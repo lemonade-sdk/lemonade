@@ -19,13 +19,15 @@ Rootful Podman and Docker give that account root-equivalent control of the host'
 
 ## Setup
 
-When `lemond` runs under your own account, from a shell, a `systemctl --user` unit, or an app that embeds it, its containers sit beside your own in `podman ps`, and it uses whatever `CONTAINER_HOST` your environment sets.
+When `lemond` runs under your own account, from a shell, a `systemctl --user` unit, or an app that embeds it, its containers sit beside your own in `podman ps`, and it uses whatever `CONTAINER_HOST` your environment sets. The `systemctl --user` unit sets it to your `podman.socket`, so Podman's API service starts the containers outside the unit's sandbox. If the unit is ever killed outright, as with `systemctl --user kill -s KILL lemond`, a container can keep running; loading the same model replaces it, or `podman rm -f` removes it.
 
 **With Podman:**
 
-1. Install Podman, for example with `sudo apt install podman`, `sudo dnf install podman` or `sudo pacman -S podman`.
+1. Install Podman and crun, for example with `sudo apt install podman crun`, `sudo dnf install podman crun` or `sudo pacman -S podman crun`.
 2. Add your account to `render`: `sudo usermod -aG render $USER`.
 3. Log out and back in.
+
+Rootless Podman must run containers with crun, not runc. Containers reach the GPU through your account's `render` group, and only crun can keep that group inside a rootless container; under runc the backend can't open the GPU and silently runs on the CPU. Podman normally installs crun, but on Debian and Ubuntu a machine that had Docker first already has runc, and Podman uses it. `lemonade backends` reports this with the command that installs crun, and Podman switches to crun as soon as it's installed.
 
 **With Docker:**
 
@@ -34,7 +36,7 @@ When `lemond` runs under your own account, from a shell, a `systemctl --user` un
 
 Docker Desktop and rootless Docker can't run container backends. With either one, install Podman instead.
 
-When `lemond` runs as `lemond.service`, installed by the `.deb`, PPA or `.rpm` package, it runs under the `lemonade` account. The package pulls in Podman unless Docker is already installed, adds `lemonade` to `render`, and allocates its subordinate UID and GID range, so rootless Podman needs no further setup.
+When `lemond` runs as `lemond.service`, installed by the `.deb`, PPA or `.rpm` package, it runs under the `lemonade` account. The package pulls in Podman unless Docker is already installed, and crun, adds `lemonade` to `render`, and allocates its subordinate UID and GID range, so rootless Podman needs no further setup.
 
 **`lemond.service` with rootful Podman:** give `lemonade` its own root Podman socket, leaving root's `podman.socket` as it is. Rootful Podman needs the netavark network backend, Podman's default; on Podman 4's older CNI backend, `lemond` cannot reach its containers. Switching root's Podman to netavark (`network_backend = "netavark"` in `/etc/containers/containers.conf`) needs `podman system reset`, which deletes all of root's containers and images.
 

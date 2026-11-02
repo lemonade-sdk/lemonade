@@ -139,9 +139,11 @@ public:
     // never claim each other's containers.
     static std::string container_name(int instance, const std::string& recipe,
                                       const std::string& backend, const std::string& model);
-    // The command that installs Podman on the distribution `os_release`
-    // describes, matched on ID, then each word of ID_LIKE.
-    static std::string podman_install_command(const std::string& os_release);
+    // The command that installs `package` on the distribution `os_release`
+    // describes, matched on ID, then each word of ID_LIKE. `name` is how the
+    // generic step for an unknown distribution refers to it.
+    static std::string install_command(const std::string& os_release, const std::string& package,
+                                       const std::string& name);
     static bool allowed_image(const std::string& image);
     // A read-only mount that puts `host_path` at `destination`, its source
     // resolved through symlinks, because a Hugging Face cache's links point into
@@ -158,14 +160,19 @@ private:
     // since setup checks run on every /system-info request.
     std::optional<bool> podman_info_rootless() const;
     // `podman info`'s answer once it has given one. Before that, rootless
-    // unless CONTAINER_HOST points Podman elsewhere or lemond runs as root.
+    // unless lemond runs as root or CONTAINER_HOST points Podman somewhere
+    // other than the account's own podman.socket.
     bool expect_rootless() const;
+    bool own_podman_socket() const;
+    static bool needs_crun(bool rootless, const std::string& runtime);
 
     ContainerHost host_;
     mutable std::mutex podman_mode_mutex_;
     mutable std::optional<bool> podman_rootless_;
     // Podman's network backend, "netavark" or "cni", from the same answer.
     mutable std::string podman_network_backend_;
+    // Podman's OCI runtime, such as "crun" or "runc", from the same answer.
+    mutable std::string podman_oci_runtime_;
 };
 
 }  // namespace utils

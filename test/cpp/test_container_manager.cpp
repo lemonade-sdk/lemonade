@@ -50,6 +50,7 @@ struct FakeHost {
     int podman_info_exit = 0;
     std::string podman_rootless = "true";
     std::string network_backend = "netavark";
+    std::string oci_runtime = "crun";
     // What Podman prints on stderr, which reaches `output` only when captured.
     std::string stderr_noise =
         "time=\"2026-10-17T00:57:31Z\" level=warning msg=\"Falling back to --cgroup-manager=cgroupfs\"\n";
@@ -83,7 +84,7 @@ struct FakeHost {
             lemon::utils::CommandResult result;
             if (argv.size() > 1 && argv[0] == "podman" && argv[1] == "info") {
                 result.exit_code = podman_info_exit;
-                result.output = podman_rootless + " " + network_backend + "\n";
+                result.output = podman_rootless + " " + network_backend + " " + oci_runtime + "\n";
             } else if (argv.size() > 1 && argv[1] == "network") {
                 result.exit_code = 0;
             } else if (argv.front() == "getsubids") {
@@ -143,6 +144,18 @@ void test_run_command() {
     check("podman run matches the spec's Complete Example",
           podman_command == "podman" + common + " --group-add keep-groups" + mount_and_home +
                                 " -p 127.0.0.1:8001:8001" + image_and_program);
+
+    FakeHost user_socket;
+    user_socket.tools = {"podman"};
+    user_socket.env = {{"CONTAINER_HOST", "unix:///run/user/1000/podman/podman.sock"},
+                       {"XDG_RUNTIME_DIR", "/run/user/1000"}};
+    const std::string user_socket_command =
+        join(ContainerManager(user_socket.host()).run_command(example_spec()));
+    check("podman run through the account's podman.socket keeps groups by annotation",
+          user_socket_command == "podman" + common +
+                                     " --annotation run.oci.keep_original_groups=1" +
+                                     mount_and_home + " -p 127.0.0.1:8001:8001" +
+                                     image_and_program);
 
     FakeHost docker;
     docker.tools = {"docker"};
@@ -217,6 +230,14 @@ void test_tool_choice_and_setup() {
     remote.env["CONTAINER_HOST"] = "unix:///run/podman/podman.sock";
     check("before podman info runs, Podman behind CONTAINER_HOST needs neither group",
           ContainerManager(remote.host()).check_host().empty() && remote.commands == 0);
+    FakeHost own_socket;
+    own_socket.tools = {"podman"};
+    own_socket.env = {{"CONTAINER_HOST", "unix:///run/user/1000/podman/podman.sock"},
+                      {"XDG_RUNTIME_DIR", "/run/user/1000"}};
+    check("before podman info runs, the account's own podman.socket needs the GPU devices",
+          lemon::utils::SetupReport{ContainerManager(own_socket.host()).check_host()}.ids() ==
+                  std::vector<std::string>({"device_groups"}) &&
+              own_socket.commands == 0);
     FakeHost as_root;
     as_root.tools = {"podman"};
     as_root.root = true;
@@ -245,6 +266,24 @@ void test_tool_choice_and_setup() {
           silent && silent->id == "podman_info" && silent->message == "`podman info` fails" &&
               lemon::utils::SetupReport{{*silent}}.action() ==
                   "Run `podman info` and fix the error it prints");
+
+    FakeHost no_socket = broken;
+    no_socket.env = {{"CONTAINER_HOST", "unix:///run/user/1000/podman/podman.sock"},
+                     {"XDG_RUNTIME_DIR", "/run/user/1000"}};
+    const auto unreachable = ContainerManager(no_socket.host()).check_podman();
+    check("an unreachable podman.socket of the account's own asks to start it",
+          unreachable && unreachable->id == "podman_info" &&
+              lemon::utils::SetupReport{{*unreachable}}.action() ==
+                  "systemctl --user enable --now podman.socket");
+
+    FakeHost elsewhere = broken;
+    elsewhere.env = {{"CONTAINER_HOST", "unix:///run/podman-lemonade.sock"}};
+    const auto remote_info = ContainerManager(elsewhere.host()).check_podman();
+    check("a failing Podman behind another CONTAINER_HOST names it",
+          remote_info && remote_info->id == "podman_info" &&
+              lemon::utils::SetupReport{{*remote_info}}.action() ==
+                  "Run `podman info` with CONTAINER_HOST=unix:///run/podman-lemonade.sock and fix "
+                  "the error it prints");
 
     FakeHost docker;
     docker.tools = {"docker"};
@@ -394,12 +433,55 @@ void test_rootful_cni() {
 }
 
 void test_install_commands() {
-    const auto command = ContainerManager::podman_install_command;
+    const auto podman = [](const std::string& os_release) {
+        return ContainerManager::install_command(os_release, "podman", "Podman");
+    };
     check("Rocky Linux matches fedora through ID_LIKE",
-          command("ID=\"rocky\"\nID_LIKE=\"rhel centos fedora\"\n") == "sudo dnf install podman");
-    check("Fedora matches on ID", command("ID=fedora\n") == "sudo dnf install podman");
+          podman("ID=\"rocky\"\nID_LIKE=\"rhel centos fedora\"\n") == "sudo dnf install podman");
+    check("Fedora matches on ID", podman("ID=fedora\n") == "sudo dnf install podman");
     check("an unknown distribution gets the generic step",
-          command("ID=gentoo\n") == "Install Podman with the host's package manager");
+          podman("ID=gentoo\n") == "Install Podman with the host's package manager");
+    check("crun installs through the same package manager",
+          ContainerManager::install_command("ID=ubuntu\nID_LIKE=debian\n", "crun", "crun") ==
+                  "sudo apt install crun" &&
+              ContainerManager::install_command("ID=gentoo\n", "crun", "crun") ==
+                  "Install crun with the host's package manager");
+}
+
+void test_oci_runtime() {
+    FakeHost runc;
+    runc.tools = {"podman"};
+    runc.gpu_access = true;
+    runc.oci_runtime = "runc";
+    const ContainerManager manager(runc.host());
+    const auto failure = manager.check_podman();
+    check("rootless Podman on runc asks for crun",
+          failure && failure->id == "oci_runtime" &&
+              failure->message ==
+                  "Rootless Podman runs containers with runc, which cannot give them the GPU" &&
+              lemon::utils::SetupReport{{*failure}}.action() == "sudo apt install crun");
+    runc.oci_runtime = "crun";
+    check("installing crun clears the failure without restarting lemond", !manager.check_podman());
+
+    FakeHost fedora = runc;
+    fedora.oci_runtime = "runc";
+    fedora.files["/etc/os-release"] = "ID=fedora\n";
+    const auto dnf = ContainerManager(fedora.host()).check_podman();
+    check("Fedora is told to install crun with dnf",
+          dnf && lemon::utils::SetupReport{{*dnf}}.action() == "sudo dnf install crun");
+
+    FakeHost rootful = runc;
+    rootful.oci_runtime = "runc";
+    rootful.podman_rootless = "false";
+    check("rootful Podman on runc passes, since it adds the render group by ID",
+          !ContainerManager(rootful.host()).check_podman());
+
+    FakeHost own_socket = runc;
+    own_socket.oci_runtime = "runc";
+    own_socket.env = {{"CONTAINER_HOST", "unix:///run/user/1000/podman/podman.sock"},
+                      {"XDG_RUNTIME_DIR", "/run/user/1000"}};
+    const auto api = ContainerManager(own_socket.host()).check_podman();
+    check("the account's podman.socket on runc asks for crun", api && api->id == "oci_runtime");
 }
 
 void test_helpers() {
@@ -530,6 +612,7 @@ int main() {
     test_rootful_service();
     test_rootful_cni();
     test_install_commands();
+    test_oci_runtime();
     test_helpers();
 #ifndef _WIN32
     test_model_mount();

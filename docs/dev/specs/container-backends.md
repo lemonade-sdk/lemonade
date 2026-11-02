@@ -194,7 +194,7 @@ When the container tool is rootless Podman, `lemond` connects to the server at `
 
 | Option | Value | Comes from |
 | --- | --- | --- |
-| `--group-add` | `keep-groups` ‡, which carries the account's own `render` membership into the container | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
+| `--group-add` | `keep-groups` ‡, which carries the account's own `render` membership into the container. Through the account's `podman.socket`, whose API rejects `keep-groups`, `lemond` passes `--annotation run.oci.keep_original_groups=1`, the crun annotation `keep-groups` stands for, instead | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
 | `-p` | `127.0.0.1:<port>:<port>` | A free port `lemond` picks |
 
 When the container tool is Docker or rootful Podman, `lemond` connects to the server at the container's address on its private network, and the command adds:
@@ -287,7 +287,7 @@ Lemonade uses Podman when it is installed, and Docker otherwise §. When neither
 
 The user starts `lemond` as their own account, through any of:
 
-- a `systemctl --user` unit, `lemond-user.service`, which runs with the user's own rights, as a shell does. Rootless Podman needs the setuid `newuidmap`/`newgidmap` helpers and the user's full subordinate ID range, and in a user manager each of systemd's sandboxing options takes one away: the seccomp-based ones (`NoNewPrivileges`, `RestrictNamespaces`, `LockPersonality`, `RestrictRealtime`) set the no-new-privileges flag, and the mount-based ones (`PrivateTmp`, `ProtectSystem`) confine the service to a user namespace that maps only the user's own UID.
+- a `systemctl --user` unit, `lemond-user.service`, which keeps systemd's sandboxing options and sets `CONTAINER_HOST` to the user's `podman.socket`. In a user manager those options take away what rootless Podman needs: the seccomp-based ones (`NoNewPrivileges`, `RestrictNamespaces`, `LockPersonality`, `RestrictRealtime`) set the no-new-privileges flag, which stops the setuid `newuidmap`/`newgidmap` helpers, and the mount-based ones (`PrivateTmp`, `ProtectSystem`) confine the service to a user namespace that maps only the user's own UID, not their subordinate range. So `podman` in the unit only sends requests to Podman's API service, which systemd starts from the socket outside the unit, and that service creates the containers. It resolves mount paths in the host's view, so model files must be outside the unit's private `/tmp`; the default Hugging Face cache, under the home directory, is. The containers belong to Podman's API service, not the unit: stopping the unit still stops them through `lemond`'s own shutdown, and when `lemond` alone dies, its `podman run` client gets SIGTERM and forwards it to the container, but when the whole unit is killed with SIGKILL, client included, a container keeps running until `lemond` loads the same model again.
 - a shell, including a `lemond` built from source and run from its build directory
 - an app that embeds `lemond`
 
@@ -314,8 +314,11 @@ When the container tool is Podman, the checks are:
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
 | Device nodes accessible | Podman is rootless and the user's account cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG render $USER`<br>2. Log out and back in |
-| Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
+| Podman answers | `podman info` fails | `systemctl --user enable --now podman.socket` when `CONTAINER_HOST` is the account's own `podman.socket`; otherwise run `podman info` (with that `CONTAINER_HOST`, if set) and fix the error it prints |
+| crun runtime | Podman is rootless and `podman info` reports an OCI runtime other than crun | The install command for crun for the host's `ID` |
 | Network reachable | Podman is rootful and its network backend is CNI, which gives an internal network no gateway for `lemond` to reach the container by | Unset `CONTAINER_HOST` to use rootless Podman |
+
+Rootless containers reach the GPU through the account's own `render` membership, which `--group-add keep-groups` carries into the container. Only crun supports `keep-groups`; runc always resets a container's supplementary groups, so under runc the device nodes are closed to the container and the engine silently falls back to the CPU. Podman installs crun by default, but on Debian and Ubuntu a host that had Docker first already has runc, which satisfies Podman's `crun | runc` dependency, so Podman runs with runc. The check therefore requires crun for rootless Podman, and the packages recommend it. Podman uses crun as soon as it is installed, so `lemond` asks `podman info` again until it reports crun instead of caching the first answer. Rootful Podman and Docker add the `render` group by its numeric ID and work with either runtime.
 
 When the container tool is Docker, the checks are:
 
@@ -343,6 +346,7 @@ What the package does:
 | Adds `lemonade` to `render` with `usermod` | `lemonade-server.postinst` | `postinst-rpm` |
 | Allocates `lemonade` a subordinate UID/GID range (see [`lemond.service` and rootless Podman](#lemondservice-and-rootless-podman)) | `lemonade-server.postinst` | `postinst-rpm` |
 | Pulls in Podman unless Docker is installed | `debian/control` declares `Recommends: podman \| docker.io \| docker-ce` | `CPackRPM.cmake` declares `Recommends: (podman or docker or docker-ce)` |
+| Pulls in crun, which rootless Podman needs for the GPU (see [`lemond` Started by the User](#lemond-started-by-the-user)) | `debian/control` declares `Recommends: crun` | `CPackRPM.cmake` declares `Recommends: crun` |
 
 Containers are started by:
 
@@ -356,7 +360,8 @@ When the container tool is Podman, the checks are:
 | Check | Fails when | `action` |
 | --- | --- | --- |
 | Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
-| Podman answers | `podman info` fails | Run `podman info` and fix the error it prints |
+| Podman answers | `podman info` fails | `systemctl --user enable --now podman.socket` when `CONTAINER_HOST` is the account's own `podman.socket`; otherwise run `podman info` (with that `CONTAINER_HOST`, if set) and fix the error it prints |
+| crun runtime | Podman is rootless and `podman info` reports an OCI runtime other than crun | The install command for crun for the host's `ID` |
 | Device nodes accessible | `lemonade` cannot read and write `/dev/kfd` and every `/dev/dri/renderD*` node | 1. `sudo usermod -aG render lemonade`<br>2. `sudo systemctl restart lemond` |
 | Subordinate IDs allocated | Podman is rootless and `getsubids lemonade` or `getsubids -g lemonade` prints no range | Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs to `lemonade`, then `sudo systemctl restart lemond` |
 | Network reachable | Podman is rootful and its network backend is CNI | 1. Remove `CONTAINER_HOST` from `/etc/default/lemond` to use rootless Podman<br>2. `sudo systemctl restart lemond` |
