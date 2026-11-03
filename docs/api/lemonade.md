@@ -1522,6 +1522,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `prompt` | Yes | The text description of the video to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `negative_prompt` | No | Text describing what to avoid. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `duration` | No | Length of the clip in seconds. Approximate: it is converted to frames at `fps` and rounded to the nearest count the model takes, which is 4n+1 for Wan. `video_frames` wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `video_frames` | No | Number of frames to generate. Defaults to the model's `video_frames` recipe option, else `33`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `fps` | No | Frames per second of the returned clip. Defaults to the model's `fps` recipe option, else `16`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `width` | No | Output width in pixels. Video models are sensitive to resolutions they were not trained on. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -1649,6 +1650,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `output_format` - The clip's container format, present once completed.
 - `frame_count` - Frames in the clip, present once completed.
 - `fps` - The clip's frame rate, present once completed.
+- `duration` - The clip's length in seconds, `frame_count` over `fps`, present once completed.
 
 ### Errors
 

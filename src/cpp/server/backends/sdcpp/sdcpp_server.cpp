@@ -15,7 +15,9 @@
 #include <iostream>
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <functional>
 #include <thread>
 #include <cstring>
@@ -604,8 +606,20 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
         if (value.is_number() && value.get<int>() > 0) return value.get<int>();
         return std::nullopt;
     };
-    if (auto frames = video_param("video_frames")) body["video_frames"] = *frames;
-    if (auto fps = video_param("fps")) body["fps"] = *fps;
+    const auto fps = video_param("fps");
+    std::optional<int> frames;
+    if (request.contains("video_frames") && request["video_frames"].is_number_integer()) {
+        frames = request["video_frames"].get<int>();
+    } else if (request.contains("duration") && request["duration"].is_number()) {
+        // sd.cpp only generates 4n+1 frames and floors any other count, which
+        // would cut a short clip by up to a third, so round to the nearest one.
+        const double wanted = request["duration"].get<double>() * fps.value_or(16);
+        frames = std::max(1, 4 * static_cast<int>(std::lround((wanted - 1.0) / 4.0)) + 1);
+    } else {
+        frames = video_param("video_frames");
+    }
+    if (frames) body["video_frames"] = *frames;
+    if (fps) body["fps"] = *fps;
     if (request.contains("seed") && request["seed"].is_number_integer()) {
         body["seed"] = request["seed"];
     }

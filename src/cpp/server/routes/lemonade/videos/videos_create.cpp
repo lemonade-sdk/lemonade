@@ -21,6 +21,11 @@ const RouteArg kVideoFrames{"video_frames", ArgIn::JsonBody, {{"type", "integer"
 const RouteArg kFps{"fps", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}}, false, Support::Available,
                     "Frames per second of the returned clip. Defaults to the model's `fps` recipe option, "
                     "else `16`."};
+const RouteArg kDuration{"duration", ArgIn::JsonBody, {{"type", "number"}, {"minimum", 0}}, false,
+                         Support::Available,
+                         "Length of the clip in seconds. Approximate: it is converted to frames at `fps` and "
+                         "rounded to the nearest count the model takes, which is 4n+1 for Wan. "
+                         "`video_frames` wins when both are given."};
 const RouteArg kWidth{"width", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
                       "Output width in pixels. Video models are sensitive to resolutions they were not "
                       "trained on. Defaults to the model's own."};
@@ -64,7 +69,7 @@ public:
             "GPU only, in practice. A 33-frame 832x480 clip takes about 5 minutes on a discrete GPU.",
         };
         s.args = {
-            kPrompt, model_loading::kModel, kNegativePrompt, kVideoFrames, kFps, kWidth, kHeight,
+            kPrompt, model_loading::kModel, kNegativePrompt, kDuration, kVideoFrames, kFps, kWidth, kHeight,
             inference::kSteps, kCfgScale, kSamplingMethod, kFlowShift, inference::kSeed, kOutputFormat
         };
 

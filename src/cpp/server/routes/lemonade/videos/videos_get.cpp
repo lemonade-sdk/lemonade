@@ -38,7 +38,8 @@ public:
                 "mime_type": {"type": "string", "description": "The clip's media type, present once completed."},
                 "output_format": {"type": "string", "description": "The clip's container format, present once completed."},
                 "frame_count": {"type": "integer", "description": "Frames in the clip, present once completed."},
-                "fps": {"type": "integer", "description": "The clip's frame rate, present once completed."}
+                "fps": {"type": "integer", "description": "The clip's frame rate, present once completed."},
+                "duration": {"type": "number", "description": "The clip's length in seconds, `frame_count` over `fps`, present once completed."}
             }
         })");
         s.responses = {response};
@@ -69,6 +70,10 @@ public:
             if (step.contains("output") && step["output"].is_object()) {
                 for (const char* key : {"mime_type", "output_format", "frame_count", "fps"}) {
                     if (step["output"].contains(key)) out[key] = step["output"][key];
+                }
+                if (out.contains("frame_count") && out["frame_count"].is_number() &&
+                    out.contains("fps") && out["fps"].is_number() && out["fps"].get<double>() > 0) {
+                    out["duration"] = out["frame_count"].get<double>() / out["fps"].get<double>();
                 }
             }
         }

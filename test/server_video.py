@@ -275,6 +275,35 @@ class VideoGenerationTests(ServerTestBase):
         )
         print(f"[OK] default frame count reached the backend: {payload['frame_count']}")
 
+    def test_013_duration_sets_the_frame_count(self):
+        """A duration in seconds becomes the nearest frame count the model takes.
+
+        One second at 8 fps is 8 frames, which Wan cannot generate; the nearest
+        4n+1 count is 9, where sd.cpp on its own would floor 8 down to 5.
+        """
+        self._ensure_model_pulled()
+        job_id = self._create(
+            {
+                "model": get_test_model("video"),
+                "prompt": "a lovely cat walking through tall grass",
+                "duration": 1,
+                "fps": 8,
+                "steps": 4,
+                "width": 480,
+                "height": 320,
+            }
+        )
+        payload = self._wait(job_id)
+        self.assertEqual(
+            payload["status"], "completed", f"generation failed: {payload}"
+        )
+        self.assertEqual(payload["frame_count"], 9)
+        self.assertAlmostEqual(payload["duration"], 9 / 8)
+        print(
+            f"[OK] duration 1s -> {payload['frame_count']} frames, "
+            f"{payload['duration']}s"
+        )
+
     def test_012_cancel_releases_a_running_generation(self):
         """Cancelling ends the job and frees the slot.
 
