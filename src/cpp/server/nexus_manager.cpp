@@ -1098,6 +1098,7 @@ struct NexusManager::Session {
     using IdentityPtr = std::unique_ptr<ln_identity_t, decltype(&ln_identity_destroy)>;
     std::unique_ptr<ln_client_t, decltype(&ln_destroy)> client{nullptr, ln_destroy};
     IdentityPtr identity{nullptr, ln_identity_destroy};
+    std::shared_ptr<ClientSlot> client_slot;
     const IdentitySource source;
     // The outstanding hand-off request; a new request replaces it, and an open consumes it.
     std::unique_ptr<ln_handoff_t, decltype(&ln_identity_handoff_destroy)> handoff{nullptr, ln_identity_handoff_destroy};
@@ -1139,9 +1140,10 @@ struct NexusManager::Session {
     std::string catalog_error;             // the SDK refused the catalog at the last join
 
     Session(const std::string& data_root, int port, int local_port, int mesh_listener_port, nlohmann::ordered_json service_catalog,
-            const ProcessRole& role)
+            const ProcessRole& role, std::shared_ptr<ClientSlot> slot)
         : source(nexus_access::identity_source(role)), root(utils::path_from_utf8(data_root)), ingress_port(port),
-          local_service_port(local_port), mesh_port(mesh_listener_port), catalog(std::move(service_catalog)) {
+          local_service_port(local_port), mesh_port(mesh_listener_port), catalog(std::move(service_catalog)),
+          client_slot(std::move(slot)) {
         std::filesystem::create_directories(root);
 #ifndef _WIN32
         std::filesystem::permissions(root, std::filesystem::perms::owner_all);
@@ -1179,8 +1181,10 @@ struct NexusManager::Session {
             account["server"] = host;
             persist();
         }
+        withdraw_client();
         client.reset(ln_create_tls(host.c_str(), static_cast<uint16_t>(public_port)));
         if (!client) throw NexusError(500, "Cannot create Nexus client");
+        publish_client();
         // The SDK moves the session when its Tier 1 server leaves; the journal keeps
         // the record. The callback owns the text and runs on an SDK thread.
         ln_set_session_moved_callback(client.get(), [](char* event_json, void*) {
@@ -1225,7 +1229,20 @@ struct NexusManager::Session {
             genesis_key_set = true;
         }
     }
-    ~Session() { if (client) ln_mesh_disable(client.get()); }
+    ~Session() {
+        withdraw_client();
+        if (client) ln_mesh_disable(client.get());
+    }
+    // status() reads the client's key-check progress through the slot; it must
+    // never see a client this session is about to destroy.
+    void publish_client() {
+        std::lock_guard<std::mutex> lock(client_slot->mutex);
+        client_slot->client = client.get();
+    }
+    void withdraw_client() {
+        std::lock_guard<std::mutex> lock(client_slot->mutex);
+        client_slot->client = nullptr;
+    }
     // Makes `next` the device identity. Another key while one is active ends that
     // session first (lock, drop), then the new key takes over with its own account; the
     // same key changes nothing. Nothing is written except the account files.
@@ -2202,6 +2219,27 @@ NexusManager::json NexusManager::status() const {
 #ifdef LEMONADE_WITH_NEXUS
     enforced = catalog && nexus_access::route_policy_available() && snapshot_.value("catalog_error", std::string()).empty();
 #endif
+#ifdef LEMONADE_WITH_NEXUS
+    // Before the first tree request the SDK verifies the network's key history
+    // page by page; on a long history a connect waits on it for several requests.
+    {
+        std::lock_guard<std::mutex> slot_lock(client_slot_->mutex);
+        char* out = nullptr;
+        if (client_slot_->client &&
+            ln_tier1_progress(static_cast<ln_client_t*>(client_slot_->client), &out) == LN_OK && out) {
+            const auto progress = json::parse(out, nullptr, false);
+            if (progress.is_object() && progress.value("active", false)) {
+                const auto total = progress.value("pages_total", uint64_t{0});
+                const auto done = progress.value("pages_done", uint64_t{0});
+                result["key_check"] = {{"epoch", progress.value("epoch", uint64_t{0})},
+                                       {"target_epoch", progress.value("target", uint64_t{0})},
+                                       {"page", total > 0 ? std::min(done + 1, total) : done + 1},
+                                       {"pages", total}};
+            }
+        }
+        ln_free(out);
+    }
+#endif
     result["route_policy"] = enforced ? "enforced" : "unavailable";
     return result;
 }
@@ -2225,7 +2263,7 @@ bool NexusManager::enable(std::string& error) {
 #else
     try {
         if (stopping_) throw std::runtime_error("Server is shutting down");
-        if (!session_) session_ = std::make_unique<Session>(data_root_, ingress_port_, management_port_, selection_port_, catalog_, role_);
+        if (!session_) session_ = std::make_unique<Session>(data_root_, ingress_port_, management_port_, selection_port_, catalog_, role_, client_slot_);
         enabled_ = true;
         persist_enabled_locked();
         update_snapshot_locked(session_->status());

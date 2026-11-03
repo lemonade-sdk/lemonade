@@ -286,6 +286,15 @@ private:
     ProcessRole role_;
     int ingress_port_{0};
     std::unique_ptr<Session> session_;
+    // The running session's SDK client (an ln_client_t*), so status() can report
+    // the network key check's progress while a connect waits on it: session_mutex_
+    // is held for the whole connect, and ln_tier1_progress never blocks. The
+    // session clears it under `mutex` before it replaces or destroys the client.
+    struct ClientSlot {
+        std::mutex mutex;
+        void* client = nullptr;
+    };
+    std::shared_ptr<ClientSlot> client_slot_ = std::make_shared<ClientSlot>();
     mutable std::mutex mutex_;
     // Serializes Session (SDK) work. Lock before mutex_ when both are needed.
     std::mutex session_mutex_;

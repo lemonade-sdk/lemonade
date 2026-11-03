@@ -410,6 +410,17 @@ it to the SDK at start, so a restart refuses an older membership list. If
 discovery fails, those calls fail and `status` reports
 `genesis_key_set: false`.
 
+Before its first tree call the SDK verifies the network's key history from the
+Genesis key, one authority page at a time (32 handoffs per page from a current
+server, 4 from an older one). On a long history a connect waits on that for
+several requests. While it runs, `status` includes `key_check`:
+`{"page": 2, "pages": 4, "epoch": 36, "target_epoch": 100}`, where `page` is
+the page being fetched, `pages` the estimated total (0 when unknown), `epoch`
+the epoch verified so far, and `target_epoch` the epoch the walk aims for.
+`status` reads it from the SDK live (`ln_tier1_progress`), without waiting for
+the connect. GUI3 does not show it yet; a connecting screen can show
+"Verifying network keys 2 of 4".
+
 ## Control API
 
 Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
