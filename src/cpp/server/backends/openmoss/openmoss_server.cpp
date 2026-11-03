@@ -113,9 +113,9 @@ AudioFormatMetadata OpenMossServer::audio_format_metadata(
     for (const auto& [option, header] :
          {std::pair{"pcm_sample_rate", "X-MOSS-Sample-Rate"},
           {"pcm_channels", "X-MOSS-Channels"}}) {
-        const json value = options.get_option(option);
-        if (value.is_number() && value.get<int>() > 0) {
-            metadata.headers[header] = std::to_string(value.get<int>());
+        const int value = options.int_option(option).value_or(0);
+        if (value > 0) {
+            metadata.headers[header] = std::to_string(value);
         }
     }
     return metadata;

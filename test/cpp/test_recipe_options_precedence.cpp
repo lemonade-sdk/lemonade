@@ -249,6 +249,78 @@ int main() {
             !merged.has_option("cfg_scale"), "", "");
     }
 
+    // --- typed reads: a stored value of the wrong type reads as unset ---
+    // No writer validates an option value's type except the options route, and
+    // get_option() hands whatever it holds to a cast that throws. These reads
+    // drop a value they cannot use, so the load falls back the same way it does
+    // for a key no layer named. has_option() is deliberately untouched: a
+    // backend that gates on it still sees the key as named.
+
+    // D1: values no cast would survive
+    {
+        json malformed = {
+            {"steps", "eight"},
+            {"cfg_scale", true},
+            {"sampling_method", 7},
+            {"width", 512.0},
+        };
+        RecipeOptions opts("sd-cpp", malformed);
+
+        failures += fail("typed: non-numeric steps falls back to the descriptor default",
+            opts.int_option("steps").value_or(-1) == 20,
+            std::to_string(opts.int_option("steps").value_or(-1)), "20");
+        failures += fail("typed: non-numeric cfg_scale falls back to the descriptor default",
+            opts.number_option("cfg_scale").value_or(-1.0) == 7.0,
+            std::to_string(opts.number_option("cfg_scale").value_or(-1.0)), "7.0");
+        failures += fail("typed: non-string sampling_method falls back to the descriptor default",
+            opts.string_option("sampling_method").value_or("?") == "",
+            opts.string_option("sampling_method").value_or("?"), "(empty)");
+        failures += fail("typed: fractional width truncates rather than falling back",
+            opts.int_option("width").value_or(0) == 512,
+            std::to_string(opts.int_option("width").value_or(0)), "512");
+    }
+
+    // D2: values a cast already handled are returned as they were stored
+    {
+        RecipeOptions opts("sd-cpp", model_layer);
+
+        failures += fail("typed: steps read as int", opts.int_option("steps").value_or(-1) == 4,
+                         std::to_string(opts.int_option("steps").value_or(-1)), "4");
+        failures += fail("typed: cfg_scale read as double", opts.number_option("cfg_scale").value_or(-1.0) == 1.0,
+                         std::to_string(opts.number_option("cfg_scale").value_or(-1.0)), "1.0");
+        failures += fail("typed: sampling_method read as string",
+                         opts.string_option("sampling_method").value_or("?") == "euler",
+                         opts.string_option("sampling_method").value_or("?"), "euler");
+    }
+
+    // D3: unset resolves through to the descriptor default; an option no
+    // descriptor declares has nothing to fall back to
+    {
+        RecipeOptions opts("sd-cpp", json::object());
+
+        failures += fail("typed: unset steps resolves to the descriptor default",
+                         opts.int_option("steps").value_or(-1) == 20,
+                         std::to_string(opts.int_option("steps").value_or(-1)), "20");
+        failures += fail("typed: unset option with no default is nullopt",
+                         !opts.int_option("not_an_option").has_value(), "", "");
+        failures += fail("typed: unset option with no default reads as no string either",
+                         !opts.string_option("not_an_option").has_value(), "", "");
+    }
+
+    // D4: a bool option stored as something else
+    {
+        json wrong_type = {{"qwen_vae_enhance", "yes"}};
+        RecipeOptions opts("thenoise", wrong_type);
+
+        failures += fail("typed: non-bool qwen_vae_enhance falls back to the descriptor default",
+                         opts.bool_option("qwen_vae_enhance").value_or(true) == false, "", "");
+
+        json set_true = {{"qwen_vae_enhance", true}};
+        RecipeOptions enabled("thenoise", set_true);
+        failures += fail("typed: bool read back as stored",
+                         enabled.bool_option("qwen_vae_enhance").value_or(false), "", "");
+    }
+
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;
 }

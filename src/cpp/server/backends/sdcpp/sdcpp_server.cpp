@@ -186,13 +186,13 @@ void SDServer::load(const std::string& model_name,
     LOG(INFO, "SDServer") << "Loading model: " << model_name << std::endl;
     LOG(DEBUG, "SDServer") << "Per-model settings: " << options.to_log_string() << std::endl;
 
-    std::string backend = options.get_option("sd-cpp_backend");
+    std::string backend = options.string_option("sd-cpp_backend").value_or("");
     if (backend.empty()) {
         auto supported = SystemInfo::get_supported_backends("sd-cpp");
         backend = supported.backends.empty() ? "cpu" : supported.backends[0];
     }
     std::string resolved_backend = resolve_sdcpp_backend(backend);
-    std::string sdcpp_args = options.get_option("sdcpp_args");
+    std::string sdcpp_args = options.string_option("sdcpp_args").value_or("");
 
     RuntimeConfig::validate_backend_choice("sdcpp", backend);
 
@@ -402,10 +402,10 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
         return fallback;
     };
     auto option_int = [&](const std::string& key) -> int {
-        return recipe_options_.has_option(key) ? static_cast<int>(recipe_options_.get_option(key)) : 0;
+        return recipe_options_.has_option(key) ? recipe_options_.int_option(key).value_or(0) : 0;
     };
     auto option_string = [&](const std::string& key) -> std::string {
-        return recipe_options_.has_option(key) ? recipe_options_.get_option(key).get<std::string>() : "";
+        return recipe_options_.has_option(key) ? recipe_options_.string_option(key).value_or("") : "";
     };
 
     // steps -> sample_params.sample_steps
@@ -418,7 +418,7 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
     if (request.contains("cfg_scale") && request["cfg_scale"].is_number()) {
         guidance["txt_cfg"] = request["cfg_scale"].get<float>();
     } else if (recipe_options_.has_option("cfg_scale")) {
-        guidance["txt_cfg"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
+        guidance["txt_cfg"] = static_cast<float>(recipe_options_.number_option("cfg_scale").value_or(0.0));
     }
 
     // sample_method -> sample_params.sample_method
@@ -431,7 +431,7 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
         if (request.contains("flow_shift") && request["flow_shift"].is_number()) {
             sample_params["flow_shift"] = request["flow_shift"].get<float>();
         } else if (recipe_options_.has_option("flow_shift")) {
-            sample_params["flow_shift"] = static_cast<float>(recipe_options_.get_option("flow_shift"));
+            sample_params["flow_shift"] = static_cast<float>(recipe_options_.number_option("flow_shift").value_or(0.0));
         }
     }
 
@@ -465,8 +465,8 @@ std::string SDServer::resolve_size(const json& request) const {
     // Fall back to the effective recipe options (ladder in build_extra_args()).
     // Return "" when unset so sd-server picks its own native defaults.
     if (!recipe_options_.has_option("width") || !recipe_options_.has_option("height")) return "";
-    int w = static_cast<int>(recipe_options_.get_option("width"));
-    int h = static_cast<int>(recipe_options_.get_option("height"));
+    int w = recipe_options_.int_option("width").value_or(0);
+    int h = recipe_options_.int_option("height").value_or(0);
     if (w <= 0 || h <= 0) return "";
     return std::to_string(w) + "x" + std::to_string(h);
 }

@@ -895,8 +895,8 @@ void ModelIngest::pull(const std::string& model_name,
     }
 
     if (model_data.contains("recipe_options")) {
-        // On top of the 3-level merge, so an import's own overrides win without
-        // discarding the layers underneath (e.g. sdcpp_args).
+        // On top of everything the model already resolves to, so an import's own
+        // overrides win without discarding the layers underneath (e.g. sdcpp_args).
         json merged = model_info.recipe_options.to_json();
         for (auto& [key, value] : model_data["recipe_options"].items()) {
             merged[key] = value;

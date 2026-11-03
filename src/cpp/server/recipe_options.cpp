@@ -240,10 +240,7 @@ RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
     return inherited;
 }
 
-json RecipeOptions::get_option(const std::string& opt) const {
-    if (options_.contains(opt)) {
-        return options_[opt];
-    }
+static json option_below_storage(const std::string& opt) {
 #ifndef LEMONADE_CLI
     // Dynamic defaults for backends if not explicitly set
     SystemInfo::SupportedBackendsResult backend_result;
@@ -254,6 +251,44 @@ json RecipeOptions::get_option(const std::string& opt) const {
     }
 #endif
     return get_defaults().contains(opt) ? get_defaults()[opt] : json();
+}
+
+json RecipeOptions::get_option(const std::string& opt) const {
+    if (options_.contains(opt)) {
+        return options_[opt];
+    }
+    return option_below_storage(opt);
+}
+
+json RecipeOptions::option_matching(const std::string& opt, bool (*usable)(const json&)) const {
+    if (options_.contains(opt) && usable(options_.at(opt))) {
+        return options_.at(opt);
+    }
+    const json below = option_below_storage(opt);
+    return usable(below) ? below : json();
+}
+
+std::optional<int> RecipeOptions::int_option(const std::string& opt) const {
+    if (const auto value = number_option(opt)) return static_cast<int>(*value);
+    return std::nullopt;
+}
+
+std::optional<double> RecipeOptions::number_option(const std::string& opt) const {
+    const json value = option_matching(opt, [](const json& v) { return v.is_number(); });
+    if (value.is_number()) return value.get<double>();
+    return std::nullopt;
+}
+
+std::optional<bool> RecipeOptions::bool_option(const std::string& opt) const {
+    const json value = option_matching(opt, [](const json& v) { return v.is_boolean(); });
+    if (value.is_boolean()) return value.get<bool>();
+    return std::nullopt;
+}
+
+std::optional<std::string> RecipeOptions::string_option(const std::string& opt) const {
+    const json value = option_matching(opt, [](const json& v) { return v.is_string(); });
+    if (value.is_string()) return value.get<std::string>();
+    return std::nullopt;
 }
 
 bool RecipeOptions::has_option(const std::string& opt) const {

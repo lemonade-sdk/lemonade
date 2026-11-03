@@ -214,8 +214,8 @@ std::string TheNoiseServer::resolve_size(const json& request) const {
              + std::to_string(request["height"].get<int>());
     }
     if (!recipe_options_.has_option("width") || !recipe_options_.has_option("height")) return "";
-    int w = static_cast<int>(recipe_options_.get_option("width"));
-    int h = static_cast<int>(recipe_options_.get_option("height"));
+    int w = recipe_options_.int_option("width").value_or(0);
+    int h = recipe_options_.int_option("height").value_or(0);
     if (w <= 0 || h <= 0) return "";
     return std::to_string(w) + "x" + std::to_string(h);
 }
@@ -263,20 +263,20 @@ json TheNoiseServer::build_request(const json& request) const {
 
     // negative_prompt
     std::string negative_prompt = resolve_string("negative_prompt",
-        recipe_options_.get_option("negative_prompt"));
+        recipe_options_.string_option("negative_prompt").value_or(""));
     if (!negative_prompt.empty()) {
         body["negative_prompt"] = negative_prompt;
     }
 
     // steps
-    int steps = resolve_int("steps", static_cast<int>(recipe_options_.get_option("steps")));
+    int steps = resolve_int("steps", recipe_options_.int_option("steps").value_or(0));
     if (steps > 0) {
         body["steps"] = steps;
     }
 
     // cfg_scale -> guidance_scale
     float cfg_scale = resolve_float("cfg_scale",
-                                    static_cast<float>(recipe_options_.get_option("cfg_scale")));
+                                    static_cast<float>(recipe_options_.number_option("cfg_scale").value_or(0.0)));
     if (cfg_scale > 0.0f) {
         body["guidance_scale"] = cfg_scale;
     }
@@ -289,27 +289,27 @@ json TheNoiseServer::build_request(const json& request) const {
     }
 
     // sampler
-    std::string sampler = resolve_string("sampler", recipe_options_.get_option("sampler"));
+    std::string sampler = resolve_string("sampler", recipe_options_.string_option("sampler").value_or(""));
     if (!sampler.empty()) {
         body["sampler"] = sampler;
     }
 
     // qwen_vae_enhance
     bool qwen_vae_enhance = resolve_bool("qwen_vae_enhance",
-        recipe_options_.get_option("qwen_vae_enhance"));
+        recipe_options_.bool_option("qwen_vae_enhance").value_or(false));
     if (qwen_vae_enhance) {
         body["qwen_vae_enhance"] = true;
     }
 
     // film_grain
-    float film_grain = static_cast<float>(recipe_options_.get_option("film_grain"));
+    float film_grain = static_cast<float>(recipe_options_.number_option("film_grain").value_or(0.0));
     film_grain = resolve_float("film_grain", film_grain);
     if (film_grain > 0.0f) {
         body["film_grain"] = film_grain;
     }
 
     // sharpening
-    float sharpening = static_cast<float>(recipe_options_.get_option("sharpening"));
+    float sharpening = static_cast<float>(recipe_options_.number_option("sharpening").value_or(0.0));
     sharpening = resolve_float("sharpening", sharpening);
     if (sharpening > 0.0f) {
         body["sharpening"] = sharpening;
@@ -323,8 +323,7 @@ json TheNoiseServer::build_request(const json& request) const {
         json specs = split_lora_specs(request["lora_specs"].get<std::string>());
         if (!specs.empty()) body["lora_specs"] = specs;
     } else {
-        const json opt = recipe_options_.get_option("lora_specs");
-        std::string specs = opt.is_string() ? opt.get<std::string>() : "";
+        std::string specs = recipe_options_.string_option("lora_specs").value_or("");
         if (!specs.empty()) body["lora_specs"] = split_lora_specs(specs);
     }
 

@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,11 @@ public:
     std::string to_log_string(bool resolve_defaults=true) const;
     RecipeOptions inherit(const RecipeOptions& options) const;
     json get_option(const std::string& opt) const;
+    std::optional<int> int_option(const std::string& opt) const;
+    std::optional<double> number_option(const std::string& opt) const;
+    std::optional<bool> bool_option(const std::string& opt) const;
+    std::optional<std::string> string_option(const std::string& opt) const;
+
     bool has_option(const std::string& opt) const;
     void set_option(const std::string& opt, const json& value);
     void remove_option(const std::string& opt);
@@ -55,6 +61,10 @@ public:
     /// since -1 is the storable value meaning "size the context automatically".
     static bool is_default_sentinel(const std::string& key, const json& value);
 private:
+    // get_option()'s ladder — stored value, dynamic *_backend default,
+    // descriptor default — narrowed to values `usable` accepts.
+    json option_matching(const std::string& opt, bool (*usable)(const json&)) const;
+
     json options_ = json::object();
     json explicit_options_ = json::object();
     std::string recipe_ = "";
