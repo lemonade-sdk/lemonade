@@ -953,6 +953,35 @@ void Router::load_model(const std::string& model_name,
         ModelType model_type = model_info.type;
         DeviceType device_type = model_info.device;
 
+        // A host-exclusive backend shares the machine with no other local model:
+        // loading it evicts them all, and loading any other local model evicts it.
+        // Cloud models hold no local memory and stay.
+        if (!is_unmetered_recipe(model_info.recipe)) {
+            const bool exclusive_load =
+                slot_policy_for_recipe(model_info.recipe) == SlotPolicy::ExclusiveHost;
+            std::vector<std::pair<WrappedServer*, std::string>> displaced;
+            for (const auto& server : loaded_servers_) {
+                if (!server->is_backend_alive()) continue;
+                const std::string recipe = server->get_recipe_options().get_recipe();
+                const SlotPolicy policy = slot_policy_for_recipe(recipe);
+                if (policy == SlotPolicy::Unmetered) continue;
+                if (!exclusive_load && policy != SlotPolicy::ExclusiveHost) continue;
+                const std::string reason =
+                    (exclusive_load ? model_info.recipe : recipe) + " requires the machine to itself";
+                if (should_reject_residency_displacement(requested_residency_class,
+                                                         server->get_residency_class())) {
+                    throw RouterResidencyConflictException(canonical_model_name,
+                                                           server->get_model_name(), reason);
+                }
+                displaced.emplace_back(server.get(), reason);
+            }
+            for (const auto& [server, reason] : displaced) {
+                LOG(INFO, "Router") << reason << ", evicting: " << server->get_model_name()
+                                    << std::endl;
+                evict_server(server);
+            }
+        }
+
         // NPU EXCLUSIVITY CHECK — driven by the backend's slot policy (descriptor).
         //   ExclusiveNpu (ryzenai-llm, whisper-on-npu): lock the entire NPU,
         //                evicting ALL NPU servers first.
@@ -1029,6 +1058,7 @@ void Router::load_model(const std::string& model_name,
             }
             case SlotPolicy::Standard:
             case SlotPolicy::Unmetered:
+            case SlotPolicy::ExclusiveHost:
                 break;
         }
 

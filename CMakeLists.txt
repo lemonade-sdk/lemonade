@@ -234,6 +234,7 @@ set(LEMON_BACKENDS
     "thenoise|thenoise"
     "ds4|ds4"
     "rocmfpx|rocmfpx"
+    "halogen|halogen"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
