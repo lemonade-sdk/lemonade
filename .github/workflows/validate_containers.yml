@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -43,6 +44,7 @@ jobs:
           import glob
           import json
           import re
+          import time
           import urllib.error
           import urllib.parse
           import urllib.request
@@ -81,6 +83,18 @@ jobs:
                   + (missing or "any backend")
                   + ". Update RECIPE_RE or POLICY_RE to match the descriptor format.")
 
+          def open_url(request):
+              for attempt in range(4):
+                  try:
+                      return urllib.request.urlopen(request, timeout=30)
+                  except urllib.error.HTTPError as e:
+                      if e.code != 429 and e.code < 500 or attempt == 3:
+                          raise
+                  except urllib.error.URLError:
+                      if attempt == 3:
+                          raise
+                  time.sleep(10 * 2 ** attempt)
+
           class Registry:
               def __init__(self, image):
                   host, self.name = image.split("/", 1)
@@ -96,7 +110,7 @@ jobs:
                   else:
                       raise SystemExit(f"Unsupported registry for {image}")
                   self.image = image
-                  with urllib.request.urlopen(token_url, timeout=30) as response:
+                  with open_url(token_url) as response:
                       self.token = json.load(response)["token"]
 
               def request(self, url, method="GET", accept=None):
@@ -105,7 +119,7 @@ jobs:
                       headers["Accept"] = accept
                   request = urllib.request.Request(url, method=method, headers=headers)
                   try:
-                      return urllib.request.urlopen(request, timeout=30)
+                      return open_url(request)
                   except urllib.error.HTTPError as e:
                       raise SystemExit(f"{self.image}: {url} returned HTTP {e.code}")
 
@@ -172,12 +186,14 @@ jobs:
           PY
           git diff src/cpp/resources/backend_versions.json
 
-      # GH_TOKEN, not GITHUB_TOKEN: a PR opened with GITHUB_TOKEN triggers no
-      # workflows, so the ci:backends label would never start the tests.
+      # A PR opened with GITHUB_TOKEN starts no workflows, so the PR is opened
+      # with GH_TOKEN when that token is allowed to, and test-container-backends
+      # runs on its own. The merge queue runs it either way.
       - name: Create Pull Request
         if: github.event_name != 'pull_request'
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          PR_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           if git diff --quiet src/cpp/resources/backend_versions.json; then
@@ -199,16 +215,23 @@ jobs:
           git commit -m "Update container backend images to the newest tag and digest"
           git push origin "$BRANCH"
 
-          PR_URL=$(gh pr create \
-            --title "Update container backend image pins" \
-            --body-file pr_body.md \
-            --label ci:backends \
-            --base main \
-            --head "$BRANCH")
-          echo "Opened $PR_URL"
+          open_pr() {
+            GH_TOKEN="$1" gh pr create \
+              --title "Update container backend image pins" \
+              --body-file pr_body.md \
+              --label ci:backends \
+              --base main \
+              --head "$BRANCH"
+          }
+          if [ -n "$PR_TOKEN" ] && PR_URL=$(open_pr "$PR_TOKEN"); then
+            echo "Opened $PR_URL"
+          else
+            PR_URL=$(gh pr view "$BRANCH" --json url --jq .url 2>/dev/null || open_pr "$GH_TOKEN")
+            echo "::warning::secrets.GH_TOKEN could not open the PR, so $PR_URL was opened with GITHUB_TOKEN and its checks will not start on their own. Close and reopen it to start them, or give GH_TOKEN pull request write access."
+          fi
 
           if ! gh pr merge "$PR_URL" --auto --squash; then
-            echo "::warning::Could not enable auto-merge on $PR_URL. Allow auto-merge in the repository settings."
+            echo "::warning::Could not enable auto-merge on $PR_URL."
           fi
 
           # The new PR carries every pin the older ones did, so they are closed.
