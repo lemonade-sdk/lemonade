@@ -4,7 +4,6 @@
 
 #include <lemon/utils/aixlog.hpp>
 
-#include "lemon/alias_manager.h"
 #include "lemon/auto_tune.h"
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
@@ -48,7 +47,7 @@ ordered_json model_options_schema() {
             "saved": {"type": "object", "description": "The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`."},
             "effective": {"type": "object", "description": "The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed."},
             "defaults": {"type": "object", "description": "What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically."},
-            "resolved_ctx_size": {"type": ["integer", "null"], "description": "The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. `null` means automatic sizing found insufficient memory and no valid context is available."}
+            "resolved_ctx_size": {"type": "integer", "description": "The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`."}
         }
     })");
 }
@@ -59,20 +58,11 @@ void respond_with_model_options(ServerContext& ctx, const std::string& id,
     const std::string model_id = utils::normalize_model_name(id);
     std::string model_key = model_id;
 
-    if (!model_manager.model_exists(model_key)) {
-        std::optional<std::string> target;
-        if (ctx.alias_manager->has_alias(model_id)) {
-            target = ctx.alias_manager->resolve_alias(model_id);
-        }
-        std::string canonical_target = target ? model_manager.resolve_model_name(*target) : "";
-        if (target && model_manager.model_exists(canonical_target)) {
-            model_key = canonical_target;
-        } else if (target && model_manager.model_exists(*target)) {
-            model_key = *target;
-        } else {
-            ctx.model_loader->write_load_error(res, model_id, "Model not found");
-            return;
-        }
+    if (auto resolved = model_manager.resolve(model_id)) {
+        model_key = resolved->canonical_id;
+    } else {
+        ctx.model_loader->write_load_error(res, model_id, "Model not found");
+        return;
     }
 
     // Work in canonical names from here on: a user model's requested id is its
@@ -86,8 +76,9 @@ void respond_with_model_options(ServerContext& ctx, const std::string& id,
         const RecipeOptions no_request_options(info.recipe, json::object());
         RecipeOptions effective = ctx.router->resolve_effective_options(info, no_request_options);
 
+        const json opts = model_manager.options(model_key);
         ModelInfo without_saved = info;
-        without_saved.recipe_options = model_manager.get_model_default_options(info);
+        without_saved.recipe_options = RecipeOptions(info.recipe, opts["defaults"]);
         RecipeOptions defaults = ctx.router->resolve_effective_options(without_saved, no_request_options);
 
         // `effective` and `defaults` double as replayable /v1/load bodies.
@@ -98,16 +89,13 @@ void respond_with_model_options(ServerContext& ctx, const std::string& id,
 
         const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
         const json effective_ctx = effective.get_option("ctx_size");
-        json resolved_ctx = nullptr;
-        if (auto_ctx != AUTO_CTX_NO_CAPACITY) {
-            resolved_ctx = auto_ctx != -2 ? auto_ctx
-                : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
-        }
+        const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
+            : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
 
         json response = {
             {"model_name", model_id},
             {"recipe", info.recipe},
-            {"saved", model_manager.get_saved_model_options(model_key)},
+            {"saved", opts["saved"]},
             {"effective", effective_json},
             {"defaults", defaults_json},
             {"resolved_ctx_size", resolved_ctx}

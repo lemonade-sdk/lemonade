@@ -2,7 +2,6 @@
 
 namespace lemon {
 
-class AliasManager;
 class BackendManager;
 class CloudProviderRegistry;
 class ConfigEffects;
@@ -30,7 +29,6 @@ struct ServerContext {
     ModelManager* model_manager = nullptr;
     BackendManager* backend_manager = nullptr;
     CloudProviderRegistry* cloud_registry = nullptr;
-    AliasManager* alias_manager = nullptr;
     RuntimeConfig* config = nullptr;
     SystemMetricsPlatform* metrics = nullptr;
     jobs::JobManager* job_manager = nullptr;

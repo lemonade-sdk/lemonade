@@ -49,7 +49,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
   const [apiKey, setApiKey] = useState(api.apiKey);
   const observedConnection = useRef({ endpoint: api.baseUrl, key: api.apiKey });
   const [canPersistApiKey, setCanPersistApiKey] = useState(api.canPersistApiKey);
-  const [rememberApiKey, setRememberApiKey] = useState(api.canPersistApiKey && Boolean(api.apiKey));
+  const [rememberApiKey, setRememberApiKey] = useState(api.canPersistApiKey && api.isApiKeyPersisted);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(api.lastConnectionError);
   const [notice, setNotice] = useState<string | null>(null);
@@ -98,7 +98,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
         setHost(api.baseUrl);
         setApiKey(api.apiKey);
         setCanPersistApiKey(api.canPersistApiKey);
-        setRememberApiKey(api.canPersistApiKey && Boolean(api.apiKey));
+        setRememberApiKey(api.canPersistApiKey && api.isApiKeyPersisted);
         setError(api.lastConnectionError);
       })
       .catch(err => {
@@ -106,7 +106,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
         setHost(api.baseUrl);
         setApiKey(api.apiKey);
         setCanPersistApiKey(api.canPersistApiKey);
-        setRememberApiKey(false);
+        setRememberApiKey(api.canPersistApiKey && api.isApiKeyPersisted);
         setError(friendlyErrorMessage(err));
       });
 
@@ -167,7 +167,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
       setRememberApiKey(api.canPersistApiKey && saveResult.apiKeyPersisted);
 
       if (apiKey && saveResult.apiKeyPersisted) {
-        setNotice(`${t('Connected to {url}. API key saved in Lemonade app settings.', { url: normalized })}`);
+        setNotice(`${t('Connected to {url}. API key saved on this device.', { url: normalized })}`);
       } else {
         setNotice(t('Connected to {url}.', { url: normalized }));
       }

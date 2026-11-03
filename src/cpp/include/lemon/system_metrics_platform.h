@@ -111,6 +111,9 @@ public:
     // Memory usage in GB, 0 if not available
     virtual double get_memory_usage_gb() = 0;
 
+    // Total physical RAM in GB, 0 if not available
+    virtual double get_memory_total_gb() { return 0.0; }
+
     // GPU usage percentage (0-100), -1 if not available or unsupported
     virtual double get_gpu_usage() = 0;
 

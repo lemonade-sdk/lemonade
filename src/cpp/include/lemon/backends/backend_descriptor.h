@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -25,6 +26,7 @@ enum class SlotPolicy {
     Standard,      // counts toward the LRU slots, no device exclusivity (llamacpp, sd-cpp)
     ExclusiveNpu,  // evict ALL npu servers before loading (ryzenai-llm, whispercpp-npu)
     CoexistByType, // one per model type, evicts exclusive-npu peers (flm)
+    ExclusiveHost, // shares the machine with no other local model, in either load order (halogen)
     Unmetered      // never counts toward slots, never auto-evicted (cloud)
 };
 
@@ -34,11 +36,20 @@ enum class VersionPolicy {
     AtLeast   // installed >= expected is acceptable (system-managed packages, e.g. flm)
 };
 
+// A container backend's image, and the device nodes and Linux permissions its
+// container gets.
+struct ContainerPolicy {
+    std::string image;
+    std::vector<std::string> devices;   // device nodes the container can open, e.g. "/dev/dri"
+    std::vector<std::string> cap_add;   // capabilities given back after --cap-drop=all
+};
+
 inline const char* slot_policy_to_string(SlotPolicy p) {
     switch (p) {
         case SlotPolicy::Standard:      return "standard";
         case SlotPolicy::ExclusiveNpu:  return "exclusive_npu";
         case SlotPolicy::CoexistByType: return "coexist_by_type";
+        case SlotPolicy::ExclusiveHost: return "exclusive_host";
         case SlotPolicy::Unmetered:     return "unmetered";
     }
     return "standard";
@@ -115,8 +126,16 @@ struct BackendDescriptor {
 
     // True if the backend streams the model from storage rather than loading it
     // fully resident (ds4 --ssd-streaming); changes how it is size-filtered (see
-    // filter_models_by_backend in model_manager.cpp).
+    // filter_for_host in model_manager.cpp).
     bool streams_model_from_storage = false;
+
+    // The backends in `support` that run from an OCI image, keyed by backend name.
+    std::map<std::string, ContainerPolicy> containers;
+
+    const ContainerPolicy* container_for(const std::string& backend) const {
+        auto it = containers.find(backend);
+        return it == containers.end() ? nullptr : &it->second;
+    }
 
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {

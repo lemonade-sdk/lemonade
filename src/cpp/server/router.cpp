@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <condition_variable>
 #include <iostream>
+#include <lemon/model_manager.h>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -952,6 +953,35 @@ void Router::load_model(const std::string& model_name,
         ModelType model_type = model_info.type;
         DeviceType device_type = model_info.device;
 
+        // A host-exclusive backend shares the machine with no other local model:
+        // loading it evicts them all, and loading any other local model evicts it.
+        // Cloud models hold no local memory and stay.
+        if (!is_unmetered_recipe(model_info.recipe)) {
+            const bool exclusive_load =
+                slot_policy_for_recipe(model_info.recipe) == SlotPolicy::ExclusiveHost;
+            std::vector<std::pair<WrappedServer*, std::string>> displaced;
+            for (const auto& server : loaded_servers_) {
+                if (!server->is_backend_alive()) continue;
+                const std::string recipe = server->get_recipe_options().get_recipe();
+                const SlotPolicy policy = slot_policy_for_recipe(recipe);
+                if (policy == SlotPolicy::Unmetered) continue;
+                if (!exclusive_load && policy != SlotPolicy::ExclusiveHost) continue;
+                const std::string reason =
+                    (exclusive_load ? model_info.recipe : recipe) + " requires the machine to itself";
+                if (should_reject_residency_displacement(requested_residency_class,
+                                                         server->get_residency_class())) {
+                    throw RouterResidencyConflictException(canonical_model_name,
+                                                           server->get_model_name(), reason);
+                }
+                displaced.emplace_back(server.get(), reason);
+            }
+            for (const auto& [server, reason] : displaced) {
+                LOG(INFO, "Router") << reason << ", evicting: " << server->get_model_name()
+                                    << std::endl;
+                evict_server(server);
+            }
+        }
+
         // NPU EXCLUSIVITY CHECK — driven by the backend's slot policy (descriptor).
         //   ExclusiveNpu (ryzenai-llm, whisper-on-npu): lock the entire NPU,
         //                evicting ALL NPU servers first.
@@ -1028,6 +1058,7 @@ void Router::load_model(const std::string& model_name,
             }
             case SlotPolicy::Standard:
             case SlotPolicy::Unmetered:
+            case SlotPolicy::ExclusiveHost:
                 break;
         }
 
@@ -1044,11 +1075,6 @@ void Router::load_model(const std::string& model_name,
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
         int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
         const bool ctx_size_auto = auto_ctx != -2;
-        if (auto_ctx == AUTO_CTX_NO_CAPACITY) {
-            throw std::runtime_error(
-                "Not enough free memory to load " + canonical_model_name +
-                " with automatic context sizing. Free memory or choose a smaller model.");
-        }
         if (auto_ctx > 0) {
             LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx << std::endl;
             effective_options.set_option("ctx_size", auto_ctx);
@@ -1197,6 +1223,17 @@ void Router::load_model(const std::string& model_name,
                       << "evicting all models and retrying..." << std::endl;
 
             evict_all_servers();
+
+            // The eviction freed memory the first auto-tune could not count.
+            if (ctx_size_auto) {
+                effective_options.set_option("ctx_size", -1);
+                const int64_t retry_ctx = resolve_auto_ctx_size(effective_options, model_info);
+                if (retry_ctx > 0) {
+                    LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << retry_ctx
+                                        << " for the retry" << std::endl;
+                    effective_options.set_option("ctx_size", retry_ctx);
+                }
+            }
 
             // Mark loading again for retry
             is_loading_ = true;
@@ -1485,7 +1522,7 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
 
     const json model_json = model_info.recipe_options.to_json();
     const json model_defaults_json =
-        model_manager_->get_model_default_options(model_info).to_json();
+        model_manager_->options(model_info.model_name)["defaults"];
     const json arch_json = arch_opts.to_json();
     const json backend_defaults_json = default_opt.to_json();
     const json merge_value = effective.get_option("merge_args");

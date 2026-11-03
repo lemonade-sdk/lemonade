@@ -84,6 +84,7 @@ nav:
       - vLLM: guide/configuration/vllm.md
       - Moonshine: guide/configuration/moonshine.md
       - Cloud Offload: guide/configuration/cloud.md
+      - Container Backends: guide/configuration/container-backends.md
     - Telemetry: guide/telemetry.md
     - FAQ: guide/faq.md
   - Development:
@@ -123,6 +124,7 @@ nav:
     - Mindcraft: integrations/mindcraft.md
     - Open Hands: integrations/open-hands.md
     - Open WebUI: integrations/open-webui.md
+    - Pi: integrations/pi.md
     - Wut: integrations/wut.md
   - API Spec:
       - Overview: api/README.md

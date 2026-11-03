@@ -19,9 +19,9 @@
 #include "wrapped_server.h"
 #include "lemon/live_throughput.h"
 #include "model_residency.h"
-#include "model_manager.h"
 #include "backend_manager.h"
 #include "runtime_config.h"
+#include "lemon/model_manager_types.h"
 
 // 5 seconds is generous enough for inference to complete but prevents
 // indefinite blocking if a backend is stuck.

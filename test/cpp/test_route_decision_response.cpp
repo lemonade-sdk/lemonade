@@ -138,6 +138,40 @@ static void test_trace_serializes_label_and_rationale() {
           !out["trace"][1].contains("label") && !out["trace"][1].contains("rationale"));
 }
 
+// `error` and `truncated` join label/rationale under the same rule, and the
+// same schema constraint: both are declared in decision.schema.json's
+// trace_entry, which is additionalProperties:false.
+static void test_trace_serializes_error_and_truncated() {
+    Decision decision;
+    decision.route_to = "builtin.Qwen3.5-35B-A3B-GGUF";
+
+    lemon::TraceEntry failed{"classifier:topic", std::nullopt, false};
+    failed.error = "classify failed: backend unreachable";
+    decision.trace.push_back(failed);
+
+    lemon::TraceEntry cut{"classifier:topic", 0.91, true};
+    cut.truncated = true;
+    decision.trace.push_back(cut);
+
+    decision.trace.push_back(lemon::TraceEntry{"keywords_any", std::nullopt, false});
+
+    lemon::TraceEntry whole{"classifier:topic", 0.12, false};
+    whole.truncated = false;
+    decision.trace.push_back(whole);
+
+    json out = lemon::route_decision_to_json(decision);
+    check("trace entry serializes error",
+          out["trace"][0].value("error", "") == "classify failed: backend unreachable");
+    check("a failed entry carries no truncated key", !out["trace"][0].contains("truncated"));
+    check("trace entry serializes truncated as true",
+          out["trace"][1].value("truncated", false) == true);
+    // Absence means "the backend did not say"; `false` means it said it did not cut.
+    check("empty error/truncated keys are omitted",
+          !out["trace"][2].contains("error") && !out["trace"][2].contains("truncated"));
+    check("trace entry serializes truncated as false",
+          out["trace"][3].contains("truncated") && out["trace"][3]["truncated"] == false);
+}
+
 int main() {
     test_lf_event_is_injected();
     test_crlf_split_event_is_injected_before_done();
@@ -145,6 +179,7 @@ int main() {
     test_only_first_json_event_gets_route();
     test_route_header_default_value();
     test_trace_serializes_label_and_rationale();
+    test_trace_serializes_error_and_truncated();
 
     if (g_failures == 0) {
         std::printf("All route decision response tests passed.\n");

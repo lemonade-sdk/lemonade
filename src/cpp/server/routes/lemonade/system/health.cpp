@@ -1,6 +1,7 @@
 #include <string>
 #include <vector>
 
+#include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/runtime_config.h"
 #include "lemon/server.h"
@@ -24,6 +25,17 @@ ordered_json health_schema() {
             "version": {"type": "string", "description": "Lemonade Server version."},
             "model_loaded": {"type": ["string", "null"], "description": "The most recently used loaded model, or `null` when none is loaded."},
             "update_check_done": {"type": "boolean", "description": "Whether the startup check for model updates has finished. Until it has, models' `update_available` can be incomplete."},
+            "models_generation": {"type": "integer", "description": "Rises whenever the model list changes, including a model's `downloaded` or `update_available`. A client that polls health reads [`GET /v1/models`](./openai.md#get-v1models) again when it changes."},
+            "model_sync": {
+                "type": "object",
+                "description": "The model sync, so a client that polls health can tell when one starts or finishes. Details are at [`GET /internal/models/sync/status`](./internal.md#get-internalmodelssyncstatus).",
+                "required": ["status", "sync_id", "completed_sync_id"],
+                "properties": {
+                    "status": {"enum": ["idle", "in_progress", "success", "failed"], "description": "Status of the latest sync."},
+                    "sync_id": {"type": "integer", "description": "The latest sync; `0` before any sync."},
+                    "completed_sync_id": {"type": "integer", "description": "The most recent sync that finished."}
+                }
+            },
             "all_models_loaded": {
                 "type": "array",
                 "description": "Every loaded model.",
@@ -158,6 +170,16 @@ public:
         }
 
         response["update_check_done"] = ctx_.server->update_check_done();
+
+        if (ctx_.model_manager) {
+            const json sync = ctx_.model_manager->sync_status();
+            response["model_sync"] = {
+                {"status", sync.value("status", "idle")},
+                {"sync_id", sync.value("sync_id", std::uint64_t{0})},
+                {"completed_sync_id", sync.value("completed_sync_id", std::uint64_t{0})},
+            };
+            response["models_generation"] = ctx_.model_manager->models_generation();
+        }
 
         res.set_content(response.dump(), "application/json");
     }

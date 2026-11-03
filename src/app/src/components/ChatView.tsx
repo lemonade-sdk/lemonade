@@ -9,6 +9,7 @@ import { WorkspaceList, WorkspaceListRow } from './WorkspacePanels';
 import { backendCompactLabel, capabilityColor } from '../modelPresentation';
 import { scheduleIdleWork } from '../startupScheduler';
 import { useI18n } from '../i18n';
+import ChatReadinessProgress from './ChatReadinessProgress';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
 const LogViewer = lazy(() => import(/* webpackChunkName: "chat-logs" */ './LogViewer'));
@@ -45,7 +46,18 @@ import {
   modelStructure,
 } from '../modelCapabilities';
 import { storageKey } from '../storage';
-import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference, saveChatHistoryPreference } from '../features/chatHistory/historySettings';
+import { captureBrowserDraftSend, hasBrowserPromptContext, readBrowserPromptDraft, saveBrowserPromptDraft } from '../features/browserPrompt';
+import {
+  CHAT_HISTORY_PREFERENCE_EVENT,
+  conversationVersion,
+  deletedConversationIds,
+  loadChatHistoryPreference,
+  removeDeletedConversations,
+  saveChatHistoryPreference,
+  storedConversationId,
+  storedConversationIds,
+  tryWriteChatHistoryPreference,
+} from '../features/chatHistory/historySettings';
 import { prepareToolCallsForStorage } from '../features/chatHistory/toolCallPersistence';
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel, virtualLoadedCollection } from '../features/collections/collectionModels';
@@ -85,6 +97,7 @@ interface Message {
   toolCalls?: ToolCallEntry[];
   model?: ModelSnapshot | null;
   isError?: boolean;
+  fromBrowserPrompt?: boolean;
 }
 
 interface Conversation {
@@ -288,10 +301,10 @@ function normalizeSnapshot(raw: unknown): ModelSnapshot | null {
   };
 }
 
-function normalizeConversation(raw: unknown): Conversation | null {
+function normalizeConversation(raw: unknown, stableId?: string): Conversation | null {
   if (!raw || typeof raw !== 'object') return null;
   const obj = raw as Record<string, unknown>;
-  const id = typeof obj.id === 'string' ? obj.id : generateId();
+  const id = stableId ?? storedConversationId(raw) ?? generateId();
   const messagesRaw = Array.isArray(obj.messages) ? obj.messages : [];
   const messages = messagesRaw
     .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
@@ -303,6 +316,7 @@ function normalizeConversation(raw: unknown): Conversation | null {
       toolCalls: Array.isArray(m.toolCalls) ? m.toolCalls as ToolCallEntry[] : undefined,
       model: normalizeSnapshot(m.model),
       isError: m.isError === true || (typeof m.content === 'string' && /^Error:/i.test(m.content)),
+      fromBrowserPrompt: m.fromBrowserPrompt === true || undefined,
     }));
   return {
     id,
@@ -314,26 +328,44 @@ function normalizeConversation(raw: unknown): Conversation | null {
   };
 }
 
-function loadConversations(persist: boolean): Conversation[] {
-  if (!persist) return [];
+function tryReadStoredConversations(): unknown[] | null {
   try {
     const raw = localStorage.getItem(scopedKey(STORAGE_KEY));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    const list: unknown[] = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.conversations) ? parsed.conversations : []);
-    return list.map(normalizeConversation).filter((c): c is Conversation => !!c);
+    if (Array.isArray(parsed)) return parsed;
+    if (Array.isArray(parsed?.conversations)) return parsed.conversations;
   } catch { /* ignore */ }
-  return [];
+  return null;
 }
 
-function saveConversations(convos: Conversation[], persist: boolean) {
-  if (!persist) {
-    try {
-      localStorage.removeItem(scopedKey(STORAGE_KEY));
-      localStorage.removeItem(scopedKey(ACTIVE_KEY));
-    } catch { /* ignore */ }
-    return;
+function readStoredConversations(): unknown[] {
+  return tryReadStoredConversations() ?? [];
+}
+
+function writeStoredConversations(list: unknown[]): boolean {
+  try {
+    localStorage.setItem(scopedKey(STORAGE_KEY), JSON.stringify({ version: STORAGE_VERSION, conversations: list }));
+    return true;
+  } catch {
+    return false;
   }
+}
+
+function loadConversations(): Conversation[] {
+  const stored = readStoredConversations();
+  const ids = storedConversationIds(stored);
+  return stored.map((entry, index) => normalizeConversation(entry, ids[index])).filter((c): c is Conversation => !!c);
+}
+
+function removeSavedConversations(deletedIds: ReadonlySet<string>): boolean {
+  const stored = tryReadStoredConversations();
+  if (stored === null) return false;
+  const kept = removeDeletedConversations(stored, deletedIds);
+  return kept.length === stored.length || writeStoredConversations(kept);
+}
+
+function saveConversations(convos: Conversation[]): boolean {
   // Strip transient/generated media before persisting. Image prompts are redacted
   // so private context around an image does not leak into localStorage.
   const stripped = convos.map(c => ({
@@ -351,19 +383,16 @@ function saveConversations(convos: Conversation[], persist: boolean) {
       toolCalls: prepareToolCallsForStorage(m.toolCalls),
     })),
   }));
-  try { localStorage.setItem(scopedKey(STORAGE_KEY), JSON.stringify({ version: STORAGE_VERSION, conversations: stripped })); } catch { /* ignore */ }
+  return writeStoredConversations(stripped);
 }
 
-function loadActiveId(persist: boolean): string | null {
-  if (!persist) return null;
+function loadActiveId(): string | null {
   try { return localStorage.getItem(scopedKey(ACTIVE_KEY)); } catch { return null; }
 }
 
-function saveActiveId(id: string | null, persist: boolean) {
+function saveActiveId(id: string | null) {
   try {
-    if (!persist) {
-      localStorage.removeItem(scopedKey(ACTIVE_KEY));
-    } else if (id) {
+    if (id) {
       localStorage.setItem(scopedKey(ACTIVE_KEY), id);
     } else {
       localStorage.removeItem(scopedKey(ACTIVE_KEY));
@@ -511,13 +540,17 @@ function timeAgo(ts: number): string {
 }
 
 interface ChatViewProps {
+  isVisible: boolean;
   currentModel: string | null;
+  dictationTarget: string | null;
   modelSelectionEpoch: number;
   composerFocusEpoch: number;
   loadedModels: LoadedModel[];
   serverModels: ModelInfo[];
   connectionStatus: ConnectionStatus;
-  onModelSelect: (model: string) => void;
+  onModelSelect: (model: string, options?: { navigate?: boolean }) => void;
+  onDictationStart: (model: string) => void;
+  onDictationEnd: (failed?: boolean) => void;
   onOpenModelDetails: (model: string) => void;
   onRefresh: () => void | Promise<void>;
 }
@@ -525,7 +558,6 @@ interface ChatViewProps {
 interface ModelPreparationState {
   modelName: string;
   phase: 'waiting' | 'downloading' | 'loading';
-  percent?: number;
 }
 
 const MCP_ENABLED_KEY = 'mcp_enabled';
@@ -880,13 +912,17 @@ function friendlyRouterChatError(message: string): string {
 }
 
 const ChatView: React.FC<ChatViewProps> = ({
+  isVisible,
   currentModel: selectedModel,
+  dictationTarget,
   modelSelectionEpoch,
   composerFocusEpoch,
   loadedModels,
   serverModels,
   connectionStatus,
   onModelSelect,
+  onDictationStart,
+  onDictationEnd,
   onOpenModelDetails,
   onRefresh,
 }) => {
@@ -905,13 +941,19 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [modelPreparations, setModelPreparations] = useState<Record<string, ModelPreparationState>>({});
   const [persistHistory, setPersistHistory] = useState(() => loadPersistencePreference());
   const [historyNoticeDismissed, setHistoryNoticeDismissed] = useState(false);
+  const [historyWriteFailed, setHistoryWriteFailed] = useState(false);
+  const [historyPreferenceWriteFailed, setHistoryPreferenceWriteFailed] = useState(false);
   // Large persisted conversations are not required to draw the first usable
   // frame.  Hydrate them after paint instead of JSON-parsing the full history
   // synchronously inside the initial React render.
-  const [historyHydrated, setHistoryHydrated] = useState(() => !loadPersistencePreference());
+  const [historyHydrated, setHistoryHydrated] = useState(false);
+  const savedVersionsRef = useRef<Map<string, string>>(new Map());
+  const previousConversationIdsRef = useRef<Set<string> | null>(null);
+  const pendingDeletionsRef = useRef<Set<string>>(new Set());
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [inputValue, setInputValue] = useState('');
+  const [incomingPrompt] = useState(readBrowserPromptDraft);
+  const [inputValue, setInputValue] = useState(incomingPrompt);
   const [imageMode, setImageMode] = useState<ImageMode>('generate');
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
   const [audioGenerationSettings, setAudioGenerationSettings] = useState<AudioGenerationSettings>(DEFAULT_AUDIO_GENERATION_SETTINGS);
@@ -995,6 +1037,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const realtimeRef = useRef<RealtimeTranscriptionHandle | null>(null);
   // Dictation uses an independent ASR model; the selected chat model stays the target for Send.
   const micSessionRef = useRef<'dictation' | 'transcription' | null>(null);
+  const micSessionIdRef = useRef(0);
   const lastDictationTextRef = useRef('');
   const finishDictationRef = useRef<(() => void) | null>(null);
   const isLiveRecordingRef = useRef(false);
@@ -1002,7 +1045,18 @@ const ChatView: React.FC<ChatViewProps> = ({
   const liveFinalizeTimerRef = useRef<number | null>(null);
   const audioLevelRef = useRef(0);
   const autoSpeechRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
-  const handleSendRef = useRef<(overrideText?: string) => Promise<void>>(async () => {});
+  const incomingPromptHandledRef = useRef(false);
+  const [, setIncomingPromptDismissals] = useState(0);
+  // The imported prompt belongs to the new chat it opened. Once the user moves
+  // on, it must not be sent later or attach its tool restriction to their input.
+  const dismissIncomingPrompt = useCallback((): boolean => {
+    if (!incomingPrompt || incomingPromptHandledRef.current) return false;
+    incomingPromptHandledRef.current = true;
+    saveBrowserPromptDraft('');
+    setIncomingPromptDismissals(count => count + 1);
+    return true;
+  }, [incomingPrompt]);
+  const handleSendRef = useRef<(overrideText?: string, fromBrowserPrompt?: boolean) => Promise<void>>(async () => {});
 
   const generatedMediaUrlsRef = useRef<Set<string>>(new Set());
   const trackGeneratedMediaUrl = useCallback((url: string): string => {
@@ -1017,23 +1071,20 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   useEffect(() => {
     if (historyHydrated) return;
-    if (!persistHistory) {
-      setHistoryHydrated(true);
-      return;
-    }
     const cancelSchedule = scheduleIdleWork(() => {
-      const storedConversations = loadConversations(true);
-      const storedActiveId = loadActiveId(true);
+      const storedConversations = loadConversations();
+      const storedActiveId = loadActiveId();
+      savedVersionsRef.current = new Map(storedConversations.map(c => [c.id, conversationVersion(c)]));
       setConversations(current => {
         if (current.length === 0) return storedConversations;
         const existing = new Set(current.map(conversation => conversation.id));
         return [...current, ...storedConversations.filter(conversation => !existing.has(conversation.id))];
       });
-      setActiveId(current => current || storedActiveId);
+      setActiveId(current => current || (incomingPrompt && !incomingPromptHandledRef.current ? null : storedActiveId));
       setHistoryHydrated(true);
     }, 500);
     return cancelSchedule;
-  }, [historyHydrated, persistHistory]);
+  }, [historyHydrated]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1405,7 +1456,10 @@ const ChatView: React.FC<ChatViewProps> = ({
     () => canUseMicrophone() && hasRealtimeAudio,
     [hasRealtimeAudio],
   );
-  const supportsDictation = currentCapability === 'chat' && canUseMicrophone();
+  const supportsDictation = canUseMicrophone() && (
+    ['chat', 'image', 'audio-generation', 'tts'].includes(currentCapability)
+    || (currentCapability === 'model3d' && model3dSettings.sourceMode === 'text')
+  );
   const supportsChatAudioInput = useMemo(
     () => modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel),
     [currentKnownModelInfo, currentLoadedModel],
@@ -1582,11 +1636,12 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, []);
 
   const startLemonadeToolPrompt = useCallback((text: string) => {
+    dismissIncomingPrompt();
     persistMcpEnabled(true);
     persistMcpSelection([LEMONADE_MCP_SERVER_ID], null);
     setInputValue(text);
     inputRef.current?.focus();
-  }, [persistMcpEnabled, persistMcpSelection]);
+  }, [dismissIncomingPrompt, persistMcpEnabled, persistMcpSelection]);
 
   const selectedMcpServerIdSet = useMemo(() => new Set(selectedMcpServerIds), [selectedMcpServerIds]);
   const selectedMcpToolNameSet = useMemo(() => selectedMcpToolNames === null ? null : new Set(selectedMcpToolNames), [selectedMcpToolNames]);
@@ -1748,6 +1803,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, [modelPickerOpen]);
 
   useEffect(() => {
+    if (selectedModel && selectedModel === dictationTarget) return;
     const selectedInfo = selectedModel ? findModelInfoByName(knownModelInfos, selectedModel) : null;
     const selectedStillUsable = Boolean(selectedModel) && (
       loadedModels.some(m => m.model_name === selectedModel && canSelectInComposer(m))
@@ -1755,9 +1811,15 @@ const ChatView: React.FC<ChatViewProps> = ({
     );
     const selectedDefault = lemonadeDefaultModel(selectedModel);
     if (selectedStillUsable || selectedDefault || !selectedModel || loadedModels.length === 0) return;
+    // Do not turn an unloaded prompt model into standalone transcription
+    // merely because the dictation ASR model is running.
+    if (loadedModels.every(m => String(m.type).toLowerCase() === 'transcription')
+        && (!selectedInfo || capabilityFromModelInfo(selectedInfo) !== 'audio')) return;
     const preferred = selectPreferredLoadedModel(loadedModels);
-    if (preferred && canSelectInComposer(preferred)) onModelSelect(preferred.model_name);
-  }, [knownModelInfos, loadedModels, onModelSelect, selectedModel]);
+    // ChatView stays mounted while hidden, so this fallback can fire from an
+    // unload or reload on another tab; it must not pull the user into Chat.
+    if (preferred && canSelectInComposer(preferred)) onModelSelect(preferred.model_name, { navigate: false });
+  }, [dictationTarget, knownModelInfos, loadedModels, onModelSelect, selectedModel]);
 
   const updateConversation = useCallback((id: string, updater: (c: Conversation) => Conversation) => {
     setConversations(prev => prev.map(c => c.id === id ? updater(c) : c));
@@ -1808,7 +1870,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     return api.loadModel(modelName, recipeOptions, target);
   }, [knownModelInfos, loadedModels]);
 
-  const waitForExistingModelDownload = useCallback(async (modelName: string, convoId: string): Promise<boolean> => {
+  const waitForExistingModelDownload = useCallback(async (modelName: string): Promise<boolean> => {
     const [{ downloadStore }, api] = await Promise.all([getDownloadStoreModule(), getApiClient()]);
     let sawDownload = false;
     const startedAt = Date.now();
@@ -1822,14 +1884,6 @@ const ChatView: React.FC<ChatViewProps> = ({
         if (active.status === 'paused') {
           throw new Error(`Download for ${modelName} is paused. Resume it in Downloads, then send again.`);
         }
-        setModelPreparations(prev => ({
-          ...prev,
-          [convoId]: {
-            modelName,
-            phase: 'waiting',
-            percent: Number.isFinite(active.percent) ? active.percent : undefined,
-          },
-        }));
         await new Promise(resolve => window.setTimeout(resolve, 750));
         continue;
       }
@@ -1878,6 +1932,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       return snapshotFromLoaded(loaded) || snapshotFromModelInfo(initialInfo) || snapshotFromName(modelName, [loaded])!;
     }
 
+    setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'waiting' } }));
     let freshModels = await api.models(true).catch(() => ({ data: knownModelInfos }));
     let info = findModelInfoByName(freshModels.data, modelName) || initialInfo;
 
@@ -1895,7 +1950,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       return snapshotFromModelInfo(info) || snapshotFromName(modelName, health.all_models_loaded || [])!;
     }
 
-    const existingFinished = await waitForExistingModelDownload(modelName, convoId);
+    const existingFinished = await waitForExistingModelDownload(modelName);
     if (existingFinished) {
       freshModels = await api.models(true).catch(() => freshModels);
       info = findModelInfoByName(freshModels.data, modelName) || info;
@@ -1905,20 +1960,10 @@ const ChatView: React.FC<ChatViewProps> = ({
       let pullError: Error | null = null;
       let pullCompleted = false;
       downloadStore.wake(modelName, 'model');
-      setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'downloading', percent: 0 } }));
+      setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'downloading' } }));
 
       await api.pullModel(modelName, {
-        onProgress: data => {
-          const item = downloadStore.wake(modelName, 'model');
-          setModelPreparations(prev => ({
-            ...prev,
-            [convoId]: {
-              modelName,
-              phase: 'downloading',
-              percent: item?.percent ?? prev[convoId]?.percent ?? 0,
-            },
-          }));
-        },
+        onProgress: () => { downloadStore.wake(modelName, 'model'); },
         onComplete: data => {
           pullCompleted = true;
           downloadStore.wake(modelName, 'model');
@@ -1937,7 +1982,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       }
     }
 
-    setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'loading', percent: 100 } }));
+    setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'loading' } }));
     await loadModelForChat(modelName, info || initialInfo);
     await Promise.resolve(onRefresh());
     health = await api.health();
@@ -2048,6 +2093,10 @@ const ChatView: React.FC<ChatViewProps> = ({
   const currentStream = activeId ? streaming.getStream(activeId) : undefined;
   const isStreaming = !!currentStream;
   const modelPreparation = activeId ? modelPreparations[activeId] || null : null;
+  const progressModelName = modelPreparation?.modelName || modelPickerLoading || currentModel;
+  const progressModelInfo = progressModelName === currentModel
+    ? currentKnownModelInfo : findModelInfoByName(knownModelInfos, progressModelName);
+  const progressRecipe = String((progressModelInfo as any)?.recipe || (progressModelName === currentModel ? currentRecipe : '')).toLowerCase();
   const capabilityBusy = activeId ? capabilityBusyConvoIds.has(activeId) : false;
   const isBusy = isStreaming || capabilityBusy || isLiveRecording || micPreparation !== null || modelPreparation !== null;
 
@@ -2086,6 +2135,18 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
+  const incomingPromptPending = !activeId && !!incomingPrompt && !incomingPromptHandledRef.current;
+  const toolsUnavailable = hasBrowserPromptContext(messages) || incomingPromptPending;
+  useEffect(() => {
+    if (toolsUnavailable) setMcpPickerOpen(false);
+  }, [toolsUnavailable]);
+
+  // Covers typing, dictation, and any other draft update while the prompt waits.
+  useEffect(() => {
+    if (!incomingPromptPending) return;
+    if (inputValue.trim()) saveBrowserPromptDraft(inputValue);
+    else dismissIncomingPrompt();
+  }, [dismissIncomingPrompt, incomingPromptPending, inputValue]);
 
   useFocusTrap(bottomSheetRef, mobileSheetOpen);
 
@@ -2135,14 +2196,56 @@ const ChatView: React.FC<ChatViewProps> = ({
     };
   }, []);
 
-  // Persist conversations to localStorage only when the user explicitly opted in.
   useEffect(() => {
     if (!historyHydrated) return;
-    saveConversations(conversations, persistHistory);
-    try { localStorage.setItem(storageKey('persist_conversations'), String(persistHistory)); } catch { /* ignore */ }
+    if (persistHistory) {
+      const saved = saveConversations(conversations);
+      if (saved) {
+        savedVersionsRef.current = new Map(conversations.map(c => [c.id, conversationVersion(c)]));
+        pendingDeletionsRef.current = new Set();
+      }
+      setHistoryWriteFailed(!saved);
+    }
+    setHistoryPreferenceWriteFailed(!tryWriteChatHistoryPreference(persistHistory));
   }, [conversations, historyHydrated, persistHistory]);
 
-  const hasUnsavedConversations = !persistHistory && conversations.some(c => c.messages.length > 0);
+  useEffect(() => {
+    if (!historyHydrated) return;
+    const ids = new Set(conversations.map(c => c.id));
+    const previous = previousConversationIdsRef.current;
+    previousConversationIdsRef.current = ids;
+    // Only a successful full save may clear pending deletions.
+    if (persistHistory) return;
+    if (!previous) return;
+    const deleted = new Set([...deletedConversationIds(previous, ids), ...pendingDeletionsRef.current]);
+    if (deleted.size === 0) return;
+    // Keep failed removals pending and tell the user when a deletion was not saved.
+    const removed = removeSavedConversations(deleted);
+    pendingDeletionsRef.current = removed ? new Set() : deleted;
+    setHistoryWriteFailed(!removed);
+  }, [conversations, historyHydrated, persistHistory]);
+
+  const isUnsavedConversation = (c: Conversation) =>
+    c.messages.length > 0 && savedVersionsRef.current.get(c.id) !== conversationVersion(c);
+  const hasHistoryStorageError = historyWriteFailed || historyPreferenceWriteFailed;
+  const hasUnsavedConversations = hasHistoryStorageError || (!persistHistory && conversations.some(isUnsavedConversation));
+
+  const retryHistoryWrite = useCallback(() => {
+    setHistoryPreferenceWriteFailed(!tryWriteChatHistoryPreference(persistHistory));
+    if (persistHistory) {
+      const saved = saveConversations(conversations);
+      if (saved) {
+        savedVersionsRef.current = new Map(conversations.map(c => [c.id, conversationVersion(c)]));
+        pendingDeletionsRef.current = new Set();
+      }
+      setHistoryWriteFailed(!saved);
+    } else {
+      const deleted = pendingDeletionsRef.current;
+      const removed = deleted.size === 0 || removeSavedConversations(deleted);
+      if (removed) pendingDeletionsRef.current = new Set();
+      setHistoryWriteFailed(!removed);
+    }
+  }, [conversations, persistHistory]);
 
   // The browser owns this dialog's wording, so it cannot say what is at stake.
   // The composer notice carries the explanation; this only catches the reflex refresh.
@@ -2164,10 +2267,11 @@ const ChatView: React.FC<ChatViewProps> = ({
   // Persist active conversation id only after the initial stored value has been
   // hydrated, otherwise an empty cold-start state could overwrite it.
   useEffect(() => {
-    if (!historyHydrated) return;
-    saveActiveId(activeId, persistHistory);
-  }, [activeId, historyHydrated, persistHistory]);
+    if (!historyHydrated || !persistHistory ||
+        (incomingPrompt && !incomingPromptHandledRef.current && !activeId)) return;
 
+    saveActiveId(activeId);
+  }, [activeId, historyHydrated, persistHistory, incomingPrompt]);
   // Active ID can point at stale/missing data after manual localStorage edits or migrations.
   useEffect(() => {
     if (activeId && !conversations.some(c => c.id === activeId)) {
@@ -2226,11 +2330,12 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, []);
 
   const handleNewChat = useCallback(() => {
+    if (dismissIncomingPrompt()) setInputValue('');
     setShowLoadedOverview(true);
     setActiveId(null);
     setFallbackModelOverride(null);
     inputRef.current?.focus();
-  }, []);
+  }, [dismissIncomingPrompt]);
 
   // Each conversation answers with the model it was started on. Without this the
   // app-level selection leaks across conversations and an old thread silently
@@ -2247,17 +2352,27 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   // Restoring the active conversation from storage sets activeId directly rather
   // than going through handleSelectConversation, so the model needs restoring too.
+  // A model already loaded from the Models workspace is the newer, explicit pick.
   const startupModelRestoredRef = useRef(false);
   useEffect(() => {
     if (startupModelRestoredRef.current || !historyHydrated || !activeId) return;
     startupModelRestoredRef.current = true;
+    if (composerFocusEpoch > 0) return;
     applyConversationModel(conversations.find(c => c.id === activeId)?.model?.name);
-  }, [activeId, applyConversationModel, conversations, historyHydrated]);
+  }, [activeId, applyConversationModel, composerFocusEpoch, conversations, historyHydrated]);
+
+  // composerFocusEpoch only advances when the Models workspace loads a model and
+  // hands it to chat.
+  useEffect(() => {
+    if (composerFocusEpoch > 0) setFallbackModelOverride(null);
+  }, [composerFocusEpoch]);
 
   const handleSelectConversation = useCallback((id: string) => {
+    // The imported text must not follow the user into a conversation where tools may run.
+    if (dismissIncomingPrompt()) setInputValue('');
     setActiveId(id);
     applyConversationModel(conversations.find(c => c.id === id)?.model?.name);
-  }, [applyConversationModel, conversations]);
+  }, [applyConversationModel, conversations, dismissIncomingPrompt]);
 
   // An explicit pick outranks a conversation-restored override, which would
   // otherwise keep winning and make the click look like it did nothing.
@@ -2446,7 +2561,8 @@ ${finalText}`
 
   const handleMicStart = useCallback(async () => {
     if (!currentModel || !currentModelSnapshot || micPreparation !== null || isStreaming || capabilityBusy
-      || (currentCapability === 'chat' ? !supportsDictation : !supportsRealtimeAudio)) return;
+      || (!supportsDictation && !supportsRealtimeAudio)) return;
+    const sessionId = ++micSessionIdRef.current;
     if (liveFinalizeTimerRef.current) {
       window.clearTimeout(liveFinalizeTimerRef.current);
       liveFinalizeTimerRef.current = null;
@@ -2458,9 +2574,24 @@ ${finalText}`
     setLiveTranscript('');
     liveTranscriptRef.current = '';
     lastDictationTextRef.current = '';
-    const dictating = currentCapability === 'chat';
+    const dictating = supportsDictation;
     micSessionRef.current = dictating ? 'dictation' : 'transcription';
+    if (dictating) onDictationStart(currentModel);
     setMicPreparation(dictating ? t('Preparing dictation...') : t('Connecting microphone…'));
+    const isCurrent = () => sessionId === micSessionIdRef.current;
+    const failDictation = () => {
+      if (!dictating || !isCurrent() || micSessionRef.current !== 'dictation') return;
+      // Keep committed draft text when the socket closes after Stop.
+      if (liveFinalizeTimerRef.current !== null) return finishDictationRef.current?.();
+      ++micSessionIdRef.current;
+      micSessionRef.current = null;
+      const handle = realtimeRef.current;
+      realtimeRef.current = null;
+      handle?.close();
+      stopRecording();
+      clearLiveMicState();
+      onDictationEnd(true);
+    };
     try {
       const api = await getApiClient();
       let transcriptionModel = currentModel;
@@ -2487,25 +2618,38 @@ ${finalText}`
         }
       }
       const handle = await api.connectRealtimeTranscription(transcriptionModel, {
-        onConnected: () => setIsLiveConnected(true),
-        onDisconnected: () => setIsLiveConnected(false),
-        onError: message => setLiveError(message),
-        onSpeechEvent: handleLiveSpeechEvent,
-        onTranscription: handleLiveTranscription,
+        onConnected: () => { if (isCurrent()) setIsLiveConnected(true); },
+        onDisconnected: () => {
+          // A failed primary socket may still close while the legacy port connects.
+          if (!isCurrent() || !realtimeRef.current) return;
+          setIsLiveConnected(false);
+          if (dictating && liveFinalizeTimerRef.current === null) setLiveError('Realtime microphone disconnected.');
+          failDictation();
+        },
+        onError: message => { if (isCurrent()) { setLiveError(message); failDictation(); } },
+        onSpeechEvent: event => { if (isCurrent()) handleLiveSpeechEvent(event); },
+        onTranscription: (text, final) => { if (isCurrent()) handleLiveTranscription(text, final); },
       });
+      if (!isCurrent()) { handle.close(); return; }
+      if (!handle.isConnected()) throw new Error('Realtime microphone disconnected.');
       realtimeRef.current = handle;
       isLiveRecordingRef.current = true;
       await startRecording();
+      if (!isCurrent()) { stopRecording(); return; }
+      if (!handle.isConnected()) throw new Error('Realtime microphone disconnected.');
       setIsLiveRecording(true);
     } catch (err) {
+      if (!isCurrent()) return;
+      ++micSessionIdRef.current;
+      micSessionRef.current = null;
       realtimeRef.current?.close();
       realtimeRef.current = null;
       stopRecording();
       clearLiveMicState();
-      micSessionRef.current = null;
+      if (dictating) onDictationEnd(true);
       setLiveError(friendlyErrorMessage(err));
     } finally {
-      setMicPreparation(null);
+      if (isCurrent() || micSessionRef.current === null) setMicPreparation(null);
     }
   }, [
     capabilityBusy,
@@ -2520,6 +2664,8 @@ ${finalText}`
     loadedModels,
     micPreparation,
     onRefresh,
+    onDictationStart,
+    onDictationEnd,
     startRecording,
     stopRecording,
     supportsDictation,
@@ -2528,6 +2674,7 @@ ${finalText}`
   ]);
 
   const handleMicStop = useCallback(() => {
+    const sessionId = micSessionIdRef.current;
     stopRecording();
     const handle = realtimeRef.current;
     const dictating = micSessionRef.current === 'dictation';
@@ -2537,29 +2684,35 @@ ${finalText}`
     // A final ASR segment may arrive well after Stop on slower CPUs.
     // Finish when the server sends it, with a bounded fallback for silence/errors.
     const finish = () => {
+      if (sessionId !== micSessionIdRef.current) return;
       if (liveFinalizeTimerRef.current !== null) window.clearTimeout(liveFinalizeTimerRef.current);
       const finalText = liveTranscriptRef.current.trim();
       if (!dictating && finalText) appendLiveTranscript(finalText);
       if (dictating) requestAnimationFrame(() => inputRef.current?.focus());
       setLiveTranscript('');
       liveTranscriptRef.current = '';
-      handle?.close();
-      if (realtimeRef.current === handle) realtimeRef.current = null;
+      ++micSessionIdRef.current;
       micSessionRef.current = null;
+      if (realtimeRef.current === handle) realtimeRef.current = null;
       finishDictationRef.current = null;
+      handle?.close();
       liveFinalizeTimerRef.current = null;
+      if (dictating) onDictationEnd();
     };
     if (dictating) finishDictationRef.current = finish;
     liveFinalizeTimerRef.current = window.setTimeout(finish, dictating ? 10000 : 1200);
-  }, [appendLiveTranscript, clearLiveMicState, stopRecording]);
+  }, [appendLiveTranscript, clearLiveMicState, onDictationEnd, stopRecording]);
 
   useEffect(() => {
     return () => {
+      ++micSessionIdRef.current;
       stopRecording();
       realtimeRef.current?.close();
       if (liveFinalizeTimerRef.current) window.clearTimeout(liveFinalizeTimerRef.current);
+      if (micSessionRef.current === 'dictation') onDictationEnd();
+      micSessionRef.current = null;
     };
-  }, [stopRecording]);
+  }, [onDictationEnd, stopRecording]);
 
   const runCapabilityRequest = useCallback(async (
     convoId: string,
@@ -2773,6 +2926,7 @@ ${finalText}`
     const text = userMessage.content.trim();
     const images = userMessage.images?.length ? [...userMessage.images] : undefined;
     const hasImages = !!images?.length;
+    const allowTools = !hasBrowserPromptContext([...priorMessages, userMessage]);
     const collectionInfo = currentKnownModelInfo && isCollectionModel(currentKnownModelInfo) ? currentKnownModelInfo : null;
 
     if (appendUserToConversation) {
@@ -2816,7 +2970,7 @@ ${finalText}`
     let includeDirectAudioParts = canUseAudioInput && modeSupportsChatCompletions && audioFiles.length > 0;
 
     let omniRuntime: ChatToolRuntime | null = null;
-    if (collectionInfo) {
+    if (collectionInfo && allowTools) {
       const { buildOmniToolRuntime } = await import(
         /* webpackChunkName: "omni-tools" */ '../tools/omniTools'
       );
@@ -2870,7 +3024,7 @@ ${finalText}`
     }
 
     let selectedMcpRuntime: ChatToolRuntime | null = null;
-    if (useMcp && modeSupportsMcp) {
+    if (allowTools && useMcp && modeSupportsMcp) {
       try {
         const { buildSelectedMcpRuntime } = await import(
           /* webpackChunkName: "mcp-runtime" */ '../tools/mcpRuntime'
@@ -2982,8 +3136,9 @@ ${finalText}`
     useMcp,
   ]);
 
-  const handleSend = async (overrideText?: string) => {
+  const handleSend = async (overrideText?: string, fromBrowserPrompt = false) => {
     const text = (overrideText ?? inputValue).trim();
+    const isExternalPrompt = captureBrowserDraftSend(overrideText, fromBrowserPrompt, incomingPrompt, incomingPromptHandledRef.current);
     const audioFiles = [...pendingAudioFiles];
     const hasImages = pendingImages.length > 0;
     const canSubmitContent = currentCapability === 'audio' && !modeSupportsChatCompletions
@@ -2998,10 +3153,14 @@ ${finalText}`
               ? (!!text && !openMossDescribeUnavailable && !openMossCloneUnavailable)
               : (!!text || hasImages || (canUseAudioInput && audioFiles.length > 0));
     if (!canSubmitContent || isBusy || !currentModelSnapshot) return;
+    if (isExternalPrompt) {
+      incomingPromptHandledRef.current = true;
+      saveBrowserPromptDraft('');
+    }
 
     // Sending a new message explicitly resumes following the latest reply.
     threadFollowBottomRef.current = true;
-    let convoId = activeId;
+    let convoId = isExternalPrompt ? null : activeId;
     const initialSnapshot = currentModelSnapshot;
     const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
     const userMessage: Message = {
@@ -3010,6 +3169,7 @@ ${finalText}`
       images: hasImages ? [...pendingImages] : undefined,
       audioName: audioFiles[0]?.name,
       model: initialSnapshot,
+      fromBrowserPrompt: isExternalPrompt || undefined,
     };
 
     if (!convoId) {
@@ -3034,10 +3194,10 @@ ${finalText}`
       }));
     }
 
-    setInputValue('');
+    if (overrideText === undefined) setInputValue('');
     setPendingImages([]);
     setPendingAudioFiles([]);
-    void speakWithPinnedTts(text, 'user');
+    if (!isExternalPrompt) void speakWithPinnedTts(text, 'user');
 
     if (connectionStatus !== 'connected') {
       appendAssistantMessage(convoId, {
@@ -3151,12 +3311,28 @@ ${finalText}`
       updatedAt: Date.now(),
     } : c));
 
-    await startAssistantResponse(activeId, currentModelSnapshot, editedUserMessage, priorMessages, [], false);
+    await startAssistantResponse(
+      activeId,
+      currentModelSnapshot,
+      editedUserMessage,
+      priorMessages,
+      [],
+      false,
+    );
   }, [activeId, connectionStatus, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
 
   // Keep option-button callbacks stable across unrelated Chat state updates. This
   // lets memoized completed Markdown messages retain their DOM and selection.
   handleSendRef.current = handleSend;
+
+  useEffect(() => {
+    if (!isVisible || activeId || !incomingPrompt || incomingPromptHandledRef.current || !historyHydrated
+        || connectionStatus !== 'connected' || !currentModelSnapshot
+        || !modeSupportsChatCompletions || !currentLoadedModel || isBusy) return;
+
+    setShowLoadedOverview(false);
+    void handleSendRef.current(undefined, true);
+  }, [isVisible, activeId, incomingPrompt, historyHydrated, connectionStatus, currentModelSnapshot, modeSupportsChatCompletions, currentLoadedModel, isBusy]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -3467,14 +3643,7 @@ ${finalText}`
     || currentCapability === 'model3d'
     || (currentCapability === 'tts' && isOpenMossTts);
 
-  const composerHint = modelPreparation
-    ? (modelPreparation.phase === 'loading'
-      ? t('Loading {model} for chat…', { model: modelPreparation.modelName })
-      : t(modelPreparation.phase === 'waiting' ? 'Waiting for {model}…' : 'Downloading {model}{progress}…', {
-        model: modelPreparation.modelName,
-        progress: Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : '',
-      }))
-    : supportsChatAudioInput && modeSupportsChatCompletions
+  const composerHint = supportsChatAudioInput && modeSupportsChatCompletions
     ? (supportsRealtimeAudio
       ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
       : 'Chat + audio mode · attached audio is routed through chat completions')
@@ -3734,26 +3903,6 @@ ${finalText}`
                 </article>
               )}
 
-              {modelPreparation && !isStreaming && (
-                <article className="message message--assistant" data-model-preparation={modelPreparation.phase}>
-                  <div className="message__avatar"><Icon name="download" size={16} /></div>
-                  <div className="message__body">
-                    <div className="message__author-row">
-                      <div className="message__author">{t('Lemonade')}</div>
-                    </div>
-                    <div className="message__content message__content--pending">
-                      <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
-                      {modelPreparation.phase === 'loading'
-                        ? t('Loading {model} for chat…', { model: modelPreparation.modelName })
-                        : t(modelPreparation.phase === 'waiting' ? 'Waiting for {model}…' : 'Downloading {model}{progress}…', {
-                          model: modelPreparation.modelName,
-                          progress: Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : '',
-                        })}
-                    </div>
-                  </div>
-                </article>
-              )}
-
               {capabilityBusy && !isStreaming && !modelPreparation && (
                 <article className="message message--assistant">
                   <div className="message__avatar"><CapabilityIcon capability={currentCapability} size={16} /></div>
@@ -3802,27 +3951,36 @@ ${finalText}`
           {(modelPickerOptions.length > 0 || modelPickerOpen) && (
             <div className="composer__model-picker" ref={modelPickerRef}>
               <span className="composer__model-label">{t('Model')}</span>
-              <button
-                type="button"
-                className="composer__model-button"
-                onClick={() => { setModelPickerOpen(v => !v); setModelPickerError(null); }}
-                aria-haspopup="listbox"
-                aria-expanded={modelPickerOpen}
-              >
-                {currentLoadedModel ? (
-                  <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe)}`}>
+              <div className="composer__model-stack">
+                <button
+                  type="button"
+                  className="composer__model-button"
+                  onClick={() => { setModelPickerOpen(v => !v); setModelPickerError(null); }}
+                  aria-haspopup="listbox"
+                  aria-expanded={modelPickerOpen}
+                >
+                  {currentLoadedModel ? (
+                    <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe)}`}>
+                      <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
+                      <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe)}</span>
+                    </span>
+                  ) : (
                     <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
-                    <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe)}</span>
-                  </span>
-                ) : (
-                  <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
-                )}
-                <span className="composer__model-button-name">{currentModel}</span>
-                {selectableModels.length > 0 && (
-                  <span className="composer__model-button-badge">({selectableModels.length})</span>
-                )}
-                <span className="composer__model-button-caret">▾</span>
-              </button>
+                  )}
+                  <span className="composer__model-button-name">{currentModel}</span>
+                  {selectableModels.length > 0 && (
+                    <span className="composer__model-button-badge">({selectableModels.length})</span>
+                  )}
+                  <span className="composer__model-button-caret">▾</span>
+                </button>
+                <ChatReadinessProgress
+                  modelName={progressModelName}
+                  recipe={progressRecipe}
+                  modelSizeGiB={progressModelInfo?.size}
+                  phase={modelPreparation?.phase || (modelPickerLoading ? 'loading' : null)}
+                  isLoaded={loadedModels.some(model => model.model_name.toLowerCase() === progressModelName.toLowerCase())}
+                />
+              </div>
               {modelPickerOpen && (
                 <div className="composer__model-menu" role="dialog" aria-label={t('Search models')}>
                   <label className="composer__model-search">
@@ -3963,11 +4121,22 @@ ${finalText}`
             {streamingToolStatus}
           </div>
         )}
-        {!persistHistory && messages.length > 0 && !historyNoticeDismissed && (
+        {hasHistoryStorageError && (
+          <div className="composer__history-notice" role="alert">
+            <Icon name="alert" size={13} aria-hidden="true" />
+            <span className="composer__history-notice-copy">
+              {t('Could not update saved chat history. Messages may be lost or deleted chats may return after refresh. Check your browser storage and try again.')}
+            </span>
+            <button type="button" className="composer__history-notice-action" onClick={retryHistoryWrite}>
+              {t('Retry')}
+            </button>
+          </div>
+        )}
+        {!hasHistoryStorageError && !persistHistory && activeConvo && isUnsavedConversation(activeConvo) && !historyNoticeDismissed && (
           <div className="composer__history-notice" role="status">
             <Icon name="alert" size={13} aria-hidden="true" />
             <span className="composer__history-notice-copy">
-              {t('Chat history is not saved. Refreshing clears this conversation. Turning saving on keeps the text of what is already here, but not images or audio.')}
+              {t('Chat history is not saved. Refreshing loses messages sent or edited since saving was turned off. Turning saving on keeps the text of what is already here, but not images or audio.')}
             </span>
             <button type="button" className="composer__history-notice-action" onClick={handleEnableHistoryPersistence}>
               {t('Save chat history')}
@@ -4307,13 +4476,13 @@ ${finalText}`
             <div className="composer__live-head">
               <span className={`composer__live-dot${isSpeaking ? ' composer__live-dot--speaking' : ''}`} />
               <span>{micPreparation || (micSessionRef.current === 'dictation'
-                ? t('Dictation to chat draft')
+                ? (currentCapability === 'chat' ? t('Dictation to chat draft') : t('Dictate message'))
                 : isLiveRecording ? (isLiveConnected ? t('Live microphone') : t('Connecting microphone…')) : t('Microphone'))}</span>
               {isLiveRecording && <span className="composer__live-meter"><span style={{ width: `${Math.round(audioLevel * 100)}%` }} /></span>}
             </div>
             {!micPreparation && (
               <div className="composer__live-text">
-                {liveError || micError || liveTranscript || 'Listening… start speaking to see transcription.'}
+                {liveError || micError || liveTranscript || t('Listening… start speaking to see transcription.')}
               </div>
             )}
           </div>
@@ -4372,21 +4541,23 @@ ${finalText}`
                   role="menuitem"
                   data-mcp-entry="tools"
                   onClick={openMcpPicker}
-                  disabled={!modeSupportsMcp}
+                  disabled={!modeSupportsMcp || toolsUnavailable}
                   aria-label={t('Tools')}
                   aria-haspopup="dialog"
                 >
                   <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
                   <span className="composer__add-text">
                     <strong>{t('Tools')}</strong>
-                    <small>{useMcp
-                      ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
-                      : 'Lemonade tools and external MCP servers'}</small>
+                    <small>{toolsUnavailable
+                      ? 'Unavailable for imported webpage context'
+                      : useMcp
+                        ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
+                        : 'Lemonade tools and external MCP servers'}</small>
                   </span>
                 </button>
               </div>
             )}
-            {addMenuOpen && mcpPickerOpen && (
+            {addMenuOpen && mcpPickerOpen && !toolsUnavailable && (
               <div
                 className="composer__mcp-modal"
                 onMouseDown={event => {
@@ -4595,13 +4766,15 @@ ${finalText}`
               className={`composer__mic${isLiveRecording ? ' composer__mic--recording' : ''}`}
               onClick={isLiveRecording ? handleMicStop : handleMicStart}
               disabled={!currentModel || !!micPreparation || (!supportsDictation && !supportsRealtimeAudio && !isLiveRecording) || ((isStreaming || capabilityBusy) && !isLiveRecording)}
-              title={isLiveRecording ? t('Stop microphone') : currentCapability === 'chat'
-                ? t('Dictate speech into the chat draft (uses a transcription model)')
+              title={isLiveRecording ? t('Stop microphone') : supportsDictation
+                ? (currentCapability === 'chat'
+                  ? t('Dictate speech into the chat draft (uses a transcription model)')
+                  : t('Dictate message'))
                 : t('Start live audio transcription')}
-              aria-label={isLiveRecording ? t('Stop microphone') : currentCapability === 'chat' ? t('Dictate message') : t('Start live audio transcription')}
+              aria-label={isLiveRecording ? t('Stop microphone') : supportsDictation ? t('Dictate message') : t('Start live audio transcription')}
               aria-pressed={isLiveRecording}
             >
-              <Icon name={isLiveRecording ? 'stop' : currentCapability === 'chat' ? 'mic' : 'audio'} size={16} />
+              <Icon name={isLiveRecording ? 'stop' : supportsDictation ? 'mic' : 'audio'} size={16} />
             </button>
           )}
           {isStreaming ? (
@@ -4617,6 +4790,13 @@ ${finalText}`
         </div>
         </div>
         <div className="composer__hint">{composerHint}</div>
+        {toolsUnavailable && (
+          <div className="composer__hint" role="status">
+            {incomingPromptPending
+              ? 'Imported webpage content: tools are unavailable for this prompt. Clear it or open another chat to use tools.'
+              : 'Imported webpage content: tools are unavailable in this conversation. Start a new chat to use tools.'}
+          </div>
+        )}
       </div>
       </div>
       <div aria-live="assertive" aria-atomic="true" className="sr-only">
@@ -4675,19 +4855,19 @@ const EmptyState: React.FC<EmptyStateProps> = ({
         </p>
 
         <div className="chips" role="list">
-          <button className="chip" role="listitem" onClick={() => onChipClick('How do I get started with Lemonade?')}>
+          <button className="chip" role="listitem" onClick={() => onChipClick(t('How do I get started with Lemonade?'))}>
             <span className="chip__icon" aria-hidden="true"><Icon name="info" size={16} /></span>
             {t('How do I use Lemonade?')}
           </button>
-          <button className="chip" role="listitem" onClick={() => onChipClick('How do I download and load a model in Lemonade?')}>
+          <button className="chip" role="listitem" onClick={() => onChipClick(t('How do I download and load a model in Lemonade?'))}>
             <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
             {t('How do I add a model?')}
           </button>
-          <button className="chip" role="listitem" onClick={() => onChipClick('What are Lemonade tools, and how do I use them?')}>
+          <button className="chip" role="listitem" onClick={() => onChipClick(t('What are Lemonade tools, and how do I use them?'))}>
             <span className="chip__icon" aria-hidden="true"><Icon name="tools" size={16} /></span>
             {t('What are Lemonade tools?')}
           </button>
-          <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well with Lemonade?')}>
+          <button className="chip" role="listitem" onClick={() => onChipClick(t('What can my hardware run well with Lemonade?'))}>
             <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
             {t('What can my hardware run?')}
           </button>

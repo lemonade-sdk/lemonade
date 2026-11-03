@@ -5,23 +5,23 @@
 
 #include <nlohmann/json.hpp>
 
-#include "lemon/model_manager.h"
-
 namespace lemon {
 
-class AliasManager;
+class ModelManager;
 class Router;
+struct ModelInfo;
 
 // The models routes, the job engine and the status page all describe a model, so the
 // shape is built here once and its schema sits beside it.
 class ModelJson {
 public:
-    ModelJson(ModelManager* model_manager, Router* router, AliasManager* alias_manager);
+    ModelJson(ModelManager* model_manager, Router* router);
 
     // depth bounds how deeply collection components embed one another, since
-    // registrations can be cyclic.
+    // registrations can be cyclic. `include_paths` is the opt-in to absolute
+    // filesystem paths, as in /models/{id}/files.
     nlohmann::json to_json(const std::string& model_id, const ModelInfo& info,
-                           int depth = 0) const;
+                           int depth = 0, bool include_paths = false) const;
 
     // The smaller window.SERVER_MODELS entry the legacy status page reads.
     nlohmann::json status_page_json(const std::string& model_id, const ModelInfo& info) const;
@@ -36,7 +36,6 @@ private:
 
     ModelManager* model_manager_;
     Router* router_;
-    AliasManager* alias_manager_;
 };
 
 } // namespace lemon

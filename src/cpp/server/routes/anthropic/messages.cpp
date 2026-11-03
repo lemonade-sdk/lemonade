@@ -395,10 +395,11 @@ void forward_anthropic_upstream(AnthropicUpstream upstream,
         });
 }
 
-json convert_anthropic_to_openai_chat(const RouteRequest& req, std::vector<std::string>& warnings) {
+json convert_anthropic_to_openai_chat(ServerContext& ctx, const RouteRequest& req,
+                                     std::vector<std::string>& warnings) {
     json openai_req;
 
-    std::string model = strip_latest_tag(req.value(gateway::kModel, ""));
+    std::string model = canonical_model_name(ctx, req.value(gateway::kModel, ""));
     openai_req[model_loading::kModel.name] = model;
 
     json messages = json::array();
@@ -915,7 +916,7 @@ public:
         try {
             std::vector<std::string> warnings;
 
-            std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
+            std::string model = canonical_model_name(ctx_, req.arg(gateway::kModel).get<std::string>());
 
             if (req.has(kBeta)) {
                 std::string beta_value = req.arg(kBeta).get<std::string>();
@@ -945,7 +946,7 @@ public:
                 return;
             }
 
-            auto openai_req = convert_anthropic_to_openai_chat(req, warnings);
+            auto openai_req = convert_anthropic_to_openai_chat(ctx_, req, warnings);
 
             if (!gateway_ensure_loaded(*ctx_.model_loader, model,
                                        gateway_load_options(nullptr, req.arg(model_loading::kCtxSize)),

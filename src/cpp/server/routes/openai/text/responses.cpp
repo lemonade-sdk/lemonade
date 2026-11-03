@@ -63,6 +63,7 @@ ordered_json response_event_schema() {
             "type": {"type": "string", "description": "Event type, passed through from the backend, such as `response.created`, `response.output_text.delta` or `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming)."},
             "response": {"type": "object", "description": "Lifecycle events, such as `response.created`, `response.in_progress` and `response.completed`, only: the response so far."},
             "item": {"type": "object", "description": "Output item events, such as `response.output_item.added`, only: the output item."},
+            "output_index": {"type": "integer", "description": "Zero-based index of the output item in the response's `output` array, on output-item and delta events."},
             "item_id": {"type": "string", "description": "Delta events only: the `id` of the output item the text belongs to."},
             "delta": {"type": "string", "description": "Delta events, such as `response.output_text.delta` and `response.reasoning_text.delta`, only: the next text."},
             "timings": {"type": "object", "description": "`response.completed` only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp."}

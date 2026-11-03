@@ -2,7 +2,8 @@
 
 #include "lemon/server/model_sync.h"
 #include "lemon/hf_variants.h"
-#include "lemon/model_registry.h"
+#include "lemon/model_manager.h"
+#include "lemon/models/registry_types.h"
 #include "lemon/runtime_config.h"
 #include "lemon/server/api_route.h"
 
@@ -101,7 +102,7 @@ public:
                 write_plain_error(res, kMissingCheckpoint, "Missing required query parameter 'checkpoint'");
                 return;
             }
-            lemon::RemoteRegistrySource url_source;
+            lemon::RegistryId url_source;
             std::string url_repo_id;
             bool has_url = lemon::detect_registry_url(checkpoint, url_source, url_repo_id);
 
@@ -139,7 +140,8 @@ public:
             }
             bool not_found = false;
             const std::string resolved_source = remote_registry_source_name(parsed_source);
-            json body = lemon::fetch_pull_variants(checkpoint, resolved_source, not_found);
+            json body = lemon::fetch_pull_variants(ctx_.model_manager->resolver(),
+                                                       checkpoint, resolved_source, not_found);
             if (not_found) {
                 write_plain_error(res, kCheckpointNotFound, "Checkpoint '" + checkpoint + "' not found on " +
                     remote_registry_display_name(parsed_source));

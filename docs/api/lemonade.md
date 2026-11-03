@@ -52,7 +52,7 @@ Some Lemonade endpoints live on other pages: the per-model [`/v1/models/{id}/fil
 ## `POST /v1/classify`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on a string and returns a score for each label. It serves `onnxruntime` models, both sequence classifiers (one label set) and token classifiers (aggregated span labels), and provides the classification that the router's `classifier` condition uses.
+Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on a string and returns a score for each label. It serves `onnxruntime` sequence classifiers (one label set), token classifiers (aggregated span labels) and zero-shot models (labels sent with each request). It provides the classification that the router's `classifier` and `zero_shot` conditions use.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -63,14 +63,17 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | No | The classifier model. Optional when exactly one classification model is loaded; that model is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `input` or `text` | Yes | Text to classify. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Return only the highest-scoring `k` labels. Defaults to every label. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `labels` | No | The labels to score `input` against. Required by a zero-shot model, and refused by every other model. The entries are unique, not blank, and carry no control character. How many are accepted, and how long each may be, is the model's token window to decide. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-A malformed request, such as one with a blank `input` or a non-positive `top_k`, is rejected before any model loads.
+A malformed request, such as one with a blank `input`, a non-positive `top_k`, or a `labels` entry that is blank, repeated or holds a control character, is rejected before any model loads. How many labels a zero-shot model accepts, and how long each may be, depends on its token window, so the model enforces those limits itself and names both numbers when it refuses.
 
 ### Supported Models
 
 Single-sequence encoder families: BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa (v1/v2), ELECTRA, ALBERT and CamemBERT. A stock `optimum-cli export onnx` directory of one of these works as is.
 
 A servable model directory holds `model.onnx`, `tokenizer.json` and `config.json`. The `config.json` is always required: its architecture is checked against the families above, so an unsupported family such as XLNet is rejected at load time rather than served with wrong scores. Label names (`id2label`), normalization and the token budget come from the same config, and an optional `manifest.json` overrides them. Without a manifest, inference assumes single-label softmax, so a multi-label (sigmoid) model declares `problem_type: multi_label_classification` in its config or ships a `manifest.json`.
+
+Zero-shot family: LFM2 (`Lfm2BidirForSequenceRouting`), such as `LFM2.5-Encoder-350M-Prompt-Router-ONNX`. Every request to it carries `labels`.
 
 Some upstream models declare only generic `LABEL_<n>` label names; their model card explains them.
 
@@ -106,7 +109,8 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 {
   "object": "classification",
   "model": "Phishing-Email-Detection-ONNX",
-  "labels": {"LABEL_0": 5.558096745517105e-05, ... 3 more}
+  "labels": {"LABEL_0": 5.558096745517105e-05, ... 3 more},
+  "truncated": false
 }
 ```
 
@@ -116,6 +120,7 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 - `model` - The model that classified the input, including one chosen because it was the only one loaded.
 - `labels` - Each label's score, keyed by label name.
   - The label's score, in `[0, 1]`.
+- `truncated` - `true` when the model cut the input text to fit its token window before scoring, `false` when it scored the whole input. Labels are never cut, so the scores still cover every label sent. Absent when the backend does not report cuts (ort-server before 0.4.0), so absence means unknown.
 
 ### Errors
 
@@ -125,7 +130,7 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is omitted and not exactly one classification model is loaded |
-| `400` |  | The backend rejects the request, for example because `model` is not a classification model, which is found only after it loads |
+| `400` |  | The backend rejects the request, for example because `model` is not a classification model, which is found only after it loads, or because `labels` is sent to a fixed-label model or left out for a zero-shot one |
 | `404` |  | The model is unloaded while the request waits for it |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
@@ -256,6 +261,9 @@ Requires `LEMONADE_API_KEY` when it is set.
     "labels": ["chat", "custom"],
     "components": [],
     "checkpoints": {"main": "unsloth/Phi-4-mini-instruct-GGUF:Q3_K_M"},
+    "checkpoint_status": [
+      {"type": "main", "present": false, "required": true, "registry": "huggingface"}
+    ],
     "source": "huggingface",
     "registry_source": "huggingface",
     "recipe_options": {}
@@ -296,6 +304,12 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
   - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
     - The checkpoint that fills the role named by its key.
+  - `checkpoint_status` - One entry per checkpoint of the model, answering whether its bytes are there.
+    - `type` - Checkpoint slot, e.g. `main`, `mmproj`, `vae`.
+    - `present` - `true` only when the checkpoint's bytes are complete and readable.
+    - `required` - A missing required checkpoint keeps the model undownloaded; an optional one, loaded lazily, does not.
+    - `registry` - Registry hosting the checkpoint; empty for local files and directories.
+    - `path` - Absolute path to the checkpoint file; present only with `include_paths=true` and when `present` is `true`.
   - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
   - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
   - `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
@@ -1096,7 +1110,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `pinned` | No | If `true`, pins the model so least-recently-used eviction skips it; `false` unpins it. When omitted, a loaded model keeps its pin state and a new load uses the model's saved `pinned` option, else `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `save_options` | No | If `true`, saves the options sent in this request as the model's `recipe_options.json` entry, replacing the stored one, so an option the request omits is no longer saved; one sent as `null` keeps its stored value. To save options without loading, or to change one option without resending the rest, use [`POST /v1/models/{id}/options`](openai.md#post-v1modelsidoptions). Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Context size: a positive whole number, or `-1` to size it automatically even when the server-wide `ctx_size` is a specific number. Only recipes that take a context size use it, such as `llamacpp`, `flm`, `ryzenai-llm` and `vllm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `llamacpp_backend` | No | `llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, or `system` for a `llama-server` already installed where supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `llamacpp_backend` | No | `llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, `nathanw`, or `system` for a `llama-server` already installed where supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `llamacpp_args` | No | `llamacpp`: extra arguments for `llama-server`. Flags Lemonade sets itself are rejected, with their aliases: `-m`, `--port`, `--ctx-size`, `--jinja`, `--device`, `--mmproj`, `--model-draft`, `--embeddings`, `--reranking` and `--metrics`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `whispercpp_backend` | No | `whispercpp`: the whisper.cpp backend, such as `cpu`, `npu`, `vulkan`, `rocm` or `metal`. [`/v1/system-info`](#get-v1system-info) lists the ones this system supports. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `whispercpp_args` | No | `whispercpp`: extra arguments for `whisper-server`, such as `--convert`. `-m`, `--model` and `--port` are rejected. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -1397,7 +1411,7 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
       --output output.wav
     ```
 
-**Response:** `200 OK`, `audio/wav`, 8,640,044 bytes
+**Response:** `200 OK`, `audio/wav`, 8,593,964 bytes
 
 ### Errors
 
@@ -1468,7 +1482,7 @@ Errors carry a JSON `error` object.
       --output output.glb
     ```
 
-**Response:** `200 OK`, `model/gltf-binary`, 4,534,160 bytes
+**Response:** `200 OK`, `model/gltf-binary`, 4,453,452 bytes
 
 ### Errors
 
@@ -1652,36 +1666,49 @@ This endpoint does not take any parameters.
 ```json
 {
   "status": "ok",
-  "version": "2026.43.0~1689.0292987c",
+  "version": "2026.45.0~1719.034d3f52",
   "model_loaded": "Qwen3-0.6B-GGUF",
   "update_check_done": true,
   "all_models_loaded": [
     {
-      "model_name": "Qwen3-0.6B-GGUF",
-      "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
-      "last_use": 66265129,
-      "type": "llm",
+      "model_name": "nomic-embed-text-v1-GGUF",
+      "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
+      "last_use": 872883217,
+      "type": "embedding",
       "device": "gpu",
       "pinned": false,
       "is_busy": false,
       "is_streaming": false,
-      "backend_url": "http://127.0.0.1:8001/v1",
-      "pid": 193678,
-      "launch_command": ["~/.cache/lemonade/bin/llamacpp/vulkan/llama-server", "-m", "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "--ctx-size", "40960", "--port", "8001", "--jinja", ... 13 more],
+      "backend_url": "http://127.0.0.1:8002/v1",
+      "pid": 15836,
+      "launch_command": [
+        "~/.cache/lemonade\\bin\\llamacpp\\vulkan\\llama-server.exe",
+        "-m",
+        "~\\.cache\\huggingface\\hub/models--nomic-ai--nomic-embed-text-v1-GGUF\\snapshots\\90c80ac5c2a0d13de9a36cf1dec39f34acee54a8\\nomic-embed-text-v1.Q4_K_S.gguf",
+        "--ctx-size",
+        "8192",
+        "--port",
+        "8002",
+        "--jinja",
+        "--metrics",
+        "-lv",
+        "4",
+        "--embeddings",
+        "--parallel",
+        "1"
+      ],
       "recipe": "llamacpp",
-      "recipe_options": {
-        "ctx_size": 40960,
-        "llamacpp_args": "--temp 0.6 --top-p 0.85 --top-k 20 --min-p 0.0 --repeat-penalty 1.0 --parallel 1"
-      },
+      "recipe_options": {"ctx_size": 8192, "llamacpp_args": "--parallel 1"},
       "residency_class": "standard",
-      "slot_pool": "standard/llm",
+      "slot_pool": "standard/embedding",
       "status": "ready",
       "backend_alive": true,
       "backend_health": "ready",
       "loaded": true,
       "watchdog_reset": false,
-      "max_context_window": 40960
-    }
+      "max_context_window": 2048
+    },
+    ... 1 more
   ],
   "pinned_models": {"classification": 0, ... 6 more},
   "max_models": {
@@ -1693,7 +1720,7 @@ This endpoint does not take any parameters.
     "tts": 1,
     "classification": 1
   },
-  "websocket_port": 9001,
+  "websocket_port": 9000,
   "telemetry": {"enabled": false},
   "pinned_helper_models": {"classification": 0, ... 6 more}
 }
@@ -1705,6 +1732,11 @@ This endpoint does not take any parameters.
 - `version` - Lemonade Server version.
 - `model_loaded` - The most recently used loaded model, or `null` when none is loaded.
 - `update_check_done` - Whether the startup check for model updates has finished. Until it has, models' `update_available` can be incomplete.
+- `models_generation` - Rises whenever the model list changes, including a model's `downloaded` or `update_available`. A client that polls health reads [`GET /v1/models`](./openai.md#get-v1models) again when it changes.
+- `model_sync` - The model sync, so a client that polls health can tell when one starts or finishes. Details are at [`GET /internal/models/sync/status`](./internal.md#get-internalmodelssyncstatus).
+  - `status` - Status of the latest sync.
+  - `sync_id` - The latest sync; `0` before any sync.
+  - `completed_sync_id` - The most recent sync that finished.
 - `all_models_loaded` - Every loaded model.
   - `model_name` - Name of the loaded model
   - `checkpoint` - The model's main checkpoint.
@@ -1780,17 +1812,17 @@ This endpoint does not take any parameters.
 
 ```json
 {
-  "time_to_first_token": 0.010258,
-  "tokens_per_second": 330.7515771574438,
-  "input_tokens": 15,
+  "time_to_first_token": 0.00445,
+  "tokens_per_second": 350.4584986185915,
+  "input_tokens": 1,
   "output_tokens": 327,
   "prompt_tokens": 15,
-  "cache_tokens": 0,
-  "request_count_total": 1,
-  "input_tokens_total": 15,
-  "output_tokens_total": 327,
-  "prompt_tokens_total": 15,
-  "cache_tokens_total": 0,
+  "cache_tokens": 14,
+  "request_count_total": 9,
+  "input_tokens_total": 165,
+  "output_tokens_total": 2104,
+  "prompt_tokens_total": 226,
+  "cache_tokens_total": 75,
   "routing_decisions_total": 0,
   "routing_switches_total": 0,
   "live": {"active_requests": 0, "estimated_tokens_per_second": 0.0}
@@ -2139,15 +2171,16 @@ The same backend can carry different labels on different operating systems. Each
     - `modality` - The kind of model the recipe mainly serves, such as `Text generation`.
     - `selectable_backend` - Whether a `<recipe>_backend` option chooses the recipe's backend.
     - `uses_ctx_size` - Whether the recipe accepts the shared `ctx_size` option.
-    - `slot_policy` - How the recipe's models count against loaded-model limits: `standard`, `exclusive_npu` (loading one evicts every NPU model), `coexist_by_type` (one per model type) or `unmetered` (never counted or evicted).
+    - `slot_policy` - How the recipe's models count against loaded-model limits: `standard`, `exclusive_npu` (loading one evicts every NPU model), `coexist_by_type` (one per model type), `exclusive_host` (shares the machine with no other local model) or `unmetered` (never counted or evicted).
     - `support` - Every backend's operating systems, devices and tier, the same on every host.
     - `options` - The recipe's load options, with each one's CLI flag, default and help text.
     - `backends` - Available backends for this recipe
       - One entry per backend.
         - `devices` - Devices **on this system** that support this backend; empty when none do.
-        - `state` - Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available` or `installed`.
+        - `state` - Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available`, `action_required` or `installed`.
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL.
+        - `setup_checks` - For a container backend in the `action_required` state, the ids of its failed setup checks, in the order of `message`'s lines (for example `["container_tool", "device_groups"]`). `message` then holds one failed check per line and `action` the numbered steps that fix them. See [Container Backends](../guide/configuration/container-backends.md).
         - `version` - Installed or configured backend version (when available)
         - `tier` - `core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
         - `format` - `native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats).

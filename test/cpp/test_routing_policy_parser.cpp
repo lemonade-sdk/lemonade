@@ -271,6 +271,53 @@ static void test_classifier_capability_validation() {
               throws_with_options(doc, options, "cannot serve as a classifier"));
     }
     {
+        json doc = fixture("l3_classifier.json");
+        doc["routing"]["classifiers"][0]["type"] = "zero_shot";
+        RoutingPolicyParseOptions options;
+        options.get_model_type = [](const std::string& name) -> std::optional<ModelType> {
+            if (name == "pii-detector-small") return ModelType::CLASSIFICATION;
+            return ModelType::LLM;
+        };
+        check("zero_shot accepts a CLASSIFICATION model type", parses_ok(doc, options));
+    }
+    {
+        // Unlike `classifier`, zero_shot has no LLM-as-classifier fallback.
+        json doc = fixture("l3_classifier.json");
+        doc["routing"]["classifiers"][0]["type"] = "zero_shot";
+        RoutingPolicyParseOptions options;
+        options.get_model_type = [](const std::string&) -> std::optional<ModelType> {
+            return ModelType::LLM;
+        };
+        check("zero_shot rejects a model typed LLM",
+              throws_with_options(doc, options, "cannot serve zero_shot"));
+    }
+    {
+        auto doc_of = [&](const char* type) {
+            json doc = fixture("l3_classifier.json");
+            doc["routing"]["classifiers"][0]["type"] = type;
+            return doc;
+        };
+        RoutingPolicyParseOptions fixed_label;
+        fixed_label.get_model_type = [](const std::string& name) -> std::optional<ModelType> {
+            if (name == "pii-detector-small") return ModelType::CLASSIFICATION;
+            return ModelType::LLM;
+        };
+        fixed_label.serves_zero_shot = [](const std::string&) { return false; };
+        RoutingPolicyParseOptions zero_shot = fixed_label;
+        zero_shot.serves_zero_shot = [](const std::string& name) {
+            return name == "pii-detector-small";
+        };
+
+        check("zero_shot accepts a model labelled zero-shot",
+              parses_ok(doc_of("zero_shot"), zero_shot));
+        check("zero_shot rejects a fixed-label classification model",
+              throws_with_options(doc_of("zero_shot"), fixed_label, "is not a zero-shot model"));
+        check("classifier accepts a fixed-label classification model",
+              parses_ok(doc_of("classifier"), fixed_label));
+        check("classifier rejects a model labelled zero-shot",
+              throws_with_options(doc_of("classifier"), zero_shot, "use type 'zero_shot'"));
+    }
+    {
         json doc = fixture("l2_semantic.json");
         RoutingPolicyParseOptions options;
         options.get_model_type = [](const std::string&) -> std::optional<ModelType> {
@@ -334,6 +381,64 @@ static void test_inline_component_type_regression_pair() {
         check("inline classifier + that same inline embedding definition fails",
               throws_with_options(classifier_doc, options, "cannot serve as a classifier"));
     }
+}
+
+// on_truncation reaches a case on_error cannot: a score computed from cut text
+// succeeds, so only this field can turn it into a failure.
+static void test_on_truncation_validation() {
+    auto zero_shot_doc = [](const char* on_truncation) {
+        json doc = fixture("l3_classifier.json");
+        doc["routing"]["classifiers"][0]["type"] = "zero_shot";
+        if (on_truncation != nullptr) {
+            doc["routing"]["classifiers"][0]["on_truncation"] = on_truncation;
+        }
+        return doc;
+    };
+    RoutingPolicyParseOptions options;
+    options.get_model_type = [](const std::string&) -> std::optional<lemon::ModelType> {
+        return lemon::ModelType::CLASSIFICATION;
+    };
+
+    check("zero_shot accepts on_truncation fail", parses_ok(zero_shot_doc("fail"), options));
+    check("zero_shot accepts on_truncation score", parses_ok(zero_shot_doc("score"), options));
+    check("on_truncation is optional", parses_ok(zero_shot_doc(nullptr), options));
+    check("on_truncation rejects an unknown value",
+          throws_with_options(zero_shot_doc("match_true"), options,
+                              "on_truncation must be score or fail"));
+
+    auto classifier_doc = [](const char* on_truncation) {
+        json doc = fixture("l3_classifier.json");
+        if (on_truncation != nullptr) {
+            doc["routing"]["classifiers"][0]["on_truncation"] = on_truncation;
+        }
+        return doc;
+    };
+    check("classifier accepts on_truncation fail",
+          parses_ok(classifier_doc("fail"), options));
+    check("classifier accepts on_truncation score",
+          parses_ok(classifier_doc("score"), options));
+    check("classifier rejects an unknown on_truncation",
+          throws_with_options(classifier_doc("match_true"), options,
+                              "on_truncation must be score or fail"));
+
+    RoutingPolicyParseOptions llm_options;
+    llm_options.get_model_type = [](const std::string&) -> std::optional<lemon::ModelType> {
+        return lemon::ModelType::LLM;
+    };
+    check("chat-backed classifier rejects on_truncation",
+          throws_with_options(classifier_doc("fail"), llm_options,
+                              "a chat model reports no truncation"));
+    check("chat-backed classifier still parses without on_truncation",
+          parses_ok(classifier_doc(nullptr), llm_options));
+
+    // The types that are not model-backed never see a token window, so the
+    // option is refused rather than silently inert.
+    json wrong_type = fixture("l3_classifier.json");
+    wrong_type["routing"]["classifiers"][0]["type"] = "keyword";
+    wrong_type["routing"]["classifiers"][0]["on_truncation"] = "fail";
+    check("on_truncation is rejected on a type that reads no token window",
+          throws_with_options(wrong_type, options,
+                              "on_truncation is accepted on the model-backed types"));
 }
 
 static void test_schema_parser_key_parity() {
@@ -408,6 +513,7 @@ int main() {
     test_router_sugar_desugars_and_canonicalizes();
     test_classifier_capability_validation();
     test_inline_component_type_regression_pair();
+    test_on_truncation_validation();
     test_schema_parser_key_parity();
     test_collect_policy_helper_models();
 

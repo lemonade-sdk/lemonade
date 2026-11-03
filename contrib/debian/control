@@ -61,6 +61,8 @@ Depends:
  libgomp1,
 Recommends:
  libsecret-1-0,
+ podman | docker.io | docker-ce,
+ crun,
 Description: Local LLM serving with GPU and NPU acceleration server
  Lemonade helps users run local LLMs with the highest performance by
  configuring state-of-the-art inference engines for their NPUs and GPUs.

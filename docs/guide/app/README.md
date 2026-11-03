@@ -48,7 +48,7 @@ Most workspaces have a collapsible left rail. On a narrow window it becomes a me
 
 Open **Settings > Server**, enter the full `http://` or `https://` server URL, optionally enter an API key, and select **Connect**. Connection errors include the endpoint that failed.
 
-The endpoint and API key belong to this GUI client, not to `lemond`. The desktop host can persist an API key only when **Remember API key** is selected. When the host cannot store it, the key remains session-only. **Clear permitted local data** clears this client's browser data and saved connection settings; it does not delete server models or configuration.
+The endpoint and API key belong to this GUI client, not to `lemond`. Select **Remember API key** to keep the key across app restarts: browser clients save it in the current origin's `localStorage`, while the desktop app uses native app settings. Without this option, the key remains session-only. Remember browser keys only on trusted devices, since scripts running on the same origin can access browser storage. **Clear permitted local data** clears this client's browser data and saved connection settings; it does not delete server models or configuration.
 
 For a remote server, prefer HTTPS and configure the server's allowed browser origins when using the web build.
 

@@ -110,15 +110,14 @@ public:
         if (!async_specified || async_dispatch) {
             auto enqueue_res = model_manager->enqueue_sync(target_models, attach_if_running);
             if (enqueue_res.already_running) {
-                json status = model_manager->get_sync_status(enqueue_res.sync_id);
+                json status = model_manager->sync_status(enqueue_res.sync_id);
                 res.set_content(status.dump(), "application/json");
                 res.status = 200;
                 return;
             }
 
-            ctx_.server->start_background_sync();
-
-            json dispatched_result = model_manager->get_sync_status(enqueue_res.sync_id);
+            // Enqueueing is dispatching: the sync service's own worker drains it.
+            json dispatched_result = model_manager->sync_status(enqueue_res.sync_id);
             dispatched_result["message"] = "Model synchronization dispatched in background";
             dispatched_result["async"] = true;
             dispatched_result["already_in_progress"] = false;
