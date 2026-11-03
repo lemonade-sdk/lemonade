@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -33,6 +34,14 @@ enum class SlotPolicy {
 enum class VersionPolicy {
     Exact,    // installed must match the expected version
     AtLeast   // installed >= expected is acceptable (system-managed packages, e.g. flm)
+};
+
+// A container backend's image, and the device nodes and Linux permissions its
+// container gets.
+struct ContainerPolicy {
+    std::string image;
+    std::vector<std::string> devices;   // device nodes the container can open, e.g. "/dev/dri"
+    std::vector<std::string> cap_add;   // capabilities given back after --cap-drop=all
 };
 
 inline const char* slot_policy_to_string(SlotPolicy p) {
@@ -123,6 +132,14 @@ struct BackendDescriptor {
     // for models that also carry the capability label, and the only mode such a
     // model may deploy in. Registration refuses the mode without the label.
     std::vector<std::pair<std::string, std::string>> mode_capability_requirements;
+
+    // The backends in `support` that run from an OCI image, keyed by backend name.
+    std::map<std::string, ContainerPolicy> containers;
+
+    const ContainerPolicy* container_for(const std::string& backend) const {
+        auto it = containers.find(backend);
+        return it == containers.end() ? nullptr : &it->second;
+    }
 
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {

@@ -1464,7 +1464,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /v1/images/upscale`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Upscales an image with an upscaling model such as `RealESRGAN-x4plus`. The model sets the upscale factor, which its name usually states.
+Upscales an image with an upscaling model such as `RealESRGAN-x4plus`. The model sets the default upscale factor; TheNoise models also accept an optional `upscale_factor`.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1474,6 +1474,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `image` | Yes | Base64-encoded PNG image to upscale. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The upscaling model to use, such as `RealESRGAN-x4plus` or `Remacri-4x-TheNoise`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `upscale_factor` | No | Optional scale factor for TheNoise (up to the upscaler's native scale). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 The model is downloaded on first use.
 
