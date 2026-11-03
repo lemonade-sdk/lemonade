@@ -1,8 +1,12 @@
+#include <set>
+#include <string>
+
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/shared_args.h"
+#include "lemon/server/video_store.h"
 
 namespace lemon {
 namespace {
@@ -61,6 +65,7 @@ public:
             "as `Wan2.1-T2V-1.3B` and is a Lemonade extension.";
         s.notes = {
             "The model loads when the job starts, not during this request.",
+            "The clip is kept on disk under the cache directory until its job is evicted or deleted.",
             "stable-diffusion.cpp generates a single frame when no frame count is given, and video "
             "models need a few dozen frames before they animate rather than drift, so Lemonade sends "
             "33 by default.",
@@ -107,6 +112,10 @@ public:
             const std::string model =
                 canonical_model_name(ctx_, req.arg(model_loading::kModel).get<std::string>());
             req.body[model_loading::kModel.name] = model;
+            // Set here, never taken from the client, and named before the job runs so
+            // the clean-up below cannot remove a clip that is still being written.
+            req.body["clip_file"] = video_store::new_file_name();
+            remove_unreferenced_clips();
 
             lemon::jobs::StepRecord step;
             step.id = "video";
@@ -128,6 +137,23 @@ public:
             LOG(ERROR, "Server") << "ERROR in videos_create: " << e.what() << std::endl;
             write_openai_error(res, kUnexpectedException, e.what(), "internal_error");
         }
+    }
+
+private:
+    void remove_unreferenced_clips() {
+        std::set<std::string> keep;
+        for (const auto& summary : ctx_.job_manager->list()) {
+            const auto job = ctx_.job_manager->get(summary.value("id", ""));
+            if (!job || !job->contains("steps") || !(*job)["steps"].is_array()) continue;
+            for (const auto& step : (*job)["steps"]) {
+                for (const char* where : {"params", "output"}) {
+                    if (step.contains(where) && step[where].is_object() &&
+                        step[where].contains("clip_file") && step[where]["clip_file"].is_string())
+                        keep.insert(step[where]["clip_file"].get<std::string>());
+                }
+            }
+        }
+        video_store::remove_all_except(keep);
     }
 };
 

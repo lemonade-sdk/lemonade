@@ -15,8 +15,10 @@
 #include "lemon/server/model_json.h"
 #include "lemon/server/model_loader.h"
 #include "lemon/server/system_stats.h"
+#include "lemon/server/video_store.h"
 #include "lemon/system_info.h"
 #include "lemon/system_metrics_platform.h"
+#include "lemon/utils/json_utils.h"
 
 namespace lemon {
 
@@ -160,9 +162,16 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
                 msg = err.get<std::string>();
             throw lemon::jobs::JobError(424, msg);
         }
+        if (response.contains("b64_json") && response["b64_json"].is_string()) {
+            std::string file = request.value("clip_file", std::string());
+            if (!video_store::is_valid_file_name(file)) file = video_store::new_file_name();
+            video_store::write(file, utils::JsonUtils::base64_decode(response["b64_json"].get<std::string>()));
+            response.erase("b64_json");
+            response["clip_file"] = file;
+        }
         return lemon::jobs::json::parse(response.dump());
     };
-    providers.begin_exclusive =[router, job_states, current_job, state_mutex](
+    providers.begin_exclusive = [router, job_states, current_job, state_mutex](
                                     const std::string& job_id,
                                     lemon::jobs::CancelFlag* cancel) -> bool {
         if (!router->begin_exclusive(cancel)) return false;

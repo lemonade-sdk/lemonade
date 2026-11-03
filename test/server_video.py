@@ -204,6 +204,13 @@ class VideoGenerationTests(ServerTestBase):
         )
         video = content.content
         self.assertGreater(len(video), 1024, "video payload is implausibly small")
+
+        # The job store is rewritten on every job transition, so the clip must
+        # stay out of it.
+        job = requests.get(f"{self.base_url}/jobs/{job_id}", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(job.status_code, 200, job.text[:200])
+        self.assertNotIn("b64_json", job.text, "the clip was stored in the job record")
+        self.assertLess(len(job.content), 64 * 1024, "the job record carries the clip")
         self.assertEqual(
             video[:4],
             WEBM_MAGIC,

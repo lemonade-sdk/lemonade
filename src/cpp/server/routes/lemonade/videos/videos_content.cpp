@@ -1,7 +1,11 @@
 #include "video_shared.h"
+
+#include <string>
+#include <utility>
+
 #include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
-#include "lemon/utils/json_utils.h"
+#include "lemon/server/video_store.h"
 
 namespace lemon {
 namespace {
@@ -46,12 +50,13 @@ public:
             return;
         }
         const auto& output = (*job)["steps"][0]["output"];
-        if (!output.is_object() || !output.contains("b64_json") || !output["b64_json"].is_string()) {
+        std::string bytes;
+        if (!output.is_object() || !output.contains("clip_file") || !output["clip_file"].is_string() ||
+            !video_store::read(output["clip_file"].get<std::string>(), bytes)) {
             write_plain_error(res, kVideoNoOutput, "video job has no output");
             return;
         }
-        res.set_content(utils::JsonUtils::base64_decode(output["b64_json"].get<std::string>()),
-                        output.value("mime_type", "video/webm"));
+        res.set_content(std::move(bytes), output.value("mime_type", "video/webm"));
     }
 };
 

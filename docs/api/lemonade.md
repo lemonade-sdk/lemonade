@@ -1536,6 +1536,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 The model loads when the job starts, not during this request.
 
+The clip is kept on disk under the cache directory until its job is evicted or deleted.
+
 stable-diffusion.cpp generates a single frame when no frame count is given, and video models need a few dozen frames before they animate rather than drift, so Lemonade sends 33 by default.
 
 A video is an ordinary job, so it is also listed under [`GET /v1/jobs`](#get-v1jobs) and accepts the job control routes.
