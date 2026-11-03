@@ -54,8 +54,9 @@ struct RegistryRowRef {
 std::optional<RegistryRowRef> find_registry_row(const RegistryDocuments::Pin& pin,
                                                 const std::string& requested);
 
-// The row's authored option layer: `recipe_options`, with a deprecated
-// `image_defaults` block folded underneath it. Null when the row carries neither.
+// The row's authored option layer: `recipe_options`, with any retired
+// `image_defaults` / `audio_defaults` block folded underneath it. Null when the
+// row carries none of the three.
 nlohmann::json row_recipe_options(const json& row);
 
 // The facts a document cannot answer about its own rows.

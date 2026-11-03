@@ -99,7 +99,7 @@ void parse_extras(ModelInfo& info, const json& row) {
     static const std::set<std::string> kKnownKeys = {
         "checkpoint",   "checkpoints",     "components",   "mmproj",  "recipe",
         "suggested",    "source",          "registry_source", "size", "cloud_provider",
-        "labels",       "image_defaults",  "recipe_options"};
+        "labels",       "image_defaults",  "audio_defaults", "recipe_options"};
     if (!row.is_object()) {
         return;
     }
@@ -209,25 +209,32 @@ std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& 
     return info;
 }
 
+namespace {
+
+// Per-model option blocks from before recipe_options carried everything.
+const std::set<std::string> kLegacyOptionBlocks = {"image_defaults", "audio_defaults"};
+
+}  // namespace
+
 json row_recipe_options(const json& row) {
     if (!row.is_object()) {
         return json(nullptr);
     }
     const bool has_options = row.contains("recipe_options") && row["recipe_options"].is_object();
-    const bool has_legacy = row.contains("image_defaults") && row["image_defaults"].is_object();
-    if (!has_options && !has_legacy) {
-        return json(nullptr);
-    }
-    if (!has_legacy) {
-        return row["recipe_options"];
-    }
     json merged = has_options ? row["recipe_options"] : json::object();
-    for (const auto& [key, value] : row["image_defaults"].items()) {
-        if (!merged.contains(key)) {
-            merged[key] = value;
+    bool any_block = has_options;
+    for (const auto& legacy : kLegacyOptionBlocks) {
+        if (!row.contains(legacy) || !row[legacy].is_object()) {
+            continue;
+        }
+        any_block = true;
+        for (const auto& [key, value] : row[legacy].items()) {
+            if (!merged.contains(key)) {
+                merged[key] = value;
+            }
         }
     }
-    return merged;
+    return any_block ? merged : json(nullptr);
 }
 
 JsonCatalog::JsonCatalog(CatalogDescriptor descriptor,

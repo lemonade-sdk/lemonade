@@ -309,7 +309,6 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
   - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
   - `system_prompt` - Omni collections only: the collection's system prompt override.
-  - `audio_defaults` - Audio models only: default generation parameters.
   - `version` - Router collections only: the policy document's version.
   - `routing` - Router collections only: the routing policy.
 

@@ -1015,7 +1015,7 @@ void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade,
 
 static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{
     "checkpoints", "checkpoint", "recipe", "mmproj", "size",
-    "audio_defaults", "components", "recipe_options",
+    "components", "recipe_options",
     "routing", "system_prompt", "version", "source", "registry_source",
     "auto_update"
 };
@@ -1048,8 +1048,8 @@ void ModelIngest::register_user_model(const std::string& model_name,
         }
     }
 
-    // A registration may still carry the retired `image_defaults` block; rows
-    // this server writes name only `recipe_options`.
+    // A registration may still carry a retired option block; rows this server
+    // writes name only `recipe_options`.
     if (const json authored = row_recipe_options(model_data); authored.is_object()) {
         model_entry["recipe_options"] = authored;
     }

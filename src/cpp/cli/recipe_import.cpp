@@ -21,7 +21,8 @@ namespace lemon_cli {
 namespace {
 
 // Keys kept when a model file is normalized; everything else is dropped.
-// `image_defaults` is retired but still accepted, so older exports import.
+// `image_defaults` and `audio_defaults` are retired but still accepted, so
+// older exports import.
 const std::vector<std::string> kKnownKeys = {
     "checkpoint",
     "checkpoints",

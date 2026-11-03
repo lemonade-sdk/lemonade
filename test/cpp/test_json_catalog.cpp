@@ -249,11 +249,21 @@ static void test_the_authored_options_layer_is_reported() {
     check_eq("and recipe_options wins every key both blocks name",
              both.authored["M"].dump(), json{{"steps", 9}, {"width", 512}}.dump());
 
+    Recorder audio;
+    row(json{{"recipe", "openmoss"},
+             {"audio_defaults", {{"pcm_sample_rate", 48000}, {"pcm_channels", 2}}}},
+        rules(audio));
+    check_eq("a retired audio_defaults block registers the same way",
+             audio.authored["M"].dump(),
+             json{{"pcm_sample_rate", 48000}, {"pcm_channels", 2}}.dump());
+
     const ModelInfo not_extra =
         *row(json{{"checkpoint", "org/repo"}, {"labels", {"image"}},
-                  {"image_defaults", {{"steps", 4}}}}, rules(legacy));
+                  {"image_defaults", {{"steps", 4}}},
+                  {"audio_defaults", {{"pcm_sample_rate", 24000}}}}, rules(legacy));
     check("a retired block is consumed, not handed to the backend as an extra",
-          not_extra.extras.count("image_defaults") == 0);
+          not_extra.extras.count("image_defaults") == 0 &&
+              not_extra.extras.count("audio_defaults") == 0);
 }
 
 static void test_unconsumed_keys_survive_as_extras() {

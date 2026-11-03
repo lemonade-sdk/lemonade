@@ -19,6 +19,8 @@ inline const BackendDescriptor descriptor = {
     /*options*/ {
         {"openmoss_backend", "--openmoss", "", "BACKEND",
          "OpenMOSS TTS backend to use", "Text-to-Speech Options"},
+        {"pcm_sample_rate", "", 0, "SIZE", "Sample rate of the PCM this model emits, reported as X-MOSS-Sample-Rate (0 omits the header)", "Text-to-Speech Options"},
+        {"pcm_channels", "", 0, "SIZE", "Channel count of the PCM this model emits, reported as X-MOSS-Channels (0 omits the header)", "Text-to-Speech Options"},
     },
     /*support*/ {
         {"cuda", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},

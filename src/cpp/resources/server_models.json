@@ -2507,7 +2507,7 @@
             "tts"
         ],
         "size": 12.5,
-        "audio_defaults": {
+        "recipe_options": {
             "pcm_sample_rate": 24000,
             "pcm_channels": 1
         }
@@ -2525,7 +2525,7 @@
             "tts"
         ],
         "size": 8.5,
-        "audio_defaults": {
+        "recipe_options": {
             "pcm_sample_rate": 48000,
             "pcm_channels": 2
         }
@@ -2542,7 +2542,7 @@
             "voice-design"
         ],
         "size": 7.3,
-        "audio_defaults": {
+        "recipe_options": {
             "pcm_sample_rate": 24000,
             "pcm_channels": 1
         }
@@ -2558,7 +2558,7 @@
             "audio-generation"
         ],
         "size": 6.6,
-        "audio_defaults": {
+        "recipe_options": {
             "pcm_sample_rate": 48000,
             "pcm_channels": 1
         }

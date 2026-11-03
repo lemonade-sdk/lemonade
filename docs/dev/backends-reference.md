@@ -142,6 +142,8 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `openmoss_backend` | `--openmoss` | BACKEND | "" | OpenMOSS TTS backend to use |
+| `pcm_sample_rate` | — | SIZE | 0 | Sample rate of the PCM this model emits, reported as X-MOSS-Sample-Rate (0 omits the header) |
+| `pcm_channels` | — | SIZE | 0 | Channel count of the PCM this model emits, reported as X-MOSS-Channels (0 omits the header) |
 
 #### `sd-cpp` — StableDiffusion.cpp
 

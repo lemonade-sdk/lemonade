@@ -133,11 +133,6 @@ json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int 
         model_json["system_prompt"] = info.system_prompt;
     }
 
-    auto audio_defaults = info.extras.find("audio_defaults");
-    if (audio_defaults != info.extras.end() && audio_defaults->second.is_object()) {
-        model_json["audio_defaults"] = audio_defaults->second;
-    }
-
     if (is_router_collection_recipe(info.recipe)) {
         // The parser requires a root "version"; surface it alongside "routing"
         // so an exported router collection can be re-imported through /pull.
@@ -239,7 +234,6 @@ nlohmann::ordered_json ModelJson::schema() {
             "cost_input_per_million": {"type": "number", "description": "Cloud models only: USD per million input tokens, when the provider reports it."},
             "cost_output_per_million": {"type": "number", "description": "Cloud models only: USD per million output tokens, when the provider reports it."},
             "system_prompt": {"type": "string", "description": "Omni collections only: the collection's system prompt override."},
-            "audio_defaults": {"type": "object", "description": "Audio models only: default generation parameters."},
             "version": {"description": "Router collections only: the policy document's version."},
             "routing": {"type": "object", "description": "Router collections only: the routing policy."}
         }
