@@ -597,10 +597,12 @@ ln_error_t ln_resume(ln_client_t* client);
  *  foreground and its grace period ended, Android stopped the app). Call
  *  it before the OS freezes the process, after ln_stop_mesh_port and
  *  ln_disable_mesh when the host uses them. It closes the dataplane's UDP
- *  socket, keeping the netstack and every peer and session, and drops every
+ *  socket and the loopback listeners the private API dials through,
+ *  keeping the netstack and every peer and session, and drops every
  *  private-API connection: iOS and Android defunct the sockets of a
- *  suspended app, and a defunct socket receives nothing, so the socket is
- *  given up now and ln_resume opens a new one. Never blocks on the network.
+ *  suspended app, a defunct UDP socket receives nothing and a defunct
+ *  listener refuses every connect, so they are given up now and ln_resume
+ *  opens new ones. Never blocks on the network.
  *  Safe at any time; a no-op while the mesh is disabled. Returns LN_OK, or
  *  LN_ERR_NULL_ARG when client is NULL. */
 ln_error_t ln_suspend(ln_client_t* client);

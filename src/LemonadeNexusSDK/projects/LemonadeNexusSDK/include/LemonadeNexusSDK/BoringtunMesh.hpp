@@ -134,17 +134,21 @@ public:
     std::size_t rehandshake_all();
 
     /// The process is about to be suspended: close the dataplane's UDP
-    /// socket and stop its threads, keeping the netstack, every peer, and
-    /// every session. iOS and Android defunct the sockets of a suspended
-    /// app, and a defunct socket receives nothing. The plane stays active;
-    /// rebind() opens a new socket. No-op when inactive. Thread-safe.
+    /// socket and stop its threads, and close every loopback egress
+    /// listener (tcp_egress), keeping the netstack, every peer, and every
+    /// session. iOS and Android defunct the sockets of a suspended app: a
+    /// defunct UDP socket receives nothing and a defunct listener refuses
+    /// every connect. The plane stays active; rebind() opens a new socket
+    /// and the next tcp_egress() binds a new listener. No-op when inactive.
+    /// Thread-safe.
     void suspend();
 
     /// Open a new UDP socket for the dataplane (after suspend(), or for a
-    /// socket a suspension defuncted) and send a fresh handshake to every
-    /// peer, so each one learns the new path. Returns the number of
-    /// initiations sent, nullopt when inactive or the bind failed.
-    /// Thread-safe.
+    /// socket a suspension defuncted), drop the loopback egress listeners
+    /// so the next tcp_egress() binds fresh ones, and send a fresh
+    /// handshake to every peer, so each one learns the new path. Returns
+    /// the number of initiations sent, nullopt when inactive or the bind
+    /// failed. Thread-safe.
     std::optional<std::size_t> rebind();
 
     /// Unix seconds of the newest authenticated packet (keepalives included)

@@ -411,14 +411,44 @@ std::size_t BoringtunMesh::rehandshake_all() {
     return sent;
 }
 
+namespace {
+
+/// Drops every loopback egress listener. Each one is a kernel TCP socket on
+/// 127.0.0.1 that the OS defuncts with the rest of a suspended app's
+/// sockets; a connect to a defunct listener is refused at once. The next
+/// tcp_egress() for the same destination binds a fresh one. Caller holds
+/// ns_mtx.
+void close_all_egress_locked(NsHandle* ns,
+                             std::map<std::pair<std::string, uint16_t>, uint16_t>& cache) {
+    if (ns != nullptr) {
+        for (const auto& [key, local] : cache) {
+            ns_remove_tcp_egress(ns, key.first.c_str(), key.second);
+        }
+    }
+    if (!cache.empty()) {
+        spdlog::info("[BoringtunMesh] {} loopback egress listener(s) closed", cache.size());
+    }
+    cache.clear();
+}
+
+}  // namespace
+
 void BoringtunMesh::suspend() {
     if (!impl_->active.load()) return;
     impl_->dp.suspend();
+    std::lock_guard lock(impl_->ns_mtx);
+    close_all_egress_locked(impl_->ns, impl_->egress_cache);
 }
 
 std::optional<std::size_t> BoringtunMesh::rebind() {
     if (!impl_->active.load()) return std::nullopt;
     if (!impl_->dp.rebind()) return std::nullopt;
+    {
+        // The host may not have called suspend(); the listeners are then as
+        // dead as the UDP socket was.
+        std::lock_guard lock(impl_->ns_mtx);
+        close_all_egress_locked(impl_->ns, impl_->egress_cache);
+    }
     // The peers hold their sessions, but the path to each one changed with
     // the source port: a handshake from the new socket tells them so.
     return rehandshake_all();
