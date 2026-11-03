@@ -11,6 +11,8 @@ on:
   pull_request:
     paths:
       - '.github/workflows/validate_containers.yml'
+      - 'src/cpp/resources/backend_versions.json'
+      - 'src/cpp/include/lemon/backends/**'
   schedule:
     - cron: "0 18 * * 0"
 
