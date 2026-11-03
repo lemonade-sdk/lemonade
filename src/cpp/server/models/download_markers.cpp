@@ -12,16 +12,15 @@ namespace models {
 
 namespace {
 
-// Non-recursive scan for .partial markers to confirm folder integrity.
-bool has_partial_files(const fs::path& dir) {
-    std::error_code ec;
-    if (!utils::safe_is_directory(dir)) return false;
-    for (const auto& entry : fs::directory_iterator(dir, ec)) {
-        if (entry.path().extension() == ".partial") {
-            return true;
-        }
+// A pull writes its manifest at the snapshot root, which can sit above a checkpoint
+// nested in the repository (Moonshine's onnx/tiny).
+fs::path find_manifest(const fs::path& start) {
+    for (fs::path dir = start; !dir.empty(); dir = dir.parent_path()) {
+        const fs::path manifest = dir / ".download_manifest.json";
+        if (utils::safe_exists(manifest)) return manifest;
+        if (dir.parent_path().filename() == "snapshots" || dir == dir.parent_path()) break;
     }
-    return false;
+    return {};
 }
 
 }  // namespace
@@ -32,9 +31,8 @@ std::string interrupted_download(const std::string& resolved_path) {
     const fs::path resolved = utils::path_from_utf8(resolved_path);
     const bool directory = utils::safe_is_directory(resolved);
 
-    const fs::path manifest =
-        (directory ? resolved : resolved.parent_path()) / ".download_manifest.json";
-    if (utils::safe_exists(manifest)) {
+    const fs::path manifest = find_manifest(directory ? resolved : resolved.parent_path());
+    if (!manifest.empty()) {
         return "download in progress: " + utils::path_to_utf8(manifest);
     }
 
@@ -43,10 +41,7 @@ std::string interrupted_download(const std::string& resolved_path) {
                    ? "download in progress: " + resolved_path + ".partial"
                    : "";
     }
-
-    return has_partial_files(resolved) ? "download in progress: a .partial inside " +
-                                             resolved_path
-                                       : "";
+    return "";
 }
 
 }  // namespace models

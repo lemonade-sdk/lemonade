@@ -141,7 +141,7 @@ static void test_one_presence_answer(ModelManager& manager, const RegistryFixtur
     write_file(fixtures.hf_uncommitted_repo / "refs" / "main", "incomplete-snapshot");
     manager.invalidate_models_cache();
     check_one_answer(manager, "user.hf-uncommitted", false,
-                     "a .partial inside a directory checkpoint");
+                     "an interrupted download inside a directory checkpoint");
     fs::remove(fixtures.hf_uncommitted_repo / "refs" / "main");
 
     write_file(variant_file, "<html><body>Rate limit exceeded</body></html>");
