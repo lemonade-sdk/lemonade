@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -35,6 +36,21 @@ struct Tier1Server {
     std::string node_id;  ///< base64 Ed25519 node identity
     std::string host;     ///< certificate FQDN the proof names
     uint16_t    port{0};
+};
+
+/// Progress of the authority chain walk that a refresh runs, for display. A
+/// client walks the chain from the pinned Genesis key page by page before its
+/// first tree request; on a long chain that takes several requests.
+struct Tier1WalkProgress {
+    bool     active{false};   ///< a refresh is walking the chain now
+    uint64_t epoch{0};        ///< the epoch verified so far
+    /// The epoch the walk aims for: the larger of the lowest accepted epoch and
+    /// the latest epoch a server named (an unverified hint). 0 when unknown.
+    uint64_t target{0};
+    uint64_t pages_done{0};   ///< pages applied in this refresh
+    /// pages_done plus the pages still expected to reach `target`, estimated
+    /// from the size of the last page. 0 when `target` is unknown.
+    uint64_t pages_total{0};
 };
 
 /// The verified Tier 1 membership and the servers proven reachable.
@@ -83,7 +99,11 @@ inline constexpr std::size_t kGenesisDiscoveryMinHosts = 3;
 /// I/O.
 class Tier1Directory {
 public:
-    explicit Tier1Directory(Tier1DiscoveryGet get);
+    /// `get` performs the GET requests. `rate_limit_wait` is how long a chain
+    /// walk waits after a server answers 429 before it asks again for the
+    /// same page (kMaxRateLimitWaits times per walk at most).
+    explicit Tier1Directory(Tier1DiscoveryGet get,
+                            std::chrono::milliseconds rate_limit_wait = std::chrono::seconds(1));
     ~Tier1Directory();
 
     Tier1Directory(const Tier1Directory&) = delete;
@@ -130,6 +150,10 @@ public:
 
     /// The last verified membership; empty servers when none is verified.
     [[nodiscard]] Tier1Membership membership() const;
+
+    /// Progress of the chain walk of the refresh running now. Reads atomics
+    /// only: it never waits for a refresh. Thread-safe.
+    [[nodiscard]] Tier1WalkProgress walk_progress() const;
 
     /// True when a refresh is due: nothing verified, marked stale, or older
     /// than `max_age_ms`.

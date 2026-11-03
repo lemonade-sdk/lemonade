@@ -11,6 +11,9 @@
 #include <LemonadeNexus/Security/Epoch/AuthorityChainPage.hpp>
 #include <LemonadeNexus/Security/Epoch/NextEpochPlan.hpp>
 #include <LemonadeNexus/Security/Genesis/BootstrapCertificate.hpp>
+#include <LemonadeNexus/Security/Policy/SecurityConstants.hpp>
+
+#include <cstddef>
 
 namespace nexus::security::codec_detail {
 
@@ -23,7 +26,9 @@ bool encode_commit_proof(Writer& w, const CommitProof& p);
 bool encode_handoff(Writer& w, const EpochHandoff& h);
 bool encode_handoff_proof(Writer& w, const EpochHandoffProofMsg& m);
 bool encode_chain_request(Writer& w, const AuthorityChainRequest& c);
-bool encode_chain_page(Writer& w, const AuthorityChainPage& p);
+/// Links beyond `max_links` fail the encode; the security wire uses the default.
+bool encode_chain_page(Writer& w, const AuthorityChainPage& p,
+                       std::size_t max_links = constants::kMaxHandoffChainLinks);
 
 bool decode_certificate(Reader& r, QuorumCertificate& qc);
 bool decode_proposal_core(Reader& r, Proposal& p, QuorumCertificate& justify);
@@ -33,6 +38,8 @@ bool decode_commit_proof(Reader& r, CommitProof& p);
 bool decode_handoff(Reader& r, EpochHandoff& h);
 bool decode_handoff_proof(Reader& r, EpochHandoffProofMsg& m);
 bool decode_chain_request(Reader& r, AuthorityChainRequest& c);
-bool decode_chain_page(Reader& r, AuthorityChainPage& p);
+/// A claimed link count beyond `max_links` fails before any link is parsed.
+bool decode_chain_page(Reader& r, AuthorityChainPage& p,
+                       std::size_t max_links = constants::kMaxHandoffChainLinks);
 
 }  // namespace nexus::security::codec_detail

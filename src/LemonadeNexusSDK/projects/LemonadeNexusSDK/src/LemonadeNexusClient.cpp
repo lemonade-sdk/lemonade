@@ -1233,6 +1233,10 @@ Tier1Membership LemonadeNexusClient::tier1_membership() const {
     return impl_->tier1.membership();
 }
 
+Tier1WalkProgress LemonadeNexusClient::tier1_walk_progress() const {
+    return impl_->tier1.walk_progress();
+}
+
 // ---------------------------------------------------------------------------
 // Session state
 // ---------------------------------------------------------------------------

@@ -95,6 +95,10 @@ public:
     /// The last verified membership (empty when none is verified).
     [[nodiscard]] Tier1Membership tier1_membership() const;
 
+    /// Progress of the Tier 1 authority chain walk running now (for display
+    /// while a join or sign-in waits on it). Never blocks. Thread-safe.
+    [[nodiscard]] Tier1WalkProgress tier1_walk_progress() const;
+
     // -----------------------------------------------------------------
     // Health
     // -----------------------------------------------------------------

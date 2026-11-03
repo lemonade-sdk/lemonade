@@ -1928,6 +1928,21 @@ ln_error_t ln_tier1_membership(ln_client_t* client, char** out_json) {
     }
 }
 
+ln_error_t ln_tier1_progress(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        const auto p = client->client.tier1_walk_progress();
+        *out_json = strdup_json(json{{"active", p.active},
+                                     {"epoch", p.epoch},
+                                     {"target", p.target},
+                                     {"pages_done", p.pages_done},
+                                     {"pages_total", p.pages_total}});
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
 ln_error_t ln_discover_servers(const char* domain, const char* region, uint16_t port,
                                char** out_json) {
     if (!domain || !region || !out_json) return LN_ERR_NULL_ARG;

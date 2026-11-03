@@ -115,9 +115,8 @@ bool encode_chain_request(Writer& w, const AuthorityChainRequest& c) {
     return true;
 }
 
-bool encode_chain_page(Writer& w, const AuthorityChainPage& p) {
-    if (p.base_vote_keys.size() > constants::kMaxActiveTier1 ||
-        p.links.size() > constants::kMaxHandoffChainLinks) {
+bool encode_chain_page(Writer& w, const AuthorityChainPage& p, std::size_t max_links) {
+    if (p.base_vote_keys.size() > constants::kMaxActiveTier1 || p.links.size() > max_links) {
         return false;
     }
     w.u16(p.has_base ? 1 : 0);
@@ -227,7 +226,7 @@ bool decode_handoff_proof(Reader& r, EpochHandoffProofMsg& m) {
 
 bool decode_chain_request(Reader& r, AuthorityChainRequest& c) { return r.u64(c.have_epoch); }
 
-bool decode_chain_page(Reader& r, AuthorityChainPage& p) {
+bool decode_chain_page(Reader& r, AuthorityChainPage& p, std::size_t max_links) {
     uint16_t has_base = 0;
     if (!r.u16(has_base) || has_base > 1) {
         return r.fail(CodecError::BadValue);
@@ -258,8 +257,8 @@ bool decode_chain_page(Reader& r, AuthorityChainPage& p) {
         return false;
     }
     // Bounded before the loop: a claimed count never drives allocation or
-    // signature parsing past the compiled page limit.
-    if (count > constants::kMaxHandoffChainLinks) {
+    // signature parsing past the caller's page limit.
+    if (count > max_links) {
         return r.fail(CodecError::CountTooLarge);
     }
     for (uint16_t i = 0; i < count; ++i) {
@@ -274,21 +273,24 @@ bool decode_chain_page(Reader& r, AuthorityChainPage& p) {
 
 }  // namespace codec_detail
 
-std::vector<uint8_t> encode_authority_chain_page(const AuthorityChainPage& page) {
+std::vector<uint8_t> encode_authority_chain_page(const AuthorityChainPage& page,
+                                                 std::size_t max_links) {
     codec_detail::Writer w;
-    if (!codec_detail::encode_chain_page(w, page)) {
+    if (!codec_detail::encode_chain_page(w, page, max_links)) {
         return {};
     }
     return w.take();
 }
 
-std::optional<AuthorityChainPage> decode_authority_chain_page(std::span<const uint8_t> bytes) {
-    if (bytes.size() > constants::kMaxSecurityMessageBytes) {
+std::optional<AuthorityChainPage> decode_authority_chain_page(std::span<const uint8_t> bytes,
+                                                              std::size_t max_links,
+                                                              std::size_t max_bytes) {
+    if (bytes.size() > max_bytes) {
         return std::nullopt;
     }
     codec_detail::Reader r(bytes);
     AuthorityChainPage page;
-    if (!codec_detail::decode_chain_page(r, page) || !r.done()) {
+    if (!codec_detail::decode_chain_page(r, page, max_links) || !r.done()) {
         return std::nullopt;
     }
     return page;

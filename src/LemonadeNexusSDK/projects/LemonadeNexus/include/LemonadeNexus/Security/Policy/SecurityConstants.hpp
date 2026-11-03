@@ -288,6 +288,17 @@ inline constexpr uint64_t kSyncPageRetryMs = 1000;
 // accepts one attacker-sized chain object.
 inline constexpr std::size_t kMaxHandoffChainLinks = 4;
 
+// Handoff-chain links per page that GET /api/tier1/authority serves to a
+// client that asks for more with max_links. HTTP has no datagram envelope, so
+// such a page may exceed kMaxSecurityMessageBytes; the security wire between
+// servers keeps kMaxHandoffChainLinks. A client walking from Genesis then
+// needs one request per 32 epochs instead of one per 4.
+inline constexpr std::size_t kMaxHttpChainLinks = 32;
+
+// Largest HTTP authority chain page, in bytes: kMaxHttpChainLinks links of
+// under 10 KB each, with the epoch-1 base beside them.
+inline constexpr std::size_t kMaxHttpChainPageBytes = 512 * 1024;
+
 // --- Threshold storage key (design Part B, Phase 5) -------------------------
 
 // The storage key role's domain tag; the storage-threshold crate binds the same

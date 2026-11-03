@@ -1131,6 +1131,16 @@ ln_error_t ln_tier1_refresh(ln_client_t* client, char** out_json);
  *  must ln_free() *out_json. Thread-safe. */
 ln_error_t ln_tier1_membership(ln_client_t* client, char** out_json);
 
+/** Progress of the Tier 1 authority chain walk running now, for display while
+ *  a join or sign-in waits on it. *out_json receives
+ *  {"active":bool,"epoch":N,"target":N,"pages_done":N,"pages_total":N}:
+ *  "epoch" is the epoch verified so far, "target" the epoch the walk aims for
+ *  (0 when unknown), and "pages_total" an estimate (0 when unknown). Reads
+ *  only; it never waits for the walk, so another thread may call it while
+ *  ln_join_network or ln_tier1_refresh runs. The caller must ln_free()
+ *  *out_json. Thread-safe. */
+ln_error_t ln_tier1_progress(ln_client_t* client, char** out_json);
+
 /** First-connect discovery of the network's Genesis key, for a client with no
  *  pinned key. It never replaces a pinned key; changing the key stays an
  *  explicit ln_set_genesis_key call.

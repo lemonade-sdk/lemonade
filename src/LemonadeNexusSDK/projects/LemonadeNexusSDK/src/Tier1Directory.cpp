@@ -11,10 +11,12 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cstring>
 #include <mutex>
+#include <thread>
 
 namespace lnsdk {
 
@@ -24,8 +26,15 @@ namespace sec = nexus::security;
 using json = nlohmann::json;
 
 /// Pages one refresh walks before it gives up. Each page holds at most
-/// kMaxHandoffChainLinks links, so this bounds the epochs per refresh.
+/// kMaxHttpChainLinks links, so this bounds the epochs per refresh.
 constexpr int kMaxChainPages = 4096;
+/// Links a chain page request asks for. A server that predates max_links
+/// ignores it and sends kMaxHandoffChainLinks.
+constexpr std::size_t kChainPageLinks = nexus::security::constants::kMaxHttpChainLinks;
+/// 429 answers one walk waits out before it treats the source as unreachable.
+/// A server that predates the separate authority page limit allows a burst of
+/// 20 requests; the waits let a walk from Genesis finish there too.
+constexpr int kMaxRateLimitWaits = 30;
 /// Candidate servers one refresh probes.
 constexpr std::size_t kMaxProbes = 32;
 /// Chain walks a refresh starts again after a proof names a later epoch.
@@ -102,6 +111,7 @@ struct GenesisClaim {
 
 struct Tier1Directory::State {
     Tier1DiscoveryGet get;
+    std::chrono::milliseconds rate_limit_wait{1000};
 
     mutable std::mutex mutex;  // guards every field below except the walker
     std::optional<nexus::crypto::Ed25519PublicKey> genesis;
@@ -116,6 +126,13 @@ struct Tier1Directory::State {
     std::mutex refresh_mutex;  // serializes refresh(); guards the walker
     std::unique_ptr<sec::AuthorityChainWalker> walker;
     uint64_t walker_generation = 0;
+
+    // Progress of the running walk (walk_progress), read without a lock.
+    std::atomic<bool> walk_active{false};
+    std::atomic<uint64_t> walk_epoch{0};
+    std::atomic<uint64_t> walk_target{0};
+    std::atomic<uint64_t> walk_pages{0};
+    std::atomic<uint64_t> walk_page_links{0};  // links in the last page applied
 
     /// Pins `key` and raises the epoch floor. A different key drops every
     /// verified result. Caller holds `mutex`.
@@ -134,11 +151,21 @@ struct Tier1Directory::State {
     /// Walks pages from `server` until it has nothing newer. io: network.
     Walk walk_from(const ServerEndpoint& server, std::string& error) {
         bool advanced = false;
+        int waits = 0;
         for (int page_count = 0; page_count < kMaxChainPages; ++page_count) {
             const auto have = walker->epoch().underlying();
-            const auto reply =
-                get(server, "/api/tier1/authority?have_epoch=" + std::to_string(have));
+            const auto reply = get(server, "/api/tier1/authority?have_epoch=" +
+                                               std::to_string(have) +
+                                               "&max_links=" + std::to_string(kChainPageLinks));
             if (!reply) return advanced ? Walk::Advanced : Walk::Unreachable;
+            // A rate limit is no verdict on the chain: wait for the server's
+            // budget to refill and ask for the same page again.
+            if (reply->status == 429 && waits < kMaxRateLimitWaits) {
+                ++waits;
+                --page_count;
+                std::this_thread::sleep_for(rate_limit_wait);
+                continue;
+            }
             if (reply->status == 404) return advanced ? Walk::Advanced : Walk::Done;
             if (reply->status != 200) return advanced ? Walk::Advanced : Walk::Unreachable;
             const auto doc = json::parse(reply->body, nullptr, false);
@@ -148,15 +175,25 @@ struct Tier1Directory::State {
                 return Walk::Refused;
             }
             const auto bytes = decode_b64(doc["page"].get<std::string>());
-            const auto page = bytes ? sec::decode_authority_chain_page(*bytes)
-                                    : std::optional<sec::AuthorityChainPage>{};
+            const auto page =
+                bytes ? sec::decode_authority_chain_page(*bytes, kChainPageLinks,
+                                                         sec::constants::kMaxHttpChainPageBytes)
+                      : std::optional<sec::AuthorityChainPage>{};
             if (!page) {
                 error = "malformed authority chain page from " + server.host;
                 return Walk::Refused;
             }
+            if (doc.contains("latest_epoch") && doc["latest_epoch"].is_number_unsigned()) {
+                // A display hint only; the walk verifies every page.
+                const auto latest = doc["latest_epoch"].get<uint64_t>();
+                if (latest > walk_target.load()) walk_target.store(latest);
+            }
             switch (walker->apply(*page)) {
                 case sec::ChainPageResult::Advanced:
                     advanced = true;
+                    walk_pages.fetch_add(1);
+                    walk_epoch.store(walker->epoch().underlying());
+                    if (!page->links.empty()) walk_page_links.store(page->links.size());
                     break;
                 case sec::ChainPageResult::NoProgress:
                     return advanced ? Walk::Advanced : Walk::Done;
@@ -170,8 +207,10 @@ struct Tier1Directory::State {
     }
 };
 
-Tier1Directory::Tier1Directory(Tier1DiscoveryGet get) : state_(std::make_unique<State>()) {
+Tier1Directory::Tier1Directory(Tier1DiscoveryGet get, std::chrono::milliseconds rate_limit_wait)
+    : state_(std::make_unique<State>()) {
     state_->get = std::move(get);
+    state_->rate_limit_wait = rate_limit_wait;
     if (sodium_init() < 0) {
         spdlog::error("[Tier1Directory] libsodium failed to initialize");
     }
@@ -336,6 +375,15 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
         state_->walker = std::make_unique<sec::AuthorityChainWalker>(*genesis);
         state_->walker_generation = generation;
     }
+    state_->walk_pages.store(0);
+    state_->walk_page_links.store(0);
+    state_->walk_epoch.store(state_->walker->epoch().underlying());
+    state_->walk_target.store(min_epoch);
+    state_->walk_active.store(true);
+    struct WalkDone {
+        std::atomic<bool>& active;
+        ~WalkDone() { active.store(false); }
+    } walk_done{state_->walk_active};
 
     // 1. The authority chain, from the pinned key.
     // A single source may hold only part of the chain: a non-Tier-1 replica
@@ -518,6 +566,22 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
     result.ok = true;
     result.value = std::move(membership);
     return result;
+}
+
+Tier1WalkProgress Tier1Directory::walk_progress() const {
+    Tier1WalkProgress p;
+    p.active = state_->walk_active.load();
+    p.epoch = state_->walk_epoch.load();
+    p.target = state_->walk_target.load();
+    p.pages_done = state_->walk_pages.load();
+    if (p.target > p.epoch) {
+        const auto links = state_->walk_page_links.load();
+        const uint64_t per_page = links > 0 ? links : kChainPageLinks;
+        p.pages_total = p.pages_done + (p.target - p.epoch + per_page - 1) / per_page;
+    } else if (p.target > 0) {
+        p.pages_total = p.pages_done;
+    }
+    return p;
 }
 
 Tier1Membership Tier1Directory::membership() const {
