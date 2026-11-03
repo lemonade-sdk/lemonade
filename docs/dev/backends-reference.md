@@ -250,10 +250,6 @@ Voice design is opt-in through the `voice_design_description` extension and is n
 
 Lemonade launches `llama-server` with `--parallel 1` and leaves the upstream `--cache-ram` host prompt cache at its default. `LlamaCppServer` does not override `downsize()`: slot `erase` frees no device memory (the KV buffer is allocated once at model load) and discards the slot's KV state without going through the host-cache save path, so soft idle leaves the slot resident and a resumed conversation reuses its cached prefix.
 
-### Model downloads
-
-A checkpoint file can be reached twice during a registry download: once because the backend's `select_checkpoint_files` claimed it alongside the main weight, and again because it is also declared as its own checkpoint role (the OpenMOSS `.extras.gguf` sidecars are both). The same bytes either way, so `download_from_registry` collapses duplicates before counting, or the progress total overshoots.
-
 ### Backend auto-selection
 
 When a recipe's backend is not pinned in `config.json` (the `backend` key is absent or `"auto"`), the default backend reported in `system-info` — and used by `RecipeOptions` when resolving `*_backend` options — is chosen as follows: the first supported backend in `RECIPE_DEFS` preference order wins, unless a later supported backend is already locally installed (state `installed`, `update_available`, or `update_required`) while the earlier candidates are merely installable. In that case the first installed one wins. This makes explicitly installing a variant (e.g. the Vulkan build of a GPU backend) an effective override: auto-selection uses what is on disk instead of downloading the preference-order winner. An explicit `backend` value in `config.json` always takes precedence over both rules. The llamacpp `system` variant is never auto-selected unless `prefer_system` is set.

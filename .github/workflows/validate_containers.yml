@@ -1,10 +1,12 @@
 name: Update Container Backend Images
 
-# Keeps every container backend on the newest build of its tag. Each pin in
-# backend_versions.json is <tag>@<digest>; this workflow moves only the digest,
-# and a maintainer sets the tag by hand. The update PR carries the ci:backends
-# label, so test-container-backends in cpp_server_build_test_release.yml
-# validates the new digests before merge.
+# Keeps every container backend on the newest image upstream publishes. Each
+# pin in backend_versions.json is <tag>@<digest>. A tag with version numbers,
+# such as 0.18.22 or rocm-10.0-gufo, moves to the highest-numbered tag of the
+# same shape; every pin then moves to its tag's newest digest. The update PR
+# carries the ci:backends label, so test-container-backends in
+# cpp_server_build_test_release.yml validates the new pins, and it merges on
+# its own once they pass.
 
 on:
   workflow_dispatch:
@@ -29,12 +31,12 @@ defaults:
 
 jobs:
   update:
-    name: Update image digests
+    name: Update image pins
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
-      - name: Pin the newest digest of each tag
+      - name: Pin the newest tag and digest of each image
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -42,11 +44,13 @@ jobs:
           import json
           import re
           import urllib.error
+          import urllib.parse
           import urllib.request
 
           PIN_RE = re.compile(r"^(?P<tag>[^@]+)@(?P<digest>sha256:[0-9a-f]{64})$")
           RECIPE_RE = re.compile(r'/\*recipe\*/\s*"([^"]+)"')
           POLICY_RE = re.compile(r'\{"([^"]+)",\s*\{\s*/\*image\*/\s*"([^"]+)"')
+          NEXT_RE = re.compile(r'<([^>]+)>;\s*rel="next"')
           ACCEPT = ", ".join([
               "application/vnd.oci.image.index.v1+json",
               "application/vnd.docker.distribution.manifest.list.v2+json",
@@ -77,33 +81,66 @@ jobs:
                   + (missing or "any backend")
                   + ". Update RECIPE_RE or POLICY_RE to match the descriptor format.")
 
-          def newest_digest(image, tag):
-              registry, name = image.split("/", 1)
-              if registry == "docker.io":
-                  token_url = (
-                      "https://auth.docker.io/token?service=registry.docker.io"
-                      f"&scope=repository:{name}:pull"
-                  )
-                  manifest_url = f"https://registry-1.docker.io/v2/{name}/manifests/{tag}"
-              elif registry == "ghcr.io":
-                  token_url = f"https://ghcr.io/token?scope=repository:{name}:pull"
-                  manifest_url = f"https://ghcr.io/v2/{name}/manifests/{tag}"
-              else:
-                  raise SystemExit(f"Unsupported registry for {image}")
-              request = urllib.request.Request(manifest_url, method="HEAD", headers={"Accept": ACCEPT})
-              try:
+          class Registry:
+              def __init__(self, image):
+                  host, self.name = image.split("/", 1)
+                  if host == "docker.io":
+                      self.base = "https://registry-1.docker.io"
+                      token_url = (
+                          "https://auth.docker.io/token?service=registry.docker.io"
+                          f"&scope=repository:{self.name}:pull"
+                      )
+                  elif host == "ghcr.io":
+                      self.base = "https://ghcr.io"
+                      token_url = f"https://ghcr.io/token?scope=repository:{self.name}:pull"
+                  else:
+                      raise SystemExit(f"Unsupported registry for {image}")
+                  self.image = image
                   with urllib.request.urlopen(token_url, timeout=30) as response:
-                      token = json.load(response)["token"]
-                  request.add_header("Authorization", f"Bearer {token}")
-                  with urllib.request.urlopen(request, timeout=30) as response:
+                      self.token = json.load(response)["token"]
+
+              def request(self, url, method="GET", accept=None):
+                  headers = {"Authorization": f"Bearer {self.token}"}
+                  if accept:
+                      headers["Accept"] = accept
+                  request = urllib.request.Request(url, method=method, headers=headers)
+                  try:
+                      return urllib.request.urlopen(request, timeout=30)
+                  except urllib.error.HTTPError as e:
+                      raise SystemExit(f"{self.image}: {url} returned HTTP {e.code}")
+
+              def tags(self):
+                  tags = []
+                  url = f"{self.base}/v2/{self.name}/tags/list?n=1000"
+                  while url:
+                      with self.request(url) as response:
+                          tags += json.load(response).get("tags") or []
+                          link = NEXT_RE.search(response.headers.get("Link", ""))
+                      url = urllib.parse.urljoin(self.base, link.group(1)) if link else None
+                  return tags
+
+              def digest(self, tag):
+                  url = f"{self.base}/v2/{self.name}/manifests/{tag}"
+                  with self.request(url, method="HEAD", accept=ACCEPT) as response:
                       digest = response.headers.get("Docker-Content-Digest")
-              except urllib.error.HTTPError as e:
-                  raise SystemExit(
-                      f"{image}:{tag} returned HTTP {e.code}. If the tag was removed "
-                      "upstream, a maintainer must pin a new tag in backend_versions.json.")
-              if not digest:
-                  raise SystemExit(f"{image}:{tag} returned no Docker-Content-Digest header")
-              return digest
+                  if not digest:
+                      raise SystemExit(f"{self.image}:{tag} returned no Docker-Content-Digest header")
+                  return digest
+
+          # Only a tag of the same shape is a newer version of the pinned one:
+          # rocm-10.0 may move to rocm-10.1 but not to rocm-10.0_20261103T122023
+          # or rocm-10.0-gufo. A tag with no numbers, such as latest, never moves.
+          def shape(tag):
+              return re.sub(r"\d+", "#", tag)
+
+          def numbers(tag):
+              return tuple(int(n) for n in re.findall(r"\d+", tag))
+
+          def newest_tag(tag, registry):
+              if "#" not in shape(tag):
+                  return tag
+              same_shape = [t for t in registry.tags() if shape(t) == shape(tag)]
+              return max([tag] + same_shape, key=numbers)
 
           rows = []
           for (recipe, backend), image in sorted(images.items()):
@@ -112,21 +149,26 @@ jobs:
               if not match:
                   raise SystemExit(f"{recipe}:{backend} is not pinned to <tag>@<digest>: {pin!r}")
               tag, digest = match.group("tag"), match.group("digest")
-              latest = newest_digest(image, tag)
-              state = "current" if latest == digest else "new digest"
-              print(f"{recipe}:{backend} {image}:{tag} pinned {digest[:19]} newest {latest[:19]} ({state})")
-              if latest != digest:
-                  versions[recipe][backend] = f"{tag}@{latest}"
+              registry = Registry(image)
+              new_tag = newest_tag(tag, registry)
+              new_digest = registry.digest(new_tag)
+              new_pin = f"{new_tag}@{new_digest}"
+              state = "current" if new_pin == pin else "update"
+              print(f"{recipe}:{backend} {image} {tag}@{digest[:19]} -> {new_tag}@{new_digest[:19]} ({state})")
+              if new_pin != pin:
+                  versions[recipe][backend] = new_pin
                   rows.append(
-                      f"| `{recipe}:{backend}` | `{image}:{tag}` | `{digest[:19]}` | `{latest[:19]}` |"
+                      f"| `{recipe}:{backend}` | `{image}` "
+                      f"| `{tag}@{digest[:19]}` | `{new_tag}@{new_digest[:19]}` |"
                   )
 
           with open(path, "w", encoding="utf-8") as out:
               json.dump(versions, out, indent=2)
               out.write("\n")
           with open("pr_body.md", "w", encoding="utf-8") as out:
-              out.write("| Backend | Image | Old digest | New digest |\n|---|---|---|---|\n")
-              out.write("\n".join(rows) + "\n")
+              out.write("| Backend | Image | Old pin | New pin |\n|---|---|---|---|\n")
+              out.write("\n".join(rows) + "\n\n")
+              out.write("`test-container-backends` validates these pins; the PR merges once it passes.\n")
           PY
           git diff src/cpp/resources/backend_versions.json
 
@@ -139,7 +181,7 @@ jobs:
         run: |
           set -euo pipefail
           if git diff --quiet src/cpp/resources/backend_versions.json; then
-            echo "Every pin is on the newest digest of its tag."
+            echo "Every pin is on the newest tag and digest of its image."
             exit 0
           fi
 
@@ -154,12 +196,24 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add src/cpp/resources/backend_versions.json
-          git commit -m "Update container backend images to the newest digest of each tag"
+          git commit -m "Update container backend images to the newest tag and digest"
           git push origin "$BRANCH"
 
-          gh pr create \
-            --title "Update container backend image digests" \
+          PR_URL=$(gh pr create \
+            --title "Update container backend image pins" \
             --body-file pr_body.md \
             --label ci:backends \
             --base main \
-            --head "$BRANCH"
+            --head "$BRANCH")
+          echo "Opened $PR_URL"
+
+          if ! gh pr merge "$PR_URL" --auto --squash; then
+            echo "::warning::Could not enable auto-merge on $PR_URL. Allow auto-merge in the repository settings."
+          fi
+
+          # The new PR carries every pin the older ones did, so they are closed.
+          gh pr list --state open --json number,headRefName \
+            --jq ".[] | select(.headRefName | startswith(\"auto/container-pins-\")) | select(.headRefName != \"$BRANCH\") | .number" |
+          while read -r OLD_PR; do
+            gh pr close "$OLD_PR" --delete-branch --comment "Superseded by $PR_URL."
+          done

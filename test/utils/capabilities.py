@@ -112,9 +112,6 @@ CAPABILITIES = {
             "chat_extra_body": {"enable_thinking": False},
             "responses_extra_body": {"reasoning": {"effort": "none"}},
         },
-        # A reasoning model; thinking is turned off for chat as for ds4 below. Its
-        # Responses API honors only a launch-time switch, so a responses request
-        # reasons briefly and gets room to finish.
         "halogen": {
             "backends": ["rocm"],
             "supports": {
@@ -136,10 +133,7 @@ CAPABILITIES = {
                 "llm": "Qwen3.8-Flash-Next-Halogen",
             },
             "chat_extra_body": {"enable_thinking": False},
-            "responses_extra_body": {
-                "reasoning": {"effort": "minimal"},
-                "max_output_tokens": 512,
-            },
+            "responses_extra_body": {"reasoning": {"effort": "none"}},
         },
         # A reasoning model, with thinking turned off for the run: the tests'
         # small token budgets would otherwise land entirely in reasoning.
