@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -90,6 +91,17 @@ public:
     virtual json image_generations(const json& request) = 0;
     virtual json image_edits(const json& request) = 0;
     virtual json image_variations(const json& request) = 0;
+};
+
+// Video generation capability (text or image -> video). Separate from
+// IImageServer so a caller asking for an image can never resolve to a video
+// model: the two take different parameters and differ by orders of magnitude
+// in runtime.
+class IVideoServer : public virtual ICapability {
+public:
+    virtual ~IVideoServer() = default;
+    virtual json video_generations(const json& request,
+                                   std::atomic<bool>* cancel = nullptr) = 0;
 };
 
 class IUpscaleServer : public virtual ICapability {
