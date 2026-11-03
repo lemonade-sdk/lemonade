@@ -28,6 +28,9 @@ const RouteArg kImage{"image", ArgIn::JsonBody, {{"type", "string"}}, true, Supp
                       "Base64-encoded PNG image to upscale."};
 const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}, {"minLength", 1}}, true, Support::Available,
                       "The upscaling model to use, such as `RealESRGAN-x4plus` or `Remacri-4x-TheNoise`."};
+const RouteArg kUpscaleFactor{"upscale_factor", ArgIn::JsonBody,
+                              {{"type", "number"}, {"minimum", 1.0}}, false, Support::Available,
+                              "Optional scale factor for TheNoise (up to the upscaler's native scale)."};
 
 class ImagesUpscaleRoute : public ApiRoute {
 public:
@@ -42,7 +45,7 @@ public:
         s.modality = "image + ESRGAN model -> upscaled image";
         s.description =
             "Upscales an image with an upscaling model such as `RealESRGAN-x4plus`. The model sets "
-            "the upscale factor, which its name usually states.";
+            "the default upscale factor; TheNoise models also accept an optional `upscale_factor`.";
         s.notes = {
             "The model is downloaded on first use.",
             "### Upscale a Generated Image\n"
@@ -50,7 +53,7 @@ public:
             "To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgenerations), "
             "pass its `b64_json` as `image`.",
         };
-        s.args = {kImage, kModel};
+        s.args = {kImage, kModel, kUpscaleFactor};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -91,6 +94,11 @@ public:
                         "Upscale model is not labeled 'upscaling': " + upscale_model_name);
                     return;
                 }
+                if (req.has(kUpscaleFactor) && info.recipe != "thenoise") {
+                    write_openai_error(res, kRecipeCannotUpscale,
+                        "`upscale_factor` is supported only for TheNoise upscale models.");
+                    return;
+                }
 
                 if (!model_manager.is_model_downloaded(upscale_model_name)) {
                     LOG(INFO, "Server") << "Upscale model not cached, downloading from its remote registry..." << std::endl;
@@ -120,7 +128,8 @@ public:
                 return;
             }
             auto* upscale_server = dynamic_cast<IUpscaleServer*>(server.get());
-            std::string upscaled = upscale_server->upscale_via_cli(b64_image, info.resolved_path("main"));
+            std::string upscaled = upscale_server->upscale_via_cli(
+                b64_image, info.resolved_path("main"), req.value(kUpscaleFactor, 0.0));
 
             if (upscaled.empty()) {
                 write_openai_error(res, kUpscaleFailed, "Upscale failed", "server_error");
