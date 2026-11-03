@@ -2,11 +2,9 @@ name: Update Container Backend Images
 
 # Keeps every container backend on the newest image upstream publishes. Each
 # pin in backend_versions.json is <tag>@<digest>. A tag with version numbers,
-# such as 0.18.22 or rocm-10.0-gufo, moves to the highest-numbered tag of the
-# same shape; every pin then moves to its tag's newest digest. The update PR
-# carries the ci:backends label, so test-container-backends in
-# cpp_server_build_test_release.yml validates the new pins, and it merges on
-# its own once they pass.
+# such as 0.18.22, moves to the highest-numbered tag of the same shape; every
+# pin then moves to its tag's newest digest. The update PR is opened the same
+# way as validate_llamacpp.yml's.
 
 on:
   workflow_dispatch:
@@ -20,6 +18,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -167,25 +166,17 @@ jobs:
               out.write("\n")
           with open("pr_body.md", "w", encoding="utf-8") as out:
               out.write("| Backend | Image | Old pin | New pin |\n|---|---|---|---|\n")
-              out.write("\n".join(rows) + "\n\n")
-              out.write("`test-container-backends` validates these pins; the PR merges once it passes.\n")
+              out.write("\n".join(rows) + "\n")
           PY
           git diff src/cpp/resources/backend_versions.json
 
-      # GH_TOKEN, not GITHUB_TOKEN: a PR opened with GITHUB_TOKEN triggers no
-      # workflows, so the ci:backends label would never start the tests.
       - name: Create Pull Request
         if: github.event_name != 'pull_request'
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -euo pipefail
-          if git diff --quiet src/cpp/resources/backend_versions.json; then
-            echo "Every pin is on the newest tag and digest of its image."
-            exit 0
-          fi
-
           BRANCH="auto/container-pins-$(sha256sum src/cpp/resources/backend_versions.json | cut -c1-12)"
+
           EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
           if [ -n "$EXISTING_PR" ]; then
             echo "PR #$EXISTING_PR already exists for branch $BRANCH. Skipping."
@@ -194,26 +185,19 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
-          git add src/cpp/resources/backend_versions.json
-          git commit -m "Update container backend images to the newest tag and digest"
-          git push origin "$BRANCH"
 
-          PR_URL=$(gh pr create \
-            --title "Update container backend image pins" \
-            --body-file pr_body.md \
-            --label ci:backends \
-            --base main \
-            --head "$BRANCH")
-          echo "Opened $PR_URL"
-
-          if ! gh pr merge "$PR_URL" --auto --squash; then
-            echo "::warning::Could not enable auto-merge on $PR_URL. Allow auto-merge in the repository settings."
+          if git diff --quiet src/cpp/resources/backend_versions.json; then
+            echo "backend_versions.json is unchanged — nothing to update."
+            exit 0
           fi
 
-          # The new PR carries every pin the older ones did, so they are closed.
-          gh pr list --state open --json number,headRefName \
-            --jq ".[] | select(.headRefName | startswith(\"auto/container-pins-\")) | select(.headRefName != \"$BRANCH\") | .number" |
-          while read -r OLD_PR; do
-            gh pr close "$OLD_PR" --delete-branch --comment "Superseded by $PR_URL."
-          done
+          git checkout -b "$BRANCH"
+          git add src/cpp/resources/backend_versions.json
+          git commit -m "Update container backend image pins"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "Update container backend image pins" \
+            --body-file pr_body.md \
+            --base main \
+            --head "$BRANCH"
