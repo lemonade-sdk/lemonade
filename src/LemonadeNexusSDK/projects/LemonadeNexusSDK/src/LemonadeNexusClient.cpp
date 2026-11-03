@@ -143,7 +143,7 @@ void ignore_sigpipe_once() {
 template <typename HttpClient>
 void apply_client_socket_options(HttpClient& client) {
 #ifdef __APPLE__
-    client.set_socket_options([](httplib::socket_t sock) {
+    client.set_socket_options([](socket_t sock) {
         int on = 1;
         ::setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
     });
