@@ -28,8 +28,10 @@ inline const BackendDescriptor descriptor = {
         // gfx942/gfx950 (CDNA) omitted until their vLLM/ROCm assets ship in lemonade-sdk/vllm-rocm;
         // everything else is wired (incl. the rocm_arch_overrides pins), so re-add them here once that lands.
         {"rocm", BackendTier::Experimental, BackendFormat::Python, {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Strix Halo iGPU (gfx1151)"},
+        // Optional full-bundle Omni add-on, managed under the same vllm recipe.
+        {"omni-rocm", BackendTier::Experimental, BackendFormat::Python, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "Strix Halo (Omni extension)"},
     },
-    /*supported_modes*/ {"chat"},
+    /*supported_modes*/ {"chat", "tts"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
     /*web_display_name*/ "",

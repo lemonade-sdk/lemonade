@@ -594,10 +594,16 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         return;
     }
 
+    // The two vLLM ROCm variants replace each other, so serialize their
+    // installs even when one is triggered by an automatic model load.
+    const bool vllm_variant = recipe == "vllm" &&
+        (resolved_backend == "rocm" || resolved_backend == "omni-rocm");
     std::mutex* install_lock;
     {
         std::lock_guard<std::mutex> guard(install_locks_mutex_);
-        install_lock = &install_locks_[recipe + ":" + resolved_backend];
+        const std::string lock_key = vllm_variant ? "vllm:rocm-variant"
+                                                  : recipe + ":" + resolved_backend;
+        install_lock = &install_locks_[lock_key];
     }
     std::lock_guard<std::mutex> serialized_install(*install_lock);
 
@@ -852,6 +858,21 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
             complete_progress.complete = true;
             progress_cb(complete_progress);
         }
+
+        // Only retire the other version after a successful, committed install.
+        // On download failure the previous working version remains untouched.
+        if (vllm_variant) {
+            const std::string replaced = resolved_backend == "rocm" ? "omni-rocm" : "rocm";
+            const fs::path previous_dir =
+                backends::BackendUtils::get_install_directory(spec->recipe, replaced);
+            std::error_code cleanup_ec;
+            fs::remove_all(previous_dir, cleanup_ec);
+            if (cleanup_ec) {
+                LOG(WARNING, "BackendManager")
+                    << "Installed vLLM " << resolved_backend << " but could not remove "
+                    << replaced << ": " << cleanup_ec.message() << std::endl;
+            }
+        }
     } catch (const std::exception& e) {
         if (handle_install_failure(e.what())) return;
         throw;
@@ -863,6 +884,9 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
 void BackendManager::uninstall_backend(const std::string& recipe, const std::string& backend) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
+    if (recipe == "vllm" && resolved_backend == "omni-rocm") {
+        throw std::invalid_argument("The Omni extension is removed together with vllm:rocm");
+    }
     LOG(DEBUG, "BackendManager") << "Uninstalling " << recipe << ":" << resolved_backend << std::endl;
 
     auto* spec = backends::try_get_spec_for_recipe(recipe);
@@ -887,6 +911,19 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
         LOG(DEBUG, "BackendManager") << "Removed: " << install_dir << std::endl;
     } else {
         LOG(DEBUG, "BackendManager") << "Nothing to uninstall at: " << install_dir << std::endl;
+    }
+    if (recipe == "vllm" && resolved_backend == "rocm") {
+        // Also remove installations from the old standalone PR recipe, if present.
+        for (const auto& extra : std::vector<std::pair<std::string, std::string>>{
+                 {"vllm", "omni-rocm"}, {"vllm-omni", "rocm"}}) {
+            const fs::path omni_dir = backends::BackendUtils::get_install_directory(
+                extra.first, extra.second);
+            std::error_code ec;
+            fs::remove_all(omni_dir, ec);
+            if (ec) {
+                throw std::runtime_error("Failed to remove vLLM Omni extension: " + ec.message());
+            }
+        }
     }
 }
 

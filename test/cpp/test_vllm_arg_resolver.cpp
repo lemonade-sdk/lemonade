@@ -3,6 +3,7 @@
 // Run with: ctest --test-dir build -R vllm_arg_resolver --output-on-failure
 
 #include "lemon/backends/vllm/vllm_arg_resolver.h"
+#include "lemon/backends/vllm/omni_uma_memory.h"
 
 #include <cmath>
 #include <cstdint>
@@ -387,6 +388,25 @@ int main() {
     failures += !expect_utilization(
         "the same free share on a large pool is still worth requesting",
         gib_of(32.0), gib_of(256.0), 0.07);
+
+    // gfx1151 Omni: host/cgroup memory, not sysfs VRAM usage, bounds all stages.
+    {
+        constexpr uint64_t GB = 1ULL << 30;
+        auto large = lemon::backends::calculate_omni_uma_budget(128 * GB, 110 * GB);
+        auto small = lemon::backends::calculate_omni_uma_budget(64 * GB, 43 * GB);
+        bool ok = large.max_gpu_bytes <= 32 * GB && large.max_gpu_bytes >= 30 * GB
+            && large.gpu_fraction < 0.30 && small.max_gpu_bytes < large.max_gpu_bytes
+            && small.max_gpu_bytes <= 23 * GB;
+        std::printf("[%s] Omni UMA caps do not consume system RAM\n", ok ? "PASS" : "FAIL");
+        failures += !ok;
+        try {
+            (void)lemon::backends::calculate_omni_uma_budget(128 * GB, 12 * GB);
+            std::printf("[FAIL] Omni refuses insufficient available RAM\n");
+            ++failures;
+        } catch (const std::runtime_error&) {
+            std::printf("[PASS] Omni refuses insufficient available RAM\n");
+        }
+    }
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

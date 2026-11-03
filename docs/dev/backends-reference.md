@@ -23,7 +23,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `thenoise` | TheNoise | yes | no | cuda, rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
-| `vllm` | vLLM ROCm | yes | yes | rocm |
+| `vllm` | vLLM ROCm | yes | yes | omni-rocm, rocm |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
 
@@ -71,6 +71,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `trellis` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `trellis` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `vllm` | rocm | experimental | python | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `vllm` | omni-rocm | experimental | python | linux | amd_gpu (gfx1151) |
 | `whispercpp` | npu | core | native | windows | amd_npu (XDNA2) |
 | `whispercpp` | metal | core | native | macos | metal |
 | `whispercpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64) |

@@ -185,6 +185,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "args": "",
     "backend": "auto"
   },
+  "vllm-omni": {
+    "args": "",
+    "backend": "auto"
+  },
   "websocket_port": "auto",
   "whispercpp": {
     "args": "",

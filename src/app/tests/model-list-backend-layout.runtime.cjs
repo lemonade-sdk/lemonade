@@ -55,6 +55,9 @@ assert.doesNotMatch(component, /backendCompactLabel\(recipe\)\.toUpperCase\(\)/,
 /* ── Backend readiness still drives the row's status ──────────────── */
 
 assert.match(component, /export function modelBackendReadiness\(/);
+assert.match(component, /const omniModel = recipe === 'vllm'/);
+assert.match(component, /const allowed = omniModel \? \['omni-rocm'\] : \['omni-rocm', 'rocm'\]/);
+assert.match(component, /const configuredBackend = omniModel \? 'omni-rocm'/);
 for (const state of ['installed', 'update_required', 'update_available', 'installable', 'action_required', 'unsupported']) {
   assert.ok(component.includes(`state === '${state}'`), `missing backend readiness handling for ${state}`);
 }

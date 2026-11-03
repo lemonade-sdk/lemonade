@@ -11761,6 +11761,11 @@ optgroup {
   color: var(--text-tertiary);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Optically center the icon on the digits: flex centering uses the full line
@@ -11780,6 +11785,11 @@ a.backend-card__version:focus-visible {
 .backend-card__footer {
   gap: var(--space-2);
   margin-top: var(--space-1);
+}
+
+.backend-card__variant-switch {
+  display: flex;
+  align-items: center;
 }
 
 /* Uninstall repeats on every installed row; keep it neutral at rest so the

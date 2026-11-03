@@ -13,7 +13,7 @@ namespace backends {
 
 std::map<std::string, nlohmann::json> parse_vllm_metrics_text(const std::string& body);
 
-class VLLMServer : public WrappedServer {
+class VLLMServer : public WrappedServer, public ITextToSpeechServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -35,6 +35,13 @@ public:
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
     json responses(const json& request) override;
+    void audio_speech(const json& request, httplib::DataSink& sink) override;
+    std::vector<std::string> supported_audio_formats() const override {
+        return {"wav", "pcm"};
+    }
+    std::vector<std::string> supported_streaming_audio_formats() const override {
+        return {"pcm"};
+    }
 
     void forward_streaming_request(const std::string& endpoint,
                                    const std::string& request_body,
@@ -55,6 +62,9 @@ private:
     int64_t count_openai_prompt_tokens(const json& request);
 
     int64_t max_model_len_ = 0;
+    bool omni_runtime_ = false;
+    std::string omni_default_voice_;
+    std::string omni_tts_task_type_;
 };
 
 namespace vllm {
