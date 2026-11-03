@@ -1411,7 +1411,7 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
       --output output.wav
     ```
 
-**Response:** `200 OK`, `audio/wav`, 8,640,044 bytes
+**Response:** `200 OK`, `audio/wav`, 8,593,964 bytes
 
 ### Errors
 
@@ -1482,7 +1482,7 @@ Errors carry a JSON `error` object.
       --output output.glb
     ```
 
-**Response:** `200 OK`, `model/gltf-binary`, 4,534,160 bytes
+**Response:** `200 OK`, `model/gltf-binary`, 4,453,452 bytes
 
 ### Errors
 
