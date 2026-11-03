@@ -22,11 +22,8 @@ on:
         required: false
         default: '4'
 
-# Only contents:write is needed — the report job pushes results to the
-# benchmark-data branch. No issues/PRs are created (regressions are tracked in
-# benchmark-data/regressions.json for the dashboard, not via GitHub issues).
 permissions:
-  contents: write
+  contents: read
 
 # One run at a time so two runs never race to push benchmark history.
 concurrency:
@@ -36,8 +33,6 @@ concurrency:
 env:
   LEMONADE_CI_MODE: "True"
   PYTHONIOENCODING: utf-8
-  HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   # Branch that accumulates nightly results + leaderboard. This is what makes
   # day-over-day regression detection possible at all.
   HISTORY_BRANCH: benchmark-data
@@ -113,6 +108,9 @@ jobs:
     needs: [setup]
     runs-on: [self-hosted, Linux, strix-halo, devlab-dispatch]
     timeout-minutes: 360
+    env:
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -122,6 +120,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           clean: true
+          persist-credentials: false
 
       - name: Download lemonade embeddable
         run: |
@@ -386,23 +385,53 @@ jobs:
         run: |
           pkill -9 -f "bench-binaries/" 2>/dev/null || true
 
-  report:
-    name: Aggregate and report
+  grade-code:
+    name: Grade code tests
     needs: bench
     if: always() && needs.bench.result != 'skipped'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
-      # Each artifact lands in its own subdirectory (artifacts/bench-results-
-      # <fork>-<runid>/). Deliberately NOT merge-multiple: forks may write
-      # identically-named files (e.g. regression_report.json) and merging
-      # would silently overwrite all but one.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Download all bench results
         uses: actions/download-artifact@v7
         with:
           pattern: bench-results-*
+          path: artifacts
+
+      - name: Grade pending code-test answers
+        run: python3 .github/scripts/validate_backend_bench.py --grade-code artifacts
+
+      - name: Upload graded results
+        uses: actions/upload-artifact@v7
+        with:
+          name: graded-results-${{ github.run_id }}
+          path: artifacts/
+          retention-days: 90
+          if-no-files-found: warn
+
+  report:
+    name: Aggregate and report
+    needs: [bench, grade-code]
+    if: always() && needs.bench.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download graded results
+        uses: actions/download-artifact@v7
+        with:
+          pattern: graded-results-*
           path: artifacts
 
       - name: Merge results into history branch
@@ -574,6 +603,7 @@ jobs:
                     "accuracy": (me.get("accuracy") or {}).get("score"),
                     "accuracy_passed": (me.get("accuracy") or {}).get("passed"),
                     "accuracy_total": (me.get("accuracy") or {}).get("total"),
+                    "accuracy_errors": len((me.get("accuracy") or {}).get("errors") or []),
                     "input_tokens": sc.get("input_tokens"),
                     "vram_peak_gb": sc.get("vram_peak_gb"),
                     "timestamp": me.get("timestamp", data.get("timestamp")),
@@ -589,16 +619,15 @@ jobs:
                   leaderboard[key].append(entry)
                   leaderboard[key].sort(key=lambda e: e["tps_mean"], reverse=True)
 
-          # Accuracy verdict by cross-backend vote: a backend deviates on a question
-          # it missed that >=75% of the other backends answered correctly, so
-          # questions the model itself is unsure of don't count. Needs 3+ complete
-          # results on the same question-set version.
-          MAX_DEVIATIONS = 2
-          accuracy_detail = {}
+          latest_acc = {}
           for entries in leaderboard.values():
             for e in entries:
-              if e.get("accuracy") is not None:
-                accuracy_detail.setdefault(e["model"], {})[e["fork_id"]] = {"run_id": e.get("run_id")}
+              if e.get("accuracy_total") is None:
+                continue
+              k = (e["model"], e["fork_id"])
+              if k not in latest_acc or (e.get("timestamp") or "") > (latest_acc[k].get("timestamp") or ""):
+                latest_acc[k] = e
+          accuracy_detail = {}
           for run_file in sorted(results_dir.rglob("run-*.json")):
             try:
               rd = json.loads(run_file.read_text())
@@ -608,35 +637,15 @@ jobs:
             for me in rd.get("models") or []:
               acc = me.get("accuracy")
               mdl = MODEL_ALIASES.get(me.get("model"), me.get("model"))
-              slot = accuracy_detail.get(mdl, {}).get(fid)
-              if acc and slot is not None and slot["run_id"] == rd.get("run_id"):
-                slot.update(passed=acc["passed"], total=acc["total"],
-                            version=acc.get("questions_version"),
-                            complete=not acc.get("errors"),
-                            health=acc.get("health"),
-                            failed={f["id"]: {"response": f["response"], "cut_off": f.get("cut_off", False)}
-                                    for f in acc.get("failures", [])})
-          for mdl, forks in accuracy_detail.items():
-            done = {f: d for f, d in forks.items() if "failed" in d}
-            versions = [d["version"] for d in done.values()]
-            current = max(set(versions), key=versions.count) if versions else None
-            voters = {f: d for f, d in done.items() if d["complete"] and d["version"] == current}
-            for d in done.values():
-              d["voters"] = len(voters)
-            if len(voters) < 3:
-              continue
-            missed = {}
-            for d in voters.values():
-              for qid in d["failed"]:
-                missed[qid] = missed.get(qid, 0) + 1
-            total = max(d["total"] for d in voters.values())
-            if total - sum(1 for n in missed.values() if n >= len(voters) / 2) < total / 2:
-              continue
-            others = len(voters) - 1
-            for f, d in done.items():
-              if f in voters:
-                d["deviations"] = sorted(q for q in d["failed"]
-                                         if (others - (missed[q] - 1)) / others >= 0.75)
+              src = latest_acc.get((mdl, fid))
+              if acc and src and src.get("run_id") == rd.get("run_id"):
+                accuracy_detail.setdefault(mdl, {})[fid] = {
+                  "passed": acc["passed"], "total": acc["total"],
+                  "errors": len(acc.get("errors") or []),
+                  "health": acc.get("health"),
+                  "failed": {f["id"]: {"response": f["response"], "cut_off": f.get("cut_off", False)}
+                             for f in acc.get("failures", [])},
+                }
           accuracy_questions = {}
           qpath = Path(".github/scripts/accuracy_questions.json")
           if qpath.exists():
@@ -663,12 +672,6 @@ jobs:
               else:
                 prompt = q["prompt"]
               accuracy_questions[q["id"]] = {"category": q["category"], "prompt": prompt, "expected": _expected(q["grade"])}
-          for entries in leaderboard.values():
-            for e in entries:
-              d = accuracy_detail.get(e["model"], {}).get(e["fork_id"], {})
-              dev = d.get("deviations")
-              e["accuracy_deviations"] = None if dev is None else len(dev)
-              e["accuracy_pass"] = None if dev is None else len(dev) <= MAX_DEVIATIONS
 
           # Per-fork build-history series (for the trend/regression chart):
           # model -> scenario -> fork_id -> [ {version, timestamp, tps, run_url} ]

@@ -647,6 +647,9 @@ def _python_block(text: str) -> str:
     return blocks[-1] if blocks else _clean(text)
 
 
+_SECRET_ENV = re.compile(r"TOKEN|SECRET|PASSWORD|KEY|CREDENTIAL", re.I)
+
+
 def _run_python_tests(code: str, tests: list[str]) -> bool:
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "solution.py"
@@ -657,7 +660,7 @@ def _run_python_tests(code: str, tests: list[str]) -> bool:
                 cwd=tmp,
                 capture_output=True,
                 timeout=10,
-                env={"PATH": os.environ.get("PATH", "")},
+                env={k: v for k, v in os.environ.items() if not _SECRET_ENV.search(k)},
             )
         except subprocess.TimeoutExpired:
             return False
@@ -695,6 +698,8 @@ def grade_answer(text: str, grade: dict, tool_calls: list | None = None) -> bool
         try:
             args = fn.get("arguments") or {}
             args = json.loads(args) if isinstance(args, str) else args
+            if not isinstance(args, dict):
+                return False
         except ValueError:
             return False
         return fn.get("name") == grade["name"] and all(
@@ -703,7 +708,7 @@ def grade_answer(text: str, grade: dict, tool_calls: list | None = None) -> bool
     if kind == "no_tool_call":
         return not tool_calls and grade_answer(text, grade["answer"])
     if kind == "python_tests":
-        return _run_python_tests(_python_block(text), grade["tests"])
+        raise ValueError("python_tests are graded only by --grade-code")
     if kind == "json":
         try:
             return _first_json(text) == grade["value"]
@@ -760,7 +765,7 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
         by_ctx.setdefault(q.get("ctx", defaults.get("ctx", 4096)), []).append(q)
     repeat = set(suite.get("health_checks", {}).get("repeat", []))
 
-    passed, failures, errors = 0, [], []
+    passed, failures, errors, pending_code = 0, [], [], []
     replies, nondeterministic, empty, cut = {}, [], 0, 0
 
     def ask(q: dict) -> dict:
@@ -799,7 +804,7 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
             except Exception as e:
                 errors.append({"id": q["id"], "error": str(e)[:200]})
                 continue
-            choice = r["choices"][0]
+            choice = (r.get("choices") or [{}])[0]
             msg = choice.get("message", {})
             # Reasoning models (e.g. gpt-oss) can ignore enable_thinking and leave
             # content empty; their final answer is then in the reasoning field.
@@ -810,7 +815,16 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
             cut += is_cut
             if q["id"] in repeat:
                 replies[q["id"]] = (text, json.dumps(calls, sort_keys=True))
-            if grade_answer(text, q["grade"], calls):
+            if q["grade"]["type"] == "python_tests":
+                pending_code.append(
+                    {
+                        "id": q["id"],
+                        "code": _python_block(text),
+                        "response": text[-300:],
+                        "cut_off": is_cut,
+                    }
+                )
+            elif grade_answer(text, q["grade"], calls):
                 passed += 1
             else:
                 shown = text or json.dumps([c.get("function") for c in calls])
@@ -831,7 +845,11 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
 
     total = len(suite["questions"]) - len(errors)
     note = f" ({len(errors)} request errors)" if errors else ""
-    print(f"    [{model}] accuracy = {passed}/{total}{note}", flush=True)
+    print(
+        f"    [{model}] accuracy = {passed}/{total}{note}, "
+        f"{len(pending_code)} code tests graded separately",
+        flush=True,
+    )
     return {
         "passed": passed,
         "total": total,
@@ -839,12 +857,48 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
         "questions_version": version,
         "failures": failures,
         "errors": errors,
+        "pending_code": pending_code,
         "health": {
             "nondeterministic": nondeterministic,
             "empty_replies": empty,
             "cut_off": cut,
         },
     }
+
+
+def grade_pending_code(root: Path) -> None:
+    suite = json.loads(ACCURACY_FILE.read_text())
+    tests = {
+        q["id"]: q["grade"]["tests"]
+        for q in suite["questions"]
+        if q["grade"]["type"] == "python_tests"
+    }
+    for f in sorted(root.rglob("run-*.json")):
+        try:
+            data = json.loads(f.read_text())
+        except ValueError:
+            continue
+        changed = False
+        for me in data.get("models") or []:
+            acc = me.get("accuracy")
+            if not acc or not acc.get("pending_code"):
+                continue
+            for item in acc.pop("pending_code"):
+                if item["id"] in tests and _run_python_tests(
+                    item["code"], tests[item["id"]]
+                ):
+                    acc["passed"] += 1
+                else:
+                    acc["failures"].append(
+                        {k: item[k] for k in ("id", "response", "cut_off")}
+                    )
+            acc["score"] = (
+                round(acc["passed"] / acc["total"], 4) if acc["total"] else None
+            )
+            print(f"{f}: {me.get('model')} accuracy = {acc['passed']}/{acc['total']}")
+            changed = True
+        if changed:
+            f.write_text(json.dumps(data, indent=2))
 
 
 def check_regression(
@@ -981,7 +1035,15 @@ def main() -> int:
         help="Only download fork binaries, do not run bench (use before lemond starts)",
     )
     parser.add_argument("--token", default=os.environ.get("GH_TOKEN"))
+    parser.add_argument(
+        "--grade-code",
+        metavar="DIR",
+        help="grade pending code-test answers in run files under DIR, then exit",
+    )
     args = parser.parse_args()
+    if args.grade_code:
+        grade_pending_code(Path(args.grade_code))
+        return 0
 
     forks_path = Path(args.forks)
     output_dir = Path(args.output)
@@ -1028,6 +1090,7 @@ def main() -> int:
 
     # --download-only: just fetch binaries, exit before bench (used before lemond starts)
     if args.download_only:
+        failed = []
         for fork in forks:
             fork_id = fork["fork_id"]
             print(f"Downloading binary for {fork_id}...")
@@ -1054,9 +1117,11 @@ def main() -> int:
                     fork, version, binaries_dir, args.token, args.dry_run
                 )
             except Exception as e:
-                print(f"  [ERROR] {e}")
-                return 1
-        print("All fork binaries ready.")
+                print(f"  [ERROR] {fork_id}: {e} (skipping this fork)")
+                failed.append(fork_id)
+        if len(failed) == len(forks):
+            return 1
+        print(f"Fork binaries ready; failed: {failed or 'none'}")
         return 0
 
     for fork in forks:
@@ -1206,7 +1271,11 @@ def main() -> int:
                 continue
 
             if not args.skip_accuracy:
-                acc = run_accuracy(base_url, fork, model)
+                try:
+                    acc = run_accuracy(base_url, fork, model)
+                except Exception as e:
+                    print(f"    [accuracy] {model} aborted: {e}")
+                    acc = None
                 if acc:
                     for me in result.get("models", []):
                         if me.get("model") == model:
