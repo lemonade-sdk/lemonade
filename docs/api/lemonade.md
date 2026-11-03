@@ -25,6 +25,8 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh from an image |
 | `POST` | [`/v1/videos`](#post-v1videos) | Generate a video from a text prompt |
 | `GET` | [`/v1/videos/{id}`](#get-v1videosid) | Read a video's status |
+| `GET` | [`/v1/videos/{id}/content`](#get-v1videosidcontent) | Download a generated video |
+| `POST` | [`/v1/videos/{id}/cancel`](#post-v1videosidcancel) | Cancel a video |
 | `GET` | [`/v1/docs`](#get-v1docs) | List the API reference pages bundled with the running server |
 | `GET` | [`/v1/docs/{page}`](#get-v1docspage) | Read one bundled API reference page |
 | `GET` | [`/v1/health`](#get-v1health) | Check the server's status and loaded models |
@@ -1654,6 +1656,78 @@ Requires `LEMONADE_API_KEY` when it is set.
 |--------|------|
 | `404` | `id` names no video, or a deleted one |
 <!-- END GENERATED: lemonade.videos_get -->
+
+<!-- BEGIN GENERATED: lemonade.videos_content -->
+## `GET /v1/videos/{id}/content`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Returns the encoded clip as raw bytes, with its media type, once the video's status is `completed`.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `id` (path) | Yes | Video id, from [`POST /v1/videos`](#post-v1videos). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `404` | `id` names no video, or a deleted one |
+| `409` | the video's status is not yet `completed` |
+| `500` | the video completed without an encoded clip |
+<!-- END GENERATED: lemonade.videos_content -->
+
+<!-- BEGIN GENERATED: lemonade.videos_cancel -->
+## `POST /v1/videos/{id}/cancel`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Stops a queued or running video and keeps its record, which then reports `interrupted`.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `id` (path) | Yes | Video id, from [`POST /v1/videos`](#post-v1videos). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+Cancelling releases the job and the model slot at once, but stable-diffusion.cpp refuses to cancel once frames are being produced. A clip that already reached the GPU runs to completion in the background; a clip still queued is cancelled straight away.
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/videos/job-20261028-115841-000003/cancel" `
+      -Method POST
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:13305/v1/videos/job-20261028-115841-000003/cancel
+    ```
+
+**Response:** `200 OK`
+
+```json
+{"status": "interrupting"}
+```
+
+### Response format
+
+- `status` - Always `interrupting`.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `404` | `id` names no video, a deleted one, or one that is not queued or running |
+<!-- END GENERATED: lemonade.videos_cancel -->
 
 <!-- BEGIN GENERATED: lemonade.docs -->
 ## `GET /v1/docs`

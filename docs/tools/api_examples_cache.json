@@ -4687,6 +4687,25 @@
       }
     }
   },
+  "358dee3420ae9677a6fe62f76d551737ae0d8072046d8de3afecf3b9b00088bb": {
+    "route": "lemonade.videos_cancel",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/videos/job-20261028-115841-000003/cancel",
+      "query": {},
+      "json": null,
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "status": "interrupting"
+      }
+    }
+  },
   "fab7f60f193610a9c2df3e440b272aef5432219ab93e513d5968605f4d9b1b65": {
     "route": "lemonade.videos_create",
     "format": "Json",
