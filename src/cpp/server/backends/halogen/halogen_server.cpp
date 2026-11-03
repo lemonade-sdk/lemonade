@@ -28,19 +28,11 @@ namespace {
 
 constexpr const char* kBackend = "rocm";
 constexpr int kNativeContext = 262144;
-constexpr const char* kTokenizerDir = "tokenizer";
-constexpr const char* kLookupTableSuffix = "-ngram.hgn";
-constexpr const char* kVisionTowerSuffix = "-vision.hgn";
 
 // Registering a 62 GiB checkpoint with the GPU is bounded by storage
 // bandwidth, not by anything global_timeout describes, so it gets its own
 // floor; a larger global_timeout still raises it.
 constexpr long kStartupTimeoutSeconds = 1800;
-
-bool ends_with(const std::string& value, const std::string& suffix) {
-    return value.size() >= suffix.size() &&
-           value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
 
 class HalogenOps : public BackendOps {
 public:
@@ -59,28 +51,6 @@ public:
         if (!ctx_size.is_number_integer() || ctx_size.get<int>() <= 0) {
             options.set_option("ctx_size", kNativeContext);
         }
-    }
-
-    // A bundle is the checkpoint, its lookup table, the vision tower and the
-    // tokenizer directory. The repository's other checkpoints and their
-    // sidecars stay behind.
-    std::optional<std::vector<std::string>> select_checkpoint_files(
-        const std::string& main_variant, const std::vector<std::string>& repo_files) const override {
-        if (!ends_with(main_variant, ".hgn")) {
-            return std::nullopt;
-        }
-        std::vector<std::string> selected;
-        for (const auto& file : repo_files) {
-            if (file == main_variant || ends_with(file, kLookupTableSuffix) ||
-                ends_with(file, kVisionTowerSuffix) ||
-                file.rfind(std::string(kTokenizerDir) + "/", 0) == 0) {
-                selected.push_back(file);
-            }
-        }
-        if (std::find(selected.begin(), selected.end(), main_variant) == selected.end()) {
-            throw std::runtime_error("Halogen checkpoint not found in repository: " + main_variant);
-        }
-        return selected;
     }
 
     std::optional<utils::SetupFailure> check_container_host(
@@ -146,24 +116,10 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
                                  "' (checkpoint: " + model_info.checkpoint() + ")");
     }
 
-    // The lookup table, the tokenizer and the optional vision tower sit beside
-    // the checkpoint in the same snapshot.
-    const fs::path bundle = fs::path(checkpoint).parent_path();
-    const std::string table_name = model_info.extra<std::string>("halogen_lookup_table", "");
-    if (table_name.empty()) {
-        throw std::runtime_error("halogen: model '" + model_name +
-                                 "' names no halogen_lookup_table");
-    }
-    const std::string lookup_table = (bundle / table_name).string();
-    const std::string tokenizer = (bundle / kTokenizerDir).string();
-    const std::string vision_name = model_info.extra<std::string>("halogen_vision_tower", "");
-    const std::string vision = vision_name.empty() ? "" : (bundle / vision_name).string();
-    for (const auto& required : {lookup_table, tokenizer, vision}) {
-        if (!required.empty() && !fs::exists(required)) {
-            throw std::runtime_error("halogen: the bundle for '" + model_name + "' is missing " +
-                                     required);
-        }
-    }
+    const std::string lookup_table = model_info.resolved_path("lookup_table");
+    const std::string tokenizer =
+        fs::path(model_info.resolved_path("tokenizer")).parent_path().string();
+    const std::string vision = model_info.resolved_path("vision_tower");
 
     const json ctx_option = options.get_option("ctx_size");
     const int ctx_size = ctx_option.is_number_integer() && ctx_option.get<int>() > 0

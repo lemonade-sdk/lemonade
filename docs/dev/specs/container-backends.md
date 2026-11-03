@@ -405,9 +405,9 @@ A container backend whose `devices` include `/dev/kfd` runs one more check befor
 
 ## Image Updates
 
-A new workflow, `.github/workflows/validate_containers.yml`, keeps every container backend on the newest build of its tag. It follows the pattern of `validate_llamacpp.yml`: it runs weekly, every Sunday at 18:00 UTC, and opens its pull request only after the new pins pass validation on the self-hosted runners.
+A new workflow, `.github/workflows/validate_containers.yml`, keeps every container backend on the newest image upstream publishes. It runs weekly, every Sunday at 18:00 UTC, and on every pull request that changes a pin or a backend descriptor, where it only checks that each pin can still be resolved.
 
-The workflow changes only the digest in each pin. A maintainer sets the tag by hand to the tag AI Toolbox Cockpit runs for the same engine on the same GPU, such as `vulkan-radv-performance` for `llamacpp:nathanw` and `latest` for Halogen. This will be one of the first jobs to take advantage of Devlab Dispatch, which provides Strix Halo 128 GB Linux runners that can handle Halogen and DS4 models.
+A pin whose tag carries version numbers moves to the highest-numbered tag of the same shape: `0.18.22` moves to `0.18.23`, and `rocm-10.0-gufo` to `rocm-10.1-gufo`, but never to a timestamped build such as `rocm-10.0-gufo_20261103T122023`. A tag with no numbers, such as `vulkan-radv-performance`, keeps its name. Every pin then moves to its tag's newest digest. The workflow opens one pull request with the new pins, labeled `ci:backends` so `test-container-backends` validates them on Devlab Dispatch's Strix Halo 128 GB Linux runners, enables auto-merge on it, and closes any update pull request it supersedes. Each starting tag is the one AI Toolbox Cockpit runs for the same engine on the same GPU, such as `vulkan-radv-performance` for `llamacpp:nathanw`. Halogen pins its release tag, such as `0.18.22`, because AI Cockpit's `latest` names no version.
 
 ## Appendix A: Ramalama and AI Cockpit Conventions, and Where Lemonade Differs
 
