@@ -265,13 +265,6 @@ void SDServer::load(const std::string& model_name,
         args.push_back("-v");
     }
 
-    if (resolved_backend == "vulkan") {
-        LOG(INFO, "SDServer")
-            << "Applying Vulkan SD workaround: --vae-tiling --diffusion-fa"
-            << std::endl;
-        args.push_back("--vae-tiling");
-        args.push_back("--diffusion-fa");
-    }
     std::set<std::string> reserved_flags = {
         "-m",
         "--model",
@@ -283,6 +276,12 @@ void SDServer::load(const std::string& model_name,
         "--listen-port"
     };
 
+    // Parse the user's arguments before adding any of our own, so a flag they
+    // set explicitly is not also appended by us. These are not in
+    // reserved_flags on purpose -- passing them is legitimate, it just must not
+    // produce the same flag twice on the command line.
+    std::vector<std::string> custom_args_vec;
+    std::set<std::string> user_flags;
     if (!sdcpp_args.empty()) {
         std::string validation_error = validate_custom_args(sdcpp_args, reserved_flags);
         if (!validation_error.empty()) {
@@ -292,9 +291,34 @@ void SDServer::load(const std::string& model_name,
         }
 
         LOG(DEBUG, "SDServer") << "Adding custom arguments: " << sdcpp_args << std::endl;
-        std::vector<std::string> custom_args_vec = parse_custom_args(sdcpp_args);
-        args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
+        custom_args_vec = parse_custom_args(sdcpp_args);
+        for (const std::string& token : custom_args_vec) {
+            if (token.rfind("--", 0) == 0 || (token.size() > 1 && token[0] == '-')) {
+                user_flags.insert(token);
+            }
+        }
     }
+
+    if (resolved_backend == "vulkan") {
+        std::vector<std::string> applied;
+        for (const char* flag : {"--vae-tiling", "--diffusion-fa"}) {
+            if (user_flags.count(flag) == 0) {
+                args.push_back(flag);
+                applied.push_back(flag);
+            }
+        }
+        if (!applied.empty()) {
+            std::ostringstream joined;
+            for (size_t i = 0; i < applied.size(); ++i) {
+                if (i > 0) joined << " ";
+                joined << applied[i];
+            }
+            LOG(INFO, "SDServer")
+                << "Applying Vulkan SD workaround: " << joined.str() << std::endl;
+        }
+    }
+
+    args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
 
     std::vector<std::pair<std::string, std::string>> env_vars;
     fs::path exe_dir = fs::path(exe_path).parent_path();
