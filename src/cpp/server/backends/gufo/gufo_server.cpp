@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/gufo/gufo.h"
 #include "lemon/backends/llamacpp/llamacpp_server.h"
+#include "lemon/gguf_reader.h"
 #include "lemon/gguf_shard_utils.h"
 #include "lemon/model_manager.h"
 #include "lemon/utils/custom_args.h"
@@ -61,6 +62,16 @@ public:
 
 namespace gufo {
 
+std::string speculative_mode(const std::string& draft_architecture,
+                             const std::string& target_architecture) {
+    if (draft_architecture == "dflash") return "dflash2";
+    if (draft_architecture == "deepseek4-dspark") return "dspark";
+    // An MTP sidecar is a slice of its target, so it keeps the target's architecture.
+    if (!draft_architecture.empty() && draft_architecture == target_architecture) return "mtp";
+    throw std::invalid_argument("gufo runs DFlash2, MTP and DSpark drafts, not a draft with "
+                                "GGUF architecture '" + draft_architecture + "'");
+}
+
 std::vector<std::string> build_server_argv(const std::string& model_name,
                                            const std::string& gguf_path,
                                            const std::string& mmproj_path,
@@ -83,12 +94,8 @@ std::vector<std::string> build_server_argv(const std::string& model_name,
         argv.insert(argv.end(), {"--mmproj", mmproj_path});
     }
     if (!draft_path.empty()) {
-        const auto flag = draft_flags().find(speculative);
-        if (flag == draft_flags().end()) {
-            throw std::invalid_argument("gufo: a draft model needs gufo_speculative set to "
-                                        "dflash2, mtp or dspark, not '" + speculative + "'");
-        }
-        argv.insert(argv.end(), {"--speculative", speculative, flag->second, draft_path});
+        argv.insert(argv.end(),
+                    {"--speculative", speculative, draft_flags().at(speculative), draft_path});
     }
 
     if (!gufo_args.empty()) {
@@ -126,6 +133,15 @@ void GufoServer::load(const std::string& model_name, const ModelInfo& model_info
     }
     const std::string mmproj_path = model_info.resolved_path("mmproj");
     const std::string draft_path = model_info.resolved_path("draft");
+    std::string speculative;
+    if (!draft_path.empty()) {
+        GgufMetadata target_metadata;
+        GgufMetadata draft_metadata;
+        read_gguf_metadata(target_metadata, gguf_path);
+        read_gguf_metadata(draft_metadata, draft_path);
+        speculative = gufo::speculative_mode(draft_metadata.architecture,
+                                             target_metadata.architecture);
+    }
 
     const int ctx_size = options.get_option("ctx_size");
     const std::string gufo_args = options.get_option("gufo_args");
@@ -135,7 +151,7 @@ void GufoServer::load(const std::string& model_name, const ModelInfo& model_info
     ServerCommand command;
     command.program = gufo::descriptor.binary;
     command.args = gufo::build_server_argv(model_name, gguf_path, mmproj_path, draft_path,
-                                           model_info.extra<std::string>("gufo_speculative", ""),
+                                           speculative,
                                            ctx_size, port_, gufo_args);
     for (const std::string& path : {gguf_path, mmproj_path, draft_path}) {
         if (!path.empty()) {

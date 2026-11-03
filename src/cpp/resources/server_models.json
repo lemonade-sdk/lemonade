@@ -3174,8 +3174,7 @@
             "tool-calling",
             "vision"
         ],
-        "size": 19.6,
-        "gufo_speculative": "dflash2"
+        "size": 19.6
     },
     "Qwen3.8-Flash-Next-Gufo": {
         "checkpoints": {
@@ -3191,8 +3190,7 @@
             "tool-calling",
             "vision"
         ],
-        "size": 115.0,
-        "gufo_speculative": "mtp"
+        "size": 115.0
     },
     "DeepSeek-V4-Flash-IQ2XXS-Gufo": {
         "checkpoints": {
@@ -3206,7 +3204,6 @@
             "reasoning",
             "tool-calling"
         ],
-        "size": 92.7,
-        "gufo_speculative": "dspark"
+        "size": 92.7
     }
 }

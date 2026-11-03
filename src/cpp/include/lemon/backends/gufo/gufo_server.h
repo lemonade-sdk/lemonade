@@ -25,9 +25,14 @@ public:
 };
 
 namespace gufo {
+// gufo takes each kind of draft through its own flag, and the draft's GGUF
+// architecture says which kind it is. Throws for a draft gufo cannot run.
+std::string speculative_mode(const std::string& draft_architecture,
+                             const std::string& target_architecture);
+
 // `gufo serve llm`'s arguments for a model. `mmproj_path` and `draft_path` are ""
-// when the model has none; `speculative` names the draft's mode (dflash2, mtp or
-// dspark) and is ignored without a draft.
+// when the model has none; `speculative` is speculative_mode()'s answer for the
+// draft and is ignored without one.
 std::vector<std::string> build_server_argv(const std::string& model_name,
                                            const std::string& gguf_path,
                                            const std::string& mmproj_path,

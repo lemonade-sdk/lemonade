@@ -618,13 +618,18 @@ void test_gufo_argv() {
               join(lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "d.gguf",
                                                             "dspark", 0, 1, ""))
                       .find("--speculative dspark --dspark-model d.gguf") != std::string::npos);
+    using lemon::backends::gufo::speculative_mode;
+    check("gufo reads a draft's mode from its GGUF architecture",
+          speculative_mode("dflash", "qwen35") == "dflash2" &&
+              speculative_mode("deepseek4-dspark", "deepseek4") == "dspark" &&
+              speculative_mode("qwen4exp", "qwen4exp") == "mtp");
     bool threw = false;
     try {
-        lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "d.gguf", "", 0, 1, "");
+        speculative_mode("llama", "qwen35");
     } catch (const std::invalid_argument&) {
         threw = true;
     }
-    check("gufo refuses a draft whose speculative mode is not named", threw);
+    check("gufo refuses a draft of an architecture it cannot run", threw);
     threw = false;
     try {
         lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "", "", 0, 1, "--port 9");
