@@ -192,7 +192,7 @@ public:
             }
 
             auto info = model_manager.get_model_info(model_name);
-            if (has_label(info.labels, "upscaling")) {
+            if (!is_router_collection_recipe(info.recipe) && has_label(info.labels, "upscaling")) {
                 write_openai_error(res, kUpscalerCannotLoad,
                                    "Upscaling models cannot be loaded; use POST /v1/images/upscale instead.");
                 return;

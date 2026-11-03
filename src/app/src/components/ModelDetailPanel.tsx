@@ -2586,7 +2586,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const isRouterCollection = Boolean(model && activeRecipeForModel(model) === 'collection.router');
   const isCustomCollection = Boolean(model && modelIsCustom(model) && (isCollectionModel(model) || isRouterCollection));
   const imageOnly = isImageOnlyModel(model);
-  const isOnDemandUpscaler = Boolean(model && Array.isArray(model.labels) && model.labels.includes('upscaling'));
+  const isOnDemandUpscaler = Boolean(model && !isRouterCollection && Array.isArray(model.labels) && model.labels.includes('upscaling'));
   const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS
     : (isOnDemandUpscaler ? UPSCALER_MODEL_TABS : (imageOnly ? IMAGE_MODEL_TABS : TABS));
 
