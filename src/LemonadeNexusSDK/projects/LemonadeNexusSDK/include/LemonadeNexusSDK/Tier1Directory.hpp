@@ -159,6 +159,11 @@ public:
     /// than `max_age_ms`.
     [[nodiscard]] bool needs_refresh(int64_t max_age_ms) const;
 
+    /// Time since the last successful refresh, whichever caller ran it, or
+    /// nullopt when nothing is verified or the membership is marked stale.
+    /// Never blocks on network I/O.
+    [[nodiscard]] std::optional<std::chrono::milliseconds> verified_age() const;
+
     /// True when `node_id` (base64) is a member of the verified epoch and has
     /// a verified server.
     [[nodiscard]] bool is_verified_member(const std::string& node_id) const;

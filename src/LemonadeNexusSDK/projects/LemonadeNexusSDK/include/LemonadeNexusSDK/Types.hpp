@@ -458,6 +458,15 @@ struct MeshTunnelStatus {
     /// it. Reported by LemonadeNexusClient::mesh_status(), not by the mesh
     /// state callback. A session the SDK moved by itself never sets it.
     bool        needs_rejoin{false};
+    /// True while the tunnel to the session server is alive: the server's
+    /// dataplane peer sent an authenticated packet or a handshake within
+    /// kTunnelAliveWindow (20 s), or the mesh was enabled less than that ago
+    /// and has carried nothing yet (tunnel_alive). False while the mesh is
+    /// not enabled. A host that expects the mesh up and reads false should
+    /// call LemonadeNexusClient::resume() and, if it stays false, rebuild
+    /// the mesh. Read live by mesh_status(), not reported by the mesh state
+    /// callback.
+    bool        tunnel_up{false};
 };
 
 /// One session move: the Tier 1 server that issued the session left the

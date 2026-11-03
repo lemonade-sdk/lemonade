@@ -15,6 +15,7 @@
 #include <cstring>
 #include <ctime>
 #include <mutex>
+#include <string>
 
 #ifdef _WIN32
 #  include <winsock2.h>
@@ -180,6 +181,12 @@ bool UserspaceDataplane::start(const Config& config) {
     int reuse = 1;
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
                reinterpret_cast<const char*>(&reuse), sizeof(reuse));
+#ifdef __APPLE__
+    // A send on a socket iOS defuncted during a suspension must fail with an
+    // error, not kill the process.
+    int no_sigpipe = 1;
+    setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe, sizeof(no_sigpipe));
+#endif
     int bufsize = 1 << 20;
     setsockopt(sock, SOL_SOCKET, SO_RCVBUF,
                reinterpret_cast<const char*>(&bufsize), sizeof(bufsize));
@@ -222,6 +229,7 @@ bool UserspaceDataplane::start(const Config& config) {
     bound_port_ = ntohs(actual.sin_port);
 
     socket_  = static_cast<intptr_t>(sock);
+    rx_error_logged_ = false;
     running_ = true;
 
     int workers = config.rx_threads > 0 ? config.rx_threads : 1;
@@ -658,11 +666,34 @@ void UserspaceDataplane::rx_loop() {
                           rx_buf.size(),
 #endif
                           0, reinterpret_cast<sockaddr*>(&from), &from_len);
-        if (n <= 0) continue;  // timeout / shutdown / error
+        if (n <= 0) {
+            // The receive timeout (SO_RCVTIMEO) and the shutdown are the
+            // normal reasons. Another error is a dead socket (iOS defuncts
+            // the sockets of a suspended app): nothing restarts it here, but
+            // the first one is logged so the silence has a visible cause.
+            if (n < 0 && running_) note_rx_error();
+            continue;
+        }
 
         handle_datagram({rx_buf.data(), static_cast<size_t>(n)},
                         pack_sockaddr(from), scratch_a, scratch_b);
     }
+}
+
+void UserspaceDataplane::note_rx_error() {
+#ifdef _WIN32
+    const int err = WSAGetLastError();
+    if (err == WSAETIMEDOUT || err == WSAEWOULDBLOCK || err == WSAEINTR) return;
+    const std::string text = std::to_string(err);
+#else
+    const int err = errno;
+    if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR) return;
+    const std::string text = std::strerror(err);
+#endif
+    if (rx_error_logged_.exchange(true)) return;
+    spdlog::error("[dataplane] recvfrom on UDP port {} failed: {} ({}); the socket may be dead "
+                  "and receives nothing until the dataplane is restarted",
+                  bound_port_, text, err);
 }
 
 void UserspaceDataplane::handle_datagram(std::span<const uint8_t> pkt,

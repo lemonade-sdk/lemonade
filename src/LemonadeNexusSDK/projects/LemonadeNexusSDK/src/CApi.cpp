@@ -1828,6 +1828,12 @@ ln_error_t ln_mesh_refresh(ln_client_t* client) {
     return LN_OK;
 }
 
+ln_error_t ln_resume(ln_client_t* client) {
+    if (!client) return LN_ERR_NULL_ARG;
+    client->client.resume();
+    return LN_OK;
+}
+
 // ---------------------------------------------------------------------------
 // Routing layer (connect-by-identifier)
 // ---------------------------------------------------------------------------

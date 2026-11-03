@@ -390,6 +390,16 @@ std::size_t BoringtunMesh::probe_peer(const std::string& pubkey,
     return impl_->dp.probe_endpoints(pubkey, endpoints);
 }
 
+std::optional<int64_t> BoringtunMesh::server_peer_seen() const {
+    if (!impl_->active.load()) return std::nullopt;
+    for (const auto& peer : impl_->dp.snapshot_peers()) {
+        if (peer.public_key != impl_->server_pubkey) continue;
+        return std::max(static_cast<int64_t>(peer.last_rx),
+                        static_cast<int64_t>(peer.last_handshake));
+    }
+    return 0;
+}
+
 std::size_t BoringtunMesh::rehandshake_all() {
     if (!impl_->active.load()) return 0;
     std::size_t sent = 0;

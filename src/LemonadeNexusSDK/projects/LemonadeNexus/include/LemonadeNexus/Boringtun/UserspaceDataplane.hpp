@@ -264,6 +264,9 @@ private:
     /// Count a policy drop and log at most once per interval.
     void note_forward_denied(const Peer& src, const Peer& dst);
 
+    /// Log a recvfrom() error that is not a timeout, once per start().
+    void note_rx_error();
+
     [[nodiscard]] PeerPtr peer_by_index(uint32_t index) const;
     [[nodiscard]] PeerPtr peer_by_pubkey(const std::string& pubkey_b64) const;
 
@@ -283,6 +286,7 @@ private:
     std::atomic<uint64_t> routes_generation_{0};  ///< changed under tables_mtx_
     std::atomic<uint64_t> forward_denied_{0};
     std::atomic<int64_t>  forward_denied_logged_ms_{0};
+    std::atomic<bool>     rx_error_logged_{false};  ///< see note_rx_error()
 
     mutable std::shared_mutex inbound_mtx_;
     InboundIpHandler          inbound_;

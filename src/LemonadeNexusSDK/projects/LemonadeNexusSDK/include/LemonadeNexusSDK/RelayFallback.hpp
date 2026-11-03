@@ -166,9 +166,19 @@ public:
     /// working direct path. With `skip_grace`, a peer without a working path
     /// may get a relay at the next pass; otherwise its direct grace period
     /// starts again now. A pending retry delay ends, and the eager period
-    /// starts again; the failure count that sets the next backoff stays. An open relay channel stays as it is: a
-    /// relay that carries traffic is kept (paired_action).
+    /// starts again; the failure count that sets the next backoff stays
+    /// (reset_backoff() clears it). An open relay channel stays as it is: a
+    /// relay that carries traffic is kept (paired_action), and one that
+    /// carries nothing after the renewal is released without a failure or
+    /// blame, since the path changed under it.
     void renew(const std::vector<std::string>& pubkeys, bool skip_grace);
+
+    /// Forget every failure the process counted before a resume: each
+    /// peer's failure count, retry delay, and unproven relay, every relay
+    /// cooldown, and the cached candidate list. A failure from before a
+    /// suspension says nothing about the relays now, and a fresh process
+    /// starts at zero. Open channels stay as they are.
+    void reset_backoff();
 
     /// Close every channel and move every relayed peer off its relay.
     void stop();
@@ -253,6 +263,9 @@ private:
         std::string                   unproven_relay;
         bool                          applied{false};
         bool                          listed{false};    ///< maintain() has seen the peer
+        /// renew() ran while the channel was open: cleared when a channel
+        /// opens or pairs.
+        bool                          renewed{false};
     };
 
     /// Open a channel to the chosen relay for `peer`. False on failure.
@@ -266,9 +279,12 @@ private:
     /// keep that path, and do not count a failure.
     void promote_direct(const std::string& pubkey, PeerState& state,
                         const std::string& listed_endpoint);
-    /// Close a channel whose relay path is not in use yet because the peer
-    /// answered on a direct path first. No failure, no backoff.
-    void release_unused(const std::string& pubkey, PeerState& state);
+    /// Close a channel without a failure or a backoff, and undo its relay
+    /// path when it is in use: the peer answered on a direct path before
+    /// the relay was in use, or the channel was renewed since it paired
+    /// (this device resumed) and its silence is the path change, not the
+    /// relay's fault. `why` completes the log line.
+    void release_unused(const std::string& pubkey, PeerState& state, const char* why);
     void schedule_retry(PeerState& state);
     std::vector<RelayCandidate> usable_candidates(Clock::time_point now);
 

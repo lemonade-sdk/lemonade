@@ -101,12 +101,17 @@ bool is_models_path(const std::string& path) {
 /// Binds without SO_REUSEPORT, so a second process cannot share the port. Unix keeps
 /// SO_REUSEADDR so the HTTP to TLS switch can rebind past TIME_WAIT connections; it
 /// does not allow two listeners on one address. Windows uses SO_EXCLUSIVEADDRUSE.
+/// On Apple platforms a write to a socket the OS closed (iOS defuncts the sockets
+/// of a suspended app) must fail with an error, not raise SIGPIPE.
 void exclusive_socket_options(socket_t sock) {
     int opt = 1;
 #ifdef _WIN32
     setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&opt), sizeof(opt));
 #else
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const void*>(&opt), sizeof(opt));
+#endif
+#ifdef __APPLE__
+    setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, reinterpret_cast<const void*>(&opt), sizeof(opt));
 #endif
 }
 

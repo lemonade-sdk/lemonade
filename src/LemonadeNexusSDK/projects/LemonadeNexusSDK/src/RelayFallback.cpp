@@ -126,16 +126,30 @@ void RelayFallback::promote_direct(const std::string& pubkey, PeerState& state,
                  short_key(pubkey));
 }
 
-void RelayFallback::release_unused(const std::string& pubkey, PeerState& state) {
+void RelayFallback::release_unused(const std::string& pubkey, PeerState& state, const char* why) {
     if (state.channel) {
         state.channel->close();
         state.channel.reset();
     }
+    if (state.applied) {
+        mesh_.clear_peer_relay(pubkey);
+        state.applied = false;
+        std::lock_guard lock(relayed_mtx_);
+        relayed_.erase(pubkey);
+    }
     state.failures = 0;
     state.next_attempt = {};
-    spdlog::info("[RelayFallback] peer {} answered on a direct path before its relay was in "
-                 "use; relay request closed",
-                 short_key(pubkey));
+    spdlog::info("[RelayFallback] peer {} {}; relay closed without blame", short_key(pubkey), why);
+}
+
+void RelayFallback::reset_backoff() {
+    for (auto& [pubkey, state] : peers_) {
+        state.failures = 0;
+        state.next_attempt = {};
+        state.unproven_relay.clear();
+    }
+    cooldown_.clear();
+    candidate_cache_.clear();
 }
 
 void RelayFallback::set_window_clock(UnixClock clock) { window_clock_ = std::move(clock); }
@@ -154,6 +168,7 @@ void RelayFallback::renew(const std::vector<std::string>& pubkeys, bool skip_gra
         // A retry delay earned while the peer was away (a relay request it
         // never joined) says nothing about its new path.
         state.next_attempt = {};
+        state.renewed = state.channel != nullptr;
     }
 }
 
@@ -209,6 +224,7 @@ bool RelayFallback::open_channel(PeerState& state, const MeshPeer& peer,
     state.channel = std::move(channel);
     state.relay_id = relay.relay_id;
     state.opened_unix = unix_now();
+    state.renewed = false;
     state.window = window;
     spdlog::info("[RelayFallback] peer {} has no direct path; allocating at relay {}",
                  short_key(peer.mesh_pubkey), state.channel->relay_endpoint());
@@ -289,7 +305,8 @@ std::chrono::steady_clock::time_point RelayFallback::maintain(const std::vector<
                                 at->second != state.channel->local_endpoint();
             if (direct && handshake > 0 && handshake >= state.opened_unix &&
                 handshake > state.stale_before) {
-                release_unused(pubkey, state);
+                release_unused(pubkey, state,
+                               "answered on a direct path before its relay was in use");
                 continue;
             }
         }
@@ -325,6 +342,7 @@ std::chrono::steady_clock::time_point RelayFallback::maintain(const std::vector<
                             state.paired_at = now;
                             state.paired_unix = now_unix;
                             state.relay_seen = 0;
+                            state.renewed = false;
                             std::lock_guard lock(relayed_mtx_);
                             relayed_[pubkey] = relay_endpoint;
                         } else {
@@ -352,6 +370,12 @@ std::chrono::steady_clock::time_point RelayFallback::maintain(const std::vector<
                         }
                         const int64_t since_pair =
                             handshake > 0 && handshake >= state.paired_unix ? handshake : 0;
+                        // A renewal since the pairing (this device resumed,
+                        // or the peer moved) explains a silent relay: the
+                        // path changed under it. Such a channel is released
+                        // without a failure or blame, so a resume never arms
+                        // the backoff or a relay cooldown.
+                        const bool renewed = state.renewed;
                         switch (paired_action(
                             state.relay_seen, since_pair, now_unix,
                             std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -365,6 +389,11 @@ std::chrono::steady_clock::time_point RelayFallback::maintain(const std::vector<
                                 promote_direct(pubkey, state, peer.endpoint);
                                 break;
                             case PairedAction::AbandonUnproven: {
+                                if (renewed) {
+                                    release_unused(pubkey, state,
+                                                   "was renewed while its relay carried nothing");
+                                    break;
+                                }
                                 // The relay may have paired us with a dead
                                 // request of the peer (a restarted or resumed
                                 // peer's old socket), which only this side
@@ -381,7 +410,12 @@ std::chrono::steady_clock::time_point RelayFallback::maintain(const std::vector<
                                 break;
                             }
                             case PairedAction::AbandonStale:
-                                abandon(pubkey, state, false);
+                                if (renewed) {
+                                    release_unused(pubkey, state,
+                                                   "was renewed after its relay went silent");
+                                } else {
+                                    abandon(pubkey, state, false);
+                                }
                                 break;
                             case PairedAction::Working:
                                 state.failures = 0;

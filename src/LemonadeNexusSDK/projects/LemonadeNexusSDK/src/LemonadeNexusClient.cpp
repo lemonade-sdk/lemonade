@@ -15,6 +15,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <csignal>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -32,6 +33,7 @@
 #else
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <sys/socket.h>
 #endif
 
 namespace lnsdk {
@@ -121,6 +123,33 @@ bool request_not_sent(httplib::Error error) {
     return error == httplib::Error::Connection ||
            error == httplib::Error::ConnectionTimeout ||
            error == httplib::Error::SSLConnection;
+}
+
+/// Ignore SIGPIPE once for the process. A TLS write to a socket the OS
+/// closed under the SDK (iOS defuncts sockets of a suspended app) otherwise
+/// kills the process before any error reaches the caller. cpp-httplib does
+/// the same, but only in its Server constructor, which runs only when the
+/// mesh port starts; a client needs it from its first request.
+void ignore_sigpipe_once() {
+#ifndef _WIN32
+    static std::once_flag once;
+    std::call_once(once, [] { ::signal(SIGPIPE, SIG_IGN); });
+#endif
+}
+
+/// Socket options for every httplib client the SDK opens. On Apple platforms
+/// SO_NOSIGPIPE also keeps a write to a dead socket from raising SIGPIPE in
+/// case another library restores the default handler.
+template <typename HttpClient>
+void apply_client_socket_options(HttpClient& client) {
+#ifdef __APPLE__
+    client.set_socket_options([](httplib::socket_t sock) {
+        int on = 1;
+        ::setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
+    });
+#else
+    (void)client;
+#endif
 }
 
 /// Resolve a hostname to its first IPv4 address (dotted string), or "" on
@@ -272,25 +301,70 @@ struct LemonadeNexusClient::Impl {
     // One keep-alive connection for the private API, reused across requests.
     // A connection per call meant a TLS handshake every time (~570ms) and
     // enough socket churn through the netstack bridge to stall new connects.
-    std::unique_ptr<httplib::SSLClient> private_cli;
+    // private_cli_mtx guards the pointer and the port, never the request:
+    // the request runs under private_api_mtx on its own copy of the pointer,
+    // so reset_private_transport() can take the connection away and stop it
+    // (the request then fails at once) without waiting for the request.
+    std::mutex                          private_cli_mtx;
+    std::shared_ptr<httplib::SSLClient> private_cli;
     uint16_t                            private_cli_port{0};
 
-    httplib::SSLClient* private_client(uint16_t egress_port) {
-        if (private_cli && private_cli_port == egress_port) return private_cli.get();
-        private_cli = std::make_unique<httplib::SSLClient>(server_private_fqdn, egress_port);
+    // Counts the private transport resets (reset_private_transport). A
+    // request that fails after a reset started was cut off by the reset, not
+    // by the path: it arms no breaker and counts as no unanswered request.
+    std::atomic<uint64_t> private_transport_generation{0};
+
+    std::shared_ptr<httplib::SSLClient> private_client(uint16_t egress_port) {
+        std::lock_guard lock(private_cli_mtx);
+        if (private_cli && private_cli_port == egress_port) return private_cli;
+        private_cli = std::make_shared<httplib::SSLClient>(server_private_fqdn, egress_port);
         // The private FQDN lands on the loopback egress; SNI + certificate
         // verification still use the FQDN (against the public CA).
         private_cli->set_hostname_addr_map({{server_private_fqdn, "127.0.0.1"}});
         private_cli->set_connection_timeout(kMeshConnectTimeoutSec);
         private_cli->set_read_timeout(kMeshReadTimeoutSec);
         private_cli->set_keep_alive(true);
+        apply_client_socket_options(*private_cli);
         private_cli_port = egress_port;
-        return private_cli.get();
+        return private_cli;
     }
 
     void drop_private_client() {
+        std::lock_guard lock(private_cli_mtx);
         private_cli.reset();
         private_cli_port = 0;
+    }
+
+    // See LemonadeNexusClient::reset_private_transport(). Each connection is
+    // taken out of its slot under that slot's lock and stopped outside it:
+    // httplib's stop() shuts the socket down under a request in flight, so
+    // the thread in the request sees an error at once.
+    void reset_private_transport() {
+        private_transport_generation.fetch_add(1, std::memory_order_relaxed);
+        std::shared_ptr<httplib::SSLClient> stale_private;
+        {
+            std::lock_guard lock(private_cli_mtx);
+            stale_private = std::move(private_cli);
+            private_cli_port = 0;
+        }
+        if (stale_private) stale_private->stop();
+        std::shared_ptr<httplib::SSLClient> stale_poll;
+        std::shared_ptr<httplib::ws::WebSocketClient> stale_events;
+        {
+            std::lock_guard lock(poll_mtx);
+            stale_poll = std::move(poll_cli);
+            poll_cli_port = 0;
+            stale_events = events_ws;
+        }
+        if (stale_poll) stale_poll->stop();
+        if (stale_events) stale_events->close(httplib::ws::CloseStatus::GoingAway, "resumed");
+        mesh_breaker_until_ms.store(0, std::memory_order_relaxed);
+        private_path_answered();
+        {
+            std::lock_guard lock(transport_mtx);
+            public_clients.clear();
+        }
+        spdlog::info("[LemonadeNexusClient] private transport reset after a resume");
     }
 
     // The peer list long-poll (wait_mesh_peers) holds its request for up to
@@ -657,7 +731,8 @@ struct LemonadeNexusClient::Impl {
     // member. The move verifies the membership again over the public API
     // first, so a device that lost its network (nothing verifiable) does
     // not move. The window restarts at the move, so one move starts per
-    // window.
+    // window, and at a resume (reset_private_transport), so requests a
+    // suspension cut off never move the session.
     void note_private_path_unanswered() {
         const int64_t now   = steady_now_ms();
         const int64_t since = private_unanswered_since_ms.load(std::memory_order_relaxed);
@@ -813,6 +888,7 @@ struct LemonadeNexusClient::Impl {
             slot->cli.set_read_timeout(config.read_timeout_sec);
             slot->cli.set_write_timeout(config.write_timeout_sec);
             slot->cli.set_keep_alive(true);
+            apply_client_socket_options(slot->cli);
         }
         return slot;
     }
@@ -981,9 +1057,10 @@ struct LemonadeNexusClient::Impl {
         // Set when the final attempt failed before any request byte went
         // out: the path to the server is dead, not merely slow.
         bool unanswered = false;
+        const auto generation = private_transport_generation.load(std::memory_order_relaxed);
         for (int attempt = 0; attempt < 2; ++attempt) {
             try {
-                auto* cli = private_client(lp);
+                auto cli = private_client(lp);
                 httplib::Result res = is_get
                     ? cli->Get(path, auth_headers())
                     : cli->Post(path, auth_headers(), body, "application/json");
@@ -1028,6 +1105,10 @@ struct LemonadeNexusClient::Impl {
                              method, path, e.what());
                 break;
             }
+        }
+        // A failure that a transport reset caused says nothing about the path.
+        if (generation != private_transport_generation.load(std::memory_order_relaxed)) {
+            return std::nullopt;
         }
         if (use_breaker) {
             mesh_breaker_until_ms.store(now_ms + kMeshBreakerCooldownMs,
@@ -1158,6 +1239,7 @@ struct LemonadeNexusClient::Impl {
 LemonadeNexusClient::LemonadeNexusClient(const ServerConfig& config)
     : impl_{std::make_unique<Impl>(config)}
 {
+    ignore_sigpipe_once();
     impl_->owner = this;
 }
 
@@ -1231,6 +1313,10 @@ Result<Tier1Membership> LemonadeNexusClient::refresh_tier1() {
 
 Tier1Membership LemonadeNexusClient::tier1_membership() const {
     return impl_->tier1.membership();
+}
+
+std::optional<std::chrono::milliseconds> LemonadeNexusClient::tier1_verified_age() const {
+    return impl_->tier1.verified_age();
 }
 
 Tier1WalkProgress LemonadeNexusClient::tier1_walk_progress() const {
@@ -3368,6 +3454,22 @@ void LemonadeNexusClient::refresh_mesh_peers() {
     }
 }
 
+void LemonadeNexusClient::resume() {
+    // The tunnel first: the handshakes leave now, so the connection the
+    // next private request dials finds a live session instead of waiting
+    // for the dataplane's own rekey timers.
+    const auto sent = impl_->meshplane.rehandshake_all();
+    impl_->reset_private_transport();
+    std::lock_guard lock(impl_->mutex);
+    if (impl_->mesh_orchestrator) impl_->mesh_orchestrator->resume();
+    spdlog::info("[LemonadeNexusClient] resumed: {} handshakes sent, mesh {}", sent,
+                 impl_->mesh_orchestrator ? "pass requested" : "disabled");
+}
+
+void LemonadeNexusClient::reset_private_transport() {
+    impl_->reset_private_transport();
+}
+
 void LemonadeNexusClient::set_mesh_devices_callback(MeshDevicesCallback cb) {
     std::lock_guard lock(impl_->mutex);
     impl_->mesh_devices_callback = std::move(cb);
@@ -3616,6 +3718,7 @@ Result<std::string> LemonadeNexusClient::wait_mesh_peers(const std::string& node
             impl_->poll_cli->set_hostname_addr_map({{fqdn, "127.0.0.1"}});
             impl_->poll_cli->set_connection_timeout(kMeshConnectTimeoutSec);
             impl_->poll_cli->set_keep_alive(true);
+            apply_client_socket_options(*impl_->poll_cli);
             impl_->poll_cli_port = lp;
         }
         impl_->poll_cli->set_read_timeout(static_cast<time_t>(timeout_sec) + kReadMarginSec);
@@ -3705,6 +3808,7 @@ Result<bool> LemonadeNexusClient::run_mesh_events(
     ws->set_connection_timeout(kMeshConnectTimeoutSec);
     ws->set_websocket_ping_interval(kPingSec);
     ws->set_websocket_max_missed_pongs(kMaxMissedPongs);
+    apply_client_socket_options(*ws);
     {
         std::lock_guard lock(impl_->poll_mtx);
         if (impl_->poll_cancelled) return {false, false, 0, "cancelled"};
@@ -3720,6 +3824,19 @@ Result<bool> LemonadeNexusClient::run_mesh_events(
         release();
         return {false, false, std::max(opened.status(), 0),
                 "event socket not opened: " + httplib::to_string(opened.error())};
+    }
+    bool cancelled = false;
+    {
+        std::lock_guard lock(impl_->poll_mtx);
+        cancelled = impl_->poll_cancelled;
+    }
+    if (cancelled) {
+        // cancel_mesh_peer_wait() ran while the socket was opening: its
+        // close() found no connection yet, so the socket is closed here, or
+        // the read below would wait for the server to end it.
+        ws->close(httplib::ws::CloseStatus::GoingAway, "mesh stopping");
+        release();
+        return {false, false, 0, "cancelled"};
     }
 
     std::string message;

@@ -279,6 +279,12 @@ bool RelayChannel::open(Options options) {
     tv.tv_usec = 100 * 1000;
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 #endif
+#ifdef __APPLE__
+    // A send on a socket iOS defuncted during a suspension must fail with an
+    // error, not kill the process.
+    int no_sigpipe = 1;
+    setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe, sizeof(no_sigpipe));
+#endif
     sockaddr_in bind_addr{};
     bind_addr.sin_family = AF_INET;
     bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);

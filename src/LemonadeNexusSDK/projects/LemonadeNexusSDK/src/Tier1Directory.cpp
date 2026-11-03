@@ -595,6 +595,12 @@ bool Tier1Directory::needs_refresh(int64_t max_age_ms) const {
            steady_ms() - state_->verified_at_ms > max_age_ms;
 }
 
+std::optional<std::chrono::milliseconds> Tier1Directory::verified_age() const {
+    std::lock_guard lock(state_->mutex);
+    if (state_->stale || state_->membership.servers.empty()) return std::nullopt;
+    return std::chrono::milliseconds(steady_ms() - state_->verified_at_ms);
+}
+
 bool Tier1Directory::is_verified_member(const std::string& node_id) const {
     std::lock_guard lock(state_->mutex);
     return std::any_of(state_->membership.servers.begin(), state_->membership.servers.end(),

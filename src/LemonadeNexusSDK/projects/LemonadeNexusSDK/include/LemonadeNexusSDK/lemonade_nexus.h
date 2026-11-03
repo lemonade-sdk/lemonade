@@ -465,13 +465,22 @@ ln_error_t ln_mesh_disable(ln_client_t* client);
 
 /** Get mesh tunnel status as JSON.
  *  Returns: {is_up, tunnel_ip, peer_count, online_count,
- *  total_rx_bytes, total_tx_bytes, peers: [...], needs_rejoin}. Each peer
- *  has the fields ln_mesh_peers documents.
+ *  total_rx_bytes, total_tx_bytes, peers: [...], needs_rejoin, tunnel_up}.
+ *  Each peer has the fields ln_mesh_peers documents.
  *  needs_rejoin is true when the Tier 1 server that issued the session left
  *  the verified membership and the SDK could not move the session by itself
  *  (no identity set, or the silent join failed; see
  *  ln_set_session_moved_callback): the session is dropped and private-API
  *  calls are refused until ln_join_network succeeds again, which clears it.
+ *  tunnel_up is true while the tunnel to the session server is alive: the
+ *  server's dataplane peer sent an authenticated packet or a handshake
+ *  within the last 20 s (the SDK's own heartbeat crosses the tunnel every
+ *  3 s, so this is several missed heartbeats), or the mesh was enabled less
+ *  than 20 s ago and has carried nothing yet. It is false while the mesh is
+ *  not enabled. Read it instead of inferring tunnel health from the peers:
+ *  a host that expects the mesh up and reads false should call ln_resume
+ *  and, when it stays false, rebuild the mesh (ln_mesh_disable,
+ *  ln_join_network, ln_mesh_enable).
  *  Caller must ln_free(*out_json). */
 ln_error_t ln_mesh_status(ln_client_t* client, char** out_json);
 
@@ -559,10 +568,28 @@ ln_error_t ln_mesh_peers(ln_client_t* client, char** out_json);
  *  list and sync the dataplane, query STUN, start a new punch burst toward
  *  every peer without a direct path, and run the relay fallback, in one
  *  orchestrator pass. Call it when the network changed (another Wi-Fi, a
- *  VPN, cellular). The SDK detects a resume from suspension by itself.
+ *  VPN, cellular). For a return from a suspension call ln_resume instead.
  *  Returns at once; the pass runs on the orchestrator thread. No effect
  *  while the mesh is disabled. */
 ln_error_t ln_mesh_refresh(ln_client_t* client);
+
+/** The host process returned to the foreground after a suspension (an iOS
+ *  app became active again, a laptop woke). Call it from the platform's
+ *  foreground notification, every time. Safe at any time, also before a
+ *  join or while the mesh is disabled, and it never blocks on the network.
+ *  It sends a fresh handshake to every dataplane peer so the tunnel is
+ *  re-keyed at once, drops every private-API connection from before the
+ *  suspension (a request still waiting on one fails at once and dials
+ *  again), closes the event socket so it opens again, clears the private
+ *  transport's breaker and its unanswered-request window, and runs the
+ *  mesh orchestrator's resume pass now: peer refresh, STUN, heartbeat, a
+ *  punch burst, the relay fallback with its backoff and relay cooldowns
+ *  forgotten, and a "devices" mesh event. The SDK also runs that pass by
+ *  itself when its loop finds a wall-clock gap, so a host that never calls
+ *  this still recovers, only later: the next private request may first
+ *  wait out the read timeout of a dead connection. Returns LN_OK, or
+ *  LN_ERR_NULL_ARG when client is NULL. */
+ln_error_t ln_resume(ln_client_t* client);
 
 /* ------------------------------------------------------------------ */
 /* Identity: seed-based creation                                       */

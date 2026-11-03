@@ -95,6 +95,12 @@ public:
     /// The last verified membership (empty when none is verified).
     [[nodiscard]] Tier1Membership tier1_membership() const;
 
+    /// Time since the membership was last verified, by any caller (a tree
+    /// call, refresh_tier1(), or the private transport); nullopt when none
+    /// is verified or a server refused a tree route since. Never blocks.
+    /// MeshOrchestrator reads it so one resume costs one chain walk.
+    [[nodiscard]] std::optional<std::chrono::milliseconds> tier1_verified_age() const;
+
     /// Progress of the Tier 1 authority chain walk running now (for display
     /// while a join or sign-in waits on it). Never blocks. Thread-safe.
     [[nodiscard]] Tier1WalkProgress tier1_walk_progress() const;
@@ -447,6 +453,32 @@ public:
     /// refresh, STUN, a new punch burst, and relay fallback in one pass.
     /// Returns at once. No effect while the mesh is disabled.
     void refresh_mesh_peers();
+
+    /// The host process came back from a suspension (an iOS app returned to
+    /// the foreground, a laptop woke). Safe at any time, also before a join
+    /// or while the mesh is disabled; never blocks on the network. In order:
+    /// sends a fresh handshake initiation to every dataplane peer
+    /// (BoringtunMesh::rehandshake_all) so the next private request has a
+    /// live tunnel; resets the private transport (reset_private_transport);
+    /// and asks the mesh orchestrator for its resume pass
+    /// (MeshOrchestrator::resume: peer refresh, STUN, heartbeat, punch
+    /// burst, relay fallback with its backoff forgotten, device list
+    /// notice). The orchestrator runs the same pass by itself when it finds
+    /// a wall-clock gap, so a host that never calls this still recovers,
+    /// only later: the gap is seen when the loop thread next runs, and a
+    /// request already waiting on a dead connection holds the others until
+    /// its timeout.
+    void resume();
+
+    /// Drop every connection and failure record of the private transport
+    /// from before a suspension: the pooled private-API connection (a
+    /// request waiting on it fails at once and dials again), the peer list
+    /// long-poll connection, the event socket (run_mesh_events returns and
+    /// the orchestrator opens it again), the mesh breaker, the unanswered
+    /// window of the forced session move, and the pooled public-API
+    /// connections. Takes no lock that a request in flight holds, so it
+    /// never waits on the network. Used by MeshOrchestrator and resume().
+    void reset_private_transport();
 
     /// Callback type for mesh state changes.
     using MeshStateCallback = std::function<void(const MeshTunnelStatus&)>;

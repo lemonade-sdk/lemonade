@@ -83,6 +83,14 @@ bool loop_was_suspended(std::chrono::milliseconds wall_elapsed, std::chrono::mil
     return wall_elapsed - busy - std::max(planned_wait, std::chrono::milliseconds{0}) > kResumeGap;
 }
 
+bool tunnel_alive(int64_t server_seen_unix, int64_t now_unix,
+                  std::chrono::steady_clock::duration since_enable) {
+    if (server_seen_unix > 0 && now_unix - server_seen_unix < kTunnelAliveWindow.count()) {
+        return true;
+    }
+    return since_enable < kTunnelAliveWindow;
+}
+
 PeerLiveness next_peer_liveness(PeerLiveness previous, bool fresh) {
     if (fresh) return {true, 0};
     if (previous.online && previous.stale_passes + 1 < kPeerOfflinePasses) {
@@ -116,6 +124,8 @@ void MeshOrchestrator::start(const MeshConfig& config) {
     {
         std::lock_guard lock(mutex_);
         config_ = config;
+        resume_requested_ = false;
+        started_at_ = std::chrono::steady_clock::now();
     }
 
     // The join just verified the Tier 1 servers.
@@ -173,8 +183,15 @@ bool MeshOrchestrator::is_running() const {
 }
 
 MeshTunnelStatus MeshOrchestrator::status() const {
+    const auto seen = mesh_.server_peer_seen();
+    const auto now_unix = std::chrono::duration_cast<std::chrono::seconds>(
+                              std::chrono::system_clock::now().time_since_epoch())
+                              .count();
     std::lock_guard lock(mutex_);
-    return last_status_;
+    auto status = last_status_;
+    status.tunnel_up = running_.load() && seen &&
+                       tunnel_alive(*seen, now_unix, std::chrono::steady_clock::now() - started_at_);
+    return status;
 }
 
 std::vector<MeshPeer> MeshOrchestrator::peers() const {
@@ -186,6 +203,15 @@ void MeshOrchestrator::refresh_now() {
     {
         std::lock_guard lock(mutex_);
         refresh_requested_ = true;
+    }
+    cv_.notify_all();
+}
+
+void MeshOrchestrator::resume() {
+    if (!running_.load()) return;
+    {
+        std::lock_guard lock(mutex_);
+        resume_requested_ = true;
     }
     cv_.notify_all();
 }
@@ -238,24 +264,34 @@ void MeshOrchestrator::run_loop() {
 
         MeshConfig cfg;
         bool refresh_requested = false;
+        bool resume_requested = false;
         std::chrono::system_clock::time_point wall_now;
         {
             std::lock_guard lock(mutex_);
             cfg = config_;
             refresh_requested = std::exchange(refresh_requested_, false);
+            resume_requested = std::exchange(resume_requested_, false);
             wall_now = wall_clock_ ? wall_clock_() : std::chrono::system_clock::now();
         }
 
         // A suspended process (an app in the background, a sleeping laptop)
         // finds its sessions, NAT mappings, and reflexive address possibly
         // gone, and its peers may have moved meanwhile.
-        const bool resumed =
+        const bool gap_found =
             last_wall &&
             loop_was_suspended(duration_cast<milliseconds>(wall_now - *last_wall), busy,
                                planned_wait);
         last_wall = wall_now;
+        const bool resumed = gap_found || resume_requested;
         if (resumed) {
-            const auto sent = mesh_.rehandshake_all();
+            std::size_t sent = 0;
+            if (!resume_requested) {
+                // The host did not call resume(): re-key the tunnel and drop
+                // the transport state of before the gap here, as resume()
+                // does before it sets the flag.
+                sent = mesh_.rehandshake_all();
+                client_.reset_private_transport();
+            }
             std::vector<std::string> all;
             {
                 std::lock_guard lock(mutex_);
@@ -263,9 +299,10 @@ void MeshOrchestrator::run_loop() {
             }
             hole_puncher_->renew(all);
             relay_fallback_->renew(all, false);
-            spdlog::info("[MeshOrchestrator] resumed after a suspension: {} handshakes sent, "
-                         "checking {} peer paths",
-                         sent, all.size());
+            relay_fallback_->reset_backoff();
+            spdlog::info("[MeshOrchestrator] resumed after a suspension ({}): {} handshakes "
+                         "sent, checking {} peer paths",
+                         resume_requested ? "host call" : "wall-clock gap", sent, all.size());
             // A device list change may have come while the process slept.
             notify_devices();
         }
@@ -346,8 +383,9 @@ void MeshOrchestrator::run_loop() {
         busy = duration_cast<milliseconds>(pass_end - now);
         planned_wait = std::max(milliseconds{0}, duration_cast<milliseconds>(next_wake - pass_end));
         std::unique_lock lock(mutex_);
-        cv_.wait_until(lock, next_wake,
-                       [this] { return !running_.load() || refresh_requested_; });
+        cv_.wait_until(lock, next_wake, [this] {
+            return !running_.load() || refresh_requested_ || resume_requested_;
+        });
     }
 }
 
@@ -701,8 +739,14 @@ std::vector<RelayCandidate> MeshOrchestrator::relay_candidates() {
     std::vector<RelayCandidate> out;
     auto membership = client_.tier1_membership();
     const auto now = std::chrono::steady_clock::now();
-    if (tier1_recheck_due(membership.servers.size(), membership.members.size(),
-                          now - tier1_checked_)) {
+    // A tree call or a private request may have verified the membership
+    // since this loop last did (ensure_tier1 after a resume, for example):
+    // that verification counts, so one resume costs one chain walk.
+    std::chrono::steady_clock::duration since_check = now - tier1_checked_;
+    if (const auto age = client_.tier1_verified_age()) {
+        since_check = std::min(since_check, std::chrono::steady_clock::duration(*age));
+    }
+    if (tier1_recheck_due(membership.servers.size(), membership.members.size(), since_check)) {
         tier1_checked_ = now;
         auto refreshed = client_.refresh_tier1();
         if (refreshed.ok) {

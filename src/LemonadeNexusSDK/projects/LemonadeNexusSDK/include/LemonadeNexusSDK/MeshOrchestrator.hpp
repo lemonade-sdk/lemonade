@@ -89,6 +89,27 @@ inline constexpr std::chrono::milliseconds kResumeGap{2 * kMonitorInterval};
                                       std::chrono::milliseconds busy,
                                       std::chrono::milliseconds planned_wait);
 
+/// How long the session server's dataplane peer may go without a packet or a
+/// handshake before the tunnel reads dead (MeshTunnelStatus::tunnel_up). The
+/// orchestrator's heartbeat crosses the tunnel every heartbeat_interval_sec
+/// (3 s by default) and the server's answer comes back through it, so a live
+/// tunnel carries traffic every few seconds; 20 s is several missed
+/// heartbeats, not one lost packet.
+inline constexpr std::chrono::seconds kTunnelAliveWindow{20};
+
+/// Whether the tunnel to the session server is alive. Pure.
+/// @param server_seen_unix  the server peer's newest packet or handshake,
+///                          Unix seconds (BoringtunMesh::server_peer_seen);
+///                          0 when none arrived yet
+/// @param now_unix          Unix seconds now
+/// @param since_enable      time since the mesh was enabled
+/// A packet within kTunnelAliveWindow is alive. Otherwise the tunnel reads
+/// alive for the first kTunnelAliveWindow after enable_mesh: a fresh mesh has
+/// carried nothing yet, and "unknown" reads as alive so it is not torn down
+/// before its first heartbeat.
+[[nodiscard]] bool tunnel_alive(int64_t server_seen_unix, int64_t now_unix,
+                                std::chrono::steady_clock::duration since_enable);
+
 /// Background orchestrator for P2P mesh networking over the boringtun dataplane.
 ///
 /// Periodically:
@@ -120,9 +141,14 @@ inline constexpr std::chrono::milliseconds kResumeGap{2 * kMonitorInterval};
 ///   - a refresh request (refresh_now(), or a heartbeat answer whose
 ///     peers_revision differs from the previous answer's),
 ///   - a resume: the wall clock shows a gap larger than kResumeGap between
-///     passes (loop_was_suspended). The pass also sends a fresh handshake
-///     initiation to every peer (BoringtunMesh::rehandshake_all) and the
-///     heartbeat, and treats every peer's path as possibly changed.
+///     passes (loop_was_suspended), or the host called resume(). The pass
+///     also sends the heartbeat, treats every peer's path as possibly
+///     changed, forgets the relay backoff (RelayFallback::reset_backoff), and
+///     reports a possible device list change. A resume the wall clock found
+///     also sends a fresh handshake initiation to every peer
+///     (BoringtunMesh::rehandshake_all) and resets the client's private
+///     transport (LemonadeNexusClient::reset_private_transport);
+///     LemonadeNexusClient::resume() does those two first itself.
 /// A peer refresh that finds a known peer with a new listed endpoint, or a
 /// peer that this device reads offline while the server saw it again, renews
 /// that peer: it gets a punch burst at once, a handshake from its old path
@@ -169,7 +195,8 @@ public:
     /// Whether the orchestrator is running.
     [[nodiscard]] bool is_running() const;
 
-    /// Get current mesh status (thread-safe snapshot).
+    /// Get current mesh status (thread-safe snapshot). `tunnel_up` is read
+    /// live from the dataplane (tunnel_alive), not from the last monitor pass.
     [[nodiscard]] MeshTunnelStatus status() const;
 
     /// Get current mesh peers (thread-safe snapshot).
@@ -180,6 +207,12 @@ public:
     /// waiting for their intervals. Thread-safe. Has no effect when the loop
     /// is stopped.
     void refresh_now();
+
+    /// Run the resume pass now, as the loop does when it finds a wall-clock
+    /// gap (see the class comment), without the handshakes and the transport
+    /// reset that LemonadeNexusClient::resume() already made. Thread-safe.
+    /// Has no effect when the loop is stopped.
+    void resume();
 
     /// Set the callback for mesh state changes. It runs on the loop thread after
     /// a monitor pass in which the dataplane went up or down, or a peer's
@@ -267,8 +300,9 @@ private:
 
     /// The relays the client may use: verified Tier 1 servers and listed relays.
     /// Verifies the Tier 1 servers again when kTier1Recheck has passed, or
-    /// kTier1RecheckMissing while a member was not reachable. Blocks on
-    /// network I/O. Loop thread only.
+    /// kTier1RecheckMissing while a member was not reachable, since the
+    /// last verification by any caller (a tree call or the private
+    /// transport count too). Blocks on network I/O. Loop thread only.
     std::vector<RelayCandidate> relay_candidates();
 
     /// Start a certificate renewal thread when a registered certificate is
@@ -355,6 +389,8 @@ private:
     std::chrono::steady_clock::time_point tier1_checked_{};  // loop thread only
     LocalAddressSource       local_address_source_; // empty: list_interface_addresses
     bool                     refresh_requested_{false};  // set by refresh_now() and do_heartbeat()
+    bool                     resume_requested_{false};   // set by resume(); guarded by mutex_
+    std::chrono::steady_clock::time_point started_at_{};  // start(); guarded by mutex_
     WallClock                wall_clock_;                // empty: the system clock
     std::string              peers_revision_;            // last known; guarded by mutex_
     std::thread              cert_thread_;               // runs one renewal pass

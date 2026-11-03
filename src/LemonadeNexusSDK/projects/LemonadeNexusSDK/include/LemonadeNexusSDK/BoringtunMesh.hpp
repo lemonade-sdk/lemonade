@@ -133,6 +133,12 @@ public:
     /// sent (0 when inactive). Thread-safe.
     std::size_t rehandshake_all();
 
+    /// Unix seconds of the newest authenticated packet (keepalives included)
+    /// or completed handshake from the session server's dataplane peer, as
+    /// the dataplane records them: 0 when none arrived yet, nullopt when
+    /// inactive. The tunnel liveness signal (tunnel_alive). Thread-safe.
+    [[nodiscard]] std::optional<int64_t> server_peer_seen() const;
+
     /// Sync the desired mesh peer set into the dataplane (add/update/remove).
     /// The server peer is preserved. Each peer's routes come from
     /// peer_allowed_ips; a peer that gets no route is not added. A peer with
