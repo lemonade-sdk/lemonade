@@ -361,7 +361,7 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
                         if (!file.directory) main_repo_files.push_back(file.path);
                     }
                     comparison_files = registry_files::merge_reuse_comparison_files(
-                        comparison_files, repo_id, info.recipe, main_variant, previous_repo_files,
+                        comparison_files, repo_id, main_variant, previous_repo_files,
                         main_repo_files);
                 } catch (const std::exception& e) {
                     LOG(DEBUG, "ModelManager")
