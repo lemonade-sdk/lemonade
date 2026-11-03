@@ -266,7 +266,7 @@ httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::
         return httplib::Server::HandlerResponse::Unhandled;
     }
 
-    // Nexus routes authorize local operators or SDK-attributed peers, never API keys.
+    // Nexus routes authorize local/private-network operators or SDK-attributed peers, never API keys.
     if (nexus_access::nexus_request(req)) {
         return httplib::Server::HandlerResponse::Unhandled;
     }

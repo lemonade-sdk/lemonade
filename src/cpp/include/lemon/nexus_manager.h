@@ -18,7 +18,8 @@
 namespace lemon {
 /// The listener a Nexus route is registered on.
 /// Public: lemond's normal port. Loopback clients read status and are redirected to
-/// Management for every other route. Remote clients use the authenticated mesh.
+/// Management for every other route. Direct RFC1918 clients may manage Nexus;
+/// other remote clients use the authenticated mesh.
 /// Management: the loopback listener owned by NexusManager for the local desktop.
 /// MeshIngress: the loopback listener behind Nexus virtual port 13305. Mesh peers arrive
 /// from loopback with SDK-attributed identity and permissions.
@@ -177,7 +178,8 @@ bool administers_tree(const nlohmann::json& path, const std::string& key);
 std::pair<int, std::string> mesh_request_access(const httplib::Request& req, bool management = false);
 /// Decides whether a Nexus route may run. Returns {0, ""}
 /// to run the route, {307, ""} to redirect it to the management listener, or an HTTP
-/// error status and message. An API key cannot replace mesh caller authorization.
+/// error status and message. Direct RFC1918 clients on Public need no API key;
+/// an API key cannot replace mesh caller authorization.
 std::pair<int, std::string> route_access(NexusListener listener, const httplib::Request& req, const std::string& operation);
 /// Header that carries the selected peer's API key through the relay. The relay sends it
 /// to that peer as Authorization and never forwards the caller's own Authorization.
