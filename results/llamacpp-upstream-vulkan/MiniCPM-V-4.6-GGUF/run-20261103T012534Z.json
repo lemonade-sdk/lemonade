@@ -1,0 +1,226 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/vulkan": "b11393"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM-V-4.6-gguf:MiniCPM-V-4_6-Q4_K_M.gguf",
+        "mmproj": "OpenBMB/MiniCPM-V-4.6-gguf:mmproj-model-f16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM-V-4.6-GGUF",
+      "results": [
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 484.704061,
+                "mean": 482.880101,
+                "min": 479.702054,
+                "p50": 484.234188,
+                "p95": 484.6570737
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 8.4,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 8386.597446207204,
+              "tps": {
+                "max": 210.13747414756074,
+                "mean": 209.67536215771233,
+                "min": 209.08990866072412,
+                "p50": 209.7987036648521,
+                "p95": 210.10359709928986
+              },
+              "ttft_ms": {
+                "max": 384.39,
+                "mean": 382.762,
+                "min": 380.261,
+                "p50": 383.635,
+                "p95": 384.3145
+              },
+              "vram_peak_gb": 2.1270484924316406
+            }
+          ]
+        },
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 4459.803091,
+                "mean": 4420.439182666666,
+                "min": 4397.553411,
+                "p50": 4403.961046,
+                "p95": 4454.2188865
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 8.7,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 5818.108431827563,
+              "tps": {
+                "max": 162.51539619542905,
+                "mean": 153.53364829964846,
+                "min": 142.95818097000887,
+                "p50": 155.1273677335075,
+                "p95": 161.7765933492369
+              },
+              "ttft_ms": {
+                "max": 4290.026,
+                "mean": 4260.935333333334,
+                "min": 4243.443,
+                "p50": 4249.337,
+                "p95": 4285.9571
+              },
+              "vram_peak_gb": 2.5514602661132812
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-03T02:03:42Z",
+      "accuracy": {
+        "passed": 28,
+        "total": 45,
+        "score": 0.6222,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-batball",
+            "response": " cents).\n\nThe total cost is $1.10, which is 110 cents. So, we have the equation:\n\n\\[ b + (b + 10) = 110 \\]\n\nSimplify the equation:\n\n\\[ 2b + 10 = 110 \\]\n\nSubtract 10 from both sides:\n\n\\[ 2b = 100 \\]\n\nDivide both sides by 2:\n\n\\[ b = 50 \\]\n\nSo, the ball costs 50 cents.\n\nAnswer: The ball costs 50 cents.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-sisters",
+            "response": "es themselves (but since they all share the same sister, we consider the sister as part of the group). Therefore, each of Alice's brothers has one sister, which is Alice.\n\nThus, each of Alice's brothers has one sister, which is Alice.\n\nAnswer: Each of Alice's brothers has one sister, which is Alice.",
+            "cut_off": false
+          },
+          {
+            "id": "code-typeof",
+            "response": "Let's analyze the JavaScript code. The expression `typeof null` checks the type of the null object. In JavaScript, `null` is a special object that does not have a type, so `typeof null` returns \"null\". Therefore, the console.log will output \"null\".\n\nAnswer: The code prints \"null\".",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "To convert Fahrenheit to Celsius, we use the formula:  \n\u00b0C = (\u00b0F - 32) \u00d7 5/9  \n\nPlug in 100\u00b0F:  \n\u00b0C = (100 - 32) \u00d7 5/9  \n\u00b0C = 68 \u00d7 5/9  \n\u00b0C = 350/9 \u2248 38.888...  \n\nRounded to the nearest whole number, that's 39.  \n\nAnswer: 39",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-abc",
+            "response": "Let's think step by step. The first letter of the English alphabet is \"a\", and it is already in lowercase. We need the first three letters, so we take \"a\", then the next is \"b\", and the next is \"c\". Therefore, the first three letters in lowercase are \"a,b,c\". So, the answer is a,b,c.",
+            "cut_off": false
+          },
+          {
+            "id": "json-primes",
+            "response": "[\"2\", \"3\", \"5\", \"7\", \"11\"]",
+            "cut_off": false
+          },
+          {
+            "id": "py-palindrome",
+            "response": "```python\ndef is_palindrome(s):\n    cleaned = ''.join(char for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-fizzbuzz",
+            "response": "ult = []\n    for i in range(1, n+1):\n        if i % 3 == 0 and i % 5 == 0:\n            result.append(\"FizzBuzz\")\n        elif i % 3 == 0:\n            result.append(\"Fizz\")\n        elif i % 5 == 0:\n            result.append(\"Buzz\")\n        else:\n            result.append(str(i))\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-flatten",
+            "response": "```python\ndef flatten(lst):\n    result = []\n    for item in lst:\n        if type(item) is list:\n            result.extend(flatten(item))\n        else:\n            result.append(item)\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    # Remove spaces and convert to lower case\n    cleaned_a = a.replace(\" \", \"\").lower()\n    cleaned_b = b.replace(\" \", \"\").lower()\n    # Check if the cleaned strings are equal\n    return cleaned_a == cleaned_b\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-prime",
+            "response": "```python\ndef is_prime(n):\n    if n <= 1:\n        return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            return False\n    return True\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "rged = []\n    for interval in sorted_intervals:\n        # Check if this interval can be merged with the previous one\n        if merged and merged[-1][0] >= interval[0]:\n            merged[-1][1] = max(merged[-1][1], interval[1])\n        else:\n            merged.append(interval)\n    return merged\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": " += roman_map[s[i]]\n        \n        # If it's the last character, don't add the next one\n        if i + 1 < len(s):\n            # Subtract the value of the next Roman numeral if it's smaller\n            if s[i+1] in roman_map:\n                integer -= roman_map[s[i+1]]\n    \n    return integer\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-second-largest",
+            "response": "argest(nums):\n    # Find the maximum value in the list\n    max_val = max(nums)\n    # Filter values smaller than the maximum and find the second largest\n    smaller_values = [num for num in nums if num < max_val]\n    if not smaller_values:\n        return None\n    return sorted(smaller_values)[-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "turn-list",
+            "response": "Let's start with the original shopping list: apples, bread, milk, eggs.\n\nFirst, remove bread: apples, milk, eggs.\n\nNow, add cheese to the end: apples, milk, eggs, cheese.\n\nThe third item on the list is milk.\n\nAnswer: The third item on the list after removing bread and adding cheese is milk.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-uppercase",
+            "response": "Let's analyze the question. THE CAPITAL OF FRANCE IS PARIS.\n\nConsidering the query, the capital of France is PARIS.\n\nAnswer: THE CAPITAL OF FRANCE IS PARIS.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "Based on the information provided, your flight leaves at 3pm. However, considering the earlier correction, it actually leaves two hours later than initially stated.\n\nAnswer: Your flight leaves at 3pm, but it actually leaves two hours later than initially mentioned.",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-03T02:03:42Z",
+  "fork_id": "llamacpp-upstream-vulkan",
+  "fork_label": "llama.cpp Vulkan (upstream reference)",
+  "fork_repo": "ggml-org/llama.cpp",
+  "fork_version": "b12059",
+  "rocm_version": null,
+  "fork_backend": "vulkan",
+  "experimental": false,
+  "run_id": "41537874631",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/41537874631",
+  "commit": "63179454590d5147bfa98ae24f6819ffda663928",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d08-125594324294"
+}

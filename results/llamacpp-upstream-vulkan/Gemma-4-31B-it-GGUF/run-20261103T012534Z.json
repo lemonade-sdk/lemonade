@@ -1,0 +1,183 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/vulkan": "b11393"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/gemma-4-31B-it-GGUF:Q4_K_M",
+        "mmproj": "unsloth/gemma-4-31B-it-GGUF:mmproj-F16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Gemma-4-31B-it-GGUF",
+      "results": [
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 14277.050365,
+                "mean": 14273.608659666666,
+                "min": 14270.996123,
+                "p50": 14272.779491,
+                "p95": 14276.6232776
+              },
+              "failed_runs": 0,
+              "input_tokens": 3119,
+              "memory_peak_gb": 28.5,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 250.88131933738285,
+              "tps": {
+                "max": 10.426006630940218,
+                "mean": 10.40276337144346,
+                "min": 10.380261768348616,
+                "p50": 10.402021715041544,
+                "p95": 10.423608139350351
+              },
+              "ttft_ms": {
+                "max": 12439.593,
+                "mean": 12432.175666666668,
+                "min": 12426.052,
+                "p50": 12430.882,
+                "p95": 12438.7219
+              },
+              "vram_peak_gb": 21.078746795654297
+            }
+          ]
+        },
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 120847.274467,
+                "mean": 120759.08914633332,
+                "min": 120695.300947,
+                "p50": 120734.692025,
+                "p95": 120836.0162228
+              },
+              "failed_runs": 0,
+              "input_tokens": 24035,
+              "memory_peak_gb": 30.9,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 202.6126050799984,
+              "tps": {
+                "max": 9.240355257616242,
+                "mean": 9.233378182384905,
+                "min": 9.229170006168971,
+                "p50": 9.230609283369501,
+                "p95": 9.23938066019157
+              },
+              "ttft_ms": {
+                "max": 118714.507,
+                "mean": 118625.43033333332,
+                "min": 118556.202,
+                "p50": 118605.582,
+                "p95": 118703.6145
+              },
+              "vram_peak_gb": 23.478900909423828
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-03T01:25:34Z",
+      "accuracy": {
+        "passed": 37,
+        "total": 45,
+        "score": 0.8222,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "py-palindrome",
+            "response": "```python\nimport re\n\ndef is_palindrome(s):\n    # Remove non-alphanumeric characters and convert to lowercase\n    cleaned = re.sub(r'[^a-zA-Z0-9]', '', s).lower()\n    # Compare the string with its reverse\n    return cleaned == cleaned[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-fizzbuzz",
+            "response": "(n):\n    result = []\n    for i in range(1, n + 1):\n        if i % 15 == 0:\n            result.append(\"FizzBuzz\")\n        elif i % 3 == 0:\n            result.append(\"Fizz\")\n        elif i % 5 == 0:\n            result.append(\"Buzz\")\n        else:\n            result.append(str(i))\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-flatten",
+            "response": "```python\ndef flatten(lst):\n    flat_list = []\n    for item in lst:\n        if isinstance(item, list):\n            flat_list.extend(flatten(item))\n        else:\n            flat_list.append(item)\n    return flat_list\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    def clean_string(s):\n        return sorted(s.replace(\" \", \"\").lower())\n    \n    return clean_string(a) == clean_string(b)\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-prime",
+            "response": "```python\ndef is_prime(n):\n    if n < 2:\n        return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            return False\n    return True\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "e\n        if curr_start <= prev_end:\n            # Update the end of the last interval to the maximum end seen\n            merged[-1][1] = max(prev_end, curr_end)\n        else:\n            # No overlap, add the current interval as a new entry\n            merged.append(current)\n\n    return merged\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": "    }\n    total = 0\n    prev_value = 0\n    \n    for char in reversed(s):\n        current_value = roman_map[char]\n        if current_value < prev_value:\n            total -= current_value\n        else:\n            total += current_value\n        prev_value = current_value\n        \n    return total\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-second-largest",
+            "response": "```python\ndef second_largest(nums):\n    if not nums:\n        return None\n    \n    unique_nums = set(nums)\n    if len(unique_nums) < 2:\n        return None\n    \n    sorted_nums = sorted(list(unique_nums), reverse=True)\n    return sorted_nums[1]\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [
+            "reason-batball"
+          ],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-03T01:25:34Z",
+  "fork_id": "llamacpp-upstream-vulkan",
+  "fork_label": "llama.cpp Vulkan (upstream reference)",
+  "fork_repo": "ggml-org/llama.cpp",
+  "fork_version": "b12059",
+  "rocm_version": null,
+  "fork_backend": "vulkan",
+  "experimental": false,
+  "run_id": "41537874631",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/41537874631",
+  "commit": "63179454590d5147bfa98ae24f6819ffda663928",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d08-125594324294"
+}

@@ -1,0 +1,186 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3.6-35B-A3B-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        "mmproj": "unsloth/Qwen3.6-35B-A3B-GGUF:mmproj-F16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3.6-35B-A3B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 2383.49129,
+                "mean": 2376.2895663333334,
+                "min": 2370.99947,
+                "p50": 2374.377939,
+                "p95": 2382.5799549
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 29.5,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 1608.9850892931045,
+              "tps": {
+                "max": 51.49177080199788,
+                "mean": 51.14924217259098,
+                "min": 50.5559827683924,
+                "p50": 51.39997294738266,
+                "p95": 51.48259101653636
+              },
+              "ttft_ms": {
+                "max": 1999.627,
+                "mean": 1995.052333333333,
+                "min": 1991.385,
+                "p50": 1994.145,
+                "p95": 1999.0787999999998
+              },
+              "vram_peak_gb": 22.122455596923828
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 19735.428805,
+                "mean": 19708.02877866667,
+                "min": 19664.014801,
+                "p50": 19724.64273,
+                "p95": 19734.3501975
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 30.0,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 1287.605768544838,
+              "tps": {
+                "max": 45.51181630472796,
+                "mean": 45.48796716885295,
+                "min": 45.454436711873896,
+                "p50": 45.497648489957,
+                "p95": 45.51039952325087
+              },
+              "ttft_ms": {
+                "max": 19277.101,
+                "mean": 19252.824666666667,
+                "min": 19215.469,
+                "p50": 19265.904,
+                "p95": 19275.9813
+              },
+              "vram_peak_gb": 22.69715118408203
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-03T01:20:47Z",
+      "accuracy": {
+        "passed": 36,
+        "total": 45,
+        "score": 0.8,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-sisters",
+            "response": "rothers and 1 sister. This means there are 4 girls in total in the family: Alice herself and her 1 sister.\n\nFrom the perspective of any one of Alice's brothers, his sisters are all the female siblings in the family. Since there are 4 girls (Alice + her sister), each brother has 4 sisters.\n\nAnswer: 4",
+            "cut_off": false
+          },
+          {
+            "id": "py-palindrome",
+            "response": "```python\ndef is_palindrome(s):\n    cleaned = ''.join(c.lower() for c in s if c.isalnum())\n    return cleaned == cleaned[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-fizzbuzz",
+            "response": "t = []\n    for i in range(1, n + 1):\n        if i % 3 == 0 and i % 5 == 0:\n            result.append(\"FizzBuzz\")\n        elif i % 3 == 0:\n            result.append(\"Fizz\")\n        elif i % 5 == 0:\n            result.append(\"Buzz\")\n        else:\n            result.append(str(i))\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-flatten",
+            "response": "```python\ndef flatten(lst):\n    result = []\n    for item in lst:\n        if isinstance(item, list):\n            result.extend(flatten(item))\n        else:\n            result.append(item)\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    a = a.replace(\" \", \"\").lower()\n    b = b.replace(\" \", \"\").lower()\n    return sorted(a) == sorted(b)\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-prime",
+            "response": "```python\ndef is_prime(n):\n    if n <= 1:\n        return False\n    if n <= 3:\n        return True\n    if n % 2 == 0 or n % 3 == 0:\n        return False\n    i = 5\n    while i * i <= n:\n        if n % i == 0 or n % (i + 2) == 0:\n            return False\n        i += 6\n    return True\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "uches the last merged interval\n        if start <= last_end:\n            # Merge them by updating the end time\n            merged[-1] = (last_start, max(last_end, end))\n        else:\n            # No overlap, add the current interval\n            merged.append((start, end))\n    \n    return merged\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": "    'D': 500,\n        'M': 1000\n    }\n    \n    total = 0\n    prev_value = 0\n    \n    for char in reversed(s):\n        value = roman_values[char]\n        if value < prev_value:\n            total -= value\n        else:\n            total += value\n        prev_value = value\n        \n    return total\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-second-largest",
+            "response": "```python\ndef second_largest(nums):\n    if not nums or len(set(nums)) < 2:\n        return None\n    unique_nums = sorted(set(nums))\n    return unique_nums[-2]\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-03T01:20:47Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20261102",
+  "rocm_version": "10.1.0a20260822",
+  "fork_backend": "rocm-gfx11",
+  "experimental": false,
+  "run_id": "41537874631",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/41537874631",
+  "commit": "63179454590d5147bfa98ae24f6819ffda663928",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d08-125594324294"
+}

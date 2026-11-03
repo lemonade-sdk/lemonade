@@ -1,0 +1,186 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/vulkan": "b11393"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3.6-35B-A3B-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        "mmproj": "unsloth/Qwen3.6-35B-A3B-GGUF:mmproj-F16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3.6-35B-A3B-GGUF",
+      "results": [
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 2983.703806,
+                "mean": 2975.7985336666666,
+                "min": 2967.848197,
+                "p50": 2975.843598,
+                "p95": 2982.9177852
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 28.6,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 1228.860618383409,
+              "tps": {
+                "max": 55.4037622070526,
+                "mean": 53.69328981212621,
+                "min": 52.70808597521055,
+                "p50": 52.96802125411548,
+                "p95": 55.16018811175889
+              },
+              "ttft_ms": {
+                "max": 2616.213,
+                "mean": 2612.1813333333334,
+                "min": 2607.103,
+                "p50": 2613.228,
+                "p95": 2615.9145000000003
+              },
+              "vram_peak_gb": 22.418994903564453
+            }
+          ]
+        },
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 25583.723416,
+                "mean": 25555.338486333334,
+                "min": 25522.44711,
+                "p50": 25559.844933,
+                "p95": 25581.3355677
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 29.3,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 987.6451104955819,
+              "tps": {
+                "max": 45.66780756066608,
+                "mean": 45.48008521269268,
+                "min": 45.349741983836395,
+                "p50": 45.422706093575556,
+                "p95": 45.64329741395702
+              },
+              "ttft_ms": {
+                "max": 25128.098,
+                "mean": 25100.13566666667,
+                "min": 25065.797,
+                "p50": 25106.512,
+                "p95": 25125.939400000003
+              },
+              "vram_peak_gb": 23.061573028564453
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-03T02:11:24Z",
+      "accuracy": {
+        "passed": 36,
+        "total": 45,
+        "score": 0.8,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-sisters",
+            "response": "rothers and 1 sister. This means there are 4 girls in total in the family: Alice herself and her 1 sister.\n\nFrom the perspective of any one of Alice's brothers, his sisters are all the female siblings in the family. Since there are 4 girls (Alice + her sister), each brother has 4 sisters.\n\nAnswer: 4",
+            "cut_off": false
+          },
+          {
+            "id": "py-palindrome",
+            "response": "```python\ndef is_palindrome(s):\n    cleaned = ''.join(c.lower() for c in s if c.isalnum())\n    return cleaned == cleaned[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-fizzbuzz",
+            "response": "t = []\n    for i in range(1, n + 1):\n        if i % 3 == 0 and i % 5 == 0:\n            result.append(\"FizzBuzz\")\n        elif i % 3 == 0:\n            result.append(\"Fizz\")\n        elif i % 5 == 0:\n            result.append(\"Buzz\")\n        else:\n            result.append(str(i))\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-flatten",
+            "response": "```python\ndef flatten(lst):\n    result = []\n    for item in lst:\n        if isinstance(item, list):\n            result.extend(flatten(item))\n        else:\n            result.append(item)\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    a = a.replace(\" \", \"\").lower()\n    b = b.replace(\" \", \"\").lower()\n    return sorted(a) == sorted(b)\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-prime",
+            "response": "```python\ndef is_prime(n):\n    if n < 2:\n        return False\n    if n == 2:\n        return True\n    if n % 2 == 0:\n        return False\n    for i in range(3, int(n**0.5) + 1, 2):\n        if n % i == 0:\n            return False\n    return True\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "    last_start, last_end = merged[-1]\n        \n        # If the current interval overlaps with the last merged interval, merge them\n        if start <= last_end:\n            merged[-1] = (last_start, max(last_end, end))\n        else:\n            merged.append([start, end])\n    \n    return merged\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": "    'D': 500,\n        'M': 1000\n    }\n    \n    total = 0\n    prev_value = 0\n    \n    for char in reversed(s):\n        value = roman_values[char]\n        if value < prev_value:\n            total -= value\n        else:\n            total += value\n        prev_value = value\n        \n    return total\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-second-largest",
+            "response": "```python\ndef second_largest(nums):\n    if not nums or len(set(nums)) < 2:\n        return None\n    unique_nums = sorted(set(nums))\n    return unique_nums[-2]\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-03T02:11:24Z",
+  "fork_id": "llamacpp-upstream-vulkan",
+  "fork_label": "llama.cpp Vulkan (upstream reference)",
+  "fork_repo": "ggml-org/llama.cpp",
+  "fork_version": "b12059",
+  "rocm_version": null,
+  "fork_backend": "vulkan",
+  "experimental": false,
+  "run_id": "41537874631",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/41537874631",
+  "commit": "63179454590d5147bfa98ae24f6819ffda663928",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d08-125594324294"
+}

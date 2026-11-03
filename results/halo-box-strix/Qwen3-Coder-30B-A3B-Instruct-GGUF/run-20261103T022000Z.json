@@ -1,0 +1,207 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 2010.243381,
+                "mean": 1982.370881,
+                "min": 1962.31577,
+                "p50": 1974.553492,
+                "p95": 2006.6743921
+              },
+              "failed_runs": 0,
+              "input_tokens": 3208,
+              "memory_peak_gb": 25.0,
+              "name": "context-4k",
+              "output_tokens": 2,
+              "pp_tps": 1661.5277460433826,
+              "tps": {
+                "max": 37.90894271958755,
+                "mean": 34.92850899821209,
+                "min": 32.92072688964972,
+                "p50": 33.955857385398986,
+                "p95": 37.513634186168694
+              },
+              "ttft_ms": {
+                "max": 1938.745,
+                "mean": 1930.7716666666668,
+                "min": 1924.359,
+                "p50": 1929.211,
+                "p95": 1937.7916
+              },
+              "vram_peak_gb": 18.071578979492188
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 30951.288574,
+                "mean": 30922.285838333333,
+                "min": 30891.479206,
+                "p50": 30924.089735,
+                "p95": 30948.568690099997
+              },
+              "failed_runs": 0,
+              "input_tokens": 24788,
+              "memory_peak_gb": 27.5,
+              "name": "context-32k",
+              "output_tokens": 2,
+              "pp_tps": 804.3217518208334,
+              "tps": {
+                "max": 20.73183373069348,
+                "mean": 19.852264705041954,
+                "min": 18.280533060344037,
+                "p50": 20.544427324088343,
+                "p95": 20.713093090032967
+              },
+              "ttft_ms": {
+                "max": 30860.792,
+                "mean": 30818.542666666664,
+                "min": 30790.04,
+                "p50": 30804.796,
+                "p95": 30855.1924
+              },
+              "vram_peak_gb": 20.723209381103516
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-03T02:58:01Z",
+      "accuracy": {
+        "passed": 32,
+        "total": 45,
+        "score": 0.7111,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-sisters",
+            "response": "o are male)\n- Alice has 1 sister (who is female)\n- So there are 4 children total: Alice + 3 brothers + 1 sister\n\nEach of Alice's brothers would see the same siblings from Alice's perspective. Since Alice has 1 sister, each brother would also have 1 sister (the same sister that Alice has).\n\nAnswer: 1",
+            "cut_off": false
+          },
+          {
+            "id": "py-palindrome",
+            "response": "```python\ndef is_palindrome(s):\n    # Convert to lowercase and keep only alphanumeric characters\n    cleaned = ''.join(char.lower() for char in s if char.isalnum())\n    \n    # Check if the cleaned string equals its reverse\n    return cleaned == cleaned[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-fizzbuzz",
+            "response": "(n):\n    result = []\n    for i in range(1, n + 1):\n        if i % 15 == 0:\n            result.append(\"FizzBuzz\")\n        elif i % 3 == 0:\n            result.append(\"Fizz\")\n        elif i % 5 == 0:\n            result.append(\"Buzz\")\n        else:\n            result.append(str(i))\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-flatten",
+            "response": "```python\ndef flatten(lst):\n    result = []\n    for item in lst:\n        if isinstance(item, list):\n            result.extend(flatten(item))\n        else:\n            result.append(item)\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    # Remove spaces and convert to lowercase\n    a_clean = a.replace(\" \", \"\").lower()\n    b_clean = b.replace(\" \", \"\").lower()\n    \n    # Check if sorted characters are equal\n    return sorted(a_clean) == sorted(b_clean)\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-prime",
+            "response": "```python\ndef is_prime(n):\n    if n < 2:\n        return False\n    if n == 2:\n        return True\n    if n % 2 == 0:\n        return False\n    \n    for i in range(3, int(n**0.5) + 1, 2):\n        if n % i == 0:\n            return False\n    return True\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "ouches the last merged interval\n        if current[0] <= last[1]:\n            # Merge them by extending the end time\n            merged[-1] = [last[0], max(last[1], current[1])]\n        else:\n            # No overlap, add current interval\n            merged.append(current)\n    \n    return merged\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": "\n    \n    total = 0\n    prev_value = 0\n    \n    for char in reversed(s):\n        current_value = roman_values[char]\n        if current_value >= prev_value:\n            total += current_value\n        else:\n            total -= current_value\n        prev_value = current_value\n    \n    return total\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-second-largest",
+            "response": "```python\ndef second_largest(nums):\n    if not nums:\n        return None\n    \n    max_val = max(nums)\n    candidates = [x for x in nums if x < max_val]\n    \n    if not candidates:\n        return None\n    \n    return max(candidates)\n```",
+            "cut_off": false
+          },
+          {
+            "id": "tool-weather",
+            "response": "[{\"arguments\": \"{\\\"city\\\":\\\"Paris\\\",\\\"unit\\\":\\\"celsius\\\"}\", \"name\": \"get_weather\"}, {\"arguments\": \"{\\\"amount\\\":100,\\\"from_currency\\\":\\\"EUR\\\",\\\"to_currency\\\":\\\"USD\\\"}\", \"name\": \"convert_currency\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-currency",
+            "response": "[{\"arguments\": \"{\\\"amount\\\":50,\\\"from_currency\\\":\\\"USD\\\",\\\"to_currency\\\":\\\"EUR\\\"}\", \"name\": \"convert_currency\"}, {\"arguments\": \"{\\\"city\\\":\\\"Paris\\\",\\\"unit\\\":\\\"celsius\\\"}\", \"name\": \"get_weather\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-event",
+            "response": "[{\"arguments\": \"{\\\"attendees\\\":[\\\"alice\\\", \\\"bob\\\"],\\\"date\\\":\\\"2026-11-05\\\",\\\"title\\\":\\\"Design review\\\"}\", \"name\": \"create_event\"}, {\"arguments\": \"{\\\"attendees\\\":[\\\"alice\\\", \\\"bob\\\"],\\\"date\\\":\\\"2026-11-05\\\",\\\"title\\\":\\\"Design review\\\"}\", \"name\": \"create_event\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-search",
+            "response": "[{\"arguments\": \"{\\\"query\\\":\\\"wireless headphones\\\",\\\"max_price\\\":100,\\\"in_stock\\\":true}\", \"name\": \"search_products\"}, {\"arguments\": \"{\\\"query\\\":\\\"wireless headphones\\\",\\\"max_price\\\":100,\\\"in_stock\\\":true}\", \"name\": \"search_products\"}]",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [
+            "reason-batball"
+          ],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-03T02:58:01Z",
+  "fork_id": "halo-box-strix",
+  "fork_label": "llama.cpp Halo-box",
+  "fork_repo": "halo-box/strix-llama.cpp",
+  "fork_version": "b1044",
+  "rocm_version": "10.1.0a20260910",
+  "fork_backend": "halo-box-strix",
+  "experimental": true,
+  "run_id": "41537874631",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/41537874631",
+  "commit": "63179454590d5147bfa98ae24f6819ffda663928",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d08-125594324294"
+}

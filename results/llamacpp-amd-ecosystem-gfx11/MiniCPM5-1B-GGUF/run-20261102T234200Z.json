@@ -1,0 +1,250 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM5-1B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 519.448606,
+                "mean": 517.6643463333334,
+                "min": 516.177791,
+                "p50": 517.366642,
+                "p95": 519.2404096
+              },
+              "failed_runs": 0,
+              "input_tokens": 3065,
+              "memory_peak_gb": 4.4,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 7585.271806291336,
+              "tps": {
+                "max": 180.5894820883748,
+                "mean": 177.22003154945503,
+                "min": 174.58581811833244,
+                "p50": 176.48479444165784,
+                "p95": 180.1790133237031
+              },
+              "ttft_ms": {
+                "max": 405.329,
+                "mean": 404.07466666666664,
+                "min": 403.11,
+                "p50": 403.785,
+                "p95": 405.1746
+              },
+              "vram_peak_gb": 1.1290397644042969
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 5917.31226,
+                "mean": 5897.317685999999,
+                "min": 5865.318198,
+                "p50": 5909.3226,
+                "p95": 5916.513293999999
+              },
+              "failed_runs": 0,
+              "input_tokens": 23649,
+              "memory_peak_gb": 5.2,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 4138.293758245522,
+              "tps": {
+                "max": 120.84669007276243,
+                "mean": 119.99408524260531,
+                "min": 119.11105538664077,
+                "p50": 120.02451026841271,
+                "p95": 120.76447209232747
+              },
+              "ttft_ms": {
+                "max": 5731.882,
+                "mean": 5714.721999999999,
+                "min": 5692.374,
+                "p50": 5719.91,
+                "p95": 5730.684799999999
+              },
+              "vram_peak_gb": 1.8133773803710938
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-02T23:46:40Z",
+      "accuracy": {
+        "passed": 23,
+        "total": 45,
+        "score": 0.5111,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-widgets",
+            "response": "s for 100 machines to make 100 widgets**\n- Since 1 machine makes 1 widget in 5 minutes, 100 machines would make 100 widgets in 5 minutes.\n\n**Step 4: Verify the answer**\n- 5 machines make 5 widgets in 5 minutes.\n- 100 machines would make 100 widgets in 5 minutes.\n\n**Answer:**\nThe answer is 5 minutes.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-sisters",
+            "response": " has 3 brothers and 1 sister.\n\n2. The question asks about how many sisters each of Alice's brothers has.\n\n3. Since Alice has 1 sister, and this sister is shared among all her brothers, each brother has the same number of sisters as Alice.\n\nTherefore, each of Alice's brothers has 1 sister.\n\nAnswer: 1",
+            "cut_off": false
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "Answer: Wednesday",
+            "cut_off": false
+          },
+          {
+            "id": "fact-light",
+            "response": "imately 299,792 kilometers per second, but this value can change over time due to experimental measurements and theoretical advancements.\n\nIf you provide the specific speed of light you're referring to, I can help you calculate or explain it.\n\nAnswer: I need more information to answer your question.",
+            "cut_off": false
+          },
+          {
+            "id": "code-powassoc",
+            "response": "pression:\n\n1. `2 ** 3` means 2 raised to the power of 3, which equals 8.\n2. `8 ** 2` means 8 raised to the power of 2, which equals 64.\n\nSo, the code will print `64`.\n\nHere's the step-by-step calculation:\n\n- `2 ** 3` = 2 * 2 * 2 = 8\n- `8 ** 2` = 8 * 8 = 64\n\nTherefore, the output of the code is `64`.",
+            "cut_off": false
+          },
+          {
+            "id": "code-bool",
+            "response": "The code `print(bool(\"\"))` will print `False` because the boolean value of an empty string is `False`.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-miles",
+            "response": "I don't have the ability to calculate distances or perform mathematical operations. I can't convert miles to kilometers or perform any calculations.\n\nI'm sorry, but I can't answer your question.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "Answer: 37",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-backwards",
+            "response": "Answer: anaburn",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-count-r",
+            "response": "First, we break the word into individual characters: s, t, r, a, b, r, r, i, t, y.  \n\nNext, we count the occurrences of the letter 'r' in the word:  \n- The 2nd character is 'r'.  \n- The 6th, 7th, and 8th characters are 'r'.  \n\nSo, the letter 'r' appears 4 times in the word \"strawberry\".  \n\nAnswer: 4",
+            "cut_off": false
+          },
+          {
+            "id": "json-sum",
+            "response": "```json\n{\"sum\": 2 + 3}\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-palindrome",
+            "response": "```python\ndef is_palindrome(s):\n    cleaned = [c.lower() for c in s if c.isalnum()]\n    return cleaned == cleaned[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-fizzbuzz",
+            "response": "t = []\n    for i in range(1, n + 1):\n        if i % 3 == 0 and i % 5 == 0:\n            result.append(\"FizzBuzz\")\n        elif i % 3 == 0:\n            result.append(\"Fizz\")\n        elif i % 5 == 0:\n            result.append(\"Buzz\")\n        else:\n            result.append(str(i))\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-flatten",
+            "response": "```python\ndef flatten(lst):\n    result = []\n    for element in lst:\n        if isinstance(element, list):\n            result.extend(flatten(element))\n        else:\n            result.append(element)\n    return result\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    # Process strings: lowercase and remove non-alphanumeric characters\n    a = ''.join(c for c in a.lower() if c.isalnum())\n    b = ''.join(c for c in b.lower() if c.isalnum())\n    # Compare sorted strings\n    return sorted(a) == sorted(b)\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-prime",
+            "response": "```python\ndef is_prime(n):\n    if n <= 1:\n        return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            return False\n    return True\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "0], intervals[0][1]]\n    for current_start, current_end in intervals[1:]:\n        last_start, last_end = merged[-1]\n        if current_start <= last_end:\n            merged[-1][1] = max(last_end, current_end)\n        else:\n            merged.append([current_start, current_end])\n    return merged\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": "= {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}\n    total = 0\n    for i in range(len(s)):\n        if i > 0 and roman_map[s[i]] > roman_map[s[i-1]]:\n            total += roman_map[s[i]] - 2 * roman_map[s[i-1]]\n        else:\n            total += roman_map[s[i]]\n    return total\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-second-largest",
+            "response": "```python\ndef second_largest(nums):\n    if not nums:\n        return None\n    max_val = max(nums)\n    second_max = None\n    for num in nums:\n        if num < max_val:\n            if second_max is None or num > second_max:\n                second_max = num\n    return second_max\n```",
+            "cut_off": false
+          },
+          {
+            "id": "turn-dog",
+            "response": "I'm sorry, but I don't have information about your dog's name.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-remember",
+            "response": "I don't have access to the number 4821 or the number you asked me to add. I can't perform those operations. I'll need you to provide the correct numbers.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "I'm sorry, but I don't have access to your personal information or the specific details of your flight. I can only provide general information about flights and travel. If you have any other questions or need assistance with something else, feel free to ask.",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-02T23:46:40Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20261102",
+  "rocm_version": "10.1.0a20260822",
+  "fork_backend": "rocm-gfx11",
+  "experimental": false,
+  "run_id": "41537874631",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/41537874631",
+  "commit": "63179454590d5147bfa98ae24f6819ffda663928",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d02-125594324253"
+}
