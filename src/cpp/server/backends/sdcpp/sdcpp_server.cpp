@@ -16,6 +16,8 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <functional>
+#include <thread>
 #include <cstring>
 #include <random>
 #include <sstream>
@@ -559,6 +561,166 @@ json SDServer::image_generations(const json& request) {
 
     // Image generation can take 20+ minutes for large models; avoid timeout.
     return forward_request("/v1/images/generations", sd_request, 0);
+}
+
+json SDServer::video_generations(const json& request, std::atomic<bool>* cancel) {
+    // /sdcpp/v1/vid_gen is sd-cpp's NATIVE route and takes a real JSON body --
+    // unlike /v1/images/generations, which is OpenAI-shaped and reads its
+    // parameters from a <sd_cpp_extra_args> blob smuggled inside the prompt.
+    // Reusing that convention here silently loses every parameter (the server
+    // falls back to 512x512) and corrupts the prompt with the blob text, so the
+    // body is built from scratch. Field names and nesting come from the
+    // backend's own /sdcpp/v1/capabilities defaults.
+    json body = json::object();
+    body["prompt"] = request.value("prompt", std::string());
+    if (request.contains("negative_prompt") && request["negative_prompt"].is_string()) {
+        body["negative_prompt"] = request["negative_prompt"];
+    }
+
+    // Prefer explicit request dimensions, then the model's recipe options.
+    // Omitted entirely when neither supplies them, so sd-server keeps its own
+    // defaults rather than us inventing a resolution the model wasn't trained on.
+    auto dimension = [&](const char* key) -> std::optional<int> {
+        if (request.contains(key) && request[key].is_number_integer()) {
+            return request[key].get<int>();
+        }
+        if (recipe_options_.has_option(key)) {
+            json value = recipe_options_.get_option(key);
+            if (value.is_number() && value.get<int>() > 0) return value.get<int>();
+        }
+        return std::nullopt;
+    };
+    if (auto width = dimension("width")) body["width"] = *width;
+    if (auto height = dimension("height")) body["height"] = *height;
+
+    // Same ladder, but with the descriptor's default as a last rung rather
+    // than stopping at what this model happens to set -- see the video_frames
+    // option in sdcpp.h for why leaving it unset is not a viable outcome.
+    auto video_param = [&](const char* key) -> std::optional<int> {
+        if (request.contains(key) && request[key].is_number_integer()) {
+            return request[key].get<int>();
+        }
+        json value = recipe_options_.get_option(key);
+        if (value.is_number() && value.get<int>() > 0) return value.get<int>();
+        return std::nullopt;
+    };
+    if (auto frames = video_param("video_frames")) body["video_frames"] = *frames;
+    if (auto fps = video_param("fps")) body["fps"] = *fps;
+    if (request.contains("seed") && request["seed"].is_number_integer()) {
+        body["seed"] = request["seed"];
+    }
+    if (request.contains("output_format") && request["output_format"].is_string()) {
+        body["output_format"] = request["output_format"];
+    }
+
+    // Sampling knobs live under sample_params, and cfg under its guidance
+    // object -- flat top-level copies are ignored by this route.
+    json sample_params = json::object();
+    auto sampling = [&](const char* request_key, const char* option_key) -> std::optional<double> {
+        if (request.contains(request_key) && request[request_key].is_number()) {
+            return request[request_key].get<double>();
+        }
+        if (recipe_options_.has_option(option_key)) {
+            json value = recipe_options_.get_option(option_key);
+            if (value.is_number()) return value.get<double>();
+        }
+        return std::nullopt;
+    };
+    if (auto steps = sampling("steps", "steps")) {
+        sample_params["sample_steps"] = static_cast<int>(*steps);
+    }
+    if (auto flow_shift = sampling("flow_shift", "flow_shift")) {
+        sample_params["flow_shift"] = *flow_shift;
+    }
+    if (request.contains("sampling_method") && request["sampling_method"].is_string()) {
+        sample_params["sample_method"] = request["sampling_method"];
+    } else if (recipe_options_.has_option("sampling_method")) {
+        json method = recipe_options_.get_option("sampling_method");
+        if (method.is_string()) {
+            sample_params["sample_method"] = method;
+        }
+    }
+    if (auto cfg = sampling("cfg_scale", "cfg_scale")) {
+        sample_params["guidance"] = json{{"txt_cfg", *cfg}};
+    }
+    if (!sample_params.empty()) {
+        body["sample_params"] = sample_params;
+    }
+
+    LOG(DEBUG, "SDServer") << "Forwarding video request to sd-server: "
+                           << body.dump(2) << std::endl;
+
+    // vid_gen is asynchronous: it answers 202 with a job handle and does the
+    // work in the background. forward_request reports any non-200 as a backend
+    // error, so the 202 body is accepted here and the job polled to completion.
+    json accepted = forward_request("/sdcpp/v1/vid_gen", body, 0);
+    const json* handle = &accepted;
+    if (accepted.contains("error") && accepted["error"].is_object()) {
+        const json& err = accepted["error"];
+        if (err.value("status_code", 0) == 202 && err.contains("details") &&
+            err["details"].is_object() && err["details"].contains("response")) {
+            handle = &err["details"]["response"];
+        } else {
+            return accepted;
+        }
+    }
+
+    const std::string poll_url = handle->value("poll_url", std::string());
+    if (poll_url.empty()) {
+        // Some builds may answer synchronously; pass that straight through.
+        return *handle;
+    }
+
+    // The job is marked interrupted without waiting for this function to return,
+    // so the cancel fires on scope exit rather than from the loop below. The
+    // backend only honours it while the job is queued: it reports
+    // cancel_generating false and answers 409 once frames are being produced, so
+    // a clip already on the GPU still runs to completion.
+    struct ScopeExit {
+        std::function<void()> fn;
+        ~ScopeExit() { if (fn) fn(); }
+    } cancel_backend{[this, &poll_url, cancel]() {
+        if (!cancel || !cancel->load()) return;
+        try {
+            json reply = forward_request(poll_url + "/cancel", json::object(), 0);
+            LOG(INFO, "SDServer") << "canceled backend video job " << poll_url << ": "
+                                  << reply.dump() << std::endl;
+        } catch (const std::exception& e) {
+            LOG(INFO, "SDServer") << "backend declined to cancel " << poll_url << ": "
+                                  << e.what() << std::endl;
+        }
+    }};
+
+    // No wall-clock deadline: a long clip legitimately runs for many minutes.
+    // Give up when the caller cancels, or when the backend dies, which
+    // is_backend_alive() catches via forward_get_request.
+    while (true) {
+        if (cancel && cancel->load()) {
+            return ErrorResponse::from_exception(
+                BackendException(server_name_, "video generation canceled", 499));
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        json status = forward_get_request(poll_url, 0);
+        // A job payload always carries a string "status"; anything else is a
+        // transport/backend error envelope from forward_get_request. Checking
+        // for a "status" field rather than for "error" matters: the job payload
+        // itself always has an "error" key, null while the job is healthy.
+        if (!status.contains("status") || !status["status"].is_string()) {
+            return status;
+        }
+        const std::string state = status.value("status", std::string());
+        if (state == "queued" || state == "generating") {
+            continue;
+        }
+        if (!status.value("error", json()).is_null()) {
+            return ErrorResponse::from_exception(
+                BackendException(server_name_, status["error"].dump(), 500));
+        }
+        if (status.contains("result") && !status["result"].is_null()) {
+            return status["result"];
+        }
+        return status;
+    }
 }
 
 json SDServer::image_edits(const json& request) {
