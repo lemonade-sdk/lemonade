@@ -1645,6 +1645,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `status` - The video's state: `queued`, `running`, `canceled`, `completed` or `failed`, or `paused` when paused through the job routes.
 - `model` - The model generating the video.
 - `created_at` - When the job was created, as an ISO 8601 UTC time.
+- `started_at` - When generation started, as an ISO 8601 UTC time.
+- `completed_at` - When the video completed, failed or was canceled, as an ISO 8601 UTC time.
 - `error` - Why generation failed, present after a failure.
 - `mime_type` - The clip's media type, present once completed.
 - `output_format` - The clip's container format, present once completed.

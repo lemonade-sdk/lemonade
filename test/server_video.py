@@ -188,6 +188,10 @@ class VideoGenerationTests(ServerTestBase):
             f"unexpected mime_type: {payload['mime_type']}",
         )
         self.assertNotIn("b64_json", payload, "the clip leaked into the status payload")
+        for field in ("created_at", "started_at", "completed_at"):
+            self.assertIn(field, payload, f"status missing '{field}'")
+        self.assertLessEqual(payload["created_at"], payload["started_at"])
+        self.assertLessEqual(payload["started_at"], payload["completed_at"])
 
         content = requests.get(
             f"{self.base_url}/videos/{job_id}/content",
