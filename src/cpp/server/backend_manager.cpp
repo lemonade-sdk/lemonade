@@ -167,7 +167,8 @@ void install_container_backend(const std::string& recipe, const std::string& bac
         throw std::runtime_error(recipe + ":" + backend + " is a container backend, which runs on Linux");
     }
     const auto& manager = utils::ContainerManager::global();
-    if (auto failure = backends::container_setup_failure()) {
+    if (auto failure = backends::container_setup_failure(recipe, backend,
+                                                         backends::container_setup_failure())) {
         throw std::runtime_error("Cannot install " + recipe + ":" + backend + ":" +
                                  failure->text());
     }

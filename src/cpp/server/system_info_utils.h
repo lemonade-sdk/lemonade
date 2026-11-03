@@ -7,6 +7,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <set>
 #include <system_error>
 #include <string>
@@ -254,6 +255,47 @@ inline bool rocm_device_memory_from_sysfs(const std::filesystem::path& kfd_nodes
     free_bytes = total - used;
     total_bytes = total;
     return true;
+}
+
+// HIP numbers GPUs in KFD node order, skipping the CPU node, so a container given all
+// of /dev/kfd needs this index to run on the GPU it was sized for. Empty when no GPU
+// satisfies `runs_on`.
+inline std::string hip_visible_device(const std::filesystem::path& kfd_nodes_dir,
+                                      const std::function<bool(const std::string& arch)>& runs_on) {
+    namespace fs = std::filesystem;
+
+    std::error_code ec;
+    std::vector<std::pair<long, fs::path>> nodes;
+    for (fs::directory_iterator it(kfd_nodes_dir, ec), end; it != end && !ec;
+         it.increment(ec)) {
+        try {
+            nodes.emplace_back(std::stol(it->path().filename().string()), it->path());
+        } catch (const std::exception&) {
+        }
+    }
+    std::sort(nodes.begin(), nodes.end());
+
+    int index = 0;
+    for (const auto& node : nodes) {
+        std::ifstream props(node.second / "properties");
+        std::string key;
+        std::string value;
+        std::string gfx_target_version;
+        while (props >> key >> value) {
+            if (key == "gfx_target_version") {
+                gfx_target_version = value;
+                break;
+            }
+        }
+        if (gfx_target_version.empty() || gfx_target_version == "0") {
+            continue;
+        }
+        if (runs_on(gfx_target_version_to_arch(gfx_target_version))) {
+            return std::to_string(index);
+        }
+        ++index;
+    }
+    return "";
 }
 
 }  // namespace lemon::system_info_detail

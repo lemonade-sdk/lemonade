@@ -43,11 +43,6 @@
           "trellis-cuda12-windows-x64.zip": "sha256:8b948b62fc857cab0e064d0962b9f7961a246620bddabbc8a0c00521db78dfb5"
         }
       },
-      "lemonade-sdk/ds4-rocm": {
-        "b0001": {
-          "ds4-b0001-linux-rocm-gfx1151-x64.tar.gz": "sha256:e63b7c9428fd10de75b3f69164eccd564a8e7261c2f9087cd8bec2b4b19a8ad1"
-        }
-      },
       "ROCm/ggml-staging-automation": {
         "hrx-b99": {
           "llama-hrx-b99-bin-manylinux-hrx-x64.tar.gz": "sha256:02c88d96d39c607aefbb982e8b4f630785ec43c4416583834912ceaa63fd7624"
@@ -82,7 +77,7 @@
     "metal": "master-957-90e86d1"
   },
   "ds4": {
-    "rocm": "b0001"
+    "rocm": "rocm-10.0@sha256:31b4e7e3584684768ee060e3dfeb62c1d716219da468090f3483977fdf6dfb47"
   },
   "therock": {
     "version": "10.1.0",

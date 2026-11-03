@@ -301,6 +301,11 @@ std::string identify_cuda_arch_from_name(const std::string& device_name);
 // Check if kernel has CWSR fix for Strix Halo
 bool needs_gfx1151_cwsr_fix();
 
+// HIP_VISIBLE_DEVICES for the first GPU `recipe:backend` supports, or "" when none
+// is present. A host-wide pick such as get_rocm_arch() prefers a discrete GPU the
+// backend may not support.
+std::string hip_visible_device(const std::string& recipe, const std::string& backend);
+
 // FLM status (derived from system-info cache)
 struct FlmStatus {
     std::string state;     // "unsupported","installable","update_required","action_required","installed","update_available"
