@@ -1542,7 +1542,7 @@ stable-diffusion.cpp generates a single frame when no frame count is given, and 
 
 A video is an ordinary job, so it is also listed under [`GET /v1/jobs`](#get-v1jobs) and accepts the job control routes.
 
-GPU only, in practice. A 33-frame 832x480 clip takes about 5 minutes on a discrete GPU.
+GPU only, in practice. With `Wan2.1-T2V-1.3B` on a Radeon AI PRO R9700, a 33-frame 832x480 clip takes about 140 s and peaks at about 14 GB of VRAM.
 
 ### Example
 
