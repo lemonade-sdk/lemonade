@@ -13,6 +13,7 @@
 #include "lemon/router.h"
 #include "lemon/server.h"
 #include "lemon/server/model_json.h"
+#include "lemon/server/model_loader.h"
 #include "lemon/server/system_stats.h"
 #include "lemon/system_info.h"
 #include "lemon/system_metrics_platform.h"
@@ -26,6 +27,7 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     ModelJson* model_json = ctx.model_json;
     SystemMetricsPlatform* metrics = ctx.metrics;
     Server* server = ctx.server;
+    ModelLoader* model_loader = ctx.model_loader;
 
     // A running job remembers which models were loaded before it started (snapshot)
     // and which ones it loaded itself (owned), so pausing it can unload exactly its own
@@ -140,7 +142,27 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         }
         return lemon::jobs::json::parse(response.dump());
     };
-    providers.begin_exclusive = [router, job_states, current_job, state_mutex](
+    providers.video_op = [router, model_loader](const lemon::jobs::json& params,
+                                                lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+        nlohmann::json request = nlohmann::json::parse(params.dump());
+        const std::string model = request.value("model", std::string());
+        if (!model.empty()) {
+            model_loader->ensure_loaded(
+                model, ModelLoader::load_options(request.value("ctx_size", nlohmann::json())));
+        }
+        nlohmann::json response = router->video_generations(request, &cancel);
+        if (response.contains("error")) {
+            std::string msg = "video generation failed";
+            const auto& err = response["error"];
+            if (err.is_object() && err.contains("message") && err["message"].is_string())
+                msg = err["message"].get<std::string>();
+            else if (err.is_string())
+                msg = err.get<std::string>();
+            throw lemon::jobs::JobError(424, msg);
+        }
+        return lemon::jobs::json::parse(response.dump());
+    };
+    providers.begin_exclusive =[router, job_states, current_job, state_mutex](
                                     const std::string& job_id,
                                     lemon::jobs::CancelFlag* cancel) -> bool {
         if (!router->begin_exclusive(cancel)) return false;
