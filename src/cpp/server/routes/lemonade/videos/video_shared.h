@@ -18,6 +18,8 @@ extern const RouteError kVideoNotActive;
 extern const RouteError kVideoNotReady;
 extern const RouteError kVideoNoOutput;
 
+std::string video_status(const std::string& job_status);
+
 void write_unknown_video(httplib::Response& res);
 
 } // namespace lemon

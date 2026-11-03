@@ -4692,7 +4692,7 @@
     "format": "Json",
     "request": {
       "method": "POST",
-      "path": "/v1/videos/job-20261028-115841-000003/cancel",
+      "path": "/v1/videos/job-20261103-184046-000001/cancel",
       "query": {},
       "json": null,
       "form": {},
@@ -4702,7 +4702,7 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "status": "interrupting"
+        "status": "canceling"
       }
     }
   },

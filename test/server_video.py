@@ -32,7 +32,7 @@ TIMEOUT_VIDEO_GENERATION = 3600
 # than some other payload.
 WEBM_MAGIC = b"\x1a\x45\xdf\xa3"
 
-TERMINAL = {"completed", "failed", "interrupted"}
+TERMINAL = {"completed", "failed", "canceled"}
 
 
 class VideoGenerationTests(ServerTestBase):
@@ -343,11 +343,12 @@ class VideoGenerationTests(ServerTestBase):
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(cancel.status_code, 200, cancel.text[:200])
+        self.assertEqual(cancel.json().get("status"), "canceling")
 
         payload = self._wait(job_id, timeout=TIMEOUT_MODEL_OPERATION)
         self.assertIn(
             payload["status"],
-            ("interrupted", "failed"),
+            ("canceled", "failed"),
             f"cancel did not stop the job: {payload}",
         )
         print(f"[OK] cancelled generation ended as {payload['status']}")

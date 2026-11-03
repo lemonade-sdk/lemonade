@@ -31,7 +31,7 @@ public:
             "required": ["id", "status"],
             "properties": {
                 "id": {"type": "string", "description": "The video's id."},
-                "status": {"enum": ["queued", "running", "paused", "interrupted", "completed", "failed"], "description": "The job's state: `queued`, `running`, `paused`, `interrupted`, `completed` or `failed`. A canceled video reports `interrupted`."},
+                "status": {"enum": ["queued", "running", "paused", "canceled", "completed", "failed"], "description": "The video's state: `queued`, `running`, `canceled`, `completed` or `failed`, or `paused` when paused through the job routes."},
                 "model": {"type": "string", "description": "The model generating the video."},
                 "created_at": {"type": "string", "description": "When the job was created, as an ISO 8601 UTC time."},
                 "error": {"type": "string", "description": "Why generation failed, present after a failure."},
@@ -59,7 +59,7 @@ public:
             write_unknown_video(res);
             return;
         }
-        json out = {{"id", job->value("id", "")}, {"status", job->value("status", "")}};
+        json out = {{"id", job->value("id", "")}, {"status", video_status(job->value("status", ""))}};
         if (job->contains("created_at")) out["created_at"] = (*job)["created_at"];
         if (job->contains("steps") && (*job)["steps"].is_array() && !(*job)["steps"].empty()) {
             const auto& step = (*job)["steps"][0];

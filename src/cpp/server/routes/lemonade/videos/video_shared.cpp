@@ -15,6 +15,10 @@ const RouteError kVideoNotActive{
 const RouteError kVideoNotReady{409, "", "the video's status is not yet `completed`"};
 const RouteError kVideoNoOutput{500, "", "the video completed without an encoded clip"};
 
+std::string video_status(const std::string& job_status) {
+    return job_status == "interrupted" ? "canceled" : job_status;
+}
+
 void write_unknown_video(httplib::Response& res) {
     write_plain_error(res, kUnknownVideo, "unknown video");
 }

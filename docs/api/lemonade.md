@@ -1642,7 +1642,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ### Response format
 
 - `id` - The video's id.
-- `status` - The job's state: `queued`, `running`, `paused`, `interrupted`, `completed` or `failed`. A canceled video reports `interrupted`.
+- `status` - The video's state: `queued`, `running`, `canceled`, `completed` or `failed`, or `paused` when paused through the job routes.
 - `model` - The model generating the video.
 - `created_at` - When the job was created, as an ISO 8601 UTC time.
 - `error` - Why generation failed, present after a failure.
@@ -1686,7 +1686,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /v1/videos/{id}/cancel`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Stops a queued or running video and keeps its record, which then reports `interrupted`.
+Stops a queued or running video and keeps its record, which then reports `canceled`.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1704,25 +1704,25 @@ Cancelling releases the job and the model slot at once, but stable-diffusion.cpp
 
     ```powershell
     Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/videos/job-20261028-115841-000003/cancel" `
+      -Uri "http://localhost:13305/v1/videos/job-20261103-184046-000001/cancel" `
       -Method POST
     ```
 
 === "Bash"
 
     ```bash
-    curl -X POST http://localhost:13305/v1/videos/job-20261028-115841-000003/cancel
+    curl -X POST http://localhost:13305/v1/videos/job-20261103-184046-000001/cancel
     ```
 
 **Response:** `200 OK`
 
 ```json
-{"status": "interrupting"}
+{"status": "canceling"}
 ```
 
 ### Response format
 
-- `status` - Always `interrupting`.
+- `status` - Always `canceling`.
 
 ### Errors
 

@@ -19,7 +19,7 @@ public:
         s.summary = "Cancel a video";
         s.experimental = true;
         s.description =
-            "Stops a queued or running video and keeps its record, which then reports `interrupted`.";
+            "Stops a queued or running video and keeps its record, which then reports `canceled`.";
         s.notes = {
             "Cancelling releases the job and the model slot at once, but stable-diffusion.cpp refuses "
             "to cancel once frames are being produced. A clip that already reached the GPU runs to "
@@ -32,7 +32,7 @@ public:
         response.schema = ordered_json::parse(R"({
             "type": "object",
             "required": ["status"],
-            "properties": {"status": {"const": "interrupting", "description": "Always `interrupting`."}}
+            "properties": {"status": {"const": "canceling", "description": "Always `canceling`."}}
         })");
         s.responses = {response};
 
@@ -50,7 +50,7 @@ public:
             write_plain_error(res, kVideoNotActive, "video not found or not cancellable");
             return;
         }
-        res.set_content(R"({"status":"interrupting"})", "application/json");
+        res.set_content(R"({"status":"canceling"})", "application/json");
     }
 };
 
