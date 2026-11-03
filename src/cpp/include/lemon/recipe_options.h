@@ -26,6 +26,8 @@ public:
     std::optional<double> number_option(const std::string& opt) const;
     std::optional<bool> bool_option(const std::string& opt) const;
     std::optional<std::string> string_option(const std::string& opt) const;
+    std::optional<int> stored_int_option(const std::string& opt) const;
+    std::optional<double> stored_number_option(const std::string& opt) const;
 
     bool has_option(const std::string& opt) const;
     void set_option(const std::string& opt, const json& value);

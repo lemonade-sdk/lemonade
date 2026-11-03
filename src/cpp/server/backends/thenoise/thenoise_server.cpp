@@ -213,11 +213,10 @@ std::string TheNoiseServer::resolve_size(const json& request) const {
         return std::to_string(request["width"].get<int>()) + "x"
              + std::to_string(request["height"].get<int>());
     }
-    if (!recipe_options_.has_option("width") || !recipe_options_.has_option("height")) return "";
-    int w = recipe_options_.int_option("width").value_or(0);
-    int h = recipe_options_.int_option("height").value_or(0);
-    if (w <= 0 || h <= 0) return "";
-    return std::to_string(w) + "x" + std::to_string(h);
+    const auto w = recipe_options_.stored_int_option("width");
+    const auto h = recipe_options_.stored_int_option("height");
+    if (!w || !h || *w <= 0 || *h <= 0) return "";
+    return std::to_string(*w) + "x" + std::to_string(*h);
 }
 
 json TheNoiseServer::build_request(const json& request) const {

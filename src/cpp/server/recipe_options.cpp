@@ -2,6 +2,7 @@
 #include <lemon/backends/backend_descriptor_registry.h>
 #include <lemon/utils/custom_args.h>
 #include <nlohmann/json.hpp>
+#include <climits>
 #include <map>
 #include <optional>
 #include <vector>
@@ -268,8 +269,17 @@ json RecipeOptions::option_matching(const std::string& opt, bool (*usable)(const
     return usable(below) ? below : json();
 }
 
+static bool usable_int(const json& value) {
+    if (!value.is_number()) return false;
+    const double v = value.get<double>();
+    return v >= static_cast<double>(INT_MIN) && v <= static_cast<double>(INT_MAX);
+}
+
+static int int_of(const json& value) { return static_cast<int>(value.get<double>()); }
+
 std::optional<int> RecipeOptions::int_option(const std::string& opt) const {
-    if (const auto value = number_option(opt)) return static_cast<int>(*value);
+    const json value = option_matching(opt, usable_int);
+    if (value.is_number()) return int_of(value);
     return std::nullopt;
 }
 
@@ -288,6 +298,16 @@ std::optional<bool> RecipeOptions::bool_option(const std::string& opt) const {
 std::optional<std::string> RecipeOptions::string_option(const std::string& opt) const {
     const json value = option_matching(opt, [](const json& v) { return v.is_string(); });
     if (value.is_string()) return value.get<std::string>();
+    return std::nullopt;
+}
+
+std::optional<double> RecipeOptions::stored_number_option(const std::string& opt) const {
+    if (options_.contains(opt) && options_.at(opt).is_number()) return options_.at(opt).get<double>();
+    return std::nullopt;
+}
+
+std::optional<int> RecipeOptions::stored_int_option(const std::string& opt) const {
+    if (options_.contains(opt) && usable_int(options_.at(opt))) return int_of(options_.at(opt));
     return std::nullopt;
 }
 

@@ -402,7 +402,7 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
         return fallback;
     };
     auto option_int = [&](const std::string& key) -> int {
-        return recipe_options_.has_option(key) ? recipe_options_.int_option(key).value_or(0) : 0;
+        return recipe_options_.stored_int_option(key).value_or(0);
     };
     auto option_string = [&](const std::string& key) -> std::string {
         return recipe_options_.has_option(key) ? recipe_options_.string_option(key).value_or("") : "";
@@ -413,12 +413,12 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
     if (steps > 0) sample_params["sample_steps"] = steps;
 
     // cfg_scale -> sample_params.guidance.txt_cfg
-    // 0.0 is a valid explicit value (disables CFG guidance); only omit the key
-    // when it is absent from every layer so sd-server applies its own default.
+    // 0.0 is a valid explicit value (disables CFG guidance); omit the key when no
+    // layer names it or its value is unusable, leaving the default to sd-server.
     if (request.contains("cfg_scale") && request["cfg_scale"].is_number()) {
         guidance["txt_cfg"] = request["cfg_scale"].get<float>();
-    } else if (recipe_options_.has_option("cfg_scale")) {
-        guidance["txt_cfg"] = static_cast<float>(recipe_options_.number_option("cfg_scale").value_or(0.0));
+    } else if (const auto cfg = recipe_options_.stored_number_option("cfg_scale")) {
+        guidance["txt_cfg"] = static_cast<float>(*cfg);
     }
 
     // sample_method -> sample_params.sample_method
@@ -426,12 +426,12 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
     if (!sample_method.empty()) sample_params["sample_method"] = sample_method;
 
     // flow_shift -> sample_params.flow_shift
-    // Like cfg_scale, 0.0 is a real value here; only omit when unset everywhere.
+    // Like cfg_scale, 0.0 is a real value here; omit when unset or unusable.
     if (include_flow_shift) {
         if (request.contains("flow_shift") && request["flow_shift"].is_number()) {
             sample_params["flow_shift"] = request["flow_shift"].get<float>();
-        } else if (recipe_options_.has_option("flow_shift")) {
-            sample_params["flow_shift"] = static_cast<float>(recipe_options_.number_option("flow_shift").value_or(0.0));
+        } else if (const auto shift = recipe_options_.stored_number_option("flow_shift")) {
+            sample_params["flow_shift"] = static_cast<float>(*shift);
         }
     }
 
@@ -462,13 +462,11 @@ std::string SDServer::resolve_size(const json& request) const {
         return std::to_string(request["width"].get<int>()) + "x"
              + std::to_string(request["height"].get<int>());
     }
-    // Fall back to the effective recipe options (ladder in build_extra_args()).
-    // Return "" when unset so sd-server picks its own native defaults.
-    if (!recipe_options_.has_option("width") || !recipe_options_.has_option("height")) return "";
-    int w = recipe_options_.int_option("width").value_or(0);
-    int h = recipe_options_.int_option("height").value_or(0);
-    if (w <= 0 || h <= 0) return "";
-    return std::to_string(w) + "x" + std::to_string(h);
+    // A size reaches sd-server only when an option layer names both edges.
+    const auto w = recipe_options_.stored_int_option("width");
+    const auto h = recipe_options_.stored_int_option("height");
+    if (!w || !h || *w <= 0 || *h <= 0) return "";
+    return std::to_string(*w) + "x" + std::to_string(*h);
 }
 
 // ICompletionServer implementation - not supported for image generation

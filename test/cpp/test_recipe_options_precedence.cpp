@@ -321,6 +321,49 @@ int main() {
                          enabled.bool_option("qwen_vae_enhance").value_or(false), "", "");
     }
 
+    // D5: a number outside int is as unusable as one of the wrong type
+    {
+        json overflow = {{"width", 4294967296}, {"height", -9223372036854775807}};
+        RecipeOptions opts("sd-cpp", overflow);
+
+        failures += fail("typed: out-of-range width falls back to the descriptor default",
+                         opts.int_option("width").value_or(-1) == 512,
+                         std::to_string(opts.int_option("width").value_or(-1)), "512");
+        failures += fail("typed: out-of-range height falls back to the descriptor default",
+                         opts.int_option("height").value_or(-1) == 512,
+                         std::to_string(opts.int_option("height").value_or(-1)), "512");
+        failures += fail("stored: out-of-range width is no value at all",
+                         !opts.stored_int_option("width").has_value(), "", "");
+    }
+
+    // D6: stored_* never reaches the descriptor default. Its consumers leave a
+    // request key out rather than send a default of their own choosing.
+    {
+        RecipeOptions nothing("sd-cpp", json::object());
+
+        failures += fail("stored: unset cfg_scale is no value",
+                         !nothing.stored_number_option("cfg_scale").has_value(), "", "");
+        failures += fail("stored: unset width is no value",
+                         !nothing.stored_int_option("width").has_value(), "", "");
+
+        json malformed = {{"cfg_scale", "auto"}};
+        RecipeOptions bad("sd-cpp", malformed);
+        failures += fail("stored: wrong-typed cfg_scale is no value",
+                         !bad.stored_number_option("cfg_scale").has_value(), "", "");
+        failures += fail("typed: that same option resolves to the descriptor default",
+                         bad.number_option("cfg_scale").value_or(-1.0) == 7.0,
+                         std::to_string(bad.number_option("cfg_scale").value_or(-1.0)), "7.0");
+
+        json set = {{"cfg_scale", 7.5}, {"width", 1024}};
+        RecipeOptions good("sd-cpp", set);
+        failures += fail("stored: cfg_scale read back as set",
+                         good.stored_number_option("cfg_scale").value_or(-1.0) == 7.5,
+                         std::to_string(good.stored_number_option("cfg_scale").value_or(-1.0)), "7.5");
+        failures += fail("stored: width read back as set",
+                         good.stored_int_option("width").value_or(-1) == 1024,
+                         std::to_string(good.stored_int_option("width").value_or(-1)), "1024");
+    }
+
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;
 }
