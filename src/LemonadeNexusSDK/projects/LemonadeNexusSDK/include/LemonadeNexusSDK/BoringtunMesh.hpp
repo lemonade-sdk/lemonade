@@ -133,6 +133,20 @@ public:
     /// sent (0 when inactive). Thread-safe.
     std::size_t rehandshake_all();
 
+    /// The process is about to be suspended: close the dataplane's UDP
+    /// socket and stop its threads, keeping the netstack, every peer, and
+    /// every session. iOS and Android defunct the sockets of a suspended
+    /// app, and a defunct socket receives nothing. The plane stays active;
+    /// rebind() opens a new socket. No-op when inactive. Thread-safe.
+    void suspend();
+
+    /// Open a new UDP socket for the dataplane (after suspend(), or for a
+    /// socket a suspension defuncted) and send a fresh handshake to every
+    /// peer, so each one learns the new path. Returns the number of
+    /// initiations sent, nullopt when inactive or the bind failed.
+    /// Thread-safe.
+    std::optional<std::size_t> rebind();
+
     /// Unix seconds of the newest authenticated packet (keepalives included)
     /// or completed handshake from the session server's dataplane peer, as
     /// the dataplane records them: 0 when none arrived yet, nullopt when

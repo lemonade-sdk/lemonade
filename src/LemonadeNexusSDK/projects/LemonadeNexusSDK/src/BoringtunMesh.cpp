@@ -411,6 +411,19 @@ std::size_t BoringtunMesh::rehandshake_all() {
     return sent;
 }
 
+void BoringtunMesh::suspend() {
+    if (!impl_->active.load()) return;
+    impl_->dp.suspend();
+}
+
+std::optional<std::size_t> BoringtunMesh::rebind() {
+    if (!impl_->active.load()) return std::nullopt;
+    if (!impl_->dp.rebind()) return std::nullopt;
+    // The peers hold their sessions, but the path to each one changed with
+    // the source port: a handshake from the new socket tells them so.
+    return rehandshake_all();
+}
+
 StatusResult BoringtunMesh::sync_peers(const std::vector<MeshPeer>& desired) {
     StatusResult result;
     if (!impl_->active.load()) {

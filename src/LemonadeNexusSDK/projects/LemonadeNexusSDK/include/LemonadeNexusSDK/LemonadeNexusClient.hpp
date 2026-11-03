@@ -470,6 +470,16 @@ public:
     /// its timeout.
     void resume();
 
+    /// The host process is about to be suspended (an iOS app left the
+    /// foreground and its grace period ended, Android stopped the app).
+    /// Closes the dataplane's UDP socket (BoringtunMesh::suspend) and drops
+    /// every private-API connection, so the OS finds nothing to defunct and
+    /// the server sees clean closes instead of a dead peer. The mesh stays
+    /// enabled with its peers; resume() opens a new socket, re-keys every
+    /// peer, and runs the resume pass. Safe at any time; no-op while the
+    /// mesh is disabled.
+    void suspend();
+
     /// Drop every connection and failure record of the private transport
     /// from before a suspension: the pooled private-API connection (a
     /// request waiting on it fails at once and dials again), the peer list

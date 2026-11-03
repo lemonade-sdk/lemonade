@@ -3455,15 +3455,26 @@ void LemonadeNexusClient::refresh_mesh_peers() {
 }
 
 void LemonadeNexusClient::resume() {
-    // The tunnel first: the handshakes leave now, so the connection the
-    // next private request dials finds a live session instead of waiting
-    // for the dataplane's own rekey timers.
-    const auto sent = impl_->meshplane.rehandshake_all();
+    // The tunnel first, on a new socket: the OS defuncts the sockets of a
+    // suspended app, so the old one may receive nothing. The handshakes
+    // leave from the new socket now, so the connection the next private
+    // request dials finds a live session instead of waiting for the
+    // dataplane's own rekey timers.
+    const auto sent = impl_->meshplane.rebind();
     impl_->reset_private_transport();
     std::lock_guard lock(impl_->mutex);
     if (impl_->mesh_orchestrator) impl_->mesh_orchestrator->resume();
-    spdlog::info("[LemonadeNexusClient] resumed: {} handshakes sent, mesh {}", sent,
+    spdlog::info("[LemonadeNexusClient] resumed: {}, mesh {}",
+                 sent ? "new dataplane socket, " + std::to_string(*sent) + " handshakes sent"
+                      : "dataplane inactive",
                  impl_->mesh_orchestrator ? "pass requested" : "disabled");
+}
+
+void LemonadeNexusClient::suspend() {
+    impl_->meshplane.suspend();
+    impl_->reset_private_transport();
+    spdlog::info("[LemonadeNexusClient] suspended: dataplane socket closed, private "
+                 "connections dropped");
 }
 
 void LemonadeNexusClient::reset_private_transport() {

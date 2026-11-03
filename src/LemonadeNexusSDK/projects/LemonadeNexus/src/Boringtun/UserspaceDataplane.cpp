@@ -163,7 +163,21 @@ bool UserspaceDataplane::start(const Config& config) {
         return false;
     }
     config_ = config;
+    uint16_t bound = 0;
+    const intptr_t sock = open_socket(config.listen_port, bound);
+    if (sock == static_cast<intptr_t>(kInvalidSocket)) return false;
+    bound_port_ = bound;
+    socket_ = sock;
+    rx_error_logged_ = false;
+    suspended_ = false;
+    running_ = true;
+    start_threads();
+    spdlog::info("[dataplane] started on UDP :{} ({} rx workers, no kernel interface)",
+                 bound_port_, rx_workers_.size());
+    return true;
+}
 
+intptr_t UserspaceDataplane::open_socket(uint16_t port, uint16_t& bound_port) const {
 #ifdef _WIN32
     static std::once_flag wsa_once;
     std::call_once(wsa_once, [] {
@@ -175,7 +189,7 @@ bool UserspaceDataplane::start(const Config& config) {
     socket_t sock = ::socket(AF_INET, SOCK_DGRAM, 0);
     if (sock == kInvalidSocket) {
         spdlog::error("[dataplane] failed to create UDP socket");
-        return false;
+        return static_cast<intptr_t>(kInvalidSocket);
     }
 
     int reuse = 1;
@@ -206,46 +220,37 @@ bool UserspaceDataplane::start(const Config& config) {
     sockaddr_in bind_addr{};
     bind_addr.sin_family      = AF_INET;
     bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    bind_addr.sin_port        = htons(config.listen_port);
+    bind_addr.sin_port        = htons(port);
     if (bind(sock, reinterpret_cast<const sockaddr*>(&bind_addr), sizeof(bind_addr)) != 0) {
 #ifdef _WIN32
         const int err = WSAGetLastError();
-        spdlog::error("[dataplane] failed to bind UDP port {} (WSA error {})",
-                      config.listen_port, err);
+        spdlog::error("[dataplane] failed to bind UDP port {} (WSA error {})", port, err);
 #else
         // EPERM here on macOS means the App Sandbox lacks the
         // com.apple.security.network.server entitlement.
         const int err = errno;
-        spdlog::error("[dataplane] failed to bind UDP port {}: {}",
-                      config.listen_port, std::strerror(err));
+        spdlog::error("[dataplane] failed to bind UDP port {}: {}", port, std::strerror(err));
 #endif
         close_socket(sock);
-        return false;
+        return static_cast<intptr_t>(kInvalidSocket);
     }
 
     sockaddr_in actual{};
     socklen_t actual_len = sizeof(actual);
     getsockname(sock, reinterpret_cast<sockaddr*>(&actual), &actual_len);
-    bound_port_ = ntohs(actual.sin_port);
+    bound_port = ntohs(actual.sin_port);
+    return static_cast<intptr_t>(sock);
+}
 
-    socket_  = static_cast<intptr_t>(sock);
-    rx_error_logged_ = false;
-    running_ = true;
-
-    int workers = config.rx_threads > 0 ? config.rx_threads : 1;
+void UserspaceDataplane::start_threads() {
+    const int workers = config_.rx_threads > 0 ? config_.rx_threads : 1;
     rx_workers_.reserve(workers);
     for (int i = 0; i < workers; ++i)
         rx_workers_.emplace_back([this] { rx_loop(); });
     timer_thread_ = std::thread([this] { timer_loop(); });
-
-    spdlog::info("[dataplane] started on UDP :{} ({} rx workers, no kernel interface)",
-                 bound_port_, workers);
-    return true;
 }
 
-void UserspaceDataplane::stop() {
-    if (!running_.exchange(false)) return;
-
+void UserspaceDataplane::close_plane() {
     for (auto& t : rx_workers_)
         if (t.joinable()) t.join();
     rx_workers_.clear();
@@ -255,6 +260,52 @@ void UserspaceDataplane::stop() {
         close_socket(static_cast<socket_t>(socket_));
         socket_ = static_cast<intptr_t>(kInvalidSocket);
     }
+}
+
+void UserspaceDataplane::suspend() {
+    if (!running_.exchange(false)) return;
+    close_plane();
+    suspended_ = true;
+    spdlog::info("[dataplane] suspended: UDP :{} closed, {} peer(s) kept", bound_port_,
+                 [this] {
+                     std::shared_lock lock(tables_mtx_);
+                     return by_pubkey_.size();
+                 }());
+}
+
+bool UserspaceDataplane::rebind() {
+    const bool was_running = running_.exchange(false);
+    if (!was_running && !suspended_.load()) return false;
+    if (was_running) close_plane();
+    const uint16_t old_port = bound_port_;
+    uint16_t bound = 0;
+    intptr_t sock = open_socket(config_.listen_port, bound);
+    if (sock == static_cast<intptr_t>(kInvalidSocket) && config_.listen_port != 0) {
+        // The configured port may still be held by the defunct socket's
+        // owner; any port serves, the peers learn it from the handshake.
+        sock = open_socket(0, bound);
+    }
+    if (sock == static_cast<intptr_t>(kInvalidSocket)) {
+        suspended_ = true;
+        return false;
+    }
+    bound_port_ = bound;
+    socket_ = sock;
+    rx_error_logged_ = false;
+    suspended_ = false;
+    running_ = true;
+    start_threads();
+    spdlog::info("[dataplane] rebound: UDP :{} -> :{}, {} peer(s) kept", old_port, bound_port_,
+                 [this] {
+                     std::shared_lock lock(tables_mtx_);
+                     return by_pubkey_.size();
+                 }());
+    return true;
+}
+
+void UserspaceDataplane::stop() {
+    if (!running_.exchange(false) && !suspended_.exchange(false)) return;
+    close_plane();
 
     std::unique_lock lock(tables_mtx_);
     for (auto& [pubkey, peer] : by_pubkey_)

@@ -577,8 +577,10 @@ ln_error_t ln_mesh_refresh(ln_client_t* client);
  *  app became active again, a laptop woke). Call it from the platform's
  *  foreground notification, every time. Safe at any time, also before a
  *  join or while the mesh is disabled, and it never blocks on the network.
- *  It sends a fresh handshake to every dataplane peer so the tunnel is
- *  re-keyed at once, drops every private-API connection from before the
+ *  It opens a new dataplane UDP socket (the OS may have defuncted the old
+ *  one; see ln_suspend) and sends a fresh handshake from it to every
+ *  dataplane peer so the tunnel is re-keyed on the new path at once, drops
+ *  every private-API connection from before the
  *  suspension (a request still waiting on one fails at once and dials
  *  again), closes the event socket so it opens again, clears the private
  *  transport's breaker and its unanswered-request window, and runs the
@@ -590,6 +592,18 @@ ln_error_t ln_mesh_refresh(ln_client_t* client);
  *  wait out the read timeout of a dead connection. Returns LN_OK, or
  *  LN_ERR_NULL_ARG when client is NULL. */
 ln_error_t ln_resume(ln_client_t* client);
+
+/** The host process is about to be suspended (an iOS app left the
+ *  foreground and its grace period ended, Android stopped the app). Call
+ *  it before the OS freezes the process, after ln_stop_mesh_port and
+ *  ln_disable_mesh when the host uses them. It closes the dataplane's UDP
+ *  socket, keeping the netstack and every peer and session, and drops every
+ *  private-API connection: iOS and Android defunct the sockets of a
+ *  suspended app, and a defunct socket receives nothing, so the socket is
+ *  given up now and ln_resume opens a new one. Never blocks on the network.
+ *  Safe at any time; a no-op while the mesh is disabled. Returns LN_OK, or
+ *  LN_ERR_NULL_ARG when client is NULL. */
+ln_error_t ln_suspend(ln_client_t* client);
 
 /* ------------------------------------------------------------------ */
 /* Identity: seed-based creation                                       */

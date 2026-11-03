@@ -96,6 +96,27 @@ public:
     void stop();
     [[nodiscard]] bool is_running() const { return running_.load(std::memory_order_relaxed); }
 
+    /// Close the UDP socket and stop the rx/timer threads, keeping every
+    /// peer, route, and session. For a process about to be suspended: iOS
+    /// and Android defunct the sockets of a suspended app, and a defunct
+    /// socket receives nothing until it is replaced. No-op unless running.
+    /// rebind() brings the plane back. Thread-safe with the control plane;
+    /// not with start()/stop().
+    void suspend();
+
+    /// Replace the UDP socket: bind a new one (the configured port, or any
+    /// port when that one is taken) and start the rx/timer threads again,
+    /// keeping every peer, route, and session. For a resume after
+    /// suspend(), and for a socket a suspension defuncted while the plane
+    /// kept running. The caller re-keys the peers afterwards (the new
+    /// source port is a new path for them). Returns false when the plane
+    /// was never started or the bind failed; false after a running plane
+    /// leaves it suspended. Not thread-safe with start()/stop().
+    [[nodiscard]] bool rebind();
+
+    /// True between suspend() and rebind().
+    [[nodiscard]] bool is_suspended() const { return suspended_.load(std::memory_order_relaxed); }
+
     /// Port the socket actually bound (useful when config.listen_port == 0).
     [[nodiscard]] uint16_t bound_port() const { return bound_port_; }
 
@@ -266,14 +287,24 @@ private:
 
     /// Log a recvfrom() error that is not a timeout, once per start().
     void note_rx_error();
+    /// Create and bind the UDP socket for `port` (0 = any) with the plane's
+    /// socket options. Returns the socket and the port it bound, or
+    /// kInvalidSocket.
+    [[nodiscard]] intptr_t open_socket(uint16_t port, uint16_t& bound_port) const;
+    /// Start the rx workers and the timer thread on the current socket.
+    void start_threads();
+    /// Stop the threads and close the socket; peers and routes stay.
+    void close_plane();
 
     [[nodiscard]] PeerPtr peer_by_index(uint32_t index) const;
     [[nodiscard]] PeerPtr peer_by_pubkey(const std::string& pubkey_b64) const;
 
     Config config_;
     std::atomic<bool> running_{false};
+    std::atomic<bool> suspended_{false};  ///< see suspend()
     uint16_t bound_port_{0};
-    intptr_t socket_{-1};
+    /// Replaced by rebind() while control-plane callers may send on it.
+    std::atomic<intptr_t> socket_{-1};
 
     mutable std::shared_mutex tables_mtx_;
     std::unordered_map<std::string, PeerPtr> by_pubkey_;
