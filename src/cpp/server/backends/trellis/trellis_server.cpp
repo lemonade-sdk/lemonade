@@ -88,6 +88,11 @@ void TrellisServer::load(const std::string& model_name,
     }
     RuntimeConfig::validate_backend_choice("trellis", backend);
     const std::string selected_device = options.get_option("trellis_device");
+    const bool is_cuda = backend.rfind("cuda", 0) == 0;
+    if (!is_cuda && backend != "rocm" && backend != "rocm-stable" &&
+        !selected_device.empty() && selected_device != "auto") {
+        throw std::invalid_argument("Device " + selected_device + " is unsupported with trellis backend " + backend);
+    }
     const std::string exe_path = resolve_binary_path(backend);
 
     port_ = choose_port();
@@ -130,16 +135,12 @@ void TrellisServer::load(const std::string& model_name,
         }
         prepend_loader_path(dirs);
         BackendUtils::apply_accelerator_device_env_vars(env_vars, "trellis-server", backend, selected_device);
-    } else if (backend.rfind("cuda", 0) == 0) {
+    } else if (is_cuda) {
         prepend_loader_path("");
-        BackendUtils::apply_accelerator_device_env_vars(env_vars, "trellis-server", backend, selected_device);
+        BackendUtils::apply_accelerator_device_env_vars(env_vars, "trellis-server", "cuda", selected_device);
     }
 
     LOG(INFO, "trellis-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
-    if (backend != "cuda" && backend != "rocm" && backend != "rocm-stable" &&
-        !selected_device.empty() && selected_device != "auto") {
-        throw std::invalid_argument("Device " + selected_device + " is unsupported with trellis backend " + backend);
-    }
 
     ServerCommand command;
     command.program = exe_path;
