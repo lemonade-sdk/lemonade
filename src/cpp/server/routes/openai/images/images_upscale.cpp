@@ -105,6 +105,11 @@ public:
                     model_manager.download_registered_model(info, true);
                     LOG(INFO, "Server") << "Upscale model download complete: " << upscale_model_name << std::endl;
                     info = model_manager.get_model_info(upscale_model_name);
+                    if (req.has(kUpscaleFactor) && info.recipe != "thenoise") {
+                        write_openai_error(res, kRecipeCannotUpscale,
+                            "`upscale_factor` is supported only for TheNoise upscale models.");
+                        return;
+                    }
                 }
 
             } catch (const std::exception& e) {
