@@ -548,7 +548,7 @@ interface ChatViewProps {
   loadedModels: LoadedModel[];
   serverModels: ModelInfo[];
   connectionStatus: ConnectionStatus;
-  onModelSelect: (model: string) => void;
+  onModelSelect: (model: string, options?: { navigate?: boolean }) => void;
   onDictationStart: (model: string) => void;
   onDictationEnd: (failed?: boolean) => void;
   onOpenModelDetails: (model: string) => void;
@@ -1816,7 +1816,9 @@ const ChatView: React.FC<ChatViewProps> = ({
     if (loadedModels.every(m => String(m.type).toLowerCase() === 'transcription')
         && (!selectedInfo || capabilityFromModelInfo(selectedInfo) !== 'audio')) return;
     const preferred = selectPreferredLoadedModel(loadedModels);
-    if (preferred && canSelectInComposer(preferred)) onModelSelect(preferred.model_name);
+    // ChatView stays mounted while hidden, so this fallback can fire from an
+    // unload or reload on another tab; it must not pull the user into Chat.
+    if (preferred && canSelectInComposer(preferred)) onModelSelect(preferred.model_name, { navigate: false });
   }, [dictationTarget, knownModelInfos, loadedModels, onModelSelect, selectedModel]);
 
   const updateConversation = useCallback((id: string, updater: (c: Conversation) => Conversation) => {
