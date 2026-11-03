@@ -208,6 +208,12 @@ void SDServer::load(const std::string& model_name,
 
     std::string model_path = model_info.resolved_path("main");
     std::string llm_path = model_info.resolved_path("text_encoder");
+    // sd-cpp routes the text encoder by family: --llm for LLM-style encoders
+    // (Flux2/Qwen-Image use qwen, LTX uses gemma), --t5xxl for T5-family ones
+    // (Wan uses umt5). The slots are independent -- HunyuanVideo 1.5 fills both
+    // -- and a model declares which it fills by the checkpoint keys it
+    // provides, so neither is guessed from the filename.
+    std::string t5xxl_path = model_info.resolved_path("t5xxl");
     std::string vae_path = model_info.resolved_path("vae");
 
     if (model_path.empty()) {
@@ -237,14 +243,20 @@ void SDServer::load(const std::string& model_name,
         "--listen-port", std::to_string(port_)
     };
 
-    if (llm_path.empty() || vae_path.empty()) {
+    if ((llm_path.empty() && t5xxl_path.empty()) || vae_path.empty()) {
         args.push_back("-m");
         args.push_back(model_path);
     } else {
         args.push_back("--diffusion-model");
         args.push_back(model_path);
-        args.push_back("--llm");
-        args.push_back(llm_path);
+        if (!llm_path.empty()) {
+            args.push_back("--llm");
+            args.push_back(llm_path);
+        }
+        if (!t5xxl_path.empty()) {
+            args.push_back("--t5xxl");
+            args.push_back(t5xxl_path);
+        }
         args.push_back("--vae");
         args.push_back(vae_path);
     }
@@ -265,6 +277,7 @@ void SDServer::load(const std::string& model_name,
         "--model",
         "--diffusion-model",
         "--llm",
+        "--t5xxl",
         "--vae",
         "-v",
         "--listen-port"
