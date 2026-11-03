@@ -129,7 +129,9 @@ class ContainerSmokeTest(unittest.TestCase):
 
         containers = labeled("container")
         self.assertEqual(len(containers), 1, containers)
-        self.assertTrue(containers[0].startswith(f"lemonade-{recipe}-{backend}-"))
+        self.assertTrue(
+            containers[0].startswith(f"lemonade-{self.port}-{recipe}-{backend}-")
+        )
         type(self).image = tool(
             "inspect", "--format", "{{.Config.Image}}", containers[0]
         ).stdout.strip()
