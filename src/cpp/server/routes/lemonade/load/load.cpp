@@ -5,6 +5,7 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/model_manager.h"
+#include "lemon/model_types.h"
 #include "lemon/recipe_options.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
@@ -16,6 +17,8 @@ namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+const RouteError kUpscalerCannotLoad{400, "", "Upscaling models run on demand through /v1/images/upscale"};
 
 ordered_json load_schema() {
     return ordered_json::parse(R"({
@@ -107,6 +110,8 @@ public:
             "`collection.router` model loads nothing until a request routes to a candidate.",
             "Loading a model that is already loaded with the same options does nothing; different "
             "options reload it.",
+            "Upscaling models run on demand through "
+            "[`POST /v1/images/upscale`](openai.md#post-v1imagesupscale) and cannot be loaded here.",
             "### Option Priority\n\n"
             "Each recipe option comes from the first of these layers that sets it:\n\n"
             "1. The `load` request\n"
@@ -160,7 +165,7 @@ public:
         collection_example.format = ResponseFormat::Json;
         collection_example.args = {{"model_name", "LMX-Omni-5.5B-Lite"}};
         s.examples = {example, collection_example};
-        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid}, ModelLoader::errors()});
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kUpscalerCannotLoad}, ModelLoader::errors()});
         s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
@@ -187,6 +192,11 @@ public:
             }
 
             auto info = model_manager.get_model_info(model_name);
+            if (has_label(info.labels, "upscaling")) {
+                write_openai_error(res, kUpscalerCannotLoad,
+                                   "Upscaling models cannot be loaded; use POST /v1/images/upscale instead.");
+                return;
+            }
 
             // Omitted options keep saved values; a null masks its saved key for this
             // load only.

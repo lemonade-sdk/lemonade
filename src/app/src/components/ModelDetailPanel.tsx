@@ -2533,6 +2533,7 @@ const CUSTOM_COLLECTION_TABS: Array<{ id: DetailTab; label: string }> = [
 ];
 
 const IMAGE_MODEL_TABS: Array<{ id: DetailTab; label: string }> = TABS;
+const UPSCALER_MODEL_TABS = TABS.filter(tab => tab.id !== 'config');
 
 export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   model,
@@ -2585,14 +2586,16 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const isRouterCollection = Boolean(model && activeRecipeForModel(model) === 'collection.router');
   const isCustomCollection = Boolean(model && modelIsCustom(model) && (isCollectionModel(model) || isRouterCollection));
   const imageOnly = isImageOnlyModel(model);
-  const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS : (imageOnly ? IMAGE_MODEL_TABS : TABS);
+  const isOnDemandUpscaler = Boolean(model && Array.isArray(model.labels) && model.labels.includes('upscaling'));
+  const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS
+    : (isOnDemandUpscaler ? UPSCALER_MODEL_TABS : (imageOnly ? IMAGE_MODEL_TABS : TABS));
 
   // Move focus to heading when model changes.
   useEffect(() => {
     if (model) panelHeadingRef.current?.focus();
-    setActiveTab(isCustomCollection ? 'settings' : 'config');
+    setActiveTab(isCustomCollection ? 'settings' : (isOnDemandUpscaler ? 'readme' : 'config'));
     setConfigHasUnsavedChanges(false);
-  }, [detailName, isCustomCollection, imageOnly]);
+  }, [detailName, isCustomCollection, imageOnly, isOnDemandUpscaler]);
 
   const confirmDiscardLoadSettings = useCallback(() => (
     !configHasUnsavedChanges || window.confirm('Discard unsaved load setting changes?')
@@ -2741,6 +2744,12 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             {isLoadingThis ? t('Working…') : t('Unload')}
           </WorkspaceActionButton>
         </>
+      ) : isOnDemandUpscaler ? (
+        isDownloaded ? null : (
+          <WorkspaceActionButton appearance="primary" icon="download" onClick={() => onPull(model)} aria-label={`Download ${name}`}>
+            {t('Download')}
+          </WorkspaceActionButton>
+        )
       ) : (isDownloaded || isRouterCollection) ? (
         isRouterCollection ? (
           <>
