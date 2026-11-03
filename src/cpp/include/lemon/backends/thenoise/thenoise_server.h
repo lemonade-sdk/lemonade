@@ -37,7 +37,8 @@ public:
 
     std::string upscale_via_cli(
         const std::string& b64_image,
-        const std::string& upscale_model_path) override;
+        const std::string& upscale_model_path,
+        double upscale_factor) override;
 
 private:
     nlohmann::json build_request(const nlohmann::json& request) const;

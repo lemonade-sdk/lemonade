@@ -1891,11 +1891,11 @@ class LemonadeAPI {
     return { blob, url: URL.createObjectURL(blob), filename: `${model}.glb` };
   }
 
-  async imageUpscale(model: string, imageUrl: string): Promise<string> {
+  async imageUpscale(model: string, imageUrl: string, upscaleFactor?: number): Promise<string> {
     const image = imageUrl.replace(/^data:image\/[^;]+;base64,/, '');
     const data = await this._json<Record<string, any>>('/api/v1/images/upscale', {
       method: 'POST',
-      body: { model, image },
+      body: { model, image, ...(upscaleFactor === undefined ? {} : { upscale_factor: upscaleFactor }) },
     });
     const item = Array.isArray(data.data) ? data.data[0] : null;
     const url = item?.b64_json ? `data:image/png;base64,${item.b64_json}` : item?.url;

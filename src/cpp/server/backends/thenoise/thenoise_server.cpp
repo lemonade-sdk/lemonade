@@ -426,7 +426,8 @@ json TheNoiseServer::image_variations(const json& /* request */) {
 
 std::string TheNoiseServer::upscale_via_cli(
     const std::string& b64_image,
-    const std::string& upscale_model_path) {
+    const std::string& upscale_model_path,
+    double upscale_factor) {
 
     std::string configured_backend;
     if (auto* cfg = RuntimeConfig::global()) {
@@ -499,6 +500,10 @@ std::string TheNoiseServer::upscale_via_cli(
         "--input", input_path.string(),
         "--out", output_path.string()
     };
+    if (upscale_factor > 0.0) {
+        args.push_back("--upscale-factor");
+        args.push_back(std::to_string(upscale_factor));
+    }
 
     std::vector<std::pair<std::string, std::string>> env_vars;
 #ifdef _WIN32

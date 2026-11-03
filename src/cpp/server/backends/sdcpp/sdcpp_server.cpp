@@ -610,7 +610,8 @@ json SDServer::image_variations(const json& request) {
 
 std::string SDServer::upscale_via_cli(
     const std::string& b64_image,
-    const std::string& upscale_model_path) {
+    const std::string& upscale_model_path,
+    double /* upscale_factor */) {
 
     std::string backend;
     if (auto* cfg = RuntimeConfig::global()) {
