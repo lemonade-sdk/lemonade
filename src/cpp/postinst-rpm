@@ -14,6 +14,27 @@ chown lemonade:lemonade /opt/var/lib/lemonade > /dev/null 2>&1 || true
 
 usermod -a -G render lemonade > /dev/null 2>&1 || true
 
+# Rootless Podman maps the container's users onto a subordinate ID range,
+# which useradd allocates only for regular accounts. The range starts past
+# every range already allocated. A subid: line in nsswitch.conf naming a
+# source other than files means a central directory allocates ranges, so
+# that is left to its administrator.
+# Only container backends need the range, so a failure warns instead of
+# failing the install.
+subid_source=$(awk -F'[: \t]+' '$1 == "subid" { print $2; exit }' /etc/nsswitch.conf 2>/dev/null)
+if [ -z "$subid_source" ] || [ "$subid_source" = files ]; then
+    touch /etc/subuid /etc/subgid
+    subid_start=$(cat /etc/subuid /etc/subgid |
+        awk -F: 'BEGIN { m = 100000 } NF >= 3 { e = $2 + $3; if (e > m) m = e } END { print m }')
+    subid_range="$subid_start-$((subid_start + 65535))"
+    grep -qs '^lemonade:' /etc/subuid || usermod --add-subuids "$subid_range" lemonade ||
+        echo "lemonade-server: could not allocate subordinate UIDs $subid_range to lemonade;" \
+            "container backends under lemond.service will not start until it has them" >&2
+    grep -qs '^lemonade:' /etc/subgid || usermod --add-subgids "$subid_range" lemonade ||
+        echo "lemonade-server: could not allocate subordinate GIDs $subid_range to lemonade;" \
+            "container backends under lemond.service will not start until it has them" >&2
+fi
+
 if getent group systemd-journal > /dev/null 2>&1; then
     usermod -a -G systemd-journal lemonade > /dev/null 2>&1 || true
 fi

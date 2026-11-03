@@ -8,6 +8,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/gguf_capabilities.h"
 #include "lemon/gguf_reader.h"
+#include "lemon/gguf_shard_utils.h"
 #include "lemon/model_manager.h"
 #include <algorithm>
 #include <cctype>
@@ -101,6 +102,11 @@ static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
 }
 
+// llamacpp:nathanw is a Vulkan build of llama.cpp, so it takes Vulkan devices.
+static std::string device_api(const std::string& backend) {
+    return backend == "nathanw" ? "vulkan" : backend;
+}
+
 static bool is_dflash_draft_checkpoint(std::string checkpoint) {
     std::transform(checkpoint.begin(), checkpoint.end(), checkpoint.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -112,6 +118,7 @@ static bool is_dflash_draft_checkpoint(std::string checkpoint) {
 }
 
 static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
+                                                 const std::string& backend,
                                                  const std::string& custom_args,
                                                  bool merge_args) {
     if (!merge_args) return custom_args;
@@ -138,6 +145,13 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
     // full ctx_size to every slot instead of dividing it. Pinning the count keeps
     // ctx_size the context a request actually gets.
     defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
+
+    // llama-server's 512-token ubatch costs the Vulkan performance fork about a
+    // fifth of its prefill; its author measures, and recommends, 2048.
+    if (backend == "nathanw") {
+        defaults.push_back({"-b 2048", "-b", {"--batch-size"}});
+        defaults.push_back({"-ub 2048", "-ub", {"--ubatch-size"}});
+    }
 
     return append_runtime_arg_defaults(custom_args, defaults);
 }
@@ -291,6 +305,14 @@ void LlamaCppServer::load(const std::string& model_name,
     // Update device type based on the actual backend selected.
     device_type_ = use_gpu ? DEVICE_GPU : DEVICE_CPU;
 
+    const ContainerPolicy* container = llamacpp::descriptor.container_for(llamacpp_backend);
+    if (container && model_info.extra<bool>("hf_load", false)) {
+        throw std::runtime_error(
+            "Model '" + model_name + "' has llama-server download its own weights, which llamacpp:" +
+            llamacpp_backend + " cannot do from its container's private network. "
+            "Load it on a llamacpp backend that runs on the host.");
+    }
+
     // Install llama-server if needed (use per-model backend)
     backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);
 
@@ -311,7 +333,8 @@ void LlamaCppServer::load(const std::string& model_name,
 
     port_ = choose_port();
 
-    std::string executable = BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);
+    std::string executable =
+        container ? "" : BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);
 
     bool supports_embeddings = (model_info.type == ModelType::EMBEDDING);
     bool supports_reranking = (model_info.type == ModelType::RERANKING);
@@ -340,12 +363,15 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
 
     if (!llamacpp_device.empty()) {
-        BackendUtils::validate_device_backend_match(llamacpp_backend, llamacpp_device);
+        BackendUtils::validate_device_backend_match(device_api(llamacpp_backend), llamacpp_device);
         push_arg(args, reserved_flags, "--device", llamacpp_device);
     }
     push_reserved(reserved_flags, "--device", std::vector<std::string>{"-dev"});
 
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
+    if (container) {
+        push_arg(args, reserved_flags, "--host", "0.0.0.0");
+    }
     push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
     push_arg(args, reserved_flags, "--metrics");
 
@@ -412,6 +438,30 @@ void LlamaCppServer::load(const std::string& model_name,
     }
 
     LOG(INFO, "LlamaCpp") << "Starting llama-server..." << std::endl;
+
+    if (container) {
+        ServerCommand command;
+        command.program = llamacpp::descriptor.binary;
+        command.args = std::move(args);
+        for (const std::string& path : {gguf_path, mmproj_path,
+                                        use_draft_checkpoint ? draft_path : std::string()}) {
+            if (!path.empty()) {
+                const auto files = gguf_files(path);
+                command.model_files.insert(command.model_files.end(), files.begin(), files.end());
+            }
+        }
+        command.port = port_;
+
+        const bool inherit_output = (log_level_ == "info") || is_debug();
+        start_server(std::make_unique<ContainerProcess>(
+                         ProcessOutput{inherit_output, true}, llamacpp::descriptor.recipe,
+                         llamacpp_backend, model_name, *container,
+                         BackendUtils::get_backend_image(llamacpp::descriptor.recipe,
+                                                         llamacpp_backend)),
+                     command);
+        LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
+        return;
+    }
 
     // For ROCm on Linux, set LD_LIBRARY_PATH to include the ROCm library directory
     std::vector<std::pair<std::string, std::string>> env_vars;
@@ -760,9 +810,12 @@ public:
         const json custom_args_value = options.get_option("llamacpp_args");
         const std::string custom_args =
             custom_args_value.is_string() ? custom_args_value.get<std::string>() : "";
+        const json backend_value = options.get_option("llamacpp_backend");
+        const std::string backend =
+            backend_value.is_string() ? backend_value.get<std::string>() : "";
         options.set_option(
             "llamacpp_args",
-            resolve_llamacpp_runtime_args(info, custom_args, merge_args));
+            resolve_llamacpp_runtime_args(info, backend, custom_args, merge_args));
     }
 
     void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
