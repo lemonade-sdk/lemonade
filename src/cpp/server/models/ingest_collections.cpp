@@ -380,14 +380,15 @@ std::optional<std::string> IngestCollections::validate(
                     return std::nullopt;
                 }
             },
-            [this](const std::string& name) -> std::optional<ModelType> {
+            [this](const std::string& name) -> std::optional<RoutingModelFacts> {
                 try {
-                    return require_row(deps_, name).type;
+                    const ModelInfo row = require_row(deps_, name);
+                    return routing_model_facts(row.type, row.labels);
                 } catch (...) {
                     return std::nullopt;
                 }
             },
-            [this, &find_inline_def](const std::string& name) -> std::optional<ModelType> {
+            [this, &find_inline_def](const std::string& name) -> std::optional<RoutingModelFacts> {
                 // Not registered - the name may match an inline `models[]`
                 // definition in this same request. Derive the type exactly as
                 // register_user_model() would once that definition is
@@ -400,8 +401,8 @@ std::optional<std::string> IngestCollections::validate(
                     return std::nullopt;
                 }
                 std::set<std::string> label_set = normalized_definition_labels(*def);
-                return get_model_type_from_labels(
-                    std::vector<std::string>(label_set.begin(), label_set.end()));
+                const std::vector<std::string> labels(label_set.begin(), label_set.end());
+                return routing_model_facts(get_model_type_from_labels(labels), labels);
             },
         });
         try {

@@ -182,5 +182,60 @@
         ] }, "route_to": "MathLLM" }
       ]
     }
+  },
+  "zero_shot_label_selection": {
+    "version": "1",
+    "model_name": "user.ZeroShot-LabelSelection",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "RouterModel"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "topic", "type": "zero_shot", "model": "RouterModel", "labels": ["code", "math", "chit-chat"] }
+      ],
+      "rules": [
+        { "id": "code-rule", "match": { "classifier": "topic", "label": "code", "min_score": 0.5 }, "route_to": "CodingLLM" },
+        { "id": "math-rule", "match": { "classifier": "topic", "label": "math", "min_score": 0.5 }, "route_to": "MathLLM" }
+      ]
+    }
+  },
+  "zero_shot_on_error": {
+    "version": "1",
+    "model_name": "user.ZeroShot-OnError",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "OpenRouter", "ClosedRouter"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "fail_open", "type": "zero_shot", "model": "OpenRouter", "labels": ["code", "math"] },
+        { "id": "fail_closed", "type": "zero_shot", "model": "ClosedRouter", "labels": ["code", "math"], "on_error": "match_true" }
+      ],
+      "rules": [
+        { "id": "open-rule", "match": { "classifier": "fail_open", "label": "code", "min_score": 0.5 }, "route_to": "CodingLLM" },
+        { "id": "closed-rule", "match": { "classifier": "fail_closed", "label": "code", "min_score": 0.5 }, "route_to": "MathLLM" }
+      ]
+    }
+  },
+  "zero_shot_on_truncation": {
+    "version": "1",
+    "model_name": "user.ZeroShot-OnTruncation",
+    "recipe": "collection.router",
+    "components": ["LocalLLM", "CloudLLM", "PrivacyRouter", "TopicRouter"],
+    "routing": {
+      "candidates": ["LocalLLM", "CloudLLM"],
+      "default_model": "CloudLLM",
+      "classifiers": [
+        { "id": "privacy", "type": "zero_shot", "model": "PrivacyRouter", "labels": ["private", "public"],
+          "on_truncation": "fail", "on_error": "match_true" },
+        { "id": "topic", "type": "zero_shot", "model": "TopicRouter", "labels": ["code", "chat"],
+          "on_truncation": "fail" }
+      ],
+      "rules": [
+        { "id": "private-to-local", "match": { "classifier": "privacy", "label": "private", "min_score": 0.5 }, "route_to": "LocalLLM" },
+        { "id": "code-to-local", "match": { "classifier": "topic", "label": "code", "min_score": 0.5 }, "route_to": "LocalLLM" }
+      ]
+    }
   }
 }

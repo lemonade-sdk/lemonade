@@ -1,9 +1,12 @@
 #include "lemon/backend_manager.h"
 #include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
+#include "lemon/server/download_manager.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/container_manager.h"
 #include "lemon/utils/github_api.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
@@ -150,6 +153,111 @@ void report_backend_ready(const std::string& recipe,
     p.percent = 100;
     p.complete = true;
     progress_cb(p);
+}
+
+// A container backend's install directory holds only its version.txt, which
+// records the pin its image was pulled for.
+fs::path container_version_file(const std::string& recipe, const std::string& backend) {
+    return fs::path(backends::BackendUtils::get_install_directory(recipe, backend)) / "version.txt";
+}
+
+void install_container_backend(const std::string& recipe, const std::string& backend,
+                               bool force, DownloadProgressCallback progress_cb) {
+    if (get_current_os() != "linux") {
+        throw std::runtime_error(recipe + ":" + backend + " is a container backend, which runs on Linux");
+    }
+    const auto& manager = utils::ContainerManager::global();
+    if (auto failure = backends::container_setup_failure(recipe, backend,
+                                                         backends::container_setup_failure())) {
+        throw std::runtime_error("Cannot install " + recipe + ":" + backend + ":" +
+                                 failure->text());
+    }
+
+    const ContainerPolicy* policy = backends::BackendUtils::get_container_policy(recipe, backend);
+    if (!utils::ContainerManager::allowed_image(policy->image)) {
+        throw std::runtime_error(recipe + ":" + backend + " names the image " + policy->image +
+                                 ", which is not one Lemonade pulls container backends from");
+    }
+
+    const std::string pin = backends::BackendUtils::get_backend_version(recipe, backend);
+    const std::string image = backends::BackendUtils::get_backend_image(recipe, backend);
+    const fs::path version_file = container_version_file(recipe, backend);
+    const std::string installed_pin = read_version_file(version_file);
+
+    if (!force && installed_pin == pin && manager.has_image(image)) {
+        report_backend_ready(recipe, backend, progress_cb);
+        return;
+    }
+    if (auto* cfg = RuntimeConfig::global()) {
+        if (cfg->offline() || cfg->no_fetch_executables()) {
+            throw std::runtime_error(
+                (cfg->offline() ? "Cannot install " : "Fetching executable artifacts is disabled for ") +
+                recipe + ":" + backend + (cfg->offline() ? ": offline mode" : ""));
+        }
+    }
+
+    manager.pull(image, progress_cb);
+
+    // Replace whatever the install directory held, such as an earlier pin or a
+    // binary release of the same backend. The previous image goes last so a
+    // failed write leaves the working install in place.
+    const std::string previous_image =
+        backends::BackendUtils::get_installed_backend_image(recipe, backend);
+    const fs::path install_dir = version_file.parent_path();
+    const fs::path staging_dir =
+        install_dir.parent_path() / ("." + install_dir.filename().string() + ".staging");
+    std::error_code ec;
+    fs::remove_all(staging_dir, ec);
+    std::ofstream staged;
+    if (fs::create_directories(staging_dir, ec); !ec) {
+        staged.open(staging_dir / version_file.filename());
+        staged << pin << "\n";
+        staged.close();
+    }
+    if (ec || !staged) {
+        throw std::runtime_error("Failed to write the version marker in " + staging_dir.string());
+    }
+    fs::remove_all(install_dir, ec);
+    if (!ec) fs::rename(staging_dir, install_dir, ec);
+    if (ec) {
+        throw std::runtime_error("Failed to replace " + install_dir.string() + ": " + ec.message());
+    }
+    if (!previous_image.empty() && previous_image != image) {
+        manager.remove_image(previous_image);
+    }
+    LOG(INFO, "BackendManager") << "Installed " << recipe << ":" << backend << " as " << image
+                                << std::endl;
+}
+
+// The registry page a container backend's image is published on.
+std::string container_registry_url(const std::string& image) {
+    const std::string docker_hub = "docker.io/";
+    const std::string ghcr = "ghcr.io/";
+    if (image.compare(0, docker_hub.size(), docker_hub) == 0) {
+        return "https://hub.docker.com/r/" + image.substr(docker_hub.size());
+    }
+    if (image.compare(0, ghcr.size(), ghcr) == 0) {
+        const std::string path = image.substr(ghcr.size());
+        const auto slash = path.find('/');
+        if (slash != std::string::npos) {
+            return "https://github.com/orgs/" + path.substr(0, slash) +
+                   "/packages/container/package/" + path.substr(slash + 1);
+        }
+    }
+    return "";
+}
+
+void uninstall_container_backend(const std::string& recipe, const std::string& backend) {
+    const std::string image = backends::BackendUtils::get_installed_backend_image(recipe, backend);
+    if (!image.empty()) {
+        utils::ContainerManager::global().remove_image(image);
+    }
+    const fs::path install_dir = container_version_file(recipe, backend).parent_path();
+    std::error_code ec;
+    fs::remove_all(install_dir, ec);
+    if (ec) {
+        throw std::runtime_error("Failed to remove " + install_dir.string() + ": " + ec.message());
+    }
 }
 
 bool github_download_service_reachable() {
@@ -338,6 +446,11 @@ void install_therock_if_needed(const std::string& os, const json& backend_versio
 }
 
 } // namespace
+
+std::string BackendManager::canonical_backend_name(const std::string& recipe,
+                                                   const std::string& backend) {
+    return normalize_backend_name(recipe, backend);
+}
 
 BackendManager::BackendManager() {
     try {
@@ -573,8 +686,34 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << resolved_backend << std::endl;
 
+    if (!progress_cb && download_manager_ && resolved_backend != "system") {
+        const std::string name = recipe + ":" + resolved_backend;
+        download_manager_->run_tracked("backend:" + name, "backend", name,
+            [this, recipe, resolved_backend, force](DownloadProgressCallback report,
+                                                    utils::CancelToken) {
+                install_backend(recipe, resolved_backend, force, report);
+            });
+        return;
+    }
+
     // System backend uses a pre-installed binary from PATH - nothing to install
     if (resolved_backend == "system") {
+        return;
+    }
+
+    std::mutex* install_lock;
+    {
+        std::lock_guard<std::mutex> guard(install_locks_mutex_);
+        install_lock = &install_locks_[recipe + ":" + resolved_backend];
+    }
+    std::lock_guard<std::mutex> serialized_install(*install_lock);
+
+    struct InvalidateBackendStatusOnExit {
+        ~InvalidateBackendStatusOnExit() { SystemInfoCache::invalidate_recipes(); }
+    } invalidate_backend_status_on_exit;
+
+    if (backends::BackendUtils::get_container_policy(recipe, resolved_backend)) {
+        install_container_backend(recipe, resolved_backend, force, progress_cb);
         return;
     }
 
@@ -582,10 +721,6 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
-
-    struct InvalidateBackendStatusOnExit {
-        ~InvalidateBackendStatusOnExit() { SystemInfoCache::invalidate_recipes(); }
-    } invalidate_backend_status_on_exit;
 
     const std::string existing_backend_binary =
         installed_backend_binary_path(*spec, resolved_backend);
@@ -842,6 +977,11 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     LOG(DEBUG, "BackendManager") << "Uninstalling " << recipe << ":" << resolved_backend << std::endl;
 
+    if (backends::BackendUtils::get_container_policy(recipe, resolved_backend)) {
+        uninstall_container_backend(recipe, resolved_backend);
+        return;
+    }
+
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
@@ -937,6 +1077,14 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
     BackendEnrichment result;
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
+        if (const ContainerPolicy* policy = backends::BackendUtils::get_container_policy(recipe, resolved_backend)) {
+            result.version = backends::short_container_pin(
+                backends::BackendUtils::get_backend_version(recipe, resolved_backend));
+            result.download_filename =
+                backends::BackendUtils::get_backend_image(recipe, resolved_backend);
+            result.release_url = container_registry_url(policy->image);
+            return result;
+        }
         // All standard recipes (including ryzenai-llm): one get_install_params() call gives us everything
         auto params = get_install_params(recipe, resolved_backend);
         result.release_url = "https://github.com/" + params.repo + "/releases/tag/" + params.version;

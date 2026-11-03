@@ -430,7 +430,7 @@ The following options are available depending on the recipe being used:
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
 
-#### TheNoise ROCm (`thenoise` recipe)
+#### TheNoise (`thenoise` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -442,6 +442,19 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--ds4-args ARGS` | Custom arguments to pass to ds4-server | `""` |
+
+#### ROCm FPX (`rocmfpx` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--rocmfpx-args ARGS` | Custom arguments to pass to the ROCm FPX llama-server | `""` |
+
+#### Halogen Flash (`halogen` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
 
 #### ThinkSound (`thinksound` recipe)
 

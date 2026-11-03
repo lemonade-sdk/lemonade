@@ -1,6 +1,7 @@
 #include "lemon/server/download_manager.h"
 
 #include <algorithm>
+#include <stdexcept>
 #include <vector>
 
 #include <lemon/utils/aixlog.hpp>
@@ -59,6 +60,9 @@ json DownloadManager::job_to_json(const std::shared_ptr<Job>& job) {
 
 bool DownloadManager::is_visible(const std::shared_ptr<Job>& job) {
     if (!job) return false;
+    // Auto-installs that only verified an existing executable are not downloads.
+    if (!job->visible && job->status != "error" &&
+        job->status != "paused" && job->status != "cancelled") return false;
     if (job->running) {
         return true;
     }
@@ -96,7 +100,8 @@ void DownloadManager::join(const std::shared_ptr<Job>& job) {
 }
 
 json DownloadManager::start(const std::string& download_id, const std::string& download_type,
-                            const std::string& display_name, Operation operation) {
+                            const std::string& display_name, Operation operation,
+                            bool show_before_progress) {
     std::shared_ptr<Job> old_job;
     auto job = std::make_shared<Job>();
     job->id = download_id;
@@ -104,6 +109,7 @@ json DownloadManager::start(const std::string& download_id, const std::string& d
     job->display_name = display_name;
     job->status = "downloading";
     job->running = true;
+    job->visible = show_before_progress;
     job->progress = {
         {"id", download_id},
         {"type", download_type},
@@ -147,6 +153,7 @@ json DownloadManager::start(const std::string& download_id, const std::string& d
                     job->stop_acknowledged = true;
                     return false;
                 }
+                if (!p.complete) job->visible = true;
 
                 if (job->current_file_index != p.file_index) {
                     if (job->current_file_index >= 0 && p.file_index > job->current_file_index) {
@@ -204,6 +211,7 @@ json DownloadManager::start(const std::string& download_id, const std::string& d
             job->terminal_since = (job->status == "completed" || job->status == "cancelled")
                 ? std::chrono::steady_clock::now()
                 : std::chrono::steady_clock::time_point{};
+            completed_cv_.notify_all();
         } catch (const lemon::UnknownModelError& e) {
             std::lock_guard<std::mutex> lock(mutex_);
             LOG(ERROR, "DownloadManager") << "worker unknown-model error id=" << job->id
@@ -214,6 +222,7 @@ json DownloadManager::start(const std::string& download_id, const std::string& d
             job->progress["error"] = e.what();
             job->progress["code"] = lemon::kUnknownModelErrorCode;
             job->running = false;
+            completed_cv_.notify_all();
         } catch (const std::exception& e) {
             bool cancel_requested = false;
             {
@@ -240,6 +249,7 @@ json DownloadManager::start(const std::string& download_id, const std::string& d
             if (job->status == "cancelled") {
                 job->terminal_since = std::chrono::steady_clock::now();
             }
+            completed_cv_.notify_all();
         }
     });
     worker_lock.unlock();
@@ -248,6 +258,21 @@ json DownloadManager::start(const std::string& download_id, const std::string& d
     // under the same mutex its progress callback holds.
     std::lock_guard<std::mutex> lock(mutex_);
     return job_to_json(job);
+}
+
+void DownloadManager::run_tracked(const std::string& id, const std::string& type,
+                                  const std::string& display_name, Operation operation) {
+    // Reuse (or join) exactly the job that /install and /downloads already own.
+    // Keep the model-load request blocked until the backend is ready.
+    start(id, type, display_name, std::move(operation), /*show_before_progress=*/false);
+    std::unique_lock<std::mutex> lock(mutex_);
+    auto it = jobs_.find(id);
+    if (it == jobs_.end()) throw std::runtime_error("Download job disappeared: " + id);
+    const auto job = it->second;
+    completed_cv_.wait(lock, [&] { return !job->running; });
+    if (job->status == "completed") return;
+    if (!job->error.empty()) throw std::runtime_error(job->error);
+    throw std::runtime_error("Backend installation " + job->status + ": " + id);
 }
 
 json DownloadManager::list() {

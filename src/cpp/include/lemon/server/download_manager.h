@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -31,7 +32,13 @@ public:
     // Starts operation on a worker thread under id, or returns the job already running
     // under that id. Returns the job's snapshot.
     nlohmann::json start(const std::string& id, const std::string& type,
-                         const std::string& display_name, Operation operation);
+                         const std::string& display_name, Operation operation,
+                         bool show_before_progress = true);
+
+    // Same server-owned job, but waits for an install required by a model load.
+    // No-op installations without a download stay hidden from the download list.
+    void run_tracked(const std::string& id, const std::string& type,
+                     const std::string& display_name, Operation operation);
 
     // Snapshots of every visible job, expiring completed jobs past their grace period.
     nlohmann::json list();
@@ -75,6 +82,7 @@ private:
         // already returned normally.
         bool stop_acknowledged = false;
         bool running = false;
+        bool visible = true;
         std::chrono::steady_clock::time_point terminal_since;
         // Protects worker publication/join. A job can be visible in the registry
         // while start() is still joining the previous worker; removals and
@@ -90,6 +98,7 @@ private:
     static void join(const std::shared_ptr<Job>& job);
 
     std::mutex mutex_;
+    std::condition_variable completed_cv_;
     std::map<std::string, std::shared_ptr<Job>> jobs_;
 };
 

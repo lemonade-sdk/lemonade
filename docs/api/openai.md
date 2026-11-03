@@ -1456,7 +1456,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /v1/images/upscale`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Upscales an image with an upscaling model such as `RealESRGAN-x4plus`. The model sets the upscale factor, which its name usually states.
+Upscales an image with an upscaling model such as `RealESRGAN-x4plus`. The model sets the default upscale factor; TheNoise models also accept an optional `upscale_factor`.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1466,6 +1466,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `image` | Yes | Base64-encoded PNG image to upscale. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The upscaling model to use, such as `RealESRGAN-x4plus` or `Remacri-4x-TheNoise`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `upscale_factor` | No | Optional scale factor for TheNoise (up to the upscaler's native scale). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 The model is downloaded on first use.
 
@@ -1808,6 +1809,12 @@ an error naming it; the file is left for you to correct.
 |-------|-------------|
 | `vision` | Accepts image attachments in chat messages. |
 | `chat-transcription` | Accepts audio attachments in chat messages and transcribes them as part of its answer (e.g. Qwen2.5-Omni). Like `vision`, this is something a chat model can do, not a deployment mode of its own; a model carrying it also carries `chat`. It is distinct from `transcription`, which deploys a dedicated ASR model on `/audio/transcriptions`. |
+
+**Classification capability labels:** carried alongside `classification`:
+
+| Label | Description |
+|-------|-------------|
+| `zero-shot` | Takes its labels from each `/classify` request instead of a fixed label set (e.g. `LFM2.5-Encoder-350M-Prompt-Router-ONNX`). A router policy must use such a model in a `zero_shot` classifier, and a fixed-label model in a `classifier`; registration refuses either mismatch. |
 
 **Streaming labels:** capability flags for real-time features:
 

@@ -95,11 +95,11 @@ CompositionResult ModelComposition::run() {
             return is_router_collection_recipe(entry.second.recipe);
         });
 
-    std::map<std::string, ModelType> pre_filter_types;
+    std::map<std::string, RoutingModelFacts> pre_filter_facts;
     std::map<std::string, std::string> pre_filter_aliases;
     if (needs_routing_snapshots) {
         for (const auto& [name, info] : all_models) {
-            pre_filter_types[name] = info.type;
+            pre_filter_facts[name] = routing_model_facts(info.type, info.labels);
         }
         pre_filter_aliases = compute_model_alias_maps(all_models).public_model_aliases;
     }
@@ -165,15 +165,15 @@ CompositionResult ModelComposition::run() {
             if (it == pre_filter_aliases.end()) return std::nullopt;
             return it->second;
         },
-        [&composed](const std::string& name) -> std::optional<ModelType> {
+        [&composed](const std::string& name) -> std::optional<RoutingModelFacts> {
             auto it = composed.find(name);
             if (it == composed.end()) return std::nullopt;
-            return it->second.type;
+            return routing_model_facts(it->second.type, it->second.labels);
         },
-        [&pre_filter_types, &unavailable_components](
-            const std::string& name) -> std::optional<ModelType> {
-            auto it = pre_filter_types.find(name);
-            if (it == pre_filter_types.end()) return std::nullopt;
+        [&pre_filter_facts, &unavailable_components](
+            const std::string& name) -> std::optional<RoutingModelFacts> {
+            auto it = pre_filter_facts.find(name);
+            if (it == pre_filter_facts.end()) return std::nullopt;
             unavailable_components.insert(name);
             return it->second;
         },

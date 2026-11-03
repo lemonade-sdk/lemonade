@@ -4,6 +4,8 @@
 #include <filesystem>
 #include "lemon/backends/backend_descriptor.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/models/artifact_ref.h"
 #include "lemon/models/artifact_store.h"
@@ -139,6 +141,36 @@ void BackendOps::download_model(const ModelInfo& info, bool do_not_upgrade,
 const BackendOps* default_backend_ops() {
     static const BackendOps kDefault;
     return &kDefault;
+}
+
+std::optional<utils::SetupReport> container_setup_failure() {
+    const auto& manager = utils::ContainerManager::global();
+    // check_podman() first, so check_host() sees Podman's actual rootless mode.
+    const std::optional<utils::SetupFailure> podman = manager.check_podman();
+    utils::SetupReport report;
+    report.failures = manager.check_host();
+    if (report.empty() && podman) report.failures.push_back(*podman);
+    if (report.empty()) return std::nullopt;
+    return report;
+}
+
+std::optional<utils::SetupReport> container_setup_failure(
+    const std::string& recipe, const std::string& backend,
+    const std::optional<utils::SetupReport>& host) {
+    utils::SetupReport report = host.value_or(utils::SetupReport{});
+    if (auto failure = ops_for(recipe)->check_container_host(backend)) {
+        report.failures.push_back(*failure);
+    }
+    const ContainerPolicy* policy = BackendUtils::get_container_policy(recipe, backend);
+    if (report.empty() && policy &&
+        std::find(policy->devices.begin(), policy->devices.end(), "/dev/kfd") !=
+            policy->devices.end()) {
+        if (auto failure = utils::ContainerManager::global().check_selinux()) {
+            report.failures.push_back(*failure);
+        }
+    }
+    if (report.empty()) return std::nullopt;
+    return report;
 }
 
 } // namespace backends
