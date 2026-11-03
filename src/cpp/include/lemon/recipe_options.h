@@ -1,6 +1,10 @@
 #pragma once
 
 #include <nlohmann/json.hpp>
+
+#include <string>
+#include <vector>
+
 #ifdef LEMONADE_CLI
 #include <CLI/CLI.hpp>
 #endif
@@ -36,15 +40,10 @@ public:
     /// Option names this recipe accepts, in declaration order.
     static std::vector<std::string> keys_for_recipe(const std::string& recipe);
 
-    /// Fold precedence layers into one RecipeOptions. Layers are given lowest
-    /// to highest precedence; each later layer's keys overwrite earlier ones
-    /// wholesale, including *_args (which are only token-merged by inherit()
-    /// between the Router's layers). Returns an empty RecipeOptions when all
-    /// layers are null/absent.
+    /// Fold precedence layers, lowest to highest. Later keys overwrite earlier
+    /// ones wholesale, *_args included (inherit() token-merges those instead).
     static RecipeOptions merge_precedence_layers(const std::string& recipe,
-                                                 const json& lowest,
-                                                 const json& middle,
-                                                 const json& highest);
+                                                 const std::vector<json>& layers);
 
     /// Every option the recipe accepts, with unset keys resolved to their
     /// defaults. Two option sets that resolve equal describe the same load,

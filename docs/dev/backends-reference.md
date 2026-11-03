@@ -155,6 +155,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `height` | — | SIZE | 512 | Output image height |
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
+| `soft_pixel_cap` | — | SIZE | 0 | Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default) |
 
 #### `thenoise` — TheNoise
 
@@ -171,6 +172,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `film_grain` | — | SIZE | 0.0 | Film grain strength (0.0-10.0) |
 | `sharpening` | — | SIZE | 0.0 | RCAS sharpening strength (0.0-1.0) |
 | `lora_specs` | — | ARGS | "" | Comma-separated LoRA specs, e.g. "style:0.8,sub/detail:0.5" |
+| `soft_pixel_cap` | — | SIZE | 0 | Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default) |
 
 #### `thinksound` — ThinkSound
 

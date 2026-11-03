@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 #include <map>
 #include <optional>
+#include <vector>
 #ifdef LEMONADE_CLI
 #include <CLI/CLI.hpp>
 #else
@@ -197,13 +198,11 @@ static std::string format_option_for_logging(const json& opt) {
 }
 
 RecipeOptions RecipeOptions::merge_precedence_layers(const std::string& recipe,
-                                                     const json& lowest,
-                                                     const json& middle,
-                                                     const json& highest) {
-    json merged = lowest.is_object() ? lowest : json::object();
-    for (const json* layer : {&middle, &highest}) {
-        if (!layer->is_object()) continue;
-        for (auto it = layer->begin(); it != layer->end(); ++it) {
+                                                     const std::vector<json>& layers) {
+    json merged = json::object();
+    for (const json& layer : layers) {
+        if (!layer.is_object()) continue;
+        for (auto it = layer.begin(); it != layer.end(); ++it) {
             merged[it.key()] = it.value();
         }
     }

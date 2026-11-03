@@ -9415,12 +9415,6 @@
             "created": 1234567890,
             "downloaded": true,
             "id": "SD-Turbo",
-            "image_defaults": {
-              "cfg_scale": 1.0,
-              "height": 512,
-              "steps": 4,
-              "width": 512
-            },
             "labels": [
               "image"
             ],
@@ -9430,6 +9424,7 @@
             "recipe_options": {
               "cfg_scale": 1.0,
               "height": 512,
+              "soft_pixel_cap": 525625,
               "steps": 4,
               "width": 512
             },

@@ -714,13 +714,11 @@ function partialImageSettingsFromSource(source?: Record<string, unknown> | null)
 }
 
 function imageDefaultsForModel(loadedModel: LoadedModel | null, modelInfo: ModelInfo | null, directRecipeOptions?: Record<string, unknown> | null): ImageGenerationSettings {
-  const modelImageDefaults = partialImageSettingsFromSource(modelInfo?.image_defaults as Record<string, unknown> | undefined);
   const modelRecipeOptions = partialImageSettingsFromSource(modelInfo?.recipe_options as Record<string, unknown> | undefined);
   const loadedRecipeOptions = partialImageSettingsFromSource(loadedModel?.recipe_options);
   const directDefaults = partialImageSettingsFromSource(directRecipeOptions);
   return {
     ...DEFAULT_IMAGE_SETTINGS,
-    ...modelImageDefaults,
     ...modelRecipeOptions,
     ...loadedRecipeOptions,
     ...directDefaults,

@@ -20,9 +20,8 @@
 namespace lemon_cli {
 namespace {
 
-// Keys allowed in exported/imported model files. Keep in sync with
-// EXPORT_KNOWN_KEYS in src/app/src/renderer/utils/modelData.ts (the GUI's
-// mirror of this transform).
+// Keys kept when a model file is normalized; everything else is dropped.
+// `image_defaults` is retired but still accepted, so older exports import.
 const std::vector<std::string> kKnownKeys = {
     "checkpoint",
     "checkpoints",

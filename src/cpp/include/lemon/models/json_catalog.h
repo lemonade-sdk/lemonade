@@ -37,8 +37,6 @@ void parse_checkpoints(ModelInfo& info, const json& row);
 
 void parse_components(ModelInfo& info, const json& row);
 
-void parse_image_defaults(ModelInfo& info, const json& row);
-
 // Keys no typed field consumed, kept so a backend can read custom per-model
 // fields in load(). Keep the known-key set in step with what this file parses.
 void parse_extras(ModelInfo& info, const json& row);
@@ -56,7 +54,8 @@ struct RegistryRowRef {
 std::optional<RegistryRowRef> find_registry_row(const RegistryDocuments::Pin& pin,
                                                 const std::string& requested);
 
-// Null when the row carries no `recipe_options` block.
+// The row's authored option layer: `recipe_options`, with a deprecated
+// `image_defaults` block folded underneath it. Null when the row carries neither.
 nlohmann::json row_recipe_options(const json& row);
 
 // The facts a document cannot answer about its own rows.

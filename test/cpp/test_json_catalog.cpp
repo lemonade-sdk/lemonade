@@ -234,6 +234,26 @@ static void test_the_authored_options_layer_is_reported() {
     check("a malformed options block is not reported", untouched.authored.empty());
     row(json{{"recipe", "llamacpp"}}, r);
     check("a row with no options block reports nothing", untouched.authored.empty());
+
+    Recorder legacy;
+    row(json{{"recipe", "sd-cpp"}, {"image_defaults", {{"steps", 4}, {"width", 512}}}},
+        rules(legacy));
+    check_eq("a retired image_defaults block registers as options",
+             legacy.authored["M"].dump(), json{{"steps", 4}, {"width", 512}}.dump());
+
+    Recorder both;
+    row(json{{"recipe", "sd-cpp"},
+             {"image_defaults", {{"steps", 4}, {"width", 512}}},
+             {"recipe_options", {{"steps", 9}}}},
+        rules(both));
+    check_eq("and recipe_options wins every key both blocks name",
+             both.authored["M"].dump(), json{{"steps", 9}, {"width", 512}}.dump());
+
+    const ModelInfo not_extra =
+        *row(json{{"checkpoint", "org/repo"}, {"labels", {"image"}},
+                  {"image_defaults", {{"steps", 4}}}}, rules(legacy));
+    check("a retired block is consumed, not handed to the backend as an extra",
+          not_extra.extras.count("image_defaults") == 0);
 }
 
 static void test_unconsumed_keys_survive_as_extras() {

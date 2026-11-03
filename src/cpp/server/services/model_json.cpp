@@ -138,22 +138,6 @@ json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int 
         model_json["audio_defaults"] = audio_defaults->second;
     }
 
-    if (info.image_defaults.has_defaults) {
-        json img_def = {
-            {"steps", info.image_defaults.steps},
-            {"cfg_scale", info.image_defaults.cfg_scale},
-            {"width", info.image_defaults.width},
-            {"height", info.image_defaults.height}
-        };
-        if (!info.image_defaults.sampling_method.empty())
-            img_def["sampling_method"] = info.image_defaults.sampling_method;
-        if (info.image_defaults.flow_shift > 0.0f)
-            img_def["flow_shift"] = info.image_defaults.flow_shift;
-        if (info.image_defaults.soft_pixel_cap > 0)
-            img_def["soft_pixel_cap"] = info.image_defaults.soft_pixel_cap;
-        model_json["image_defaults"] = img_def;
-    }
-
     if (is_router_collection_recipe(info.recipe)) {
         // The parser requires a root "version"; surface it alongside "routing"
         // so an exported router collection can be re-imported through /pull.
@@ -232,19 +216,6 @@ nlohmann::ordered_json ModelJson::schema() {
             "update_available": {"type": "boolean", "description": "Whether the model's registry has a newer commit; `false` except for downloaded registry models."},
             "suggested": {"type": "boolean", "description": "Whether the model is recommended for general use."},
             "labels": {"type": "array", "items": {"type": "string"}, "description": "The model's capabilities and characteristics; see [Model Labels](./openai.md#model-labels)."},
-            "image_defaults": {
-                "type": "object",
-                "description": "Image models only: default generation parameters.",
-                "properties": {
-                    "steps": {"type": "integer", "description": "Number of inference steps, such as `4` for turbo models or `20` for standard models."},
-                    "cfg_scale": {"type": "number", "description": "Classifier-free guidance scale, such as `1.0` for turbo models or `7.5` for standard models."},
-                    "width": {"type": "integer", "description": "Default image width in pixels."},
-                    "height": {"type": "integer", "description": "Default image height in pixels."},
-                    "sampling_method": {"type": "string", "description": "Default sampler, when the model sets one."},
-                    "flow_shift": {"type": "number", "description": "Default flow shift, when the model sets one."},
-                    "soft_pixel_cap": {"type": "integer", "description": "Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted."}
-                }
-            },
             "components": {"type": "array", "items": {"type": "string"}, "description": "The names of a collection's component models, in order; empty for other models."},
             "models": {"type": "array", "items": {"type": "object"},
                        "description": "Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull)."},
@@ -263,7 +234,7 @@ nlohmann::ordered_json ModelJson::schema() {
                 }},
             "source": {"type": "string", "description": "Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`."},
             "registry_source": {"type": "string", "description": "Remote registry the checkpoint downloads from: `huggingface` or `modelscope`."},
-            "recipe_options": {"type": "object", "description": "The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top."},
+            "recipe_options": {"type": "object", "description": "The model's own options: those its registry row authors, with what was saved in `recipe_options.json` on top."},
             "cloud_provider": {"type": "string", "description": "Cloud models only: the provider that serves the model."},
             "cost_input_per_million": {"type": "number", "description": "Cloud models only: USD per million input tokens, when the provider reports it."},
             "cost_output_per_million": {"type": "number", "description": "Cloud models only: USD per million output tokens, when the provider reports it."},

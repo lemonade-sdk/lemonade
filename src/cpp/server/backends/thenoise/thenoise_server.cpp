@@ -105,8 +105,6 @@ void TheNoiseServer::load(const std::string& model_name,
     LOG(INFO, "TheNoise") << "Loading model: " << model_name << std::endl;
     LOG(DEBUG, "TheNoise") << "Per-model settings: " << options.to_log_string() << std::endl;
 
-    image_defaults_ = model_info.image_defaults;
-
     const std::string backend = resolve_thenoise_backend(options.get_option("thenoise_backend"));
 
     RuntimeConfig::validate_backend_choice("thenoise", backend);
@@ -215,17 +213,15 @@ std::string TheNoiseServer::resolve_size(const json& request) const {
         return std::to_string(request["width"].get<int>()) + "x"
              + std::to_string(request["height"].get<int>());
     }
-    if (image_defaults_.has_defaults) {
-        return std::to_string(image_defaults_.width) + "x"
-             + std::to_string(image_defaults_.height);
-    }
-    return "";
+    if (!recipe_options_.has_option("width") || !recipe_options_.has_option("height")) return "";
+    int w = static_cast<int>(recipe_options_.get_option("width"));
+    int h = static_cast<int>(recipe_options_.get_option("height"));
+    if (w <= 0 || h <= 0) return "";
+    return std::to_string(w) + "x" + std::to_string(h);
 }
 
 json TheNoiseServer::build_request(const json& request) const {
     // thenoise /text2image accepts the shared model-agnostic params directly.
-    // Precedence for each value: request override -> model image_defaults
-    // -> recipe_options.
     json body;
 
     body["prompt"] = request.value("prompt", "");
@@ -273,19 +269,14 @@ json TheNoiseServer::build_request(const json& request) const {
     }
 
     // steps
-    int steps = image_defaults_.has_defaults
-                  ? image_defaults_.steps
-                  : static_cast<int>(recipe_options_.get_option("steps"));
-    steps = resolve_int("steps", steps);
+    int steps = resolve_int("steps", static_cast<int>(recipe_options_.get_option("steps")));
     if (steps > 0) {
         body["steps"] = steps;
     }
 
     // cfg_scale -> guidance_scale
-    float cfg_scale = image_defaults_.has_defaults
-                              ? image_defaults_.cfg_scale
-                              : static_cast<float>(recipe_options_.get_option("cfg_scale"));
-    cfg_scale = resolve_float("cfg_scale", cfg_scale);
+    float cfg_scale = resolve_float("cfg_scale",
+                                    static_cast<float>(recipe_options_.get_option("cfg_scale")));
     if (cfg_scale > 0.0f) {
         body["guidance_scale"] = cfg_scale;
     }

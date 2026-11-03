@@ -1,7 +1,6 @@
-// Standalone test for RecipeOptions precedence. The full ladder is documented
-// in SDServer::build_extra_args(); these cases pin merge_precedence_layers()
-// Custom-argument scope merging is handled separately by
-// resolve_scoped_custom_args().
+// Standalone test for RecipeOptions precedence: merge_precedence_layers() folds
+// one model's layers, inherit() folds the router's. Custom-argument scope
+// merging is separate, in resolve_scoped_custom_args().
 
 #include <lemon/recipe_options.h>
 
@@ -31,8 +30,7 @@ static int fail(const char* name, bool condition,
 int main() {
     int failures = 0;
 
-    // A model entry's image_defaults, as extracted from server_models.json
-    static const json image_defaults = {
+    static const json model_layer = {
         {"steps", 4},
         {"cfg_scale", 1.0f},
         {"width", 512},
@@ -41,32 +39,31 @@ int main() {
         {"flow_shift", 3.0f}
     };
 
-    // --- merge_precedence_layers: user-saved > model recipe_options > image_defaults ---
+    // --- merge_precedence_layers: user-saved > what the row authored ---
 
-    // A1: image_defaults survive when the upper layers are null or empty
+    // A1: the lowest layer survives when the layer above it is null or empty
     {
-        json null_opts = json(nullptr);
         RecipeOptions merged = RecipeOptions::merge_precedence_layers(
-            "sd-cpp", image_defaults, null_opts, json::object());
+            "sd-cpp", {model_layer, json::object()});
 
-        failures += fail("layers: image_defaults steps preserved",
+        failures += fail("layers: steps preserved",
             merged.get_option("steps").get<int>() == 4,
             std::to_string(merged.get_option("steps").get<int>()), "4");
-        failures += fail("layers: image_defaults cfg_scale preserved",
+        failures += fail("layers: cfg_scale preserved",
             merged.get_option("cfg_scale").get<float>() == 1.0f,
             std::to_string(merged.get_option("cfg_scale").get<float>()), "1.0");
-        failures += fail("layers: image_defaults width preserved",
+        failures += fail("layers: width preserved",
             merged.get_option("width").get<int>() == 512,
             std::to_string(merged.get_option("width").get<int>()), "512");
-        failures += fail("layers: image_defaults sampling_method preserved",
+        failures += fail("layers: sampling_method preserved",
             merged.get_option("sampling_method").get<std::string>() == "euler",
             merged.get_option("sampling_method").get<std::string>(), "euler");
-        failures += fail("layers: image_defaults flow_shift preserved",
+        failures += fail("layers: flow_shift preserved",
             merged.get_option("flow_shift").get<float>() == 3.0f,
             std::to_string(merged.get_option("flow_shift").get<float>()), "3.0");
     }
 
-    // A2: model recipe_options (registry entry) override image_defaults
+    // A2: the layer above overrides the keys it names, and only those
     {
         json model_ro = {
             {"steps", 12},
@@ -75,24 +72,23 @@ int main() {
         };
 
         RecipeOptions merged = RecipeOptions::merge_precedence_layers(
-            "sd-cpp", image_defaults, model_ro, json(nullptr));
+            "sd-cpp", {model_layer, model_ro, json(nullptr)});
 
-        failures += fail("layers: model recipe_options steps override image_defaults",
+        failures += fail("layers: upper-layer steps wins",
             merged.get_option("steps").get<int>() == 12,
             std::to_string(merged.get_option("steps").get<int>()), "12");
-        failures += fail("layers: model recipe_options cfg_scale override image_defaults",
+        failures += fail("layers: upper-layer cfg_scale wins",
             merged.get_option("cfg_scale").get<float>() == 3.5f,
             std::to_string(merged.get_option("cfg_scale").get<float>()), "3.5");
-        failures += fail("layers: model recipe_options sdcpp_args present",
+        failures += fail("layers: sdcpp_args present",
             merged.get_option("sdcpp_args").get<std::string>() == "--diffusion-fa",
             merged.get_option("sdcpp_args").get<std::string>(), "--diffusion-fa");
-        failures += fail("layers: width still from image_defaults when not overridden",
+        failures += fail("layers: width kept when not overridden",
             merged.get_option("width").get<int>() == 512,
             std::to_string(merged.get_option("width").get<int>()), "512");
     }
 
-    // A3: user-saved options override both model recipe_options and image_defaults.
-    // This is the "Model Options win over Image Defaults" guarantee.
+    // A3: user-saved options override every model-level layer
     {
         json model_ro = {{"steps", 12}};
         json user_saved = {
@@ -102,15 +98,15 @@ int main() {
         };
 
         RecipeOptions merged = RecipeOptions::merge_precedence_layers(
-            "sd-cpp", image_defaults, model_ro, user_saved);
+            "sd-cpp", {model_layer, model_ro, user_saved});
 
-        failures += fail("layers: user-saved steps beats model recipe_options",
+        failures += fail("layers: user-saved steps beats the model layer",
             merged.get_option("steps").get<int>() == 20,
             std::to_string(merged.get_option("steps").get<int>()), "20");
-        failures += fail("layers: user-saved width beats image_defaults",
+        failures += fail("layers: user-saved width beats the model layer",
             merged.get_option("width").get<int>() == 1024,
             std::to_string(merged.get_option("width").get<int>()), "1024");
-        failures += fail("layers: cfg_scale still from image_defaults when not overridden",
+        failures += fail("layers: cfg_scale kept when not overridden",
             merged.get_option("cfg_scale").get<float>() == 1.0f,
             std::to_string(merged.get_option("cfg_scale").get<float>()), "1.0");
     }
@@ -122,7 +118,7 @@ int main() {
         json user_saved = {{"sdcpp_args", "--threads 4"}};
 
         RecipeOptions merged = RecipeOptions::merge_precedence_layers(
-            "sd-cpp", image_defaults, model_ro, user_saved);
+            "sd-cpp", {model_layer, model_ro, user_saved});
 
         std::string args = merged.get_option("sdcpp_args").get<std::string>();
         failures += fail("args: user-saved sdcpp_args fully replaces model-level",
@@ -133,7 +129,7 @@ int main() {
     {
         json null_opts = json(nullptr);
         RecipeOptions merged = RecipeOptions::merge_precedence_layers(
-            "sd-cpp", null_opts, null_opts, null_opts);
+            "sd-cpp", {null_opts, null_opts, null_opts});
 
         failures += fail("layers: all-null layers yield no options",
             merged.to_json().is_object() && merged.to_json().empty(),
@@ -176,7 +172,7 @@ int main() {
 
     // B3: an empty higher layer does not override the lower layer
     {
-        RecipeOptions lower("sd-cpp", image_defaults);
+        RecipeOptions lower("sd-cpp", model_layer);
         RecipeOptions empty("sd-cpp", json::object());
         RecipeOptions merged = empty.inherit(lower);
 
@@ -218,7 +214,7 @@ int main() {
     {
         json only_steps = {{"steps", 8}};
         RecipeOptions merged = RecipeOptions::merge_precedence_layers(
-            "sd-cpp", only_steps, json(nullptr), json(nullptr));
+            "sd-cpp", {only_steps, json(nullptr), json(nullptr)});
 
         failures += fail("has_option: steps set by a layer",
             merged.has_option("steps"), "", "");
@@ -232,7 +228,7 @@ int main() {
     // C2: no layers at all — nothing is set, everything falls through
     {
         RecipeOptions merged = RecipeOptions::merge_precedence_layers(
-            "sd-cpp", json(nullptr), json(nullptr), json(nullptr));
+            "sd-cpp", {json(nullptr), json(nullptr), json(nullptr)});
 
         failures += fail("has_option: no layers means steps unset",
             !merged.has_option("steps"), "", "");

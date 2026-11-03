@@ -383,10 +383,8 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
     // cfg scale under "sample_params.guidance"; the old flat keys (`steps`,
     // `cfg_scale`) are silently ignored.
     // Per-value precedence, highest → lowest: per-request body fields, then the
-    // effective recipe options, which already fold user-saved > model
-    // recipe_options > image_defaults > architecture > global config (via
-    // RecipeOptions::merge_precedence_layers / inherit); a value absent from
-    // every layer is omitted, letting sd-server apply its own defaults.
+    // effective recipe options. A value no layer sets is omitted, letting
+    // sd-server apply its own defaults.
     json extra_args;
     json sample_params = json::object();
     json guidance = json::object();
@@ -501,8 +499,8 @@ json SDServer::image_generations(const json& request) {
 
     // sd-server's /v1/images/generations reads size only from top-level
     // `size: "WxH"` -- separate `width`/`height` fields are silently dropped.
-    // Collapse them here so both client styles work, and fill in image_defaults
-    // when nothing is specified (important for OmniRouter tool calls, which
+    // Collapse them here so both client styles work, and fill in the model's own
+    // size when nothing is specified (important for OmniRouter tool calls, which
     // pass only the prompt).
     std::string size = resolve_size(sd_request);
     sd_request.erase("width");
