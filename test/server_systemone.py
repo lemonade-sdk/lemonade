@@ -45,9 +45,52 @@ PARAGRAPH = (
     "strong demand for cloud services and improved margins in hardware. "
 )
 # Long enough to overflow llama-server's default physical batch (512 tokens),
-# short of the 8192-token window the model was trained with.
+# short of the 4096 tokens lemond lets an encoder decision model read by default.
 LONG_STATE = PARAGRAPH * 100
 TOO_LONG_STATE = PARAGRAPH * 400
+# One question of each form that lemond renders differently for a `laya` model.
+COUNT_QUESTIONS = {
+    "choice": {
+        "type": "choice",
+        "instructions": "Which team should handle this?",
+        "criteria": {
+            "billing": "payments and refunds",
+            "shipping": None,
+            "technical": "app or website problems",
+        },
+    },
+    "score": {
+        "type": "score",
+        "instructions": "How urgent is this?",
+        "criteria": ["can wait", "this week", "today", "right now"],
+    },
+    "noul": {"type": "noul", "instructions": "Is the customer angry?"},
+    "noul_described": {
+        "type": "noul",
+        "instructions": "Does it ask for money back?",
+        "criteria": {"true": "the customer wants a refund"},
+    },
+}
+
+
+def laya_rendering(question):
+    """The question line and option texts that lemond's laya cut check counts,
+    as laya_question_texts in llamacpp_systemone.cpp builds them."""
+    kind = question["type"]
+    criteria = question.get("criteria")
+    options = []
+    if kind == "choice":
+        options = [f"{key}: {text}" if text else key for key, text in criteria.items()]
+    elif kind == "score":
+        options = [f"level {i}: {text}" for i, text in enumerate(criteria)]
+    elif kind == "noul":
+        defaults = {
+            "true": "yes, the statement holds",
+            "false": "no, the statement does not hold",
+        }
+        for key in ("true", "false"):
+            options.append(f"{key}: {(criteria or {}).get(key) or defaults[key]}")
+    return f"{kind} question: {question['instructions']}", options
 
 
 class SystemOneTests(ServerTestBase):
@@ -396,6 +439,54 @@ class SystemOneTests(ServerTestBase):
         self.assertEqual(response.status_code, 400, response.text[:1000])
         self.assertIn("must be an array", response.text)
         print("[OK] object-form choice refused at registration")
+
+    def _count_tokens(self, text):
+        response = requests.post(
+            f"{self.base_url}/tokenize", json={"content": text}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        return len(response.json()["tokens"])
+
+    def test_513_laya_rendering_matches_prompt_length(self):
+        """lemond counts the prompt that llama-server builds for a laya model.
+
+        usage.input_tokens is the prompt llama-server ran, so a template change
+        upstream makes it differ from lemond's count. Julia-1's template drops
+        the key, the "level i:" prefix and the default yes/no text, so lemond's
+        count is only an upper bound there, which still keeps its cut check safe.
+        """
+        for model, exact in (
+            (get_test_model("systemone_router"), True),
+            (get_test_model("systemone"), False),
+        ):
+            pull_model_with_retry(model)
+            for question_id, question in COUNT_QUESTIONS.items():
+                response = self._post(
+                    "systemone",
+                    {
+                        "model": model,
+                        "state": STATE,
+                        "questions": {question_id: question},
+                    },
+                )
+                self.assertEqual(response.status_code, 200, response.text[:1000])
+                actual = response.json()["usage"]["input_tokens"]
+                # /tokenize answers with the tokenizer of the model just used.
+                line, options = laya_rendering(question)
+                predicted = (
+                    4  # [CLS] and three [SEP]
+                    + self._count_tokens(line)
+                    + sum(1 + self._count_tokens(" " + option) for option in options)
+                    + self._count_tokens(STATE)
+                )
+                context = (
+                    f"{model} {question_id}: lemond {predicted}, llama-server {actual}"
+                )
+                if exact:
+                    self.assertEqual(predicted, actual, context)
+                else:
+                    self.assertGreaterEqual(predicted, actual, context)
+                print(f"[OK] {context}")
 
     def test_506_option_order_reaches_model(self):
         """The options reach the model in the client's order, which it scores by."""
