@@ -1,0 +1,217 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM5-1B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 501.812943,
+                "mean": 497.11586000000005,
+                "min": 492.443189,
+                "p50": 497.091448,
+                "p95": 501.3407935
+              },
+              "failed_runs": 0,
+              "input_tokens": 3065,
+              "memory_peak_gb": 4.9,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 7969.646860127905,
+              "tps": {
+                "max": 183.1060569556209,
+                "mean": 177.41843935580425,
+                "min": 173.92100324957664,
+                "p50": 175.22825786221523,
+                "p95": 182.31827704628031
+              },
+              "ttft_ms": {
+                "max": 387.871,
+                "mean": 384.5986666666667,
+                "min": 382.36,
+                "p50": 383.565,
+                "p95": 387.4404
+              },
+              "vram_peak_gb": 1.1347541809082031
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 5850.82155,
+                "mean": 5839.869587333334,
+                "min": 5832.17207,
+                "p50": 5836.615142,
+                "p95": 5849.4009092
+              },
+              "failed_runs": 0,
+              "input_tokens": 23649,
+              "memory_peak_gb": 5.7,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 4179.255837449539,
+              "tps": {
+                "max": 117.25282795307417,
+                "mean": 115.69898316298156,
+                "min": 113.15585730450837,
+                "p50": 116.68826423136213,
+                "p95": 117.19637158090298
+              },
+              "ttft_ms": {
+                "max": 5671.003,
+                "mean": 5658.676333333333,
+                "min": 5652.199,
+                "p50": 5652.827,
+                "p95": 5669.1854
+              },
+              "vram_peak_gb": 1.8188400268554688
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-03T07:40:43Z",
+      "accuracy": {
+        "passed": 30,
+        "total": 45,
+        "score": 0.6667,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-sisters",
+            "response": " has 3 brothers and 1 sister.\n\n2. The question asks about how many sisters each of Alice's brothers has.\n\n3. Since Alice has 1 sister, and this sister is shared among all her brothers, each brother has the same number of sisters as Alice.\n\nTherefore, each of Alice's brothers has 1 sister.\n\nAnswer: 1",
+            "cut_off": false
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "Answer: Wednesday",
+            "cut_off": false
+          },
+          {
+            "id": "fact-light",
+            "response": "I don't have access to the current speed of light in kilometers per second. The speed of light in a vacuum is approximately 299,792 kilometers per second, but this value can change over time due to experimental measurements and theoretical advancements.\n\nAnswer: 299",
+            "cut_off": false
+          },
+          {
+            "id": "code-powassoc",
+            "response": "pression:\n\n1. `2 ** 3` means 2 raised to the power of 3, which equals 8.\n2. `8 ** 2` means 8 raised to the power of 2, which equals 64.\n\nSo, the code will print `64`.\n\nHere's the step-by-step calculation:\n\n- `2 ** 3` = 2 * 2 * 2 = 8\n- `8 ** 2` = 8 * 8 = 64\n\nTherefore, the output of the code is `64`.",
+            "cut_off": false
+          },
+          {
+            "id": "code-typeof",
+            "response": "t-in JavaScript function that returns the type of the variable.\n- `null` is a special value in JavaScript that represents the null object.\n- The `typeof` function returns the type of the variable, which in this case is `\"object\"`.\n\nSo, when you run this code, it will print `\"object\"` to the console.",
+            "cut_off": false
+          },
+          {
+            "id": "code-bool",
+            "response": "The code `print(bool(\"\"))` will print `False` because the boolean value of an empty string is `False`.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-miles",
+            "response": "I don't have the ability to calculate distances or perform mathematical operations. I can't convert miles to kilometers or perform any calculations.\n\nI'm sorry, but I can't answer your question.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "Answer: 37",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-backwards",
+            "response": "Answer: anaburna",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-count-r",
+            "response": "s the letter 'r' appears in this word.  \n\nFirst, we break down the word \"strawberry\" and count the occurrences of each letter:  \n- s: 1  \n- t: 1  \n- w: 1  \n- a: 1  \n- r: 2  \n- b: 1  \n- e: 1  \n\nNow, we count the total number of 'r's in the word: there are 2 occurrences of the letter 'r'.  \n\nAnswer: 2",
+            "cut_off": false
+          },
+          {
+            "id": "json-sum",
+            "response": "```json\n{\"sum\": 2 + 3}\n```",
+            "cut_off": false
+          },
+          {
+            "id": "turn-dog",
+            "response": "I'm sorry, but I don't have information about your dog's name.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-remember",
+            "response": "I don't have access to the number 100 you asked me to add. I can't perform that calculation. I'll need you to provide that number.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "I'm sorry, but I don't have access to your personal information or the specific details of your flight. I can only provide general information about flights and travel. If you have any other questions or need assistance with something else, feel free to ask!",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "0], intervals[0][1]]\n    for current_start, current_end in intervals[1:]:\n        last_start, last_end = merged[-1]\n        if current_start <= last_end:\n            merged[-1][1] = max(last_end, current_end)\n        else:\n            merged.append([current_start, current_end])\n    return merged\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [
+            "arith-paren"
+          ],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-03T07:40:43Z",
+  "fork_id": "llamacpp-rocm-stable",
+  "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+  "fork_repo": "lemonade-sdk/llama.cpp",
+  "fork_version": "b12003",
+  "rocm_version": "10.1.0",
+  "fork_backend": "rocm-stable",
+  "experimental": false,
+  "run_id": "41592933626",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/41592933626",
+  "commit": "bc24c13e84dba93f213f28b15dc7349be1e01a80",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s03-d06-125773632554"
+}

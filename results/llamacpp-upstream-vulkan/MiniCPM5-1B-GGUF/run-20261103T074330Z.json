@@ -1,0 +1,215 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/vulkan": "b11393"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM5-1B-GGUF",
+      "results": [
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 531.922849,
+                "mean": 529.2347120000001,
+                "min": 526.156366,
+                "p50": 529.624921,
+                "p95": 531.6930562
+              },
+              "failed_runs": 0,
+              "input_tokens": 3065,
+              "memory_peak_gb": 4.2,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 6980.656047779393,
+              "tps": {
+                "max": 224.91595245987028,
+                "mean": 223.6943288278619,
+                "min": 222.83730531056483,
+                "p50": 223.32972871315062,
+                "p95": 224.75733008519833
+              },
+              "ttft_ms": {
+                "max": 441.707,
+                "mean": 439.0833333333333,
+                "min": 435.958,
+                "p50": 439.585,
+                "p95": 441.4948
+              },
+              "vram_peak_gb": 1.0399818420410156
+            }
+          ]
+        },
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 9565.557429,
+                "mean": 9539.806874,
+                "min": 9498.130498,
+                "p50": 9555.732695,
+                "p95": 9564.574955600001
+              },
+              "failed_runs": 0,
+              "input_tokens": 23649,
+              "memory_peak_gb": 4.9,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 2519.4522223623735,
+              "tps": {
+                "max": 139.95698164353695,
+                "mean": 139.2720348808357,
+                "min": 138.84626065096973,
+                "p50": 139.01286234800043,
+                "p95": 139.8625697139833
+              },
+              "ttft_ms": {
+                "max": 9412.049,
+                "mean": 9386.655333333334,
+                "min": 9345.725,
+                "p50": 9402.192,
+                "p95": 9411.063300000002
+              },
+              "vram_peak_gb": 1.7705497741699219
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-03T07:43:30Z",
+      "accuracy": {
+        "passed": 30,
+        "total": 45,
+        "score": 0.6667,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-widgets",
+            "response": "minutes, 100 machines would make 100 widgets in 5 minutes.\n\n**Step 4: Verify the answer**\n- If 100 machines make 100 widgets in 5 minutes, then the rate of production per machine remains the same.\n\n**Answer:**\nIt would take 5 minutes for 100 machines to make 100 widgets.\n\n**Final Answer:**\n\\boxed{5}",
+            "cut_off": false
+          },
+          {
+            "id": "reason-sisters",
+            "response": "e is a sister to each of her brothers, each brother has at least one sister (Alice).\n\n4. The information about Alice having 3 brothers and 1 sister does not provide any additional information about the siblings of the brothers.\n\n5. Therefore, each of Alice's brothers has 1 sister (Alice).\n\nAnswer: 1",
+            "cut_off": false
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "Answer: Wednesday",
+            "cut_off": false
+          },
+          {
+            "id": "fact-light",
+            "response": "imately 299,792 kilometers per second, but this value can change over time due to experimental measurements and theoretical advancements.\n\nIf you provide the specific speed of light you're referring to, I can help you calculate or explain it.\n\nAnswer: I need more information to answer your question.",
+            "cut_off": false
+          },
+          {
+            "id": "code-powassoc",
+            "response": "pression:\n\n1. `2 ** 3` means 2 raised to the power of 3, which equals 8.\n2. `8 ** 2` means 8 raised to the power of 2, which equals 64.\n\nSo, the code will print `64`.\n\nHere's the step-by-step calculation:\n\n- `2 ** 3` = 2 * 2 * 2 = 8\n- `8 ** 2` = 8 * 8 = 64\n\nTherefore, the output of the code is `64`.",
+            "cut_off": false
+          },
+          {
+            "id": "code-typeof",
+            "response": "t-in JavaScript function that returns the type of the variable.\n- `null` is a special value in JavaScript that represents the null object.\n- The `typeof` function returns the type of the variable, which in this case is `\"object\"`.\n\nSo, when you run this code, it will print `\"object\"` to the console.",
+            "cut_off": false
+          },
+          {
+            "id": "code-bool",
+            "response": "The code `print(bool(\"\"))` will print `False` because the boolean value of an empty string is `False`.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-miles",
+            "response": "n the prompt.\n\nI cannot answer the question \"How many kilometers are in 5 miles, to one decimal place?\" because I do not have the necessary information to perform the calculation.\n\nI would need the actual distance in miles to calculate the number of kilometers.\n\nAnswer: I cannot answer the question.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "Answer: 37",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-backwards",
+            "response": "Answer: anaburn",
+            "cut_off": false
+          },
+          {
+            "id": "json-sum",
+            "response": "```json\n{\"sum\": 2 + 3}\n```",
+            "cut_off": false
+          },
+          {
+            "id": "turn-dog",
+            "response": "I'm sorry, but I don't have information about your dog's name.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-remember",
+            "response": "I don't have access to the number 100 you asked me to add. I can't perform that calculation. I'll need you to provide that number.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "I'm sorry, but I don't have access to your personal information or the specific times of your flights. I can only provide general information about flights and travel. If you have any other questions, feel free to ask!",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "0], intervals[0][1]]\n    for current_start, current_end in intervals[1:]:\n        last_start, last_end = merged[-1]\n        if current_start <= last_end:\n            merged[-1][1] = max(last_end, current_end)\n        else:\n            merged.append([current_start, current_end])\n    return merged\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-03T07:43:30Z",
+  "fork_id": "llamacpp-upstream-vulkan",
+  "fork_label": "llama.cpp Vulkan (upstream reference)",
+  "fork_repo": "ggml-org/llama.cpp",
+  "fork_version": "b12064",
+  "rocm_version": null,
+  "fork_backend": "vulkan",
+  "experimental": false,
+  "run_id": "41592933626",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/41592933626",
+  "commit": "bc24c13e84dba93f213f28b15dc7349be1e01a80",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s03-d06-125773632554"
+}
