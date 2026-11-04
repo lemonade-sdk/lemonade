@@ -97,14 +97,9 @@ function recipeOptionIsUserConfigurable(systemInfo: unknown, recipe: string, key
   return recipeOption(systemInfo, recipe, key)?.userConfigurable !== false;
 }
 
-export function recipeConfigurableOptionNames(
-  systemInfo: unknown,
-  recipe: string,
-  savedKeys: string[] = [],
-): string[] {
-  const visible = recipeOptionNames(systemInfo, recipe)
+export function recipeConfigurableOptionNames(systemInfo: unknown, recipe: string): string[] {
+  return recipeOptionNames(systemInfo, recipe)
     .filter(name => recipeOptionIsUserConfigurable(systemInfo, recipe, name));
-  return [...visible, ...savedKeys.filter(key => key && !visible.includes(key))];
 }
 
 export function recipeOptionLabel(systemInfo: unknown, recipe: string, key: string): string {

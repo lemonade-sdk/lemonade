@@ -78,37 +78,23 @@ function systemInfoWith(options, selectableBackend = false) {
       ['steps', 'cfg_scale', 'sampling_method', 'sd-cpp_backend'],
       'a declared backend option is listed once, in descriptor order');
 
-    // Hiding a saved value would leave it with no way to be seen or cleared, so
-    // a saved key is listed whether the recipe withholds the control or no longer
-    // declares the option at all.
-    assert.deepEqual(recipeConfigurableOptionNames(systemInfo, 'sd-cpp', ['soft_pixel_cap']),
-      ['steps', 'cfg_scale', 'sampling_method', 'soft_pixel_cap']);
-    assert.deepEqual(recipeConfigurableOptionNames(systemInfo, 'sd-cpp', ['steps']),
-      ['steps', 'cfg_scale', 'sampling_method'],
-      'a saved key the recipe already lists is not duplicated');
-    assert.deepEqual(recipeConfigurableOptionNames(systemInfo, 'sd-cpp', ['retired_option']),
-      ['steps', 'cfg_scale', 'sampling_method', 'retired_option']);
-    assert.deepEqual(recipeConfigurableOptionNames(systemInfo, 'sd-cpp', ['', null]),
-      ['steps', 'cfg_scale', 'sampling_method'],
-      'blank saved keys list nothing');
-
-    // A recipe the server does not surface lists only what the user saved.
-    assert.deepEqual(recipeConfigurableOptionNames(systemInfo, 'no-such-recipe', ['soft_pixel_cap']),
-      ['soft_pixel_cap']);
+    // A saved override for a withheld option is not listed. lemond merges a patch
+    // and clears only the keys a client names, so leaving a key out leaves its
+    // saved value alone.
+    assert.ok(!recipeConfigurableOptionNames(systemInfo, 'sd-cpp').includes('soft_pixel_cap'));
+    assert.ok(!recipeConfigurableOptionNames(systemInfo, 'sd-cpp').includes('pinned'),
+      'a saved key with no descriptor entry must not become a field: with no declared type the panel would save "true" where /v1/load wants a boolean');
+    assert.deepEqual(recipeConfigurableOptionNames(systemInfo, 'no-such-recipe'), []);
 
     // The detail panel must route its field list through the rule rather than
-    // through every descriptor option, and must hand it what the user saved.
+    // through every descriptor option.
     const panel = fs.readFileSync(path.resolve(__dirname, '../src/components/ModelDetailPanel.tsx'), 'utf8');
-    assert.match(panel, /recipeConfigurableOptionNames\(info, recipe, savedKeys\)/,
+    assert.match(panel, /recipeConfigurableOptionNames\(info, recipe\)/,
       'the tuning field list must come from recipeConfigurableOptionNames');
     assert.doesNotMatch(panel, /recipeOptionNames\(/,
       'the tuning field list must not fall back to raw descriptor names');
-    assert.match(panel, /tuningKeysForModel\(model, systemInfo, Object\.keys\(serverSavedRecipeOptions\)\)/,
-      'saved options must reach the tuning field list');
-    assert.match(panel, /tuningKeysForModel\(model, systemInfo, Object\.keys\(saved\)\)/,
-      'the draft must be seeded from the key list the fetched saved options produce');
-    assert.doesNotMatch(panel, /draftFromResolvedOptions\(recipeKeys, saved[),]/,
-      'the seed must not use the key list captured before the fetch, which misses a saved key the fetch reveals');
+    assert.doesNotMatch(panel, /tuningKeysForModel\([^)]*Object\.keys\(/,
+      'saved options must not widen the field list: some of them have no declared type to render or save as');
 
     console.log('Lemonade App non-configurable recipe option checks passed.');
   } finally {
