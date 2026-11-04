@@ -239,8 +239,11 @@ std::shared_ptr<EventSocketHandle> make_event_socket([[maybe_unused]] const std:
         return nullptr;
     } else {
         auto handle = std::make_shared<EventSocketHandle>();
-        handle->client = std::make_unique<WsClient>(url, headers);
-        auto& ws = *handle->client;
+        // `ws` stays WsClient& (dependent) so a library without the client
+        // does not see these calls.
+        auto client = std::make_unique<WsClient>(url, headers);
+        WsClient& ws = *client;
+        handle->client = std::move(client);
         if (!ws.is_valid()) return handle;
         ws.set_hostname_addr_map({{fqdn, "127.0.0.1"}});
         ws.set_websocket_ping_interval(ping_sec);
