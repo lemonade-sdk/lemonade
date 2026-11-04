@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <lemon/model_manager.h>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -20,6 +21,7 @@
 #include "lemon/api_docs.h"
 #include "lemon/collection_orchestrator.h"
 #include "lemon/model_types.h"
+#include "lemon/models/store_snapshot.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
@@ -199,7 +201,7 @@ std::filesystem::path sanitize_sandboxed_path(const std::string& raw,
 }
 
 // Collision-resistant token for auto-generated artifact filenames. A single
-// lemond serves multiple concurrent clients (AGENTS.md invariant 11), so the
+// lemond serves multiple concurrent clients, so the
 // old deterministic names (image_0.png, omni_0.png) silently clobbered each
 // other across calls. A millisecond timestamp plus a process-wide atomic
 // counter makes every generated file land on a fresh name — no overwrite, and
@@ -226,41 +228,8 @@ McpServer::McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn
 
 McpServer::~McpServer() = default;
 
-void McpServer::register_routes(httplib::Server& server) {
-    auto self = shared_from_this();
-
-    server.Post("/mcp", [self](const httplib::Request& req, httplib::Response& res) {
-        std::string response_body;
-        try {
-            response_body = self->handle_request_body(req.body);
-        } catch (const std::exception& e) {
-            LOG(ERROR, "McpServer") << "Unhandled exception in POST /mcp: " << e.what() << std::endl;
-            res.status = 500;
-            json err = make_error_response(nullptr, kJsonRpcInternalError, e.what());
-            res.set_content(err.dump(), "application/json");
-            return;
-        }
-
-        if (response_body.empty()) {
-            // All messages were notifications — Streamable HTTP expects 202.
-            res.status = 202;
-            return;
-        }
-
-        res.status = 200;
-        res.set_content(response_body, "application/json");
-    });
-
-    server.Get("/mcp", [](const httplib::Request&, httplib::Response& res) {
-        // No SSE channel in this MVP; refuse GET explicitly.
-        res.status = 405;
-        res.set_header("Allow", "POST");
-        res.set_content(
-            "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,"
-            "\"message\":\"GET /mcp not supported; use POST with a JSON-RPC body\"},"
-            "\"id\":null}",
-            "application/json");
-    });
+json McpServer::internal_error_response(const std::string& message) {
+    return make_error_response(nullptr, kJsonRpcInternalError, message);
 }
 
 std::string McpServer::handle_request_body(const std::string& body) {
@@ -455,7 +424,7 @@ std::variant<std::string, json> McpServer::resolve_model_for_tool(
     // 1. Explicit model argument always wins.
     if (arguments.contains("model") && arguments["model"].is_string() &&
         !arguments["model"].get<std::string>().empty()) {
-        return arguments["model"].get<std::string>();
+        return model_manager_->canonical_for_request(arguments["model"].get<std::string>());
     }
 
     // 2. Reuse a model of the right type that's already loaded \u2014 zero cost.
@@ -467,8 +436,9 @@ std::variant<std::string, json> McpServer::resolve_model_for_tool(
     }
 
     // 3. Load a model of the right type that's already downloaded \u2014 no network.
-    for (const auto& [name, info] : model_manager_->get_downloaded_models()) {
-        if (info.type == want_type) return name;
+    const auto snapshot = model_manager_->snapshot();
+    for (const auto& [name, info] : snapshot->models) {
+        if (info.downloaded && info.type == want_type) return name;
     }
 
     // 4. Nothing local. Only fetch the default if the caller opted in;
@@ -821,10 +791,11 @@ json McpServer::tool_omni(const json& arguments) {
     std::string model;
     if (arguments.contains("model") && arguments["model"].is_string() &&
         !arguments["model"].get<std::string>().empty()) {
-        model = arguments["model"].get<std::string>();
+        model = model_manager_->canonical_for_request(arguments["model"].get<std::string>());
     } else {
-        for (const auto& [name, info] : model_manager_->get_downloaded_models()) {
-            if (is_omni_collection_recipe(info.recipe)) {
+        const auto snapshot = model_manager_->snapshot();
+        for (const auto& [name, info] : snapshot->models) {
+            if (info.downloaded && is_omni_collection_recipe(info.recipe)) {
                 model = name;
                 break;
             }

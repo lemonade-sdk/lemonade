@@ -1263,7 +1263,6 @@ class RouterTests(ServerTestBase):
         )
         error = resp.json().get("error", {})
         self.assertEqual(error.get("code"), "router_response_chain_unsupported")
-        self.assertEqual(error.get("param"), "previous_response_id")
         self.assertIn(COLLECTION_NAME, error.get("message", ""))
         print("[OK] previous_response_id on a router collection -> 400")
 

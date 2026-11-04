@@ -16,6 +16,7 @@ build/
 develop-eggs/
 dist/
 downloads/
+!src/cpp/server/routes/lemonade/downloads/
 eggs/
 .eggs/
 lib/
