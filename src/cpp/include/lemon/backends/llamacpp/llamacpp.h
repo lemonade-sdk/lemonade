@@ -31,12 +31,12 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to llama-server", "Llama.cpp Backend Options"},
     },
     /*support*/ {
-        {"system", {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/ARM64 CPU, GPU"},
-        {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
-        {"cuda", {"windows", "linux"},
+        {"system", BackendTier::Core, BackendFormat::Native, {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/ARM64 CPU, GPU"},
+        {"metal", BackendTier::Core, BackendFormat::Native, {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
+        {"cuda", BackendTier::Core, BackendFormat::Native, {"windows", "linux"},
          {{"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}}}, "NVIDIA GPUs (Turing or newer)**"},
-        {"vulkan", {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}, {"amd_gpu", {}}}, "x86_64 CPU, AMD iGPU, AMD dGPU; ARM64 CPU/GPU (Linux)"},
-        {"rocm", {"windows", "linux"},
+        {"vulkan", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}, {"amd_gpu", {}}}, "x86_64 CPU, AMD iGPU, AMD dGPU; ARM64 CPU/GPU (Linux)"},
+        {"rocm", BackendTier::Core, BackendFormat::Native, {"windows", "linux"},
          {{"amd_gpu", {"gfx103X", "gfx110X", "gfx1150", "gfx1151", "gfx1152", "gfx120X", "gfx908", "gfx90a", "gfx942", "gfx950"}}}, "AMD GPUs supported by ROCm",
          // CDNA arches (gfx908, gfx90a, gfx942) lack Windows ROCm binaries; gfx950
          // additionally lacks a nightly-channel asset.
@@ -44,12 +44,13 @@ inline const BackendDescriptor descriptor = {
           {"gfx908", {/*os*/ {"linux"}, /*channels*/ {}}},
           {"gfx90a", {/*os*/ {"linux"}, /*channels*/ {}}},
           {"gfx942", {/*os*/ {"linux"}, /*channels*/ {}}}}},
-        {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64 CPU; ARM64 CPU (Linux)"},
+        {"cpu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64 CPU; ARM64 CPU (Linux)"},
+        {"nathanw", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "AMD Strix Halo (Vulkan performance fork)"},
+        {"halobox", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "AMD Strix Halo (Halo Box ROCm fork)"},
     },
-    /*supported_modes*/ {"chat", "embeddings", "reranking"},
+    /*supported_modes*/ {"chat", "embeddings", "reranking", "classification"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
-    /*experimental*/    false,
     /*web_display_name*/ "llama.cpp GPU",
     /*rocm_channels*/   {"stable", "nightly"},
     /*exposes_prometheus_metrics*/ true,
@@ -57,9 +58,24 @@ inline const BackendDescriptor descriptor = {
     /*version_policy*/  VersionPolicy::Exact,
     /*self_manages_downloads*/ false,
     /*takes_args*/      true,
-    /*arg_variants*/    {"rocm", "vulkan", "cpu"},
+    /*arg_variants*/    {"rocm", "vulkan", "cuda", "cpu"},
     /*bin_variants*/    {"rocm", "vulkan", "cuda", "cpu"},
     /*config_extra*/    {{"prefer_system", true}},
+    /*streams_model_from_storage*/ false,
+    /*containers*/ {
+        {"nathanw", {
+            /*image*/   "docker.io/kyuz0/amd-strix-halo-toolboxes",
+            /*devices*/ {"/dev/dri"},
+            /*cap_add*/ {},
+        }},
+        {"halobox", {
+            /*image*/   "docker.io/kyuz0/amd-strix-halo-toolboxes",
+            /*devices*/ {"/dev/dri", "/dev/kfd"},
+            /*cap_add*/ {},
+        }},
+    },
+    // see ISystemOneServer
+    /*mode_capability_requirements*/ {{"classification", "systemone"}},
 };
 
 }  // namespace llamacpp

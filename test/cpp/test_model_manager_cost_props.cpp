@@ -51,7 +51,7 @@ static void test_registration_preserves_cost_props(ModelManager& manager) {
     json doc = priced_model("user.PricedModel");
     manager.register_user_model("user.PricedModel", doc, "test");
 
-    lemon::ModelInfo info = manager.get_model_info_unfiltered("user.PricedModel");
+    lemon::ModelInfo info = manager.get_model_info("user.PricedModel");
     const auto& e = info.extras;
 
     check("cost_tier survives registration",
@@ -70,7 +70,7 @@ static void test_registration_preserves_cost_props(ModelManager& manager) {
 // The whole point of persisting the keys: the router has to be able to read a
 // price back out of a model the user registered through the API.
 static void test_router_resolves_registered_cost(ModelManager& manager) {
-    lemon::ModelInfo info = manager.get_model_info_unfiltered("user.PricedModel");
+    lemon::ModelInfo info = manager.get_model_info("user.PricedModel");
     lemon::CostInfo cost = lemon::resolve_cost_info(
         info.cost_input_per_million >= 0.0
             ? std::optional<double>{info.cost_input_per_million}
@@ -101,7 +101,7 @@ static void test_unusable_values_are_dropped_on_read(ModelManager& manager) {
     doc["cost_input_per_million"] = -3.0;
     manager.register_user_model("user.BadlyPricedModel", doc, "test");
 
-    lemon::ModelInfo info = manager.get_model_info_unfiltered("user.BadlyPricedModel");
+    lemon::ModelInfo info = manager.get_model_info("user.BadlyPricedModel");
     lemon::CostInfo cost =
         lemon::resolve_cost_info(std::nullopt, std::nullopt, info.extras);
 

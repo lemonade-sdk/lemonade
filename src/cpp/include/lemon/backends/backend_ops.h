@@ -3,19 +3,43 @@
 #include <optional>
 #include <string>
 #include <vector>
-#include "lemon/model_manager.h"  // ModelInfo, DownloadProgressCallback
+#include "lemon/models/artifact_fetch.h"  // ArtifactFetchService
+#include "lemon/models/download_progress.h"
+#include "lemon/models/model_info.h"
+#include "lemon/utils/cancel_token.h"     // CancelToken
+#include "lemon/utils/container_manager.h"
 
 namespace lemon {
 
 class CloudProviderRegistry;
 
+namespace models {
+struct CheckpointRef;
+class ArtifactLayout;
+class ModelArtifactStore;
+}  // namespace models
+
 namespace backends {
+
+// What a model needs fetched, asked once so the fetch path never branches on a
+// backend name: a repository to pull into the models directory, a backend that
+// pulls its own weights, or nothing at all. The default answer for a recipe comes
+// from its descriptor, which is where a backend already declares itself.
+enum class DownloadPolicy : int {
+    Repository,
+    SelfManaged,
+    None,
+};
 
 // Context handed to BackendOps methods: the server state model management needs
 // without a running subprocess.
 struct BackendOpsContext {
-    ModelManager* model_manager = nullptr;
+    const models::ModelArtifactStore* artifacts = nullptr;
+    // Fetching mutates the models directory, so the service is not const.
+    models::ArtifactFetchService* fetch = nullptr;
     CloudProviderRegistry* cloud_registry = nullptr;  // for dynamic cloud discovery
+    // Who may stop this download, if anyone.
+    utils::CancelToken cancel;
 };
 
 // Inputs for resolving a checkpoint's on-disk path.
@@ -49,6 +73,17 @@ public:
         (void)ctx;
     }
 
+    // Auto-tune sizes ctx_size from the memory a model's weights leave free,
+    // which is wrong for a backend that streams weights and sizes its own
+    // caches. Such a backend returns the GiB of `available_gib` its context may
+    // use. Default: nullopt, the weights decide.
+    virtual std::optional<double> auto_context_kv_budget_gib(const ModelInfo& info,
+                                                             double available_gib) const {
+        (void)info;
+        (void)available_gib;
+        return std::nullopt;
+    }
+
     // Add automatic overridable options before exposing/passing to a backend.
     // Managed arguments (model paths/ports) do not belong here. Default: none.
     virtual void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const {
@@ -71,22 +106,31 @@ public:
         return "";
     }
 
+// Whether this engine can fetch a checkpoint by registry id for a host speaking
+// `protocol`. Default false: lemonade downloads and hands over local paths.
+    virtual bool resolves_download_protocol(const std::string& protocol) const {
+        (void)protocol;
+        return false;
+    }
+
+// The ArtifactLayout for one of this backend's checkpoint types; null means the
+// snapshot layout.
+    virtual const models::ArtifactLayout* checkpoint_layout(
+        const models::CheckpointRef& checkpoint) const {
+        (void)checkpoint;
+        return nullptr;
+    }
+
+    virtual bool acquires_lazily(const std::string& checkpoint_type) const {
+        (void)checkpoint_type;
+        return false;
+    }
+
     // Validate a user-supplied checkpoint string when registering a new model.
     // Return an error message if invalid, "" if acceptable. Default: accept.
     virtual std::string validate_registration_checkpoint(const std::string& checkpoint) const {
         (void)checkpoint;
         return "";
-    }
-
-    // Select the repo-relative files to download for the main checkpoint
-    // `main_variant`, for backends whose artifact layout isn't a GGUF file.
-    // Return nullopt to use the default GGUF selection. (Direct single-file
-    // variants — .safetensors/.pth/.ckpt — are handled generically upstream.)
-    virtual std::optional<std::vector<std::string>> select_checkpoint_files(
-        const std::string& main_variant, const std::vector<std::string>& repo_files) const {
-        (void)main_variant;
-        (void)repo_files;
-        return std::nullopt;
     }
 
     // Models supplied at runtime rather than from server_models.json (descriptor
@@ -96,9 +140,16 @@ public:
         return {};
     }
 
-    // Whether a model's local artifacts are present. Default: the shared registry
-    // checkpoint-completeness check (ModelManager::checkpoints_complete).
+    // Whether a model's local artifacts are present. Default: the artifact
+    // store's checkpoint-completeness check.
     virtual bool is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const;
+    virtual std::string validate_load(const ModelInfo& info) const {
+        (void)info;
+        return "";
+    }
+
+    virtual DownloadPolicy plan_download(const ModelInfo& info,
+                                         const BackendOpsContext& ctx) const;
 
     // Validate a resolved checkpoint file for the cache. Returns "" if valid, or
     // a reason it should be treated as not-downloaded. Default: always valid.
@@ -111,6 +162,13 @@ public:
     virtual void download_model(const ModelInfo& info, bool do_not_upgrade,
                                 DownloadProgressCallback progress,
                                 const BackendOpsContext& ctx) const;
+
+    // Remove weights this backend fetched for itself, as its descriptor's
+    // self_manages_downloads promises. Default: nothing to do, because lemond
+    // wrote the bytes and its own cache removal reaches them.
+    virtual void remove_self_managed_model(const ModelInfo& info) const {
+        (void)info;
+    }
 
     // Whether the model cache must be rebuilt after this backend downloads a
     // model. Default: false.
@@ -160,10 +218,27 @@ public:
         (void)default_install_command;
         return std::nullopt;
     }
+
+    // An extra host requirement of `backend`, as the failure and its fix, or
+    // nullopt when met. Default: none.
+    virtual std::optional<utils::SetupFailure> check_container_host(
+        const std::string& backend) const {
+        (void)backend;
+        return std::nullopt;
+    }
 };
 
 // Shared default ops instance for backends that override nothing.
 const BackendOps* default_backend_ops();
+
+// nullopt when the host is ready to run container backends.
+std::optional<utils::SetupReport> container_setup_failure();
+
+// `host`, the report container_setup_failure() returned, plus the checks
+// `recipe:backend` needs on top of it.
+std::optional<utils::SetupReport> container_setup_failure(
+    const std::string& recipe, const std::string& backend,
+    const std::optional<utils::SetupReport>& host);
 
 } // namespace backends
 } // namespace lemon

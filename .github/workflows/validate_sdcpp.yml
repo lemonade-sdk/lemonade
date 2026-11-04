@@ -212,7 +212,9 @@ jobs:
             {"label":"cpu","backend":"cpu","channel":"",
              "runner":["self-hosted","Windows","X64","stx-halo","vulkan","lemon-prod"]},
             {"label":"vulkan","backend":"vulkan","channel":"",
-             "runner":["self-hosted","Windows","X64","stx-halo","vulkan","lemon-prod"]}
+             "runner":["self-hosted","Windows","X64","stx-halo","vulkan","lemon-prod"]},
+            {"label":"rocm-stable","backend":"rocm","channel":"stable",
+             "runner":["self-hosted","Windows","X64","stx-halo","rocm","lemon-prod"]}
           ]'
 
           # cpp_server_build_test_release.yml already exercises sd-cpp on CPU
@@ -234,7 +236,7 @@ jobs:
     if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && always() && !failure() && !cancelled()
     runs-on: windows-latest
     steps:
-      - name: Prepare Windows runner for long paths and stale workspace caches
+      - name: Kill orphaned Lemonade processes holding file locks
         if: runner.os == 'Windows'
         shell: PowerShell
         run: |
@@ -309,7 +311,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-release.outputs.validate_matrix) }}
     steps:
-      - name: Prepare Windows runner for long paths and stale workspace caches
+      - name: Kill orphaned Lemonade processes holding file locks
         if: runner.os == 'Windows'
         shell: PowerShell
         run: |
@@ -376,8 +378,14 @@ jobs:
           $channel = "${{ matrix.channel }}"
           $label = "${{ matrix.label }}"
           $logsDir = "server-logs-$label"
-          $cacheDir = Join-Path $PWD "ci-cache-$label"
+          $cacheDir = Join-Path $env:SystemDrive "ci-lem-cache\sdcpp-$label"
+          "LEMONADE_CI_CACHE_DIR=$cacheDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $venvPython = ".\.venv\Scripts\python.exe"
+
+          if (Test-Path $cacheDir) {
+            Write-Host "Removing cache at $cacheDir" -ForegroundColor Cyan
+            Remove-Item -LiteralPath $cacheDir -Recurse -Force -ErrorAction Stop
+          }
 
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
           New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
@@ -405,7 +413,8 @@ jobs:
               "--seed", "${{ env.SDCPP_TEST_SEED }}",
               "--warmup",
               "--output", "sdcpp_validation_$label.json",
-              "--images-dir", "sdcpp-images-$label"
+              "--images-dir", "sdcpp-images-$label",
+              "--logs-dir", $logsDir
             )
             foreach ($model in "${{ env.SDCPP_TEST_MODELS }}".Split(',')) {
               $model = $model.Trim()
@@ -437,6 +446,36 @@ jobs:
             }
           }
 
+      - name: Check ROCm runtime path headroom
+        if: always() && matrix.backend == 'rocm'
+        uses: ./.github/actions/check-rocm-path-depth
+        with:
+          cache-dir: ${{ env.LEMONADE_CI_CACHE_DIR }}
+
+      - name: Record the API examples these pins invalidate
+        # The update PR carries examples recorded with the new backend, so the API
+        # reference keeps showing what lemond returns. When this fails, the PR's API
+        # docs check reports the stale examples instead.
+        if: matrix.label == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Copy-Item build\resources\backend_versions.json src\cpp\resources\backend_versions.json -Force
+          & .\.venv\Scripts\python.exe docs\tools\gen_api_boilerplate.py --lemond build\Release\lemond.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload recorded API examples
+        if: matrix.label == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-examples
+          path: |
+            docs/tools/api_examples_cache.json
+            docs/api/
+          retention-days: 7
+
       - name: Upload validation evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -460,6 +499,23 @@ jobs:
       - name: Cleanup
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Remove lemond cache
+        if: always()
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $cacheDir = Join-Path $env:SystemDrive "ci-lem-cache\sdcpp-${{ matrix.label }}"
+          if (-not (Test-Path $cacheDir)) {
+              Write-Host "Nothing to remove at $cacheDir"
+              exit 0
+          }
+          Remove-Item -LiteralPath $cacheDir -Recurse -Force -ErrorAction SilentlyContinue
+          if (Test-Path $cacheDir) {
+              Write-Host "::warning::Could not fully remove $cacheDir; the next run wipes it before installing."
+          } else {
+              Write-Host "Removed $cacheDir" -ForegroundColor Green
+          }
 
   verify-cuda-assets:
     name: Verify required CUDA assets
@@ -519,6 +575,13 @@ jobs:
       needs.verify-cuda-assets.result == 'success'
     steps:
       - uses: actions/checkout@v5
+
+      - name: Download recorded API examples
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: api-examples
+          path: docs
 
       - name: Download validation evidence
         uses: actions/download-artifact@v7
@@ -687,7 +750,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git checkout -B "$BRANCH"
-          git add src/cpp/resources/backend_versions.json
+          git add src/cpp/resources/backend_versions.json docs/tools/api_examples_cache.json docs/api
           git commit -m "Update stable-diffusion.cpp pins to ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}"
 
           REMOTE_SHA=$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')
@@ -711,12 +774,29 @@ jobs:
               --head "$BRANCH"
           fi
 
+  gpu-offload-gate:
+    name: GPU offload gate
+    needs: validate
+    if: always() && needs.validate.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download validation evidence
+        uses: actions/download-artifact@v7
+        with:
+          pattern: sdcpp-validation-*
+          merge-multiple: true
+
+      - name: Enforce GPU offload
+        run: python3 .github/scripts/check_gpu_offload.py 'sdcpp_validation_*.json'
+
   # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
   # successfully (otherwise the merge is blocked), and 2. these jobs do not need
   # to run on ordinary pull request pushes.
   validation-gate:
     name: stable-diffusion.cpp validation
-    needs: [discover-release, build, validate, verify-cuda-assets]
+    needs: [discover-release, build, validate, verify-cuda-assets, gpu-offload-gate]
     if: always()
     runs-on: ubuntu-latest
     steps:

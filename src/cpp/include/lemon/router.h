@@ -17,10 +17,11 @@
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "wrapped_server.h"
+#include "lemon/live_throughput.h"
 #include "model_residency.h"
-#include "model_manager.h"
 #include "backend_manager.h"
 #include "runtime_config.h"
+#include "lemon/model_manager_types.h"
 
 // 5 seconds is generous enough for inference to complete but prevents
 // indefinite blocking if a backend is stuck.
@@ -225,6 +226,7 @@ public:
     json embeddings(const json& request);
     json reranking(const json& request);
     json classify(const json& request);
+    nlohmann::ordered_json systemone(const nlohmann::ordered_json& request);
     json get_slots();
     json slots_action(int slot_id, const std::string& action, const json& request_body);
     json tokenize(const json& request);
@@ -294,6 +296,7 @@ private:
     mutable std::mutex telemetry_mutex_;
     Telemetry aggregate_telemetry_;
     std::map<std::string, ModelTelemetryRecord> telemetry_by_model_;
+    LiveThroughput live_throughput_;
 
     uint64_t routing_decisions_total_ = 0;
     uint64_t routing_switches_total_ = 0;
@@ -408,6 +411,12 @@ private:
 
     template<typename Func>
     auto execute_inference(const json& request, Func&& inference_func) -> decltype(inference_func(nullptr));
+
+    // One classifier call with its telemetry span. `report_usage` adds the
+    // prompt token count; label scores are never reported.
+    nlohmann::ordered_json classifier_inference(
+        const json& request, const std::string& operation, bool report_usage,
+        const std::function<nlohmann::ordered_json(WrappedServer*)>& call);
 
     template<typename Func>
     void execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func, std::shared_ptr<telemetry::InferenceSpan> span = nullptr);

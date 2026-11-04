@@ -4,7 +4,7 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/server_capabilities.h"
-#include "lemon/model_manager.h"
+#include "lemon/model_manager_types.h"
 #include "lemon/recipe_options.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/backends/backend_utils.h"
@@ -39,7 +39,8 @@ public:
 
     std::string upscale_via_cli(
         const std::string& b64_image,
-        const std::string& upscale_model_path) override;
+        const std::string& upscale_model_path,
+        double upscale_factor) override;
 
 private:
     // Precedence and fall-through are documented in build_extra_args().
