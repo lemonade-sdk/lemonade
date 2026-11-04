@@ -147,5 +147,14 @@ global.fetch = async (url, init = {}) => {
   const before = calls.length;
   await assert.rejects(nexus.nexusRequest('status'), /invalid local network controller/);
   assert.ok(calls.slice(before).every(call => new URL(call.url).hostname === '127.0.0.1'), 'never forward credentials to an invalid controller');
+
+  controller = 'http://127.0.0.1:13305';
+  api.baseUrl = 'http://localhost:13305';
+  await nexus.nexusRequest('status');
+  assert.equal(calls.at(-1).url, 'http://localhost:13305/api/v1/nexus/status', 'a controller on the public port keeps the origin the page already uses');
+  controller = 'http://127.0.0.1:15556';
+  api.baseUrl = local;
+  await nexus.nexusRequest('status');
+  assert.equal(calls.at(-1).url, 'http://127.0.0.1:15556/api/v1/nexus/status', 'a controller on another port is addressed directly');
   console.log('Nexus client tests passed: discovery, restart, auth boundaries, relay, rollback, session-only credentials.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -188,7 +188,11 @@ async function controller(): Promise<Controller> {
     const status = await response.json() as NexusStatus;
     const control = new URL(status.controller_url || endpoint);
     if (control.protocol !== 'http:' || control.hostname !== '127.0.0.1') throw new Error('The server returned an invalid local network controller.');
-    localController = { mode: 'local', source: endpoint, endpoint: control.origin, key };
+    // A controller on the public port is the server itself: keep the origin that already reached
+    // it, which stays same-origin for a page lemond serves and inside an SSH or container forward.
+    const reached = new URL(endpoint);
+    const controllerEndpoint = reached.protocol === 'http:' && reached.port === control.port ? endpoint : control.origin;
+    localController = { mode: 'local', source: endpoint, endpoint: controllerEndpoint, key };
   }
   return localController;
 }
