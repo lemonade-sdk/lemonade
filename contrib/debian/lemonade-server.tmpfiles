@@ -1,0 +1,5 @@
+# Podman 4's rootless network namespace mounts over /var/lib/cni, or over its
+# nearest existing parent, /var/lib, until Podman's own tmpfiles.d creates it
+# at the next boot. Over /var/lib, the mount hides the lemonade account's
+# containers under /var/lib/lemonade.
+d /var/lib/cni 0755 root root -

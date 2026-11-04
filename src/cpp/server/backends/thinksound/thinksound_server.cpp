@@ -147,35 +147,13 @@ void ThinkSoundServer::audio_generations(const json& request, httplib::DataSink&
 namespace backends {
 
 namespace {
-// The checkpoint is a directory of ThinkSound GGUFs; resolve to the active
-// Hugging Face snapshot directory (ts-server scans it via --dir).
+// The main checkpoint resolves to the active snapshot directory, which
+// ts-server scans via --dir.
 class ThinkSoundOps : public BackendOps {
 public:
-    // The repo also carries q8 variants of the dit/t5 networks, but ts-server
-    // loads the bf16 set by default; skip the redundant ~5 GB.
-    std::optional<std::vector<std::string>> select_checkpoint_files(
-        const std::string& main_variant, const std::vector<std::string>& repo_files) const override {
-        (void)main_variant;
-        static const std::vector<std::string> kWanted = {
-            "dit-bf16.gguf",
-            "t5-bf16.gguf",
-            "metaclip-text-f32.gguf",
-            "vae-f32.gguf",
-            "t5-tokenizer.gguf",
-            "clip-tokenizer.gguf",
-        };
-        std::vector<std::string> want;
-        for (const auto& f : kWanted) {
-            if (std::find(repo_files.begin(), repo_files.end(), f) != repo_files.end()) {
-                want.push_back(f);
-            }
-        }
-        return want;
-    }
-
     std::string resolve_checkpoint_path(const ModelInfo& info,
                                         const CheckpointResolveContext& ctx) const override {
-        (void)info;
+        if (ctx.type != "main") return BackendOps::resolve_checkpoint_path(info, ctx);
         std::filesystem::path root = lemon::utils::path_from_utf8(ctx.model_cache_path);
         std::filesystem::path snap = hf_cache::active_snapshot_path(root);
         if (!snap.empty() && hf_cache::exists(snap)) {
