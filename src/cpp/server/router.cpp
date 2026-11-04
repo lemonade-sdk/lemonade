@@ -855,6 +855,13 @@ void Router::load_model(const std::string& model_name,
         residency_class_for_load_purpose(load_purpose);
     RecipeOptions effective_options = resolve_effective_options(model_info, options);
 
+    if (const auto* ops = backends::ops_for(model_info.recipe)) {
+        const std::string refusal = ops->validate_load(model_info);
+        if (!refusal.empty()) {
+            throw ModelLoadRefusedException(refusal);
+        }
+    }
+
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
 
@@ -2149,11 +2156,40 @@ json Router::reranking(const json& request) {
 }
 
 json Router::classify(const json& request) {
+    return json(classifier_inference(
+        request, "classify", false, [&](WrappedServer* server) -> nlohmann::ordered_json {
+        auto classification_server = dynamic_cast<IClassificationServer*>(server);
+        if (!classification_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Classification", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return classification_server->classify(request);
+    }));
+}
+
+nlohmann::ordered_json Router::systemone(const nlohmann::ordered_json& request) {
+    return classifier_inference(
+        json(request), "systemone", true, [&](WrappedServer* server) -> nlohmann::ordered_json {
+        auto systemone_server = dynamic_cast<ISystemOneServer*>(server);
+        if (!systemone_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("SystemOne", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return systemone_server->systemone(request);
+    });
+}
+
+nlohmann::ordered_json Router::classifier_inference(
+        const json& request, const std::string& operation, bool report_usage,
+        const std::function<nlohmann::ordered_json(WrappedServer*)>& call) {
     std::string requested_model = request.value("model", "");
-    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "classify", requested_model, request);
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", operation, requested_model, request);
 
     try {
-        json response = execute_inference(request, [&](WrappedServer* server) {
+        nlohmann::ordered_json response = execute_inference(
+            request, [&](WrappedServer* server) -> nlohmann::ordered_json {
             ModelTelemetryIdentity identity = get_telemetry_identity(server);
             if (span) {
                 span->set_attribute("classifier.backend", identity.recipe);
@@ -2161,13 +2197,7 @@ json Router::classify(const json& request) {
                 span->set_attribute("classifier.checkpoint", identity.checkpoint);
                 span->set_attribute("classifier.recipe", identity.recipe);
             }
-            auto classification_server = dynamic_cast<IClassificationServer*>(server);
-            if (!classification_server) {
-                return ErrorResponse::from_exception(
-                    UnsupportedOperationException("Classification", device_type_to_string(server->get_device_type()))
-                );
-            }
-            return classification_server->classify(request);
+            return call(server);
         });
 
         if (span) {
@@ -2178,8 +2208,14 @@ json Router::classify(const json& request) {
                 }
                 span->end_with_error(error_msg);
             } else {
-                // Label scores classify user content; keep them out of telemetry.
-                span->end_with_success(nlohmann::json::object(), "");
+                // Scores and answers judge user content; keep them out of telemetry.
+                nlohmann::json usage_payload = nlohmann::json::object();
+                if (report_usage && response.contains("usage") && response["usage"].is_object() &&
+                    response["usage"].contains("input_tokens") &&
+                    response["usage"]["input_tokens"].is_number_integer()) {
+                    usage_payload["prompt_tokens"] = response["usage"]["input_tokens"].get<int>();
+                }
+                span->end_with_success(usage_payload, "");
             }
         }
         return response;

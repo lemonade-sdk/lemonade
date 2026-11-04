@@ -1089,6 +1089,7 @@ jobs:
             suites: >-
               [{"name":"moonshine","script":"server_moonshine.py","extra_args":"--wrapped-server moonshine","backends":"cpu"},
                {"name":"classify-onnxruntime","script":"server_classify.py","extra_args":"--wrapped-server onnxruntime","backends":"cpu"},
+               {"name":"systemone-llamacpp","script":"server_systemone.py","extra_args":"--wrapped-server llamacpp","backends":"cpu"},
                {"name":"router-onnxruntime","script":"server_router.py","extra_args":"--wrapped-server onnxruntime","backends":"cpu"},
                {"name":"text-to-speech","script":"server_tts.py","extra_args":"","backends":""}]
     env:
@@ -1346,6 +1347,7 @@ jobs:
             runner: [self-hosted, Linux, X64, lemon-prod]
             suites: >-
               [{"name":"moonshine","script":"server_moonshine.py","extra_args":"--wrapped-server moonshine","backends":"cpu"},
+               {"name":"systemone-llamacpp","script":"server_systemone.py","extra_args":"--wrapped-server llamacpp","backends":"cpu"},
                {"name":"text-to-speech","script":"server_tts.py","extra_args":"","backends":""}]
     env:
       LEMONADE_CI_MODE: "True"

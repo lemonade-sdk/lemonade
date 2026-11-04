@@ -292,6 +292,58 @@ static void test_classifier_capability_validation() {
               throws_with_options(doc, options, "cannot serve zero_shot"));
     }
     {
+        auto systemone_doc = [] {
+            json doc = fixture("l3_classifier.json");
+            json& pii = doc["routing"]["classifiers"][0];
+            pii["type"] = "systemone";
+            pii.erase("labels");
+            pii["default_label"] = "true";
+            pii["question"] = {{"type", "noul"},
+                               {"instructions", "Does the message contain personal data?"}};
+            return doc;
+        };
+        RoutingPolicyParseOptions classification;
+        classification.get_model_type = [](const std::string& name) -> std::optional<ModelType> {
+            if (name == "pii-detector-small") return ModelType::CLASSIFICATION;
+            return ModelType::LLM;
+        };
+        check("systemone accepts a CLASSIFICATION model type",
+              parses_ok(systemone_doc(), classification));
+
+        RoutingPolicyParseOptions llm;
+        llm.get_model_type = [](const std::string&) -> std::optional<ModelType> {
+            return ModelType::LLM;
+        };
+        check("systemone rejects a model typed LLM",
+              throws_with_options(systemone_doc(), llm, "cannot serve systemone"));
+
+        RoutingPolicyParseOptions onnx = classification;
+        onnx.serves_systemone = [](const std::string&) { return false; };
+        check("systemone rejects a classification model that does not serve /v1/systemone",
+              throws_with_options(systemone_doc(), onnx, "is not a SystemOne decision model"));
+
+        RoutingPolicyParseOptions decision = classification;
+        decision.serves_systemone = [](const std::string& name) {
+            return name == "pii-detector-small";
+        };
+        check("systemone accepts a model that serves /v1/systemone",
+              parses_ok(systemone_doc(), decision));
+
+        RoutingPolicyParseOptions loadable = decision;
+        loadable.load_refusal = [](const std::string&) { return std::string(); };
+        check("systemone accepts a decision model its backend would load",
+              parses_ok(systemone_doc(), loadable));
+
+        RoutingPolicyParseOptions refused = decision;
+        refused.load_refusal = [](const std::string& name) {
+            return name == "pii-detector-small" ? std::string("decision type 'decision2'")
+                                                : std::string();
+        };
+        check("systemone rejects a decision model its backend refuses to load",
+              throws_with_options(systemone_doc(), refused,
+                                  "cannot be loaded: decision type 'decision2'"));
+    }
+    {
         auto doc_of = [&](const char* type) {
             json doc = fixture("l3_classifier.json");
             doc["routing"]["classifiers"][0]["type"] = type;
