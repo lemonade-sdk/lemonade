@@ -2,6 +2,9 @@
 
 ## model-viewer.min.js
 
+This path is a symlink to `../../vendor/model-viewer.min.js`; the bundle itself
+is stored only in `src/app/src/vendor/`.
+
 - **Source:** [`@google/model-viewer`](https://www.npmjs.com/package/@google/model-viewer) `dist/model-viewer.min.js`
 - **Version:** 4.3.1
 - **License:** Apache-2.0 (Google LLC); three.js (MIT) is bundled inside
@@ -63,7 +66,7 @@ fi
 
 # (3) Extract the bundle — now we can trust this came from npm.
 tar xzf "$TARBALL" -C "$EXTRACT"
-cp "$EXTRACT/package/dist/model-viewer.min.js" src/app/src/renderer/vendor/model-viewer.min.js
+cp "$EXTRACT/package/dist/model-viewer.min.js" src/app/src/vendor/model-viewer.min.js
 
 # (4) Re-pin the sidecar hash.
 cd src/app/src/renderer/vendor

@@ -233,6 +233,27 @@ jobs:
 
           exit $EXIT_CODE
 
+      - name: Record the API examples these pins invalidate
+        # The update PR carries examples recorded with the new backend, so the API
+        # reference keeps showing what lemond returns. When this fails, the PR's API
+        # docs check reports the stale examples instead.
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
+        run: |
+          cp build/resources/backend_versions.json src/cpp/resources/backend_versions.json
+          .venv/bin/python docs/tools/gen_api_boilerplate.py --lemond build/lemond
+
+      - name: Upload recorded API examples
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-examples
+          path: |
+            docs/tools/api_examples_cache.json
+            docs/api/
+          retention-days: 7
+
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v7
@@ -269,6 +290,13 @@ jobs:
       needs.validate.result == 'success'
     steps:
       - uses: actions/checkout@v5
+
+      - name: Download recorded API examples
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: api-examples
+          path: docs
 
       - name: Download validation results
         uses: actions/download-artifact@v7
@@ -363,7 +391,7 @@ jobs:
           fi
 
           git checkout -b "$BRANCH"
-          git add src/cpp/resources/backend_versions.json
+          git add src/cpp/resources/backend_versions.json docs/tools/api_examples_cache.json docs/api
           git commit -m "Update vllm-rocm to ${VLLM_ROCM_RELEASE}"
           git push origin "$BRANCH"
 

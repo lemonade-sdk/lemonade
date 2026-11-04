@@ -421,6 +421,13 @@ int main(int argc, char* argv[]) {
         return app.exit(e);
     }
 
+#ifdef __APPLE__
+    if (spawn_server) {
+        std::cerr << "Warning: --spawn-server is not supported on macOS and will be ignored." << std::endl;
+        spawn_server = false;
+    }
+#endif
+
     std::string clean_host;
     int clean_port = port;
     bool is_ssl = false;

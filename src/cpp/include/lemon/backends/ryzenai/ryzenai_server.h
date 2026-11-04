@@ -5,7 +5,6 @@
 #include "lemon/wrapped_server.h"
 #include "lemon/server_capabilities.h"
 #include "lemon/backends/backend_utils.h"
-#include "lemon/error_types.h"
 #include <string>
 
 namespace lemon {
@@ -18,9 +17,7 @@ public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
 
-    RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager,
-                  BackendManager* backend_manager);
-    ~RyzenAIServer() override;
+    RyzenAIServer(bool debug, ModelManager* model_manager, BackendManager* backend_manager);
 
     // Installation and availability
     static bool is_available();
@@ -30,20 +27,10 @@ public:
              const RecipeOptions& options,
              bool do_not_upgrade = false) override;
 
-    // RyzenAI-specific: set model path before loading
-    void set_model_path(const std::string& path) { model_path_ = path; }
-
-    void unload() override;
-
     // Inference operations (from ICompletionServer via WrappedServer)
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
     json responses(const json& request) override;
-
-private:
-    std::string model_name_;
-    std::string model_path_;
-    bool is_loaded_;
 };
 
 } // namespace lemon

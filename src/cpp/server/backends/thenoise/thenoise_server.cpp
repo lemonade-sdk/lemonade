@@ -13,6 +13,7 @@
 #include "lemon/utils/path_utils.h"
 #include <ctime>
 #include <filesystem>
+#include <utility>
 #include <fstream>
 #include <random>
 #include <set>
@@ -26,6 +27,7 @@ namespace lemon {
 namespace backends {
 
 namespace {
+
 int generate_random_seed() {
     return static_cast<int>(std::random_device{}() & 0x7fffffffU);
 }
@@ -45,6 +47,15 @@ json split_lora_specs(const std::string& specs) {
     return result;
 }
 
+std::string resolve_thenoise_backend(const std::string& requested) {
+    if (!requested.empty() && requested != "auto") return requested;
+    const auto supported = SystemInfo::get_supported_backends("thenoise");
+    if (supported.backends.empty()) {
+        throw std::runtime_error("No supported TheNoise GPU backend: " + supported.not_supported_error);
+    }
+    return supported.backends.front();
+}
+
 #ifdef _WIN32
 void launch_bundled_python(std::string& exe_path,
                            std::vector<std::string>& args,
@@ -59,14 +70,21 @@ void launch_bundled_python(std::string& exe_path,
 }  // namespace
 
 InstallParams TheNoiseServer::get_install_params(const std::string& backend, const std::string& version) {
+    InstallParams params;
+    params.repo = "lemonade-sdk/thenoise";
+    if (backend == "cuda") {
+#if defined(__linux__) && defined(__x86_64__)
+        params.filename = version + "-cuda-x64.tar.gz";
+        return params;
+#else
+        throw std::runtime_error("TheNoise CUDA is supported on Linux x86_64 only");
+#endif
+    }
     if (backend != "rocm") {
-        throw std::runtime_error("TheNoise backend '" + backend + "' is not supported. Supported: rocm");
+        throw std::runtime_error("TheNoise backend '" + backend + "' is not supported. Supported: rocm, cuda (Linux)");
     }
 
     std::string target_arch = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
-
-    InstallParams params;
-    params.repo = "lemonade-sdk/thenoise";
 #ifdef _WIN32
     params.filename = version + "-" + target_arch + "-win-x64.zip";
 #else
@@ -80,10 +98,6 @@ TheNoiseServer::TheNoiseServer(const std::string& log_level, ModelManager* model
     LOG(DEBUG, "TheNoise") << "Created with log_level=" << log_level << std::endl;
 }
 
-TheNoiseServer::~TheNoiseServer() {
-    unload();
-}
-
 void TheNoiseServer::load(const std::string& model_name,
                           const ModelInfo& model_info,
                           const RecipeOptions& options,
@@ -93,10 +107,7 @@ void TheNoiseServer::load(const std::string& model_name,
 
     image_defaults_ = model_info.image_defaults;
 
-    std::string backend = options.get_option("thenoise_backend");
-    if (backend.empty()) {
-        backend = "rocm";
-    }
+    const std::string backend = resolve_thenoise_backend(options.get_option("thenoise_backend"));
 
     RuntimeConfig::validate_backend_choice("thenoise", backend);
 
@@ -166,40 +177,14 @@ void TheNoiseServer::load(const std::string& model_name,
     LOG(DEBUG, "TheNoise") << "Launching bundled interpreter: " << exe_path << std::endl;
 #endif
 
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        exe_path,
-        args,
-        "",
-        is_debug(),  // inherit_output
-        false,  // filter_health_logs
-        env_vars
-    );
-    set_process_handle(started_handle, exe_path, args);
-
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start thenoise process");
-    }
-
-    LOG(INFO, "TheNoise") << "Process started with PID: " << started_handle.pid << std::endl;
-
+    ServerCommand command;
+    command.program = exe_path;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
     // thenoise compiles the DiT with torch.compile on first load, which can take
     // several minutes; give it a generous startup window.
-    if (!wait_for_ready("/health", 1800)) {
-        unload();
-        throw std::runtime_error("thenoise failed to start or become ready");
-    }
-
-    LOG(INFO, "TheNoise") << "Server is ready at http://127.0.0.1:" << get_backend_port() << std::endl;
-}
-
-void TheNoiseServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "TheNoise") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
-    image_defaults_ = ImageDefaults{};
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command, 1800);
 }
 
 // ICompletionServer implementation - not supported for image generation
@@ -408,11 +393,22 @@ json TheNoiseServer::image_edits(const json& request) {
         json body = build_request(request);
         body["out"] = "json";
 
-        if (request.contains("image_data") && !request["image_data"].is_null()) {
-            body["image"] = request["image_data"];
-        }
+        // build_request passes unknown fields through; strip internal upload data.
+        body.erase("image_files");
         body.erase("image_data");
         body.erase("image_filename");
+        body.erase("image_content_type");
+        if (request.contains("image_files") && request["image_files"].is_array()
+            && !request["image_files"].empty()) {
+            json references = json::array();
+            for (const auto& image : request["image_files"]) {
+                references.push_back(image.at("data"));
+            }
+            // TheNoise accepts a single base64 string or an array of strings.
+            body["image"] = references.size() == 1 ? references[0] : references;
+        } else if (request.contains("image_data") && !request["image_data"].is_null()) {
+            body["image"] = request["image_data"];
+        }
 
         LOG(DEBUG, "TheNoise") << "Forwarding image edit to thenoise: " << body.dump(2) << std::endl;
 
@@ -439,10 +435,17 @@ json TheNoiseServer::image_variations(const json& /* request */) {
 
 std::string TheNoiseServer::upscale_via_cli(
     const std::string& b64_image,
-    const std::string& upscale_model_path) {
+    const std::string& upscale_model_path,
+    double upscale_factor) {
 
-    //ROCm is currently the only available backend. If other backends are added this needs to be parameterized accordingly.
-    std::string exe_path = BackendUtils::get_backend_binary_path(*thenoise::spec(), "rocm");
+    std::string configured_backend;
+    if (auto* cfg = RuntimeConfig::global()) {
+        configured_backend = cfg->backend_string("thenoise", "backend");
+    }
+    const std::string backend = resolve_thenoise_backend(configured_backend);
+    RuntimeConfig::validate_backend_choice("thenoise", backend);
+    backend_manager_->install_backend(thenoise::spec()->recipe, backend);
+    std::string exe_path = BackendUtils::get_backend_binary_path(*thenoise::spec(), backend);
 
     if (!fs::exists(exe_path)) {
         LOG(ERROR, "TheNoise") << "thenoise binary not found at: " << exe_path << std::endl;
@@ -506,6 +509,10 @@ std::string TheNoiseServer::upscale_via_cli(
         "--input", input_path.string(),
         "--out", output_path.string()
     };
+    if (upscale_factor > 0.0) {
+        args.push_back("--upscale-factor");
+        args.push_back(std::to_string(upscale_factor));
+    }
 
     std::vector<std::pair<std::string, std::string>> env_vars;
 #ifdef _WIN32

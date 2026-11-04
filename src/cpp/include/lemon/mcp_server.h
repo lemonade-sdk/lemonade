@@ -6,11 +6,10 @@
 #include <variant>
 #include <vector>
 
-#include <httplib.h>
 #include <nlohmann/json.hpp>
 
 #include "mcp_tool.h"
-#include "model_manager.h"
+#include "lemon/model_manager_types.h"
 #include "router.h"
 
 namespace lemon {
@@ -18,28 +17,18 @@ namespace lemon {
 using json = nlohmann::json;
 
 // MCP gateway: JSON-RPC 2.0 over HTTP (Streamable HTTP transport, spec 2025-06-18).
-//
-// /mcp is an INTENTIONAL EXCEPTION to the quad-prefix invariant:
-// the MCP spec mandates a single endpoint URL.
-class McpServer : public std::enable_shared_from_this<McpServer> {
+class McpServer {
 public:
     using EnsureLoadedFn = std::function<void(const std::string&)>;
-    // Aliases live in Server's AliasManager, which the gateway does not own.
-    // Injected rather than reached for, so a tool argument resolves the same
-    // way it does on the REST endpoints. Required: an absent resolver would
-    // leave the gateway silently answering for the alias name itself.
-    using ResolveAliasFn = std::function<std::string(const std::string&)>;
 
-    McpServer(Router* router,
-              ModelManager* model_manager,
-              EnsureLoadedFn ensure_loaded,
-              ResolveAliasFn resolve_alias);
+    McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded);
     ~McpServer();
 
-    // Must be called on a shared_ptr instance — handlers capture shared_from_this().
-    void register_routes(httplib::Server& server);
-
+    // Returns the JSON-RPC reply, or an empty string when every message was a
+    // notification.
     std::string handle_request_body(const std::string& body);
+
+    static json internal_error_response(const std::string& message);
 
 private:
     json dispatch_message(const json& message);
@@ -84,13 +73,10 @@ private:
                                          const std::string& name_hint);
     std::vector<McpTool> build_tools();
 
-    std::string resolve_alias(const std::string& model_name) const;
-
     Router* router_;
     ModelManager* model_manager_;
     EnsureLoadedFn ensure_loaded_;
     std::vector<McpTool> tools_;
-    ResolveAliasFn resolve_alias_;
 };
 
 }  // namespace lemon

@@ -11,7 +11,6 @@
 #include "lemon/system_info.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <cctype>
@@ -71,10 +70,6 @@ AceStepServer::AceStepServer(const std::string& log_level,
                              ModelManager* model_manager,
                              BackendManager* backend_manager)
     : WrappedServer("acestep-server", log_level, model_manager, backend_manager) {}
-
-AceStepServer::~AceStepServer() {
-    unload();
-}
 
 std::string AceStepServer::resolve_binary_path(const std::string& backend) {
     const BackendSpec* spec = acestep::spec();
@@ -154,27 +149,12 @@ void AceStepServer::load(const std::string& model_name,
     }
 
     LOG(INFO, "acestep-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        exe_path, args, "", is_debug(), false, env_vars);
-    set_process_handle(started_handle, exe_path, args);
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start acestep-server process");
-    }
-    LOG(INFO, "acestep-server") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/health")) {
-        unload();
-        throw std::runtime_error("acestep-server failed to start or become ready");
-    }
-}
-
-void AceStepServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "acestep-server") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    ServerCommand command;
+    command.program = exe_path;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command);
 }
 
 bool AceStepServer::run_job(const std::string& path, const std::string& body,
@@ -296,36 +276,19 @@ void AceStepServer::audio_generations(const json& request, httplib::DataSink& si
 namespace backends {
 
 namespace {
-// ACE-Step's HF repo holds many variants; the checkpoint variant names the DiT,
-// and we additionally fetch one LM, the text encoder, and the VAE. Resolves to
-// the active snapshot directory (ace-server scans --models).
+// The main checkpoint resolves to the active snapshot directory, which
+// ace-server scans via --models.
 class AceStepOps : public BackendOps {
 public:
     std::string resolve_checkpoint_path(const ModelInfo& info,
                                         const CheckpointResolveContext& ctx) const override {
-        (void)info;
+        if (ctx.type != "main") return BackendOps::resolve_checkpoint_path(info, ctx);
         std::filesystem::path root = lemon::utils::path_from_utf8(ctx.model_cache_path);
         std::filesystem::path snap = hf_cache::active_snapshot_path(root);
         if (!snap.empty() && hf_cache::exists(snap)) {
             return lemon::utils::path_to_utf8(snap);
         }
         return ctx.model_cache_path;
-    }
-
-    std::optional<std::vector<std::string>> select_checkpoint_files(
-        const std::string& main_variant, const std::vector<std::string>& repo_files) const override {
-        static const std::vector<std::string> kCompanions = {
-            "acestep-5Hz-lm-4B-Q8_0.gguf",     // language model (vocals/auto-lyrics)
-            "Qwen3-Embedding-0.6B-BF16.gguf",  // text encoder
-            "vae-BF16.gguf",                   // VAE
-        };
-        std::vector<std::string> want = {main_variant};
-        for (const auto& c : kCompanions) {
-            if (std::find(repo_files.begin(), repo_files.end(), c) != repo_files.end()) {
-                want.push_back(c);
-            }
-        }
-        return want;
     }
 };
 }  // namespace

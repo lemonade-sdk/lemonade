@@ -21,13 +21,11 @@ public:
     AceStepServer(const std::string& log_level,
                   ModelManager* model_manager,
                   BackendManager* backend_manager);
-    ~AceStepServer() override;
 
     void load(const std::string& model_name,
               const ModelInfo& model_info,
               const RecipeOptions& options,
               bool do_not_upgrade) override;
-    void unload() override;
 
     // IAudioGenerationServer
     void audio_generations(const json& request, httplib::DataSink& sink) override;
