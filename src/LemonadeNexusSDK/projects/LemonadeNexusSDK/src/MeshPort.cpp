@@ -696,6 +696,7 @@ MeshPort::MeshPort(MeshPortBackend backend, Options options)
 MeshPort::~MeshPort() { stop(); }
 
 MeshPortStartResult MeshPort::bind_listener(uint16_t port, bool tls) {
+    proxies_->reopen();
     auto listener = std::make_unique<Listener>();
     listener->tls = tls;
     if (tls) {
@@ -1273,6 +1274,7 @@ nlohmann::json MeshPort::status() const {
     }
     return {
         {"running", running_},
+        {"auto_failovers", auto_failovers_.load()},
         {"port", running_ ? port_ : 0},
         {"scheme", tls ? "https" : "http"},
         {"local_domain", local_domain_},
@@ -1399,9 +1401,21 @@ void MeshPort::serve_auto(const httplib::Request& req, httplib::Response& res, c
         ? body["model"].get<std::string>() : std::string();
     const auto local_ids = local_model_ids(caller_authorization);
     auto route = mesh_port::auto_route(model, members, self, local_ids, {});
+    std::vector<MeshPortPeerModels> peers;
+    bool probed = false;
     if (route.target.empty() && route.status == 404) {
-        route = mesh_port::auto_route(model, members, self, local_ids, peer_models(members, self, peer_authorization));
+        peers = peer_models(members, self, peer_authorization);
+        probed = true;
+        route = mesh_port::auto_route(model, members, self, local_ids, peers);
     }
+    // A model named without a device prefix may be served by several devices.
+    // When the chosen one gives no answer at all, the request is sent once more
+    // to the next-ranked device. A request that named its device is never
+    // moved: the caller chose. A request the device started to answer is never
+    // repeated either: proxy_request only reports "no answer" before the first
+    // response byte.
+    const bool named_device = model.find('/') != std::string::npos && route.model != model;
+    const bool may_fail_over = probed && !named_device && !route.target.empty() && route.target != "local";
     if (!route.refused.empty()) {
         std::string names;
         for (const auto& name : route.refused) names += (names.empty() ? "" : ", ") + name;
@@ -1417,14 +1431,49 @@ void MeshPort::serve_auto(const httplib::Request& req, httplib::Response& res, c
         forwarded = body.dump();
     }
     if (route.target != "local") {
-        forward_to_node(route.target, path, req, res, peer_authorization, forwarded);
+        const auto outcome = forward_to_node(route.target, path, req, res, peer_authorization, forwarded);
+        // Shutdown cancelled the request: nothing more may be sent.
+        if (outcome == ProxyOutcome::Cancelled) return;
+        const bool answered = outcome == ProxyOutcome::Answered;
+        // A device whose own ingress answers 502/503 has a service behind it
+        // that is down or not ready: no model byte was produced, so the request
+        // is as safe to re-send as one that got no answer at all.
+        const bool unavailable = !answered || res.status == 502 || res.status == 503;
+        spdlog::debug("[MeshPort] auto: {} -> {} answered={} status={} probed={} named_device={} peers={}", model,
+                      route.target, answered, res.status, probed, named_device, peers.size());
+        if (!unavailable || !may_fail_over) return;
+        // The chosen device never answered. Drop it from this request's view
+        // and ask the ranking for the next device, once.
+        const std::string dead = route.target;
+        peers.erase(std::remove_if(peers.begin(), peers.end(),
+                                   [&dead](const MeshPortPeerModels& p) { return p.node_id == dead; }),
+                    peers.end());
+        const auto next = mesh_port::auto_route(model, members, self, local_ids, peers);
+        if (next.target.empty() || next.target == "local" || next.target == dead) return;  // nothing else serves it
+        if (proxies_->is_closed()) return;  // stop() began while the first attempt ended
+        spdlog::info("[MeshPort] auto: device {} gave no answer for {}; re-sending once to {}", dead, model,
+                     next.target);
+        ++auto_failovers_;
+        httplib::Response retry;
+        auto body_next = forwarded;
+        if (next.model != route.model) {
+            body["model"] = next.model;
+            body_next = body.dump();
+        }
+        forward_to_node(next.target, path, req, retry, peer_authorization, body_next);
+        res = std::move(retry);
         return;
     }
     forward_local(path, req, res, forwarded);
 }
 
-void MeshPort::forward_to_node(const std::string& node_id, const std::string& path, const httplib::Request& req,
-                               httplib::Response& res, const std::string& peer_authorization, const std::string& body) {
+ProxyOutcome MeshPort::forward_to_node(const std::string& node_id, const std::string& path,
+                                       const httplib::Request& req, httplib::Response& res,
+                                       const std::string& peer_authorization, const std::string& body) {
+    if (proxies_->is_closed()) {
+        reply_error(res, 502, "Cannot reach that service");
+        return ProxyOutcome::Cancelled;
+    }
     std::vector<MeshPortMember> members;
     {
         std::lock_guard lock(state_mutex_);
@@ -1434,12 +1483,12 @@ void MeshPort::forward_to_node(const std::string& node_id, const std::string& pa
     const auto target = mesh_port::forward_target(members, self, node_id);
     if (target.first != 0) {
         reply_error(res, target.first, target.second);
-        return;
+        return ProxyOutcome::Unanswered;
     }
     const uint16_t port = backend_.open_egress ? backend_.open_egress(target.second, kMeshPortPeerServicePort) : 0;
     if (port == 0) {
         reply_error(res, 502, "Cannot open a mesh connection to that device");
-        return;
+        return ProxyOutcome::Unanswered;
     }
     {
         std::lock_guard lock(state_mutex_);
@@ -1455,15 +1504,17 @@ void MeshPort::forward_to_node(const std::string& node_id, const std::string& pa
         backend_.close_egress(address, kMeshPortPeerServicePort);
         return backend_.open_egress(address, kMeshPortPeerServicePort);
     };
+    ProxyOutcome outcome = ProxyOutcome::Unanswered;
     if (req.is_multipart_form_data()) {
         const auto [type, encoded] = multipart_body(req);
         proxy_request(proxies_, "127.0.0.1", port, req, path, forwarded_headers(req, peer_authorization, type), encoded,
-                      res, reopen);
-        return;
+                      res, reopen, &outcome);
+        return outcome;
     }
     const auto type = req.has_header("Content-Type") ? req.get_header_value("Content-Type") : std::string();
     proxy_request(proxies_, "127.0.0.1", port, req, path, forwarded_headers(req, peer_authorization, type), body, res,
-                  reopen);
+                  reopen, &outcome);
+    return outcome;
 }
 
 void MeshPort::forward_local(const std::string& path, const httplib::Request& req, httplib::Response& res,

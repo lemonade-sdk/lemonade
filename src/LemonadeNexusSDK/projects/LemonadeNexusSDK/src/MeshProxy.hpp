@@ -36,6 +36,7 @@ struct MeshPortProxies {
     std::vector<std::weak_ptr<MeshProxyPipe>> pipes;
     size_t handlers{0};
     bool switching{false};       // refuse new requests while the listener is replaced
+    bool closed{false};          // cancel_all() ran: no new pipe may start until reopen()
     bool wake_when_idle{false};  // a switch is waiting for the open requests to finish
     std::function<void()> on_idle;
 
@@ -55,10 +56,24 @@ struct MeshPortProxies {
         }
         if (wake) wake();
     }
-    void add(const std::shared_ptr<MeshProxyPipe>& pipe) {
+    /// Registers a pipe so cancel_all() can reach it. False once cancel_all() has
+    /// run: the caller must not start the request. Checked under the same lock
+    /// cancel_all() takes, so a pipe is either cancelled by it or never started.
+    bool add(const std::shared_ptr<MeshProxyPipe>& pipe) {
         std::lock_guard lock(mutex);
+        if (closed) return false;
         prune_locked();
         pipes.push_back(pipe);
+        return true;
+    }
+    /// Accepts new pipes again; a listener calls this when it binds.
+    void reopen() {
+        std::lock_guard lock(mutex);
+        closed = false;
+    }
+    bool is_closed() {
+        std::lock_guard lock(mutex);
+        return closed;
     }
     /// Called by a pipe's destructor, once its response is written or aborted.
     void released() {
@@ -90,6 +105,7 @@ struct MeshPortProxies {
         switching = false;
         wake_when_idle = false;
     }
+    /// Aborts every open pipe and refuses new ones until reopen().
     void cancel_all();
 
 private:
@@ -120,6 +136,13 @@ std::pair<std::string, std::string> multipart_body(const httplib::Request& req);
 /// service. Equal to the upstream connect timeout.
 inline constexpr std::chrono::seconds kDeadBridgeWindow{10};
 
+/// How a proxied request ended.
+enum class ProxyOutcome {
+    Answered,    // the service sent response headers
+    Unanswered,  // no response byte came back: safe to send elsewhere
+    Cancelled,   // the listener is shutting down: send nothing more
+};
+
 /// Forwards `req` as `target` to the HTTP service at host:port with `headers` and
 /// `body`, and streams the upstream response into `res` with its status and
 /// Content-Type. A service that does not answer gets 502. The response streams
@@ -132,6 +155,6 @@ inline constexpr std::chrono::seconds kDeadBridgeWindow{10};
 void proxy_request(const std::shared_ptr<MeshPortProxies>& proxies, const std::string& host, uint16_t port,
                    const httplib::Request& req, const std::string& target, httplib::Headers headers,
                    const std::string& body, httplib::Response& res,
-                   const std::function<uint16_t()>& reopen = {});
+                   const std::function<uint16_t()>& reopen = {}, ProxyOutcome* outcome = nullptr);
 
 }  // namespace lnsdk
