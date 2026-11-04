@@ -710,6 +710,8 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
     // No wall-clock deadline: a long clip legitimately runs for many minutes.
     // Give up when the caller cancels, or when the backend dies, which
     // is_backend_alive() catches via forward_get_request.
+    constexpr int kMaxFailedPolls = 5;
+    int failed_polls = 0;
     while (true) {
         if (cancel && cancel->load()) {
             cancel_backend_job();
@@ -723,8 +725,22 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
         // for a "status" field rather than for "error" matters: the job payload
         // itself always has an "error" key, null while the job is healthy.
         if (!status.contains("status") || !status["status"].is_string()) {
+            // A dead backend is left to the router, which reloads it and retries.
+            if (!is_backend_alive()) {
+                return status;
+            }
+            if (++failed_polls < kMaxFailedPolls) {
+                continue;
+            }
+            // Failing the job while sd-server may still be generating would free the
+            // slot with the GPU still busy, the same mismatch a refused cancel causes.
+            LOG(WARNING, "SDServer") << "lost track of video job " << poll_url << " after "
+                                     << failed_polls << " failed polls: " << status.dump()
+                                     << "; stopping sd-server" << std::endl;
+            stop_server();
             return status;
         }
+        failed_polls = 0;
         const std::string state = status.value("status", std::string());
         if (state == "queued" || state == "generating") {
             continue;
