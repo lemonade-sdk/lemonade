@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -387,7 +388,10 @@ private:
                          const std::string& path);
     void serve_auto(const httplib::Request& req, httplib::Response& res,
                     const std::string& path, const std::string& peer_authorization);
-    void forward_to_node(const std::string& node_id, const std::string& path,
+    /// Returns false when the device produced no response at all (it is not a
+    /// reachable Tier 3 member, no bridge could be opened, or the bridge gave no
+    /// response byte); the auto router then tries the next device once.
+    bool forward_to_node(const std::string& node_id, const std::string& path,
                          const httplib::Request& req, httplib::Response& res,
                          const std::string& peer_authorization, const std::string& body);
     void forward_local(const std::string& path, const httplib::Request& req,
@@ -414,6 +418,8 @@ private:
     std::shared_ptr<MeshPortProxies> proxies_;
 
     mutable std::mutex state_mutex_;
+    /// Requests the auto router re-sent to another device after the chosen one gave no answer.
+    std::atomic<int> auto_failovers_{0};
     bool running_{false};
     uint16_t port_{0};
     std::string local_host_;    // local service host; empty for none

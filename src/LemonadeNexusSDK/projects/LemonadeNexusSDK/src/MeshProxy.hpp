@@ -132,6 +132,6 @@ inline constexpr std::chrono::seconds kDeadBridgeWindow{10};
 void proxy_request(const std::shared_ptr<MeshPortProxies>& proxies, const std::string& host, uint16_t port,
                    const httplib::Request& req, const std::string& target, httplib::Headers headers,
                    const std::string& body, httplib::Response& res,
-                   const std::function<uint16_t()>& reopen = {});
+                   const std::function<uint16_t()>& reopen = {}, bool* answered = nullptr);
 
 }  // namespace lnsdk

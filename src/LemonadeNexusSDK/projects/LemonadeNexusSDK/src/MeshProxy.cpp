@@ -185,7 +185,8 @@ bool pipe_answered(MeshProxyPipe& pipe) {
 
 void proxy_request(const std::shared_ptr<MeshPortProxies>& proxies, const std::string& host, uint16_t port,
                    const httplib::Request& req, const std::string& target, httplib::Headers headers,
-                   const std::string& body, httplib::Response& res, const std::function<uint16_t()>& reopen) {
+                   const std::string& body, httplib::Response& res, const std::function<uint16_t()>& reopen,
+                   bool* answered) {
     const auto started = std::chrono::steady_clock::now();
     auto pipe = start_pipe(proxies, host, port, req, target, headers, body);
     if (reopen && !pipe_answered(*pipe) && std::chrono::steady_clock::now() - started < kDeadBridgeWindow) {
@@ -212,6 +213,7 @@ void proxy_request(const std::shared_ptr<MeshPortProxies>& proxies, const std::s
         status = pipe->status;
         type = pipe->content_type;
     }
+    if (answered) *answered = ready;
     if (!ready) {
         pipe->cancel();
         pipe->join();
