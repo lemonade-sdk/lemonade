@@ -98,6 +98,8 @@ Each `support` row names its backend's tier (`BackendTier::Core`, `BackendTier::
 
 `supported_modes` is the backend's contract with the model registry. A model whose labels name no mode is stamped with `supported_modes[0]`; a model whose labels name a mode absent from the list is refused by `POST /pull` with a 400 rather than failing later at inference time. `BackendModeContractTest` fails the build if this list disagrees with the capability interfaces your server class implements.
 
+An `options` entry is a user knob unless it sets `user_configurable = false`, marking a value that is not supposed to be changed by the user. The option still resolves at load time and stays settable through the API and `config.json`.
+
 ### The server class + factory — `<stem>/<stem>_server.{h,cpp}`
 
 The server class is a `WrappedServer` subclass. Implement `load()` ([Starting the server process](#starting-the-server-process)) and only the capability interfaces you serve (`ITranscriptionServer`, `IImageServer`, `ITextToSpeechServer`, …). `WrappedServer` provides default "unsupported" `chat_completion`/`completion`/`responses`, so a non-chat backend does not stub them. Alongside it, a free `create()` builds the instance.

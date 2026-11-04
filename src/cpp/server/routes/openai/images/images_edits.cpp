@@ -101,7 +101,7 @@ const RouteArg kMask{"mask", ArgIn::Form, kFileSchema, false, Support::Available
                      "A PNG mask: white areas are edited and black areas are kept."};
 const RouteArg kSize{"size", ArgIn::Form, kStringSchema, false, Support::Available,
                      "Output size as `WIDTHxHEIGHT`, such as `512x512`. Defaults to the first reference "
-                     "image's size, scaled down to fit the model's `image_defaults.soft_pixel_cap` "
+                     "image's size, scaled down to fit the model's `soft_pixel_cap` option "
                      "(2048x2048 pixels, about 4 MP, unless the model sets one). An explicit size skips "
                      "that cap; backend limits still apply."};
 const RouteArg kSteps{"steps", ArgIn::Form, kIntegerSchema, false, Support::Available,
@@ -196,8 +196,13 @@ protected:
         if (!req.has(kSize)) {
             std::uint64_t soft_pixel_cap = kDefaultMaxEditPixels;
             const auto model = ctx_.router->try_get_model_info(req.model);
-            if (model && model->image_defaults.soft_pixel_cap > 0) {
-                soft_pixel_cap = model->image_defaults.soft_pixel_cap;
+            if (model) {
+                const RecipeOptions no_request_options(model->recipe, json::object());
+                const json cap = ctx_.router->resolve_effective_options(*model, no_request_options)
+                                     .get_option("soft_pixel_cap");
+                if (cap.is_number() && cap.get<std::int64_t>() > 0) {
+                    soft_pixel_cap = cap.get<std::uint64_t>();
+                }
             }
             const httplib::FormData* first = req.file(kImage);
             const auto original = image_dimensions_from_bytes(first->content);
