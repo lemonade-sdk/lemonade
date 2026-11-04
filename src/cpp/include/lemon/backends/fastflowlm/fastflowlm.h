@@ -45,6 +45,7 @@ inline const BackendDescriptor descriptor = {
     /*bin_variants*/    {},
     /*config_extra*/    {{"prefer_system", false}},
     /*streams_model_from_storage*/ false,
+    /*containers*/ {},
     // see ISystemOneServer
     /*mode_capability_requirements*/ {{"classification", "systemone"}},
 };

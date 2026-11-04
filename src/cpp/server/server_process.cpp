@@ -1,5 +1,6 @@
 #include "lemon/server_process.h"
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <map>
@@ -9,6 +10,7 @@
 
 #include "lemon/backends/backend_ops.h"
 #include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
 #include "lemon/utils/container_manager.h"
 
 #include <lemon/utils/aixlog.hpp>
@@ -108,7 +110,8 @@ std::string ContainerProcess::start(const ServerCommand& command) {
                              " is a container backend, which runs on Linux");
 #endif
     const auto& manager = ContainerManager::global();
-    if (auto failure = backends::container_setup_failure()) {
+    if (auto failure = backends::container_setup_failure(recipe_, backend_,
+                                                         backends::container_setup_failure())) {
         throw std::runtime_error(recipe_ + ":" + backend_ + " cannot start:" + failure->text());
     }
     if (!ContainerManager::allowed_image(policy_.image)) {
@@ -136,14 +139,18 @@ std::string ContainerProcess::start(const ServerCommand& command) {
     std::set<std::string> destinations;
     for (const auto& model_file : command.model_files) {
         if (model_file.empty() || inside.count(model_file)) continue;
-        const std::string file_name = fs::path(model_file).filename().string();
+        fs::path named(model_file);
+        if (!named.has_filename()) named = named.parent_path();
+        const std::string file_name = named.filename().string();
         std::string destination = std::string(kModelsDir) + "/" + file_name;
         // Two files can share a name; the second gets a numbered directory.
         for (int n = 2; destinations.count(destination); ++n) {
             destination = std::string(kModelsDir) + "/" + std::to_string(n) + "/" + file_name;
         }
         destinations.insert(destination);
-        spec.mounts.push_back(ContainerManager::model_mount(model_file, destination));
+        for (auto& mount : ContainerManager::model_mounts(model_file, destination)) {
+            spec.mounts.push_back(std::move(mount));
+        }
         inside[model_file] = destination;
     }
     const auto rewrite = [&inside](const std::string& value) {
@@ -151,6 +158,11 @@ std::string ContainerProcess::start(const ServerCommand& command) {
         return it == inside.end() ? value : it->second;
     };
 
+    if (std::find(policy_.devices.begin(), policy_.devices.end(), "/dev/kfd") !=
+        policy_.devices.end()) {
+        const std::string gpu = hip_visible_device(recipe_, backend_);
+        if (!gpu.empty()) spec.env.push_back({"HIP_VISIBLE_DEVICES", gpu});
+    }
     for (const auto& [key, value] : command.env) {
         spec.env.push_back({key, rewrite(value)});
     }

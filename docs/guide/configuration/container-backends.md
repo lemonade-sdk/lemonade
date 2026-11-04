@@ -14,7 +14,12 @@ Rootful Podman and Docker give that account root-equivalent control of the host'
 
 | Backend | Engine | Image |
 |---------|--------|-------|
+| `ds4:rocm` | DS4 | [kyuz0/strix-halo-ds4-toolbox](https://hub.docker.com/r/kyuz0/strix-halo-ds4-toolbox) |
 | `llamacpp:nathanw` | llama.cpp Vulkan performance fork | [kyuz0/amd-strix-halo-toolboxes](https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes) |
+| `llamacpp:halobox` | llama.cpp Halo Box ROCm fork | [kyuz0/amd-strix-halo-toolboxes](https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes) |
+| `rocmfpx:rocm` | llama.cpp ROCm FPX fork | [kyuz0/amd-strix-halo-toolboxes](https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes) |
+| `halogen:rocm` | Halogen Flash; needs Linux 6.18.4 or newer, built with `CONFIG_HSA_AMD_SVM` | [peonist-ai/halogen-flash-server](https://github.com/orgs/peonist-ai/packages/container/package/halogen-flash-server) |
+| `gufo:rocm` | Gufo | [kyuz0/amd-strix-halo-toolboxes](https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes) |
 
 ## Setup
 
@@ -64,6 +69,8 @@ When `lemond` runs as `lemond.service`, installed by the `.deb`, PPA or `.rpm` p
 
 1. Remove Podman, which takes precedence: `sudo apt remove podman` or `sudo dnf remove podman`.
 2. `sudo usermod -aG docker lemonade`, then `sudo systemctl restart lemond`.
+
+**With SELinux enforcing**, as on Fedora, ROCm backends also need containers allowed to map GPU devices: `sudo setsebool -P container_use_devices 1`.
 
 Until setup is complete, the backend's state is `action_required`. `lemonade backends` lists every missing step and the commands that complete them, and the Backend Manager shows the same. The state updates as soon as a step takes effect.
 
