@@ -95,31 +95,11 @@ void parse_components(ModelInfo& info, const json& row) {
     }
 }
 
-void parse_image_defaults(ModelInfo& info, const json& row) {
-    if (!row.contains("image_defaults") || !row["image_defaults"].is_object()) {
-        return;
-    }
-    const auto& img_defaults = row["image_defaults"];
-    info.image_defaults.has_defaults = true;
-    info.image_defaults.steps = utils::JsonUtils::get_or_default<int>(img_defaults, "steps", 20);
-    info.image_defaults.cfg_scale = utils::JsonUtils::get_or_default<float>(img_defaults, "cfg_scale", 7.0f);
-    info.image_defaults.width = utils::JsonUtils::get_or_default<int>(img_defaults, "width", 512);
-    info.image_defaults.height = utils::JsonUtils::get_or_default<int>(img_defaults, "height", 512);
-    info.image_defaults.sampling_method =
-        utils::JsonUtils::get_or_default<std::string>(img_defaults, "sampling_method", "");
-    info.image_defaults.flow_shift =
-        utils::JsonUtils::get_or_default<float>(img_defaults, "flow_shift", 0.0f);
-    const auto edit_cap = img_defaults.find("soft_pixel_cap");
-    if (edit_cap != img_defaults.end() && edit_cap->is_number_unsigned()) {
-        info.image_defaults.soft_pixel_cap = edit_cap->get<std::uint64_t>();
-    }
-}
-
 void parse_extras(ModelInfo& info, const json& row) {
     static const std::set<std::string> kKnownKeys = {
         "checkpoint",   "checkpoints",     "components",   "mmproj",  "recipe",
         "suggested",    "source",          "registry_source", "size", "cloud_provider",
-        "labels",       "image_defaults",  "recipe_options"};
+        "labels",       "image_defaults",  "audio_defaults", "recipe_options"};
     if (!row.is_object()) {
         return;
     }
@@ -201,7 +181,6 @@ std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& 
         }
     }
 
-    parse_image_defaults(info, row);
     parse_extras(info, row);
 
     if (rules.recipe_options) {
@@ -230,12 +209,32 @@ std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& 
     return info;
 }
 
+namespace {
+
+// Per-model option blocks from before recipe_options carried everything.
+const std::set<std::string> kLegacyOptionBlocks = {"image_defaults", "audio_defaults"};
+
+}  // namespace
+
 json row_recipe_options(const json& row) {
-    if (!row.is_object() || !row.contains("recipe_options") ||
-        !row["recipe_options"].is_object()) {
+    if (!row.is_object()) {
         return json(nullptr);
     }
-    return row["recipe_options"];
+    const bool has_options = row.contains("recipe_options") && row["recipe_options"].is_object();
+    json merged = has_options ? row["recipe_options"] : json::object();
+    bool any_block = has_options;
+    for (const auto& legacy : kLegacyOptionBlocks) {
+        if (!row.contains(legacy) || !row[legacy].is_object()) {
+            continue;
+        }
+        any_block = true;
+        for (const auto& [key, value] : row[legacy].items()) {
+            if (!merged.contains(key)) {
+                merged[key] = value;
+            }
+        }
+    }
+    return any_block ? merged : json(nullptr);
 }
 
 JsonCatalog::JsonCatalog(CatalogDescriptor descriptor,

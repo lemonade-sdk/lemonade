@@ -109,13 +109,14 @@ AudioFormatMetadata OpenMossServer::audio_format_metadata(
     }
     AudioFormatMetadata metadata;
     metadata.content_type = "audio/pcm";
-    const int sample_rate = pcm_sample_rate_.load(std::memory_order_acquire);
-    const int channels = pcm_channels_.load(std::memory_order_acquire);
-    if (sample_rate > 0) {
-        metadata.headers["X-MOSS-Sample-Rate"] = std::to_string(sample_rate);
-    }
-    if (channels > 0) {
-        metadata.headers["X-MOSS-Channels"] = std::to_string(channels);
+    const RecipeOptions options = get_recipe_options();
+    for (const auto& [option, header] :
+         {std::pair{"pcm_sample_rate", "X-MOSS-Sample-Rate"},
+          {"pcm_channels", "X-MOSS-Channels"}}) {
+        const int value = options.int_option(option).value_or(0);
+        if (value > 0) {
+            metadata.headers[header] = std::to_string(value);
+        }
     }
     return metadata;
 }
@@ -179,16 +180,6 @@ void OpenMossServer::load(const std::string& model_name,
     if (!voicegen_path_.empty() && !std::filesystem::exists(voicegen_path_)) {
         voicegen_path_.clear();
     }
-    const json audio_defaults =
-        model_info.extra<json>("audio_defaults", json::object());
-    pcm_sample_rate_.store(
-        utils::JsonUtils::get_or_default<int>(
-            audio_defaults, "pcm_sample_rate", 0),
-        std::memory_order_release);
-    pcm_channels_.store(
-        utils::JsonUtils::get_or_default<int>(
-            audio_defaults, "pcm_channels", 0),
-        std::memory_order_release);
     reference_cache_.clear();
 
     start_speech_process();
