@@ -51,13 +51,14 @@
     }
   },
   "llamacpp": {
-    "vulkan": "b11846",
-    "rocm-stable": "b11836",
-    "rocm-nightly": "b1353",
-    "cuda": "b11836",
-    "metal": "b11846",
-    "cpu": "b11846",
-    "nathanw": "vulkan-radv-performance@sha256:41018261e61b7e32fb38e4985ba569d0837804e727dcc62689c2fb1d73ec8f15"
+    "vulkan": "b12109",
+    "rocm-stable": "b12109",
+    "rocm-nightly": "b1365",
+    "cuda": "b12109",
+    "metal": "b12109",
+    "cpu": "b12109",
+    "nathanw": "vulkan-radv-performance@sha256:41018261e61b7e32fb38e4985ba569d0837804e727dcc62689c2fb1d73ec8f15",
+    "halobox": "rocm-10.0-strix-llama@sha256:7d3844524fda1865a2ae60cc73eb232589626ccca245cc3c7bd2afb153bd9bd6"
   },
   "llamacpp-hrx": {
     "hrx": "hrx-b99"
@@ -82,6 +83,9 @@
   "halogen": {
     "rocm": "0.18.22@sha256:273714ccb64dabb7fac0418ee1b6dd83eb57d2fd44cf286eb68a7c694a27c203"
   },
+  "gufo": {
+    "rocm": "rocm-10.0-gufo@sha256:67aa0b040993fedfd4e300242c5cb48f8add5874454a7486993668e74185e7a9"
+  },
   "ds4": {
     "rocm": "rocm-10.0@sha256:31b4e7e3584684768ee060e3dfeb62c1d716219da468090f3483977fdf6dfb47"
   },
@@ -100,6 +104,8 @@
       "gfx1151",
       "gfx1152",
       "gfx1153",
+      "gfx1170",
+      "gfx1171",
       "gfx1200",
       "gfx1201",
       "gfx1010",
@@ -130,6 +136,8 @@
       "gfx1151": "gfx1151",
       "gfx1152": "gfx1152",
       "gfx1153": "gfx1153",
+      "gfx1170": "gfx117X-all",
+      "gfx1171": "gfx117X-all",
       "gfx1200": "gfx120X-all",
       "gfx1201": "gfx120X-all",
       "gfx1010": "gfx101X-dgpu",

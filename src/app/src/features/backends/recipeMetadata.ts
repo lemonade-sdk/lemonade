@@ -15,6 +15,7 @@ export interface RecipeOptionMetadata {
   typeName: string;
   help: string;
   group: string;
+  userConfigurable: boolean;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -64,6 +65,7 @@ export function recipeOptions(systemInfo: unknown, recipe: string): RecipeOption
       typeName: asString(option.type_name),
       help: asString(option.help),
       group: asString(option.group),
+      userConfigurable: option.user_configurable !== false,
     };
   }).filter(option => option.name !== '');
 }
@@ -89,6 +91,15 @@ export function recipeBackendOptionName(systemInfo: unknown, recipe: string): st
   return recipeRecord(systemInfo, recipe).selectable_backend === true
     ? `${normalizedRecipeKey(recipe)}_backend`
     : null;
+}
+
+function recipeOptionIsUserConfigurable(systemInfo: unknown, recipe: string, key: string): boolean {
+  return recipeOption(systemInfo, recipe, key)?.userConfigurable !== false;
+}
+
+export function recipeConfigurableOptionNames(systemInfo: unknown, recipe: string): string[] {
+  return recipeOptionNames(systemInfo, recipe)
+    .filter(name => recipeOptionIsUserConfigurable(systemInfo, recipe, name));
 }
 
 export function recipeOptionLabel(systemInfo: unknown, recipe: string, key: string): string {

@@ -282,7 +282,7 @@ assert.match(backendManagerSource,
   'final #3183 per-backend args safety rule must remain intact');
 assert.doesNotMatch(detailSource, /IMAGE_RECIPE_KEYS|recipeKeysForRecipe\(|fallbackBackendsForRecipe\(/,
   'Model Configuration must not map an unknown recipe onto a frontend recipe table');
-assert.match(detailSource, /recipeOptionNames\(info, recipe\)/,
+assert.match(detailSource, /recipe(?:Configurable)?OptionNames\(info, recipe[),]/,
   'Model Configuration fields must come from recipes[].options[]');
 assert.match(detailSource, /recipeBackendOptionName\(systemInfo, activeRecipe\)/,
   'device options must resolve their owning backend field from recipe metadata');

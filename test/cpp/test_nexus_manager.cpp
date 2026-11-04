@@ -398,8 +398,8 @@ void check_service_catalog(const std::function<void(bool, const char*)>& check) 
         ++per_family[family];
         if (route.value("prefixes", std::string()) == "Internal") known = known && family == "internal";
     }
-    check(all.size() == 86 && known, "Every lemond route has one of the known families");
-    check(per_family["inference"] == 34 && per_family["models_manage"] == 18 && per_family["internal"] == 15 && per_family["jobs"] == 7 &&
+    check(all.size() == 87 && known, "Every lemond route has one of the known families");
+    check(per_family["inference"] == 35 && per_family["models_manage"] == 18 && per_family["internal"] == 15 && per_family["jobs"] == 7 &&
           per_family["backends"] == 5 && per_family["system"] == 3 && per_family["mcp"] == 2 && per_family["management"] == 2,
           "The family assignment matches the documented table");
     bool status_reads_in_inference = true;

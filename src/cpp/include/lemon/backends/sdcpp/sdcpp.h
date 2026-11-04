@@ -27,13 +27,13 @@ inline const BackendDescriptor descriptor = {
          "SD.cpp backend to use", "Stable Diffusion Options"},
         {"sdcpp_args", "--sdcpp-args", "", "ARGS",
          "Custom arguments to pass to sd-server (must not conflict with managed args)", "Stable Diffusion Options"},
-        // Image generation defaults (recipe-level only, not CLI flags).
         {"steps", "", 20, "SIZE", "Number of diffusion steps", "Stable Diffusion Options"},
         {"cfg_scale", "", 7.0, "SIZE", "Classifier-free guidance scale", "Stable Diffusion Options"},
         {"width", "", 512, "SIZE", "Output image width", "Stable Diffusion Options"},
         {"height", "", 512, "SIZE", "Output image height", "Stable Diffusion Options"},
         {"sampling_method", "", "", "ARGS", "Sampling method", "Stable Diffusion Options"},
         {"flow_shift", "", 0.0, "SIZE", "Flow shift", "Stable Diffusion Options"},
+        {"soft_pixel_cap", "", 0, "SIZE", "Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default)", "Stable Diffusion Options", false},
     },
     /*support*/ {
         {"metal", BackendTier::Core, BackendFormat::Native, {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},

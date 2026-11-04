@@ -284,7 +284,6 @@ The JSON file must contain the following fields:
 |-------|------|-------------|
 | `labels` | array | Array of label strings (e.g., `["reasoning", "coding"]`) |
 | `recipe_options` | object | Recipe-specific options (e.g., `{"ctx-size": 8192, "llamacpp": "vulkan"}`) |
-| `image_defaults` | object | Image generation defaults for image models |
 | `size` | string | Model size description |
 
 **Notes:**
@@ -455,6 +454,13 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
+
+#### Gufo (`gufo` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--gufo-args ARGS` | Custom arguments to pass to gufo serve llm | `""` |
 
 #### ThinkSound (`thinksound` recipe)
 

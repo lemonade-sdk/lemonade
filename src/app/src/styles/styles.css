@@ -1429,8 +1429,6 @@ input[type="checkbox"]:disabled {
   flex-wrap: wrap;
 }
 
-.composer__toolbar > .composer__tools-toggle { margin-top: 3px; }
-
 .composer__tools-toggle {
   display: inline-flex;
   align-items: center;
@@ -5871,6 +5869,7 @@ optgroup {
 }
 
 .composer__model-button {
+  min-height: 30px;
   min-width: 220px;
   max-width: min(420px, 46vw);
   display: inline-flex;

@@ -258,7 +258,7 @@ URL. `nexus_access::kFamilies` lists the families:
 
 | Family | Routes |
 | --- | --- |
-| `inference` | chat/completions, completions, responses, embeddings, audio, images, 3d and audio generations, classify, rerank, tokenize, slots (read), the Anthropic messages route, the Ollama chat, generate, embed, embeddings, tags, show, ps and version routes, models list and model detail reads (`models`, `models/{id}`, `models/{id}/files`, `models/{id}/options` GET), health, live, stats, system-stats, system-info (device status reads that a mesh client polls to use the device) |
+| `inference` | chat/completions, completions, responses, embeddings, audio, images, 3d and audio generations, classify, systemone, rerank, tokenize, slots (read), the Anthropic messages route, the Ollama chat, generate, embed, embeddings, tags, show, ps and version routes, models list and model detail reads (`models`, `models/{id}`, `models/{id}/files`, `models/{id}/options` GET), health, live, stats, system-stats, system-info (device status reads that a mesh client polls to use the device) |
 | `mcp` | `/mcp` RPC and SSE |
 | `models_manage` | pull, pull/variants, registry/search, delete, load, unload, models/register, models/check-updates, `models/{id}/options` POST and DELETE, downloads and downloads/control, Ollama pull, delete, create, copy, push and blobs |
 | `backends` | install, install/dry-run, uninstall, cloud/auth, `cloud/auth/{provider}` |
