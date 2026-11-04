@@ -5103,14 +5103,28 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
 
 /* ── Message bubble ──────────────────────────────────────── */
 
+function imageDownloadExtension(src: string): string {
+  const subtype = /^data:image\/([^;,]+)/i.exec(src)?.[1]?.toLowerCase();
+  if (subtype) {
+    if (subtype === 'jpeg' || subtype === 'pjpeg') return 'jpg';
+    if (subtype === 'svg+xml') return 'svg';
+    if (subtype === 'x-icon' || subtype === 'vnd.microsoft.icon') return 'ico';
+    if (/^[a-z0-9]+$/.test(subtype)) return subtype;
+  }
+  const path = src.split(/[?#]/, 1)[0];
+  return /\.(png|jpe?g|webp|gif|bmp|avif|svg|tiff?|heic|heif)$/i.exec(path)?.[1]?.toLowerCase() || 'png';
+}
+
 const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; defaultThinkingOpen?: boolean; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, defaultThinkingOpen = false, onOptionSelect, onRetry, onSpeak, onEditUser }) => {
   const { t } = useI18n();
   const [thinkingOpen, setThinkingOpen] = useState(defaultThinkingOpen);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content || '');
+  const [copyFailed, setCopyFailed] = useState(false);
 
   useEffect(() => {
     if (!isEditing) setEditDraft(message.content || '');
+    setCopyFailed(false);
   }, [isEditing, message.content]);
 
   if (message.role === 'user') {
@@ -5154,11 +5168,25 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
               <MarkdownMessage content={message.content} />
             </div>
           ) : null}
-          {!isEditing && onEditUser && message.content && (
+          {!isEditing && message.content && (
             <div className="message__actions" aria-label={t('Message actions')}>
-              <button type="button" className="message__action" onClick={() => setIsEditing(true)}>
-                <Icon name="edit" size={13} /> {t('Edit & resend')}
+              <button
+                type="button"
+                className="message__action"
+                onClick={() => {
+                  void copyTextToClipboard(message.content)
+                    .then(() => setCopyFailed(false))
+                    .catch(() => setCopyFailed(true));
+                }}
+                aria-live="polite"
+              >
+                <Icon name="copy" size={13} /> {copyFailed ? t('Copy failed') : t('Copy')}
               </button>
+              {onEditUser && (
+                <button type="button" className="message__action" onClick={() => setIsEditing(true)}>
+                  <Icon name="edit" size={13} /> {t('Edit & resend')}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -5195,7 +5223,18 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
         {message.generatedImages && message.generatedImages.length > 0 && (
           <div className="message__images message__images--generated">
             {message.generatedImages.map((src, i) => (
-              <img key={i} src={src} alt={`Generated image ${i + 1}`} className="message__image message__image--generated" />
+              <div key={i} className="message__image-item">
+                <img src={src} alt={`Generated image ${i + 1}`} className="message__image message__image--generated" />
+                <a
+                  href={src}
+                  download={`lemonade-image-${i + 1}.${imageDownloadExtension(src)}`}
+                  className="message__image-download"
+                  title={t('Download')}
+                  aria-label={`${t('Download')} ${t('Image')} ${i + 1}`}
+                >
+                  <Icon name="download" size={16} />
+                </a>
+              </div>
             ))}
           </div>
         )}

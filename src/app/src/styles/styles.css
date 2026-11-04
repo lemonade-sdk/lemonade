@@ -5134,6 +5134,35 @@ optgroup {
 .message__image--generated {
   max-width: min(100%, 512px);
   max-height: 512px;
+  display: block;
+}
+
+.message__image-item {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  align-self: flex-start;
+}
+
+.message__image-download {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.message__image-download:hover,
+.message__image-download:focus-visible {
+  background: var(--surface-2);
 }
 
 .active-card__status--muted {
