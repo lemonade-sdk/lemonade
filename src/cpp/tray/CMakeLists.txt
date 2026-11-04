@@ -171,10 +171,7 @@ endfunction()
 # cmake/NexusSDK.cmake defines the imported target after this directory and adds the
 # runtime copy dependency and rpath for every target in its list, lemonade-tray included.
 function(apply_tray_nexus_sdk target_name)
-    if(LEMONADE_WITH_NEXUS)
-        target_compile_definitions(${target_name} PRIVATE LEMONADE_WITH_NEXUS=1)
-        target_link_libraries(${target_name} PRIVATE lemonade-nexus-sdk)
-    endif()
+    target_link_libraries(${target_name} PRIVATE lemonade-nexus-sdk)
 endfunction()
 
 # ============================================================

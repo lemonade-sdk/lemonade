@@ -551,12 +551,12 @@ without management controls. Live events have a five-second polling fallback.
 
 ## Building and verification
 
-`LEMONADE_WITH_NEXUS` defaults to `ON` when Cargo 1.85 or newer is found, and
-to `OFF` otherwise. CMake looks in `PATH`, then in `/usr/lib/rust-1.*/bin`,
-where Ubuntu's versioned `cargo-1.xx` packages install. Set
-`LEMONADE_CARGO_EXECUTABLE` to choose one. An explicit `ON` without that
-toolchain fails at configuration. `OFF` builds without SDK dependencies and
-reports Nexus unavailable.
+Every build carries the Nexus client SDK; there is no option to leave it out.
+CMake needs Cargo 1.85 or newer and looks in `PATH`, then in
+`/usr/lib/rust-1.*/bin`, where Ubuntu's versioned `cargo-1.xx` packages
+install. Set `LEMONADE_CARGO_EXECUTABLE` to choose one. Configuration fails
+without that toolchain, so a `lemond` that reports Nexus unavailable cannot be
+produced by accident.
 
 Rust 1.85 is a real minimum: the locked `zeroize` 1.9 uses edition 2024, and
 Cargo 1.75 cannot read the version 4 lockfiles. Ubuntu 24.04's `cargo` is 1.75;
@@ -604,8 +604,8 @@ vendored tree is allowed; send fixes to Nexus so the series can shrink.
 2. If a patch no longer applies, rebase it onto the new commit, regenerate it
    with `git format-patch`, and run the script again. Drop a patch once Nexus
    carries the change.
-3. Build `lemond` and `test_nexus_manager` with `LEMONADE_WITH_NEXUS=ON`, and
-   check that every `ln_*` symbol `lemond` imports is still exported.
+3. Build `lemond` and `test_nexus_manager`, and check that every `ln_*`
+   symbol `lemond` imports is still exported.
 
 CI runs `python tools/update_nexus_sdk.py --check`. It rebuilds the pinned
 commit plus the patches in a temporary directory and fails if the result

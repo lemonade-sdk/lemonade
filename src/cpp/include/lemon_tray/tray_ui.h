@@ -19,7 +19,7 @@
 // The tray carries the signed-in user's Nexus device key to lemond on macOS and Linux,
 // where lemond may run outside the user's session. LemonadeServer.exe is the user's
 // process itself and loads the key directly.
-#if defined(LEMONADE_WITH_NEXUS) && !defined(_WIN32)
+#ifndef _WIN32
 #define LEMONADE_TRAY_NEXUS_CARRIER 1
 #endif
 

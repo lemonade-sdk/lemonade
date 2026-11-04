@@ -32,6 +32,20 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# The Nexus client SDK needs Cargo 1.85 or newer. CMake accepts it from PATH or
+# from a versioned Ubuntu package in /usr/lib/rust-1.*/bin, so both are checked.
+nexus_cargo_ok() {
+    local cargo version
+    for cargo in cargo /usr/lib/rust-1.*/bin/cargo; do
+        version=$("$cargo" --version 2>/dev/null | awk '{print $2}')
+        [ -n "$version" ] || continue
+        if echo "$version" | awk -F. '{exit !($1 > 1 || ($1 == 1 && $2 >= 85))}'; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Check if system is managed by rpm-ostree
 is_rpm_ostree() {
     command_exists rpm-ostree && rpm-ostree status >/dev/null 2>&1
@@ -543,11 +557,11 @@ else
             . "$HOME/.cargo/env"
         fi
     fi
-    if ! command_exists cargo || ! command_exists rustc; then
-        rust_needs_install=true
-        print_info "Rust toolchain not found"
-    else
+    if nexus_cargo_ok; then
         print_success "Rust toolchain is already installed"
+    else
+        rust_needs_install=true
+        print_info "Rust toolchain not found or older than Cargo 1.85"
     fi
 fi
 
@@ -722,7 +736,9 @@ if [ ${#tauri_linux_deps[@]} -gt 0 ] || [ "$rust_needs_install" = true ]; then
         if [ "$OS" = "linux" ]; then
             if command_exists apt; then
                 maybe_sudo apt update
-                if maybe_sudo apt install -y rustc cargo; then
+                # Ubuntu 24.04's cargo is 1.75; its versioned cargo-1.85 package is
+                # new enough for the Nexus SDK. Later releases ship it as cargo.
+                if maybe_sudo apt install -y cargo-1.85 rustc-1.85 || maybe_sudo apt install -y rustc cargo; then
                     rust_install_ok=true
                 fi
             elif command_exists pacman; then
@@ -756,8 +772,10 @@ if [ ${#tauri_linux_deps[@]} -gt 0 ] || [ "$rust_needs_install" = true ]; then
             fi
         fi
 
-        if command_exists cargo && command_exists rustc; then
+        if nexus_cargo_ok; then
             rust_install_ok=true
+        else
+            rust_install_ok=false
         fi
 
         if [ "$rust_install_ok" != true ]; then
@@ -780,10 +798,10 @@ if [ ${#tauri_linux_deps[@]} -gt 0 ] || [ "$rust_needs_install" = true ]; then
             fi
         fi
 
-        if command_exists cargo && command_exists rustc; then
+        if nexus_cargo_ok; then
             print_success "Rust toolchain installed"
         else
-            print_error "Rust installation completed, but cargo/rustc are still unavailable"
+            print_error "Rust installation completed, but no Cargo 1.85 or newer is available"
             exit 1
         fi
     fi

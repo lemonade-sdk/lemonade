@@ -34,15 +34,14 @@ set(LEMONADE_MSI_VERSION
 message(STATUS "Lemonade version: ${PROJECT_VERSION}")
 
 include(CTest)
-# Builders without Cargo 1.85+ default to OFF instead of failing at build time.
+# Every lemond carries the Nexus client SDK; a build that cannot find the Rust
+# toolchain stops here rather than producing a server without mesh support.
 include(${CMAKE_SOURCE_DIR}/cmake/NexusRustToolchain.cmake)
-option(LEMONADE_WITH_NEXUS "Build the Nexus client SDK (requires Cargo 1.85+)" ${_nexus_toolchain_found})
-if(LEMONADE_WITH_NEXUS AND NOT _nexus_toolchain_found)
-    message(FATAL_ERROR "LEMONADE_WITH_NEXUS=ON requires Cargo 1.85 or newer, in PATH or as "
+if(NOT _nexus_toolchain_found)
+    message(FATAL_ERROR "The Nexus client SDK requires Cargo 1.85 or newer, in PATH or as "
         "/usr/lib/rust-1.*/bin/cargo. Install Rust with rustup or the cargo-1.85 package, "
-        "set LEMONADE_CARGO_EXECUTABLE, or configure with -DLEMONADE_WITH_NEXUS=OFF.")
+        "or set LEMONADE_CARGO_EXECUTABLE.")
 endif()
-message(STATUS "Nexus client SDK: ${LEMONADE_WITH_NEXUS}")
 
 # Aggregate build target for the C++ tests selected by packaging CI.
 # Platform-specific tests add themselves only inside their existing if() block.
@@ -2364,10 +2363,7 @@ else()
         "${EMBEDDABLE_DIR_NAME}")
 endif()
 
-set(_embeddable_nexus_runtime)
-if(LEMONADE_WITH_NEXUS)
-    set(_embeddable_nexus_runtime COMMAND ${CMAKE_COMMAND} -E copy "${LEMONADE_NEXUS_RUNTIME}" "${EMBEDDABLE_STAGING_DIR}/")
-endif()
+set(_embeddable_nexus_runtime COMMAND ${CMAKE_COMMAND} -E copy "${LEMONADE_NEXUS_RUNTIME}" "${EMBEDDABLE_STAGING_DIR}/")
 
 add_custom_target(embeddable
     # Clean and create staging directory
@@ -4104,7 +4100,5 @@ if(BUILD_TESTING AND EXISTS "${_NEXUS_MANAGER_TEST_SRC}")
     # The test finishes in well under a minute; a bound keeps a stalled keystore or
     # listener from holding a CI runner.
     set_tests_properties(NexusManagerTest PROPERTIES TIMEOUT 300)
-    if(LEMONADE_WITH_NEXUS)
-        add_dependencies(test_nexus_manager nexus-sdk-runtime)
-    endif()
+    add_dependencies(test_nexus_manager nexus-sdk-runtime)
 endif()

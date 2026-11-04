@@ -140,14 +140,11 @@ std::string stale_account_file(const nlohmann::json& account);
 /// the invite. Returns {granted, dropped}; `granted` is null when nothing remains, which
 /// selects the federation default.
 std::pair<nlohmann::json, nlohmann::json> default_invite_permissions(const nlohmann::json& held, bool admin);
-#ifdef LEMONADE_WITH_NEXUS
 /// The HTTP answer for a failed ln_identity_handoff_open: 400 for a malformed envelope
 /// (LN_ERR_PARSE, LN_ERR_NULL_ARG), 403 when the envelope does not open for the
 /// outstanding request or the request was used or expired (LN_ERR_AUTH,
 /// LN_ERR_REJECTED), 500 otherwise. The message never carries the envelope.
 std::pair<int, std::string> handoff_failure(int code);
-#endif
-#ifdef LEMONADE_WITH_NEXUS
 /// The HTTP answer for a failed SDK call. `retryable` is true when the federation was
 /// not reached rather than refusing the device, so the same request may succeed later
 /// and the local session stays as it is.
@@ -163,7 +160,6 @@ struct SdkFailure {
 /// reach answer 503 and are retryable. Any other LN_ERR_AUTH answers 403: the SDK
 /// reports a federation 401 and 403 alike.
 SdkFailure sdk_failure(int code, const nlohmann::json& reply, int rejected_status);
-#endif
 /// Compares two secrets in time that depends only on the length of `expected`.
 bool constant_time_equals(const std::string& candidate, const std::string& expected);
 /// True when `authorization` is "Bearer <key>" for `api_key` or a nonempty `admin_key`.
@@ -221,10 +217,8 @@ struct PeerContext {
 void accept_peer_headers(httplib::Request& req, bool mesh_ingress);
 /// The peer of the request the calling thread serves; empty outside a mesh ingress request.
 const PeerContext& request_peer();
-#ifdef LEMONADE_WITH_NEXUS
 /// True when the loaded SDK exports the route catalog and refusal-event functions.
 bool route_policy_available();
-#endif
 /// Sends a GET or POST `req` to http://127.0.0.1:`port``path` with lemond's HTTP client.
 /// `peer_authorization` ("Bearer <key>" or empty) becomes the upstream Authorization;
 /// `body` replaces the request body unless the request is multipart. A POST whose JSON

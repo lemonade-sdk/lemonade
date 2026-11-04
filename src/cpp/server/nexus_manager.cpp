@@ -22,9 +22,7 @@
 #else
 #include <unistd.h>
 #endif
-#ifdef LEMONADE_WITH_NEXUS
 #include <LemonadeNexusSDK/lemonade_nexus.h>
-#endif
 
 namespace lemon {
 namespace {
@@ -1040,7 +1038,6 @@ void relay_http(uint16_t port, const std::string& path, const httplib::Request& 
 
 }
 
-#ifdef LEMONADE_WITH_NEXUS
 namespace nexus_access {
 namespace {
 // The C ABI reports every ln_auth_ed25519 failure as LN_ERR_AUTH, so the texts the SDK
@@ -2131,9 +2128,6 @@ struct NexusManager::Session {
         throw NexusError(404, "Unknown network operation");
     }
 };
-#else
-struct NexusManager::Session {};
-#endif
 
 NexusManager::NexusManager(const std::string& config_dir,
                            const std::function<void(httplib::Server&)>& install_policy,
@@ -2146,13 +2140,11 @@ NexusManager::NexusManager(const std::string& config_dir,
     : data_root_(utils::path_to_utf8(utils::path_from_utf8(config_dir) / "nexus")), catalog_(std::move(service_catalog)),
       route_permissions_(std::move(route_permissions)),
       role_(process_role ? *process_role : nexus_access::current_process_role()), selection_port_(mesh_port) {
-#ifdef LEMONADE_WITH_NEXUS
     if (!catalog_.is_object()) {
         LOG(INFO, "Nexus") << "Route policy is unavailable: no route catalog" << std::endl;
     } else if (!nexus_access::route_policy_available()) {
         LOG(INFO, "Nexus") << "Route policy is unavailable: the Nexus SDK does not export ln_mesh_service_set_catalog" << std::endl;
     }
-#endif
     // Built once and never rebound: a main-port rebind leaves the mesh listener alone.
     register_routes(mesh_server_, NexusListener::MeshIngress);
     install_api(mesh_server_);
@@ -2172,7 +2164,6 @@ NexusManager::NexusManager(const std::string& config_dir,
     if (management_port_ < 0) { stop(); throw std::runtime_error("Cannot bind local network management listener"); }
     management_thread_ = std::thread([this] { management_server_.listen_after_bind(); });
     management_server_.wait_until_ready();
-#ifdef LEMONADE_WITH_NEXUS
     std::ifstream input(utils::path_from_utf8(data_root_) / "preferences.json");
     auto saved = json::parse(input, nullptr, false);
     if (saved.is_object() && saved.value("enabled", false)) {
@@ -2180,7 +2171,6 @@ NexusManager::NexusManager(const std::string& config_dir,
         enable(error);
     }
     worker_ = std::thread(&NexusManager::supervise, this);
-#endif
 }
 
 NexusManager::~NexusManager() { stop(); }
@@ -2205,21 +2195,14 @@ NexusManager::json NexusManager::status() const {
     result["enabled"] = enabled_;
     result["controller_url"] = "http://127.0.0.1:" + std::to_string(management_port_);
     result["remote_management"] = result.value("mesh_up", false);
-#ifdef LEMONADE_WITH_NEXUS
     result["available"] = true;
-#else
-    result["available"] = false;
-#endif
     result["event_sequence"] = event_sequence_;
     if (!active_invite_.is_null()) result["active_invite"] = {{"device_name", active_invite_.value("device_name", "")}, {"expires_at", active_invite_.value("expires_at", uint64_t{0})}};
     const bool catalog = catalog_.is_object();
     result["catalog_version"] = catalog ? catalog_.value("version", uint64_t{0}) : uint64_t{0};
     result["app"] = catalog ? json(catalog_.at("app")) : json{{"name", "lemonade"}, {"version", LEMON_VERSION_STRING}};
     bool enforced = false;
-#ifdef LEMONADE_WITH_NEXUS
     enforced = catalog && nexus_access::route_policy_available() && snapshot_.value("catalog_error", std::string()).empty();
-#endif
-#ifdef LEMONADE_WITH_NEXUS
     // Before the first tree request the SDK verifies the network's key history
     // page by page; on a long history a connect waits on it for several requests.
     {
@@ -2239,7 +2222,6 @@ NexusManager::json NexusManager::status() const {
         }
         ln_free(out);
     }
-#endif
     result["route_policy"] = enforced ? "enforced" : "unavailable";
     return result;
 }
@@ -2257,10 +2239,6 @@ void NexusManager::persist_enabled_locked() {
 bool NexusManager::enable(std::string& error) {
     std::lock_guard<std::mutex> session_lock(session_mutex_);
     std::lock_guard<std::mutex> lock(mutex_);
-#ifndef LEMONADE_WITH_NEXUS
-    error = "This build does not include the Nexus SDK";
-    return false;
-#else
     try {
         if (stopping_) throw std::runtime_error("Server is shutting down");
         if (!session_) session_ = std::make_unique<Session>(data_root_, ingress_port_, management_port_, selection_port_, catalog_, role_, client_slot_);
@@ -2275,7 +2253,6 @@ bool NexusManager::enable(std::string& error) {
         snapshot_["error"] = error;
         return false;
     }
-#endif
 }
 void NexusManager::disable() {
     std::lock_guard<std::mutex> session_lock(session_mutex_);
@@ -2288,7 +2265,6 @@ void NexusManager::disable() {
 }
 std::pair<int, NexusManager::json> NexusManager::control(const std::string& method, const std::string& path, const json& body,
                                                        const std::string& caller_key) {
-#ifdef LEMONADE_WITH_NEXUS
     // session_mutex_ serializes SDK work; mutex_ guards only the published state, so status,
     // events and shutdown do not wait for a slow federation request.
     std::lock_guard<std::mutex> session_lock(session_mutex_);
@@ -2309,9 +2285,6 @@ std::pair<int, NexusManager::json> NexusManager::control(const std::string& meth
     std::lock_guard<std::mutex> lock(mutex_);
     if (snapshot.is_object()) update_snapshot_locked(snapshot);
     return result;
-#else
-    return {503, {{"error", "This build does not include the Nexus SDK"}}};
-#endif
 }
 
 void NexusManager::emit_locked(const std::string& type, const json& data) {
@@ -2348,7 +2321,6 @@ void NexusManager::update_snapshot_locked(const json& snapshot) {
 
 void NexusManager::supervise() {
     while (true) {
-#ifdef LEMONADE_WITH_NEXUS
         {
             std::lock_guard<std::mutex> session_lock(session_mutex_);
             bool active = false;
@@ -2366,7 +2338,6 @@ void NexusManager::supervise() {
                 else if (!error.empty()) snapshot_["error"] = error;
             }
         }
-#endif
         std::unique_lock<std::mutex> lock(mutex_);
         if (wake_.wait_for(lock, std::chrono::seconds(5), [this] { return stopping_; })) return;
     }
@@ -2478,7 +2449,6 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
 }
 
 void NexusManager::relay(const httplib::Request& req, httplib::Response& res) {
-#ifdef LEMONADE_WITH_NEXUS
     uint16_t port = 0;
     {
         std::lock_guard<std::mutex> session_lock(session_mutex_);
@@ -2492,9 +2462,6 @@ void NexusManager::relay(const httplib::Request& req, httplib::Response& res) {
     auto path = req.matches[2].str();
     if (const auto query = req.target.find('?'); query != std::string::npos) path += req.target.substr(query);
     nexus_access::relay_http(port, path, req, res, req.get_header_value(nexus_access::kPeerAuthorizationHeader), req.body);
-#else
-    reply_error(res, 503, "This build does not include the Nexus SDK");
-#endif
 }
 
 void NexusManager::register_routes(httplib::Server& server, NexusListener listener) {

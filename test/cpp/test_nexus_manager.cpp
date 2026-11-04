@@ -18,9 +18,7 @@
 #include <set>
 #include <string>
 #include <thread>
-#ifdef LEMONADE_WITH_NEXUS
 #include <LemonadeNexusSDK/lemonade_nexus.h>
-#endif
 
 namespace lemon {
 // Each route folder's registration function, as server.cpp declares them: the test
@@ -466,7 +464,6 @@ void check_service_catalog(const std::function<void(bool, const char*)>& check) 
     check(displayed.count("POST /api/v1/chat/completions") && displayed.count("POST /mcp") &&
         displayed.count("POST /api/v1/nexus/members/{node_id}/role") && displayed.count("GET /v1/nexus/route-permissions"),
         "The route view includes registered inference, MCP, management and alias routes");
-#ifdef LEMONADE_WITH_NEXUS
     // The vendored SDK validates the catalog the way lemond's Tier 1 registration does;
     // no mesh is needed, and the closed port is never reached.
     std::unique_ptr<ln_client_t, decltype(&ln_destroy)> sdk(ln_create_tls("127.0.0.1", 9), ln_destroy);
@@ -475,7 +472,6 @@ void check_service_catalog(const std::function<void(bool, const char*)>& check) 
     twice["families"][0]["routes"].push_back(twice["families"][0]["routes"][0]);
     check(sdk != nullptr && ln_mesh_service_set_catalog(sdk.get(), 13305, twice.dump().c_str()) == LN_ERR_REJECTED,
           "The SDK refuses a repeated route, so the acceptance check is live");
-#endif
 }
 
 void check_role_presets(const std::function<void(bool, const char*)>& check) {
@@ -582,12 +578,8 @@ void check_status_fields(const std::filesystem::path& root, const std::function<
     const auto status = manager.status();
     check(status.at("catalog_version") == 202604600300ULL + access::kCatalogRevision, "Status reports the catalog version");
     check(status.at("app") == json({{"name", "lemonade"}, {"version", "2026.46.3"}}), "Status reports the catalog's app");
-#ifdef LEMONADE_WITH_NEXUS
     check(status.at("route_policy") == (access::route_policy_available() ? "enforced" : "unavailable"),
           "Route policy follows the SDK's catalog interface");
-#else
-    check(status.at("route_policy") == "unavailable", "Route policy is unavailable without the SDK");
-#endif
     manager.stop();
     lemon::NexusManager bare((root / "status-bare").string(), listener_policy, listener_policy, 0, nullptr, kSystemRole);
     const auto bare_status = bare.status();
@@ -1080,16 +1072,13 @@ void check_identity_rules(const std::function<void(bool, const char*)>& check) {
     check(user_key::controller_port(json{{"controller_url", "http://10.0.0.1:4567"}}) == 0 && user_key::controller_port(json{{"controller_url", "http://127.0.0.1:"}}) == 0 &&
           user_key::controller_port(json{{"controller_url", "http://127.0.0.1:70000"}}) == 0 && user_key::controller_port(json::object()) == 0,
           "A nonloopback or malformed controller URL yields no port");
-#ifdef LEMONADE_WITH_NEXUS
     check(access::handoff_failure(LN_ERR_PARSE).first == 400 && access::handoff_failure(LN_ERR_NULL_ARG).first == 400, "A malformed envelope is 400");
     check(access::handoff_failure(LN_ERR_AUTH).first == 403 && access::handoff_failure(LN_ERR_REJECTED).first == 403, "An envelope that does not open is 403");
     check(access::handoff_failure(LN_ERR_INTERNAL).first == 500, "Other hand-off failures are 500");
     check(!user_key::store_failure_text(LN_ERR_AUTH).empty() && user_key::store_failure_text(LN_ERR_AUTH) != user_key::store_failure_text(LN_ERR_UNSUPPORTED),
           "Store failures have distinct texts");
-#endif
 }
 
-#ifdef LEMONADE_WITH_NEXUS
 // The hand-off routes in-process: this test is the user's session (ln_identity_generate
 // stands in for the user store) and the management listener is lemond. The federation
 // is a closed port, so every unlock ends as a retryable outage after the identity took
@@ -1290,7 +1279,6 @@ void check_sdk_failures(const std::function<void(bool, const char*)>& check) {
     const auto internal = access::sdk_failure(LN_ERR_INTERNAL, json(), 409);
     check(internal.status == 502 && !internal.retryable && internal.message.find("SDK error") != std::string::npos, "Other failures are 502 and name the code");
 }
-#endif
 }
 
 int main() {
@@ -1387,16 +1375,14 @@ int main() {
         check_role_presets(check);
         check_service_catalog(check);
         check_peer_headers(check);
-#ifdef LEMONADE_WITH_NEXUS
         check_sdk_failures(check);
-#endif
         check_route_access(check);
         check_private_management(root, check);
         check_relay_stream(check);
         check_mesh_ingress_routes(check);
         check_listener_isolation(root, check);
         check_status_fields(root, check);
-#if defined(LEMONADE_WITH_NEXUS) && defined(__linux__)
+#if defined(__linux__)
         check_user_mode_fails_closed(root, check);
 #endif
         {
@@ -1457,12 +1443,9 @@ int main() {
             }
             request("enable", "[]", 400);
             request("enable", "{", 400);
-#ifdef LEMONADE_WITH_NEXUS
             request("selection", R"({"target":"local"})", 409);
             auto disabled_handoff = management.Get("/api/v1/nexus/key/handoff");
             check(disabled_handoff && disabled_handoff->status == 409, "A hand-off needs the mesh enabled");
-#endif
-#ifdef LEMONADE_WITH_NEXUS
             auto enabled = request("enable", "{}", 200);
             request("selection", R"({"target":"local"})", 409);
             request("selection", R"({"target":5})", 400);
@@ -1576,16 +1559,10 @@ int main() {
             if (pinned.value("identity_source", "") == "system") check_handoff(management, root, check);
             else std::cout << "Skipping the hand-off round trip: it needs the system identity file\n";
             set_environment("LEMONADE_NEXUS_GENESIS_PUBKEY", "");
-#else
-            request("enable", "{}", 503);
-            request("selection", R"({"target":"local"})", 503);
-            request("members/peer/role", R"({"role":"admin"})", 503);
-#endif
             auto events = management.Get("/api/v1/nexus/events?after=0&once=1");
             check(events && events->status == 200 && events->get_header_value("Content-Type") == "text/event-stream", "Events use SSE format");
             server.stop(); worker.join(); manager.stop();
         }
-#ifdef LEMONADE_WITH_NEXUS
         {
             lemon::NexusManager restored(root.string(), listener_policy, listener_policy, 0, nullptr, kSystemRole);
             const auto status = restored.status();
@@ -1597,7 +1574,6 @@ int main() {
             lemon::NexusManager disabled(root.string(), listener_policy, listener_policy, 0, nullptr, kSystemRole);
             check(!disabled.status().at("enabled"), "Disable survives restart");
         }
-#endif
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; ++failures; }
     cleanup();
     return failures ? 1 : 0;

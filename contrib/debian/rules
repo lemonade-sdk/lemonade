@@ -13,7 +13,7 @@ override_dh_auto_configure:
 	# builds against the system cpp-httplib, like lemond.
 	test -d debian/rust-vendor || { echo "Run debian/vendor-rust-crates first" >&2; exit 1; }
 	dh_auto_configure -- -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_WEB_APP=ON -DUSE_SYSTEM_NODEJS_MODULES=ON -DBUILD_TESTING=OFF \
-		-DLEMONADE_WITH_NEXUS=ON -DLEMONADE_NEXUS_CARGO_VENDOR_DIR=$(CURDIR)/debian/rust-vendor
+		-DLEMONADE_NEXUS_CARGO_VENDOR_DIR=$(CURDIR)/debian/rust-vendor
 
 override_dh_auto_test:
 	# No tests configured

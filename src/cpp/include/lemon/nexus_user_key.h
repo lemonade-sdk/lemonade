@@ -3,9 +3,7 @@
 #include <cstdlib>
 #include <nlohmann/json.hpp>
 #include <string>
-#ifdef LEMONADE_WITH_NEXUS
 #include <LemonadeNexusSDK/lemonade_nexus.h>
-#endif
 
 // Decisions shared by lemond and the tray's device-key carrier. Header-only: the tray
 // does not link lemonade-server-core.
@@ -33,7 +31,6 @@ inline int controller_port(const nlohmann::json& status) {
     return port >= 1 && port <= 65535 ? static_cast<int>(port) : 0;
 }
 
-#ifdef LEMONADE_WITH_NEXUS
 /// Why ln_identity_user_load or ln_identity_user_create returned no identity, as one
 /// sentence for status text and logs. It names the condition, never the store contents.
 inline std::string store_failure_text(int code) {
@@ -45,7 +42,6 @@ inline std::string store_failure_text(int code) {
     default: return "the device key store failed (SDK error " + std::to_string(code) + ")";
     }
 }
-#endif
 
 }
 }
