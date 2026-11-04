@@ -35,14 +35,23 @@ for dir in "$out"/winapi-*-pc-windows-gnu-* "$out"/windows_*; do
     [ -d "$dir/lib" ] || continue
     rm -rf "$dir/lib"
     mkdir "$dir/lib"
-    python3 - "$dir/.cargo-checksum.json" <<'PY'
+done
+# dh_clean deletes every *.orig file in the tree when dpkg-buildpackage runs the
+# clean target, so a vendored Cargo.toml.orig is gone by the time cargo checks
+# the crate. Cargo does not read it; drop the file and its checksum entry.
+find "$out" -name Cargo.toml.orig -type f -delete
+for checksum in "$out"/*/.cargo-checksum.json; do
+    python3 - "$checksum" <<'PY'
 import json
+import os
 import sys
 
 path = sys.argv[1]
+crate = os.path.dirname(path)
 with open(path) as stream:
     checksum = json.load(stream)
-checksum["files"] = {name: digest for name, digest in checksum["files"].items() if not name.startswith("lib/")}
+checksum["files"] = {name: digest for name, digest in checksum["files"].items()
+                     if os.path.isfile(os.path.join(crate, name))}
 with open(path, "w") as stream:
     json.dump(checksum, stream)
 PY
