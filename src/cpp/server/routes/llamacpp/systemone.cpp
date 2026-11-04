@@ -207,6 +207,7 @@ protected:
         // ctx_size only sizes the load, which is done by now; FLM answers 422 to a
         // field it does not know.
         body.erase(model_loading::kCtxSize.name);
+        auto cancel = cancel_on_disconnect(req);
         const ordered_json response = ctx_.router->systemone(body);
         if (response.contains("error")) {
             set_error_response(json(response), res, kBackendError);

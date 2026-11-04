@@ -292,15 +292,15 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
         );
     }
 
-    // FLM's transcription endpoint ignores response_format and always answers with
-    // the compact {model, text} JSON. Plain text can be derived from that; SRT and
-    // VTT cannot, because they need the per-segment timestamps FLM never returns.
+    // FLM sends text, SRT and VTT as text/plain, but forward_multipart_request reads
+    // only JSON. handle_audio_transcriptions() renders text from a JSON reply's "text"
+    // field; a JSON reply cannot carry SRT or VTT.
     const std::string requested_format = request.value("response_format", audio::ResponseFormat::JSON);
     if (requested_format == audio::ResponseFormat::SRT ||
         requested_format == audio::ResponseFormat::VTT) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("response_format '" + requested_format + "'",
-                                          "FLM transcription models (no segment timestamps)")
+                                          "FLM transcription models")
         );
     }
 
@@ -339,15 +339,14 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
         if (request.contains("prompt")) {
             fields.push_back({"prompt", request["prompt"].get<std::string>(), "", ""});
         }
-        if (request.contains("response_format")) {
-            fields.push_back({"response_format", request["response_format"].get<std::string>(), "", ""});
+        if (request.contains("response_format") &&
+            requested_format != audio::ResponseFormat::TEXT) {
+            fields.push_back({"response_format", requested_format, "", ""});
         }
         if (request.contains("temperature")) {
             fields.push_back({"temperature", std::to_string(request["temperature"].get<double>()), "", ""});
         }
 
-        // FLM always replies with JSON here, so the strict shared helper is correct:
-        // handle_audio_transcriptions() renders the "text" field for plain-text formats.
         return forward_multipart_request("/v1/audio/transcriptions", fields);
 
     } catch (const std::exception& e) {
