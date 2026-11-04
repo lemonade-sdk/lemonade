@@ -87,6 +87,7 @@ void MeshPortProxies::cancel_all() {
             if (auto pipe = weak.lock()) open.push_back(std::move(pipe));
         }
         pipes.clear();
+        closed = true;
     }
     for (const auto& pipe : open) pipe->cancel();
 }
@@ -137,7 +138,11 @@ std::shared_ptr<MeshProxyPipe> start_pipe(const std::shared_ptr<MeshPortProxies>
     pipe->client->set_read_timeout(300, 0);
     pipe->client->set_write_timeout(300, 0);
     pipe->client->set_keep_alive(false);
-    proxies->add(pipe);
+    if (!proxies->add(pipe)) {
+        // The listener is shutting down: never send this request.
+        pipe->cancelled = true;
+        return pipe;
+    }
 
     httplib::Request upstream;
     upstream.method = req.method;
@@ -186,7 +191,7 @@ bool pipe_answered(MeshProxyPipe& pipe) {
 void proxy_request(const std::shared_ptr<MeshPortProxies>& proxies, const std::string& host, uint16_t port,
                    const httplib::Request& req, const std::string& target, httplib::Headers headers,
                    const std::string& body, httplib::Response& res, const std::function<uint16_t()>& reopen,
-                   bool* answered) {
+                   ProxyOutcome* outcome) {
     const auto started = std::chrono::steady_clock::now();
     auto pipe = start_pipe(proxies, host, port, req, target, headers, body);
     if (reopen && !pipe_answered(*pipe) && std::chrono::steady_clock::now() - started < kDeadBridgeWindow) {
@@ -213,7 +218,12 @@ void proxy_request(const std::shared_ptr<MeshPortProxies>& proxies, const std::s
         status = pipe->status;
         type = pipe->content_type;
     }
-    if (answered) *answered = ready;
+    if (outcome) {
+        // A pipe this function cancelled itself (the dead-bridge retry) is replaced
+        // above; one still cancelled here was cancelled by shutdown.
+        *outcome = ready ? ProxyOutcome::Answered
+                         : (proxies->is_closed() ? ProxyOutcome::Cancelled : ProxyOutcome::Unanswered);
+    }
     if (!ready) {
         pipe->cancel();
         pipe->join();

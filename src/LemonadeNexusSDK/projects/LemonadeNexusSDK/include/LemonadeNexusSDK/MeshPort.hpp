@@ -28,6 +28,7 @@ namespace lnsdk {
 
 class LemonadeNexusClient;
 struct MeshPortProxies;
+enum class ProxyOutcome;
 
 /// Default loopback port of the mesh port listener.
 inline constexpr uint16_t kMeshPortDefaultPort = 13306;
@@ -388,10 +389,11 @@ private:
                          const std::string& path);
     void serve_auto(const httplib::Request& req, httplib::Response& res,
                     const std::string& path, const std::string& peer_authorization);
-    /// Returns false when the device produced no response at all (it is not a
+    /// Unanswered when the device produced no response at all (it is not a
     /// reachable Tier 3 member, no bridge could be opened, or the bridge gave no
     /// response byte); the auto router then tries the next device once.
-    bool forward_to_node(const std::string& node_id, const std::string& path,
+    /// Cancelled when stop() aborted the request; nothing more is sent.
+    ProxyOutcome forward_to_node(const std::string& node_id, const std::string& path,
                          const httplib::Request& req, httplib::Response& res,
                          const std::string& peer_authorization, const std::string& body);
     void forward_local(const std::string& path, const httplib::Request& req,

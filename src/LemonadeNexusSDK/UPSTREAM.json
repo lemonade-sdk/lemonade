@@ -74,6 +74,7 @@
   ],
   "patches": [
     "0001-mesh-port-auto-router-resends-once-on-no-answer.patch",
-    "0002-mesh-port-502-503-count-as-unavailable.patch"
+    "0002-mesh-port-502-503-count-as-unavailable.patch",
+    "0003-mesh-port-cancelled-request-is-never-resent.patch"
   ]
 }
