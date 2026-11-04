@@ -37,6 +37,21 @@
         <loc>https://lemonade-server.ai/docs/guide/concepts/</loc>
       </url>
       <url>
+        <loc>https://lemonade-server.ai/docs/guide/app/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/docs/guide/app/models/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/docs/guide/app/chat/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/docs/guide/app/audio-and-3d/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/docs/guide/app/operations/</loc>
+      </url>
+      <url>
         <loc>https://lemonade-server.ai/docs/guide/cli/</loc>
       </url>
       <url>
@@ -86,6 +101,12 @@
       </url>
       <url>
         <loc>https://lemonade-server.ai/docs/dev/specs/container-backends/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/docs/dev/specs/http-server/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/docs/dev/specs/model-management/</loc>
       </url>
       <url>
         <loc>https://lemonade-server.ai/docs/dev/working-groups/</loc>
@@ -166,6 +187,9 @@
         <loc>https://lemonade-server.ai/docs/integrations/open-webui/</loc>
       </url>
       <url>
+        <loc>https://lemonade-server.ai/docs/integrations/pi/</loc>
+      </url>
+      <url>
         <loc>https://lemonade-server.ai/docs/integrations/wut/</loc>
       </url>
       <url>
@@ -188,6 +212,12 @@
       </url>
       <url>
         <loc>https://lemonade-server.ai/docs/api/lemonade/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/docs/api/router/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/docs/api/internal/</loc>
       </url>
       <url>
         <loc>https://lemonade-server.ai/docs/embeddable/</loc>
