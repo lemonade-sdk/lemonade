@@ -20,7 +20,7 @@ inline bool wants_device_key(const nlohmann::json& status) {
         status.value("needs_user_key", false);
 }
 
-/// The loopback port of lemond's management listener from `status.controller_url`
+/// The loopback port of lemond's local controller from `status.controller_url`
 /// ("http://127.0.0.1:<port>"), or 0 when it is absent or malformed.
 inline int controller_port(const nlohmann::json& status) {
     if (!status.is_object()) return 0;

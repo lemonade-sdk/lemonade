@@ -190,8 +190,8 @@ The server bridge adds these routes beneath every Nexus prefix listed in
 
 Names must contain non-whitespace text and fit within 128 UTF-8 bytes. Tree
 responses expose display fields, capabilities and visible assignments; wrapped
-private key material is omitted. Public loopback requests redirect to the
-management listener. Remote requests require the existing API-key configuration;
+private key material is omitted. Public loopback requests are served on the
+public port. Remote requests require the existing API-key configuration;
 mesh ingress refuses all tree routes. No group deletion or reparenting operation
 is introduced by this UI.
 

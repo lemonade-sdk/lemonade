@@ -968,8 +968,8 @@ std::pair<int, std::string> route_access(NexusListener listener, const httplib::
         return remote_operation(operation) ? std::make_pair(0, std::string()) :
             std::make_pair(403, std::string("Use the local controller for identity, lifecycle and relay operations"));
     }
-    if (listener == NexusListener::Management) return loopback ? std::make_pair(0, std::string()) : std::make_pair(403, std::string("Local network management only"));
-    if (loopback) return {operation == "status" || operation == "join/status" || operation == "relay" ? 0 : 307, ""};
+    if (loopback) return {0, ""};
+    if (listener == NexusListener::Management) return {403, "Local network management only"};
     return {403, "Connect through the authenticated Nexus mesh. Initial setup requires the local controller or SSH forwarding."};
 }
 
@@ -2373,7 +2373,7 @@ void NexusManager::supervise() {
 }
 
 void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
-                           const std::string& operation, bool remote) {
+                           const std::string& operation, bool remote, const std::string& controller_url) {
     res.set_header("Cache-Control", "no-store");
     const auto reply = [&](int code, json body) {
         if (remote && body.is_object()) {
@@ -2391,6 +2391,7 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
     try {
         if (operation == "status" || operation == "join/status") {
             auto current = status();
+            if (!controller_url.empty()) current["controller_url"] = controller_url;
             reply(200, current);
             return;
         }
@@ -2500,17 +2501,17 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
     const auto dispatch = [this, listener](const httplib::Request& req, httplib::Response& res, const std::string& operation) {
         const bool loopback = local_address(req.remote_addr);
         const auto access = nexus_access::route_access(listener, req, operation);
-        if (access.first == 307) {
-            res.set_redirect("http://127.0.0.1:" + std::to_string(management_port_) + req.target, 307);
-            return;
-        }
         if (access.first != 0) {
             res.set_header("Cache-Control", "no-store");
             res.status = access.first;
             res.set_content(json{{"error", access.second}}.dump(), "application/json");
             return;
         }
-        handle(req, res, operation, listener == NexusListener::MeshIngress || !loopback);
+        // A loopback operator on the public port is told to keep using that port: it is the
+        // one port an SSH tunnel, a VM or a container forwards, unlike the ephemeral listener.
+        const auto controller = listener == NexusListener::Public && loopback
+            ? "http://127.0.0.1:" + std::to_string(req.local_port) : std::string();
+        handle(req, res, operation, listener == NexusListener::MeshIngress || !loopback, controller);
     };
     for (const auto* prefix : nexus_prefixes) {
         for (const auto& route : nexus_routes()) {

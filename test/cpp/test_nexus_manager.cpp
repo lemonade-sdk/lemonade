@@ -108,7 +108,7 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
         }
     }
     check(route(NexusListener::Public, "127.0.0.1", "status").first == 0, "Local discovery is key-free");
-    check(route(NexusListener::Public, "127.0.0.1", "members").first == 307, "Local management retains its redirect");
+    check(route(NexusListener::Public, "127.0.0.1", "members").first == 0, "Local management is served on the public port");
     check(route(NexusListener::Management, "127.0.0.1", "enable").first == 0, "Local bootstrap is key-free");
     check(route(NexusListener::Management, "192.168.1.2", "enable").first == 403, "Bootstrap stays local");
     for (const auto* role : {"administrator", "moderator", "user"}) {
@@ -722,8 +722,8 @@ void check_private_management(const std::filesystem::path& root, const std::func
                     const auto status = server.request(address, "GET", std::string(prefix) + "status", "", headers);
                     check(status.status == 200 && json::parse(status.body).contains("controller_url"),
                           "Local Nexus discovery needs no API key and returns its controller");
-                    check(server.request(address, "POST", std::string(prefix) + "enable", "{}", headers).status == 307,
-                          "Local Nexus setup retains the controller redirect without requiring an API key");
+                    check(server.request(address, "POST", std::string(prefix) + "enable", "[]", headers).status == 400,
+                          "Local Nexus setup on the public port reaches body validation without an API key");
                     check(management.request(address, "POST", std::string(prefix) + "enable", "[]", headers).status == 400,
                           "The local Nexus controller reaches body validation without an API key");
                 }
@@ -1418,21 +1418,26 @@ int main() {
                 auto unauthenticated = forbidden.Get("/api/v1/nexus/status");
                 check(unauthenticated && unauthenticated->status == 401, "Management enforces API key");
             }
-            auto redirect = client.Post("/api/v1/nexus/enable", "{}", "application/json");
-            check(redirect && redirect->status == 307, "Public listener redirects management away from mesh service");
-            for (const auto* path : {"members/peer/role", "members/peer/permissions", "devices/peer/access"}) {
-                auto moved = client.Post(std::string("/api/v1/nexus/") + path, "{}", "application/json");
-                check(moved && moved->status == 307 && moved->get_header_value("Location").find("127.0.0.1:" + std::to_string(control_port)) != std::string::npos,
-                    "Public listener redirects access management to the loopback listener");
-            }
-            auto members_redirect = client.Get("/api/v1/nexus/members");
-            check(members_redirect && members_redirect->status == 307, "Public listener does not serve the member list");
-            auto handoff_redirect = client.Get("/api/v1/nexus/key/handoff");
-            check(handoff_redirect && handoff_redirect->status == 307, "Public listener redirects the hand-off to the management listener");
-            auto denied_access = forbidden.Post("/api/v1/nexus/members/peer/role", httplib::Headers{{"Origin", "https://untrusted.example"}}, R"({"role":"admin"})", "application/json");
-            check(denied_access && denied_access->status == 403, "Access management rejects untrusted origins");
             httplib::Client management("127.0.0.1", control_port);
             if (api_key && *api_key) management.set_default_headers({{"Authorization", std::string("Bearer ") + api_key}});
+            // A loopback operator gets the same answer from the public port as from the management listener.
+            const auto served_alike = [&](const std::string& path, const char* body = nullptr) {
+                auto direct = body ? client.Post(path, body, "application/json") : client.Get(path);
+                auto managed = body ? management.Post(path, body, "application/json") : management.Get(path);
+                return direct && managed && direct->status == managed->status && direct->status != 307;
+            };
+            auto public_status = client.Get("/api/v1/nexus/status");
+            check(public_status && public_status->status == 200 &&
+                  nlohmann::json::parse(public_status->body).at("controller_url") == "http://127.0.0.1:" + std::to_string(port),
+                  "Public status names the public port as the controller");
+            check(served_alike("/api/v1/nexus/enable", "[]"), "Public listener serves management like the management listener");
+            for (const auto* path : {"members/peer/role", "members/peer/permissions", "devices/peer/access"}) {
+                check(served_alike(std::string("/api/v1/nexus/") + path, "{}"), "Public listener serves access management");
+            }
+            check(served_alike("/api/v1/nexus/members"), "Public listener serves the member list");
+            check(served_alike("/api/v1/nexus/key/handoff"), "Public listener serves the hand-off");
+            auto denied_access = forbidden.Post("/api/v1/nexus/members/peer/role", httplib::Headers{{"Origin", "https://untrusted.example"}}, R"({"role":"admin"})", "application/json");
+            check(denied_access && denied_access->status == 403, "Access management rejects untrusted origins");
             const auto request = [&](const std::string& path, const std::string& body, int expected) {
                 auto result = management.Post("/api/v1/nexus/" + path, body, "application/json");
                 check(result && result->status == expected, path.c_str());
@@ -1443,13 +1448,11 @@ int main() {
                 check(result && result->status == 200, "Status prefix registered");
                 if (result) check(nlohmann::json::parse(result->body).at("locked") == true, "Starts locked");
                 for (const auto* path : {"tree", "tree/root/children", "account", "memberships"}) {
-                    const auto redirected = client.Get(std::string(prefix) + "nexus/" + path);
-                    check(redirected && redirected->status == 307, "Tree reads use the management listener on every prefix");
+                    check(served_alike(std::string(prefix) + "nexus/" + path), "Tree reads are served on every prefix");
                 }
                 for (const auto* path : {"tree/root/groups", "tree/root/rename", "tree/root/permissions", "account/avatar",
                                          "tree/root/invites", "tree/device/move", "invites/accept", "memberships/root/leave", "account/delete"}) {
-                    const auto redirected = client.Post(std::string(prefix) + "nexus/" + path, "{}", "application/json");
-                    check(redirected && redirected->status == 307, "Tree writes use the management listener on every prefix");
+                    check(served_alike(std::string(prefix) + "nexus/" + path, "{}"), "Tree writes are served on every prefix");
                 }
             }
             request("enable", "[]", 400);

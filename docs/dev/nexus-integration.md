@@ -183,7 +183,7 @@ The hand-off is the SDK's single-use sealed transfer:
 2. It calls `ln_identity_user_load`, and on `LN_ERR_NOT_FOUND`
    `ln_identity_user_create`. Any other failure shows in the tray menu as
    `Nexus: device key unavailable: <reason>` and is retried on a later poll.
-3. `GET key/handoff` on the management listener (`controller_url`) returns
+3. `GET key/handoff` on the controller (`controller_url`) returns
    `ln_identity_handoff_begin`'s request: an ephemeral X25519 key, a nonce and
    an expiry 60 s ahead. One request is outstanding at a time; a new request
    replaces it.
@@ -199,9 +199,9 @@ The hand-off is the SDK's single-use sealed transfer:
 The management listener answers 409 to an envelope when no request is
 outstanding, 400 to a malformed envelope, and 403 to an envelope that does not
 open for the outstanding request, was already used, or whose request expired.
-The envelope is never logged. The routes are management-listener only: the
-public listener redirects a loopback caller and refuses other machines, and
-the mesh ingress listener refuses them.
+The envelope is never logged. The routes are loopback only: the public and
+management listeners refuse other machines, and the mesh ingress listener
+refuses them.
 
 When a different OS user's key arrives while another key is active, `lemond`
 locks the current session (mesh off, tokens dropped) and continues with the new
@@ -494,16 +494,19 @@ Each listener applies its own rules:
 
 | Listener | Client | Nexus routes |
 | --- | --- | --- |
-| Public | Loopback | No API key required; `status`, `join/status` and the relay directly; every other route redirects with HTTP 307 to the management listener |
+| Public | Loopback | All Nexus routes without an API key; `status.controller_url` names the public port itself |
 | Public | Any remote client, including RFC1918 | HTTP 403, even with a valid API key or supplied identity headers |
 | Management (`127.0.0.1`, ephemeral port) | Local operator / SSH-forwarded connection | All Nexus routes without an API key |
 | Mesh ingress (`127.0.0.1`, ephemeral port) | SDK-attributed mesh administrator | Status, devices, members, group/tree administration, invitations and device checks; local identity/lifecycle/relay operations remain refused |
 
 Local clients on `127.0.0.1`, `::1` or `::ffff:127.0.0.1` need no API key
-for Nexus discovery, setup, management or relay requests. Local setup retains
-the redirect to the dedicated loopback management listener. For SSH setup,
-forward the controller port reported by local status; that port changes on
-restart. Authenticate the SSH session using the host's existing access policy.
+for Nexus discovery, setup, management or relay requests, and the public port
+serves them all, so an SSH tunnel, a VM or a container needs to forward only
+that port. Any connection that reaches `lemond` from its own loopback is a local
+operator, including one through an SSH tunnel or a reverse proxy on the same
+host, so authenticate those with the host's existing access policy. The
+management listener keeps its own ephemeral port for the SDK session and the
+tray.
 
 For remote access, the SDK verifies the sending mesh peer, strips client-supplied
 `X-Nexus-*` headers and supplies its own attribution to the dedicated ingress
@@ -535,11 +538,12 @@ the next successful refresh. A refused session answers 403; the SDK's C ABI
 reports a federation 401 and 403 alike. A client should end its signed-in
 session on 401 or 403 only, never on 503.
 
-The desktop discovers the management listener through `status` and sends the
-requests without requiring a local API key for Nexus routes. It rediscovers the listener once when a request cannot
-reach it, because `lemond` picks a new port each time it starts. The management
-listener accepts only loopback clients and uses `RequestMiddleware::install`
-for origin, CORS and ordinary API authentication. Mesh traffic never
+The desktop reads `controller_url` from `status` on the public port, which
+names that same port for a loopback client, and sends the requests there
+without a local API key for Nexus routes. It rediscovers the controller once
+when a request cannot reach it. The management listener accepts only loopback
+clients and uses `RequestMiddleware::install` for origin, CORS and ordinary
+API authentication. Mesh traffic never
 reaches the public or management listener: userspace ingress arrives on
 loopback and cannot safely be treated as a desktop control request, so it has a
 listener of its own. Browser views on this device show device information

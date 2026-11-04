@@ -17,8 +17,10 @@
 
 namespace lemon {
 /// The listener a Nexus route is registered on. Public is lemond's normal port, where a
-/// loopback client gets only status and a 307 to Management; MeshIngress is the loopback
-/// listener behind Nexus virtual port 13305, where the SDK has already attributed the peer.
+/// loopback client gets every route and `status.controller_url` names that same port;
+/// Management is the ephemeral loopback listener the SDK session and the tray use;
+/// MeshIngress is the loopback listener behind Nexus virtual port 13305, where the SDK
+/// has already attributed the peer.
 enum class NexusListener { Public, Management, MeshIngress };
 
 /// Where the device identity lives.
@@ -172,8 +174,8 @@ bool nexus_request(const httplib::Request& req);
 bool administers_tree(const nlohmann::json& path, const std::string& key);
 /// Only valid on the dedicated SDK ingress listener; public peer headers are untrusted.
 std::pair<int, std::string> mesh_request_access(const httplib::Request& req, bool management = false);
-/// {0, ""} runs the route, {307, ""} redirects it (see NexusListener), anything else is
-/// the HTTP error to answer. An API key never stands in for mesh caller authorization.
+/// {0, ""} runs the route, anything else is the HTTP error to answer (see NexusListener).
+/// An API key never stands in for mesh caller authorization.
 std::pair<int, std::string> route_access(NexusListener listener, const httplib::Request& req, const std::string& operation);
 /// Header that carries the selected peer's API key through the relay. The relay sends it
 /// to that peer as Authorization and never forwards the caller's own Authorization.
@@ -263,7 +265,9 @@ private:
     void persist_enabled_locked();
     void update_snapshot_locked(const json& snapshot);
     void emit_locked(const std::string& type, const json& data);
-    void handle(const httplib::Request& req, httplib::Response& res, const std::string& operation, bool remote);
+    /// `controller_url`, when set, replaces the management listener in a status reply.
+    void handle(const httplib::Request& req, httplib::Response& res, const std::string& operation, bool remote,
+                const std::string& controller_url = {});
     void relay(const httplib::Request& req, httplib::Response& res);
     std::pair<int, json> control(const std::string& method, const std::string& path, const json& body,
                                const std::string& caller_key = "");
