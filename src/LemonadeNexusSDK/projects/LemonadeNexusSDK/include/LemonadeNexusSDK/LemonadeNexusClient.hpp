@@ -579,8 +579,9 @@ public:
     /// certificate verified against the FQDN, which needs the hostname map
     /// of the cpp-httplib WebSocket client (v0.47.0 and newer). A build on
     /// an older system library (Ubuntu ships 0.26.0, Debian 13 backports
-    /// 0.41.0) has no event socket: run_mesh_events() fails at once and the
-    /// peer list long-poll (wait_mesh_peers) serves instead.
+    /// 0.41.0) has no event socket: run_mesh_events() fails at once, the
+    /// peer list long-poll (wait_mesh_peers) serves instead, and the
+    /// heartbeat answer's devices_revision reports device list changes.
     [[nodiscard]] static bool event_socket_supported() noexcept;
 
     /// Holds the private event socket for `node_id` (this device's node) open
@@ -606,12 +607,13 @@ public:
     /// addresses, at most kMaxLocalEndpoints; see LanPaths.hpp); an empty
     /// list removes the ones reported before, and nullopt leaves them as they
     /// are. The server lists them only to peers that already list this node.
-    /// On success, `value` is the server's
-    /// `peers_revision`: an opaque string that changes when this node's peer
-    /// list changes (see POST /api/mesh/heartbeat). It is empty when the
-    /// server sends none (older servers) or sends a malformed one. Compare
-    /// it only for equality; it carries no peer data.
-    [[nodiscard]] Result<std::string> mesh_heartbeat(
+    /// On success, `value.peers` is the server's `peers_revision`, an opaque
+    /// string that changes when this node's peer list changes (see POST
+    /// /api/mesh/heartbeat), and `value.devices` its `devices_revision`,
+    /// which changes with the device list of the node's groups. Either is
+    /// empty when the server sends none (older servers) or a malformed one.
+    /// Compare them only for equality; they carry no data.
+    [[nodiscard]] Result<MeshRevisions> mesh_heartbeat(
         const std::string& node_id, const std::string& endpoint,
         const std::optional<std::vector<std::string>>& local_endpoints = std::nullopt);
 

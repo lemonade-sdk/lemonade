@@ -527,21 +527,30 @@ void MeshOrchestrator::do_heartbeat() {
         return;
     }
     // A server without peers_revision leaves the peer refresh interval as
-    // the only schedule. The first value is the baseline: the start pass
-    // has just fetched the list.
-    if (result.value.empty()) return;
+    // the only schedule. The first value of either revision is a baseline:
+    // the start pass has just fetched the peer list and reported the devices.
+    // devices_revision in the answer is how a build without the event socket
+    // sees a device list change (within one heartbeat).
     bool first = false;
+    bool devices_changed = false;
     {
         std::lock_guard lock(mutex_);
-        first = peers_revision_.empty();
-        if (!first && result.value != peers_revision_) {
-            spdlog::debug("[MeshOrchestrator] peer list changed at the server; refreshing");
-            refresh_requested_ = true;
+        if (!result.value.peers.empty()) {
+            first = peers_revision_.empty();
+            if (!first && result.value.peers != peers_revision_) {
+                spdlog::debug("[MeshOrchestrator] peer list changed at the server; refreshing");
+                refresh_requested_ = true;
+            }
+            peers_revision_ = std::move(result.value.peers);
         }
-        peers_revision_ = std::move(result.value);
+        if (!result.value.devices.empty()) {
+            devices_changed = !devices_revision_.empty() && result.value.devices != devices_revision_;
+            devices_revision_ = std::move(result.value.devices);
+        }
     }
     // The first revision is what the long-poll waits on.
     if (first) cv_.notify_all();
+    if (devices_changed) notify_devices();
 }
 
 void MeshOrchestrator::poll_loop() {

@@ -158,7 +158,7 @@ void apply_client_socket_options(HttpClient& client) {
 // client itself in v0.33.0). The SDK also builds against the older library a
 // distribution ships (Ubuntu: 0.26.0, Debian 13 backports: 0.41.0); that
 // build has no event socket, and the orchestrator keeps the peer list
-// long-poll instead.
+// long-poll and the heartbeat's devices_revision instead.
 template <typename WsClient>
 concept EventSocketClient = requires(WsClient& ws, std::map<std::string, std::string> addresses) {
     ws.set_hostname_addr_map(addresses);
@@ -176,31 +176,85 @@ constexpr bool kEventSocketSupported = EventSocketClient<EventSocket>;
 constexpr const char* kNoEventSocket =
     "this build has no event socket (cpp-httplib " CPPHTTPLIB_VERSION ")";
 
-/// Closes an open event socket with status 1001 (going away).
+/// Closes an open event socket with status 1001 (going away), from the
+/// thread that reads it.
 void close_event_socket([[maybe_unused]] EventSocket& ws, [[maybe_unused]] const char* reason) {
 #if LEMONADE_NEXUS_HTTPLIB_VERSION >= 33000
     ws.close(httplib::ws::CloseStatus::GoingAway, reason);
 #endif
 }
 
+/// An event socket client and the socket it connected on.
+///
+/// The handle closes an open socket before it destroys the client. Until
+/// cpp-httplib v0.50.1 the client's teardown freed the TLS session and then
+/// sent the close frame through it (a use-after-free on every secure close
+/// of a still-open socket); close() first marks the socket closed and sends
+/// the frame while the session is alive, and the teardown then sends nothing.
+/// The SDK closes on every path anyway; the handle makes that a guarantee.
+struct EventSocketHandle {
+    std::unique_ptr<EventSocket> client;
+    /// The connected socket, from the client's socket options callback, for
+    /// end_event_socket().
+    std::atomic<socket_t> sock{INVALID_SOCKET};
+
+    ~EventSocketHandle() {
+#if LEMONADE_NEXUS_HTTPLIB_VERSION >= 33000
+        if (client && client->is_open()) close_event_socket(*client, "released");
+#endif
+    }
+};
+
+/// Ends an event socket from a thread other than the one reading it. From
+/// cpp-httplib v0.54.0 close() sends the close frame and leaves the peer's
+/// reply to the thread that is reading, so it can run from here. Before,
+/// close() reads the reply itself beside that thread: two readers of one TLS
+/// session, which corrupts it. There the socket is shut down instead; the
+/// read ends, and the reading thread closes the socket.
+void end_event_socket([[maybe_unused]] EventSocketHandle& handle,
+                      [[maybe_unused]] const char* reason) {
+#if LEMONADE_NEXUS_HTTPLIB_VERSION >= 54000
+    if (handle.client) close_event_socket(*handle.client, reason);
+#elif LEMONADE_NEXUS_HTTPLIB_VERSION >= 33000
+    if (const auto sock = handle.sock.load(); sock != INVALID_SOCKET) {
+#ifdef _WIN32
+        ::shutdown(sock, SD_BOTH);
+#else
+        ::shutdown(sock, SHUT_RDWR);
+#endif
+    }
+#endif
+}
+
 /// The event socket client for `url`, with `fqdn` mapped to the loopback
 /// egress and the ping schedule set; nullptr when the library has no
-/// hostname map. The caller checks is_valid().
+/// hostname map. The caller checks the client's is_valid().
 template <typename WsClient>
-std::shared_ptr<WsClient> make_event_socket([[maybe_unused]] const std::string& url,
-                                            [[maybe_unused]] const httplib::Headers& headers,
-                                            [[maybe_unused]] const std::string& fqdn,
-                                            [[maybe_unused]] time_t ping_sec,
-                                            [[maybe_unused]] int max_missed_pongs) {
+std::shared_ptr<EventSocketHandle> make_event_socket([[maybe_unused]] const std::string& url,
+                                                     [[maybe_unused]] const httplib::Headers& headers,
+                                                     [[maybe_unused]] const std::string& fqdn,
+                                                     [[maybe_unused]] time_t ping_sec,
+                                                     [[maybe_unused]] int max_missed_pongs) {
     if constexpr (!EventSocketClient<WsClient>) {
         return nullptr;
     } else {
-        auto ws = std::make_shared<WsClient>(url, headers);
-        if (!ws->is_valid()) return ws;
-        ws->set_hostname_addr_map({{fqdn, "127.0.0.1"}});
-        ws->set_websocket_ping_interval(ping_sec);
-        ws->set_websocket_max_missed_pongs(max_missed_pongs);
-        return ws;
+        auto handle = std::make_shared<EventSocketHandle>();
+        handle->client = std::make_unique<WsClient>(url, headers);
+        auto& ws = *handle->client;
+        if (!ws.is_valid()) return handle;
+        ws.set_hostname_addr_map({{fqdn, "127.0.0.1"}});
+        ws.set_websocket_ping_interval(ping_sec);
+        ws.set_websocket_max_missed_pongs(max_missed_pongs);
+        // Runs on the connecting thread while the handle, which owns the
+        // client, is alive. SO_NOSIGPIPE as in apply_client_socket_options.
+        ws.set_socket_options([owner = handle.get()](socket_t sock) {
+            owner->sock.store(sock);
+#ifdef __APPLE__
+            int on = 1;
+            ::setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
+#endif
+        });
+        return handle;
     }
 }
 
@@ -426,7 +480,7 @@ struct LemonadeNexusClient::Impl {
         }
         if (stale_private) stale_private->stop();
         std::shared_ptr<httplib::SSLClient> stale_poll;
-        std::shared_ptr<EventSocket>        stale_events;
+        std::shared_ptr<EventSocketHandle>  stale_events;
         {
             std::lock_guard lock(poll_mtx);
             stale_poll = std::move(poll_cli);
@@ -434,7 +488,7 @@ struct LemonadeNexusClient::Impl {
             stale_events = events_ws;
         }
         if (stale_poll) stale_poll->stop();
-        if (stale_events) close_event_socket(*stale_events, "resumed");
+        if (stale_events) end_event_socket(*stale_events, "resumed");
         mesh_breaker_until_ms.store(0, std::memory_order_relaxed);
         private_path_answered();
         {
@@ -455,8 +509,8 @@ struct LemonadeNexusClient::Impl {
     uint16_t                            poll_cli_port{0};
     bool                                poll_cancelled{false};
     // The event socket (run_mesh_events), guarded by poll_mtx like the
-    // long-poll client so cancel_mesh_peer_wait() can close it.
-    std::shared_ptr<EventSocket> events_ws;
+    // long-poll client so cancel_mesh_peer_wait() can end it.
+    std::shared_ptr<EventSocketHandle> events_ws;
 
     // Device and group loopback certificates kept current on disk. Declared
     // before mesh_orchestrator: the orchestrator's renewal thread uses it
@@ -3847,7 +3901,7 @@ Result<std::string> LemonadeNexusClient::wait_mesh_peers(const std::string& node
 
 void LemonadeNexusClient::cancel_mesh_peer_wait() {
     std::shared_ptr<httplib::SSLClient> cli;
-    std::shared_ptr<EventSocket>        ws;
+    std::shared_ptr<EventSocketHandle>  ws;
     {
         std::lock_guard lock(impl_->poll_mtx);
         impl_->poll_cancelled = true;
@@ -3855,7 +3909,7 @@ void LemonadeNexusClient::cancel_mesh_peer_wait() {
         ws = impl_->events_ws;
     }
     if (cli) cli->stop();
-    if (ws) close_event_socket(*ws, "mesh stopping");
+    if (ws) end_event_socket(*ws, "mesh stopping");
 }
 
 Result<bool> LemonadeNexusClient::run_mesh_events(
@@ -3897,9 +3951,8 @@ Result<bool> LemonadeNexusClient::run_mesh_events(
         "wss://" + fqdn + ":" + std::to_string(lp) + "/api/events?node_id=" + node_id,
         impl_->auth_headers(), fqdn, kPingSec, kMaxMissedPongs);
     if (!ws) return {false, false, 0, kNoEventSocket};
-    if (!ws->is_valid()) return {false, false, 0, "the event socket URL is not valid"};
-    ws->set_connection_timeout(kMeshConnectTimeoutSec);
-    apply_client_socket_options(*ws);
+    if (!ws->client->is_valid()) return {false, false, 0, "the event socket URL is not valid"};
+    ws->client->set_connection_timeout(kMeshConnectTimeoutSec);
     {
         std::lock_guard lock(impl_->poll_mtx);
         if (impl_->poll_cancelled) return {false, false, 0, "cancelled"};
@@ -3909,7 +3962,7 @@ Result<bool> LemonadeNexusClient::run_mesh_events(
         std::lock_guard lock(impl_->poll_mtx);
         if (impl_->events_ws == ws) impl_->events_ws.reset();
     };
-    const auto opened = open_event_socket(*ws);
+    const auto opened = open_event_socket(*ws->client);
     egress_lock.unlock();
     if (!opened.ok) {
         release();
@@ -3921,17 +3974,17 @@ Result<bool> LemonadeNexusClient::run_mesh_events(
         cancelled = impl_->poll_cancelled;
     }
     if (cancelled) {
-        // cancel_mesh_peer_wait() ran while the socket was opening: its
-        // close() found no connection yet, so the socket is closed here, or
+        // cancel_mesh_peer_wait() ran while the socket was opening and may
+        // have found nothing to end yet, so the socket is closed here, or
         // the read below would wait for the server to end it.
-        ws->close(httplib::ws::CloseStatus::GoingAway, "mesh stopping");
+        close_event_socket(*ws->client, "mesh stopping");
         release();
         return {false, false, 0, "cancelled"};
     }
 
     std::string message;
     std::string error;
-    while (ws->read(message) != httplib::ws::Fail) {
+    while (ws->client->read(message) != httplib::ws::Fail) {
         if (message.size() > kMaxMessage) {
             error = "event message too large";
             break;
@@ -3958,7 +4011,7 @@ Result<bool> LemonadeNexusClient::run_mesh_events(
         }
         on_revisions({*peers, *devices});
     }
-    ws->close();
+    ws->client->close();
     release();
     return {true, true, 101, error};
 #endif
@@ -3971,7 +4024,7 @@ void LemonadeNexusClient::begin_mesh_peer_waits() {
 
 bool LemonadeNexusClient::event_socket_supported() noexcept { return kEventSocketSupported; }
 
-Result<std::string> LemonadeNexusClient::mesh_heartbeat(
+Result<LemonadeNexusClient::MeshRevisions> LemonadeNexusClient::mesh_heartbeat(
     const std::string& nid, const std::string& endpoint,
     const std::optional<std::vector<std::string>>& local_endpoints) {
     json body;
@@ -3993,16 +4046,19 @@ Result<std::string> LemonadeNexusClient::mesh_heartbeat(
         notice != resp->end() && notice->is_object()) {
         impl_->note_departure_notice(notice->value("next_epoch", uint64_t{0}));
     }
-    // A change only makes the orchestrator fetch the peer list sooner, so a
+    // A change only makes the orchestrator fetch a list sooner, so a
     // malformed value is ignored rather than refused.
-    constexpr std::size_t kMaxPeersRevision = 128;
-    std::string revision;
-    if (const auto found = resp->find("peers_revision");
-        found != resp->end() && found->is_string() &&
-        found->get_ref<const std::string&>().size() <= kMaxPeersRevision) {
-        revision = found->get<std::string>();
-    }
-    return {true, std::move(revision), status, ""};
+    constexpr std::size_t kMaxRevision = 128;
+    const auto revision = [&](const char* key) {
+        std::string out;
+        if (const auto found = resp->find(key); found != resp->end() && found->is_string() &&
+            found->get_ref<const std::string&>().size() <= kMaxRevision) {
+            out = found->get<std::string>();
+        }
+        return out;
+    };
+    return {true, MeshRevisions{revision("peers_revision"), revision("devices_revision")}, status,
+            ""};
 }
 
 // ---------------------------------------------------------------------------
