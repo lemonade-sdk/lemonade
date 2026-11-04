@@ -19,6 +19,7 @@ Rootful Podman and Docker give that account root-equivalent control of the host'
 | `llamacpp:halobox` | llama.cpp Halo Box ROCm fork | [kyuz0/amd-strix-halo-toolboxes](https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes) |
 | `rocmfpx:rocm` | llama.cpp ROCm FPX fork | [kyuz0/amd-strix-halo-toolboxes](https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes) |
 | `halogen:rocm` | Halogen Flash; needs Linux 6.18.4 or newer, built with `CONFIG_HSA_AMD_SVM` | [peonist-ai/halogen-flash-server](https://github.com/orgs/peonist-ai/packages/container/package/halogen-flash-server) |
+| `gufo:rocm` | Gufo | [kyuz0/amd-strix-halo-toolboxes](https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes) |
 
 ## Setup
 

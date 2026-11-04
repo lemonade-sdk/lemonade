@@ -456,6 +456,13 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
 
+#### Gufo (`gufo` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--gufo-args ARGS` | Custom arguments to pass to gufo serve llm | `""` |
+
 #### ThinkSound (`thinksound` recipe)
 
 | Option | Description | Default |

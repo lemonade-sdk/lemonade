@@ -1483,6 +1483,10 @@ jobs:
             install: "halogen:rocm"
             script: server_llm.py
             extra_args: "--wrapped-server halogen --backend rocm"
+          - name: gufo
+            install: "gufo:rocm"
+            script: server_llm.py
+            extra_args: "--wrapped-server gufo --backend rocm"
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
