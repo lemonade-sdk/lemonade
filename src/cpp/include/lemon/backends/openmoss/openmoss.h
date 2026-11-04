@@ -26,6 +26,12 @@ inline const BackendDescriptor descriptor = {
         {"cuda", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
         {"vulkan", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
     },
+    /*about*/ {
+        {"cuda", {"MOSS speech and sound-effect models in C++/GGML on top of llama.cpp, on NVIDIA GPUs.",
+                  "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "Apache-2.0", "https://github.com/pwilkin/openmoss"}},
+        {"vulkan", {"MOSS speech and sound-effect models in C++/GGML on top of llama.cpp, on most Vulkan-capable GPUs.",
+                    "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "Apache-2.0", "https://github.com/pwilkin/openmoss"}},
+    },
     /*supported_modes*/ {"tts", "audio-generation"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},

@@ -31,6 +31,11 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"npu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
     },
+    /*about*/ {
+        {"npu", {"NPU-native runtime for LLMs, speech and embeddings, with kernels built for Ryzen AI XDNA2 NPUs.",
+                 "FastFlowLM (now AMD ROCm)", "AMD ROCm",
+                 "MIT (CLI) and FastFlowLM NPU Binary License (kernels)", "https://github.com/ROCm/FastFlowLM"}},
+    },
     /*supported_modes*/ {"chat", "embeddings", "transcription"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},

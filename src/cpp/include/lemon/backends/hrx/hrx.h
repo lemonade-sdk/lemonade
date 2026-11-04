@@ -55,6 +55,10 @@ inline const BackendDescriptor descriptor = {
          {{"gfx1100", {/*os*/ {"linux"}, /*channels*/ {}}},
           {"gfx1151", {/*os*/ {"linux"}, /*channels*/ {}}}}},
     },
+    /*about*/ {
+        {"hrx", {"AMD's staging build of llama.cpp on the experimental HRX runtime, for select Radeon and Strix Halo GPUs.",
+                 "AMD ROCm", "AMD ROCm", "MIT", "https://github.com/ROCm/ggml-staging-automation"}},
+    },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},

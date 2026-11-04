@@ -11776,6 +11776,36 @@ a.backend-card__version:focus-visible {
   text-decoration: underline;
 }
 
+.backend-card__author {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-secondary);
+  font-weight: var(--weight-medium);
+}
+
+.backend-card__author .app-icon { transform: translateY(-0.5px); }
+
+a.backend-card__author {
+  text-decoration: none;
+}
+
+a.backend-card__author:hover,
+a.backend-card__author:focus-visible {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.backend-card__description,
+.backend-card__provenance {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+}
+
+.backend-card__description { color: var(--text-secondary); }
+.backend-card__provenance { color: var(--text-tertiary); }
+
 .backend-card__footer {
   gap: var(--space-2);
   margin-top: var(--space-1);

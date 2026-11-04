@@ -619,6 +619,19 @@ sys.exit(0)
         result = self.assertCommandSucceeds(["backends", "uninstall", "llamacpp:cpu"])
         print(f"Backends uninstall exit code: {result.returncode}")
 
+    def test_043_backends_info(self):
+        """Test backends info prints the backend's author, publisher and license."""
+        result = self.assertCommandSucceeds(["backends", "info", "llamacpp:rocm"])
+        output = result.stdout
+        self.assertIn("llamacpp:rocm", output)
+        self.assertRegex(output, r"Author\s+ggml-org")
+        self.assertRegex(output, r"Publisher\s+lemonade-sdk")
+        self.assertRegex(output, r"License\s+MIT")
+
+    def test_044_backends_info_unknown_backend(self):
+        """Test backends info rejects a backend the recipe does not have."""
+        self.assertCommandFails(["backends", "info", "llamacpp:no-such-backend"])
+
     # =============================================================================
     # Cloud Tests
     # =============================================================================

@@ -27,6 +27,11 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"rocm", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, /*device_summary*/ "AMD Strix Halo"},
     },
+    /*about*/ {
+        {"rocm", {"Closed-source engine with hand-written Strix Halo kernels, serving Qwen3.8-Flash-Next.",
+                  "Peonist", "Peonist", "Halogen EULA (proprietary, free to use)",
+                  "https://github.com/peonist-ai/halogen-flash-server"}},
+    },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
