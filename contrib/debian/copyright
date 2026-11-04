@@ -15,13 +15,6 @@ Copyright: Microsoft Corporation
 License: Expat
 Comment: Script from Microsoft's devcontainer templates
 
-Files: debian/httplib-vendor/*
-Copyright: 2026 Yuji Hirose
-License: Expat
-Comment: cpp-httplib, built into the Nexus SDK library only. Distributions ship
- a version older than the SDK needs; debian/vendor-httplib copies the pinned
- release. lemond links the system package.
-
 Files: src/app/*
        src/cpp/installer/installer_banner_wix.bmp
        src/cpp/installer/top_banner.bmp

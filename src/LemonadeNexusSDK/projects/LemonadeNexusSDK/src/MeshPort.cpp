@@ -700,8 +700,17 @@ MeshPortStartResult MeshPort::bind_listener(uint16_t port, bool tls) {
     listener->tls = tls;
     if (tls) {
         auto* state = tls_.get();
+#ifndef LEMONADE_NEXUS_HTTPLIB_VERSION
+#error "LEMONADE_NEXUS_HTTPLIB_VERSION names the cpp-httplib release (see cmake/libraries/httplib.cmake)"
+#endif
+#if LEMONADE_NEXUS_HTTPLIB_VERSION >= 33000
         listener->server = std::make_unique<httplib::SSLServer>(
             [state](httplib::tls::ctx_t context) { return state->configure(*static_cast<SSL_CTX*>(context)); });
+#else
+        // cpp-httplib before v0.33.0 hands the OpenSSL context to the callback itself.
+        listener->server = std::make_unique<httplib::SSLServer>(
+            [state](SSL_CTX& context) { return state->configure(context); });
+#endif
         if (!listener->server->is_valid()) return MeshPortStartResult::BindFailed;
     } else {
         listener->server = std::make_unique<httplib::Server>();

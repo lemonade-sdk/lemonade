@@ -152,6 +152,83 @@ void apply_client_socket_options(HttpClient& client) {
 #endif
 }
 
+// The event socket dials the private FQDN at the loopback egress with the
+// certificate still verified against the FQDN. Only the hostname map of the
+// WebSocket client allows that, and cpp-httplib added it in v0.47.0 (the
+// client itself in v0.33.0). The SDK also builds against the older library a
+// distribution ships (Ubuntu: 0.26.0, Debian 13 backports: 0.41.0); that
+// build has no event socket, and the orchestrator keeps the peer list
+// long-poll instead.
+template <typename WsClient>
+concept EventSocketClient = requires(WsClient& ws, std::map<std::string, std::string> addresses) {
+    ws.set_hostname_addr_map(addresses);
+};
+
+#ifndef LEMONADE_NEXUS_HTTPLIB_VERSION
+#error "LEMONADE_NEXUS_HTTPLIB_VERSION names the cpp-httplib release (see cmake/libraries/httplib.cmake)"
+#endif
+#if LEMONADE_NEXUS_HTTPLIB_VERSION >= 33000
+using EventSocket = httplib::ws::WebSocketClient;
+#else
+struct EventSocket {};  // no WebSocket client in this cpp-httplib
+#endif
+constexpr bool kEventSocketSupported = EventSocketClient<EventSocket>;
+constexpr const char* kNoEventSocket =
+    "this build has no event socket (cpp-httplib " CPPHTTPLIB_VERSION ")";
+
+/// Closes an open event socket with status 1001 (going away).
+void close_event_socket([[maybe_unused]] EventSocket& ws, [[maybe_unused]] const char* reason) {
+#if LEMONADE_NEXUS_HTTPLIB_VERSION >= 33000
+    ws.close(httplib::ws::CloseStatus::GoingAway, reason);
+#endif
+}
+
+/// The event socket client for `url`, with `fqdn` mapped to the loopback
+/// egress and the ping schedule set; nullptr when the library has no
+/// hostname map. The caller checks is_valid().
+template <typename WsClient>
+std::shared_ptr<WsClient> make_event_socket([[maybe_unused]] const std::string& url,
+                                            [[maybe_unused]] const httplib::Headers& headers,
+                                            [[maybe_unused]] const std::string& fqdn,
+                                            [[maybe_unused]] time_t ping_sec,
+                                            [[maybe_unused]] int max_missed_pongs) {
+    if constexpr (!EventSocketClient<WsClient>) {
+        return nullptr;
+    } else {
+        auto ws = std::make_shared<WsClient>(url, headers);
+        if (!ws->is_valid()) return ws;
+        ws->set_hostname_addr_map({{fqdn, "127.0.0.1"}});
+        ws->set_websocket_ping_interval(ping_sec);
+        ws->set_websocket_max_missed_pongs(max_missed_pongs);
+        return ws;
+    }
+}
+
+struct EventSocketOpen {
+    bool        ok{false};
+    int         status{0};  ///< the server's HTTP answer, 0 when unknown
+    std::string error;
+};
+
+/// connect() of the event socket. From cpp-httplib v0.58.0 it answers with a
+/// Result that carries the server's HTTP status (404: no event socket);
+/// before, with a bool, so a refusal reports status 0.
+template <typename WsClient>
+EventSocketOpen open_event_socket([[maybe_unused]] WsClient& ws) {
+    if constexpr (!EventSocketClient<WsClient>) {
+        return {false, 0, kNoEventSocket};
+    } else {
+        const auto opened = ws.connect();
+        if constexpr (requires { opened.status(); opened.error(); }) {
+            if (opened) return {true, 0, {}};
+            return {false, std::max(opened.status(), 0), httplib::to_string(opened.error())};
+        } else {
+            if (opened) return {true, 0, {}};
+            return {false, 0, "no answer"};
+        }
+    }
+}
+
 /// Resolve a hostname to its first IPv4 address (dotted string), or "" on
 /// failure. Used to learn the server's mesh IP from its private FQDN (which the
 /// authoritative DNS maps to the in-mesh address, e.g. 10.64.252.37).
@@ -349,7 +426,7 @@ struct LemonadeNexusClient::Impl {
         }
         if (stale_private) stale_private->stop();
         std::shared_ptr<httplib::SSLClient> stale_poll;
-        std::shared_ptr<httplib::ws::WebSocketClient> stale_events;
+        std::shared_ptr<EventSocket>        stale_events;
         {
             std::lock_guard lock(poll_mtx);
             stale_poll = std::move(poll_cli);
@@ -357,7 +434,7 @@ struct LemonadeNexusClient::Impl {
             stale_events = events_ws;
         }
         if (stale_poll) stale_poll->stop();
-        if (stale_events) stale_events->close(httplib::ws::CloseStatus::GoingAway, "resumed");
+        if (stale_events) close_event_socket(*stale_events, "resumed");
         mesh_breaker_until_ms.store(0, std::memory_order_relaxed);
         private_path_answered();
         {
@@ -379,7 +456,7 @@ struct LemonadeNexusClient::Impl {
     bool                                poll_cancelled{false};
     // The event socket (run_mesh_events), guarded by poll_mtx like the
     // long-poll client so cancel_mesh_peer_wait() can close it.
-    std::shared_ptr<httplib::ws::WebSocketClient> events_ws;
+    std::shared_ptr<EventSocket> events_ws;
 
     // Device and group loopback certificates kept current on disk. Declared
     // before mesh_orchestrator: the orchestrator's renewal thread uses it
@@ -3770,7 +3847,7 @@ Result<std::string> LemonadeNexusClient::wait_mesh_peers(const std::string& node
 
 void LemonadeNexusClient::cancel_mesh_peer_wait() {
     std::shared_ptr<httplib::SSLClient> cli;
-    std::shared_ptr<httplib::ws::WebSocketClient> ws;
+    std::shared_ptr<EventSocket>        ws;
     {
         std::lock_guard lock(impl_->poll_mtx);
         impl_->poll_cancelled = true;
@@ -3778,7 +3855,7 @@ void LemonadeNexusClient::cancel_mesh_peer_wait() {
         ws = impl_->events_ws;
     }
     if (cli) cli->stop();
-    if (ws) ws->close(httplib::ws::CloseStatus::GoingAway, "mesh stopping");
+    if (ws) close_event_socket(*ws, "mesh stopping");
 }
 
 Result<bool> LemonadeNexusClient::run_mesh_events(
@@ -3793,6 +3870,11 @@ Result<bool> LemonadeNexusClient::run_mesh_events(
     if (node_id.empty() || !std::all_of(node_id.begin(), node_id.end(), node_char)) {
         return {false, false, 0, "run_mesh_events needs a node id"};
     }
+#if LEMONADE_NEXUS_HTTPLIB_VERSION < 33000
+    (void)on_revisions;
+    return {false, false, 0, kNoEventSocket};
+#else
+    if (!event_socket_supported()) return {false, false, 0, kNoEventSocket};
     if (const auto refusal = impl_->private_api_refusal(); !refusal.empty()) {
         return {false, false, 0, refusal};
     }
@@ -3811,14 +3893,12 @@ Result<bool> LemonadeNexusClient::run_mesh_events(
 
     // The private FQDN lands on the loopback egress, as for the other private
     // calls; SNI and certificate verification still use the FQDN.
-    auto ws = std::make_shared<httplib::ws::WebSocketClient>(
+    auto ws = make_event_socket<EventSocket>(
         "wss://" + fqdn + ":" + std::to_string(lp) + "/api/events?node_id=" + node_id,
-        impl_->auth_headers());
+        impl_->auth_headers(), fqdn, kPingSec, kMaxMissedPongs);
+    if (!ws) return {false, false, 0, kNoEventSocket};
     if (!ws->is_valid()) return {false, false, 0, "the event socket URL is not valid"};
-    ws->set_hostname_addr_map({{fqdn, "127.0.0.1"}});
     ws->set_connection_timeout(kMeshConnectTimeoutSec);
-    ws->set_websocket_ping_interval(kPingSec);
-    ws->set_websocket_max_missed_pongs(kMaxMissedPongs);
     apply_client_socket_options(*ws);
     {
         std::lock_guard lock(impl_->poll_mtx);
@@ -3829,12 +3909,11 @@ Result<bool> LemonadeNexusClient::run_mesh_events(
         std::lock_guard lock(impl_->poll_mtx);
         if (impl_->events_ws == ws) impl_->events_ws.reset();
     };
-    const auto opened = ws->connect();
+    const auto opened = open_event_socket(*ws);
     egress_lock.unlock();
-    if (!opened) {
+    if (!opened.ok) {
         release();
-        return {false, false, std::max(opened.status(), 0),
-                "event socket not opened: " + httplib::to_string(opened.error())};
+        return {false, false, opened.status, "event socket not opened: " + opened.error};
     }
     bool cancelled = false;
     {
@@ -3882,12 +3961,15 @@ Result<bool> LemonadeNexusClient::run_mesh_events(
     ws->close();
     release();
     return {true, true, 101, error};
+#endif
 }
 
 void LemonadeNexusClient::begin_mesh_peer_waits() {
     std::lock_guard lock(impl_->poll_mtx);
     impl_->poll_cancelled = false;
 }
+
+bool LemonadeNexusClient::event_socket_supported() noexcept { return kEventSocketSupported; }
 
 Result<std::string> LemonadeNexusClient::mesh_heartbeat(
     const std::string& nid, const std::string& endpoint,

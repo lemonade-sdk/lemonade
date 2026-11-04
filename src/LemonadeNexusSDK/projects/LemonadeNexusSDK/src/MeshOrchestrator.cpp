@@ -547,8 +547,13 @@ void MeshOrchestrator::do_heartbeat() {
 void MeshOrchestrator::poll_loop() {
     auto retry = kPeerWaitRetryMin;
     // Set while the session server has no event socket: until then the
-    // long-poll stands in for it.
+    // long-poll stands in for it. A build without the event socket (see
+    // LemonadeNexusClient::event_socket_supported) keeps the long-poll.
     std::optional<std::chrono::steady_clock::time_point> events_after;
+    if (!LemonadeNexusClient::event_socket_supported()) {
+        spdlog::info("[MeshOrchestrator] this build has no event socket; using the peer list long-poll");
+        events_after = std::chrono::steady_clock::time_point::max();
+    }
     while (running_.load()) {
         const auto now = std::chrono::steady_clock::now();
         auto pause = std::chrono::seconds{0};

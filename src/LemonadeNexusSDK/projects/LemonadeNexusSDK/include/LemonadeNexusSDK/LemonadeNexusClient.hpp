@@ -574,6 +574,15 @@ public:
         std::string devices;  ///< devices_revision: changes with the device list
     };
 
+    /// True when this build of the SDK can open the event socket. The socket
+    /// dials the private FQDN through the loopback egress with the
+    /// certificate verified against the FQDN, which needs the hostname map
+    /// of the cpp-httplib WebSocket client (v0.47.0 and newer). A build on
+    /// an older system library (Ubuntu ships 0.26.0, Debian 13 backports
+    /// 0.41.0) has no event socket: run_mesh_events() fails at once and the
+    /// peer list long-poll (wait_mesh_peers) serves instead.
+    [[nodiscard]] static bool event_socket_supported() noexcept;
+
     /// Holds the private event socket for `node_id` (this device's node) open
     /// over the mesh and calls `on_revisions` on the calling thread with each
     /// message: once when the socket opens and again on every change. The
@@ -582,9 +591,11 @@ public:
     /// its pings (about 45 s), or cancel_mesh_peer_wait() runs; ok is true
     /// when the socket opened. Before it opens, it fails with the server's
     /// answer in http_status: 404 from a server without the event socket,
-    /// 401 or 403 for a refused session, 0 when no answer came. A malformed
-    /// message ends the socket with `error` set. Thread-safe with respect to
-    /// the other client calls; one socket at a time.
+    /// 401 or 403 for a refused session, 0 when no answer came (and for
+    /// every refusal with cpp-httplib before v0.58.0, whose connect()
+    /// reports no status). A malformed message ends the socket with `error`
+    /// set. Thread-safe with respect to the other client calls; one socket
+    /// at a time.
     [[nodiscard]] Result<bool> run_mesh_events(
         const std::string& node_id,
         const std::function<void(const MeshRevisions&)>& on_revisions);

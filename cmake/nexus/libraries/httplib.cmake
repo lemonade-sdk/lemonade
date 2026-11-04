@@ -1,8 +1,21 @@
 # A system package new enough for the SDK is used; otherwise the vendored Nexus
 # module builds the pinned source (FETCHCONTENT_SOURCE_DIR_HTTPLIB names a local
-# copy for offline builds, as debian/vendor-httplib provides). The SDK uses the
-# WebSocket client and the TLS context API of cpp-httplib 0.61.0.
-set(_nexus_httplib_min "0.61.0")
+# copy for offline builds). The SDK builds against cpp-httplib 0.26.0 or newer,
+# the same floor as lemond (Ubuntu ships 0.26.0, Debian 13 backports 0.41.0,
+# Fedora 0.48.0). Its event socket needs the WebSocket client's hostname map of
+# 0.47.0; below that the SDK keeps the peer list long-poll
+# (LemonadeNexusClient::event_socket_supported).
+set(_nexus_httplib_min "0.26.0")
+# The SDK selects the cpp-httplib API by LEMONADE_NEXUS_HTTPLIB_VERSION
+# (major * 100000 + minor * 1000 + patch), as the Nexus module defines it for
+# the pinned source; the library's own version macros are strings.
+function(_nexus_httplib_version_definition target version)
+    if(NOT version MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+        message(FATAL_ERROR "cpp-httplib: version '${version}' is not major.minor.patch")
+    endif()
+    math(EXPR _number "${CMAKE_MATCH_1} * 100000 + ${CMAKE_MATCH_2} * 1000 + ${CMAKE_MATCH_3}")
+    target_compile_definitions(${target} INTERFACE LEMONADE_NEXUS_HTTPLIB_VERSION=${_number})
+endfunction()
 # Distribution packages (Debian, Ubuntu) build cpp-httplib as a library whose header
 # holds only declarations, so the library has to be linked as well.
 find_package(PkgConfig QUIET)
@@ -12,6 +25,8 @@ if(PkgConfig_FOUND AND NOT APPLE AND NOT WIN32)
         add_library(nexus-httplib INTERFACE)
         add_library(httplib::httplib ALIAS nexus-httplib)
         target_link_libraries(nexus-httplib INTERFACE PkgConfig::NEXUS_HTTPLIB OpenSSL::SSL OpenSSL::Crypto)
+        _nexus_httplib_version_definition(nexus-httplib "${NEXUS_HTTPLIB_VERSION}")
+        message(STATUS "Nexus SDK: system cpp-httplib ${NEXUS_HTTPLIB_VERSION}")
         return()
     endif()
 endif()
@@ -25,6 +40,8 @@ if(NEXUS_HTTPLIB_INCLUDE_DIR)
         target_include_directories(nexus-httplib INTERFACE "${NEXUS_HTTPLIB_INCLUDE_DIR}")
         target_compile_definitions(nexus-httplib INTERFACE CPPHTTPLIB_OPENSSL_SUPPORT)
         target_link_libraries(nexus-httplib INTERFACE OpenSSL::SSL OpenSSL::Crypto)
+        _nexus_httplib_version_definition(nexus-httplib "${_version}")
+        message(STATUS "Nexus SDK: system cpp-httplib header ${_version}")
         return()
     endif()
 endif()
