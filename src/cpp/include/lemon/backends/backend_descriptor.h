@@ -27,6 +27,7 @@ enum class SlotPolicy {
     Standard,      // counts toward the LRU slots, no device exclusivity (llamacpp, sd-cpp)
     ExclusiveNpu,  // evict ALL npu servers before loading (ryzenai-llm, whispercpp-npu)
     CoexistByType, // one per model type, evicts exclusive-npu peers (flm)
+    ExclusiveHost, // shares the machine with no other local model, in either load order (halogen)
     Unmetered      // never counts toward slots, never auto-evicted (cloud)
 };
 
@@ -49,6 +50,7 @@ inline const char* slot_policy_to_string(SlotPolicy p) {
         case SlotPolicy::Standard:      return "standard";
         case SlotPolicy::ExclusiveNpu:  return "exclusive_npu";
         case SlotPolicy::CoexistByType: return "coexist_by_type";
+        case SlotPolicy::ExclusiveHost: return "exclusive_host";
         case SlotPolicy::Unmetered:     return "unmetered";
     }
     return "standard";
@@ -128,13 +130,13 @@ struct BackendDescriptor {
     // filter_for_host in model_manager.cpp).
     bool streams_model_from_storage = false;
 
+    // The backends in `support` that run from an OCI image, keyed by backend name.
+    std::map<std::string, ContainerPolicy> containers;
+
     // {mode, capability}: a mode from supported_modes this backend serves only
     // for models that also carry the capability label, and the only mode such a
     // model may deploy in. Registration refuses the mode without the label.
     std::vector<std::pair<std::string, std::string>> mode_capability_requirements;
-
-    // The backends in `support` that run from an OCI image, keyed by backend name.
-    std::map<std::string, ContainerPolicy> containers;
 
     const ContainerPolicy* container_for(const std::string& backend) const {
         auto it = containers.find(backend);

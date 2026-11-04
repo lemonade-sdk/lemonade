@@ -170,7 +170,8 @@ protected:
         LOG(INFO, "Server") << "POST /api/v1/responses - Non-streaming" << std::endl;
         auto cancel = cancel_on_disconnect(req);
         auto response = ctx_.router->responses(req.body);
-        if (response.contains("error")) {
+        // A Responses object carries "error": null when it succeeded.
+        if (response.contains("error") && !response["error"].is_null()) {
             LOG(ERROR, "Server") << "Responses backend error: " << response["error"].dump() << std::endl;
             set_error_response(response, res, kBackendError);
             return;

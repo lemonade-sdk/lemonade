@@ -3,7 +3,12 @@
 // checks every container backend's descriptor and pin.
 
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/ds4/ds4.h"
+#include "lemon/backends/gufo/gufo_server.h"
+#include "lemon/backends/halogen/halogen_server.h"
 #include "lemon/utils/container_manager.h"
 
 #include <cstdio>
@@ -12,6 +17,7 @@
 #include <map>
 #include <nlohmann/json.hpp>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -496,6 +502,27 @@ void test_helpers() {
           ContainerManager::container_name(13305, "llamacpp", "nathanw", "Qwen3-4B-GGUF") !=
               ContainerManager::container_name(13306, "llamacpp", "nathanw", "Qwen3-4B-GGUF"));
 
+    FakeHost ubuntu;
+    check("a host without SELinux passes the SELinux check",
+          !ContainerManager(ubuntu.host()).check_selinux());
+    FakeHost fedora;
+    fedora.files["/sys/fs/selinux/enforce"] = "1";
+    fedora.files["/sys/fs/selinux/booleans/container_use_devices"] = "0 0";
+    const auto selinux = ContainerManager(fedora.host()).check_selinux();
+    check("enforcing SELinux without container_use_devices fails with its fix",
+          selinux &&
+              selinux->message ==
+                  "SELinux is enforcing and the container_use_devices boolean is off" &&
+              selinux->steps ==
+                  std::vector<std::string>({"sudo setsebool -P container_use_devices 1"}));
+    fedora.files["/sys/fs/selinux/booleans/container_use_devices"] = "1 1";
+    check("the SELinux check passes once container_use_devices is on",
+          !ContainerManager(fedora.host()).check_selinux());
+    fedora.files["/sys/fs/selinux/booleans/container_use_devices"] = "0 0";
+    fedora.files["/sys/fs/selinux/enforce"] = "0";
+    check("permissive SELinux passes the SELinux check",
+          !ContainerManager(fedora.host()).check_selinux());
+
     check("other publishers are refused",
           !ContainerManager::allowed_image("docker.io/library/ubuntu") &&
               !ContainerManager::allowed_image("docker.io/kyuz0x/image") &&
@@ -514,26 +541,37 @@ void test_helpers() {
 
 #ifndef _WIN32
 // A Hugging Face cache, where each snapshot file links into blobs/.
-void test_model_mount() {
+void test_model_mounts() {
     namespace fs = std::filesystem;
     const fs::path repo = fs::temp_directory_path() / "lemonade-test-model-mounts";
     fs::remove_all(repo);
     const fs::path blobs = repo / "blobs";
     const fs::path snapshot = repo / "snapshots" / "abc";
     fs::create_directories(blobs);
-    fs::create_directories(snapshot);
-    std::ofstream(blobs / "b1") << "b1";
-    fs::create_symlink("../../blobs/b1", snapshot / "model.gguf");
+    fs::create_directories(snapshot / "tokenizer" / "extra");
+    for (const char* blob : {"b1", "b2", "b3"}) std::ofstream(blobs / blob) << blob;
+    fs::create_symlink("../../blobs/b1", snapshot / "model.hgn");
+    fs::create_symlink("../../../blobs/b2", snapshot / "tokenizer" / "vocab.json");
+    fs::create_symlink("../../../../blobs/b3", snapshot / "tokenizer" / "extra" / "merges.txt");
+    const std::string real_blobs = fs::canonical(blobs).string();
 
-    const auto mount = ContainerManager::model_mount((snapshot / "model.gguf").string(),
-                                                     "/mnt/models/model.gguf");
+    const auto file = ContainerManager::model_mounts((snapshot / "model.hgn").string(),
+                                                     "/mnt/models/model.hgn");
     check("a linked file mounts its blob",
-          mount.source == fs::canonical(blobs / "b1").string() &&
-              mount.destination == "/mnt/models/model.gguf");
+          file.size() == 1 && file[0].source == real_blobs + "/b1" &&
+              file[0].destination == "/mnt/models/model.hgn");
+
+    const auto dir = ContainerManager::model_mounts((snapshot / "tokenizer").string(),
+                                                    "/mnt/models/tokenizer");
+    check("a directory mounts each file inside it, at the same relative path",
+          dir.size() == 2 && dir[0].source == real_blobs + "/b3" &&
+              dir[0].destination == "/mnt/models/tokenizer/extra/merges.txt" &&
+              dir[1].source == real_blobs + "/b2" &&
+              dir[1].destination == "/mnt/models/tokenizer/vocab.json");
 
     bool threw = false;
     try {
-        ContainerManager::model_mount((repo / "missing").string(), "/mnt/models/missing");
+        ContainerManager::model_mounts((repo / "missing").string(), "/mnt/models/missing");
     } catch (const std::exception&) {
         threw = true;
     }
@@ -541,6 +579,80 @@ void test_model_mount() {
     fs::remove_all(repo);
 }
 #endif
+
+void test_halogen_kernel_check() {
+    // A Strix Halo on Linux 7.0: SVM set, cwsr_size = 16384 + 40 * 479232.
+    const std::string node = "gfx_target_version 110501\ncapability 671326848\n"
+                             "simd_count 80\nctl_stack_size 16384\ncwsr_size 19185664\n";
+    check("Halogen passes a kernel with SVM and the gfx1151 fixes",
+          !lemon::backends::halogen::check_kfd_node(node));
+    const auto no_svm = lemon::backends::halogen::check_kfd_node(
+        "capability 537109120\nsimd_count 80\nctl_stack_size 16384\ncwsr_size 19185664\n");
+    check("Halogen refuses a kernel built without SVM",
+          no_svm && no_svm->steps == std::vector<std::string>(
+                        {"Install Linux 6.18.4 or newer, built with CONFIG_HSA_AMD_SVM"}));
+    const auto old_cwsr = lemon::backends::halogen::check_kfd_node(
+        "capability 671326848\nsimd_count 80\nctl_stack_size 16384\ncwsr_size 19169280\n");
+    check("Halogen refuses a kernel whose CWSR size predates the gfx1151 fixes",
+          old_cwsr && old_cwsr->steps ==
+                          std::vector<std::string>({"Install Linux 6.18.4 or newer"}));
+    check("Halogen refuses a kernel too old to report the CWSR sizes",
+          lemon::backends::halogen::check_kfd_node("capability 671326848\nsimd_count 80\n")
+              .has_value());
+}
+
+void test_gufo_argv() {
+    const std::string argv = join(lemon::backends::gufo::build_server_argv(
+        "Qwen3.8-27B-Gufo", "/mnt/models/target.gguf", "/mnt/models/mmproj-BF16.gguf",
+        "/mnt/models/draft.gguf", "dflash2", 8192, 8001, "--think off"));
+    check("gufo serves the target under Lemonade's model name, with its projector and its "
+          "DFlash2 draft",
+          argv == "serve llm --model /mnt/models/target.gguf --served-model-name "
+                  "Qwen3.8-27B-Gufo --context 8192 --host 0.0.0.0 --port 8001 --mmproj "
+                  "/mnt/models/mmproj-BF16.gguf --speculative dflash2 --dflash-model "
+                  "/mnt/models/draft.gguf --think off");
+    check("gufo passes an MTP draft through --mtp-model and a DSpark draft through --dspark-model",
+          join(lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "d.gguf", "mtp", 0,
+                                                        1, ""))
+                      .find("--speculative mtp --mtp-model d.gguf") != std::string::npos &&
+              join(lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "d.gguf",
+                                                            "dspark", 0, 1, ""))
+                      .find("--speculative dspark --dspark-model d.gguf") != std::string::npos);
+    using lemon::backends::gufo::speculative_mode;
+    check("gufo reads a draft's mode from its GGUF architecture",
+          speculative_mode("dflash", "qwen35") == "dflash2" &&
+              speculative_mode("deepseek4-dspark", "deepseek4") == "dspark" &&
+              speculative_mode("qwen4exp", "qwen4exp") == "mtp");
+    bool threw = false;
+    try {
+        speculative_mode("llama", "qwen35");
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    check("gufo refuses a draft of an architecture it cannot run", threw);
+    threw = false;
+    try {
+        lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "", "", 0, 1, "--port 9");
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    check("gufo_args cannot move the port", threw);
+}
+
+void test_ds4_memory_plan() {
+    using lemon::backends::ds4::memory_plan;
+    // The IQ2XXS model (80.8 GiB) with its DSpark support file (5.6 GiB).
+    const auto small_pool = memory_plan(62.0, 86.4);
+    check("ds4 streams on a 62 GiB pool with the expert, model and free budgets it was tuned for",
+          !small_pool.resident && small_pool.expert_cache_gb == 24 &&
+              small_pool.model_cache_gb == 12 && small_pool.free_reserve_gb == 37);
+    const auto large_pool = memory_plan(115.0, 86.4);
+    check("ds4 runs resident on a 115 GiB pool and leaves 16 GiB free",
+          large_pool.resident && large_pool.expert_cache_gb == 0 &&
+              large_pool.free_reserve_gb == 16);
+    check("ds4 streams a model that would leave less than 16 GiB free",
+          !memory_plan(115.0, 100.0).resident);
+}
 
 void test_descriptors_and_pins() {
     std::ifstream in(BACKEND_VERSIONS_JSON_PATH);
@@ -578,8 +690,12 @@ int main() {
     test_oci_runtime();
     test_helpers();
 #ifndef _WIN32
-    test_model_mount();
+    test_model_mounts();
 #endif
+
+    test_halogen_kernel_check();
+    test_gufo_argv();
+    test_ds4_memory_plan();
     test_descriptors_and_pins();
 
     if (failures == 0) {
