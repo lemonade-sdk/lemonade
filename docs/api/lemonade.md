@@ -2185,6 +2185,8 @@ The same backend can carry different labels on different operating systems. Each
         - `publisher` - Who builds the artifact Lemonade installs. Differs from `author` when someone other than the author builds it, as `lemonade-sdk` builds `llamacpp:rocm` from ggml-org's code.
         - `license` - The author's license, as an SPDX id such as `MIT` or a license name. Empty when the author declares none.
         - `project_url` - The author's project page, where the license file lives.
+
+          These fields describe the build Lemonade installs. When Lemonade runs a binary it did not install, such as `llamacpp:system`, a binary found through `prefer_system`, or a custom binary path, they describe the upstream project rather than that binary.
         - `release_url` - Where the backend's release asset downloads from.
         - `download_filename` - The release asset's filename.
         - `can_uninstall` - Whether the backend can be uninstalled. Lemonade sets it only on a backend that does not run on this operating system, always to `true`, so a missing value also means `true`.
