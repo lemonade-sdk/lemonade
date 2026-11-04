@@ -1,7 +1,10 @@
 #include "lemon/routing_policy.h"
+#include "lemon/classification_labels.h"
 #include "lemon/error_types.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <locale>
@@ -21,6 +24,91 @@ Score failed_score() {
     Score score;
     score.ok = false;
     return score;
+}
+
+constexpr size_t kMaxErrorChars = 256;
+
+Score failed_score(std::string reason) {
+    Score score = failed_score();
+    if (reason.size() > kMaxErrorChars) {
+        size_t cut = kMaxErrorChars - 3;
+        while (cut > 0 && (static_cast<unsigned char>(reason[cut]) & 0xC0) == 0x80) --cut;
+        reason.resize(cut);
+        reason += "...";
+    }
+    score.error = std::move(reason);
+    return score;
+}
+
+constexpr long long kLogIntervalSeconds = 60;
+
+bool rate_limited(std::atomic<unsigned long long>& counter,
+                  std::atomic<long long>& last_log_s, unsigned long long& n) {
+    n = ++counter;
+    const long long now = std::chrono::duration_cast<std::chrono::seconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+    const long long previous = last_log_s.load(std::memory_order_relaxed);
+    if (n != 1 && now - previous < kLogIntervalSeconds) return false;
+    last_log_s.store(now, std::memory_order_relaxed);
+    return true;
+}
+
+void log_classifier_failure(const std::string& type, const std::string& id,
+                            const std::string& model, const std::string& reason,
+                            std::atomic<unsigned long long>& counter,
+                            std::atomic<long long>& last_log_s) {
+    unsigned long long n = 0;
+    if (!rate_limited(counter, last_log_s, n)) return;
+    LOG(WARNING, "Routing") << "classifier '" << id << "' (" << type << ", model '" << model
+                            << "') failed: " << reason
+                            << (n == 1 ? std::string() : " [" + std::to_string(n) + " failures]")
+                            << std::endl;
+}
+
+void log_truncated_score_used(const std::string& type, const std::string& id,
+                              const std::string& model,
+                              std::atomic<unsigned long long>& counter,
+                              std::atomic<long long>& last_log_s) {
+    unsigned long long n = 0;
+    if (!rate_limited(counter, last_log_s, n)) return;
+    LOG(WARNING, "Routing") << "classifier '" << id << "' (" << type << ", model '" << model
+                            << "') scored an input the backend had cut to fit its token "
+                               "window; set on_truncation=fail to treat that as a failure"
+                            << (n == 1 ? std::string() : " [" + std::to_string(n) + " times]")
+                            << std::endl;
+}
+
+// Under `fail` the cut IS the evaluation failure, so the entry carries `error`
+// and no score, and the classifier's `on_error` then applies. So is a backend
+// that does not say whether it cut: its silence would let a cut input through.
+void apply_on_truncation(Score& score, OnTruncation on_truncation,
+                         const std::string& type, const std::string& id,
+                         const std::string& model,
+                         std::atomic<unsigned long long>& truncated_scores,
+                         std::atomic<long long>& last_truncation_log_s) {
+    if (!score.ok) return;
+    if (on_truncation == OnTruncation::Fail && !score.truncated.has_value()) {
+        static constexpr const char* kUnreported =
+            "the backend does not report whether it cut the input, so on_truncation=fail "
+            "cannot trust the scores (ort-server reports it from 0.4.0)";
+        log_classifier_failure(type, id, model, kUnreported, truncated_scores,
+                               last_truncation_log_s);
+        score = failed_score(kUnreported);
+        return;
+    }
+    if (!score.truncated.value_or(false)) return;
+    static constexpr const char* kTruncated =
+        "the backend cut the input text to fit its token window, so the scores "
+        "cover only part of the request";
+    if (on_truncation == OnTruncation::Fail) {
+        log_classifier_failure(type, id, model, kTruncated, truncated_scores,
+                               last_truncation_log_s);
+        score = failed_score(kTruncated);
+        score.truncated = true;
+    } else {
+        log_truncated_score_used(type, id, model, truncated_scores, last_truncation_log_s);
+    }
 }
 
 // Trim leading/trailing ASCII whitespace. Used by the llm router to normalize a
@@ -174,6 +262,10 @@ public:
             if (score.ok && !score.rationale.empty() && rationale_applies) {
                 entry.rationale = score.rationale;
             }
+            if (!score.ok && !score.error.empty()) {
+                entry.error = score.error;
+            }
+            entry.truncated = score.truncated;
             ctx.trace.push_back(std::move(entry));
         }
         return result;
@@ -185,6 +277,12 @@ private:
         if (inserted) {
             try {
                 it->second = classifier_->evaluate(ClassifierContext{ctx.request, ctx.services});
+            } catch (const RouterResidencyConflictException&) {
+                // Deliberately not converted to on_error: a residency conflict
+                // says the classifier model cannot run on this hardware
+                // alongside what is resident, which is a deterministic 409 for
+                // the caller rather than a score the band can reason about.
+                throw;
             } catch (const std::exception& e) {
                 // Classifier implementations should return Score{ok=false}
                 // rather than throw. Keep this catch as a permanent safety
@@ -194,12 +292,12 @@ private:
                 LOG(WARNING, "Routing") << "Classifier '" << classifier_->id()
                                         << "' threw during evaluation: " << e.what()
                                         << std::endl;
-                it->second = failed_score();
+                it->second = failed_score(e.what());
             } catch (...) {
                 LOG(WARNING, "Routing") << "Classifier '" << classifier_->id()
                                         << "' threw an unknown exception during evaluation"
                                         << std::endl;
-                it->second = failed_score();
+                it->second = failed_score("unknown exception");
             }
         }
         return it->second;
@@ -233,9 +331,11 @@ class ModelClassifier final : public Classifier {
 public:
     ModelClassifier(std::string id, std::string type, std::string model, OnError on_error,
                     std::vector<std::string> labels,
-                    std::optional<std::string> default_label)
+                    std::optional<std::string> default_label,
+                    OnTruncation on_truncation)
         : Classifier(std::move(id), std::move(type), on_error, std::move(model),
-                     std::move(labels), std::move(default_label)) {
+                     std::move(labels), std::move(default_label)),
+          on_truncation_(on_truncation) {
         if (model_name_.empty()) {
             throw std::invalid_argument("classifier requires model");
         }
@@ -244,17 +344,221 @@ public:
     Score evaluate(const ClassifierContext& ctx) const override {
         Score score;
         if (!ctx.services.run_classifier) {
-            return failed_score();
+            return failed_score("no classification service is configured");
         }
 
         try {
-            score.labels = ctx.services.run_classifier(model_name_, ctx.request.input);
+            ClassifierScores answer = ctx.services.run_classifier(model_name_, ctx.request.input);
+            score.labels = std::move(answer.scores);
+            score.truncated = answer.truncated;
             score.ok = true;
+        } catch (const RouterResidencyConflictException&) {
+            throw;
+        } catch (const std::exception& e) {
+            log_classifier_failure(type(), id(), model_name_, e.what(), failures_,
+                                   last_failure_log_s_);
+            score = failed_score(e.what());
         } catch (...) {
-            score = failed_score();
+            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_,
+                                   last_failure_log_s_);
+            score = failed_score("unknown exception");
         }
+        apply_on_truncation(score, on_truncation_, type(), id(),
+                            model_name_, truncated_scores_, last_truncation_log_s_);
         return score;
     }
+
+private:
+    const OnTruncation on_truncation_;
+    mutable std::atomic<unsigned long long> failures_{0};
+    mutable std::atomic<long long> last_failure_log_s_{0};
+    mutable std::atomic<unsigned long long> truncated_scores_{0};
+    mutable std::atomic<long long> last_truncation_log_s_{0};
+};
+
+// A backend that ignores the request's labels answers with its own head's label
+// set. Accepting that would score every declared label 0.0, a confident miss
+// that skips on_error instead of triggering it.
+bool scores_exactly_declared(const Score& score, const std::vector<std::string>& labels) {
+    const std::set<std::string> declared(labels.begin(), labels.end());
+    if (score.labels.size() != declared.size()) return false;
+    for (const auto& entry : score.labels) {
+        if (!declared.count(entry.first)) return false;
+    }
+    return true;
+}
+
+class ZeroShotClassifier final : public Classifier {
+public:
+    ZeroShotClassifier(std::string id, std::string type, std::string model, OnError on_error,
+                       std::vector<std::string> labels,
+                       std::optional<std::string> default_label,
+                       OnTruncation on_truncation)
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)),
+          on_truncation_(on_truncation) {
+        if (model_name_.empty()) {
+            throw std::invalid_argument("zero_shot classifier requires model");
+        }
+        if (this->labels().empty()) {
+            throw std::invalid_argument(
+                "zero_shot classifier requires at least one label; the model has no "
+                "label set of its own to fall back on");
+        }
+    }
+
+    Score evaluate(const ClassifierContext& ctx) const override {
+        Score score;
+        if (!ctx.services.run_zero_shot_classifier) {
+            return failed_score("no zero-shot classification service is configured");
+        }
+
+        try {
+            ClassifierScores answer =
+                ctx.services.run_zero_shot_classifier(model_name_, ctx.request.input, labels());
+            score.labels = std::move(answer.scores);
+            score.truncated = answer.truncated;
+            score.ok = true;
+        } catch (const RouterResidencyConflictException&) {
+            throw;
+        } catch (const std::exception& e) {
+            log_classifier_failure(type(), id(), model_name_, e.what(), failures_,
+                                   last_failure_log_s_);
+            score = failed_score(e.what());
+        } catch (...) {
+            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_,
+                                   last_failure_log_s_);
+            score = failed_score("unknown exception");
+        }
+        if (score.ok && !scores_exactly_declared(score, labels())) {
+            static constexpr const char* kMismatch =
+                "the backend scored a different label set than the request sent, so it "
+                "ignored the per-request labels";
+            log_classifier_failure(type(), id(), model_name_, kMismatch, failures_,
+                                   last_failure_log_s_);
+            const std::optional<bool> cut = score.truncated;
+            score = failed_score(kMismatch);
+            score.truncated = cut;
+        }
+        apply_on_truncation(score, on_truncation_, type(), id(),
+                            model_name_, truncated_scores_, last_truncation_log_s_);
+        return score;
+    }
+
+private:
+    const OnTruncation on_truncation_;
+    mutable std::atomic<unsigned long long> failures_{0};
+    mutable std::atomic<long long> last_failure_log_s_{0};
+    mutable std::atomic<unsigned long long> truncated_scores_{0};
+    mutable std::atomic<long long> last_truncation_log_s_{0};
+};
+
+// One SystemOne question (choice / noul / score) asked of a llama.cpp decision
+// model. The declared labels are the question's options: a choice's criteria
+// keys, "true"/"false" for noul, a score's level descriptions.
+class SystemOneClassifier final : public Classifier {
+public:
+    SystemOneClassifier(std::string id, std::string type, std::string model, OnError on_error,
+                        std::vector<std::string> labels,
+                        std::optional<std::string> default_label,
+                        nlohmann::ordered_json question, OnTruncation on_truncation)
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)),
+          question_(std::move(question)),
+          on_truncation_(on_truncation) {
+        if (model_name_.empty()) {
+            throw std::invalid_argument("systemone classifier requires model");
+        }
+    }
+
+    Score evaluate(const ClassifierContext& ctx) const override {
+        if (!ctx.services.run_systemone) {
+            return failed_score("no SystemOne service is configured");
+        }
+
+        Score score;
+        try {
+            const json answer =
+                ctx.services.run_systemone(model_name_, ctx.request.input, question_);
+            score.labels = answer_scores(answer);
+            if (answer.contains("truncated") && answer["truncated"].is_boolean()) {
+                score.truncated = answer["truncated"].get<bool>();
+            }
+            score.ok = true;
+        } catch (const RouterResidencyConflictException&) {
+            throw;
+        } catch (const std::exception& e) {
+            log_classifier_failure(type(), id(), model_name_, e.what(), failures_,
+                                   last_failure_log_s_);
+            return failed_score(e.what());
+        } catch (...) {
+            log_classifier_failure(type(), id(), model_name_, "unknown exception", failures_,
+                                   last_failure_log_s_);
+            return failed_score("unknown exception");
+        }
+        if (!scores_exactly_declared(score, labels())) {
+            static constexpr const char* kMismatch =
+                "the answer covers a different option set than the question asked";
+            log_classifier_failure(type(), id(), model_name_, kMismatch, failures_,
+                                   last_failure_log_s_);
+            const std::optional<bool> cut = score.truncated;
+            score = failed_score(kMismatch);
+            score.truncated = cut;
+            return score;
+        }
+        apply_on_truncation(score, on_truncation_, type(), id(),
+                            model_name_, truncated_scores_, last_truncation_log_s_);
+        return score;
+    }
+
+private:
+    mutable std::atomic<unsigned long long> failures_{0};
+    mutable std::atomic<long long> last_failure_log_s_{0};
+    mutable std::atomic<unsigned long long> truncated_scores_{0};
+    mutable std::atomic<long long> last_truncation_log_s_{0};
+
+    static double probability(const json& value) {
+        if (!value.is_number()) {
+            throw std::runtime_error("systemone answer holds a non-numeric probability");
+        }
+        const double p = value.get<double>();
+        if (!std::isfinite(p) || p < 0.0 || p > 1.0) {
+            throw std::runtime_error("systemone answer probability is outside [0, 1]");
+        }
+        return p;
+    }
+
+    std::map<std::string, double> answer_scores(const json& answer) const {
+        const std::string type = question_.at("type").get<std::string>();
+        std::map<std::string, double> scores;
+        if (type == "noul") {
+            const double p = probability(answer.at("noul"));
+            scores["true"] = p;
+            scores["false"] = 1.0 - p;
+            return scores;
+        }
+        const json& probabilities = answer.at("probabilities");
+        if (!probabilities.is_object()) {
+            throw std::runtime_error("systemone answer has no probabilities object");
+        }
+        for (const auto& [key, value] : probabilities.items()) {
+            if (type == "score") {
+                // Levels come back by index; the labels are their descriptions.
+                if (key.empty() || key.find_first_not_of("0123456789") != std::string::npos) {
+                    throw std::runtime_error("systemone answer key '" + key +
+                                             "' is not a level index");
+                }
+                const size_t level = static_cast<size_t>(std::stoul(key));
+                scores[labels().at(level)] = probability(value);
+            } else {
+                scores[key] = probability(value);
+            }
+        }
+        return scores;
+    }
+
+    nlohmann::ordered_json question_;
+    const OnTruncation on_truncation_;
 };
 
 // The `llm` router / L0(a) on-ramp. Runs a small chat model with the author's
@@ -297,8 +601,6 @@ public:
             reply = ctx.services.chat(model_name_, effective_prompt(),
                                       build_context_payload(ctx.request));
         } catch (const RouterResidencyConflictException&) {
-            // A hardware coexistence conflict is not a classifier-quality
-            // failure and must reach the HTTP layer as a deterministic 409.
             throw;
         } catch (...) {
             return failed_score();
@@ -494,6 +796,8 @@ public:
         const ReferenceEmbeddings* references = nullptr;
         try {
             references = &reference_embeddings(ctx.services);
+        } catch (const RouterResidencyConflictException&) {
+            throw;
         } catch (...) {
             return failed_score();
         }
@@ -501,6 +805,8 @@ public:
         Embedding input_embedding;
         try {
             input_embedding = ctx.services.embed(model_name_, ctx.request.input);
+        } catch (const RouterResidencyConflictException&) {
+            throw;
         } catch (...) {
             return failed_score();
         }
@@ -573,8 +879,142 @@ std::vector<std::string> parse_labels(const json& config, const std::string& id)
             }
             labels.push_back(item.get<std::string>());
         }
+        const std::string reason = validate_label_list(labels);
+        if (!reason.empty()) {
+            throw std::invalid_argument("classifier '" + id + "' " + reason);
+        }
     }
     return labels;
+}
+
+struct SystemOneQuestion {
+    std::vector<std::string> labels;
+    nlohmann::ordered_json question;
+};
+
+// Validates the TypeSafe question shape at registration, so a malformed question
+// fails once instead of sending every request to on_error.
+SystemOneQuestion parse_systemone_question(const json& config, const std::string& id) {
+    auto invalid = [&id](const std::string& message) {
+        return std::invalid_argument("systemone classifier '" + id + "' " + message);
+    };
+    auto blank = [](const std::string& s) {
+        return s.find_first_not_of(" \t\r\n") == std::string::npos;
+    };
+    auto check_description = [&invalid](const std::string& option, const json& description) {
+        if (!description.is_null() && !description.is_string() && !description.is_object() &&
+            !description.is_array()) {
+            throw invalid("option '" + option +
+                          "' description must be text, an object, an array or null");
+        }
+    };
+
+    if (!config.contains("question") || !config["question"].is_object()) {
+        throw invalid("requires a question object");
+    }
+    const json& question = config["question"];
+    for (const auto& [key, value] : question.items()) {
+        (void)value;
+        if (key != "type" && key != "instructions" && key != "criteria") {
+            throw invalid("question has unknown key '" + key + "'");
+        }
+    }
+    const json instructions = question.contains("instructions") ? question["instructions"] : json();
+    const bool text_instructions =
+        instructions.is_string() && !blank(instructions.get<std::string>());
+    const bool structured_instructions =
+        (instructions.is_object() || instructions.is_array()) && !instructions.empty();
+    if (!text_instructions && !structured_instructions) {
+        throw invalid("question instructions must be non-blank text, or a non-empty object or "
+                      "array");
+    }
+    const std::string type = question.value("type", "");
+    const json criteria = question.contains("criteria") ? question["criteria"] : json();
+
+    std::vector<std::string> labels;
+    nlohmann::ordered_json wire = {
+        {"type", type},
+        {"instructions", nlohmann::ordered_json(question["instructions"])},
+    };
+    if (type == "choice") {
+        nlohmann::ordered_json options = nlohmann::ordered_json::object();
+        auto add_option = [&](const std::string& option, const json& description) {
+            if (blank(option)) {
+                throw invalid("choice options must not be empty");
+            }
+            if (options.contains(option)) {
+                throw invalid("choice option '" + option + "' is listed twice");
+            }
+            check_description(option, description);
+            options[option] = nlohmann::ordered_json(description);
+            labels.push_back(option);
+        };
+        if (criteria.is_object()) {
+            // A stored policy sorts object keys, and the option order changes
+            // the scores, so only an array keeps what the author wrote.
+            throw invalid("choice criteria must be an array of option names and one-key "
+                          "{option: description} objects, such as [\"billing\", {\"shipping\": "
+                          "\"where an order is\"}]; an object would reach the model in "
+                          "alphabetical order");
+        }
+        if (criteria.is_array() && !criteria.empty()) {
+            for (const auto& entry : criteria) {
+                if (entry.is_string()) {
+                    add_option(entry.get<std::string>(), nullptr);
+                } else if (entry.is_object() && entry.size() == 1) {
+                    add_option(entry.begin().key(), entry.begin().value());
+                } else {
+                    throw invalid("choice criteria array entries must be an option name or a "
+                                  "one-key object {option: description}");
+                }
+            }
+        } else {
+            throw invalid("choice question requires criteria: a non-empty array of option "
+                          "names and one-key {option: description} objects");
+        }
+        if (labels.size() < 2) {
+            throw invalid("choice question needs at least 2 options; one option always scores 1.0");
+        }
+        wire["criteria"] = std::move(options);
+    } else if (type == "noul") {
+        if (!criteria.is_null()) {
+            if (!criteria.is_object()) {
+                throw invalid("noul criteria must be an object");
+            }
+            for (const auto& [key, description] : criteria.items()) {
+                if (key != "true" && key != "false") {
+                    throw invalid("noul criteria accepts only 'true' and 'false'");
+                }
+                check_description(key, description);
+            }
+        }
+        labels = {"true", "false"};
+        if (!criteria.is_null()) {
+            wire["criteria"] = nlohmann::ordered_json(criteria);
+        }
+    } else if (type == "score") {
+        if (!criteria.is_array() || criteria.size() < 2 || criteria.size() > 10) {
+            throw invalid("score question requires 2 to 10 criteria levels");
+        }
+        std::set<std::string> seen;
+        for (const auto& level : criteria) {
+            if (!level.is_string() || blank(level.get<std::string>())) {
+                throw invalid("score levels must be non-empty strings; they become the labels");
+            }
+            if (!seen.insert(level.get<std::string>()).second) {
+                throw invalid("score levels must be distinct");
+            }
+            labels.push_back(level.get<std::string>());
+        }
+        wire["criteria"] = nlohmann::ordered_json(criteria);
+    } else {
+        throw invalid("question type must be one of: choice, noul, score");
+    }
+    const std::string reason = validate_label_list(labels);
+    if (!reason.empty()) {
+        throw invalid(reason);
+    }
+    return {std::move(labels), std::move(wire)};
 }
 
 std::optional<std::string> parse_default_label(const json& config,
@@ -1256,12 +1696,61 @@ ClassifierPtr make_classifier(const json& config, bool expose_request_features) 
 
     OnError on_error = parse_on_error(config.value("on_error", "match_false"));
 
+    if (type != "systemone" && config.contains("question")) {
+        throw std::invalid_argument("classifier '" + id + "' does not accept question; "
+                                    "only the systemone type asks one");
+    }
+
+    if (config.contains("on_truncation") && type != "zero_shot" && type != "classifier" &&
+        type != "systemone") {
+        throw std::invalid_argument(
+            "classifier '" + id + "' of type '" + type +
+            "' does not accept on_truncation; only the model-backed types "
+            "('classifier', 'zero_shot' and 'systemone') read a token window they can overflow");
+    }
+    const OnTruncation on_truncation =
+        parse_on_truncation(config.value("on_truncation", "score"));
+
     if (type == "classifier") {
         std::vector<std::string> labels = parse_labels(config, id);
         std::optional<std::string> default_label = parse_default_label(config, labels, id);
         return std::make_shared<ModelClassifier>(
             id, type, config.value("model", ""), on_error,
-            std::move(labels), std::move(default_label));
+            std::move(labels), std::move(default_label), on_truncation);
+    }
+
+    if (type == "zero_shot") {
+        if (config.contains("prompt")) {
+            throw std::invalid_argument(
+                "zero_shot classifier '" + id +
+                "' does not accept prompt; the backend builds the label block itself");
+        }
+        if (config.contains("reference_phrases")) {
+            throw std::invalid_argument(
+                "zero_shot classifier '" + id + "' does not accept reference_phrases");
+        }
+        std::vector<std::string> labels = parse_labels(config, id);
+        std::optional<std::string> default_label = parse_default_label(config, labels, id);
+        return std::make_shared<ZeroShotClassifier>(
+            id, type, config.value("model", ""), on_error,
+            std::move(labels), std::move(default_label), on_truncation);
+    }
+
+    if (type == "systemone") {
+        for (const char* key : {"prompt", "labels", "reference_phrases"}) {
+            if (config.contains(key)) {
+                throw std::invalid_argument(
+                    "systemone classifier '" + id + "' does not accept " + key +
+                    "; its labels are the options of its question");
+            }
+        }
+        SystemOneQuestion question = parse_systemone_question(config, id);
+        std::optional<std::string> default_label =
+            parse_default_label(config, question.labels, id);
+        return std::make_shared<SystemOneClassifier>(
+            id, type, config.value("model", ""), on_error,
+            std::move(question.labels), std::move(default_label),
+            std::move(question.question), on_truncation);
     }
 
     if (type == "semantic_similarity") {
@@ -1564,11 +2053,11 @@ Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) co
 
     EvalContext eval{*request, services_, want_trace, {}, {}, {}};
 
-    // First-match-wins over the compiled rules. A classifier-level failure is
-    // already absorbed upstream by ClassifierBandCondition (Score::ok + the
-    // band's on_error), so this catch is only a last-resort guard: any
-    // unexpected throw fails the whole request open to default_model rather than
-    // escaping route().
+    // First-match-wins over the compiled rules. A classifier-level quality
+    // failure is already absorbed upstream by ClassifierBandCondition
+    // (Score::ok + the band's on_error), so this catch is only a last-resort
+    // guard: any unexpected throw fails the whole request open to default_model
+    // rather than escaping route().
     try {
         for (std::size_t i = 0; i < compiled_rules_.size(); ++i) {
             if (compiled_rules_[i]->evaluate(eval)) {
@@ -1577,6 +2066,8 @@ Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) co
                 return decision;
             }
         }
+    } catch (const RouterResidencyConflictException&) {
+        throw;
     } catch (const std::exception& e) {
         LOG(WARNING, "Routing") << "Routing policy evaluation threw; failing open to '"
                                 << policy_.default_model << "': " << e.what() << std::endl;

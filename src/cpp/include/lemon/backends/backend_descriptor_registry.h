@@ -35,6 +35,10 @@ const std::vector<std::string>& supported_modes_for(const std::string& recipe);
 // unknown recipes) route through /chat/completions.
 const std::string& default_mode_for(const std::string& recipe);
 
+// True if the recipe's backend serves some mode only for models that carry
+// `label`, as llamacpp serves `classification` only with `systemone`.
+bool recipe_gates_mode_on(const std::string& recipe, const std::string& label);
+
 // True if the recipe's backend can serve `mode`. Recipes with no registered
 // descriptor accept any mode: their routing is decided by the collection, not
 // by a backend that could reject the request.

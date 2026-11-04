@@ -4,6 +4,7 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/models/registry_types.h"
 #include <string>
 
 namespace lemon {
@@ -13,13 +14,12 @@ class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public 
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
-
     FastFlowLMServer(const std::string& log_level, ModelManager* model_manager = nullptr,
                      BackendManager* backend_manager = nullptr);
 
     std::string download_model(const std::string& checkpoint,
                               bool do_not_upgrade = false,
-                              RemoteRegistrySource source = RemoteRegistrySource::HuggingFace);
+                              RegistryId source = models::huggingface_descriptor().id);
 
     void load(const std::string& model_name,
              const ModelInfo& model_info,

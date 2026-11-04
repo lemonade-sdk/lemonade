@@ -1,5 +1,6 @@
 #include "lemon/backends/onnxruntime/onnxruntime_server.h"
 #include "lemon/backends/onnxruntime/onnxruntime.h"
+#include "lemon/backends/onnxruntime/ort_server_health.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
@@ -107,9 +108,9 @@ std::vector<fs::path> find_complete_model_dirs(const fs::path& root) {
 }  // namespace
 
 // The ort-server subprocess speaks a tiny HTTP contract:
-//   GET  /health             -> 200 when the model is loaded and ready
-//   POST /classify {text}    -> 200 {"labels": {"<label>": <score in [0,1]>, ...}}
-// It runs one exported ONNX model (seq- or token-classification) on the CPU EP.
+//   GET  /health                     -> 200 when the model is loaded and ready
+//   POST /classify {text[, labels]}  -> 200 {"labels": {"<label>": <score in [0,1]>, ...}}
+// It runs one exported ONNX model (seq-, token-, or zero-shot classification) on the CPU EP.
 // Distributed as a self-contained bundle by lemonade-sdk/ort-server.
 InstallParams OnnxRuntimeServer::get_install_params(const std::string& backend,
                                                     const std::string& version) {
@@ -216,11 +217,33 @@ void OnnxRuntimeServer::load(const std::string& model_name,
         throw std::runtime_error(std::string(e.what()) +
                                  (details.empty() ? "" : ": " + details));
     }
+
+    // The pin does not decide the binary: a `cpu_bin` path or tag can run an
+    // older ort-server, which cuts input without saying so. Ask the binary.
+    const json health = forward_get_request("/health", 5);
+    if (onnxruntime::reports_truncation(health)) {
+        LOG(INFO, "OnnxRuntimeServer")
+            << "ort-server version " << health["version"].get<std::string>() << std::endl;
+    } else {
+        std::string why = "did not answer /health, so its version is unknown";
+        if (health.is_object() && !health.contains("error")) {
+            why = health.contains("version") && health["version"].is_string()
+                      ? "reports version " + health["version"].get<std::string>() +
+                            ", which predates 0.4.0"
+                      : "reports no version, so it predates 0.4.0";
+        }
+        LOG(WARNING, "OnnxRuntimeServer")
+            << "ort-server at " << executable << " " << why
+            << ". It does not report input cuts, so a classifier with "
+               "on_truncation=fail on this model fails every evaluation."
+            << std::endl;
+    }
 }
 
 json OnnxRuntimeServer::forward_classify(const std::string& text, const json& params) {
     json body = {{"text", text}};
     if (params.contains("top_k")) body["top_k"] = params["top_k"];
+    if (params.contains("labels")) body["labels"] = params["labels"];
     return forward_request("/classify", body, 120);
 }
 

@@ -2,44 +2,167 @@
 
 Lemonade exposes its inference capabilities as a Model Context Protocol (MCP) server, so any MCP-compatible client (GitHub Copilot, Claude Desktop, MCP Inspector, Cursor, the `mcp` Python client, etc.) can call your locally running models as tools.
 
-The gateway implements the **MCP "Streamable HTTP" transport** (spec version `2025-06-18`) with the `tools` capability only. All traffic flows through a single endpoint:
+The gateway implements the **MCP "Streamable HTTP" transport** (spec version `2025-06-18`) with the `tools` capability only, so `resources/*` and `prompts/*` are not implemented. All traffic flows through a single endpoint:
 
-| Endpoint | Status | Notes |
-|----------|--------|-------|
-| `POST /mcp` | Supported | JSON-RPC 2.0 envelope. Accepts a single message or a batch array. |
-| `GET /mcp` | `405 Method Not Allowed` | Server-initiated SSE channel is not supported. |
+<!-- BEGIN GENERATED: mcp.summary -->
+| Method | Endpoint | Status | Description |
+|--------|----------|--------|-------------|
+| `POST` | [`/mcp`](#post-mcp) | Supported | Call MCP methods over JSON-RPC 2.0 |
+| `GET` | [`/mcp`](#get-mcp) | Not supported | Open a server-initiated event stream |
+<!-- END GENERATED: mcp.summary -->
 
-> **Why a single path?** The MCP specification mandates one endpoint URL per server, so `/mcp` is an intentional exception to Lemonade's quad-prefix convention.
+<!-- BEGIN GENERATED: mcp.rpc -->
+## `POST /mcp`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-## Authentication
+Serves the MCP methods listed under [Supported Methods](#supported-methods) over JSON-RPC 2.0.
 
-`/mcp` is treated as a regular API route, so it honors `LEMONADE_API_KEY` exactly like `/api/v1/chat/completions`:
+Requires `LEMONADE_API_KEY` when it is set.
 
-```bash
-curl -s http://localhost:13305/mcp \
-    -H "Authorization: Bearer $LEMONADE_API_KEY" \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"ping"}'
-```
+### Parameters
 
-## Supported methods
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `jsonrpc` | Yes | JSON-RPC version: `"2.0"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` | No | Request id, echoed in the reply. Omit it to send a notification, which gets no reply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `method` | Yes | One of the [supported methods](#supported-methods), e.g. `initialize`, `tools/list` or `tools/call`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `params` | No | Method parameters; `tools/call` takes `name` and `arguments`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+The body is one JSON-RPC message or a batch array of them. A JSON-RPC error is answered with `200` like any other JSON-RPC response; see [Error Model](#error-model). A request whose messages are all notifications answers `202` with no body.
+
+### Supported Methods
 
 | Method | Purpose |
 |--------|---------|
-| `initialize` | Negotiate protocol version, return server identity and capabilities. |
+| `initialize` | Return the server's protocol version, identity and capabilities. |
 | `notifications/initialized` | Client acknowledgement; silently accepted. |
+| `notifications/cancelled` | Client cancellation; silently accepted. |
 | `tools/list` | Return the catalogue of callable tools (with JSON Schemas). |
 | `tools/call` | Invoke one of the tools below. |
 | `ping` | Liveness probe; returns `{}`. |
 
+### Error Model
+
+| Code | Meaning |
+|------|---------|
+| `-32700` | Body was not valid JSON. |
+| `-32600` | Request was not a JSON-RPC object (or batch was empty / missing `method`). |
+| `-32601` | Unknown JSON-RPC method (e.g. `resources/list`). |
+| `-32602` | Invalid `params` for a known method. |
+| `-32603` | Internal server error (an exception escaped a handler). |
+
+Tool-level failures (bad arguments, model load errors, backend exceptions) are returned as **successful** JSON-RPC results with `"isError": true` and a text content block describing the failure, so MCP-aware models can self-correct.
+
+### Limitations
+
+- No session resumption (`Mcp-Session-Id` header is not issued).
+- Tools return their whole result: `lemonade_chat` ignores `stream`. Use [`POST /v1/chat/completions`](./openai.md#post-v1chatcompletions) for streamed tokens.
+- Embeddings and text-to-speech have no MCP tool; use [`/v1/embeddings`](./openai.md#post-v1embeddings) and [`/v1/audio/speech`](./openai.md#post-v1audiospeech).
+
+### Examples
+
+#### Request
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/mcp" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {"protocolVersion": "2025-06-18", "capabilities": {}}
+        }'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/mcp \
+      -H "Content-Type: application/json" \
+      -d '{
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {"protocolVersion": "2025-06-18", "capabilities": {}}
+        }'
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "capabilities": {"tools": {}},
+    "protocolVersion": "2025-06-18",
+    "serverInfo": {"name": "lemonade-mcp", "version": "2026.43.0~1686.1553ede6"}
+  }
+}
+```
+
+#### Notification
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/mcp" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/mcp \
+      -H "Content-Type: application/json" \
+      -d '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
+    ```
+
+**Response:** `202 Accepted`
+
+### Response format
+
+One JSON-RPC 2.0 response, or an array of them for a batch.
+
+- `jsonrpc` - Always `2.0`.
+- `id` - The `id` of the request this answers; `null` when it could not be read.
+- `result` - The method's result.
+- `error` - A JSON-RPC error, such as `-32601` for an unknown method.
+  - `code` - The JSON-RPC error code.
+  - `message` - What went wrong.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `500` | `-32603` | An exception escapes the JSON-RPC handling, such as a number too large for a double or invalid UTF-8 in the body |
+<!-- END GENERATED: mcp.rpc -->
+
+<!-- BEGIN GENERATED: mcp.sse -->
+## `GET /mcp`
+<sub>![Status](https://img.shields.io/badge/status-not_available-red)</sub>
+
+Lemonade opens no server-initiated event stream, so tools return their full result in the [`POST /mcp`](#post-mcp) reply.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `405` | `-32600` | Always, since MCP calls go to `POST /mcp`; the reply carries `Allow: POST` |
+<!-- END GENERATED: mcp.sse -->
+
 ## Tools
 
-### Shared tool behavior
-
-- **Model selection and downloads.** For chat, transcription, and image tools, omitting `model` first reuses a compatible loaded model, then a compatible already-downloaded model. If neither exists, the tool returns `isError: true` unless `allow_download: true` is supplied, in which case the tool may use its default model. `lemonade_omni` follows the same local-first principle for already-downloaded Omni collections. Use `lemonade_list_models` instead of guessing hardware-specific model variants; it reflects what the running server supports, and unsupported-model errors point callers toward compatible alternatives.
-- **Reasoning chat.** `lemonade_chat` disables thinking by default so small `max_tokens` budgets are not consumed entirely by reasoning. Set `chat_template_kwargs.enable_thinking=true` to opt in. If a backend returns reasoning content but no normal content, the tool surfaces the reasoning text rather than an empty result.
-- **Sandboxed media output.** `lemonade_generate_image` and `lemonade_omni` confine disk writes to the shared MCP media sandbox. The default root is `<cache_dir>/mcp-images`; set `LEMONADE_MCP_IMAGE_DIR` to an absolute path to override it. Relative output paths are resolved against the sandbox root; absolute paths are accepted only if they resolve within it. Paths that escape the sandbox, including via `..` traversal or symlinks, are rejected. Directory output uses collision-resistant names such as `image_{token}_{index}.png` and `omni_{token}_{index}.{ext}`. `lemonade_generate_image` also supports `output_path`, which writes the exact caller-selected filename and may replace an existing file. Omitting disk output returns native MCP image/audio content blocks where applicable; disk output is preferred for clients that do not render native media blocks or when avoiding large inline base64 payloads.
-- **Omni collections.** `lemonade_omni` runs the server's collection orchestrator; see the [Lemonade Omni documentation](../dev/lemonade-omni.md) for the collection model and component behavior.
+`lemonade_omni` runs the server's collection orchestrator; see the [Lemonade Omni documentation](../dev/lemonade-omni.md) for the collection model and component behavior.
 
 <!--
 The tool reference below is generated from a live Lemonade server's `tools/list`
@@ -167,38 +290,14 @@ With `page`, success returns one `text` block containing the raw bundled Markdow
 
 <!-- END GENERATED: mcp-tools -->
 
-## Error model
+## Quick Test with curl
 
-| Code | Meaning |
-|------|---------|
-| `-32700` | Body was not valid JSON. |
-| `-32600` | Request was not a JSON-RPC object (or batch was empty / missing `method`). |
-| `-32601` | Unknown JSON-RPC method (e.g. `resources/list`). |
-| `-32602` | Invalid `params` for a known method. |
-| `-32603` | Internal server error (an exception escaped a handler). |
-
-Tool-level failures (bad arguments, model load errors, backend exceptions) are returned as **successful** JSON-RPC results with `"isError": true` and a text content block describing the failure, so MCP-aware models can self-correct.
-
-## Limitations (MVP)
-
-- No server-initiated SSE (GET /mcp returns 405). Tools return their full result in the POST response.
-- No session resumption (`Mcp-Session-Id` header is not issued).
-- `resources/*` and `prompts/*` capabilities are not implemented.
-- Streaming chat output is not exposed via MCP — `stream=true` is ignored. Use `POST /v1/chat/completions` directly for streamed tokens.
-- Embeddings and text-to-speech are not currently exposed as MCP tools; use the OpenAI-compatible endpoints (`/v1/embeddings`, `/v1/audio/speech`) for those.
-
-## Quick test with curl
+After the `initialize` request in [`POST /mcp`](#post-mcp), list the tools and call one:
 
 ```bash
-# 1. Initialize
-curl -s http://localhost:13305/mcp -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}'
-
-# 2. List tools
 curl -s http://localhost:13305/mcp -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 
-# 3. Call lemonade_chat
 curl -s http://localhost:13305/mcp -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"lemonade_chat","arguments":{"model":"Qwen3-1.7B-GGUF","messages":[{"role":"user","content":"hi"}],"max_tokens":16}}}'
 ```
