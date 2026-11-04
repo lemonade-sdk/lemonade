@@ -48,7 +48,9 @@ PARAGRAPH = (
 # Long enough to overflow llama-server's default physical batch (512 tokens),
 # short of the 4096 tokens lemond lets an encoder decision model read by default.
 LONG_STATE = PARAGRAPH * 100
-TOO_LONG_STATE = PARAGRAPH * 400
+# About 37,000 tokens: over the 4096 tokens lemond lets an encoder decision
+# model read by default, and over the 32,768-token window of the d3 models.
+TOO_LONG_STATE = PARAGRAPH * 1600
 # One question of each form that lemond renders differently for a `laya` model.
 COUNT_QUESTIONS = {
     "choice": {
@@ -362,7 +364,7 @@ class SystemOneTests(ServerTestBase):
         )
         print(f"[OK] too-long state: {response.json()['error']['message']}")
 
-    def test_513_classify_text_longer_than_window(self):
+    def test_514_classify_text_longer_than_window(self):
         """/v1/classify refuses a text beyond the context window with a 400."""
         self._ensure_model_pulled()
         response = self._post(
@@ -379,7 +381,7 @@ class SystemOneTests(ServerTestBase):
         )
         print(f"[OK] too-long classify text: {response.json()['error']['message']}")
 
-    def test_514_ctx_size_is_not_forwarded(self):
+    def test_515_ctx_size_is_not_forwarded(self):
         """`ctx_size` only sizes the load; the backend never sees it."""
         self._ensure_model_pulled()
         response = self._post("systemone", self._payload(ctx_size=8192))
@@ -476,6 +478,7 @@ class SystemOneTests(ServerTestBase):
         self.assertEqual(response.status_code, 200, response.text[:1000])
         return len(response.json()["tokens"])
 
+    @skip_if_unsupported("laya_decision_type")
     def test_513_laya_rendering_matches_prompt_length(self):
         """lemond counts the prompt that llama-server builds for a laya model.
 
