@@ -497,6 +497,7 @@ const ZH_CN: Record<string, string> = {
   'Args': '参数',
   'Packaged by {publisher}': '由 {publisher} 打包',
   'License: {license}': '许可证：{license}',
+  'License: Not declared': '许可证：未声明',
   'Open the {author} project page': '打开 {author} 项目页面',
   'Arguments': '参数',
   'Save backend args': '保存后端参数',

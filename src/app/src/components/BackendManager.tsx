@@ -1177,7 +1177,11 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             const projectUrl = /^https:\/\//.test(cleanString(info.project_url)) ? cleanString(info.project_url) : '';
             const provenance = [
               publisher && publisher !== author ? t('Packaged by {publisher}', { publisher }) : '',
-              license ? t('License: {license}', { license }) : '',
+              license
+                ? t('License: {license}', { license })
+                : author
+                  ? t('License: Not declared')
+                  : '',
             ].filter(Boolean).join(' · ');
 
             return (
