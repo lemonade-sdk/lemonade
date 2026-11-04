@@ -1471,6 +1471,10 @@ jobs:
             install: "llamacpp:nathanw"
             script: server_llm.py
             extra_args: "--wrapped-server llamacpp --backend nathanw"
+          - name: llamacpp-halobox
+            install: "llamacpp:halobox"
+            script: server_llm.py
+            extra_args: "--wrapped-server llamacpp --backend halobox"
           - name: rocmfpx
             install: "rocmfpx:rocm"
             script: server_llm.py
