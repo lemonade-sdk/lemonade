@@ -122,10 +122,8 @@ private:
     std::string get_connect_host() const;
 
 #ifdef LEMONADE_TRAY_NEXUS_CARRIER
-    // Device key carrier: when lemond's nexus/status asks for the user's key, load or
-    // create it in the SDK's per-user store, seal it to lemond's hand-off request and
-    // deliver it over the loopback management listener. The key never leaves the SDK
-    // in plaintext and is destroyed after sealing.
+    // Hands the user's device key to lemond sealed inside the SDK; it never exists here in
+    // plaintext.
     void offer_device_key_if_needed();
     void on_unlock_nexus();
     bool offer_device_key(const nlohmann::json& status);

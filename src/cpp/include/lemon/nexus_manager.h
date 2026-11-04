@@ -16,12 +16,9 @@
 #include <vector>
 
 namespace lemon {
-/// The listener a Nexus route is registered on.
-/// Public: lemond's normal port. Loopback clients read status and are redirected to
-/// Management for every other route. Remote clients use the authenticated mesh.
-/// Management: the loopback listener owned by NexusManager for the local desktop.
-/// MeshIngress: the loopback listener behind Nexus virtual port 13305. Mesh peers arrive
-/// from loopback with SDK-attributed identity and permissions.
+/// The listener a Nexus route is registered on. Public is lemond's normal port, where a
+/// loopback client gets only status and a 307 to Management; MeshIngress is the loopback
+/// listener behind Nexus virtual port 13305, where the SDK has already attributed the peer.
 enum class NexusListener { Public, Management, MeshIngress };
 
 /// Where the device identity lives.
@@ -175,9 +172,8 @@ bool nexus_request(const httplib::Request& req);
 bool administers_tree(const nlohmann::json& path, const std::string& key);
 /// Only valid on the dedicated SDK ingress listener; public peer headers are untrusted.
 std::pair<int, std::string> mesh_request_access(const httplib::Request& req, bool management = false);
-/// Decides whether a Nexus route may run. Returns {0, ""}
-/// to run the route, {307, ""} to redirect it to the management listener, or an HTTP
-/// error status and message. An API key cannot replace mesh caller authorization.
+/// {0, ""} runs the route, {307, ""} redirects it (see NexusListener), anything else is
+/// the HTTP error to answer. An API key never stands in for mesh caller authorization.
 std::pair<int, std::string> route_access(NexusListener listener, const httplib::Request& req, const std::string& operation);
 /// Header that carries the selected peer's API key through the relay. The relay sends it
 /// to that peer as Authorization and never forwards the caller's own Authorization.
@@ -240,21 +236,12 @@ void relay_http(uint16_t port, const std::string& path, const httplib::Request& 
 
 class NexusManager {
 public:
-    /// Starts the management and mesh ingress listeners on loopback ports.
-    /// `install_policy` installs lemond's request middleware (origin, CORS, API keys) on the
-    /// management listener. `install_api` installs the middleware and lemond's API routes on
-    /// the mesh ingress listener, without the `/internal/*` control routes; NexusManager
-    /// registers its Nexus authorization handlers first.
-    /// Both run once, before the listener starts. If the mesh listener cannot bind, joining
-    /// fails. Once the mesh is up, the SDK serves `mesh_port` (0 selects 13306) on
-    /// 127.0.0.1 with the management listener as this device's local service.
-    /// `install_local_api` adds ordinary API routes there for the local selection port.
-    /// `service_catalog` (nexus_access::service_catalog) is registered with the SDK for
-    /// virtual port 13305 after every join, when the SDK supports it; null registers
-    /// nothing and status reports the route policy unavailable.
-    /// `process_role` fixes the identity source (nexus_access::identity_source). lemond
-    /// leaves it unset and reads its own role; tests pass a role so that no test ever
-    /// reaches an OS keystore. It is not a product setting.
+    /// `install_policy` runs on the Management listener and `install_api` on MeshIngress,
+    /// each once before it starts; NexusManager's authorization handlers are registered
+    /// first, and `/internal/*` is never installed on MeshIngress. `mesh_port` 0 selects
+    /// 13306. A null `service_catalog` registers no route policy with the SDK and status
+    /// says so. `process_role` exists for tests, so none reaches an OS keystore; lemond
+    /// leaves it unset.
     NexusManager(const std::string& config_dir,
                  const std::function<void(httplib::Server&)>& install_policy,
                  const std::function<void(httplib::Server&)>& install_api,
