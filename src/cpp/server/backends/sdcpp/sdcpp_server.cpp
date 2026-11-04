@@ -685,31 +685,34 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
         return *handle;
     }
 
-    // The job is marked interrupted without waiting for this function to return,
-    // so the cancel fires on scope exit rather than from the loop below. The
-    // backend only honours it while the job is queued: it reports
-    // cancel_generating false and answers 409 once frames are being produced, so
-    // a clip already on the GPU still runs to completion.
-    struct ScopeExit {
-        std::function<void()> fn;
-        ~ScopeExit() { if (fn) fn(); }
-    } cancel_backend{[this, &poll_url, cancel]() {
-        if (!cancel || !cancel->load()) return;
+    // sd-server only cancels a job that is still queued: once frames are being
+    // produced it answers 409 and keeps the GPU busy. Stopping the process is the
+    // only way to free it, and returning after the stop keeps the job from
+    // reporting canceled while the clip is still running. stop_server() rather
+    // than a watchdog reset, which the router would answer by reloading and
+    // replaying the canceled request; the next request reloads the model instead.
+    auto cancel_backend_job = [this, &poll_url]() {
+        json reply;
         try {
-            json reply = forward_request(poll_url + "/cancel", json::object(), 0);
-            LOG(INFO, "SDServer") << "canceled backend video job " << poll_url << ": "
-                                  << reply.dump() << std::endl;
+            reply = forward_request(poll_url + "/cancel", json::object(), 0);
         } catch (const std::exception& e) {
-            LOG(INFO, "SDServer") << "backend declined to cancel " << poll_url << ": "
-                                  << e.what() << std::endl;
+            reply = {{"error", {{"message", e.what()}}}};
         }
-    }};
+        if (!(reply.contains("error") && reply["error"].is_object())) {
+            LOG(INFO, "SDServer") << "canceled backend video job " << poll_url << std::endl;
+            return;
+        }
+        LOG(INFO, "SDServer") << "backend declined to cancel " << poll_url << ": "
+                              << reply["error"].dump() << "; stopping sd-server" << std::endl;
+        stop_server();
+    };
 
     // No wall-clock deadline: a long clip legitimately runs for many minutes.
     // Give up when the caller cancels, or when the backend dies, which
     // is_backend_alive() catches via forward_get_request.
     while (true) {
         if (cancel && cancel->load()) {
+            cancel_backend_job();
             return ErrorResponse::from_exception(
                 BackendException(server_name_, "video generation canceled", 499));
         }

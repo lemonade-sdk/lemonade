@@ -21,9 +21,9 @@ public:
         s.description =
             "Stops a queued or running video and keeps its record, which then reports `canceled`.";
         s.notes = {
-            "Cancelling releases the job and the model slot at once, but stable-diffusion.cpp refuses "
-            "to cancel once frames are being produced. A clip that already reached the GPU runs to "
-            "completion in the background; a clip still queued is cancelled straight away.",
+            "A clip still queued is cancelled straight away. stable-diffusion.cpp cannot stop a clip "
+            "once frames are being produced, so cancelling one stops its backend process; the video "
+            "reports `canceled` once the process has exited, and the next request reloads the model.",
         };
         s.args = {video_routes::kId};
 
