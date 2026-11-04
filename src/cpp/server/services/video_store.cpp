@@ -75,5 +75,14 @@ void remove_all_except(const std::set<std::string>& keep) {
     }
 }
 
+bool is_video_job(const nlohmann::json& job) {
+    if (!job.is_object() || !job.contains("steps") || !job["steps"].is_array() ||
+        job["steps"].size() != 1) {
+        return false;
+    }
+    const auto& step = job["steps"][0];
+    return step.is_object() && step.value("op", std::string()) == "generate_video";
+}
+
 } // namespace video_store
 } // namespace lemon

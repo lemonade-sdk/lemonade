@@ -1,6 +1,9 @@
 #include "video_shared.h"
 
+#include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/server_context.h"
+#include "lemon/server/video_store.h"
 
 namespace lemon {
 
@@ -14,6 +17,12 @@ const RouteError kVideoNotActive{
     404, "", "`id` names no video, a deleted one, or one that is not queued or running"};
 const RouteError kVideoNotReady{409, "", "the video's status is not yet `completed`"};
 const RouteError kVideoNoOutput{500, "", "the video completed without an encoded clip"};
+
+std::optional<nlohmann::json> find_video(ServerContext& ctx, const std::string& id) {
+    auto job = ctx.job_manager->get(id);
+    if (!job || !video_store::is_video_job(*job)) return std::nullopt;
+    return job;
+}
 
 std::string video_status(const std::string& job_status) {
     return job_status == "interrupted" ? "canceled" : job_status;

@@ -4,6 +4,8 @@
 #include <set>
 #include <string>
 
+#include <nlohmann/json.hpp>
+
 namespace lemon {
 namespace video_store {
 
@@ -23,6 +25,10 @@ void write(const std::string& name, const std::string& bytes);
 bool read(const std::string& name, std::string& bytes);
 
 void remove_all_except(const std::set<std::string>& keep);
+
+// Video ids are job ids, so without this check the video routes would report on, or
+// cancel, any job.
+bool is_video_job(const nlohmann::json& job);
 
 } // namespace video_store
 } // namespace lemon

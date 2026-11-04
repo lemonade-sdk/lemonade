@@ -7,6 +7,8 @@
 #include <stdexcept>
 #include <string>
 
+#include <nlohmann/json.hpp>
+
 namespace fs = std::filesystem;
 namespace store = lemon::video_store;
 
@@ -67,10 +69,25 @@ static void test_remove_all_except() {
     check("prune: a file it did not make stays", fs::exists(store::dir() / "notes.txt"));
 }
 
+static void test_is_video_job() {
+    using nlohmann::json;
+    const json video_step = {{"id", "video"}, {"op", "generate_video"}, {"params", json::object()}};
+    check("video job: one generate_video step", store::is_video_job({{"steps", {video_step}}}));
+    check("video job: a load job is not one",
+          !store::is_video_job({{"steps", {{{"id", "a"}, {"op", "load"}}}}}));
+    check("video job: a chat job is not one",
+          !store::is_video_job({{"steps", {{{"id", "a"}, {"op", "chat"}}}}}));
+    check("video job: generate_video among other steps is not one",
+          !store::is_video_job({{"steps", {{{"id", "a"}, {"op", "load"}}, video_step}}}));
+    check("video job: no steps is not one", !store::is_video_job({{"steps", json::array()}}));
+    check("video job: a malformed record is not one", !store::is_video_job(json::array()));
+}
+
 int main() {
     test_file_names();
     test_write_read();
     test_remove_all_except();
+    test_is_video_job();
     if (g_failures) {
         std::printf("%d FAILURE(S)\n", g_failures);
         return 1;

@@ -46,7 +46,8 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        if (!ctx_.job_manager->interrupt(req.value(video_routes::kId, std::string()))) {
+        const std::string id = req.value(video_routes::kId, std::string());
+        if (!find_video(ctx_, id) || !ctx_.job_manager->interrupt(id)) {
             write_plain_error(res, kVideoNotActive, "video not found or not cancellable");
             return;
         }

@@ -1,5 +1,4 @@
 #include "video_shared.h"
-#include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
 
 namespace lemon {
@@ -56,7 +55,7 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        const auto job = ctx_.job_manager->get(req.value(video_routes::kId, std::string()));
+        const auto job = find_video(ctx_, req.value(video_routes::kId, std::string()));
         if (!job) {
             write_unknown_video(res);
             return;
