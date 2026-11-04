@@ -1,0 +1,23 @@
+name: Probe CUDA runner OS
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/probe_cuda_runner_os.yml
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Linux, X64, cuda]
+    steps:
+      - name: Print OS version
+        run: |
+          echo "Runner: $RUNNER_NAME"
+          cat /etc/os-release
+          uname -a
+
+      - name: Print apt sources and libcpp-httplib availability
+        run: |
+          grep -rhE '^(deb|URIs|Suites)' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null || true
+          apt-cache policy libcpp-httplib0.26 || true
+          if sudo -n true 2>/dev/null; then echo "passwordless sudo: yes"; else echo "passwordless sudo: no"; fi
