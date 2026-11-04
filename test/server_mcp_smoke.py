@@ -198,8 +198,58 @@ def smoke_list_models(mcp_url, _cfg):
 
 
 def smoke_get_logs(mcp_url, _cfg):
-    """Read-only diagnostics path works without loading another model."""
-    result = tools_call(
+    """Seed both severities via existing MCP logging; verify read and filter."""
+    baseline = tools_call(
+        mcp_url, "lemonade_get_logs", {"min_level": "trace", "limit": 1}
+    )
+    assert baseline.get("isError") is False, baseline
+    cursor = json.loads(assert_text_content(baseline))["next_after_seq"]
+    marker = f"mcp-smoke-{time.time_ns()}"
+
+    unknown = tools_call(mcp_url, marker + "🧪" * 600, {})
+    assert unknown.get("isError") is True, unknown
+    invalid = tools_call(mcp_url, "lemonade_get_logs", {"limit": 201})
+    assert invalid.get("isError") is True, invalid
+
+    broad = tools_call(
+        mcp_url,
+        "lemonade_get_logs",
+        {
+            "after_seq": cursor,
+            "min_level": "info",
+            "tag": "McpServer",
+            "limit": 200,
+        },
+    )
+    assert broad.get("isError") is False, broad
+    payload = json.loads(assert_text_content(broad))
+    seeded = [e for e in payload["entries"] if marker in e["line"]]
+    assert len(seeded) == 1 and seeded[0]["severity"].lower() == "info", payload
+    assert seeded[0].get("line_truncated"), seeded[0]
+    assert len(seeded[0]["line"].encode("utf-8")) <= 2048
+
+    errors = tools_call(
+        mcp_url,
+        "lemonade_get_logs",
+        {
+            "after_seq": cursor,
+            "min_level": "error",
+            "tag": "McpServer",
+            "limit": 200,
+        },
+    )
+    assert errors.get("isError") is False, errors
+    error_payload = json.loads(assert_text_content(errors))
+    assert any(
+        "limit must be between 1 and 200" in e["line"] for e in error_payload["entries"]
+    ), error_payload
+    assert all(
+        e["severity"].lower() in ("error", "fatal") for e in error_payload["entries"]
+    )
+    assert all(marker not in e["line"] for e in error_payload["entries"])
+    detail("seeded INFO/ERROR retrieval, severity filtering and UTF-8 truncation: OK")
+
+    empty = tools_call(
         mcp_url,
         "lemonade_get_logs",
         {
@@ -207,11 +257,11 @@ def smoke_get_logs(mcp_url, _cfg):
             "limit": 1,
         },
     )
-    assert result.get("isError") is False, f"isError: {result}"
-    payload = json.loads(assert_text_content(result))
-    assert payload["matched"] == 0 and payload["entries"] == [], payload
-    assert payload["summary"]["by_tag"] == [], payload
-    detail("empty filtered snapshot: OK")
+    assert empty.get("isError") is False, empty
+    empty_payload = json.loads(assert_text_content(empty))
+    assert (
+        empty_payload["matched"] == 0 and empty_payload["entries"] == []
+    ), empty_payload
 
 
 def smoke_chat(mcp_url, cfg):

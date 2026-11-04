@@ -31,8 +31,27 @@ async function main(): Promise<void> {
     globalThis.fetch = originalFetch;
   }
 
+  let logMcpRequest: any;
+  globalThis.fetch = (async (_url, options) => {
+    logMcpRequest = JSON.parse(String(options?.body));
+    return new Response(JSON.stringify({
+      jsonrpc: '2.0', id: 'gui-get-logs',
+      result: { isError: false, content: [{ type: 'text', text: JSON.stringify({ scanned: 2, matched: 1, returned: 1, entries: [{ seq: 2, severity: 'error', tag: 'ModelManager', line: 'load failed' }] }) }] },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const logs = await api.getServerLogs({ min_level: 'error', limit: 1 });
+    assert.equal(logMcpRequest.method, 'tools/call');
+    assert.equal(logMcpRequest.params.name, 'lemonade_get_logs');
+    assert.deepEqual(logMcpRequest.params.arguments, { min_level: 'error', limit: 1 });
+    assert.equal(logs.matched, 1);
+    assert.equal((logs.entries as unknown[]).length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
   const toolNames = LEMONADE_MCP_TOOLS.map(tool => tool.function.name);
-  for (const required of ['list_models', 'load_model', 'generate_image', 'transcribe_audio', 'generate_3d']) {
+  for (const required of ['list_models', 'load_model', 'generate_image', 'transcribe_audio', 'generate_3d', 'get_logs']) {
     assert.ok(toolNames.includes(required), `missing built-in Lemon-Tools MCP tool: ${required}`);
   }
 
@@ -85,9 +104,23 @@ async function main(): Promise<void> {
     return { url: 'blob:test-glb', blob: new Blob(['glb'], { type: 'model/gltf-binary' }), filename: 'asset.glb' };
   };
 
+  const logCalls: Record<string, unknown>[] = [];
+  (api as any).getServerLogs = async (params: Record<string, unknown>) => {
+    logCalls.push(params);
+    return { scanned: 4, matched: 1, returned: 1, entries: [{ seq: 9, severity: 'error', tag: 'ModelManager', line: 'load failed' }] };
+  };
+
   const lemonade = await buildSelectedMcpRuntime(['lemonade']);
   assert.ok(lemonade);
   assert.match(lemonade!.systemPrompt || '', /collection\.router/, 'builtin Lemonade guidance must explain Router semantics');
+
+  const logResult = await lemonade!.execute({
+    id: 'call-server-logs', type: 'function',
+    function: { name: 'get_logs', arguments: JSON.stringify({ min_level: 'error', tag: 'ModelManager', limit: 1 }) },
+  });
+  assert.notEqual(logResult.error, true);
+  assert.deepEqual(logCalls, [{ min_level: 'error', tag: 'ModelManager', limit: 1 }]);
+  assert.equal(JSON.parse(logResult.content).entries[0].line, 'load failed');
 
   const routerList = await lemonade!.execute({
     id: 'call-router-list', type: 'function',

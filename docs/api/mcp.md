@@ -193,12 +193,12 @@ Read recent buffered Lemonade server logs for diagnostics. Filter by minimum sev
 
 **Returns**
 
-Returns one JSON `text` block with matching counts, the latest sequence cursor, and up to `limit` chronological log entries. With `summary=true`, includes severity and top-10 source counts.
+Returns one JSON `text` block with matching counts, the latest sequence cursor, and up to `limit` chronological log entries within a 24 KiB entries budget. Lines over 2048 bytes are truncated and marked. With `summary=true`, includes severity and top-10 source counts.
 
 | Argument | Required | Schema | Description |
 |---|:---:|---|---|
 | `after_seq` | no | `{"minimum":0,"type":"integer"}` | Only entries with a larger sequence number; default 0. |
-| `limit` | no | `{"minimum":1,"type":"integer"}` | Maximum returned entries, 1 to 200 (default 50). |
+| `limit` | no | `{"maximum":200,"minimum":1,"type":"integer"}` | Maximum returned entries, 1 to 200 (default 50). |
 | `min_level` | no | `{"enum":["trace","debug","info","warning","error","fatal"],"type":"string"}` | Minimum severity to include. Defaults to info. |
 | `query` | no | `{"type":"string"}` | Case-insensitive substring in message, tag or severity. |
 | `summary` | no | `{"type":"boolean"}` | Include severity and top-10 source counts over all matching entries; default true. |

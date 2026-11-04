@@ -1,6 +1,6 @@
 export const LEMONADE_MCP_SERVER_ID = 'lemonade';
 export const MAX_MCP_SERVER_SELECTION = 4;
-export const LEMONADE_MCP_TOOL_COUNT = 7;
+export const LEMONADE_MCP_TOOL_COUNT = 19;
 
 export interface McpServerOption {
   id: string;

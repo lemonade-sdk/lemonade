@@ -285,7 +285,7 @@ class McpGatewayTests(ServerTestBase):
     # ---------------------------------------------------------------------
 
     def test_012a_get_logs_snapshot(self):
-        """The read-only log tool filters and bounds its result without a model."""
+        """Use MCP's own INFO/ERROR logging as deterministic test data."""
 
         def call(arguments):
             response = _post(
@@ -299,14 +299,95 @@ class McpGatewayTests(ServerTestBase):
             self.assertEqual(response.status_code, 200)
             return response.json()["result"]
 
-        result = call({"min_level": "trace", "limit": 1})
-        self.assertFalse(result["isError"], result)
-        payload = json.loads(result["content"][0]["text"])
-        self.assertLessEqual(len(payload["entries"]), 1)
-        self.assertEqual(payload["returned"], len(payload["entries"]))
+        baseline = call({"min_level": "trace", "limit": 1})
+        self.assertFalse(baseline["isError"], baseline)
+        cursor = json.loads(baseline["content"][0]["text"])["next_after_seq"]
+
+        marker = f"mcp-log-test-{uuid.uuid4().hex}"
+        long_name = marker + "🧪" * 900
+        unknown = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 34,
+                "method": "tools/call",
+                "params": {"name": long_name, "arguments": {}},
+            }
+        )
+        self.assertEqual(unknown.status_code, 200)
+        self.assertTrue(unknown.json()["result"]["isError"])
+
+        invalid = call({"limit": 201})
+        self.assertTrue(invalid["isError"], invalid)
+        self.assertIn("limit must be between 1 and 200", invalid["content"][0]["text"])
+
+        broad = call(
+            {"after_seq": cursor, "min_level": "info", "tag": "McpServer", "limit": 200}
+        )
+        self.assertFalse(broad["isError"], broad)
+        payload = json.loads(broad["content"][0]["text"])
+        seeded = [e for e in payload["entries"] if marker in e["line"]]
+        self.assertEqual(len(seeded), 1, "INFO log entry must be returned")
+        self.assertEqual(seeded[0]["severity"].lower(), "info")
+        self.assertTrue(seeded[0].get("line_truncated"))
+        self.assertLessEqual(len(seeded[0]["line"].encode("utf-8")), 2048)
         self.assertGreaterEqual(payload["matched"], payload["returned"])
         self.assertIn("by_severity", payload["summary"])
         self.assertIn("by_tag", payload["summary"])
+
+        errors = call(
+            {
+                "after_seq": cursor,
+                "min_level": "error",
+                "tag": "McpServer",
+                "limit": 200,
+            }
+        )
+        self.assertFalse(errors["isError"], errors)
+        error_entries = json.loads(errors["content"][0]["text"])["entries"]
+        self.assertTrue(
+            any("limit must be between 1 and 200" in e["line"] for e in error_entries)
+        )
+        self.assertTrue(
+            all(e["severity"].lower() in ("error", "fatal") for e in error_entries)
+        )
+        self.assertFalse(any(marker in e["line"] for e in error_entries))
+
+        limited = call(
+            {"after_seq": cursor, "min_level": "info", "tag": "McpServer", "limit": 1}
+        )
+        limited_payload = json.loads(limited["content"][0]["text"])
+        self.assertEqual(limited_payload["returned"], 1)
+        self.assertGreater(limited_payload["matched"], 1)
+        self.assertTrue(limited_payload["truncated"])
+
+        # Enough known long entries to exercise the total result budget.
+        for index in range(15):
+            response = _post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 35,
+                    "method": "tools/call",
+                    "params": {
+                        "name": f"{marker}-{index}-" + "🧪" * 900,
+                        "arguments": {},
+                    },
+                }
+            )
+            self.assertEqual(response.status_code, 200)
+        bounded = call(
+            {
+                "after_seq": cursor,
+                "min_level": "info",
+                "tag": "McpServer",
+                "limit": 200,
+                "summary": False,
+            }
+        )
+        self.assertFalse(bounded["isError"], bounded)
+        bounded_text = bounded["content"][0]["text"]
+        bounded_payload = json.loads(bounded_text)
+        self.assertLessEqual(len(bounded_text.encode("utf-8")), 32 * 1024)
+        self.assertGreater(bounded_payload["matched"], bounded_payload["returned"])
 
         missing = call({"query": f"no-such-log-{uuid.uuid4().hex}", "summary": False})
         self.assertFalse(missing["isError"], missing)
@@ -318,10 +399,6 @@ class McpGatewayTests(ServerTestBase):
         after = call({"after_seq": 18446744073709551615})
         self.assertFalse(after["isError"], after)
         self.assertEqual(json.loads(after["content"][0]["text"])["entries"], [])
-
-        invalid = call({"limit": 201})
-        self.assertTrue(invalid["isError"], invalid)
-        self.assertIn("limit must be between 1 and 200", invalid["content"][0]["text"])
 
     def test_013_list_models_emits_prefixed_collection_id(self):
         """lemonade_list_models emits the canonical `user.` collection id (issue #2788).
