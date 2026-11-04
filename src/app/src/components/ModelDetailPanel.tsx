@@ -12,6 +12,7 @@ import api, { friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
 import {
   recipeBackendOptionName,
+  recipeConfigurableOptionNames,
   recipeOptionHint,
   recipeOptionIsArgs,
   recipeOptionIsBackend,
@@ -19,7 +20,6 @@ import {
   recipeOptionIsDevice,
   recipeOptionIsNumeric,
   recipeOptionLabel,
-  recipeOptionNames,
 } from '../features/backends/recipeMetadata';
 import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo } from '../modelCapabilities';
 import {
@@ -334,9 +334,10 @@ function formatContextSize(value: number): string {
 function tuningKeysForModel(
   model: ModelInfo,
   info: SystemInfoLike,
+  savedKeys: string[],
 ): Array<keyof RecipeOptions> {
   const recipe = activeRecipeForModel(model);
-  const keys = recipeOptionNames(info, recipe)
+  const keys = recipeConfigurableOptionNames(info, recipe, savedKeys)
     .map(key => key as keyof RecipeOptions);
 
   // voice/speed are model sampling fields rather than backend descriptor
@@ -1464,7 +1465,6 @@ const ModelConfigurationTab: React.FC<{
   );
   const supportsContextSize = modelSupportsContextSize(model);
   const activeRecipe = activeRecipeForModel(model);
-  const recipeKeys = useMemo(() => tuningKeysForModel(model, systemInfo), [model, systemInfo]);
   // A selector labels its own resolved value, and voice keeps a custom entry
   // outside the recipe's option list, so both are seeded from the saved layer.
   const offersResolvedValue = useCallback((key: keyof RecipeOptions) => key === 'voice'
@@ -1481,6 +1481,10 @@ const ModelConfigurationTab: React.FC<{
   const [recipeDraft, setRecipeDraft] = useState<Record<string, string>>({});
   const [customVoiceMode, setCustomVoiceMode] = useState(false);
   const [resolvedCtxSize, setResolvedCtxSize] = useState<number | null>(null);
+  const recipeKeys = useMemo(
+    () => tuningKeysForModel(model, systemInfo, Object.keys(serverSavedRecipeOptions)),
+    [model, systemInfo, serverSavedRecipeOptions],
+  );
 
   const applyDraft = useCallback((draft: LoadSettingsDraft) => {
     setCtxSizeDraft(draft.ctxSize);

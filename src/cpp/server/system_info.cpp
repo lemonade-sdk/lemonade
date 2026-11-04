@@ -1642,6 +1642,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 {"type_name", opt.type_name},
                 {"help", opt.help},
                 {"group", opt.group},
+                {"user_configurable", opt.user_configurable},
             };
             options.push_back(o);
         }

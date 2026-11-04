@@ -35,7 +35,7 @@ inline const BackendDescriptor descriptor = {
         {"film_grain", "", 0.0, "SIZE", "Film grain strength (0.0-10.0)", "TheNoise Options"},
         {"sharpening", "", 0.0, "SIZE", "RCAS sharpening strength (0.0-1.0)", "TheNoise Options"},
         {"lora_specs", "", "", "ARGS", "Comma-separated LoRA specs, e.g. \"style:0.8,sub/detail:0.5\"", "TheNoise Options"},
-        {"soft_pixel_cap", "", 0, "SIZE", "Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default)", "TheNoise Options"},
+        {"soft_pixel_cap", "", 0, "SIZE", "Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default)", "TheNoise Options", false},
     },
     /*support*/ {
         {"rocm", BackendTier::Core, BackendFormat::Python, {"linux", "windows"}, {{"amd_gpu", {"gfx103X", "gfx110X", "gfx120X", "gfx1150", "gfx1151", "gfx1152"}}}, "Supported AMD ROCm families"},

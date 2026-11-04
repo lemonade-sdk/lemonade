@@ -33,7 +33,7 @@ inline const BackendDescriptor descriptor = {
         {"height", "", 512, "SIZE", "Output image height", "Stable Diffusion Options"},
         {"sampling_method", "", "", "ARGS", "Sampling method", "Stable Diffusion Options"},
         {"flow_shift", "", 0.0, "SIZE", "Flow shift", "Stable Diffusion Options"},
-        {"soft_pixel_cap", "", 0, "SIZE", "Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default)", "Stable Diffusion Options"},
+        {"soft_pixel_cap", "", 0, "SIZE", "Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default)", "Stable Diffusion Options", false},
     },
     /*support*/ {
         {"metal", BackendTier::Core, BackendFormat::Native, {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
