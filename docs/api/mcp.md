@@ -187,6 +187,23 @@ Success returns two `text` content blocks: a human-readable summary, then a JSON
 | `include_available` | no | `{"type":"boolean"}` | Include downloaded models in the `available` list. |
 | `include_suggested` | no | `{"type":"boolean"}` | Include suggested, not-yet-downloaded models in `suggested_to_pull`. |
 
+### `lemonade_get_logs`
+
+Read recent buffered Lemonade server logs for diagnostics. Filter by minimum severity, source tag, substring, and sequence. Logs may contain sensitive information; use only when investigating a user-requested issue. Only the last 5000 captured server entries are available.
+
+**Returns**
+
+Returns one JSON `text` block with matching counts, the latest sequence cursor, and up to `limit` chronological log entries. With `summary=true`, includes severity and top-10 source counts.
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `after_seq` | no | `{"minimum":0,"type":"integer"}` | Only entries with a larger sequence number; default 0. |
+| `limit` | no | `{"minimum":1,"type":"integer"}` | Maximum returned entries, 1 to 200 (default 50). |
+| `min_level` | no | `{"enum":["trace","debug","info","warning","error","fatal"],"type":"string"}` | Minimum severity to include. Defaults to info. |
+| `query` | no | `{"type":"string"}` | Case-insensitive substring in message, tag or severity. |
+| `summary` | no | `{"type":"boolean"}` | Include severity and top-10 source counts over all matching entries; default true. |
+| `tag` | no | `{"type":"string"}` | Exact source tag (case-insensitive); omit for all sources. |
+
 ### `lemonade_chat`
 
 Chat completion against a locally hosted LLM. Pass a `messages` array (OpenAI chat format). `model` is OPTIONAL: when omitted, the server reuses an already-loaded LLM, else an already-downloaded one; if neither exists it asks you to either pass a `model` or `allow_download: true` (which downloads the default, Qwen3.5-4B-MTP-GGUF). Call `lemonade_list_models` first if you want to choose explicitly — a wrong name may trigger a multi-GB download.
