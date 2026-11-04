@@ -97,7 +97,7 @@ Supported registration flags:
 
 | Flag | Description |
 |------|-------------|
-| `--source SOURCE` | Remote registry for every checkpoint in this model: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. |
+| `--source SOURCE` | Remote registry for every checkpoint in this model: <!-- BEGIN GENERATED: remote-registry-tokens -->`huggingface` or `modelscope`<!-- END GENERATED: remote-registry-tokens -->. When omitted, the server's configured `default_model_source` applies. |
 | `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
 | `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `llamacpp-hrx`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thenoise`, `ds4`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
 | `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `chat`, `coding`, `dflash`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. When no [deployment label](../../api/openai.md#model-labels) is given, the recipe's default is added — `chat` for `llamacpp`, `flm`, `ryzenai-llm` and `vllm`; `transcription` for `whispercpp`; `image` for `sd-cpp`; and so on. |
@@ -146,7 +146,7 @@ The editor also exposes a **System Prompt** field, pre-filled with the shipped d
 
 ### Pull from the API
 
-The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:
+The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to <!-- BEGIN GENERATED: remote-registry-tokens -->`huggingface` or `modelscope`<!-- END GENERATED: remote-registry-tokens -->; when omitted, the server's configured `default_model_source` applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:
 
 ```bash
 curl -X POST http://localhost:13305/v1/pull \
@@ -190,7 +190,7 @@ curl -X POST http://localhost:13305/v1/pull \
 ## Share a Collection Between Machines
 
 `lemonade export <collection>` (and the desktop app's Export button) writes a *collection file*: the
-collection's [`/v1/models/{model_id}`](../../api/openai.md#get-v1modelsmodel_id) object normalized into
+collection's [`/v1/models/{id}`](../../api/openai.md#get-v1modelsid) object normalized into
 an import-ready [`/v1/pull`](../../api/lemonade.md#post-v1pull) body. The file carries `model_name`,
 `recipe`, `components`, and a `models` array embedding each component's definition, so it is
 self-contained — the importing machine does not need any of the components registered beforehand.
@@ -260,6 +260,23 @@ Lemonade tracks three sources of models. Every model has a **canonical ID** of t
 
 The **bare name** `NAME` is an alias that always resolves to whichever source wins precedence for that name. Precedence is **registered > imported > built-in**.
 
+### Where the model set comes from
+
+Each catalog contributes entries to one build, and a later catalog cannot take a name an
+earlier one claimed.
+
+<!-- BEGIN GENERATED: model-catalogs -->
+| Catalog | Entries come from | Required | Config key |
+| --- | --- | --- | --- |
+| Built-in registry | The model list shipped with the server. | no | — |
+| Registrations | Every model the user pulled or registered. | no | — |
+| Extra models directory | A scan of the extra models directory; GGUF files are identified by their header, not their name. | no | `extra_models_dir` |
+<!-- END GENERATED: model-catalogs -->
+
+Which catalogs depend on what this machine has installed — a backend's own models, or a
+configured cloud provider's listing — is not listed here, because this page is the same on
+every machine.
+
 ### What the API emits
 
 `/v1/models`, `/v1/models/{id}`, `lemonade list`, and the Ollama `/api/tags` endpoint emit each model with an `id` set to either:
@@ -292,7 +309,7 @@ The Tauri desktop app and the web app apply a display transformation on top of t
 
 You can define custom **aliases for model names** in `aliases.json` — alternative high-level names that resolve to any target model name. The target model does not define or need to be aware of being aliased:
 
-1. **Standalone Alias Management**: Model aliases live in a dedicated `aliases.json` file in the Lemonade cache directory (`<cache_dir>/aliases.json`). They are managed via the CLI (`lemonade alias add ALIAS TARGET_MODEL`) or administrative REST API (`POST /internal/aliases`).
+1. **Standalone Alias Management**: Model aliases live in a dedicated `aliases.json` file in the Lemonade cache directory (`<cache_dir>/aliases.json`). They are managed via the CLI (`lemonade alias add ALIAS TARGET_MODEL`) or administrative REST API ([`POST /internal/aliases`](../../api/internal.md#post-internalaliases)).
 2. **Persistence**: `aliases.json` is automatically loaded on server startup and saved on every alias mutation.
 3. **Decoupled Architecture**: Aliases function purely at the symbolic routing layer. They do not pollute model definition files (`user_models.json` or `server_models.json`).
 
@@ -325,7 +342,7 @@ response = client.chat.completions.create(
 )
 ```
 
-If the underlying target model changes, update the alias on the server using `lemonade alias add production-llm new-target` or `POST /internal/aliases`. Client application code requires no updates.
+If the underlying target model changes, update the alias on the server using `lemonade alias add production-llm new-target` or [`POST /internal/aliases`](../../api/internal.md#post-internalaliases). Client application code requires no updates.
 
 #### Alias Resolution & Target Model Independence
 
@@ -475,7 +492,7 @@ Imported models are yours to manage, so `/v1/delete` on one returns an error nam
 
 ### Access and failure behavior
 
-An `extra_models_dir` that already exists must be a directory the `lemond` process can enumerate; permission and I/O failures reject the config update and leave your current model view in place. A path that has yet to be created is accepted, so a directory watcher can pick it up later. See [`POST /internal/set`](../../embeddable/runtime.md).
+An `extra_models_dir` that already exists must be a directory the `lemond` process can enumerate; permission and I/O failures reject the config update and leave your current model view in place. A path that has yet to be created is accepted, so a directory watcher can pick it up later. See [`POST /internal/set`](../../api/internal.md#post-internalset).
 
 During a scan, unreadable nested directories are skipped. Discovery is best-effort by design, so your registered and built-in catalogs stay intact through a filesystem failure.
 
@@ -520,7 +537,7 @@ This file contains a JSON object where each key is a model name and each value d
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `source` | No | String | Remote registry: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. Persisted and used for variants, downloads, cache paths, links, and update checks. A `source`/`registry_source` that conflicts with a provider URL in the checkpoint is rejected with 400. |
+| `source` | No | String | Remote registry: <!-- BEGIN GENERATED: remote-registry-tokens -->`huggingface` or `modelscope`<!-- END GENERATED: remote-registry-tokens -->. When omitted, the server's configured `default_model_source` applies. Persisted and used for variants, downloads, cache paths, links, and update checks. A `source`/`registry_source` that conflicts with a provider URL in the checkpoint is rejected with 400. |
 | `checkpoint` | Yes* | String | Registry checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
 | `checkpoints` | Yes* | Object | Alternative to `checkpoint` for models with multiple files. See [Multi-file models](#multi-file-models). |
 | `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `collection.omni`. |
@@ -638,7 +655,7 @@ This file configures per-model runtime settings. Each key is a **canonical model
 
 > **Note:** Per-model options can also be configured through the Lemonade desktop app's model settings, or via the `save_options` parameter in the [`/api/v1/load` endpoint](../../api/lemonade.md#post-v1load).
 
-> **Editing options without loading:** [`POST /api/v1/models/{id}/options`](../../api/lemonade.md#post-v1modelsidoptions) writes this file directly, so options can be saved without bringing a model into memory. It merges rather than replaces, and `"ctx_size": -1` saves automatic context sizing even when the server-wide `ctx_size` is an explicit number. [`DELETE`](../../api/lemonade.md#delete-v1modelsidoptions) on the same path resets the model by removing its entry entirely.
+> **Editing options without loading:** [`POST /api/v1/models/{id}/options`](../../api/openai.md#post-v1modelsidoptions) writes this file directly, so options can be saved without bringing a model into memory. It merges rather than replaces, and `"ctx_size": -1` saves automatic context sizing even when the server-wide `ctx_size` is an explicit number. [`DELETE`](../../api/openai.md#delete-v1modelsidoptions) on the same path resets the model by removing its entry entirely.
 
 ## Complete Examples
 

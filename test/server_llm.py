@@ -701,9 +701,10 @@ class LLMTests(ServerTestBase):
 
         error = response.json().get("error")
         self.assertIsInstance(error, dict, response.text)
-        self.assertEqual(error.get("type"), "invalid_request")
+        self.assertEqual(error.get("type"), "invalid_request_error")
+        self.assertEqual(error.get("code"), "missing_argument")
         self.assertIn(
-            "no model specified",
+            "missing required argument 'model'",
             error.get("message", "").lower(),
         )
 

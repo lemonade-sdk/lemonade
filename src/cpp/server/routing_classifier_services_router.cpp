@@ -2,6 +2,7 @@
 
 #include "lemon/router.h"
 
+#include <lemon/models/model_info.h>
 #include <map>
 #include <mutex>
 #include <utility>

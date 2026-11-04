@@ -8,8 +8,9 @@
 #include <optional>
 #include <system_error>
 #include <lemon/auto_context_budget.h>
+#include <lemon/gguf_reader.h>
 #include <lemon/gpu_memory_selection.h>
-#include <lemon/model_manager.h>
+#include <lemon/models/model_info.h>
 #include <lemon/system_info.h>
 #include <lemon/system_metrics_platform.h>
 #include <lemon/utils/aixlog.hpp>

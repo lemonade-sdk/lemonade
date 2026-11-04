@@ -263,7 +263,9 @@ int main() {
             {"draft", "vendor/aux:draft-Q4_K_M.gguf"},
             {"npu_cache", "vendor/cache:should-not-appear"},
         };
-        const auto grouped = rf::group_aux_checkpoint_variants(checkpoints);
+        // Whisper is the recipe that fetches a side cache on first use, so this is
+        // the recipe whose pull must leave it out.
+        const auto grouped = rf::group_aux_checkpoint_variants("whispercpp", checkpoints);
         check("auxiliary checkpoints are grouped by their own repository",
               grouped.size() == 1 && grouped.count("vendor/aux") == 1);
         check("all auxiliary variants are listed",
@@ -276,7 +278,7 @@ int main() {
             {"main", "vendor/main:Q4_K_M"},
             {"mmproj", "vendor/main:mmproj-F16.gguf"},
         };
-        const auto grouped = rf::group_aux_checkpoint_variants(checkpoints);
+        const auto grouped = rf::group_aux_checkpoint_variants("llamacpp", checkpoints);
         check("a same-repository auxiliary checkpoint groups under the main repo",
               grouped.size() == 1 && grouped.count("vendor/main") == 1 &&
                   has(grouped.at("vendor/main"), "mmproj-F16.gguf"));
@@ -287,7 +289,7 @@ int main() {
             {"mmproj", "no-variant-shape"},
         };
         check("a checkpoint without repo:variant shape is skipped",
-              rf::group_aux_checkpoint_variants(checkpoints).empty());
+              rf::group_aux_checkpoint_variants("llamacpp", checkpoints).empty());
     }
 
     // --- active_local_snapshot: the comparison baseline is the snapshot on

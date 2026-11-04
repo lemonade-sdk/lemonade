@@ -1,5 +1,6 @@
 #include "lemon/runtime_config.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/models/configured_catalog.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
@@ -413,6 +414,15 @@ std::string RuntimeConfig::extra_models_dir() const {
     return config_["extra_models_dir"].get<std::string>();
 }
 
+json RuntimeConfig::model_catalogs() const {
+    std::shared_lock lock(mutex_);
+    const auto found = config_.find("model_catalogs");
+    if (found == config_.end() || !found->is_array()) {
+        return json::array();
+    }
+    return *found;
+}
+
 bool RuntimeConfig::broadcast() const {
     std::shared_lock lock(mutex_);
     if (broadcast_override_.has_value()) {
@@ -537,12 +547,12 @@ bool RuntimeConfig::no_fetch_executables() const {
 
 bool RuntimeConfig::disable_model_filtering() const {
     std::shared_lock lock(mutex_);
-    return config_["disable_model_filtering"].get<bool>();
+    return config_.value("disable_model_filtering", false);
 }
 
 bool RuntimeConfig::enable_dgpu_gtt() const {
     std::shared_lock lock(mutex_);
-    return config_["enable_dgpu_gtt"].get<bool>();
+    return config_.value("enable_dgpu_gtt", false);
 }
 
 std::string RuntimeConfig::default_model_source() const {
@@ -705,40 +715,50 @@ json RuntimeConfig::backend_config(const std::string& backend_name) const {
     return json::object();
 }
 
+namespace {
+
+// A config.json the operator edited by hand can hold any type at any key. Reading one
+// as the wrong type must not throw: a caller that asks for a backend's settings and gets
+// an exception loses whatever it was building, and recipe detection losing means every
+// model on the machine reads as unavailable. Absence and mismatch read the same way.
+const json* find_backend_value(const json& config, const std::string& backend,
+                               const std::string& key) {
+    const auto section = config.find(backend);
+    if (section == config.end() || !section->is_object()) {
+        return nullptr;
+    }
+    const auto value = section->find(key);
+    return value == section->end() ? nullptr : &*value;
+}
+
+}  // namespace
+
 std::string RuntimeConfig::backend_string(const std::string& backend,
                                            const std::string& key) const {
     std::shared_lock lock(mutex_);
-    if (config_.contains(backend) && config_[backend].contains(key)) {
-        return config_[backend][key].get<std::string>();
-    }
-    return "";
+    const json* value = find_backend_value(config_, backend, key);
+    return value != nullptr && value->is_string() ? value->get<std::string>() : "";
 }
 
 bool RuntimeConfig::backend_bool(const std::string& backend,
                                   const std::string& key) const {
     std::shared_lock lock(mutex_);
-    if (config_.contains(backend) && config_[backend].contains(key)) {
-        return config_[backend][key].get<bool>();
-    }
-    return false;
+    const json* value = find_backend_value(config_, backend, key);
+    return value != nullptr && value->is_boolean() ? value->get<bool>() : false;
 }
 
 int RuntimeConfig::backend_int(const std::string& backend,
                                 const std::string& key) const {
     std::shared_lock lock(mutex_);
-    if (config_.contains(backend) && config_[backend].contains(key)) {
-        return config_[backend][key].get<int>();
-    }
-    return 0;
+    const json* value = find_backend_value(config_, backend, key);
+    return value != nullptr && value->is_number_integer() ? value->get<int>() : 0;
 }
 
 double RuntimeConfig::backend_double(const std::string& backend,
                                       const std::string& key) const {
     std::shared_lock lock(mutex_);
-    if (config_.contains(backend) && config_[backend].contains(key)) {
-        return config_[backend][key].get<double>();
-    }
-    return 0.0;
+    const json* value = find_backend_value(config_, backend, key);
+    return value != nullptr && value->is_number() ? value->get<double>() : 0.0;
 }
 
 json RuntimeConfig::recipe_options(const std::string& backend) const {
@@ -863,6 +883,8 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (n < 0 || n > 100) {
             throw std::invalid_argument("'log_max_files' must be between 0 and 100");
         }
+    } else if (key == "model_catalogs") {
+        models::reject_refused_catalogs(value);
     } else if (key == "extra_models_dir" || key == "models_dir") {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + key + "' must be a string");

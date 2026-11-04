@@ -130,6 +130,9 @@ defineTest('collection export normalizes the /models/{id} object into the import
         id: 'multi-file', object: 'model', created: 1234567890, owned_by: 'lemonade',
         recipe: 'sd-cpp', checkpoint: 'org/edit:model.safetensors',
         checkpoints: { main: 'org/edit:model.safetensors', vae: 'org/edit:vae.safetensors' },
+        checkpoint_status: [
+          { type: 'main', present: false, required: true, registry: 'huggingface', path: '' },
+        ],
         components: [], labels: ['edit'], recipe_options: {},
         suggested: false, downloaded: false, size: 6.9,
       },
@@ -144,7 +147,8 @@ defineTest('collection export normalizes the /models/{id} object into the import
   assert.ok(!('id' in payload));
 
   // User-specific runtime fields and wire decorations never reach the file.
-  for (const key of ['suggested', 'created', 'downloaded', 'object', 'owned_by']) {
+  for (const key of ['suggested', 'created', 'downloaded', 'object', 'owned_by',
+                     'checkpoint_status']) {
     assert.ok(!(key in payload), `top-level ${key} should be stripped`);
     for (const entry of payload.models) {
       assert.ok(!(key in entry), `models[] ${key} should be stripped`);
@@ -187,6 +191,10 @@ defineTest('regular-model export carries no collection fields', () => {
     checkpoints: { main: 'org/planner:Q4_K_M' },
     components: [], labels: ['tool-calling'], recipe_options: {},
     suggested: true, downloaded: true, size: 2.5,
+    checkpoint_status: [
+      { type: 'main', present: true, required: true, registry: 'huggingface',
+        path: '/home/someone/.cache/lemonade/huggingface/snapshots/model.gguf' },
+    ],
   };
 
   const { filename, payload } = modelDataUtils.normalizeModelExportPayload(raw);
@@ -197,6 +205,8 @@ defineTest('regular-model export carries no collection fields', () => {
   assert.ok(!('downloaded' in payload));
   assert.ok(!('suggested' in payload));
   assert.ok(!('created' in payload));
+  // checkpoint_status names paths on this machine; an export file travels.
+  assert.ok(!('checkpoint_status' in payload));
 });
 
 defineTest('router collection export preserves routing and components', () => {

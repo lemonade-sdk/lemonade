@@ -16,6 +16,6 @@
     "declaration": true,
     "declarationMap": true
   },
-  "include": ["../app/src/**/*", "../app/assets/**/*", "tauri-stub.js"],
+  "include": ["../app/src/**/*", "tauri-stub.js"],
   "exclude": ["node_modules", "dist"]
 }

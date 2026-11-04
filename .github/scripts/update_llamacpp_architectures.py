@@ -134,16 +134,11 @@ def main() -> int:
         rocm_nightly_ref = pins.get("rocm-nightly")
         for ref in configured_refs:
             try:
-                sources[ref] = fetch_upstream_source(ref)
-            except Exception as error:  # pylint: disable=broad-exception-caught
                 if ref == rocm_nightly_ref:
-                    try:
-                        sources[ref] = fetch_rocm_nightly_source(ref)
-                        continue
-                    except (
-                        Exception
-                    ) as rocm_error:  # pylint: disable=broad-exception-caught
-                        error = rocm_error
+                    sources[ref] = fetch_rocm_nightly_source(ref)
+                else:
+                    sources[ref] = fetch_upstream_source(ref)
+            except Exception as error:  # pylint: disable=broad-exception-caught
                 raise RuntimeError(
                     f"No architecture source found for shipped ref {ref}"
                 ) from error
