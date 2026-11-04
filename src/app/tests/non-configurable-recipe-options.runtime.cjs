@@ -105,6 +105,10 @@ function systemInfoWith(options, selectableBackend = false) {
       'the tuning field list must not fall back to raw descriptor names');
     assert.match(panel, /tuningKeysForModel\(model, systemInfo, Object\.keys\(serverSavedRecipeOptions\)\)/,
       'saved options must reach the tuning field list');
+    assert.match(panel, /tuningKeysForModel\(model, systemInfo, Object\.keys\(saved\)\)/,
+      'the draft must be seeded from the key list the fetched saved options produce');
+    assert.doesNotMatch(panel, /draftFromResolvedOptions\(recipeKeys, saved[),]/,
+      'the seed must not use the key list captured before the fetch, which misses a saved key the fetch reveals');
 
     console.log('Lemonade App non-configurable recipe option checks passed.');
   } finally {

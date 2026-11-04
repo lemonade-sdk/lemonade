@@ -1502,8 +1502,12 @@ const ModelConfigurationTab: React.FC<{
     setServerDefaultRecipeOptions(defaults);
     const resolved = Number(result.resolved_ctx_size);
     setResolvedCtxSize(Number.isFinite(resolved) && resolved > 0 ? resolved : null);
-    if (syncDraft) applyDraft(draftFromResolvedOptions(recipeKeys, saved, effective, offersResolvedValue));
-  }, [applyDraft, offersResolvedValue, recipeKeys]);
+    if (syncDraft) {
+      applyDraft(draftFromResolvedOptions(
+        tuningKeysForModel(model, systemInfo, Object.keys(saved)), saved, effective, offersResolvedValue,
+      ));
+    }
+  }, [applyDraft, model, offersResolvedValue, systemInfo]);
 
   // Read through a ref: a save refreshes the model list, which hands this
   // component a new model object, and re-running the fetch on that would
@@ -1512,8 +1516,9 @@ const ModelConfigurationTab: React.FC<{
   applyServerOptionsRef.current = applyServerOptions;
 
   useEffect(() => {
-    // The draft is seeded once, from what this fetch returns, into the fields
-    // the recipe's option list names — so that list has to be in hand first.
+    // The draft is seeded once, from what this fetch returns, into the fields the
+    // recipe's option list names plus what the response saved — so the option
+    // list has to be in hand first.
     if (!systemInfoSettled) return;
     let cancelled = false;
     setNotice(null);
