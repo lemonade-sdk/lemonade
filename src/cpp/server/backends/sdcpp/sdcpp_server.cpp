@@ -661,6 +661,13 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
         body["sample_params"] = sample_params;
     }
 
+    // A cancel that lands while the model is loading must not reach sd-server:
+    // it starts generating at once, so the cancel below would have to stop it.
+    if (cancel && cancel->load()) {
+        return ErrorResponse::from_exception(
+            BackendException(server_name_, "video generation canceled", 499));
+    }
+
     LOG(DEBUG, "SDServer") << "Forwarding video request to sd-server: "
                            << body.dump(2) << std::endl;
 

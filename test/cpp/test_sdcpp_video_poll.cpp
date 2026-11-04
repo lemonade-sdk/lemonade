@@ -30,11 +30,13 @@ public:
 struct FakeBackend {
     httplib::Server server;
     std::thread thread;
+    std::atomic<int> submits{0};
     std::atomic<int> polls{0};
     int port = 0;
 
     explicit FakeBackend(int failing_polls) {
-        server.Post("/sdcpp/v1/vid_gen", [](const httplib::Request&, httplib::Response& res) {
+        server.Post("/sdcpp/v1/vid_gen", [this](const httplib::Request&, httplib::Response& res) {
+            ++submits;
             res.status = 202;
             res.set_content(R"({"id":"j1","poll_url":"/sdcpp/v1/jobs/j1"})", "application/json");
         });
@@ -80,11 +82,21 @@ void test_persistent_failed_polls_give_up() {
     check("failed polls: it gives up after five", backend.polls.load() == 5);
 }
 
+void test_cancel_before_submit_skips_the_backend() {
+    FakeBackend backend(0);
+    FakeSdServer sd(backend.port);
+    std::atomic<bool> cancel{true};
+    const lemon::json result = sd.video_generations(request(), &cancel);
+    check("early cancel: the video is canceled", result.contains("error"));
+    check("early cancel: sd-server never sees the clip", backend.submits.load() == 0);
+}
+
 } // namespace
 
 int main() {
     test_a_few_failed_polls_are_tolerated();
     test_persistent_failed_polls_give_up();
+    test_cancel_before_submit_skips_the_backend();
     if (g_failures) {
         std::printf("%d FAILURE(S)\n", g_failures);
         return 1;
