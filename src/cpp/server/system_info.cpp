@@ -5,10 +5,12 @@
 #include "lemon/runtime_config.h"
 #include "lemon/version.h"
 #include "lemon/backend_manager.h"
+#include "lemon/utils/container_manager.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/version_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
@@ -655,6 +657,17 @@ bool SystemInfo::backend_supports_arch(const std::string& recipe,
     return false;
 }
 
+// Marks `status` action_required when a setup check fails, returning whether one did.
+static bool mark_container_setup(json& status,
+                                 const std::optional<utils::SetupReport>& failure) {
+    if (!failure) return false;
+    status["state"] = "action_required";
+    status["message"] = failure->message();
+    status["action"] = failure->action();
+    status["setup_checks"] = failure->ids();
+    return true;
+}
+
 // Generic installation check
 static bool is_installed_state(const std::string& state) {
     return state == "installed" || state == "update_available" || state == "update_required";
@@ -669,6 +682,12 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         error_message = "Linux kernel missing support";
         return false;
     }
+    if (cwsr_desc && cwsr_desc->container_for(backend)) {
+        const std::string image = BackendUtils::get_installed_backend_image(recipe, backend);
+        if (image.empty()) return false;
+        return utils::ContainerManager::global().has_image(image);
+    }
+
     // Find the managed binary, then let the backend's ops decide installed-ness
     // (llamacpp "system" also needs the HIP plugin; flm can be a PATH package).
     bool binary_found = false;
@@ -1260,7 +1279,14 @@ json SystemInfo::build_recipes_info(const json& devices) {
     }
 
     // Build recipes from the definition table
+    std::optional<std::optional<utils::SetupReport>> container_setup;
     for (const auto& def : recipe_defs()) {
+        const auto* def_desc = backends::descriptor_for(def.recipe);
+        const bool container_backend = def_desc && def_desc->container_for(def.backend);
+        if (container_backend && current_os != "linux") {
+            continue;
+        }
+
         // Skip if not supported on current OS
         if (def.supported_os.count(current_os) == 0) {
             // Helper to format OS name nicely
@@ -1470,6 +1496,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
         } else {
             std::string installed_version = get_recipe_version(def.recipe, def.backend);
             std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
+            if (container_backend) {
+                installed_version = backends::short_container_pin(installed_version);
+                expected_version = backends::short_container_pin(expected_version);
+            }
 
             // The user's *_bin pin overrides what the state machine considers
             // "expected" — otherwise an explicit-tag pin (e.g. b8664) would
@@ -1564,6 +1594,11 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
         // Note: release_url and download_size_mb are added by the system-info route
         // using BackendManager as the single source of truth for repo/version mappings.
+
+        if (supported && container_backend) {
+            if (!container_setup) container_setup = backends::container_setup_failure();
+            mark_container_setup(backend, *container_setup);
+        }
 
         set_backend_status(def, backend, kCurrentOsUnsupportedPriority);
 
@@ -1718,6 +1753,41 @@ std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
     }
     auto result = get_supported_backends(recipe);
     return result.backends.empty() ? result.not_supported_error : "";
+}
+
+bool SystemInfo::refresh_container_setup(json& recipes) {
+    bool cleared = false;
+    std::optional<std::optional<utils::SetupReport>> container_setup;
+    for (auto& [recipe, info] : recipes.items()) {
+        const auto* desc = lemon::backends::descriptor_for(recipe);
+        if (!desc || desc->containers.empty() || !info.contains("backends")) {
+            continue;
+        }
+        for (auto& [backend, status] : info["backends"].items()) {
+            const std::string state = status.value("state", "unsupported");
+            if (!desc->container_for(backend) || state == "unsupported") {
+                continue;
+            }
+            if (!container_setup) container_setup = backends::container_setup_failure();
+            if (!mark_container_setup(status, *container_setup) && state == "action_required") {
+                cleared = true;
+            }
+        }
+    }
+    return cleared;
+}
+
+bool SystemInfo::is_backend_installed(const std::string& recipe, const std::string& backend) {
+    const auto* desc = backends::descriptor_for(recipe);
+    if (!desc) return false;
+    const std::string current_os = get_current_os();
+    const bool runs_here = std::any_of(desc->support.begin(), desc->support.end(),
+                                       [&](const BackendSupport& row) {
+                                           return row.backend == backend &&
+                                                  row.supported_os.count(current_os) > 0;
+                                       });
+    std::string ignored;
+    return runs_here && is_recipe_installed(recipe, backend, ignored);
 }
 
 std::string SystemInfo::check_guest_backend_installed(const std::string& recipe,
