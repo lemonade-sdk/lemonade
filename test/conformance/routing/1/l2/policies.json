@@ -1,0 +1,69 @@
+{
+  "semantic_concepts": {
+    "version": "1",
+    "model_name": "user.Semantic-Concepts",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "EmbedModel"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "topic", "type": "semantic_similarity", "model": "EmbedModel", "reference_phrases": { "coding": ["writes code"], "math": ["proves theorems"] } }
+      ],
+      "rules": [
+        { "id": "route-CodingLLM", "match": { "classifier": "topic", "label": "coding", "min_score": 0.75 }, "route_to": "CodingLLM" },
+        { "id": "route-MathLLM", "match": { "classifier": "topic", "label": "math", "min_score": 0.75 }, "route_to": "MathLLM" }
+      ]
+    }
+  },
+  "semantic_implicit_label": {
+    "version": "1",
+    "model_name": "user.Semantic-ImplicitLabel",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "EmbedModel"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "topic", "type": "semantic_similarity", "model": "EmbedModel", "reference_phrases": { "coding": ["writes code"], "math": ["proves theorems"] }, "default_label": "coding" }
+      ],
+      "rules": [
+        { "id": "implicit-label-rule", "match": { "classifier": "topic", "min_score": 0.5 }, "route_to": "CodingLLM" }
+      ]
+    }
+  },
+  "semantic_on_error": {
+    "version": "1",
+    "model_name": "user.Semantic-OnError",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "EmbedOpen", "EmbedClosed"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "fail_open", "type": "semantic_similarity", "model": "EmbedOpen", "reference_phrases": { "coding": ["writes code"] } },
+        { "id": "fail_closed", "type": "semantic_similarity", "model": "EmbedClosed", "reference_phrases": { "coding": ["writes code"] }, "on_error": "match_true" }
+      ],
+      "rules": [
+        { "id": "open-rule", "match": { "classifier": "fail_open", "label": "coding", "min_score": 0.5 }, "route_to": "CodingLLM" },
+        { "id": "closed-rule", "match": { "classifier": "fail_closed", "label": "coding", "min_score": 0.5 }, "route_to": "MathLLM" }
+      ]
+    }
+  },
+  "semantic_scoring": {
+    "version": "1",
+    "model_name": "user.Semantic-Scoring",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "EmbedModel"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "topic", "type": "semantic_similarity", "model": "EmbedModel", "reference_phrases": { "coding": ["writes code", "fixes bugs"] } }
+      ],
+      "rules": [
+        { "id": "route-CodingLLM", "match": { "classifier": "topic", "label": "coding", "min_score": 0.6 }, "route_to": "CodingLLM" }
+      ]
+    }
+  }
+}

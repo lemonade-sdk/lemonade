@@ -452,6 +452,20 @@ json parse_classifier_configs(const json& routing,
             }
         }
 
+        if (classifier.contains("on_truncation")) {
+            if (type != "zero_shot" && type != "classifier" && type != "systemone") {
+                throw std::invalid_argument(
+                    path + ".on_truncation is accepted on the model-backed types "
+                    "('classifier', 'zero_shot' and 'systemone'), not '" +
+                    type + "', which reads no token window it can overflow");
+            }
+            const std::string on_truncation =
+                optional_string(classifier, "on_truncation", path);
+            if (on_truncation != "score" && on_truncation != "fail") {
+                throw std::invalid_argument(path + ".on_truncation must be score or fail");
+            }
+        }
+
         json item = classifier;
         if (classifier.contains("model")) {
             const std::string original = optional_string(classifier, "model", path);
@@ -481,11 +495,55 @@ json parse_classifier_configs(const json& routing,
                         "', which cannot serve as a classifier (needs an LLM or "
                         "classification model)");
                 }
+                if (type == "classifier" && model_type == ModelType::LLM &&
+                    classifier.contains("on_truncation")) {
+                    throw std::invalid_argument(
+                        path + ".on_truncation needs a classification model; '" + original +
+                        "' is an LLM, and a chat model reports no truncation");
+                }
+
+                if ((type == "zero_shot" || type == "systemone") &&
+                    model_type != ModelType::CLASSIFICATION) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original + "' has type '" +
+                        model_type_to_string(model_type) + "', which cannot serve " + type +
+                        " (needs a classification model)");
+                }
                 if (type == "semantic_similarity" && model_type != ModelType::EMBEDDING) {
                     throw std::invalid_argument(
                         path + ".model '" + original + "' has type '" +
                         model_type_to_string(model_type) +
                         "', which cannot serve semantic_similarity (needs an embedding model)");
+                }
+            }
+            if (options.serves_zero_shot) {
+                const bool zero_shot_model = options.serves_zero_shot(resolved_model);
+                if (type == "zero_shot" && !zero_shot_model) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original +
+                        "' is not a zero-shot model (needs the 'zero-shot' label); a "
+                        "fixed-label classifier refuses per-request labels, so use type "
+                        "'classifier'");
+                }
+                if (type == "classifier" && zero_shot_model) {
+                    throw std::invalid_argument(
+                        path + ".model '" + original +
+                        "' is a zero-shot model, which needs its labels with every request; "
+                        "use type 'zero_shot'");
+                }
+            }
+            if (type == "systemone" && options.serves_systemone &&
+                !options.serves_systemone(resolved_model)) {
+                throw std::invalid_argument(
+                    path + ".model '" + original + "' is not a SystemOne decision model "
+                    "(needs the 'systemone' label on a backend that answers /v1/systemone, "
+                    "such as llamacpp)");
+            }
+            if (options.load_refusal) {
+                const std::string refusal = options.load_refusal(resolved_model);
+                if (!refusal.empty()) {
+                    throw std::invalid_argument(path + ".model '" + original +
+                                                "' cannot be loaded: " + refusal);
                 }
             }
 
@@ -582,7 +640,7 @@ const std::set<std::string>& routing_router_keys() {
 const std::set<std::string>& routing_classifier_keys() {
     static const std::set<std::string> keys = {
         "id", "type", "model", "prompt", "labels", "default_label",
-        "reference_phrases", "on_error"};
+        "reference_phrases", "question", "on_error", "on_truncation"};
     return keys;
 }
 

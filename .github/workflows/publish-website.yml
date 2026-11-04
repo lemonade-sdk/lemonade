@@ -39,6 +39,9 @@ jobs:
           run: |
             git checkout website
             git merge "$RELEASE_COMMIT" -X theirs
+            # News publishes from main as it merges; don't let an older release branch roll it back.
+            git rm -rq --ignore-unmatch docs/news docs/assets/news-data.js
+            git checkout origin/main -- docs/news docs/assets/news-data.js
         - name: Update README with marketplace apps
           run: |
             venvPython=".venv/bin/python"
@@ -55,4 +58,5 @@ jobs:
             else
               git commit -m "Update website for: ${RELEASE_COMMIT_SHORT}"
             fi
-            git push
+            # publish-news.yml may have pushed to website since this run started.
+            git push || { git pull --no-rebase --no-edit origin website && git push; }

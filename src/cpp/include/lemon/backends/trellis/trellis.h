@@ -23,6 +23,7 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to trellis-server", "3D Generation Options"},
     },
     /*support*/ {
+        {"cuda12", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"nvidia_gpu", {"sm_60", "sm_61", "sm_62", "sm_70", "sm_72"}}}, "NVIDIA Pascal/Volta GPUs (CUDA 12)"},
         {"cuda", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
         {"vulkan", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
         {"rocm", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families (ROCm via TheRock)"},
@@ -38,7 +39,7 @@ inline const BackendDescriptor descriptor = {
     /*self_manages_downloads*/ false,
     /*takes_args*/      true,
     /*arg_variants*/    {},
-    /*bin_variants*/    {"vulkan", "rocm", "cuda"},
+    /*bin_variants*/    {"vulkan", "rocm", "cuda", "cuda12"},
     /*config_extra*/    nlohmann::json::object(),
 };
 

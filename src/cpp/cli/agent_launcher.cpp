@@ -295,11 +295,12 @@ void configure_junie_agent(const std::string& api_key,
 
 } // namespace
 
-std::string build_agent_server_base_url(const std::string& host, int port) {
+std::string build_agent_server_base_url(const std::string& host, int port, bool is_ssl) {
+    const std::string scheme = is_ssl ? "https://" : "http://";
     if (host.empty() || host == "0.0.0.0" || host == "::" || host == "[::]" || host == "*") {
-        return "http://localhost:" + std::to_string(port);
+        return scheme + "localhost:" + std::to_string(port);
     }
-    return "http://" + host + ":" + std::to_string(port);
+    return scheme + host + ":" + std::to_string(port);
 }
 
 bool agent_needs_config_sync(const std::string& agent) {

@@ -197,7 +197,7 @@ lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp --
 | Option | Description | Required |
 |--------|-------------|----------|
 | `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face/ModelScope checkpoint | Yes |
-| `--source` | Remote registry for checkpoint pulls: `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. Direct hub URLs are auto-detected | No |
+| `--source` | Remote registry for checkpoint pulls: <!-- BEGIN GENERATED: cli-pull-source-values -->`huggingface` or `modelscope`<!-- END GENERATED: cli-pull-source-values -->; when omitted, the server's configured `default_model_source` applies. Direct hub URLs are auto-detected | No |
 | `--alias ALIAS` | Add an alias for the model being registered or pulled. | No |
 | `--checkpoint TYPE CHECKPOINT` | Manual registration: add a checkpoint entry. Repeat for multi-component models such as `main` + `mmproj` or `main` + `vae`. | No |
 | `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni`) | No |
@@ -430,7 +430,7 @@ The following options are available depending on the recipe being used:
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
 
-#### TheNoise ROCm (`thenoise` recipe)
+#### TheNoise (`thenoise` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -442,6 +442,26 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--ds4-args ARGS` | Custom arguments to pass to ds4-server | `""` |
+
+#### ROCm FPX (`rocmfpx` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--rocmfpx-args ARGS` | Custom arguments to pass to the ROCm FPX llama-server | `""` |
+
+#### Halogen Flash (`halogen` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
+#### Gufo (`gufo` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--gufo-args ARGS` | Custom arguments to pass to gufo serve llm | `""` |
 
 #### ThinkSound (`thinksound` recipe)
 
@@ -673,8 +693,15 @@ Codex-only option:
 |-----------------|-------------|----------|
 | `--provider,-p [PROVIDER]` | Select provider name for Codex config; Lemonade does not read or modify `config.toml` (defaults to `lemonade`) | No |
 
+Pi-only options:
+
+| Option/Argument | Description | Required |
+|-----------------|-------------|----------|
+| `--mcp`, `--no-mcp` | Add or remove the `lemonade` server in pi's `mcp.json`, giving pi Lemonade's MCP tools. The choice is kept for later launches. Needs pi 1.0 or newer. | No |
+| `--codemode` | Enable pi's `codemode` tool for this launch. Combine with `--mcp` so its scripts can call Lemonade's tools. Needs pi 1.1 or newer. | No |
+
 **Notes:**
-- The model load request is asynchronous: launch starts the agent immediately while loading continues in the background.
+- The model load request is asynchronous: launch starts the agent immediately while loading continues in the background. The exception is `pi` with an automatic context size: launch waits for the load so it can give pi the size Lemonade picked.
 - If a model is already provided, launch skips recipe import prompts.
 - `--directory` and `--recipe-file` are only used for remote recipe import at prompt time.
 - For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first, then launch with the imported model id.
@@ -685,9 +712,9 @@ Codex-only option:
 - `--agent-args` is parsed and appended to the launched agent command.
 - Supported agents: `claude`, `codex`, `opencode`, `pi`, `junie`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
-- `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json`.
+- `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json` (honors `PI_CODING_AGENT_DIR`), plus `mcp.json` with `--mcp`. See [Pi](../integrations/pi.md).
 - `junie` uses an auto-managed custom model profile at `~/.junie/models/lemonade.json` (honors `JUNIE_HOME`) and is launched with `--model custom:lemonade`.
-- When no `--api-key` is provided, the generated `opencode`, `pi`, and `junie` providers use a default `apiKey` value of `lemonade`.
+- When no `--api-key` is provided, the generated `opencode`, `pi`, and `junie` providers use a default `apiKey` value of `lemonade`. With an API key, `pi`'s config references `${LEMONADE_API_KEY}`, which launch exports to pi, instead of storing the key.
 
 **Examples:**
 
@@ -700,6 +727,9 @@ lemonade launch codex --model Qwen3.5-0.8B-GGUF -p
 
 # Launch codex using a custom provider name from your Codex config.toml
 lemonade launch codex --model Qwen3.5-0.8B-GGUF --provider my-provider
+
+# Launch pi with Lemonade's MCP tools and codemode
+lemonade launch pi --model Qwen3.5-35B-A3B-GGUF --mcp --codemode
 
 # Launch junie against a local model (writes the custom:lemonade profile)
 lemonade launch junie --model Qwen3.5-0.8B-GGUF
@@ -904,7 +934,7 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--backend BACKEND` | Backend to test (e.g., `vulkan`, `metal`, `cpu`). Repeat for multiple backends. | All installed backends |
-| `--ctx-size SIZE` | Context size to test. Repeat for multiple sizes. | Model's default context size |
+| `--ctx-size SIZE` | Context size to test. Repeat for multiple sizes. | Model default, raised per scenario when a context target requires more |
 | `--runs N` | Number of measurement runs per scenario | `3` |
 | `--warmup N` | Number of warmup runs per scenario (not included in stats) | `0` |
 | `--scenarios NAME\|CATEGORY` | Scenario name(s) or category (e.g. `chat`, `coding`, `long-context`). Use `all` to include every scenario. Repeat for multiple. | All scenarios except `long-context` |
@@ -912,6 +942,8 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | `--scenario-dir DIR` | Load all `.json` scenario files from a directory | — |
 | `--json` | Output results as JSON instead of a table | Table output |
 | `--output FILE` | Write results to file (in addition to stdout) | — |
+| `--submit` | Submit results to the Lemonade benchmark service (implies `--json`). Cannot be combined with `--compare` | False |
+| `--submit-file FILE` | Submit an already-saved benchmark JSON file. Cannot be combined with `--compare` | — |
 | `--compare FILE` | Compare results against a previously saved JSON file | — |
 | `--auto-pull` | Automatically pull the model if not downloaded | False |
 | `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
@@ -928,6 +960,10 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 **Timestamp behavior:**
 - Top-level `timestamp` is the command invocation time.
 - Each per-model result includes its own `timestamp` for when that model run started.
+
+**Submitting results:**
+
+`--submit` uploads the run to the Lemonade benchmark service and `--submit-file` uploads a benchmark JSON saved earlier with `--output`. The service answers with an id; `bench` prints a link to it so you can claim the results to your [bench.lemonade-server.ai](https://bench.lemonade-server.ai) account. Submission progress goes to stderr, so `--submit --json > results.json` still captures clean JSON.
 
 ### Scenario Files
 
@@ -954,7 +990,7 @@ The optional `context` block generates large input contexts by repeating a fille
 | `target_tokens` | int | Target token count (~4 chars per token for English) |
 | `position` | string | Where to place the question relative to filler: `"end"` (default), `"start"`, or `"middle"` |
 
-When `context` is present, the user message content is replaced with the expanded text. The question (extracted from the user message) is positioned relative to the filler according to `position`.
+When `context` is present, the user message content is replaced with the expanded text. The question (extracted from the user message) is positioned relative to the filler according to `position`. Without an explicit `--ctx-size`, bench rounds the target up to a suitable context size for that scenario. With an explicit `--ctx-size` sweep, scenarios needing more context are skipped at smaller sizes. Token counts are approximate and depend on the model tokenizer. If server-managed context selection is explicitly requested, the effective size may be unknown until the model is loaded.
 
 #### Default Scenarios
 

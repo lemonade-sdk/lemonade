@@ -2,6 +2,7 @@
 
 #include "lemon/router.h"
 
+#include <lemon/models/model_info.h>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -33,7 +34,10 @@ ClassifierServices make_router_classifier_services(
         [&router](const json& request) { return router.chat_completion(request); },
         std::move(ensure_loaded),
         [&router](const json& request) { return router.classify(request); },
-        [&router](const std::string& model) { return router.get_model_type(model); });
+        [&router](const std::string& model) { return router.get_model_type(model); },
+        [&router](const nlohmann::ordered_json& request) {
+            return json(router.systemone(request));
+        });
 }
 
 CostServices make_router_cost_services(Router& router) {

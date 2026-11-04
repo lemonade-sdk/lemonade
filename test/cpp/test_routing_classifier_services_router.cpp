@@ -6,6 +6,7 @@
 
 #include "lemon/routing_classifier_services.h"
 
+#include "lemon/config_file.h"
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/runtime_config.h"
@@ -40,12 +41,10 @@ static fs::path make_temp_dir() {
     return dir;
 }
 
-// Router's constructor (via RuntimeConfig::max_loaded_models()) requires
-// max_loaded_models to already be present -- RuntimeConfig does no
-// defaults-merging of its own, so a config missing a key the code touches is
-// a real, if easily-avoided, misuse.
+// Started from base_defaults() because building the models cache reads global
+// settings beyond max_loaded_models, and RuntimeConfig merges no defaults itself.
 static RuntimeConfig make_runtime_config() {
-    json cfg = json::object();
+    json cfg = lemon::ConfigFile::base_defaults();
     cfg["max_loaded_models"] = 4;
     cfg["log_level"] = "error";
     return RuntimeConfig(cfg);
@@ -113,24 +112,29 @@ static void test_unregistered_candidate_is_consistently_no_data() {
 }
 
 // Registering an ordinary model changes what a bare candidate name resolves
-// to, so a price already memoised under that name has to be dropped. Only a
-// router collection used to advance the notify generation, which left the memo
-// answering from the registry as it was before the model existed.
+// to, so a price already memoised under that name has to be dropped. The memo
+// is keyed on Router::registry_generation(), which has to move for any model,
+// not only for a router collection.
 static void test_ordinary_registration_advances_the_generation() {
     fs::path temp = make_temp_dir();
     lemon::utils::set_cache_dir(temp.string());
 
     ModelManager model_manager;
-    const uint64_t before = model_manager.current_notify_generation();
+    RuntimeConfig config = make_runtime_config();
+    RuntimeConfig::set_global(&config);
+    Router router(&config, &model_manager, nullptr);
+
+    const uint64_t before = router.registry_generation();
     model_manager.register_user_model(
         "user.PlainModel",
         json{{"model_name", "user.PlainModel"}, {"recipe", "llamacpp"},
              {"checkpoint", "example/plain:Q4_K_M"}});
-    const uint64_t after = model_manager.current_notify_generation();
+    const uint64_t after = router.registry_generation();
 
-    check("router cost cache: registering an ordinary model advances the notify generation",
+    check("router cost cache: registering an ordinary model advances the registry generation",
           after > before);
 
+    RuntimeConfig::set_global(nullptr);
     fs::remove_all(temp);
 }
 

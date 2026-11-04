@@ -64,10 +64,12 @@ These are enforced mechanically, not just by convention:
 - `test/test_routing_fixtures.py` keeps the schemas self-valid and the example
   fixtures conformant.
 - A committed conformance corpus (golden policy → expected `Decision`) under
-  `test/conformance/routing/<schema_major>/` enforces *behavioral* stability
-  across versions: a runner replays each case through the real engine and
-  asserts the emitted `Decision` equals the recorded one, field for field. See
-  that directory's `README.md`.
+  `test/conformance/routing/<schema_major>/` guards *behavioral* stability: a
+  runner replays each case through the real engine and asserts the emitted
+  `Decision` equals the recorded one, field for field. It holds the engine to the
+  expectations committed alongside it; making those expectations immutable across
+  versions needs the corpus freeze, which is still follow-up work. See that
+  directory's `README.md`.
 
 Lemonade executes a policy identically regardless of version — the only behavioral
 drift for model-backed classifiers (semantic_similarity / classifier / llm) comes
@@ -85,6 +87,7 @@ v1** (pinned in the schema field descriptions):
 | `metadata` | reads a request `metadata` key; **case-sensitive** comparison, value decoded into a comma-split, trimmed **token set** (`equals` raw exact / `any` set-intersection / `exists` presence). A missing, empty, or **whitespace-only** value counts as absent (matches only `exists:false`) |
 | multi-key leaf object | interpreted as implicit **`all`**; e.g. `{"keywords_any":[...],"max_chars":1000}` means both leaves must match |
 | `on_error` (omitted) | default **`match_false`** (fail-open) |
+| `on_truncation` (omitted) | default **`score`**. A score computed from input the backend cut to fit its token window is a *success*, so `on_error` never sees it. `fail` turns the cut into an evaluation failure, and `on_error` then applies. Accepted on the model-backed types, `classifier` and `zero_shot`; both read a token window they can overflow. Registration also refuses it on a `classifier` whose model is a chat LLM, which reports no cut. Under `fail`, a backend that does not report cuts (ort-server before 0.4.0) also fails. The trace's `truncated` is `true`, `false`, or absent for unknown. |
 | `routing.router` desugaring | `type: "llm"` expands to one `llm` classifier + identity rules; `type: "cost_select"` expands to one `cost` classifier + identity rules. Both are deterministic and behavior-equivalent across versions |
 | `cost` classifier tie-break / no-data fallback | ties resolve to the first-listed candidate; if no candidate has usable cost data, the classifier reports no winning label (not the `on_error` path) and the engine falls through to `default_model`. "Tie" is bit-exact IEEE equality on the summed score, not an epsilon compare — `0.1+0.2` and `0.15+0.15` are not a tie, so two prices an author considers equal resolve by their floating-point sum, not necessarily by listing order |
 
