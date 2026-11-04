@@ -539,13 +539,6 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                                   << std::endl;
                 return;
             }
-            if (ctrl->pause_requested.load()) {
-                job.status = JobStatus::Paused;
-                persist_locked();
-                LOG(INFO, "Jobs") << "job " << id << " paused before step '" << job.cursor << "'"
-                                  << std::endl;
-                return;
-            }
             if (job.cursor.empty()) {
                 job.status = JobStatus::Completed;
                 for (auto& st : job.steps)
@@ -553,6 +546,14 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                 if (job.finished_at.empty()) job.finished_at = iso_now();
                 persist_locked();
                 LOG(INFO, "Jobs") << "job " << id << " completed" << std::endl;
+                return;
+            }
+            // A pause asked for during the last step has no step left to hold back.
+            if (ctrl->pause_requested.load()) {
+                job.status = JobStatus::Paused;
+                persist_locked();
+                LOG(INFO, "Jobs") << "job " << id << " paused before step '" << job.cursor << "'"
+                                  << std::endl;
                 return;
             }
 
