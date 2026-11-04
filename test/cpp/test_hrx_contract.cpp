@@ -5,9 +5,11 @@
 #include "lemon/backends/hrx/hrx.h"
 #include "lemon/backends/hrx/hrx_server.h"
 
+#include <cstdint>
 #include <cstdio>
 #include <exception>
 #include <functional>
+#include <limits>
 #include <set>
 #include <string>
 #include <utility>
@@ -88,6 +90,83 @@ void check_launch_contract() {
           hrx::build_server_environment() == expected_environment);
 }
 
+void check_context_limit_contract() {
+    lemon::ModelInfo qwen;
+    qwen.model_name = "user.Qwen3.8-27B-HRX";
+    qwen.checkpoints["main"] =
+        "bartowski/Qwen3.8-27B-GGUF:Qwen3.8-27B-Q4_K_M.gguf";
+    qwen.max_context_window = 262144;
+    const lemon::backends::BackendOpsContext context;
+
+    hrx::ops()->populate_metadata(qwen, context);
+    check("HRX advertises the reported Qwen3.8-27B limit",
+          qwen.max_context_window == 32768);
+
+    lemon::ModelInfo qwen_without_metadata;
+    qwen_without_metadata.model_name = "user.Qwen3.8-27B-HRX";
+    qwen_without_metadata.checkpoints["main"] = qwen.checkpoint();
+    hrx::ops()->populate_metadata(qwen_without_metadata, context);
+    check("HRX supplies a known cap when GGUF metadata is unavailable",
+          qwen_without_metadata.max_context_window == 32768);
+
+    lemon::ModelInfo qwen_checkpoint_only;
+    qwen_checkpoint_only.model_name = "user.HRX-model";
+    qwen_checkpoint_only.checkpoints["main"] = qwen.checkpoint();
+    qwen_checkpoint_only.max_context_window = 262144;
+    hrx::ops()->populate_metadata(qwen_checkpoint_only, context);
+    check("HRX identifies Qwen3.8-27B from its checkpoint",
+          qwen_checkpoint_only.max_context_window == 32768);
+
+    lemon::ModelInfo qwen_lower_context = qwen;
+    qwen_lower_context.max_context_window = 16384;
+    hrx::ops()->populate_metadata(qwen_lower_context, context);
+    check("HRX preserves a lower detected context window",
+          qwen_lower_context.max_context_window == 16384);
+
+    lemon::RecipeOptions oversized("llamacpp-hrx", {{"ctx_size", 65536}});
+    hrx::ops()->resolve_runtime_options(qwen, oversized);
+    check("HRX clamps an explicit Qwen3.8-27B context size",
+          oversized.get_option("ctx_size") == 32768);
+    const auto qwen_launch = hrx::build_server_argv(
+        "/models/qwen.gguf", oversized.get_option("ctx_size").get<int>(), 14123, "");
+    check("HRX launches Qwen3.8-27B with the clamped context size",
+          qwen_launch[2] == "--ctx-size" && qwen_launch[3] == "32768");
+
+    lemon::RecipeOptions unsigned_oversized(
+        "llamacpp-hrx", {{"ctx_size", std::numeric_limits<std::uint64_t>::max()}});
+    hrx::ops()->resolve_runtime_options(qwen, unsigned_oversized);
+    check("HRX clamps an oversized unsigned Qwen3.8-27B context size",
+          unsigned_oversized.get_option("ctx_size") == 32768);
+
+    lemon::RecipeOptions at_limit("llamacpp-hrx", {{"ctx_size", 32768}});
+    hrx::ops()->resolve_runtime_options(qwen, at_limit);
+    check("HRX preserves the exact Qwen3.8-27B boundary",
+          at_limit.get_option("ctx_size") == 32768);
+
+    lemon::RecipeOptions below_detected_limit("llamacpp-hrx", {{"ctx_size", 65536}});
+    hrx::ops()->resolve_runtime_options(qwen_lower_context, below_detected_limit);
+    check("HRX does not raise a lower detected Qwen3.8-27B limit",
+          below_detected_limit.get_option("ctx_size") == 16384);
+
+    lemon::RecipeOptions auto_sized("llamacpp-hrx", {{"ctx_size", -1}});
+    hrx::ops()->resolve_runtime_options(qwen, auto_sized);
+    check("HRX preserves automatic sizing for Qwen3.8-27B",
+          auto_sized.get_option("ctx_size") == -1);
+
+    lemon::ModelInfo other;
+    other.model_name = "Qwen3-4B-Instruct-2507-HRX";
+    other.checkpoints["main"] = "unsloth/Qwen3-4B-Instruct-2507-GGUF";
+    other.max_context_window = 131072;
+    hrx::ops()->populate_metadata(other, context);
+    check("HRX leaves other models' context metadata unchanged",
+          other.max_context_window == 131072);
+
+    lemon::RecipeOptions other_options("llamacpp-hrx", {{"ctx_size", 65536}});
+    hrx::ops()->resolve_runtime_options(other, other_options);
+    check("HRX leaves other models' explicit context unchanged",
+          other_options.get_option("ctx_size") == 65536);
+}
+
 void check_admission_contract() {
     const std::set<std::string> expected_reserved_flags = {
         "-c", "-dev", "-dr", "-hf", "-hff", "-hfr", "-m", "-mu",
@@ -138,6 +217,7 @@ void check_installer_contract() {
 int main() {
     try {
         check_launch_contract();
+        check_context_limit_contract();
         check_admission_contract();
         check_installer_contract();
     } catch (const std::exception& error) {

@@ -19,6 +19,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include <cstdint>
 #include <stdexcept>
 #include <vector>
 
@@ -37,6 +38,49 @@ void validate_supported_build_host() {
 }  // namespace
 
 namespace hrx {
+
+namespace {
+
+constexpr int64_t kQwen38HrxContextLimit = 32768;
+
+bool is_qwen38_27b(const ModelInfo& model_info) {
+    return model_info.model_name.find("Qwen3.8-27B") != std::string::npos ||
+           model_info.checkpoint().find("Qwen3.8-27B") != std::string::npos;
+}
+
+int64_t effective_context_window(const ModelInfo& model_info,
+                                 int64_t detected_context_window) {
+    if (!is_qwen38_27b(model_info)) {
+        return detected_context_window;
+    }
+    if (detected_context_window <= 0 ||
+        detected_context_window > kQwen38HrxContextLimit) {
+        return kQwen38HrxContextLimit;
+    }
+    return detected_context_window;
+}
+
+void clamp_context_size(const ModelInfo& model_info, RecipeOptions& options) {
+    if (!is_qwen38_27b(model_info)) {
+        return;
+    }
+
+    const int64_t context_limit =
+        effective_context_window(model_info, model_info.max_context_window);
+    const json ctx_size = options.get_option("ctx_size");
+    bool exceeds_context_limit = false;
+    if (ctx_size.is_number_unsigned()) {
+        exceeds_context_limit =
+            ctx_size.get<std::uint64_t>() > static_cast<std::uint64_t>(context_limit);
+    } else if (ctx_size.is_number_integer()) {
+        exceeds_context_limit = ctx_size.get<int64_t>() > context_limit;
+    }
+    if (exceeds_context_limit) {
+        options.set_option("ctx_size", context_limit);
+    }
+}
+
+}  // namespace
 
 std::vector<std::string> build_server_argv(const std::string& gguf_path,
                                            int ctx_size,
@@ -149,6 +193,14 @@ public:
     void populate_metadata(ModelInfo& info,
                            const BackendOpsContext& ctx) const override {
         llamacpp::ops()->populate_metadata(info, ctx);
+        info.max_context_window =
+            hrx::effective_context_window(info, info.max_context_window);
+    }
+
+    void resolve_runtime_options(const ModelInfo& info,
+                                 RecipeOptions& options) const override {
+        llamacpp::ops()->resolve_runtime_options(info, options);
+        hrx::clamp_context_size(info, options);
     }
 
     std::string resolve_checkpoint_path(
