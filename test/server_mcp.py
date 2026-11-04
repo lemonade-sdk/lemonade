@@ -232,6 +232,7 @@ class McpGatewayTests(ServerTestBase):
         )
         expected = {
             "lemonade_list_models",
+            "lemonade_get_logs",
             "lemonade_chat",
             "lemonade_transcribe_audio",
             "lemonade_generate_image",
@@ -282,6 +283,45 @@ class McpGatewayTests(ServerTestBase):
     # ---------------------------------------------------------------------
     # tools/call error paths
     # ---------------------------------------------------------------------
+
+    def test_012a_get_logs_snapshot(self):
+        """The read-only log tool filters and bounds its result without a model."""
+
+        def call(arguments):
+            response = _post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 33,
+                    "method": "tools/call",
+                    "params": {"name": "lemonade_get_logs", "arguments": arguments},
+                }
+            )
+            self.assertEqual(response.status_code, 200)
+            return response.json()["result"]
+
+        result = call({"min_level": "trace", "limit": 1})
+        self.assertFalse(result["isError"], result)
+        payload = json.loads(result["content"][0]["text"])
+        self.assertLessEqual(len(payload["entries"]), 1)
+        self.assertEqual(payload["returned"], len(payload["entries"]))
+        self.assertGreaterEqual(payload["matched"], payload["returned"])
+        self.assertIn("by_severity", payload["summary"])
+        self.assertIn("by_tag", payload["summary"])
+
+        missing = call({"query": f"no-such-log-{uuid.uuid4().hex}", "summary": False})
+        self.assertFalse(missing["isError"], missing)
+        missing_payload = json.loads(missing["content"][0]["text"])
+        self.assertEqual(missing_payload["matched"], 0)
+        self.assertEqual(missing_payload["entries"], [])
+        self.assertNotIn("summary", missing_payload)
+
+        after = call({"after_seq": 18446744073709551615})
+        self.assertFalse(after["isError"], after)
+        self.assertEqual(json.loads(after["content"][0]["text"])["entries"], [])
+
+        invalid = call({"limit": 201})
+        self.assertTrue(invalid["isError"], invalid)
+        self.assertIn("limit must be between 1 and 200", invalid["content"][0]["text"])
 
     def test_013_list_models_emits_prefixed_collection_id(self):
         """lemonade_list_models emits the canonical `user.` collection id (issue #2788).

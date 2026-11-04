@@ -197,6 +197,23 @@ def smoke_list_models(mcp_url, _cfg):
     detail(f"summary: {truncate(text, 100)}")
 
 
+def smoke_get_logs(mcp_url, _cfg):
+    """Read-only diagnostics path works without loading another model."""
+    result = tools_call(
+        mcp_url,
+        "lemonade_get_logs",
+        {
+            "after_seq": 18446744073709551615,
+            "limit": 1,
+        },
+    )
+    assert result.get("isError") is False, f"isError: {result}"
+    payload = json.loads(assert_text_content(result))
+    assert payload["matched"] == 0 and payload["entries"] == [], payload
+    assert payload["summary"]["by_tag"] == [], payload
+    detail("empty filtered snapshot: OK")
+
+
 def smoke_chat(mcp_url, cfg):
     """lemonade_chat: one-token completion against the chat model."""
     model = cfg["chat_model"]
@@ -366,7 +383,10 @@ def build_plan(args):
     live_image = args.full or args.live_image
     live_omni = args.full or args.live_omni
 
-    smokes = [("lemonade_list_models", smoke_list_models)]
+    smokes = [
+        ("lemonade_list_models", smoke_list_models),
+        ("lemonade_get_logs", smoke_get_logs),
+    ]
 
     # Chat: live mode uses the doc-recommended model; fast mode uses tiny.
     if live_chat:
