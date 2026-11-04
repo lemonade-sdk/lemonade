@@ -84,5 +84,11 @@ bool is_video_job(const nlohmann::json& job) {
     return step.is_object() && step.value("op", std::string()) == "generate_video";
 }
 
+std::string video_status(const nlohmann::json& job) {
+    const std::string status = job.value("status", std::string());
+    if (status != "interrupted") return status;
+    return job.value("error", std::string()).empty() ? "canceled" : "failed";
+}
+
 } // namespace video_store
 } // namespace lemon

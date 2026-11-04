@@ -1,5 +1,6 @@
 #include "video_shared.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/video_store.h"
 
 namespace lemon {
 namespace {
@@ -35,7 +36,7 @@ public:
                 "created_at": {"type": "string", "description": "When the job was created, as an ISO 8601 UTC time."},
                 "started_at": {"type": "string", "description": "When generation started, as an ISO 8601 UTC time."},
                 "completed_at": {"type": "string", "description": "When the video completed, failed or was canceled, as an ISO 8601 UTC time."},
-                "error": {"type": "string", "description": "Why generation failed, present after a failure."},
+                "error": {"type": "string", "description": "Why generation failed, present after a failure, including a server restart during generation."},
                 "mime_type": {"type": "string", "description": "The clip's media type, present once completed."},
                 "output_format": {"type": "string", "description": "The clip's container format, present once completed."},
                 "frame_count": {"type": "integer", "description": "Frames in the clip, present once completed."},
@@ -60,7 +61,7 @@ public:
             write_unknown_video(res);
             return;
         }
-        json out = {{"id", job->value("id", "")}, {"status", video_status(job->value("status", ""))}};
+        json out = {{"id", job->value("id", "")}, {"status", video_store::video_status(*job)}};
         if (job->contains("created_at")) out["created_at"] = (*job)["created_at"];
         if (job->contains("started_at")) out["started_at"] = (*job)["started_at"];
         if (job->contains("finished_at")) out["completed_at"] = (*job)["finished_at"];
@@ -68,7 +69,11 @@ public:
             const auto& step = (*job)["steps"][0];
             if (step.contains("params") && step["params"].is_object())
                 out["model"] = step["params"].value("model", "");
-            if (step.contains("error") && !step["error"].empty()) out["error"] = step["error"];
+            if (step.contains("error") && !step["error"].empty()) {
+                out["error"] = step["error"];
+            } else if (job->contains("error") && !(*job)["error"].empty()) {
+                out["error"] = (*job)["error"];
+            }
             // The status payload drops the encoded bytes; they come from the content route.
             if (step.contains("output") && step["output"].is_object()) {
                 for (const char* key : {"mime_type", "output_format", "frame_count", "fps"}) {

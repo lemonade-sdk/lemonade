@@ -1649,7 +1649,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `created_at` - When the job was created, as an ISO 8601 UTC time.
 - `started_at` - When generation started, as an ISO 8601 UTC time.
 - `completed_at` - When the video completed, failed or was canceled, as an ISO 8601 UTC time.
-- `error` - Why generation failed, present after a failure.
+- `error` - Why generation failed, present after a failure, including a server restart during generation.
 - `mime_type` - The clip's media type, present once completed.
 - `output_format` - The clip's container format, present once completed.
 - `frame_count` - Frames in the clip, present once completed.

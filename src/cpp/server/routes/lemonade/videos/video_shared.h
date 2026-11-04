@@ -24,8 +24,6 @@ extern const RouteError kVideoNoOutput;
 
 std::optional<nlohmann::json> find_video(ServerContext& ctx, const std::string& id);
 
-std::string video_status(const std::string& job_status);
-
 void write_unknown_video(httplib::Response& res);
 
 } // namespace lemon

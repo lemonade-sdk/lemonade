@@ -40,7 +40,8 @@ public:
         }
         const std::string status = job->value("status", "");
         if (status != "completed") {
-            write_plain_error(res, kVideoNotReady, "video is not ready: " + video_status(status));
+            write_plain_error(res, kVideoNotReady,
+                              "video is not ready: " + video_store::video_status(*job));
             return;
         }
         if (!job->contains("steps") || !(*job)["steps"].is_array() || (*job)["steps"].empty() ||

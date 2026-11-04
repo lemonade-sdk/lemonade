@@ -24,10 +24,6 @@ std::optional<nlohmann::json> find_video(ServerContext& ctx, const std::string& 
     return job;
 }
 
-std::string video_status(const std::string& job_status) {
-    return job_status == "interrupted" ? "canceled" : job_status;
-}
-
 void write_unknown_video(httplib::Response& res) {
     write_plain_error(res, kUnknownVideo, "unknown video");
 }

@@ -30,5 +30,9 @@ void remove_all_except(const std::set<std::string>& keep);
 // cancel, any job.
 bool is_video_job(const nlohmann::json& job);
 
+// An interrupted job is a canceled video, unless the job engine recorded why it stopped:
+// it only does so when the server restarted mid-generation, and that video failed.
+std::string video_status(const nlohmann::json& job);
+
 } // namespace video_store
 } // namespace lemon

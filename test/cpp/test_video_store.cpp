@@ -83,11 +83,24 @@ static void test_is_video_job() {
     check("video job: a malformed record is not one", !store::is_video_job(json::array()));
 }
 
+static void test_video_status() {
+    using nlohmann::json;
+    check("status: running passes through",
+          store::video_status(json{{"status", "running"}}) == "running");
+    check("status: a cancel reads canceled",
+          store::video_status(json{{"status", "interrupted"}}) == "canceled");
+    check("status: a restart reads failed",
+          store::video_status(json{{"status", "interrupted"},
+                                   {"error", "server restarted while the job was active"}}) ==
+              "failed");
+}
+
 int main() {
     test_file_names();
     test_write_read();
     test_remove_all_except();
     test_is_video_job();
+    test_video_status();
     if (g_failures) {
         std::printf("%d FAILURE(S)\n", g_failures);
         return 1;
