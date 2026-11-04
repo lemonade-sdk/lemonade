@@ -3,8 +3,13 @@
 // The router lock guards every request dispatch and /health. If unload waits for
 // the busy model's in-flight request while holding that lock, every other model
 // stops answering for as long as that request runs (minutes for 3D generation).
+#include "support/server_wired_manager.h"
+
+#include "lemon/config_file.h"
+#include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/runtime_config.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/wrapped_server.h"
 
 #include <nlohmann/json.hpp>
@@ -15,6 +20,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <functional>
 #include <future>
 #include <memory>
@@ -73,7 +79,8 @@ struct UnloadBusyModelTestHook {
             r.loaded_servers_.end());
     }
 
-    // Names are already canonical; the test Router has no ModelManager.
+    // Calls the canonical path directly so a case can control what happens to
+    // the instance while unload waits; the public entry has its own case.
     static void unload(Router& r, const std::string& name) {
         r.unload_model_canonical(name, name);
     }
@@ -120,6 +127,9 @@ static bool finishes(const std::shared_future<void>& f, std::chrono::millisecond
 static bool threw(const std::shared_future<void>& f) {
     try {
         f.get();
+    } catch (const std::exception& e) {
+        std::printf("  unload threw: %s\n", e.what());
+        return true;
     } catch (...) {
         return true;
     }
@@ -164,6 +174,33 @@ static void test_busy_unload_keeps_router_responsive(Router& router) {
     check("busy model is removed after release",
           !UnloadBusyModelTestHook::has_model(router, "busy-model"));
     check("other model stays loaded", UnloadBusyModelTestHook::has_model(router, "other-model"));
+}
+
+// Same as above, but through Router::unload_model, the path /api/v1/unload takes.
+static void test_busy_unload_via_public_entry(Router& router) {
+    UnloadStubServer* busy = UnloadBusyModelTestHook::add_server(router, "public-busy-model");
+    UnloadBusyModelTestHook::add_server(router, "public-other-model");
+    busy->acquire_for_inference();
+
+    auto unload_done = run_detached([&] { router.unload_model("public-busy-model"); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    check("unload_model waits while the request is in flight",
+          unload_done.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout);
+
+    auto other_lookup =
+        run_detached([&] { UnloadBusyModelTestHook::has_model(router, "public-other-model"); });
+    check("router lock is free while unload_model waits",
+          finishes(other_lookup, std::chrono::seconds(2)));
+    check("unload_model does not unload mid-request", !busy->was_unloaded());
+
+    busy->release_inference();
+    const bool finished = finishes(unload_done, std::chrono::seconds(5));
+    check("unload_model completes once the request is released",
+          finished && !threw(unload_done));
+    check("unload_model removes the busy model",
+          !UnloadBusyModelTestHook::has_model(router, "public-busy-model"));
+    check("unload_model leaves the other model loaded",
+          UnloadBusyModelTestHook::has_model(router, "public-other-model"));
 }
 
 static void test_model_removed_while_waiting(Router& router) {
@@ -216,12 +253,27 @@ static void test_unload_all_via_public_entry(Router& router) {
     check("unload_model(\"\") removes every model",
           !UnloadBusyModelTestHook::has_model(router, "all-a") &&
               !UnloadBusyModelTestHook::has_model(router, "all-b") &&
-              !UnloadBusyModelTestHook::has_model(router, "other-model"));
+              !UnloadBusyModelTestHook::has_model(router, "other-model") &&
+              !UnloadBusyModelTestHook::has_model(router, "public-other-model"));
 }
 
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
-    json cfg = json::object();
+
+    // The public unload path resolves names through the ModelManager. Point it at
+    // an empty temp dir: no registry entry matches, so the stub names resolve to
+    // themselves.
+    namespace fs = std::filesystem;
+    fs::path temp = fs::temp_directory_path() /
+                    ("unload_busy_model_" +
+                     std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    fs::create_directories(temp / "hf");
+    lemon::utils::set_cache_dir(lemon::utils::path_to_utf8(temp));
+    lemon::utils::set_config_dir(lemon::utils::path_to_utf8(temp));
+    lemon::utils::set_models_dir(lemon::utils::path_to_utf8(temp / "hf"));
+
+    // Full defaults: building the model cache reads settings a bare object lacks.
+    json cfg = lemon::ConfigFile::base_defaults();
     cfg["max_loaded_models"] = 4;
     cfg["log_level"] = "error";
 
@@ -229,13 +281,15 @@ int main() {
     RuntimeConfig::set_global(&config);
 
     {
-        Router router(&config, nullptr, nullptr);
+        lemon::ModelManager manager(lemon::test::server_wired_config());
+        Router router(&config, &manager, nullptr);
         // After a hang the router lock may stay held, so later cases would block
         // in their own setup; stop there and report.
         void (*cases[])(Router&) = {
-            test_idle_unload_is_immediate,    test_unknown_model_throws,
-            test_busy_unload_keeps_router_responsive, test_model_removed_while_waiting,
-            test_reloaded_model_is_left_alone, test_unload_all_via_public_entry,
+            test_idle_unload_is_immediate,     test_unknown_model_throws,
+            test_busy_unload_keeps_router_responsive, test_busy_unload_via_public_entry,
+            test_model_removed_while_waiting,  test_reloaded_model_is_left_alone,
+            test_unload_all_via_public_entry,
         };
         for (auto* run_case : cases) {
             if (hung) break;

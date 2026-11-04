@@ -4080,6 +4080,7 @@ set(_UNLOAD_BUSY_MODEL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_unloa
 if(BUILD_TESTING AND EXISTS "${_UNLOAD_BUSY_MODEL_TEST_SRC}")
     add_executable(test_unload_busy_model test/cpp/test_unload_busy_model.cpp)
     target_link_libraries(test_unload_busy_model PRIVATE lemonade-server-core)
+    add_dependencies(test_unload_busy_model copy_resources)
     add_cpp_ci_test(UnloadBusyModelTest CI ON COMMAND test_unload_busy_model)
 endif()
 
