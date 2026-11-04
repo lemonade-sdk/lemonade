@@ -73,7 +73,7 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 {
   "model": "bge-reranker-v2-m3-GGUF",
   "object": "list",
-  "results": [{"index": 0, "relevance_score": 8.621444702148438}, ... 2 more],
+  "results": [{"index": 0, "relevance_score": 8.639947891235352}, ... 2 more],
   "usage": {"prompt_tokens": 51, "total_tokens": 51}
 }
 ```
@@ -198,8 +198,9 @@ Register the model with its projector file, for example on `/v1/pull`: `{"model_
     "route": {
       "type": "choice",
       "choice": "billing",
-      "probabilities": {"billing": 0.9914327368198715, ... 2 more},
-      "confidence": 0.9871491052298071
+      "probabilities": {"billing": 0.991123683409011, ... 2 more},
+      "confidence": 0.9866855251135164,
+      "truncated": false
     },
     ... 2 more
   },
@@ -285,10 +286,10 @@ This endpoint does not take any parameters.
     "next_token": [
       {"has_next_token": false, "has_new_line": false, "n_remain": -1, "n_decoded": 0}
     ],
-    "id_task": 276,
+    "id_task": 461,
     "n_ctx": 4096,
     "is_processing": false,
-    "n_prompt_tokens": 341,
+    "n_prompt_tokens": 254,
     "n_prompt_tokens_cache": 0,
     "n_prompt_tokens_processed": 0,
     "params": {
@@ -426,7 +427,7 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
   "filename": "my_conversation_cache.bin",
   "n_saved": 46,
   "n_written": 5277108,
-  "timings": {"save_ms": 8.225}
+  "timings": {"save_ms": 9.067}
 }
 ```
 
@@ -458,7 +459,7 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
   "filename": "my_conversation_cache.bin",
   "n_restored": 46,
   "n_read": 5277108,
-  "timings": {"restore_ms": 1.161}
+  "timings": {"restore_ms": 1.22}
 }
 ```
 

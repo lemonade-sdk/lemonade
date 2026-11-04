@@ -105,38 +105,38 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
 
 ```json
 {
-  "id": "chatcmpl-gNDT8sExJxtiR4rOy3b11ADbUWEjLmPU",
+  "id": "chatcmpl-fuTCmv8PVS6MKdATmrpuIQoeYlccqwwi",
   "object": "chat.completion",
-  "created": 1792807169,
+  "created": 1793814262,
   "model": "Qwen3-0.6B-GGUF",
-  "system_fingerprint": "b11846-1a24df163",
+  "system_fingerprint": "b12110-cd959bae9",
   "choices": [
     {
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "The population of Paris, France, is approximately **2,200,000** as of the latest available data. This figure reflects a population estimate and may vary slightly depending on the source or time period. For the most recent year, as of 2023, the population of Paris was approximately 2,200,000.",
-        "reasoning_content": "Okay, so the user is asking about the population of Paris. Let me start by recal... (1,100 characters)"
+        "content": "The population of Paris is approximately **10 million**. While different sources may present this figure in various formats (e.g., 10,000,000 or 11,000,000), the most commonly cited figure is around 10 million. This makes Paris one of the largest cities in France, known for its history, culture, and landmarks.",
+        "reasoning_content": "Okay, so I need to figure out the population of Paris. Let me start by recalling... (1,781 characters)"
       },
       "finish_reason": "stop"
     }
   ],
   "usage": {
     "prompt_tokens": 15,
-    "completion_tokens": 350,
-    "total_tokens": 365,
+    "completion_tokens": 520,
+    "total_tokens": 535,
     "prompt_tokens_details": {"cached_tokens": 0}
   },
   "timings": {
     "cache_n": 0,
-    "predicted_ms": 1077.037,
-    "predicted_n": 350,
-    "predicted_per_second": 324.03715007005326,
-    "predicted_per_token_ms": 3.0860659025787966,
-    "prompt_ms": 360.596,
+    "predicted_ms": 1568.35,
+    "predicted_n": 520,
+    "predicted_per_second": 330.92103165747443,
+    "predicted_per_token_ms": 3.021868978805395,
+    "prompt_ms": 375.939,
     "prompt_n": 15,
-    "prompt_per_second": 41.597799199103704,
-    "prompt_per_token_ms": 24.039733333333334
+    "prompt_per_second": 39.90009017420379,
+    "prompt_per_token_ms": 25.0626
   }
 }
 ```
@@ -172,11 +172,11 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
 **Response:** `200 OK`
 
 ```text
-data: {"id": "chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw", "object": "chat.completion.chunk", "created": 1792807169, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
-data: {"id": "chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw", "object": "chat.completion.chunk", "created": 1792807169, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}]}
-data: {"id": "chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw", "object": "chat.completion.chunk", "created": 1792807169, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}]}
+data: {"id": "chatcmpl-aPl8755KPXmF227UUIslD5piaGOBaSV0", "object": "chat.completion.chunk", "created": 1793814262, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12110-cd959bae9", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
+data: {"id": "chatcmpl-aPl8755KPXmF227UUIslD5piaGOBaSV0", "object": "chat.completion.chunk", "created": 1793814262, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12110-cd959bae9", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}]}
+data: {"id": "chatcmpl-aPl8755KPXmF227UUIslD5piaGOBaSV0", "object": "chat.completion.chunk", "created": 1793814262, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12110-cd959bae9", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}]}
 ...
-data: {"id": "chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw", "object": "chat.completion.chunk", "created": 1792807170, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 4.407, "prompt_per_token_ms": 4.407, "prompt_per_second": 226.9117313365101, "predicted_n": 400, "predicted_ms": 1172.479, "predicted_per_token_ms": 2.938543859649123, "predicted_per_second": 340.304602470492}}
+data: {"id": "chatcmpl-aPl8755KPXmF227UUIslD5piaGOBaSV0", "object": "chat.completion.chunk", "created": 1793814263, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12110-cd959bae9", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 4.291, "prompt_per_token_ms": 4.291, "prompt_per_second": 233.0459100442787, "predicted_n": 457, "predicted_ms": 1316.867, "predicted_per_token_ms": 2.8878662280701755, "predicted_per_second": 346.2764273081488}}
 data: [DONE]
 ```
 
@@ -240,38 +240,38 @@ Asks a vision model what `image.png` shows. A `messages[*].content` array mixes 
 
 ```json
 {
-  "id": "chatcmpl-0yaTud0tMDlybgWABZbPAWrbZSVX0Xjd",
+  "id": "chatcmpl-gSmdCu5VhWQ6du6XWKlguNURfEHc92lG",
   "object": "chat.completion",
-  "created": 1792807182,
+  "created": 1793814276,
   "model": "Qwen3.5-0.8B-GGUF",
-  "system_fingerprint": "b11846-1a24df163",
+  "system_fingerprint": "b12110-cd959bae9",
   "choices": [
     {
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "Based on the visual content, the image features:\n\n*   **A large red circle:** The central focus of the image is a solid red circle.\n*   **A gradient background:** The background is a smooth color transition. On the far left, it is a medium blue and purple gradient, while on the far right, it is a greyish-blue and green gradient.\n\nThe red circle stands out clearly against the colorful background. It appears to be a graphic design or a logo icon.",
-        "reasoning_content": "The user wants me to describe the image provided.\n\n1.  **Identify the main subje... (1,770 characters)"
+        "content": "This image contains **nothing** of interest to identify.\n\nIt appears to be a very simple graphic showing a single red circle on a gradient background.\n\nHere are the visible details:\n*   **Red Circle:** There is one distinct shape—a red circle.\n*   **Background:** There is a colorful gradient, changing from a teal/blue on the left side to a darker purple/blue on the right side.",
+        "reasoning_content": "The user is asking about \"this image,\" but the image provided is extremely simple. It consists of a single red circle on a color gradient background. There are no objects, people, or distinct shapes to identify.\n\nI need to state clearly that there are no objects in the image. I should probably describe the visual components visible (red circle, gradient background) so the user knows what the image *is*, even if it doesn't contain things of interest.\n\n**Plan:**\n1.  Acknowledge the image has nothing interesting inside.\n2.  Describe the visual elements: a red circle and a multi-colored background (blue/green to purple/blue gradient).\n3.  Conclude by stating there are no objects or figures."
       },
       "finish_reason": "stop"
     }
   ],
   "usage": {
     "prompt_tokens": 82,
-    "completion_tokens": 522,
-    "total_tokens": 604,
+    "completion_tokens": 239,
+    "total_tokens": 321,
     "prompt_tokens_details": {"cached_tokens": 0}
   },
   "timings": {
     "cache_n": 0,
-    "predicted_ms": 2641.657,
-    "predicted_n": 522,
-    "predicted_per_second": 197.22469646892083,
-    "predicted_per_token_ms": 5.070358925143954,
-    "prompt_ms": 4811.837,
+    "predicted_ms": 1512.598,
+    "predicted_n": 239,
+    "predicted_per_second": 157.34517697365726,
+    "predicted_per_token_ms": 6.355453781512605,
+    "prompt_ms": 5088.537,
     "prompt_n": 82,
-    "prompt_per_second": 17.04130875588678,
-    "prompt_per_token_ms": 58.68093902439025
+    "prompt_per_second": 16.11465142142034,
+    "prompt_per_token_ms": 62.05532926829269
   }
 }
 ```
@@ -490,15 +490,15 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 ```json
 {
-  "id": "chatcmpl-0oYtA00jtJ0cgg6P0zqYKYqJUZ8x6t8L",
+  "id": "chatcmpl-NtNKTxJl37NeqzQ398amGFovHpqrgySe",
   "object": "text_completion",
-  "created": 1792807185,
+  "created": 1793814278,
   "model": "Qwen3-0.6B-GGUF",
-  "system_fingerprint": "b11846-1a24df163",
+  "system_fingerprint": "b12110-cd959bae9",
   "choices": [
     {
       "index": 0,
-      "text": " What is the population of Paris in 2022?\nAnswer:\n\nThe population of Paris in 2022 was approximately **16 million**. The population of Paris in 2022 was about 16 million.\n\n**Answer:** The population of Paris in 2022 was",
+      "text": " And what is the population of the city of Paris in 2023? Also, what are the numbers that represent the population of the city? Are the numbers that represent the population of Paris in 2023 accurate?\n\nLet me think. First, the population of Paris is a city in France.",
       "logprobs": null,
       "finish_reason": "length"
     }
@@ -511,14 +511,14 @@ Naming a `collection.router` model routes the request to one of its candidates; 
   },
   "timings": {
     "cache_n": 0,
-    "predicted_ms": 180.322,
+    "predicted_ms": 177.408,
     "predicted_n": 64,
-    "predicted_per_second": 349.3750069320438,
-    "predicted_per_token_ms": 2.8622539682539685,
-    "prompt_ms": 1476.666,
+    "predicted_per_second": 355.1136363636364,
+    "predicted_per_token_ms": 2.816,
+    "prompt_ms": 1501.921,
     "prompt_n": 7,
-    "prompt_per_second": 4.740408460681021,
-    "prompt_per_token_ms": 210.9522857142857
+    "prompt_per_second": 4.660697866265935,
+    "prompt_per_token_ms": 214.56014285714286
   }
 }
 ```
@@ -556,11 +556,11 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 **Response:** `200 OK`
 
 ```text
-data: {"id": "chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ", "object": "text_completion", "created": 1792807185, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "text": " And", "logprobs": null, "finish_reason": null}]}
-data: {"id": "chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ", "object": "text_completion", "created": 1792807185, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "text": " what", "logprobs": null, "finish_reason": null}]}
-data: {"id": "chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ", "object": "text_completion", "created": 1792807185, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "text": " is", "logprobs": null, "finish_reason": null}]}
+data: {"id": "chatcmpl-rf4BSTdTM4gmilfU5QEpEEiOaUSTFZxN", "object": "text_completion", "created": 1793814278, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12110-cd959bae9", "choices": [{"index": 0, "text": " What", "logprobs": null, "finish_reason": null}]}
+data: {"id": "chatcmpl-rf4BSTdTM4gmilfU5QEpEEiOaUSTFZxN", "object": "text_completion", "created": 1793814278, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12110-cd959bae9", "choices": [{"index": 0, "text": " is", "logprobs": null, "finish_reason": null}]}
+data: {"id": "chatcmpl-rf4BSTdTM4gmilfU5QEpEEiOaUSTFZxN", "object": "text_completion", "created": 1793814278, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12110-cd959bae9", "choices": [{"index": 0, "text": " its", "logprobs": null, "finish_reason": null}]}
 ...
-data: {"id": "chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ", "object": "text_completion", "created": 1792807185, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "text": "", "logprobs": null, "finish_reason": "length"}], "usage": {"prompt_tokens": 7, "completion_tokens": 64, "total_tokens": 71, "prompt_tokens_details": {"cached_tokens": 6}}, "timings": {"cache_n": 6, "prompt_n": 1, "prompt_ms": 3.129, "prompt_per_token_ms": 3.129, "prompt_per_second": 319.59092361776925, "predicted_n": 64, "predicted_ms": 176.423, "predicted_per_token_ms": 2.8003650793650796, "predicted_per_second": 357.0962969680824}}
+data: {"id": "chatcmpl-rf4BSTdTM4gmilfU5QEpEEiOaUSTFZxN", "object": "text_completion", "created": 1793814279, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12110-cd959bae9", "choices": [{"index": 0, "text": "", "logprobs": null, "finish_reason": "length"}], "usage": {"prompt_tokens": 7, "completion_tokens": 64, "total_tokens": 71, "prompt_tokens_details": {"cached_tokens": 6}}, "timings": {"cache_n": 6, "prompt_n": 1, "prompt_ms": 3.084, "prompt_per_token_ms": 3.084, "prompt_per_second": 324.25421530479895, "predicted_n": 64, "predicted_ms": 173.509, "predicted_per_token_ms": 2.754111111111111, "predicted_per_second": 363.0935571065478}}
 data: [DONE]
 ```
 
@@ -793,10 +793,10 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 ```json
 {
-  "id": "resp_JVO4S4mP7iKKGMPqCMiRRUxtdMTukXsc",
+  "id": "resp_2TTjfl9i5Ldv0qLIdZJ8XKYsocKGZAUR",
   "object": "response",
-  "created_at": 1792807187,
-  "completed_at": 1792807187,
+  "created_at": 1793814281,
+  "completed_at": 1793814281,
   "model": "Llama-3.2-1B-Instruct-GGUF",
   "status": "completed",
   "output": [
@@ -805,11 +805,11 @@ Naming a `collection.router` model routes the request to one of its candidates; 
         {
           "annotations": [],
           "logprobs": [],
-          "text": "As of my knowledge cutoff in December 2023, the population of Paris, the capital city of France, is approximately 2.1 million people within the city limits and around 12.2 million people in the metropolitan area.",
+          "text": "As of my knowledge cutoff in December 2023, the population of Paris, the capital of France, is approximately 2.1 million people within the city limits. However, the larger metropolitan area, known as the Île-de-France region, which includes Paris and surrounding areas, has a population of over 12 million people, making it one of the most populous metropolitan areas in Europe.",
           "type": "output_text"
         }
       ],
-      "id": "msg_yrrn3oLfu5Ha0yvhJnyn4PGkmOFWtTn6",
+      "id": "msg_6v983XNM1apCtUK52AwFtwh42O8ju3gy",
       "role": "assistant",
       "status": "completed",
       "type": "message"
@@ -817,8 +817,8 @@ Naming a `collection.router` model routes the request to one of its candidates; 
   ],
   "usage": {
     "input_tokens": 42,
-    "output_tokens": 48,
-    "total_tokens": 90,
+    "output_tokens": 81,
+    "total_tokens": 123,
     "input_tokens_details": {"cached_tokens": 0}
   }
 }
@@ -856,14 +856,14 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 ```text
 event: response.created
-data: {"type": "response.created", "response": {"id": "resp_sEdqwsaCiN9lw0UMr5vdqMX8DG2HLcK8", "object": "response", "status": "in_progress"}}
+data: {"type": "response.created", "response": {"id": "resp_CPlhrevi0REb0Sjz0badctG3qggyIJ6R", "object": "response", "status": "in_progress"}}
 event: response.in_progress
-data: {"type": "response.in_progress", "response": {"id": "resp_sEdqwsaCiN9lw0UMr5vdqMX8DG2HLcK8", "object": "response", "status": "in_progress"}}
+data: {"type": "response.in_progress", "response": {"id": "resp_CPlhrevi0REb0Sjz0badctG3qggyIJ6R", "object": "response", "status": "in_progress"}}
 event: response.output_item.added
-data: {"type": "response.output_item.added", "item": {"content": [], "id": "msg_NSeiLWbMMIs3Tyy9rkAE53miBpCziSeM", "role": "assistant", "status": "in_progress", "type": "message"}, "output_index": 0}
+data: {"type": "response.output_item.added", "item": {"content": [], "id": "msg_oXJnf8pmcIZap0nVNXcJvYXOVX7eFyBe", "role": "assistant", "status": "in_progress", "type": "message"}, "output_index": 0}
 ...
 event: response.completed
-data: {"type": "response.completed", "response": {"id": "resp_sEdqwsaCiN9lw0UMr5vdqMX8DG2HLcK8", "object": "response", "created_at": 1792807187, "status": "completed", "model": "~\\.cache\\huggingface\\hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF\\snapshots\\b69aef112e9f895e6f98d7ae0949f72ff09aa401\\Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf", "output": [{"type": "message", "status": "completed", "id": "msg_NSeiLWbMMIs3Tyy9rkAE53miBpCziSeM", "content": [{"type": "output_text", "annotations": [], "logprobs": [], "text": "As of my knowledge cutoff in 2023, the population of Paris is approximately 2.1 million people within the city limits, and around 12 million in the metropolitan area. However, please note that these numbers may have changed since my knowledge cutoff date."}], "role": "assistant"}], "usage": {"input_tokens": 42, "output_tokens": 54, "total_tokens": 96, "input_tokens_details": {"cached_tokens": 41}}}, "timings": {"cache_n": 41, "prompt_n": 1, "prompt_ms": 4.928, "prompt_per_token_ms": 4.928, "prompt_per_second": 202.92207792207793, "predicted_n": 54, "predicted_ms": 234.54, "predicted_per_token_ms": 4.425283018867924, "predicted_per_second": 225.97424746311927}}
+data: {"type": "response.completed", "response": {"id": "resp_CPlhrevi0REb0Sjz0badctG3qggyIJ6R", "object": "response", "created_at": 1793814281, "status": "completed", "model": "~\\.cache\\huggingface\\hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF\\snapshots\\b69aef112e9f895e6f98d7ae0949f72ff09aa401\\Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf", "output": [{"type": "message", "status": "completed", "id": "msg_oXJnf8pmcIZap0nVNXcJvYXOVX7eFyBe", "content": [{"type": "output_text", "annotations": [], "logprobs": [], "text": "As of my knowledge cutoff in 2023, the official population of Paris, the capital city of France, is approximately 2.1 million people. However, the metropolitan area of Paris, which includes several surrounding suburbs, has a population of over 10 million people, making it one of the largest metropolitan areas in the world."}], "role": "assistant"}], "usage": {"input_tokens": 42, "output_tokens": 68, "total_tokens": 110, "input_tokens_details": {"cached_tokens": 41}}}, "timings": {"cache_n": 41, "prompt_n": 1, "prompt_ms": 4.662, "prompt_per_token_ms": 4.662, "prompt_per_second": 214.5002145002145, "predicted_n": 68, "predicted_ms": 293.275, "predicted_per_token_ms": 4.377238805970149, "predicted_per_second": 228.45452220612057}}
 data: [DONE]
 ```
 

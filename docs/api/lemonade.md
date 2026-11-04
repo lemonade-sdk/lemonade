@@ -1662,21 +1662,23 @@ This endpoint does not take any parameters.
 ```json
 {
   "status": "ok",
-  "version": "2026.45.0~1719.034d3f52",
+  "version": "2026.47.0~1767.6c5a26ae",
   "model_loaded": "Qwen3-0.6B-GGUF",
   "update_check_done": true,
+  "models_generation": 4,
+  "model_sync": {"status": "idle", "sync_id": 0, "completed_sync_id": 0},
   "all_models_loaded": [
     {
       "model_name": "nomic-embed-text-v1-GGUF",
       "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
-      "last_use": 872883217,
+      "last_use": 1880066681,
       "type": "embedding",
       "device": "gpu",
       "pinned": false,
       "is_busy": false,
       "is_streaming": false,
       "backend_url": "http://127.0.0.1:8002/v1",
-      "pid": 15836,
+      "pid": 16244,
       "launch_command": [
         "~/.cache/lemonade\\bin\\llamacpp\\vulkan\\llama-server.exe",
         "-m",
@@ -1808,15 +1810,15 @@ This endpoint does not take any parameters.
 
 ```json
 {
-  "time_to_first_token": 0.00445,
-  "tokens_per_second": 350.4584986185915,
+  "time_to_first_token": 0.004309,
+  "tokens_per_second": 355.0229056619469,
   "input_tokens": 1,
-  "output_tokens": 327,
+  "output_tokens": 240,
   "prompt_tokens": 15,
   "cache_tokens": 14,
   "request_count_total": 9,
   "input_tokens_total": 165,
-  "output_tokens_total": 2104,
+  "output_tokens_total": 2193,
   "prompt_tokens_total": 226,
   "cache_tokens_total": 75,
   "routing_decisions_total": 0,

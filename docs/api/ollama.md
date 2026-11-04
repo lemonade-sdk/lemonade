@@ -92,8 +92,8 @@ A request with tools and streaming runs non-streaming on the backend and answers
   "eval_count": 14,
   "total_duration": 0,
   "load_duration": 0,
-  "prompt_eval_duration": 16594000,
-  "eval_duration": 37498000
+  "prompt_eval_duration": 14065000,
+  "eval_duration": 38031000
 }
 ```
 
@@ -253,7 +253,7 @@ Image generation never streams.
 {
   "model": "Qwen3-0.6B-GGUF",
   "created_at": "2024-01-01T00:00:00Z",
-  "response": " Paris, and the capital of the United States is Washington D.C.  What",
+  "response": " Paris, and Paris is a city of France. The capital of France is a",
   "done": true,
   "done_reason": "stop",
   "context": [],
@@ -300,8 +300,8 @@ Image generation never streams.
 
 ```text
 {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " Paris", "done": false}
-{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": ",", "done": false}
-{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " and", "done": false}
+{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": ".", "done": false}
+{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " Yes", "done": false}
 ...
 {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": "", "done": true, "done_reason": "length"}
 {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": "", "done": true, "done_reason": "stop", "context": [], "prompt_eval_count": 5, "eval_count": 16, "total_duration": 0, "load_duration": 0, "prompt_eval_duration": 0, "eval_duration": 0}
@@ -846,7 +846,7 @@ This endpoint does not take any parameters.
       "expires_at": "2099-01-01T00:00:00Z",
       "size_vram": 0
     },
-    ... 2 more
+    ... 3 more
   ]
 }
 ```
