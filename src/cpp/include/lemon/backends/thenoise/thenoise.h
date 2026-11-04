@@ -10,7 +10,7 @@ namespace thenoise {
 // links into both the lemonade CLI and lemond without a separate source file.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "thenoise",
-    /*display_name*/    "TheNoise ROCm",
+    /*display_name*/    "TheNoise",
 #ifdef _WIN32
     /*binary*/          "thenoise.bat",
 #else
@@ -39,6 +39,9 @@ inline const BackendDescriptor descriptor = {
     },
     /*support*/ {
         {"rocm", BackendTier::Core, BackendFormat::Python, {"linux", "windows"}, {{"amd_gpu", {"gfx103X", "gfx110X", "gfx120X", "gfx1150", "gfx1151", "gfx1152"}}}, "Supported AMD ROCm families"},
+#if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
+        {"cuda", BackendTier::Experimental, BackendFormat::Python, {"linux"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
+#endif
     },
     /*supported_modes*/ {"image"},
     /*required_checkpoints*/ {"main"},  // text_encoder+vae validated together in load()
@@ -51,7 +54,7 @@ inline const BackendDescriptor descriptor = {
     /*self_manages_downloads*/ false,
     /*takes_args*/      false,
     /*arg_variants*/    {},
-    /*bin_variants*/    {"rocm"},
+    /*bin_variants*/    {"rocm", "cuda"},
     /*config_extra*/    {{"lora_dir", ""}, {"upscaler_dir", ""}},
 };
 

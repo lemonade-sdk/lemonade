@@ -123,39 +123,75 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/01-app-loaded.png', fullPage: true });
   });
 
-  // The tray and CLI deep-link into the app with `?view=<workspace>/<section>`
+  // The tray and CLI use `?view=logs` (or `?logs=true` as a browser fallback).
   // (tray_ui.cpp on_show_logs, cli/main.cpp logs). Those routes must resolve.
-  test('01a0 — host deep links address Monitor sections directly', async ({ page }) => {
-    await page.goto('/?view=dashboard/logs');
-    await page.waitForSelector('[data-view="dashboard"]');
-    await expect(page).toHaveURL(/#\/dashboard\/logs$/);
+  test('01a0 — native and direct links address Monitor sections', async ({ page }) => {
+    await page.goto('/?view=logs');
+    await page.waitForSelector('[data-view="monitor"]');
+    await expect(page).toHaveURL(/#\/monitor\/logs$/);
+
+    await page.goto('/?logs=true');
+    await page.waitForSelector('[data-view="monitor"]');
+    await expect(page).toHaveURL(/#\/monitor\/logs$/);
+
+    await page.goto('/?view=monitor/logs');
+    await page.waitForSelector('[data-view="monitor"]');
+    await expect(page).toHaveURL(/#\/monitor\/logs$/);
     await expect(page.getByRole('navigation', { name: 'Monitor sections' })
       .getByRole('button', { name: 'Logs', exact: true })).toHaveAttribute('aria-current', 'page');
 
-    await page.goto('/?view=dashboard/telemetry');
-    await page.waitForSelector('[data-view="dashboard"]');
-    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+    await page.goto('/?view=monitor/telemetry');
+    await page.waitForSelector('[data-view="monitor"]');
+    await expect(page).toHaveURL(/\/#\/monitor\/telemetry$/);
+
+    await page.goto('/?logs=true&keep=1#/monitor/logs');
+    await expect(page).toHaveURL(/\/\?keep=1#\/monitor\/logs$/);
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.reload();
+    await expect(page).toHaveURL(/\/\?keep=1#\/models$/);
+  });
+
+  test('01a0b — deep-link params are consumed without losing history', async ({ page }) => {
+    await page.goto('/#/models');
+    await page.waitForSelector('.titlebar__nav');
+    await page.goto('/?logs=true&keep=1');
+    await page.waitForSelector('[data-view="monitor"]');
+    await expect(page).toHaveURL(/\/\?keep=1#\/monitor\/logs$/);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/#\/models$/);
+
+    // A param that resolves to no route must still be stripped at startup;
+    // otherwise the first click replaces the landing entry instead of pushing.
+    await page.goto('/#/backends');
+    await page.waitForSelector('.titlebar__nav');
+    await page.goto('about:blank');
+    await page.goto('/?view=unknown');
+    await page.waitForSelector('.titlebar__nav');
+    await expect(page).toHaveURL(/\/#\/backends$/);
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await expect(page).toHaveURL(/\/#\/models$/);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/#\/backends$/);
   });
 
   test('01a — Monitor labels and URL sections stay aligned', async ({ page }) => {
-    await page.goto('/#/dashboard/telemetry');
-    await page.waitForSelector('[data-view="dashboard"]');
+    await page.goto('/#/monitor/telemetry');
+    await page.waitForSelector('[data-view="monitor"]');
 
-    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+    await expect(page).toHaveURL(/#\/monitor\/telemetry$/);
     await expect(page.locator('.titlebar__nav').getByText('Monitor')).toBeVisible();
     await expect(page.locator('.monitor-rail .workspace-rail__title')).toHaveText('Views');
-    const dashboardSections = page.getByRole('navigation', { name: 'Monitor sections' });
-    await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
-    await dashboardSections.getByRole('button', { name: 'Performance', exact: true }).click();
-    await expect(page).toHaveURL(/#\/dashboard\/performance$/);
-    await dashboardSections.getByRole('button', { name: 'Logs', exact: true }).click();
-    await expect(page).toHaveURL(/#\/dashboard\/logs$/);
-    await expect(page.locator('.titlebar__nav').getByText('Dashboard')).toHaveCount(0);
+    const monitorSections = page.getByRole('navigation', { name: 'Monitor sections' });
+    await expect(monitorSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
+    await monitorSections.getByRole('button', { name: 'Performance', exact: true }).click();
+    await expect(page).toHaveURL(/#\/monitor\/performance$/);
+    await monitorSections.getByRole('button', { name: 'Logs', exact: true }).click();
+    await expect(page).toHaveURL(/#\/monitor\/logs$/);
     await expect(page.locator('.titlebar__nav').getByText('Inspect')).toHaveCount(0);
     await expect(page.locator('.titlebar__nav').getByText('Logs')).toHaveCount(0);
 
     await page.goto('/#/monitor/requests');
-    await expect(page).toHaveURL(/#\/dashboard\/logs$/);
+    await expect(page).toHaveURL(/#\/monitor\/logs$/);
   });
 
   test('01b — Monitor and Settings share routed section navigation', async ({ page }) => {
@@ -182,15 +218,15 @@ test.describe('Lemonade UI — Feature Parity', () => {
     }
 
     await page.locator('.titlebar__nav').getByRole('button', { name: 'Monitor', exact: true }).click();
-    const dashboardSections = page.getByRole('navigation', { name: 'Monitor sections' });
-    await dashboardSections.getByRole('button', { name: 'Telemetry', exact: true }).click();
-    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+    const monitorSections = page.getByRole('navigation', { name: 'Monitor sections' });
+    await monitorSections.getByRole('button', { name: 'Telemetry', exact: true }).click();
+    await expect(page).toHaveURL(/#\/monitor\/telemetry$/);
 
     await page.locator('.titlebar__nav').getByRole('button', { name: 'Settings', exact: true }).click();
     await expect(page).toHaveURL(/#\/connect\/help-and-support$/);
     await page.goBack();
-    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
-    await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page).toHaveURL(/#\/monitor\/telemetry$/);
+    await expect(monitorSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
   });
 
   test('01b1 — Model storage save feedback is scoped and directory errors surface', async ({ page }) => {
@@ -1074,10 +1110,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     // Navigate to Monitor performance
     await page.locator('.titlebar__nav').getByText('Monitor').click();
-    await page.waitForSelector('[data-view="dashboard"]');
+    await page.waitForSelector('[data-view="monitor"]');
 
     // Performance header and navigation visible
-    await expect(page.locator('.dashboard-header').getByRole('heading', { name: 'Performance' })).toBeVisible();
+    await expect(page.locator('.monitor-header').getByRole('heading', { name: 'Performance' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Performance', exact: true })).toHaveAttribute('aria-current', 'page');
 
     // Connection indicator dot
@@ -1108,8 +1144,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.dash2-bar__btn').click();
     await expect(page.locator('.dash2-bar__btn')).not.toHaveClass(/is-paused/);
 
-    // Loaded Models section present (scope to dashboard to avoid Models view zone match)
-    const dashView = page.locator('[data-view="dashboard"]');
+    // Loaded Models section present (scope to monitor to avoid Models view zone match)
+    const dashView = page.locator('[data-view="monitor"]');
     await expect(dashView.getByText('Loaded Models')).toBeVisible();
 
     const graphScroller = page.locator('.dash2-scroll');
@@ -1122,7 +1158,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.mouse.wheel(0, 200);
     await expect.poll(() => graphScroller.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
 
-    await page.screenshot({ path: 'screenshots/15-dashboard.png', fullPage: true });
+    await page.screenshot({ path: 'screenshots/15-monitor.png', fullPage: true });
   });
 
   test('16 — Monitor logs shows filters and live output', async ({ page }) => {
@@ -1130,7 +1166,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.waitForSelector('.titlebar__nav');
 
     await page.locator('.titlebar__nav').getByText('Monitor').click();
-    await page.waitForSelector('[data-view="dashboard"]');
+    await page.waitForSelector('[data-view="monitor"]');
 
     await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
     await page.waitForSelector('[data-view="logs"]');
@@ -1199,7 +1235,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     // Navigate to Monitor logs
     await page.locator('.titlebar__nav').getByText('Monitor').click();
-    await page.waitForSelector('[data-view="dashboard"]');
+    await page.waitForSelector('[data-view="monitor"]');
     await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
     await page.waitForSelector('.logs-output', { state: 'visible' });
 
@@ -2221,6 +2257,266 @@ test.describe('Lemonade UI — Feature Parity', () => {
           .toBeLessThanOrEqual(1);
       }
     }
+  });
+
+  const routeLoadUnloadModels = async (
+    page: Page,
+    names: string[],
+    initiallyLoaded: string[],
+    handlers: { load?: (route: Route, name: string) => Promise<void>; unload?: (route: Route, name: string) => Promise<void> } = {},
+  ) => {
+    const state = { loaded: [...initiallyLoaded] };
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: {
+        status: 'ok',
+        version: 'test',
+        all_models_loaded: state.loaded.map(name => ({
+          model_name: name,
+          checkpoint: 'test/checkpoint',
+          recipe: 'llamacpp',
+          device: 'cpu',
+          backend_url: 'http://127.0.0.1:8081',
+          pid: 4242,
+          type: 'llm',
+          recipe_options: {},
+        })),
+      },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: { recipes: { llamacpp: llamacppRecipe() } },
+    }));
+    await page.route('**/api/v1/models**', async route => {
+      const segments = new URL(route.request().url()).pathname.split('/');
+      if (segments.at(-1) === 'options') {
+        return route.fulfill({
+          json: {
+            model_name: decodeURIComponent(segments.at(-2) || ''),
+            recipe: 'llamacpp',
+            saved: {},
+            effective: { ctx_size: -1 },
+            defaults: { ctx_size: -1 },
+            resolved_ctx_size: 4096,
+            load_command: '',
+          },
+        });
+      }
+      return route.fulfill({
+        json: {
+          data: names.map(name => ({
+            id: name, name, labels: ['chat'], recipe: 'llamacpp',
+            downloaded: true, max_context_window: 65536,
+          })),
+        },
+      });
+    });
+    await page.route('**/api/v1/load', async route => {
+      const name = String((route.request().postDataJSON() as { model_name?: string }).model_name);
+      if (handlers.load) return handlers.load(route, name);
+      state.loaded = [...state.loaded, name];
+      return route.fulfill({ json: { status: 'ok' } });
+    });
+    await page.route('**/api/v1/unload', async route => {
+      const name = String((route.request().postDataJSON() as { model_name?: string }).model_name);
+      if (handlers.unload) return handlers.unload(route, name);
+      state.loaded = state.loaded.filter(loadedName => loadedName !== name);
+      return route.fulfill({ json: { status: 'ok' } });
+    });
+    return state;
+  };
+
+  test('25h — unloading another model keeps an in-flight load showing Loading…', async ({ page }) => {
+    const slowName = 'slow-load-model';
+    const otherName = 'already-loaded-model';
+    let releaseLoads: (() => void) | null = null;
+    const heldLoads = new Promise<void>(resolve => { releaseLoads = resolve; });
+    const state = await routeLoadUnloadModels(page, [slowName, otherName], [otherName], {
+      load: async (route, name) => {
+        await heldLoads;
+        state.loaded = [...state.loaded, name];
+        await route.fulfill({ json: { status: 'ok' } });
+      },
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    const rows = page.locator('.model-list-panel__list .workspace-list-row');
+
+    await rows.filter({ hasText: slowName }).click();
+    await page.getByRole('button', { name: `Load ${slowName}`, exact: true }).click();
+    await expect(page.getByRole('button', { name: `Loading ${slowName}…` })).toBeVisible();
+
+    await rows.filter({ hasText: otherName }).click();
+    await page.getByRole('button', { name: `Unload ${otherName}` }).click();
+    await expect(page.getByRole('button', { name: `Load ${otherName}`, exact: true })).toBeVisible();
+
+    // lemond queues loads, so a second model's Load must not be swallowed by the first.
+    await page.getByRole('button', { name: `Load ${otherName}`, exact: true }).click();
+    await expect(page.getByRole('button', { name: `Loading ${otherName}…` })).toBeVisible();
+
+    await rows.filter({ hasText: slowName }).click();
+    await expect(page.getByRole('button', { name: `Loading ${slowName}…` })).toBeVisible();
+
+    releaseLoads!();
+    await expect.poll(() => [...state.loaded].sort()).toEqual([otherName, slowName].sort());
+  });
+
+  test('25j — a reload stays with its model when another model is selected mid-reload', async ({ page }) => {
+    const reloadName = 'reloading-model';
+    const otherName = 'bystander-model';
+    let releaseLoads: (() => void) | null = null;
+    const heldLoads = new Promise<void>(resolve => { releaseLoads = resolve; });
+    const state = await routeLoadUnloadModels(page, [reloadName, otherName], [reloadName, otherName], {
+      load: async (route, name) => {
+        await heldLoads;
+        state.loaded = [...state.loaded, name];
+        await route.fulfill({ json: { status: 'ok' } });
+      },
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    const rows = page.locator('.model-list-panel__list .workspace-list-row');
+    const panel = page.locator('#detail-panel-config');
+    // Mid-reload the model may still be listed (Unload variant) or already gone (Load variant).
+    const reloadBusy = page.getByRole('button', { name: new RegExp(`^(Working on|Loading) ${reloadName}…$`) });
+
+    await rows.filter({ hasText: reloadName }).click();
+    await page.locator('#detail-tab-config').click();
+    await panel.getByLabel('Temperature', { exact: true }).fill('1.2');
+    await panel.getByRole('button', { name: 'Reload model' }).click();
+    await expect(reloadBusy).toBeVisible();
+    // Chat's fallback to another loaded model must not navigate away from Models.
+    await expect(page.locator('.titlebar__nav').getByRole('button', { name: 'Models' })).toHaveClass(/is-active/);
+
+    await rows.filter({ hasText: otherName }).click();
+    await expect(page.getByRole('button', { name: `Unload ${otherName}` })).toBeEnabled();
+    await expect(panel.getByRole('button', { name: /Reloading/ })).toHaveCount(0);
+
+    await rows.filter({ hasText: reloadName }).click();
+    await expect(reloadBusy).toBeVisible();
+
+    await rows.filter({ hasText: otherName }).click();
+    releaseLoads!();
+    await expect.poll(() => [...state.loaded].sort()).toEqual([otherName, reloadName].sort());
+    await expect(page.getByRole('button', { name: `Unload ${otherName}` })).toBeEnabled();
+    await expect(panel.getByText('Model reloaded with the settings shown here', { exact: false })).toHaveCount(0);
+  });
+
+  test('25i — a failed unload reports the error and frees the button', async ({ page }) => {
+    const modelName = 'stubborn-model';
+    await routeLoadUnloadModels(page, [modelName], [modelName], {
+      unload: route => route.fulfill({ status: 500, json: { error: { message: 'backend refused to stop' } } }),
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+
+    await page.getByRole('button', { name: `Unload ${modelName}` }).click();
+    await expect(page.locator('.model-detail-panel__error')).toBeVisible();
+    await expect(page.getByRole('button', { name: `Unload ${modelName}` })).toBeEnabled();
+  });
+
+  test('25k — an earlier load that finishes last does not replace the newer chat selection', async ({ page }) => {
+    const firstName = 'first-requested-model';
+    const latestName = 'latest-requested-model';
+    const releases: Record<string, () => void> = {};
+    const held = (name: string) => new Promise<void>(resolve => { releases[name] = resolve; });
+    const gates: Record<string, Promise<void>> = { [firstName]: held(firstName), [latestName]: held(latestName) };
+    const state = await routeLoadUnloadModels(page, [firstName, latestName], [], {
+      load: async (route, name) => {
+        await gates[name];
+        state.loaded = [...state.loaded, name];
+        await route.fulfill({ json: { status: 'ok' } });
+      },
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    const rows = page.locator('.model-list-panel__list .workspace-list-row');
+
+    await rows.filter({ hasText: firstName }).click();
+    await page.getByRole('button', { name: `Load ${firstName}`, exact: true }).click();
+    await rows.filter({ hasText: latestName }).click();
+    await page.getByRole('button', { name: `Load ${latestName}`, exact: true }).click();
+
+    releases[latestName]();
+    await expect(page.getByRole('button', { name: new RegExp(`^Chat ${latestName}\\b`) })).toBeVisible();
+
+    releases[firstName]();
+    await expect.poll(() => [...state.loaded].sort()).toEqual([firstName, latestName].sort());
+    // The load handler clears its busy mark only after the point where it would
+    // select the model, so an enabled Unload proves that step has already run.
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await rows.filter({ hasText: firstName }).click();
+    await expect(page.getByRole('button', { name: `Unload ${firstName}` })).toBeEnabled();
+    await page.locator('.titlebar__nav').getByText('Chat').click();
+    await expect(page.getByRole('button', { name: new RegExp(`^Chat ${latestName}\\b`) })).toBeVisible();
+    await expect(page.getByRole('button', { name: new RegExp(`^Chat ${firstName}\\b`) })).toHaveCount(0);
+  });
+
+  test('25l — overlapping load failures keep an error for each model', async ({ page }) => {
+    const names = ['fails-first-model', 'fails-second-model'];
+    const releases: Record<string, () => void> = {};
+    const gates = Object.fromEntries(names.map(name => [name, new Promise<void>(resolve => { releases[name] = resolve; })]));
+    await routeLoadUnloadModels(page, names, [], {
+      load: async (route, name) => {
+        await gates[name];
+        await route.fulfill({ status: 500, json: { error: { message: `${name} could not start` } } });
+      },
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    const rows = page.locator('.model-list-panel__list .workspace-list-row');
+    const error = page.locator('.model-detail-panel__error');
+
+    for (const name of names) {
+      await rows.filter({ hasText: name }).click();
+      await page.getByRole('button', { name: `Load ${name}`, exact: true }).click();
+    }
+    releases[names[0]]();
+    await rows.filter({ hasText: names[0] }).click();
+    await expect(error).toContainText(`${names[0]} could not start`);
+    releases[names[1]]();
+    await rows.filter({ hasText: names[1] }).click();
+    await expect(error).toContainText(`${names[1]} could not start`);
+
+    await rows.filter({ hasText: names[0] }).click();
+    await expect(error).toContainText(`${names[0]} could not start`);
+  });
+
+  test('25m — an older error timer does not clear a newer error for the same model', async ({ page }) => {
+    const modelName = 'flaky-unload-model';
+    await page.clock.install();
+    await routeLoadUnloadModels(page, [modelName], [modelName], {
+      unload: route => route.fulfill({ status: 500, json: { error: { message: 'backend refused to stop' } } }),
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+    const unload = page.getByRole('button', { name: `Unload ${modelName}` });
+    const error = page.locator('.model-detail-panel__error');
+
+    await unload.click();
+    await expect(error).toBeVisible();
+    await page.clock.fastForward(4000);
+    await expect(unload).toBeEnabled();
+    await unload.click();
+    await expect(error).toBeVisible();
+
+    // The first error's 6 s timer has now fired; the retry's error must survive it.
+    await page.clock.fastForward(2500);
+    await expect(error).toBeVisible();
+    await page.clock.fastForward(4000);
+    await expect(error).toHaveCount(0);
   });
 
 });

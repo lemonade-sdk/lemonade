@@ -125,8 +125,15 @@ static httplib::Client make_client(const std::string& host, int port, const std:
 
 static void assert_http_ok(const httplib::Result& res) {
     if (!res) {
+        const std::string detail = " (" + httplib::to_string(res.error()) + ")";
+        if (res.error() == httplib::Error::Read || res.error() == httplib::Error::Write) {
+            throw std::runtime_error(
+                "Lemonade server closed the connection or stopped responding" + detail + ".\n"
+                "The server may be busy with a change such as loading or removing a model or "
+                "backend. Wait a moment and try again.");
+        }
         throw std::runtime_error(
-            "Could not connect to Lemonade server (" + httplib::to_string(res.error()) + ").\n"
+            "Could not connect to Lemonade server" + detail + ".\n"
             "Make sure the server is running and try again.");
     } else if (res->status == 401) {
         throw std::runtime_error("Forbidden by the server. Did you set the API key?");
@@ -1371,15 +1378,36 @@ int LemonadeClient::list_recipes(bool show_all) const {
                     } else {
                         info_col = "-";
                     }
-                    std::string action_col = backend.action.empty() ? "-" : backend.action;
                     if (show_all || status_str != "unsupported") {
-                        std::cout << std::left << std::setw(20) << recipe_col
-                                << std::setw(12) << backend.name
-                                << std::setw(14) << (backend.tier.empty() ? "-" : backend.tier)
-                                << std::setw(11) << (backend.format.empty() ? "-" : backend.format)
-                                << std::setw(16) << status_str
-                                << std::setw(46) << info_col
-                                << " " << action_col << std::endl;
+                        std::ostringstream lead;
+                        lead << std::left << std::setw(20) << recipe_col
+                             << std::setw(12) << backend.name
+                             << std::setw(14) << (backend.tier.empty() ? "-" : backend.tier)
+                             << std::setw(11) << (backend.format.empty() ? "-" : backend.format)
+                             << std::setw(16) << status_str;
+                        const auto split_lines = [](const std::string& text) {
+                            std::vector<std::string> lines;
+                            std::istringstream stream(text);
+                            for (std::string line; std::getline(stream, line);) {
+                                lines.push_back(line);
+                            }
+                            return lines;
+                        };
+                        // A multi-line message and action print side by side,
+                        // one problem and one step per line.
+                        const auto messages = split_lines(info_col);
+                        const auto actions =
+                            split_lines(backend.action.empty() ? "-" : backend.action);
+                        const std::string pad(lead.str().size(), ' ');
+                        for (size_t i = 0; i < std::max(messages.size(), actions.size()); ++i) {
+                            std::ostringstream line;
+                            line << std::left << (i == 0 ? lead.str() : pad) << std::setw(46)
+                                 << (i < messages.size() ? messages[i] : "") << " "
+                                 << (i < actions.size() ? actions[i] : "");
+                            std::string text = line.str();
+                            text.erase(text.find_last_not_of(' ') + 1);
+                            std::cout << text << std::endl;
+                        }
 
                         first_backend = false;
                     }

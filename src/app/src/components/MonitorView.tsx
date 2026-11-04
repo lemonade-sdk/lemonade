@@ -1,7 +1,7 @@
 import React, { Suspense, useEffect, useRef, useState } from 'react';
-import Dashboard from './Dashboard';
+import Monitor from './Monitor';
 import WorkspaceSectionRail from './WorkspaceSectionRail';
-import { WORKSPACE_NAVIGATION, type DashboardSection } from '../features/navigation/workspaceNavigation';
+import { WORKSPACE_NAVIGATION, type MonitorSection } from '../features/navigation/workspaceNavigation';
 import {
   InspectViewPreloaded as InspectView,
   LogViewerPreloaded as LogViewer,
@@ -10,9 +10,9 @@ import {
 import { useI18n } from '../i18n';
 
 interface MonitorViewProps {
-  activeSection: DashboardSection;
+  activeSection: MonitorSection;
   isActive: boolean;
-  onSectionChange: (section: DashboardSection) => void;
+  onSectionChange: (section: MonitorSection) => void;
 }
 
 export async function preloadMonitorSections(): Promise<void> {
@@ -35,7 +35,7 @@ export default function MonitorView({
 }: MonitorViewProps) {
   const [railCollapsed, setRailCollapsed] = useState(false);
   const { t } = useI18n();
-  const mountedSectionsRef = useRef<Set<DashboardSection>>(new Set([activeSection]));
+  const mountedSectionsRef = useRef<Set<MonitorSection>>(new Set([activeSection]));
   mountedSectionsRef.current.add(activeSection);
 
   useEffect(() => {
@@ -49,15 +49,15 @@ export default function MonitorView({
   return (
     <section
       className={`monitor-workspace${railCollapsed ? ' workspace--rail-collapsed' : ''}`}
-      data-view="dashboard"
+      data-view="monitor"
     >
       <WorkspaceSectionRail
-        sections={WORKSPACE_NAVIGATION.dashboard.sections}
+        sections={WORKSPACE_NAVIGATION.monitor.sections}
         activeSection={activeSection}
         onSectionChange={onSectionChange}
         collapsed={railCollapsed}
         onCollapsedChange={setRailCollapsed}
-        panelId="dashboard-views-panel"
+        panelId="monitor-views-panel"
         railLabel={t('Monitor navigation')}
         navigationLabel={t('Monitor sections')}
         railClassName="monitor-rail"
@@ -70,7 +70,7 @@ export default function MonitorView({
       <div className="monitor-content">
         {mountedSectionsRef.current.has('performance') && (
           <div className="monitor-section" hidden={activeSection !== 'performance'}>
-            <Dashboard isActive={isActive && activeSection === 'performance'} />
+            <Monitor isActive={isActive && activeSection === 'performance'} />
           </div>
         )}
         {mountedSectionsRef.current.has('telemetry') && (

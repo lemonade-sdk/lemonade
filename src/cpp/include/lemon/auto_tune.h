@@ -8,8 +8,11 @@
 #include <optional>
 #include <system_error>
 #include <lemon/auto_context_budget.h>
+#include <lemon/backends/backend_ops.h>
+#include <lemon/backends/backend_registry.h>
+#include <lemon/gguf_reader.h>
 #include <lemon/gpu_memory_selection.h>
-#include <lemon/model_manager.h>
+#include <lemon/models/model_info.h>
 #include <lemon/system_info.h>
 #include <lemon/system_metrics_platform.h>
 #include <lemon/utils/aixlog.hpp>
@@ -22,7 +25,6 @@ constexpr int64_t EMBEDDING_CTX_SIZE = 8192;
 
 // Fallback context size when auto-resolution cannot be computed
 constexpr int64_t AUTO_CTX_FALLBACK = 4096;
-constexpr int64_t AUTO_CTX_NO_CAPACITY = 0;
 
 // Hard cap on context size when the model's max context window is unknown.
 // No modern model supports less than this, and it prevents runaway allocation.
@@ -121,7 +123,11 @@ inline double get_available_memory_gb(DeviceType device_type,
                 auto metrics = create_metrics_platform();
                 if (metrics) gpu_used_gb = metrics->get_vram_usage_gb();
             }
-            const double physical_total_gb = pool.physical_total_gb;
+            double physical_total_gb = pool.physical_total_gb;
+            if (pool.unified && physical_total_gb <= 0.0) {
+                auto metrics = create_metrics_platform();
+                if (metrics) physical_total_gb = metrics->get_memory_total_gb();
+            }
             const double ram_used_gb = pool.unified
                 ? get_used_memory_gb(DEVICE_CPU) : -1.0;
             const auto available_gpu_gb = auto_context_available_gpu_gib(
@@ -293,24 +299,33 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         available_memory_gb, model_weight_gb,
         kv_bytes_per_token, (model_info.device & DEVICE_GPU) != 0,
         speculative, unified_gpu);
-    const int64_t max_ctx_from_memory = budget.max_tokens;
+    const std::optional<double> backend_kv_gib =
+        backends::ops_for(model_info.recipe)
+            ->auto_context_kv_budget_gib(model_info, available_memory_gb);
+    const int64_t max_ctx_from_memory =
+        backend_kv_gib ? static_cast<int64_t>((std::max)(0.0, *backend_kv_gib) * BYTES_PER_GIB /
+                                              kv_bytes_per_token)
+                       : budget.max_tokens;
+    // A short budget still loads with the fallback: the estimate assumes full GPU
+    // residency, while llama.cpp can spill layers to host RAM.
+    const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
     if (max_ctx_from_memory <= 0) {
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — model and runtime reserves exceed available memory ("
                                << std::fixed << std::setprecision(2) << available_memory_gb
                                << " GiB), cannot fit automatic context";
-        return AUTO_CTX_NO_CAPACITY;
+        return fallback;
     }
 
     const int64_t runtime_minimum = is_embedding ? EMBEDDING_CTX_SIZE : 0;
     const int64_t ctx_size = auto_context_clamp_tokens(
         max_ctx_from_memory, model_info.max_context_window,
         AUTO_CTX_UNKNOWN_MAX, runtime_minimum);
-    if (ctx_size == AUTO_CTX_NO_CAPACITY) {
+    if (ctx_size <= 0) {
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — budget fits " << max_ctx_from_memory
                                << " tokens, runtime requires " << runtime_minimum;
-        return AUTO_CTX_NO_CAPACITY;
+        return fallback;
     }
 
     LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
@@ -330,6 +345,15 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     return ctx_size;
 }
 
+/// An encoder SystemOne decision model has no KV cache to grow, so its context
+/// is its trained window. Causal decision models (openjev, lev, kev) keep a KV
+/// cache and declare windows up to 262144 tokens, so they size their context
+/// like any LLM.
+inline bool is_encoder_decision_model(const ModelInfo& model_info) {
+    return has_label(model_info.labels, "systemone") && !model_info.gguf.causal_attention &&
+           model_info.max_context_window > 0;
+}
+
 /// Auto-resolve ctx_size if it is -1 in the effective options.
 /// Returns the resolved context size, or -2 if no auto-resolution is needed
 /// (i.e. ctx_size was already set to an explicit non-negative value).
@@ -341,6 +365,10 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
 
     if (ctx_size != -1) {
         return -2;  // Explicit value, no auto-resolution needed
+    }
+
+    if (is_encoder_decision_model(model_info)) {
+        return model_info.max_context_window;
     }
 
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);
@@ -358,7 +386,6 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         &ctx_unified_gpu, &memory_known);
 
     if (available_gb <= 0) {
-        if (memory_known) return AUTO_CTX_NO_CAPACITY;
         int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
         LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
                                << " — memory undetectable, returning " << fallback;

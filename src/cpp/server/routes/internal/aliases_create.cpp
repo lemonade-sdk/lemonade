@@ -1,5 +1,4 @@
 #include "alias_errors.h"
-#include "lemon/alias_manager.h"
 #include "lemon/model_manager.h"
 #include "lemon/server/api_route.h"
 #include "lemon/utils/model_name_utils.h"
@@ -92,13 +91,8 @@ public:
             }
         }
 
-        if (!ctx_.alias_manager) {
-            write_alias_error(res, kAliasStoreFailed, "AliasManager uninitialized", "server_error");
-            return;
-        }
-
         std::string err_msg;
-        if (!ctx_.alias_manager->set_alias(alias, target, err_msg)) {
+        if (!ctx_.model_manager->set_alias(alias, target, err_msg)) {
             write_alias_error(res, kAliasChain, err_msg);
             return;
         }

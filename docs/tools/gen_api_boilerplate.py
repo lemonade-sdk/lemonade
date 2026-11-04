@@ -484,6 +484,14 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
+            "Files lists a path per file on disk; the model routes list one per checkpoint in "
+            "`checkpoint_status`",
+            [
+                "routes/openai/models/models_id_files.cpp:kIncludePaths",
+                "routes/shared_args.cpp:openai::models::kIncludePaths",
+            ],
+        ),
+        (
             "Audio's prompt is the style caption, with lyrics separate; images' is the image",
             [
                 "routes/lemonade/inference/audio_generations.cpp:kPrompt",
@@ -495,6 +503,13 @@ DISTINCT_ARGUMENTS = {
             [
                 "routes/lemonade/inference/generations_3d.cpp:kImage",
                 "routes/openai/images/images_upscale.cpp:kImage",
+            ],
+        ),
+        (
+            "Classify scores the input against these labels; register stores them as model tags",
+            [
+                "routes/lemonade/inference/classify.cpp:kLabels",
+                "routes/lemonade/models/register.cpp:kLabels",
             ],
         ),
         (

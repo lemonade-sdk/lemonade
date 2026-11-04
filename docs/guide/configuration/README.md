@@ -66,6 +66,9 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "prefer_system": false
   },
   "global_timeout": 600,
+  "gufo": {
+    "args": ""
+  },
   "host": "localhost",
   "hrx": {
     "args": "",
@@ -80,6 +83,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "backend": "auto",
     "cpu_args": "",
     "cpu_bin": "builtin",
+    "cuda_args": "",
     "cuda_bin": "builtin",
     "prefer_system": true,
     "rocm_args": "",
@@ -92,6 +96,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "log_max_file_size_mb": 10,
   "log_max_files": 5,
   "max_loaded_models": 1,
+  "model_catalogs": [],
   "models_dir": "auto",
   "moonshine": {
     "args": "",
@@ -113,6 +118,9 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "port": 13305,
   "rocm_channel": "stable",
   "rocm_install_method": "auto",
+  "rocmfpx": {
+    "args": ""
+  },
   "ryzenai": {
     "server_bin": "builtin"
   },
@@ -161,6 +169,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   },
   "thenoise": {
     "backend": "auto",
+    "cuda_bin": "builtin",
     "lora_dir": "",
     "rocm_bin": "builtin",
     "upscaler_dir": ""
@@ -174,6 +183,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "trellis": {
     "args": "",
     "backend": "auto",
+    "cuda12_bin": "builtin",
     "cuda_bin": "builtin",
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
@@ -189,7 +199,9 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "cpu_args": "",
     "cpu_bin": "builtin",
     "npu_args": "",
-    "npu_bin": "builtin"
+    "npu_bin": "builtin",
+    "rocm_args": "",
+    "vulkan_args": ""
   }
 }
 ```
@@ -291,6 +303,20 @@ Backend-specific settings are nested under their backend name:
 | `wire_format` | `openai` or `anthropic`. Omitted when it is the default `openai`. |
 
 API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
+
+**model_catalogs** — Extra model registries. Array, one object per catalog. A file is read on every rebuild; a fetched document answers from its cached body for a minute after a fetch, so a rebuild caused by a local event (a pull, a delete, a file in the scan directory) costs no round trip. Changing `model_catalogs` asks every origin again:
+
+| Key | Description |
+|-----|-------------|
+| `id` | Stable name: letters, digits, `.`, `_`, `-`. Keys the catalog set, and a fetched body is kept under it. Two entries under one id are refused, the first one kept. |
+| `path` | A JSON file with the same shape as `user_models.json`. Name exactly one of `path` or `url`. |
+| `url` | An HTTP(S) URL serving such a document. One that carries credentials (`@`) is refused. A body that answers once is kept, and an outage lists what the catalog listed last instead of nothing. An edit at the origin appears once the window above passes, or on the next `model_catalogs` change. A document over 8 MB is refused and the last good body is kept; dropping the catalog drops its cached body too. |
+| `required` | True: a catalog that cannot be read fails the build. Default false: it contributes nothing. |
+| `allow_insecure_http` | Needed for an `http://` URL; an `https://` URL never asks for it. |
+
+A configured document yields any name the built-in registry or a registration already holds, so it can add models without taking one over. Any other key is refused with the catalog's name in the complaint, and a refused entry costs only its own catalog.
+
+Set the value with `POST /internal/set` — the model set rebuilds and every connected client sees the change — and see what built the current set with `GET /internal/model-sources`.
 
 **telemetry** — Unified telemetry and tracing configurations:
 

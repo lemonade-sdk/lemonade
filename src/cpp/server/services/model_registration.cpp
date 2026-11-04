@@ -10,8 +10,9 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/backends/backend_registry.h"
+#include "lemon/canonical_id.h"
 #include "lemon/model_manager.h"
-#include "lemon/model_registry.h"
+#include "lemon/models/registry_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/utils/path_utils.h"
@@ -74,9 +75,7 @@ void normalize_registration_source(json& request_json, bool local_import) {
             }
             normalized_registry = normalized_public;
             request_json["source"] = normalized_public;
-        } else if (!local_import && public_source != "local_upload" &&
-                   public_source != "local_path" &&
-                   public_source != "extra_models_dir") {
+        } else if (!local_import && !is_local_origin(public_source)) {
             throw std::invalid_argument(
                 "Unsupported model source '" + public_source +
                 "' (expected 'huggingface', 'modelscope', or a local source)");

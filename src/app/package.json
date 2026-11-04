@@ -42,7 +42,7 @@
     "test:model-nav-filters": "node tests/model-nav-filter-layout.runtime.cjs",
     "test:model-state": "node tests/model-state-deduplication.runtime.cjs",
     "test:download-polling": "node tests/download-polling-lifecycle.runtime.cjs",
-    "test:dashboard-throughput": "node tests/dashboard-throughput.runtime.cjs",
+    "test:monitor-throughput": "node tests/monitor-throughput.runtime.cjs",
     "test:router-load": "node tests/router-load-regression.runtime.cjs",
     "test:i18n-coverage": "node tests/i18n-coverage.runtime.cjs",
     "test:inspect-replay": "node tests/inspect-replay-captured-output.runtime.cjs"

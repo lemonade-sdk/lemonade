@@ -17,6 +17,10 @@ module.exports = (env, argv) => ({
   module: {
     rules: [
       {
+        test: /[\\/]vendor[\\/]model-viewer\.min\.js$/,
+        parser: { import: false },
+      },
+      {
         test: /\.tsx?$/,
         use: {
           loader: 'ts-loader',
@@ -71,18 +75,6 @@ module.exports = (env, argv) => ({
       },
     },
   },
-
-  // @google/model-viewer contains an optional expression-based import.
-  // Suppress only this known warning.
-  ignoreWarnings: [
-    warning =>
-      /Critical dependency: the request of a dependency is an expression/.test(
-        warning.message || '',
-      ) &&
-      /model-viewer\.min\.js/.test(
-        warning.module?.resource || warning.moduleName || '',
-      ),
-  ],
 
   plugins: [
     new HtmlWebpackPlugin({

@@ -491,6 +491,7 @@ class DownloadStore {
   private refreshInFlight: Promise<void> | null = null;
   private wakeRefreshQueued = false;
   private lastRefreshStartedAt = 0;
+  private modelLoadsInFlight = 0;
   private started = false;
 
   constructor() {
@@ -534,6 +535,24 @@ class DownloadStore {
     if (this.started) return;
     this.started = true;
     void this.refresh();
+  }
+
+  // A server-side /load can auto-install a backend without any /install SSE
+  // event. Poll only while that request is pending to discover its download job.
+  watchForModelLoad(): () => void {
+    this.modelLoadsInFlight++;
+    const wasStarted = this.started;
+    this.start();
+    if (wasStarted) void this.refresh();
+    this.syncPolling();
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.modelLoadsInFlight--;
+      void this.refresh(); // Observe completion/errors even if no active job remains.
+      this.syncPolling();
+    };
   }
 
   async refresh(): Promise<void> {
@@ -653,7 +672,7 @@ class DownloadStore {
   }
 
   private hasActiveDownloads(): boolean {
-    return this.downloads.some(isDownloadActive);
+    return this.modelLoadsInFlight > 0 || this.downloads.some(isDownloadActive);
   }
 
   private clearWakeTimer(): void {
@@ -686,10 +705,8 @@ class DownloadStore {
   }
 
   private syncPolling(): void {
-    // The initial start()/explicit refresh is enough to discover server-owned
-    // work. Once the authoritative snapshot is idle, do not keep hitting
-    // /downloads. Coalesced pull/install wakes, focus/online, and an explicitly
-    // opened download manager can wake the store again.
+    // Idle is one-shot. During an in-flight /load, continue polling until a
+    // backend auto-install appears; otherwise only poll active download jobs.
     if (!this.started || !this.hasActiveDownloads()) {
       this.clearPollTimer();
       return;

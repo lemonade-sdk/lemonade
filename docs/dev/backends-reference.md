@@ -12,17 +12,20 @@ the generator instead. Prose outside the markers is preserved. -->
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
 | `ds4` | DwarfStar4 | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
+| `gufo` | Gufo | no | yes | rocm |
+| `halogen` | Halogen Flash | no | yes | rocm |
 | `kokoro` | Kokoro | no | no | cpu, metal |
-| `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
+| `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, halobox, metal, nathanw, rocm, system, vulkan |
 | `llamacpp-hrx` | HRX GPU | no | yes | hrx |
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, vulkan |
+| `rocmfpx` | ROCm FPX | no | yes | rocm |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
-| `thenoise` | TheNoise ROCm | yes | no | rocm |
+| `thenoise` | TheNoise | yes | no | cuda, rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
-| `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
+| `trellis` | TRELLIS.2 | yes | no | cuda, cuda12, rocm, vulkan |
 | `vllm` | vLLM ROCm | yes | yes | rocm |
 | `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
@@ -37,8 +40,10 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `acestep` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `acestep` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `acestep` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `ds4` | rocm | guest | native | linux | amd_gpu (gfx1151) |
+| `ds4` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `flm` | npu | core | native | linux, windows | amd_npu (XDNA2) |
+| `gufo` | rocm | guest | container | linux | amd_gpu (gfx1151) |
+| `halogen` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `kokoro` | metal | core | native | macos | metal |
 | `kokoro` | cpu | core | native | linux, windows | cpu (x86_64) |
 | `llamacpp` | system | core | native | linux | cpu (arm64, x86_64) |
@@ -47,6 +52,8 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `llamacpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (arm64, x86_64) |
 | `llamacpp` | rocm | core | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950) |
 | `llamacpp` | cpu | core | native | linux, windows | cpu (arm64, x86_64) |
+| `llamacpp` | nathanw | guest | container | linux | amd_gpu (gfx1151) |
+| `llamacpp` | halobox | guest | container | linux | amd_gpu (gfx1151) |
 | `llamacpp-hrx` | hrx | experimental | native | linux | amd_gpu (gfx1100, gfx1151) |
 | `moonshine` | cpu | core | python | windows | cpu (x86_64) |
 | `moonshine` | cpu | core | python | linux | cpu (arm64, x86_64) |
@@ -56,6 +63,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `onnxruntime` | cpu | experimental | native | macos | cpu (arm64) |
 | `openmoss` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `openmoss` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `rocmfpx` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `ryzenai-llm` | npu | core | native | windows | amd_npu (XDNA2) |
 | `sd-cpp` | metal | core | native | macos | metal |
 | `sd-cpp` | cuda | core | native | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
@@ -63,9 +71,11 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `sd-cpp` | rocm | core | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | core | native | linux, windows | cpu (x86_64) |
 | `thenoise` | rocm | core | python | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `thenoise` | cuda | experimental | python | linux | nvidia_gpu |
 | `thinksound` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `thinksound` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `thinksound` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `trellis` | cuda12 | experimental | native | linux, windows | nvidia_gpu (sm_60, sm_61, sm_62, sm_70, sm_72) |
 | `trellis` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `trellis` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `trellis` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
@@ -107,6 +117,13 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
 | `flm_args` | `--flm-args` | ARGS | "" | Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption |
 
+#### `gufo` — Gufo
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `gufo_args` | `--gufo-args` | ARGS | "" | Custom arguments to pass to gufo serve llm |
+
 #### `llamacpp` — Llama.cpp GPU
 
 | Option | CLI flag | Type | Default | Description |
@@ -141,6 +158,13 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 |--------|----------|------|---------|-------------|
 | `openmoss_backend` | `--openmoss` | BACKEND | "" | OpenMOSS TTS backend to use |
 
+#### `rocmfpx` — ROCm FPX
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `rocmfpx_args` | `--rocmfpx-args` | ARGS | "" | Custom arguments to pass to the ROCm FPX llama-server |
+
 #### `sd-cpp` — StableDiffusion.cpp
 
 | Option | CLI flag | Type | Default | Description |
@@ -154,7 +178,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
 
-#### `thenoise` — TheNoise ROCm
+#### `thenoise` — TheNoise
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
@@ -235,10 +259,6 @@ Voice design is opt-in through the `voice_design_description` extension and is n
 ### llama.cpp (`llamacpp`)
 
 Lemonade launches `llama-server` with `--parallel 1` and leaves the upstream `--cache-ram` host prompt cache at its default. `LlamaCppServer` does not override `downsize()`: slot `erase` frees no device memory (the KV buffer is allocated once at model load) and discards the slot's KV state without going through the host-cache save path, so soft idle leaves the slot resident and a resumed conversation reuses its cached prefix.
-
-### Model downloads
-
-A checkpoint file can be reached twice during a registry download: once because the backend's `select_checkpoint_files` claimed it alongside the main weight, and again because it is also declared as its own checkpoint role (the OpenMOSS `.extras.gguf` sidecars are both). The same bytes either way, so `download_from_registry` collapses duplicates before counting, or the progress total overshoots.
 
 ### Backend auto-selection
 

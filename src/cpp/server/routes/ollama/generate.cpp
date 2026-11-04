@@ -40,10 +40,10 @@ const RouteArg kSystem{"system", ArgIn::JsonBody, {{"type", "string"}}, false, S
 const RouteArg kFormat{"format", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false,
                        Support::NotAvailable, "Output format constraint. Ignored."};
 
-json convert_ollama_to_openai_completion(const RouteRequest& req) {
+json convert_ollama_to_openai_completion(ServerContext& ctx, const RouteRequest& req) {
     json openai_req;
 
-    std::string model = strip_latest_tag(req.value(gateway::kModel, ""));
+    std::string model = canonical_model_name(ctx, req.value(gateway::kModel, ""));
     openai_req[model_loading::kModel.name] = model;
 
     if (req.has(kPrompt)) {
@@ -235,7 +235,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
+            std::string model = canonical_model_name(ctx_, req.arg(gateway::kModel).get<std::string>());
 
             std::string prompt = req.value(kPrompt, "");
             if (prompt.empty() && req.has(ollama::kKeepAlive) && req.arg(ollama::kKeepAlive) == 0) {
@@ -272,7 +272,7 @@ public:
 
             bool stream = req.value(ollama::kStream, true);
 
-            auto openai_req = convert_ollama_to_openai_completion(req);
+            auto openai_req = convert_ollama_to_openai_completion(ctx_, req);
 
             if (stream) {
                 LOG(INFO, "OllamaApi") << "POST /api/generate - Streaming (model: " << model << ")" << std::endl;

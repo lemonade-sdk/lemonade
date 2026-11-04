@@ -37,7 +37,7 @@ async function navigateToView(page: Page, label: string): Promise<void> {
 
 async function navigateToMonitorSection(page: Page, label: 'Performance' | 'Telemetry' | 'Logs'): Promise<void> {
   await navigateToView(page, 'Monitor');
-  await page.waitForSelector('[data-view="dashboard"]');
+  await page.waitForSelector('[data-view="monitor"]');
   if (label !== 'Performance') {
     await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: label, exact: true }).click();
     await page.waitForTimeout(300);
@@ -134,6 +134,81 @@ test.describe('Accessibility — axe-core automated scans', () => {
     expect(critical, formatViolations(critical)).toHaveLength(0);
   });
 
+  for (const theme of ['dark', 'light'] as const) {
+    test(`A03 — ${theme} theme passes text contrast checks in primary views`, async ({ page }) => {
+      await page.addInitScript(value => localStorage.setItem('lemonade_theme', value), theme);
+      await page.goto('/');
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+
+      const views = [
+        { label: 'Chat', selector: '.chat' },
+        { label: 'Models', selector: '.manager' },
+        { label: 'Backends', selector: '.backends--workspace' },
+        { label: 'Monitor', selector: '.monitor-workspace[data-view="monitor"]' },
+        { label: 'Settings', selector: '.connect' },
+      ] as const;
+
+      for (const view of views) {
+        if (view.label === 'Monitor') {
+          await navigateToMonitorSection(page, 'Performance');
+          await page.waitForTimeout(500);
+        } else if (view.label !== 'Chat') {
+          await navigateToView(page, view.label);
+        }
+        await expect(page.locator(view.selector)).toBeVisible();
+
+        const results = await new AxeBuilder({ page })
+          .withRules(['color-contrast'])
+          .analyze();
+        const failures = results.violations.flatMap(violation =>
+          violation.nodes.map(node =>
+            `${view.label}: ${node.target.join(', ')} - ${node.failureSummary ?? violation.description}`,
+          ),
+        );
+        expect(failures, `${theme} theme text contrast violations`).toEqual([]);
+      }
+    });
+
+    test(`A03b — ${theme} theme checks rendered model rows and success notices`, async ({ page }) => {
+      await page.addInitScript(value => localStorage.setItem('lemonade_theme', value), theme);
+      await page.route('**/api/v1/health**', route =>
+        route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: 'test' } }),
+      );
+      await page.route('**/api/v1/models**', route =>
+        route.fulfill({ json: { data: [
+          { id: 'Llama-3.1-8B', name: 'Llama-3.1-8B', labels: ['chat'], recipe: 'llamacpp', downloaded: true },
+          { id: 'Qwen2.5-7B', name: 'Qwen2.5-7B', labels: ['chat'], recipe: 'llamacpp', downloaded: false },
+        ] } }),
+      );
+      await page.goto('/');
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+
+      const checkContrast = async (selector: string) => {
+        const results = await new AxeBuilder({ page })
+          .withRules(['color-contrast'])
+          .include(selector)
+          .analyze();
+        const failures = results.violations.flatMap(violation =>
+          violation.nodes.map(node =>
+            `${node.target.join(', ')} - ${node.failureSummary ?? violation.description}`,
+          ),
+        );
+        expect(failures, `${theme} ${selector} text contrast violations`).toEqual([]);
+      };
+
+      await navigateToView(page, 'Models');
+      // Assert a committed fixture row, not just a model-store update or shell.
+      await expect(page.locator('.model-list-panel__list .workspace-list-row')
+        .filter({ hasText: 'Llama-3.1-8B' })).toBeVisible();
+      await checkContrast('.manager');
+
+      await navigateToView(page, 'Settings');
+      await page.locator('.connect__form button[type="submit"]').click();
+      await expect(page.locator('.connect__section--server .connect__notice')).toBeVisible();
+      await checkContrast('.connect__notice');
+    });
+  }
+
   test('A04 — Connect view passes WCAG 2.1 AA', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
@@ -153,7 +228,7 @@ test.describe('Accessibility — axe-core automated scans', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await navigateToMonitorSection(page, 'Performance');
-    await page.waitForTimeout(500); // allow async dashboard data fetch to settle
+    await page.waitForTimeout(500); // allow async monitor data fetch to settle
 
     const results = await new AxeBuilder({ page })
       .withTags([...WCAG_TAGS])
@@ -585,19 +660,46 @@ test.describe('Accessibility — prefers-reduced-motion', () => {
     expect(secs, `Nav button transition-duration should be near-zero under reduce, got "${raw}"`).toBeLessThan(0.01);
   });
 
-  test('A34 — bottom-sheet has transform:none under reducedMotion=reduce (snaps, no slide animation)', async ({ page }) => {
+  test('A34 — reduced-motion mobile sheet stays closed and its dismiss controls work', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/');
-    await page.waitForSelector('.bottom-sheet');
 
-    // CSS: @media (prefers-reduced-motion: reduce) { .bottom-sheet { transform: none !important; } }
-    const transform = await page.evaluate(() => {
-      const sheet = document.querySelector('.bottom-sheet') as HTMLElement | null;
-      return sheet ? window.getComputedStyle(sheet).transform : '';
-    });
-    // 'none' means no translate is applied — sheet snaps rather than slides
-    expect(transform).toBe('none');
+    const sheet = page.locator('.bottom-sheet');
+    const composer = page.locator('.composer__input');
+    const trigger = page.locator('.chat__main .workspace-mobile-menu-button');
+    await expect(sheet).toHaveAttribute('aria-hidden', 'true');
+    // A closed sheet must be below the viewport, not covering the composer.
+    const closedBox = await sheet.boundingBox();
+    expect(closedBox).not.toBeNull();
+    expect(closedBox!.y).toBeGreaterThanOrEqual(await page.evaluate(() => window.innerHeight) - 1);
+    await composer.click();
+    await expect(composer).toBeFocused();
+
+    await trigger.click();
+    await expect(sheet).toHaveClass(/bottom-sheet--open/);
+    await sheet.locator('.bottom-sheet__handle').hover();
+    // The handle must still move the sheet; removing transitions is enough to
+    // respect reduced motion, but removing transforms breaks drag and close.
+    const openBox = await sheet.boundingBox();
+    const grip = await sheet.locator('.bottom-sheet__handle').boundingBox();
+    expect(openBox).not.toBeNull();
+    expect(grip).not.toBeNull();
+    const x = grip!.x + grip!.width / 2;
+    const y = grip!.y + grip!.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y + 140, { steps: 4 });
+    const draggedBox = await sheet.boundingBox();
+    expect(draggedBox!.y).toBeGreaterThan(openBox!.y + 80);
+    await page.mouse.up();
+    await expect(sheet).toHaveAttribute('aria-hidden', 'true');
+
+    await trigger.click();
+    await sheet.getByRole('button', { name: 'Close conversation history' }).click();
+    await expect(sheet).toHaveAttribute('aria-hidden', 'true');
+    await composer.click();
+    await expect(composer).toBeFocused();
   });
 });
 

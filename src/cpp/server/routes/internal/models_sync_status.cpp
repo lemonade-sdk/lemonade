@@ -65,7 +65,7 @@ public:
                     return;
                 }
             }
-            json status = ctx_.model_manager->get_sync_status(sync_id);
+            json status = ctx_.model_manager->sync_status(sync_id);
             res.set_content(status.dump(), "application/json");
             res.status = 200;
         } catch (const std::exception& e) {

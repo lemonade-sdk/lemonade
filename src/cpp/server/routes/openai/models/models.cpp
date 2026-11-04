@@ -1,7 +1,7 @@
-#include "lemon/alias_manager.h"
 #include "lemon/model_manager.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_json.h"
+#include "lemon/server/shared_args.h"
 
 namespace lemon {
 namespace {
@@ -38,7 +38,7 @@ public:
             "[Cloud Offload](../guide/configuration/cloud.md).",
             "`HEAD` returns `200 OK` with an empty body.",
         };
-        s.args = {kShowAll};
+        s.args = {kShowAll, openai::models::kIncludePaths};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -70,6 +70,7 @@ public:
 
         // OpenAI lists only downloaded models; the CLI's list command asks for all of them.
         bool show_all = req.value(kShowAll, false);
+        const bool include_paths = req.value(openai::models::kIncludePaths, false);
 
         std::map<std::string, ModelInfo> models;
         if (show_all) {
@@ -82,27 +83,9 @@ public:
         response["data"] = json::array();
         response["object"] = "list";
 
-        for (const auto& [model_id, model_info] : models) {
-            response["data"].push_back(ctx_.model_json->to_json(model_id, model_info));
-        }
-
-        auto all_aliases = ctx_.alias_manager->get_all_aliases();
-        for (const auto& [alias_id, target_name] : all_aliases) {
-            if (models.count(alias_id) > 0) {
-                continue;
-            }
-            std::string ultimate_target = target_name;
-            if (auto resolved = ctx_.alias_manager->resolve_alias(alias_id)) {
-                ultimate_target = *resolved;
-            }
-            std::string canonical_target = ctx_.model_manager->resolve_model_name(ultimate_target);
-            if (models.count(canonical_target) > 0) {
-                response["data"].push_back(
-                    ctx_.model_json->to_json(alias_id, models.at(canonical_target)));
-            } else if (models.count(ultimate_target) > 0) {
-                response["data"].push_back(
-                    ctx_.model_json->to_json(alias_id, models.at(ultimate_target)));
-            }
+        for (const auto& [row_id, model_info] : ctx_.model_manager->listing_rows(models)) {
+            response["data"].push_back(
+                ctx_.model_json->to_json(row_id, *model_info, 0, include_paths));
         }
 
         res.set_content(response.dump(), "application/json");

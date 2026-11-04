@@ -61,7 +61,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
+            std::string model = canonical_model_name(ctx_, req.arg(gateway::kModel).get<std::string>());
 
             if (!gateway_ensure_loaded(*ctx_.model_loader, model,
                                        gateway_load_options(req.arg(ollama::embed::kOptions), req.arg(model_loading::kCtxSize)),

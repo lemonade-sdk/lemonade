@@ -75,7 +75,7 @@ test('Session Inspector - Local Storage Persistence', async ({ page }) => {
   });
 
   // 1. Navigate to the inspect view directly
-  await page.goto('/#/dashboard/telemetry');
+  await page.goto('/#/monitor/telemetry');
   await page.waitForTimeout(1000);
 
   // 2. Verify that capturing is off by default

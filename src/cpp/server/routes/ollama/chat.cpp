@@ -93,10 +93,10 @@ const RouteArg kThink{"think", ArgIn::JsonBody,
                       "think regardless. Qwen3 models skip their reasoning when the prompt ends with "
                       "`/no_think`."};
 
-json convert_ollama_to_openai_chat(const RouteRequest& req) {
+json convert_ollama_to_openai_chat(ServerContext& ctx, const RouteRequest& req) {
     json openai_req;
 
-    std::string model = strip_latest_tag(req.value(gateway::kModel, ""));
+    std::string model = canonical_model_name(ctx, req.value(gateway::kModel, ""));
     openai_req[model_loading::kModel.name] = model;
 
     if (req.has(kMessages)) {
@@ -379,7 +379,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
+            std::string model = canonical_model_name(ctx_, req.arg(gateway::kModel).get<std::string>());
 
             auto messages = req.value(kMessages, json::array());
             if (messages.empty() && req.has(ollama::kKeepAlive) &&
@@ -409,7 +409,7 @@ public:
 
             bool stream = req.value(ollama::kStream, true);
 
-            auto openai_req = convert_ollama_to_openai_chat(req);
+            auto openai_req = convert_ollama_to_openai_chat(ctx_, req);
 
             bool has_tools = req.has(generation::kTools) &&
                              req.arg(generation::kTools).is_array() &&
