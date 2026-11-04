@@ -208,6 +208,17 @@ static void test_zero_shot_label_selects_classifier_type(ModelManager& manager) 
     check("registered zero-shot model rejected as classifier",
           error_contains(manager.validate_collection_request("user.RouterKit", registered),
                          "use type 'zero_shot'"));
+
+    const json decision_def = {{"model_name", "decision"}, {"recipe", "llamacpp"},
+                               {"checkpoint", "example/decision:Q8_0"},
+                               {"labels", {"classification", "systemone"}}};
+    check("llamacpp decision model accepted as zero_shot",
+          !manager.validate_collection_request(
+              "user.RouterKit", router_with_classifier("zero_shot", decision_def)).has_value());
+    check("llamacpp decision model rejected as classifier",
+          error_contains(manager.validate_collection_request(
+                             "user.RouterKit", router_with_classifier("classifier", decision_def)),
+                         "use type 'zero_shot'"));
 }
 
 // A chat-indicator label (reasoning/vision/…) must not promote a non-chat
@@ -257,10 +268,10 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
           error_contains(manager.validate_collection_request("user.RouterKit", kokoro_clf),
                          "cannot serve as a classifier"));
 
-    // The inverse: /v1/classify is served only by onnxruntime, so a
-    // `classification` label on a chat backend names a mode it cannot serve.
-    // Registration refuses it rather than registering a model that would fail
-    // when run_classifier reached Router::classify().
+    // The inverse: llamacpp serves /v1/classify only for SystemOne decision
+    // models, so a `classification` label without `systemone` names a mode it
+    // cannot serve. Registration refuses it rather than registering a model that
+    // would fail when run_classifier reached Router::classify().
     bool rejected = false;
     try {
         manager.register_user_model(
@@ -325,6 +336,39 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
              {"checkpoint", "example/xclf2:Q4_K_M"}});
     check("label-less llamacpp accepted as classifier via LLM chat path",
           !manager.validate_collection_request("user.RouterKit", llama_clf_bare).has_value());
+
+    auto systemone_router = [](const json& classifier_model_def) {
+        json doc = router_with_classifier("systemone", classifier_model_def);
+        json& clf = doc["routing"]["classifiers"][0];
+        clf.erase("labels");
+        clf["default_label"] = "true";
+        clf["question"] = {{"type", "noul"}, {"instructions", "Is the message urgent?"}};
+        return doc;
+    };
+    check("onnxruntime classifier rejected as systemone",
+          error_contains(manager.validate_collection_request(
+                             "user.RouterKit",
+                             systemone_router(json{{"model_name", "onnxclf"},
+                                                   {"recipe", "onnxruntime"},
+                                                   {"checkpoint", "example/onnxclf"},
+                                                   {"labels", {"classification"}}})),
+                         "is not a SystemOne decision model"));
+    check("onnxruntime classifier labelled systemone rejected as systemone",
+          error_contains(manager.validate_collection_request(
+                             "user.RouterKit",
+                             systemone_router(json{{"model_name", "onnxs1"},
+                                                   {"recipe", "onnxruntime"},
+                                                   {"checkpoint", "example/onnxs1"},
+                                                   {"labels", {"classification", "systemone"}}})),
+                         "is not a SystemOne decision model"));
+    check("llamacpp decision model accepted as systemone",
+          !manager.validate_collection_request(
+               "user.RouterKit",
+               systemone_router(json{{"model_name", "decider"},
+                                     {"recipe", "llamacpp"},
+                                     {"checkpoint", "example/decider:Q8_0"},
+                                     {"labels", {"classification", "systemone"}}}))
+               .has_value());
 }
 
 // What #2748 actually promises is that the REST of the policy keeps working,

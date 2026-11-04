@@ -7,6 +7,7 @@
 #include "lemon/models/download_progress.h"
 #include "lemon/models/model_info.h"
 #include "lemon/utils/cancel_token.h"     // CancelToken
+#include "lemon/utils/container_manager.h"
 
 namespace lemon {
 
@@ -72,6 +73,17 @@ public:
         (void)ctx;
     }
 
+    // Auto-tune sizes ctx_size from the memory a model's weights leave free,
+    // which is wrong for a backend that streams weights and sizes its own
+    // caches. Such a backend returns the GiB of `available_gib` its context may
+    // use. Default: nullopt, the weights decide.
+    virtual std::optional<double> auto_context_kv_budget_gib(const ModelInfo& info,
+                                                             double available_gib) const {
+        (void)info;
+        (void)available_gib;
+        return std::nullopt;
+    }
+
     // Add automatic overridable options before exposing/passing to a backend.
     // Managed arguments (model paths/ports) do not belong here. Default: none.
     virtual void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const {
@@ -131,6 +143,10 @@ public:
     // Whether a model's local artifacts are present. Default: the artifact
     // store's checkpoint-completeness check.
     virtual bool is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const;
+    virtual std::string validate_load(const ModelInfo& info) const {
+        (void)info;
+        return "";
+    }
 
     virtual DownloadPolicy plan_download(const ModelInfo& info,
                                          const BackendOpsContext& ctx) const;
@@ -202,10 +218,27 @@ public:
         (void)default_install_command;
         return std::nullopt;
     }
+
+    // An extra host requirement of `backend`, as the failure and its fix, or
+    // nullopt when met. Default: none.
+    virtual std::optional<utils::SetupFailure> check_container_host(
+        const std::string& backend) const {
+        (void)backend;
+        return std::nullopt;
+    }
 };
 
 // Shared default ops instance for backends that override nothing.
 const BackendOps* default_backend_ops();
+
+// nullopt when the host is ready to run container backends.
+std::optional<utils::SetupReport> container_setup_failure();
+
+// `host`, the report container_setup_failure() returned, plus the checks
+// `recipe:backend` needs on top of it.
+std::optional<utils::SetupReport> container_setup_failure(
+    const std::string& recipe, const std::string& backend,
+    const std::optional<utils::SetupReport>& host);
 
 } // namespace backends
 } // namespace lemon

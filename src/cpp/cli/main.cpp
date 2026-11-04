@@ -30,6 +30,7 @@
 #include <map>
 #include <vector>
 #include <optional>
+#include <sstream>
 
 #ifdef _WIN32
     #include <winsock2.h>

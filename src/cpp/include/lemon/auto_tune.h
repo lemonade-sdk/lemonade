@@ -8,6 +8,8 @@
 #include <optional>
 #include <system_error>
 #include <lemon/auto_context_budget.h>
+#include <lemon/backends/backend_ops.h>
+#include <lemon/backends/backend_registry.h>
 #include <lemon/gguf_reader.h>
 #include <lemon/gpu_memory_selection.h>
 #include <lemon/models/model_info.h>
@@ -297,7 +299,13 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         available_memory_gb, model_weight_gb,
         kv_bytes_per_token, (model_info.device & DEVICE_GPU) != 0,
         speculative, unified_gpu);
-    const int64_t max_ctx_from_memory = budget.max_tokens;
+    const std::optional<double> backend_kv_gib =
+        backends::ops_for(model_info.recipe)
+            ->auto_context_kv_budget_gib(model_info, available_memory_gb);
+    const int64_t max_ctx_from_memory =
+        backend_kv_gib ? static_cast<int64_t>((std::max)(0.0, *backend_kv_gib) * BYTES_PER_GIB /
+                                              kv_bytes_per_token)
+                       : budget.max_tokens;
     // A short budget still loads with the fallback: the estimate assumes full GPU
     // residency, while llama.cpp can spill layers to host RAM.
     const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
@@ -337,6 +345,15 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     return ctx_size;
 }
 
+/// An encoder SystemOne decision model has no KV cache to grow, so its context
+/// is its trained window. Causal decision models (openjev, lev, kev) keep a KV
+/// cache and declare windows up to 262144 tokens, so they size their context
+/// like any LLM.
+inline bool is_encoder_decision_model(const ModelInfo& model_info) {
+    return has_label(model_info.labels, "systemone") && !model_info.gguf.causal_attention &&
+           model_info.max_context_window > 0;
+}
+
 /// Auto-resolve ctx_size if it is -1 in the effective options.
 /// Returns the resolved context size, or -2 if no auto-resolution is needed
 /// (i.e. ctx_size was already set to an explicit non-negative value).
@@ -348,6 +365,10 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
 
     if (ctx_size != -1) {
         return -2;  // Explicit value, no auto-resolution needed
+    }
+
+    if (is_encoder_decision_model(model_info)) {
+        return model_info.max_context_window;
     }
 
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);

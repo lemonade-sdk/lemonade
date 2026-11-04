@@ -558,6 +558,8 @@ bool ApiRoute::check_args(RouteRequest& req, httplib::Response& res, bool query_
                 if (it->is_null()) {
                     if (!allows_null(arg.schema)) {
                         req.body.erase(it);
+                    } else {
+                        present = true;
                     }
                     continue;
                 }
