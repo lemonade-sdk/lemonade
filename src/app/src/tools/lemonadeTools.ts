@@ -103,6 +103,26 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
   {
     type: 'function',
     function: {
+      name: 'get_logs',
+      description: 'Inspect logs from the running Lemonade server for diagnosis of current problems, failed operations, crashes, model-load errors or backend failures. When the user asks if their running Lemonade has problems, call this even if logs are not explicitly mentioned. Do not use for general Lemonade product questions. For a broad diagnostic check, use min_level=warning and limit=20. Logs can contain sensitive information.',
+      parameters: {
+        type: 'object',
+        properties: {
+          min_level: { type: 'string', enum: ['trace', 'debug', 'info', 'warning', 'error', 'fatal'], description: 'Minimum severity; defaults to info.' },
+          tag: { type: 'string', description: 'Exact source tag, case-insensitive.' },
+          query: { type: 'string', description: 'Case-insensitive substring in message, tag, or severity.' },
+          after_seq: { type: 'integer', minimum: 0, description: 'Only entries after this sequence number.' },
+          limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Maximum returned entries (default 50, max 200).' },
+          summary: { type: 'boolean', description: 'Include counts by severity and source (default true).' },
+        },
+        required: [],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'pull_model',
       description: 'Download a model artifact to local storage. First try Lemonade registry names; if no registry match exists, this tool can search Hugging Face GGUF checkpoints and download one when a checkpoint/variant is specified or one clear option exists. Router definitions (recipe=collection.router) are registered configurations, not downloadable model artifacts, so inspect them with get_model_info instead. Use ask_question if several registry or Hugging Face variants are returned as choices. Models must be pulled before load_model can run.',
       parameters: {
@@ -884,6 +904,17 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
           ...h.all_models_loaded.slice(0, 6).map(m => `${m.model_name}: ${m.recipe || 'recipe unknown'}${m.device ? ` on ${m.device}` : ''}`),
         ].join('\n');
         return toolPayload(call, result, display);
+      }
+
+      case 'get_logs': {
+        const request: Record<string, unknown> = {};
+        for (const key of ['min_level', 'tag', 'query', 'after_seq', 'limit', 'summary']) {
+          if (args[key] !== undefined && args[key] !== null) request[key] = args[key];
+        }
+        const logs = await api.getServerLogs(request);
+        const count = Number(logs.returned ?? 0);
+        const matched = Number(logs.matched ?? 0);
+        return toolPayload(call, logs, `${count} of ${matched} matching server log entries`);
       }
 
       case 'pull_model': {

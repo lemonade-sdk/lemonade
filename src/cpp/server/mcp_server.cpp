@@ -1070,6 +1070,10 @@ json McpServer::tool_get_logs(const json& arguments) {
     json by_severity = json::object();
     std::map<std::string, size_t> by_tag;
     size_t matches = 0;
+    constexpr size_t kMaxLogLineBytes = 2048;
+    constexpr size_t kMaxReturnedEntriesBytes = 24 * 1024;
+    size_t returned_bytes = 0;
+    bool output_full = false;
 
     // Scan newest first, but return the selected entries in chronological order.
     for (auto it = window.rbegin(); it != window.rend(); ++it) {
@@ -1086,7 +1090,24 @@ json McpServer::tool_get_logs(const json& arguments) {
             by_severity[severity] = by_severity.value(severity, size_t{0}) + 1;
             ++by_tag[it->tag];
         }
-        if (selected.size() < limit) selected.push_back(it->to_json());
+        if (selected.size() < limit && !output_full) {
+            json entry = it->to_json();
+            if (it->line.size() > kMaxLogLineBytes) {
+                size_t end = kMaxLogLineBytes;
+                while (end > 0 && (static_cast<unsigned char>(it->line[end]) & 0xc0) == 0x80) {
+                    --end;
+                }
+                entry["line"] = it->line.substr(0, end);
+                entry["line_truncated"] = true;
+            }
+            const size_t bytes = entry.dump(-1, ' ', false, json::error_handler_t::replace).size();
+            if (bytes > kMaxReturnedEntriesBytes - returned_bytes) {
+                output_full = true;
+            } else {
+                returned_bytes += bytes;
+                selected.push_back(std::move(entry));
+            }
+        }
     }
     std::reverse(selected.begin(), selected.end());
 
@@ -1111,7 +1132,7 @@ json McpServer::tool_get_logs(const json& arguments) {
                               {"by_tag", std::move(sources)}};
     }
 
-    return {{"content", json::array({text_content_block(payload.dump())})},
+    return {{"content", json::array({text_content_block(payload.dump(-1, ' ', false, json::error_handler_t::replace))})},
             {"isError", false}};
 }
 
@@ -1260,7 +1281,7 @@ std::vector<McpTool> McpServer::build_tools() {
                                     {"description", "Case-insensitive substring in message, tag or severity."} }},
                         {"after_seq", { {"type", "integer"}, {"minimum", 0},
                                         {"description", "Only entries with a larger sequence number; default 0."} }},
-                        {"limit", { {"type", "integer"}, {"minimum", 1},
+                        {"limit", { {"type", "integer"}, {"minimum", 1}, {"maximum", 200},
                                     {"description", "Maximum returned entries, 1 to 200 (default 50)."} }},
                         {"summary", { {"type", "boolean"},
                                       {"description", "Include severity and top-10 source counts over all matching entries; default true."} }},
@@ -1269,8 +1290,9 @@ std::vector<McpTool> McpServer::build_tools() {
                 {"_meta", {
                     {"lemonade/result", {
                         {"description", "Returns one JSON `text` block with matching counts, "
-                         "the latest sequence cursor, and up to `limit` chronological log entries. "
-                         "With `summary=true`, includes severity and top-10 source counts."},
+                         "the latest sequence cursor, and up to `limit` chronological log entries "
+                         "within a 24 KiB entries budget. Lines over 2048 bytes are truncated "
+                         "and marked. With `summary=true`, includes severity and top-10 source counts."},
                     }},
                 }},
             },
