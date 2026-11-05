@@ -191,7 +191,7 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
     else:
         resolved_cli_binary = shutil.which(cli_binary) or cli_binary
 
-    cmd = [resolved_cli_binary] + args
+    cmd = [resolved_cli_binary] + cli_args
     print(f"Running: {' '.join(cmd)}")
 
     result = subprocess.run(
