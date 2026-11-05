@@ -852,7 +852,7 @@ void Router::load_model(const std::string& model_name,
                         LoadPurpose load_purpose,
                         std::atomic<bool>* cancel_flag) {
     if (!is_router_collection_recipe(model_info.recipe) &&
-        (has_label(model_info.labels, "on-demand") || has_label(model_info.labels, "upscaling"))) {
+        has_label(model_info.labels, "on-demand")) {
         throw ModelLoadRefusedException("On-demand models do not support persistent loading");
     }
     const std::string canonical_model_name = resolve_model_name(model_name);

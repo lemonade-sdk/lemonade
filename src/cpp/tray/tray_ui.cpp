@@ -306,7 +306,7 @@ std::vector<ModelInfo> TrayUI::get_downloaded_models() {
             for (const auto& model : models_json["data"]) {
                 const auto labels = model.value("labels", nlohmann::json::array());
                 if (labels.is_array() && std::any_of(labels.begin(), labels.end(), [](const auto& label) {
-                    return label == "on-demand" || label == "upscaling";
+                    return label == "on-demand";
                 })) continue;
                 ModelInfo info;
                 info.id = model.value("id", "");

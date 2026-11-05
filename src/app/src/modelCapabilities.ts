@@ -122,7 +122,7 @@ export function isOnDemandModelInfo(model?: ModelInfo | null): boolean {
   const fallbackRecipe = model.recipes?.[0]?.recipe;
   const recipe = typeof model.recipe === 'string' ? model.recipe : (typeof fallbackRecipe === 'string' ? fallbackRecipe : '');
   return !isRouterRecipe(recipe) &&
-    normalizedStringList(model.labels).some(label => label === 'on-demand' || label === 'upscaling');
+    normalizedStringList(model.labels).includes('on-demand');
 }
 
 export function isCollectionRecipe(recipe?: string | null): boolean {

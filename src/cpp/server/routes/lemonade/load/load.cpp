@@ -193,7 +193,7 @@ public:
 
             auto info = model_manager.get_model_info(model_name);
             if (!is_router_collection_recipe(info.recipe) &&
-                (has_label(info.labels, "on-demand") || has_label(info.labels, "upscaling"))) {
+                has_label(info.labels, "on-demand")) {
                 write_openai_error(res, kOnDemandCannotLoad,
                                    "On-demand models cannot be loaded through this endpoint.");
                 return;
