@@ -184,6 +184,9 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
             response.erase("b64_json");
             response["clip_file"] = file;
         }
+        if (!response.contains("clip_file")) {
+            throw lemon::jobs::JobError(424, "video generation returned no clip");
+        }
         return lemon::jobs::json::parse(response.dump());
     };
     providers.begin_exclusive = [router, job_states, current_job, state_mutex](
