@@ -33,7 +33,7 @@ inline const BackendDescriptor descriptor = {
                     "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "MIT", "https://github.com/pwilkin/trellis.cpp"}},
         {"cuda", {"Microsoft's TRELLIS.2 image-to-3D pipeline in C++/GGML, on NVIDIA GPUs.",
                   "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "MIT", "https://github.com/pwilkin/trellis.cpp"}},
-        {"vulkan", {"Microsoft's TRELLIS.2 image-to-3D pipeline in C++/GGML, on most Vulkan-capable GPUs.",
+        {"vulkan", {"Microsoft's TRELLIS.2 image-to-3D pipeline in C++/GGML, on Vulkan-capable GPUs.",
                     "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "MIT", "https://github.com/pwilkin/trellis.cpp"}},
         {"rocm", {"Microsoft's TRELLIS.2 image-to-3D pipeline in C++/GGML, specialized for AMD GPUs.",
                   "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "MIT", "https://github.com/pwilkin/trellis.cpp"}},

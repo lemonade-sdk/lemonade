@@ -29,7 +29,7 @@ inline const BackendDescriptor descriptor = {
     /*about*/ {
         {"cuda", {"MOSS speech and sound-effect models in C++/GGML on top of llama.cpp, on NVIDIA GPUs.",
                   "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "Apache-2.0", "https://github.com/pwilkin/openmoss"}},
-        {"vulkan", {"MOSS speech and sound-effect models in C++/GGML on top of llama.cpp, on most Vulkan-capable GPUs.",
+        {"vulkan", {"MOSS speech and sound-effect models in C++/GGML on top of llama.cpp, on Vulkan-capable GPUs.",
                     "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "Apache-2.0", "https://github.com/pwilkin/openmoss"}},
     },
     /*supported_modes*/ {"tts", "audio-generation"},

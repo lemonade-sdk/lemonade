@@ -31,7 +31,7 @@ inline const BackendDescriptor descriptor = {
         {"cuda", {"ACE-Step 1.5 music generation in C++/GGML, on NVIDIA GPUs.",
                   "ServeurpersoCom (acestep.cpp)", "Piotr Wilkin (pwilkin)", "MIT",
                   "https://github.com/ServeurpersoCom/acestep.cpp"}},
-        {"vulkan", {"ACE-Step 1.5 music generation in C++/GGML, on most Vulkan-capable GPUs.",
+        {"vulkan", {"ACE-Step 1.5 music generation in C++/GGML, on Vulkan-capable GPUs.",
                     "ServeurpersoCom (acestep.cpp)", "Piotr Wilkin (pwilkin)", "MIT",
                     "https://github.com/ServeurpersoCom/acestep.cpp"}},
         {"rocm", {"ACE-Step 1.5 music generation in C++/GGML, specialized for AMD GPUs.",

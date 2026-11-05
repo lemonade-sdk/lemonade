@@ -30,7 +30,7 @@ inline const BackendDescriptor descriptor = {
     /*about*/ {
         {"cuda", {"ThinkSound text-to-sound-effect generation, reimplemented in C++/GGML, on NVIDIA GPUs.",
                   "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "", "https://github.com/pwilkin/thinksound.cpp"}},
-        {"vulkan", {"ThinkSound text-to-sound-effect generation, reimplemented in C++/GGML, on most Vulkan-capable GPUs.",
+        {"vulkan", {"ThinkSound text-to-sound-effect generation, reimplemented in C++/GGML, on Vulkan-capable GPUs.",
                     "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "", "https://github.com/pwilkin/thinksound.cpp"}},
         {"rocm", {"ThinkSound text-to-sound-effect generation, reimplemented in C++/GGML, specialized for AMD GPUs.",
                   "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "", "https://github.com/pwilkin/thinksound.cpp"}},
