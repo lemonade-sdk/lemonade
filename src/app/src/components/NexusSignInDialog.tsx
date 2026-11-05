@@ -37,7 +37,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
       if (revision !== request.current) return;
       const profile = result.status.registered ? loadNexusAccountLabel(result.source) : undefined;
       setInspection(result); setSaved(profile);
-      setAction(result.status.registered ? 'return' : 'create');
+      setAction(result.status.registered && result.status.has_network !== false ? 'return' : 'create');
       setDeviceName(result.status.device_name || t('This computer'));
     } catch (error) { if (revision === request.current) setError(error instanceof TypeError ? t('Cannot reach the Lemonade server. Start it or check the connection in Settings.') : error instanceof Error ? error.message : String(error)); }
     finally { if (revision === request.current) setChecking(false); }
@@ -90,12 +90,12 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
           <fieldset className="nexus-sign-in__fields" disabled={busy}>
             <legend className="sr-only">{t('Account access')}</legend>
             <div className="nexus-sign-in__choices">
-              {inspection.status.registered && <label><input type="radio" name={id} checked={action === 'return'} onChange={() => { setAction('return'); setError(''); }} />{t('Use this device’s key')}</label>}
-              {!saved && !inspection.status.registered && <label><input type="radio" name={id} checked={action === 'create'} onChange={() => { setAction('create'); setError(''); }} />{t('Create account')}</label>}
+              {inspection.status.registered && inspection.status.has_network !== false && <label><input type="radio" name={id} checked={action === 'return'} onChange={() => { setAction('return'); setError(''); }} />{t('Use this device’s key')}</label>}
+              {!saved && (!inspection.status.registered || inspection.status.has_network === false) && <label><input type="radio" name={id} checked={action === 'create'} onChange={() => { setAction('create'); setError(''); }} />{t('Create account')}</label>}
               <label><input type="radio" name={id} checked={action === 'join'} onChange={() => { setAction('join'); setError(''); }} />{t('Join by invitation')}</label>
             </div>
             <label htmlFor={`${id}-device`}>{t('Device name')}</label><input autoFocus id={`${id}-device`} className="input" value={deviceName} maxLength={128} onChange={event => setDeviceName(event.target.value)} />
-            {action === 'join' && <><label htmlFor={`${id}-invite`}>{t('Invitation code or token')}</label><input id={`${id}-invite`} className="input" autoComplete="off" spellCheck={false} maxLength={68} value={invitation} onChange={event => setInvitation(event.target.value.trim())} /><p className="nexus-hint">{t(inspection.status.registered ? 'This device keeps its own network and joins the invited one as a member.' : 'Get an invitation from a device already linked to the account.')}</p></>}
+            {action === 'join' && <><label htmlFor={`${id}-invite`}>{t('Invitation code or token')}</label><input id={`${id}-invite`} className="input" autoComplete="off" spellCheck={false} maxLength={68} value={invitation} onChange={event => setInvitation(event.target.value.trim())} /><p className="nexus-hint">{t(inspection.status.registered && inspection.status.has_network !== false ? 'This device keeps its own network and joins the invited one as a member.' : 'Get an invitation from a device already linked to the account.')}</p></>}
             {action === 'create' && <p className="nexus-hint">{t('This device will create the account. Administrator access is confirmed by Nexus after joining.')}</p>}
           </fieldset>
           {nameTooLong && <p className="nexus-error" role="alert">{t('This name is too long. Try a shorter name.')}</p>}

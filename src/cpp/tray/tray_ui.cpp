@@ -730,7 +730,9 @@ bool TrayUI::offer_device_key(const nlohmann::json& status) {
         set_nexus_key_status("Nexus: the key hand-off request was invalid");
         return false;
     }
-    const nlohmann::json unlock = {{"identity_envelope", std::string(sealed)}, {"defer_join", false}};
+    // No defer_join: lemond joins the identity's network when it has one and otherwise
+    // waits for the user to create a network or join one with an invite.
+    const nlohmann::json unlock = {{"identity_envelope", std::string(sealed)}};
     ln_free(sealed);
     const auto delivered = controller_request(port, true, "/api/v1/nexus/key/unlock", unlock.dump());
     const auto reply = nlohmann::json::parse(delivered.second, nullptr, false);

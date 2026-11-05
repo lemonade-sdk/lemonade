@@ -111,3 +111,23 @@ test('a pending deletion keeps the device signed in', async ({ page }) => {
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
 });
+
+for (const action of ['create', 'join'] as const) {
+  test(`a fresh device key handed off by the tray waits for the user to ${action}`, async ({ page }) => {
+    const fixture = await setupNexusAccount(page, { joined: false, deviceKey: true, freshKey: true });
+    await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
+    await expect(dialog.getByRole('radio', { name: 'Use this device’s key' })).toHaveCount(0);
+    await expect(dialog.getByRole('radio', { name: 'Create account' })).toBeChecked();
+    if (action === 'join') {
+      await dialog.getByRole('radio', { name: 'Join by invitation' }).check();
+      await expect(dialog).toContainText('Get an invitation from a device already linked');
+      await dialog.getByRole('textbox', { name: 'Invitation code or token' }).fill('12345678');
+    }
+    await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+    const unlocks = fixture.calls.filter(call => call.path.endsWith('/key/unlock'));
+    expect(unlocks.map(call => call.body)).toEqual(action === 'create' ? [{ defer_join: false }] : []);
+    expect(fixture.calls.filter(call => call.path.endsWith('/join')).map(call => call.body)).toEqual(action === 'join' ? [{ code: '12345678' }] : []);
+  });
+}

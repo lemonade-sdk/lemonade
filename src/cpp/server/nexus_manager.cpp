@@ -1150,6 +1150,7 @@ struct NexusManager::Session {
             auto saved = json::parse(input, nullptr, false);
             if (!saved.is_object()) throw NexusError(500, "Device account is invalid; restore account.json");
             account = saved;
+            note_legacy_join();
         }
         if (const auto value = utils::get_environment_variable_utf8("LEMONADE_NEXUS_DOMAIN"); !value.empty()) domain = value;
         if (const auto value = utils::get_environment_variable_utf8("LEMONADE_NEXUS_REGION"); !value.empty()) region = value;
@@ -1323,6 +1324,7 @@ struct NexusManager::Session {
         }
         write_json(root / archive_name, account);
         account = nexus_access::account_for_key(account, archived, key);
+        if (archived.is_object()) note_legacy_join();
         persist();
         std::error_code ec;
         std::filesystem::remove(restore_path, ec);
@@ -1416,6 +1418,14 @@ struct NexusManager::Session {
     // session; key unlock removes the user-presence step, so it also unlocks again by
     // itself after a restart or, on a desktop, after the user's key arrived again.
     bool key_unlock() const { return account.value("unlock", std::string{}) == "device_key"; }
+    // True once this identity created or joined a network. Only then does a key that
+    // arrives or an idle lock end in an automatic join; a new identity waits for the
+    // user to create a network or join one with an invite.
+    bool has_network() const { return account.value("joined", false); }
+    // Accounts written before `joined` was recorded always joined on their first unlock.
+    void note_legacy_join() {
+        if (!account.contains("joined") && (key_unlock() || account.contains("credential_id"))) account["joined"] = true;
+    }
     void unlock_with_key(bool defer_join) {
         require_identity();
         if (account.contains("credential_id")) throw NexusError(409, "This device unlocks with its passkey");
@@ -1610,7 +1620,7 @@ struct NexusManager::Session {
         json result = {{"status", detail}, {"locked", locked}, {"mesh_up", !locked && ln_mesh_is_active(client.get()) != 0},
             {"node_id", node_id}, {"group_node_id", group_id}, {"tunnel_ip", tunnel_ip},
             {"peer_count", mesh.value("peer_count", 0)}, {"device_name", device_name()}, {"server", host},
-            {"registered", account.contains("credential_id") || key_unlock()},
+            {"registered", account.contains("credential_id") || key_unlock()}, {"has_network", has_network()},
             {"unlock", key_unlock() ? "device_key" : "passkey"}, {"members", devices},
             {"exposed", json::array({{{"vport", 13305}, {"local_port", ingress_port}}})}, {"error", error},
             {"error_retryable", error_retryable}, {"genesis_key_set", genesis_key_set}, {"mesh_port", mesh_port_status()},
@@ -1737,6 +1747,10 @@ struct NexusManager::Session {
         retry_delay = std::chrono::seconds(5);
         detail = "running";
         clear_error();
+        if (!account.value("joined", false)) {
+            account["joined"] = true;
+            persist();
+        }
         register_catalog();
         start_mesh_port();
         remember_tier1_epoch();
@@ -1769,7 +1783,7 @@ struct NexusManager::Session {
             if (!identity) return;
         }
         if (locked) {
-            if (!key_unlock() || hold_locked || std::chrono::steady_clock::now() < retry_at) return;
+            if (!key_unlock() || !has_network() || hold_locked || std::chrono::steady_clock::now() < retry_at) return;
             try { unlock_with_key(false); }
             catch (const std::exception& e) {
                 note_failure(e);
@@ -1882,7 +1896,7 @@ struct NexusManager::Session {
         if (path == "/key/handoff") return begin_handoff();
         if (path == "/key/unlock") {
             if (body.contains("identity_envelope")) open_handoff(body.at("identity_envelope"));
-            unlock_with_key(body.value("defer_join", false));
+            unlock_with_key(body.value("defer_join", !has_network()));
             return status();
         }
         if (path == "/unlock") {

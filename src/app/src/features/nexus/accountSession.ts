@@ -117,7 +117,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
       let prepared: NexusStatus | undefined;
       await dependencies.prepare(input.deviceName.trim(), input.action === 'join', controller.request, current => {
         prepared = current;
-        if (input.action === 'create' && current.registered) throw new Error('This device already has a registered key. Choose Use this device’s key to continue.');
+        if (input.action === 'create' && current.registered && current.has_network !== false) throw new Error('This device already has a registered key. Choose Use this device’s key to continue.');
         if (input.action === 'return' && !current.registered) throw new Error('Create an account or join by invitation before enabling Mesh on this device.');
       });
       if (input.action === 'join') {

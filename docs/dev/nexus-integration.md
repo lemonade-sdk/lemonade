@@ -189,7 +189,11 @@ The hand-off is the SDK's single-use sealed transfer:
    replaces it.
 4. The tray seals the identity to that request with
    `ln_identity_handoff_seal`, destroys its identity handle, and sends
-   `POST key/unlock {identity_envelope, defer_join: false}`.
+   `POST key/unlock {identity_envelope}`. Without `defer_join`, `lemond` joins
+   the identity's network when `account.json` records one (`joined`) and
+   otherwise only unlocks: a new identity waits for the user to create a
+   network or join one with an invite, instead of getting a network of its own
+   the moment the key arrives. The idle re-unlock follows the same rule.
 5. `lemond` opens the envelope with `ln_identity_handoff_open`, which consumes
    the request whatever the result, sets the identity on its client and runs
    the normal key unlock. A delivered key marks the device key-unlocked, so an
@@ -221,7 +225,9 @@ file. `authenticate_identity` answers 403 only when an account recorded as
 this key's names another user.
 
 `status` fields: `identity_source` (`system`, `user` or `handoff`),
-`needs_user_key`, `public_key` (`ed25519:<base64>` of the active identity, or
+`needs_user_key`, `has_network` (the identity created or joined a network
+before; accounts from before the flag count as joined once they unlocked),
+`public_key` (`ed25519:<base64>` of the active identity, or
 empty) and, in `user` mode, `identity_store`, the SDK's
 `ln_identity_user_status` object (`present`, `backend`, `unlocked`, `dir`,
 `public_key`). None of them carries a seed or private key. `disable` drops the

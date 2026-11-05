@@ -101,6 +101,9 @@ export interface NexusStatus {
   unlock?: 'passkey' | 'device_key';
   // True while lemond has no device identity, for example while the macOS tray delivers the user's key.
   needs_user_key?: boolean;
+  // False for an identity that never created or joined a network: Enable Mesh offers
+  // Create account and Join by invitation, and the unlock defers the join until then.
+  has_network?: boolean;
   join_membership?: NexusJoinMembership;
 }
 // How this device reaches another one, as its pill shows it. `connecting` is a device the
@@ -447,7 +450,9 @@ export async function prepareNexus(deviceName: string, joining: boolean, request
   beforeUnlock?.(status);
   await request('device', { device_name: deviceName });
   if (usesNexusDeviceKey(status)) {
-    if (!status.locked) return;
+    // An unlocked device without a network still needs the unlock call: it is what
+    // creates the network. A join leaves that to the invite code.
+    if (!status.locked && (status.mesh_up || joining)) return;
     try { await request('key/unlock', { defer_join: joining }); }
     catch (error) {
       if (error instanceof NexusRequestError && error.retryable) throw new Error(`${error.message} The network could not be reached. Try again shortly.`);

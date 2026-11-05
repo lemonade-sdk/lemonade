@@ -9,7 +9,7 @@ const peer: NexusDevice = { node_id: 'peer', device_name: 'Kitchen PC', tunnel_i
 
 export async function setupNexusAccount(page: Page, options: {
   desktop?: boolean; registered?: boolean; joined?: boolean; readOnly?: boolean; cancelPasskey?: boolean; unauthorized?: boolean;
-  avatarUnsupported?: boolean; needsUserKey?: boolean; inviteWithoutCode?: boolean; deviceKey?: boolean;
+  avatarUnsupported?: boolean; needsUserKey?: boolean; inviteWithoutCode?: boolean; deviceKey?: boolean; freshKey?: boolean;
   remote?: boolean; apiKey?: string; apiUnauthorized?: boolean;
   role?: NexusRole;
 } = {}) {
@@ -22,7 +22,8 @@ export async function setupNexusAccount(page: Page, options: {
   const state: NexusStatus = { available: true, controller_url: 'http://127.0.0.1:15555', enabled: true,
     registered: options.registered ?? true, locked: options.joined === false, mesh_up: options.joined !== false,
     status: options.joined === false ? 'locked' : 'running', node_id: 'self', group_node_id: options.joined === false ? '' : 'group',
-    device_name: deviceName, members, ...(options.needsUserKey ? { identity_source: 'handoff' as const, needs_user_key: true } : {}),
+    device_name: deviceName, members, has_network: !options.freshKey, ...(options.freshKey ? { locked: false, status: 'ready', registered: true, unlock: 'device_key' as const, identity_source: 'handoff' as const } : {}),
+    ...(options.needsUserKey ? { identity_source: 'handoff' as const, needs_user_key: true } : {}),
     ...(options.deviceKey ? { identity_source: 'user' as const, unlock: options.registered === false ? 'passkey' as const : 'device_key' as const } : {}) };
   const entry = (id: string, name: string, kind: 'group' | 'node', parent_id: string): NexusTreeEntry => ({
     id, name, kind, parent_id, node_type: kind === 'group' ? 'customer' : 'endpoint', tunnel_ip: '', is_inference: false,
@@ -83,10 +84,10 @@ export async function setupNexusAccount(page: Page, options: {
     if (path.endsWith('/key/unlock')) {
       if (fixture.unlockUnreachable) return route.fulfill({ status: 503, headers, json: { error: 'No network server found for mesh.example.', retryable: true } });
       state.locked = false; state.registered = true; state.unlock = 'device_key';
-      if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; }
+      if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; state.has_network = true; }
     }
     if (path.endsWith('/join')) {
-      state.mesh_up = true; state.group_node_id = 'group';
+      state.mesh_up = true; state.group_node_id = 'group'; state.has_network = true;
       // A device that already has a node stays in its network; the code makes it a member.
       if (fixture.hasOwnNetwork) { state.join_membership = { status: 'member', group_id: 'studio' }; fixture.joinedNetworks.push('studio'); }
     }

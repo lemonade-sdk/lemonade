@@ -92,7 +92,11 @@ device copies are lost, an authorized writer must select the image again.
 
 This bridge uses the one persistent device identity already owned by `lemond`.
 It does not implement the upstream Flutter client's multi-keyring account
-switching. A device already linked to an account keeps its network: **Join by
+switching. A new device key (`status.has_network` false, for example right
+after the tray minted one) offers **Create account** and **Join by
+invitation** like the mobile app's setup sheet; the create path's `key/unlock`
+makes the network, and the join path sends only the code. A device already
+linked to an account keeps its network: **Join by
 invitation** on such a device sends the code through `join` after a deferred
 unlock, and the SDK makes the identity a member of the invited group instead of
 moving the device (`status.join_membership`, shown as "Joined as a member" or

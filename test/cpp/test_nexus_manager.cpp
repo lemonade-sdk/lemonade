@@ -580,7 +580,18 @@ void check_status_fields(const std::filesystem::path& root, const std::function<
     check(status.at("app") == json({{"name", "lemonade"}, {"version", "2026.46.3"}}), "Status reports the catalog's app");
     check(status.at("route_policy") == (access::route_policy_available() ? "enforced" : "unavailable"),
           "Route policy follows the SDK's catalog interface");
+    // The session fields appear once the mesh is enabled; a new identity has no network.
+    std::string enable_error;
+    check(manager.enable(enable_error), "The status manager enables");
+    check(manager.status().at("has_network") == false, "A new identity has no network until it creates or joins one");
     manager.stop();
+    // Accounts from before `joined` was recorded always joined on their first unlock.
+    std::filesystem::create_directories(root / "status-legacy" / "nexus");
+    { std::ofstream legacy(root / "status-legacy" / "nexus" / "account.json"); legacy << R"({"unlock":"device_key","device_name":"Old laptop"})"; }
+    lemon::NexusManager migrated((root / "status-legacy").string(), listener_policy, listener_policy, 0, nullptr, kSystemRole);
+    check(migrated.enable(enable_error), "The migrated manager enables");
+    check(migrated.status().at("has_network") == true, "A device-key account from an older lemond counts as joined");
+    migrated.stop();
     lemon::NexusManager bare((root / "status-bare").string(), listener_policy, listener_policy, 0, nullptr, kSystemRole);
     const auto bare_status = bare.status();
     check(bare_status.at("catalog_version") == 0 && bare_status.at("route_policy") == "unavailable" &&
