@@ -53,6 +53,8 @@ private:
     OpRegistry registry_;
 
     mutable std::mutex mutex_;
+    // Held for the whole of shutdown(): two callers must not both join worker_.
+    std::mutex shutdown_mutex_;
     std::condition_variable cv_;
     std::map<std::string, Job> jobs_;
     std::map<std::string, std::shared_ptr<Control>> controls_;

@@ -94,6 +94,7 @@ JobManager::~JobManager() {
 }
 
 void JobManager::shutdown() {
+    std::lock_guard<std::mutex> shutdown_lock(shutdown_mutex_);
     {
         std::lock_guard<std::mutex> lock(mutex_);
         stop_ = true;
