@@ -11732,6 +11732,8 @@ optgroup {
 
 .backend-card__logo--dark .backend-card__logo-name { color: #fff; }
 .backend-card__logo--image-only .backend-card__logo-name { display: none; }
+.backend-card__logo--icon { padding-block: var(--space-1); }
+.backend-card__logo--icon img { max-height: 38px; }
 
 .backend-card__footer,
 .backend-card__actions {

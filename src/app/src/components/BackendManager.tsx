@@ -84,6 +84,10 @@ const RECIPE_LABELS: Record<string, string> = {
   thinksound:      'ThinkSound',
   openmoss:        'OpenMOSS TTS',
   trellis:         'TRELLIS.2',
+  halogen:         'Halogen',
+  gufo:            'Gufo',
+  ds4:             'DwarfStar4',
+  thenoise:        'TheNoise',
 };
 
 const ENGINE_LOGO_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/engines/';
@@ -106,6 +110,10 @@ const ENGINE_LOGOS: Record<string, EngineLogo> = {
   acestep:        { file: 'ace_step.png', plate: 'dark' },
   openmoss:       { file: 'openmoss.png' },
   trellis:        { file: 'trellis.png' },
+  halogen:        { file: 'halogen.png', plate: 'dark', showName: true },
+  gufo:           { file: 'gufo.png', showName: true },
+  ds4:            { file: 'dwarfstar.png', showName: true },
+  thenoise:       { file: 'thenoise.png', plate: 'dark' },
 };
 
 /** User-facing labels for backend variants */
@@ -1135,7 +1143,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             <>
               <h3 className="sr-only">{engineName}</h3>
               <div
-                className={`backend-card__logo${logo?.plate === 'dark' ? ' backend-card__logo--dark' : ''}${logo && !logo.showName ? ' backend-card__logo--image-only' : ''}`}
+                className={`backend-card__logo${logo?.plate === 'dark' ? ' backend-card__logo--dark' : ''}${logo ? (logo.showName ? ' backend-card__logo--icon' : ' backend-card__logo--image-only') : ''}`}
                 aria-hidden="true"
                 data-backend-logo
               >
