@@ -30,9 +30,11 @@
 #include <lemon/utils/safe_fs.h>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <set>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -969,7 +971,14 @@ void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade,
         if (!slot) slot = std::make_shared<std::mutex>();
         repo_lock = slot;
     }
-    std::lock_guard<std::mutex> download_lock(*repo_lock);
+    // A canceled job must not sit behind another request's download of the same repo.
+    std::unique_lock<std::mutex> download_lock(*repo_lock, std::defer_lock);
+    while (!download_lock.try_lock()) {
+        if (cancel.cancelled()) {
+            throw TransferError("Download cancelled", true);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
 
     // The backend's ops own the download (shared registry engine by default; flm pulls
     // via the flm CLI; cloud is a no-op).
