@@ -26,7 +26,7 @@ json ModelLoader::load_options(const json& ctx_size) {
 }
 
 void ModelLoader::ensure_loaded(const std::string& requested_model, const json& load_options,
-                                LoadPurpose load_purpose) {
+                                LoadPurpose load_purpose, std::atomic<bool>* cancel) {
     // A live process follows its current use without a reload: routing work
     // promotes it to RoutingHelper, while direct inference demotes it into the
     // counted Standard pool. Destination-pool admission remains authoritative.
@@ -80,7 +80,7 @@ void ModelLoader::ensure_loaded(const std::string& requested_model, const json& 
                         RecipeOptions(info.recipe, load_options), true,
                         /*allow_reload_on_option_change=*/false,
                         /*pinned=*/std::nullopt,
-                        load_purpose);
+                        load_purpose, cancel);
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 

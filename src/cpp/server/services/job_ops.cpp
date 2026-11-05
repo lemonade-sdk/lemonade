@@ -150,7 +150,11 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         const std::string model = request.value("model", std::string());
         if (!model.empty()) {
             model_loader->ensure_loaded(
-                model, ModelLoader::load_options(request.value("ctx_size", nlohmann::json())));
+                model, ModelLoader::load_options(request.value("ctx_size", nlohmann::json())),
+                LoadPurpose::UserInference, &cancel);
+            if (cancel.load()) {
+                throw lemon::jobs::JobError(499, "interrupted");
+            }
         }
         nlohmann::json response = router->video_generations(request, &cancel);
         if (response.contains("error")) {
