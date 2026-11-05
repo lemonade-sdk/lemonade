@@ -17,6 +17,7 @@ public:
     double get_cpu_usage(std::mutex& cpu_stats_mutex,
                         uint64_t& last_total,
                         uint64_t& last_total_idle) override {
+        std::lock_guard<std::mutex> lock(cpu_stats_mutex);
         mach_port_t host = mach_host_self();
         host_cpu_load_info_data_t load;
         mach_msg_type_number_t count = HOST_CPU_LOAD_INFO_COUNT;
@@ -36,7 +37,6 @@ public:
                                load.cpu_ticks[CPU_STATE_SYSTEM] +
                                load.cpu_ticks[CPU_STATE_NICE] + idle;
 
-        std::lock_guard<std::mutex> lock(cpu_stats_mutex);
         const bool first_sample = last_total == 0;
         const uint32_t total_diff = total - static_cast<uint32_t>(last_total);
         const uint32_t idle_diff = idle - static_cast<uint32_t>(last_total_idle);
