@@ -1596,6 +1596,7 @@ GPU only, in practice. With `Wan2.1-T2V-1.3B` on a Radeon AI PRO R9700, a 33-fra
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `500` |  | The request fails unexpectedly |
+| `503` |  | The server is shutting down |
 <!-- END GENERATED: lemonade.videos_create -->
 
 <!-- BEGIN GENERATED: lemonade.videos_get -->
@@ -3217,6 +3218,7 @@ A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The step graph is invalid, for example no steps, a duplicate step id or an unknown `op` |
 | `429` |  | All 50 jobs in the store are still active or resumable |
+| `503` |  | The server is shutting down |
 <!-- END GENERATED: lemonade.jobs_create -->
 
 <!-- BEGIN GENERATED: lemonade.jobs_list -->

@@ -213,6 +213,8 @@ std::string JobManager::create(const std::string& name, std::vector<StepRecord> 
     if (!err.empty()) throw JobError(400, err);
 
     std::lock_guard<std::mutex> lock(mutex_);
+    // The worker is gone or going, so a job created now would only run after a restart.
+    if (stop_) throw JobError(503, "the server is shutting down");
 
     size_t live = 0;
     bool evictable = false;
