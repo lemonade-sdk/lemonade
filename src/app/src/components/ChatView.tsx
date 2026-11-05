@@ -1,6 +1,8 @@
 import React, { Suspense, lazy, useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { ChatMessage, ChatCompletionStats, ConnectionStatus, LoadedModel, ModelInfo, RealtimeTranscriptionHandle } from '../api';
+import { blobFromDataUrl } from '../api';
 import { copyTextToClipboard } from '../clipboard';
+import { downloadBlob } from '../download';
 import { Icon, CapabilityIcon } from './Icon';
 
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
@@ -88,6 +90,7 @@ interface Message {
   content: string;
   images?: string[];  // transient base64 data URLs for user messages with images
   generatedImages?: string[]; // transient generated image data URLs
+  generatedImageNames?: string[];
   audioUrl?: string; // transient object URL for TTS output
   audioName?: string;
   model3dUrl?: string; // transient generated GLB object URL
@@ -376,6 +379,7 @@ function saveConversations(convos: Conversation[]): boolean {
       content: m.images?.length ? '[image prompt not persisted]' : m.content,
       images: undefined,
       generatedImages: undefined,
+      generatedImageNames: undefined,
       audioUrl: undefined,
       audioName: undefined,
       model3dUrl: undefined,
@@ -2040,7 +2044,8 @@ const ChatView: React.FC<ChatViewProps> = ({
     const model = streamModelsRef.current[convoId] || null;
     delete streamModelsRef.current[convoId];
     const artifacts = collectToolArtifacts(toolCalls);
-    const generatedImages = artifacts.filter(a => a.type === 'image').map(a => a.url);
+    const imageArtifacts = artifacts.filter(a => a.type === 'image');
+    const generatedImages = imageArtifacts.map(a => a.url);
     const generatedAudio = artifacts.find(a => a.type === 'audio');
     const generated3d = artifacts.find(a => a.type === 'model3d');
     const generatedAudioUrl = generatedAudio?.url ? trackGeneratedMediaUrl(generatedAudio.url) : undefined;
@@ -2065,6 +2070,7 @@ const ChatView: React.FC<ChatViewProps> = ({
         stats,
         model,
         generatedImages: generatedImages.length > 0 ? generatedImages : undefined,
+        generatedImageNames: generatedImages.length > 0 ? imageArtifacts.map(a => a.name || '') : undefined,
         audioUrl: generatedAudioUrl,
         audioName: generatedAudio?.name,
         model3dUrl: generated3dUrl,
@@ -2736,17 +2742,21 @@ ${finalText}`
           ? await api.imageEdit(model.name, text, images[0], imageOptions)
           : await api.imageGeneration(model.name, text, imageOptions);
         const generatedImages = [...resultImages];
+        const nameStem = effectiveImageMode === 'edit' ? `${model.name}-edit` : model.name;
+        const generatedImageNames = resultImages.map((_, index) => `${nameStem}-${index + 1}.png`);
         let content = effectiveImageMode === 'edit'
           ? `Edited ${resultImages.length} image${resultImages.length === 1 ? '' : 's'} from your prompt.`
           : `Generated ${resultImages.length} image${resultImages.length === 1 ? '' : 's'} from your prompt.`;
         if (imageSettings.upscaleModel && resultImages[0]) {
           const upscaled = await api.imageUpscale(imageSettings.upscaleModel, resultImages[0]);
           generatedImages.push(upscaled);
+          generatedImageNames.push(`${imageSettings.upscaleModel}-upscaled.png`);
           content = `${content} Added an upscaled version.`;
         }
         appendAssistantMessage(convoId, {
           content,
           generatedImages,
+          generatedImageNames,
           model,
         });
       } else if (model.capability === 'audio-generation') {
@@ -2809,6 +2819,7 @@ ${finalText}`
             ? t('Rendered a reference image and reconstructed it as a textured 3D model.')
             : t('Reconstructed the reference image as a textured 3D model.'),
           generatedImages: generatedReference,
+          generatedImageNames: generatedReference ? [`${model3dSettings.imageModel}-3d-reference.png`] : undefined,
           model3dUrl: trackGeneratedMediaUrl(result.url),
           model3dName: result.filename,
           model,
@@ -5115,16 +5126,63 @@ function imageDownloadExtension(src: string): string {
   return /\.(png|jpe?g|webp|gif|bmp|avif|svg|tiff?|heic|heif)$/i.exec(path)?.[1]?.toLowerCase() || 'png';
 }
 
+function imageDownloadName(src: string, name: string | undefined, fallbackStem: string): string {
+  const stem = (name || '').replace(/\.[a-z0-9]+$/i, '') || fallbackStem;
+  return `${stem}.${imageDownloadExtension(src)}`.replace(/[^a-z0-9._-]+/gi, '-');
+}
+
+async function downloadImage(src: string, filename: string): Promise<void> {
+  if (src.startsWith('data:')) {
+    downloadBlob(blobFromDataUrl(src), filename);
+    return;
+  }
+  const response = await fetch(src);
+  if (!response.ok) throw new Error(`Image download failed (${response.status}).`);
+  downloadBlob(await response.blob(), filename);
+}
+
+type CopyState = 'idle' | 'copied' | 'failed';
+
+const CopyButton: React.FC<{ text: string; disabled?: boolean }> = ({ text, disabled }) => {
+  const { t } = useI18n();
+  const [state, setState] = useState<CopyState>('idle');
+  const resetTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
+  }, []);
+
+  const handleCopy = () => {
+    void copyTextToClipboard(text)
+      .then(() => setState('copied'))
+      .catch(() => setState('failed'))
+      .finally(() => {
+        if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
+        resetTimerRef.current = window.setTimeout(() => setState('idle'), 2000);
+      });
+  };
+
+  return (
+    <button
+      type="button"
+      className={`message__action${state === 'idle' ? '' : ` message__action--${state}`}`}
+      onClick={handleCopy}
+      disabled={disabled}
+    >
+      <Icon name={state === 'copied' ? 'check' : 'copy'} size={13} />
+      <span aria-live="polite">{state === 'copied' ? t('Copied') : state === 'failed' ? t('Copy failed') : t('Copy')}</span>
+    </button>
+  );
+};
+
 const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; defaultThinkingOpen?: boolean; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, defaultThinkingOpen = false, onOptionSelect, onRetry, onSpeak, onEditUser }) => {
   const { t } = useI18n();
   const [thinkingOpen, setThinkingOpen] = useState(defaultThinkingOpen);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content || '');
-  const [copyFailed, setCopyFailed] = useState(false);
 
   useEffect(() => {
     if (!isEditing) setEditDraft(message.content || '');
-    setCopyFailed(false);
   }, [isEditing, message.content]);
 
   if (message.role === 'user') {
@@ -5170,18 +5228,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
           ) : null}
           {!isEditing && message.content && (
             <div className="message__actions" aria-label={t('Message actions')}>
-              <button
-                type="button"
-                className="message__action"
-                onClick={() => {
-                  void copyTextToClipboard(message.content)
-                    .then(() => setCopyFailed(false))
-                    .catch(() => setCopyFailed(true));
-                }}
-                aria-live="polite"
-              >
-                <Icon name="copy" size={13} /> {copyFailed ? t('Copy failed') : t('Copy')}
-              </button>
+              <CopyButton text={message.content} />
               {onEditUser && (
                 <button type="button" className="message__action" onClick={() => setIsEditing(true)}>
                   <Icon name="edit" size={13} /> {t('Edit & resend')}
@@ -5225,15 +5272,18 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             {message.generatedImages.map((src, i) => (
               <div key={i} className="message__image-item">
                 <img src={src} alt={`Generated image ${i + 1}`} className="message__image message__image--generated" />
-                <a
-                  href={src}
-                  download={`lemonade-image-${i + 1}.${imageDownloadExtension(src)}`}
+                <button
+                  type="button"
                   className="message__image-download"
+                  onClick={() => {
+                    const filename = imageDownloadName(src, message.generatedImageNames?.[i], `${displayModel?.name || 'lemonade-image'}-${i + 1}`);
+                    void downloadImage(src, filename).catch(err => console.warn('Could not download generated image:', err));
+                  }}
                   title={t('Download')}
                   aria-label={`${t('Download')} ${t('Image')} ${i + 1}`}
                 >
                   <Icon name="download" size={16} />
-                </a>
+                </button>
               </div>
             ))}
           </div>
@@ -5268,14 +5318,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
           </div>
         )}
         <div className="message__actions" aria-label={t('Message actions')}>
-          <button
-            type="button"
-            className="message__action"
-            onClick={() => copyTextToClipboard(message.content || message.thinking || '')}
-            disabled={!(message.content || message.thinking)}
-          >
-            <Icon name="copy" size={13} /> {t('Copy')}
-          </button>
+          <CopyButton text={message.content || message.thinking || ''} disabled={!(message.content || message.thinking)} />
           {onSpeak && (
             <button type="button" className="message__action" onClick={onSpeak}>
               <Icon name="tts" size={13} /> {t('Read aloud')}

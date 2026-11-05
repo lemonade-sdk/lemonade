@@ -199,7 +199,7 @@ function modelInfoKey(model: ModelInfo | null | undefined): string {
 }
 
 
-function blobFromDataUrl(dataUrl: string): Blob {
+export function blobFromDataUrl(dataUrl: string): Blob {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
   if (!match) throw new Error('Expected an image data URL for editing.');
   const mime = match[1] || 'image/png';
