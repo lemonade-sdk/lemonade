@@ -104,8 +104,8 @@ const ENGINE_LOGOS: Record<string, EngineLogo> = {
   acestep:        { file: 'ace_step.png', plate: 'dark' },
   openmoss:       { file: 'openmoss.png' },
   trellis:        { file: 'trellis.png' },
-  halogen:        { file: 'halogen.png', plate: 'dark' },
-  gufo:           { file: 'gufo.png', plate: 'dark', showName: true },
+  halogen:        { file: 'halogen.png', plate: 'dark', showName: true },
+  gufo:           { file: 'gufo.png', showName: true },
   ds4:            { file: 'dwarfstar.png', showName: true },
   thenoise:       { file: 'thenoise.png', plate: 'dark' },
 };
