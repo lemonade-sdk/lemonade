@@ -1586,9 +1586,9 @@
       "path": "/v1/install/dry-run",
       "query": {},
       "json": {
-        "arch": "gfx1201",
+        "recipe": "whispercpp",
         "backend": "rocm",
-        "recipe": "whispercpp"
+        "arch": "gfx1201"
       },
       "form": {},
       "files": {}

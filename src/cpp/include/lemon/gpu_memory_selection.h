@@ -129,15 +129,39 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
         if (target.targets_vendor && !target.valid) return {};
         if (!target.indices.empty()) {
             std::vector<GpuMemoryPool> pools;
-            // llama.cpp numbers ROCm devices by HSA-agent order. SystemInfo currently
-            // exposes the iGPU followed by dGPUs, which is the order used here until it
-            // carries a runtime ordinal for each AMD device.
+            const bool has_rocm_indices = std::any_of(
+                devices.begin(), devices.end(), [](const GPUInfo* gpu) {
+                    return gpu->rocm_index >= 0;
+                });
+#ifdef _WIN32
+            if (!has_rocm_indices) {
+                const size_t available_amd_gpu_count =
+                    (amd_igpu.available ? 1U : 0U) +
+                    static_cast<size_t>(std::count_if(
+                        amd_dgpus.begin(), amd_dgpus.end(),
+                        [](const GPUInfo& gpu) { return gpu.available; }));
+                if (available_amd_gpu_count != 1 || target.indices.size() != 1 ||
+                    target.indices.front() != 0) {
+                    return {};
+                }
+            }
+#endif
             for (int index : target.indices) {
-                if (index >= static_cast<int>(devices.size())) continue;
-                const auto& gpu = *devices[index];
-                pools.push_back(pool_for(gpu, "AMD ROCm" + std::to_string(index),
+                const GPUInfo* selected = nullptr;
+                if (has_rocm_indices) {
+                    for (const auto* gpu : devices) {
+                        if (gpu->rocm_index == index) {
+                            selected = gpu;
+                            break;
+                        }
+                    }
+                } else if (index >= 0 && index < static_cast<int>(devices.size())) {
+                    selected = devices[index];
+                }
+                if (!selected) continue;
+                pools.push_back(pool_for(*selected, "AMD ROCm" + std::to_string(index),
                                          GpuMemoryVendor::Amd,
-                                         &gpu == &amd_igpu));
+                                         selected == &amd_igpu));
             }
             return most_constrained(pools);
         }

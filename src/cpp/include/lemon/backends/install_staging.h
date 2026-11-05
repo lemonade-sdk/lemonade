@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -9,6 +10,18 @@
 // installation. Kept free of the heavier backend_utils.cpp dependencies so the
 // crash-safety invariant can be unit-tested in isolation (test/cpp/test_install_atomicity.cpp).
 namespace lemon::backends {
+
+    inline std::string read_installed_asset_identity(const std::filesystem::path& install_dir) {
+        std::ifstream asset_file(install_dir / "asset.txt");
+        std::string asset;
+        std::getline(asset_file, asset);
+        return asset;
+    }
+
+    inline bool installed_asset_identity_requires_refresh(const std::string& installed_asset,
+                                                           const std::string& requested_asset) {
+        return installed_asset != requested_asset;
+    }
 
     /**
      * Recursively search `dir` for a regular file named `binary_name` (or

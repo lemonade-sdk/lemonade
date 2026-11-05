@@ -5,12 +5,13 @@
 using namespace lemon;
 
 static GPUInfo gpu(double vram_gb, double used_gb = 0.0, int index = -1,
-                   const std::string& uuid = "") {
+                   const std::string& uuid = "", int rocm_index = -1) {
     GPUInfo info;
     info.available = true;
     info.vram_gb = vram_gb;
     info.vram_used_gb = used_gb;
     info.index = index;
+    info.rocm_index = rocm_index;
     info.uuid = uuid;
     return info;
 }
@@ -63,10 +64,10 @@ int main() {
     check(uuid_filtered_cuda0.total_gb == 24.0 && uuid_filtered_cuda0.used_gb == 4.0,
           "CUDA0 follows UUID CUDA_VISIBLE_DEVICES ordering");
 
-    GPUInfo amd_igpu = gpu(2.0, 0.5);
+    GPUInfo amd_igpu = gpu(2.0, 0.5, -1, "", 0);
     amd_igpu.virtual_gb = 6.0;
     amd_igpu.virtual_used_gb = 1.5;
-    std::vector<GPUInfo> two_amd{gpu(16.0, 3.0)};
+    std::vector<GPUInfo> two_amd{gpu(16.0, 3.0, -1, "", 1)};
     auto rocm1 = select_gpu_memory_pool(
         gpu_memory_vendor_for_target("system", "ROCm1"), amd_igpu, two_amd, nvidia,
         unavailable, "ROCm1");
@@ -78,6 +79,27 @@ int main() {
     check(rocm0.unified && rocm0.total_gb == 8.0 &&
           rocm0.physical_total_gb == 0.0,
           "ROCm iGPU pool does not report its GTT window as physical RAM");
+
+#ifdef _WIN32
+    GPUInfo unmapped_igpu = gpu(2.0, 0.5);
+    std::vector<GPUInfo> unmapped_dgpus{gpu(16.0, 3.0)};
+    auto unmapped_rocm0 = select_gpu_memory_pool(
+        GpuMemoryVendor::Amd, unmapped_igpu, unmapped_dgpus, nvidia,
+        unavailable, "ROCm0");
+    check(unmapped_rocm0.total_gb == 0.0,
+          "Windows does not infer an ROCm memory ordinal from WMI array order");
+#endif
+
+    GPUInfo swapped_igpu = gpu(2.0, 0.5, -1, "", 1);
+    swapped_igpu.virtual_gb = 6.0;
+    swapped_igpu.virtual_used_gb = 1.5;
+    std::vector<GPUInfo> swapped_dgpus{gpu(16.0, 3.0, -1, "", 0)};
+    auto rocm0_by_kfd_order = select_gpu_memory_pool(
+        gpu_memory_vendor_for_target("system", "ROCm0"), swapped_igpu, swapped_dgpus,
+        nvidia, unavailable, "ROCm0");
+    check(rocm0_by_kfd_order.total_gb == 16.0 &&
+              rocm0_by_kfd_order.label == "AMD ROCm0",
+          "ROCm0 follows the runtime ordinal when the iGPU is listed first");
 
     auto cuda_list = select_gpu_memory_pool(
         gpu_memory_vendor_for_target("system", "CUDA0,CUDA1"), unavailable, amd, two_nvidia,

@@ -2,6 +2,7 @@
 
 #include "lemon/backend_manager.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/runtime_config.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/shared_args.h"
 #include "lemon/system_info.h"
@@ -58,12 +59,12 @@ public:
             "properties": {
                 "recipe": {"type": "string", "description": "The requested recipe."},
                 "backend": {"type": "string", "description": "The requested backend."},
-                "arch": {"type": "string", "description": "The requested `arch`, or `\"\"` when it was omitted."},
+                "arch": {"type": "string", "description": "The effective ROCm architecture used to resolve the asset, or `\"\"` for a non-ROCm backend or when no ROCm architecture could be resolved. The optional request `arch` is an override for this value."},
                 "repo": {"type": "string", "description": "GitHub repository of the release."},
                 "version": {"type": "string", "description": "Release version: the pin in `backend_versions.json` unless runtime version policy overrides it."},
                 "filename": {"type": "string", "description": "Release asset name."},
                 "url": {"type": "string", "description": "Download URL built from `repo`, `version` and `filename`."},
-                "supported": {"type": "boolean", "description": "Whether Lemonade's recipe/backend support matrix accepts the architecture. An unsupported `arch` still resolves, with `false`; without `arch`, a successful answer is always `true`."},
+                "supported": {"type": "boolean", "description": "Whether Lemonade's recipe/backend support matrix accepts the optional request `arch`. An unsupported request still resolves, with `false`; without an override, a successful answer is always `true`."},
                 "supports_split_archive": {"type": "boolean", "description": "Whether the recipe supports assets published as multiple archive parts. When `true`, the real download path can consult a `.partcount` manifest."}
             }
         })");
@@ -93,7 +94,12 @@ public:
                 SystemInfo::set_rocm_arch_override(requested_arch);
             }
 
-            auto params = ctx_.backend_manager->get_install_params(recipe, backend);
+            const std::string llamacpp_device =
+                recipe == "llamacpp" && ctx_.config
+                    ? ctx_.config->backend_string("llamacpp", "device")
+                    : "";
+            auto params = ctx_.backend_manager->get_install_params(
+                recipe, backend, llamacpp_device);
 
             // Clear the override as soon as resolution is done so it cannot leak to
             // any later work on this thread.
@@ -115,7 +121,7 @@ public:
             json response = {
                 {"recipe", recipe},
                 {"backend", backend},
-                {"arch", requested_arch},
+                {"arch", params.resolved_arch},
                 {"repo", params.repo},
                 {"version", params.version},
                 {"filename", params.filename},
