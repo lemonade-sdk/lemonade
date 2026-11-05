@@ -5157,7 +5157,8 @@ optgroup {
   border-radius: var(--radius-sm);
   background: var(--surface-1);
   color: var(--text-primary);
-  text-decoration: none;
+  padding: 0;
+  cursor: pointer;
 }
 
 .message__image-download:hover,
@@ -5419,6 +5420,18 @@ optgroup {
 .message__action:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+.message__action--copied,
+.message__action--copied:hover:not(:disabled) {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.message__action--failed,
+.message__action--failed:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 /* Keep the collapsed conversations toggle available and visible. */
