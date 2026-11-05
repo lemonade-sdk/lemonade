@@ -1,11 +1,20 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+        title: "Lemonade's GUI has been completely overhauled!",
+        url: "https://www.youtube.com/watch?v=mg2PqmRujMo",
+        date: "November 4, 2026",
+        description: "Take a deep dive into the new Lemonade desktop app and web UI with Kyle. New features include built-in tools for exploring Lemonade in natural language, an all-new model manager, and a telemetry viewer for deep inspection of LLM traffic.",
+        image: "https://img.youtube.com/vi/mg2PqmRujMo/maxresdefault.jpg",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "video"
+        },
+    {
         title: "Vision: your auto-optimizing local stack of agents, models, and engines",
         url: "https://lemonade-server.ai/news/auto-opt-vision.html",
         date: "October 20, 2026",
         description: "A blog laying out a vision for Lemonade's technical development in the coming months. Pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.",
-        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner_03.png",
         imageStyle: "width: 100%; height: 100%; object-position: center top; ",
         type: "blog"
         },

@@ -1662,33 +1662,33 @@ This endpoint does not take any parameters.
 ```json
 {
   "status": "ok",
-  "version": "2026.45.0~1719.034d3f52",
+  "version": "2026.47.0~1769.72f32ebd",
   "model_loaded": "Qwen3-0.6B-GGUF",
   "update_check_done": true,
+  "models_generation": 5,
+  "model_sync": {"status": "idle", "sync_id": 0, "completed_sync_id": 0},
   "all_models_loaded": [
     {
       "model_name": "nomic-embed-text-v1-GGUF",
       "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
-      "last_use": 872883217,
+      "last_use": 74815978,
       "type": "embedding",
       "device": "gpu",
       "pinned": false,
       "is_busy": false,
       "is_streaming": false,
-      "backend_url": "http://127.0.0.1:8002/v1",
-      "pid": 15836,
+      "backend_url": "http://127.0.0.1:8005/v1",
+      "pid": 1283552,
       "launch_command": [
-        "~/.cache/lemonade\\bin\\llamacpp\\vulkan\\llama-server.exe",
+        "~/.cache/lemonade/bin/llamacpp/vulkan/llama-server",
         "-m",
-        "~\\.cache\\huggingface\\hub/models--nomic-ai--nomic-embed-text-v1-GGUF\\snapshots\\90c80ac5c2a0d13de9a36cf1dec39f34acee54a8\\nomic-embed-text-v1.Q4_K_S.gguf",
+        "~/.cache/huggingface/hub/models--nomic-ai--nomic-embed-text-v1-GGUF/snapshots/90c80ac5c2a0d13de9a36cf1dec39f34acee54a8/nomic-embed-text-v1.Q4_K_S.gguf",
         "--ctx-size",
         "8192",
         "--port",
-        "8002",
+        "8005",
         "--jinja",
         "--metrics",
-        "-lv",
-        "4",
         "--embeddings",
         "--parallel",
         "1"
@@ -1716,7 +1716,7 @@ This endpoint does not take any parameters.
     "tts": 1,
     "classification": 1
   },
-  "websocket_port": 9000,
+  "websocket_port": 9001,
   "telemetry": {"enabled": false},
   "pinned_helper_models": {"classification": 0, ... 6 more}
 }
@@ -1808,15 +1808,15 @@ This endpoint does not take any parameters.
 
 ```json
 {
-  "time_to_first_token": 0.00445,
-  "tokens_per_second": 350.4584986185915,
+  "time_to_first_token": 0.008384,
+  "tokens_per_second": 177.61338359134263,
   "input_tokens": 1,
-  "output_tokens": 327,
+  "output_tokens": 253,
   "prompt_tokens": 15,
   "cache_tokens": 14,
   "request_count_total": 9,
   "input_tokens_total": 165,
-  "output_tokens_total": 2104,
+  "output_tokens_total": 1817,
   "prompt_tokens_total": 226,
   "cache_tokens_total": 75,
   "routing_decisions_total": 0,
