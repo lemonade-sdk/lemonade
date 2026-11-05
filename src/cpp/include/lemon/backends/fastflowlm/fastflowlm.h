@@ -36,7 +36,7 @@ inline const BackendDescriptor descriptor = {
                  "FastFlowLM (now AMD ROCm)", "AMD ROCm",
                  "MIT (CLI) and FastFlowLM NPU Binary License (kernels)", "https://github.com/ROCm/FastFlowLM"}},
     },
-    /*supported_modes*/ {"chat", "embeddings", "transcription"},
+    /*supported_modes*/ {"chat", "embeddings", "transcription", "classification"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
     /*web_display_name*/ "FastFlowLM NPU",
@@ -49,6 +49,10 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {},
     /*config_extra*/    {{"prefer_system", false}},
+    /*streams_model_from_storage*/ false,
+    /*containers*/ {},
+    // see ISystemOneServer
+    /*mode_capability_requirements*/ {{"classification", "systemone"}},
 };
 
 }  // namespace fastflowlm

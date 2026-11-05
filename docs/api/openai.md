@@ -949,8 +949,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `prompt` | No | Text to guide the transcription's style or continue a previous segment. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | Sampling temperature. Defaults to `0` for whisper.cpp models, and to the backend's own for FastFlowLM models. Moonshine models ignore it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segments`.
-
 ### Examples
 
 #### Transcript
@@ -1016,7 +1014,7 @@ On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segme
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` cannot transcribe, which is found after it loads; the error's `type` is `unsupported_operation` |
-| `400` |  | `response_format` is `srt` or `vtt` and `model` is a FastFlowLM model, which reports no segment timestamps |
+| `400` |  | `response_format` is `srt` or `vtt` and `model` is a FastFlowLM model |
 | `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
@@ -1828,6 +1826,12 @@ an error naming it; the file is left for you to correct.
 | Label | Description |
 |-------|-------------|
 | `mtp` | Enables llama.cpp MTP draft decoding defaults (`--spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75`); users can override these with `llamacpp_args`. |
+
+**Execution labels:** control how a model is invoked:
+
+| Label | Description |
+|-------|-------------|
+| `on-demand` | Runs through a task-specific endpoint without a resident model server, so `/v1/load` is not supported. Built-in upscalers use `/v1/images/upscale`. |
 
 **Image capability labels:** carried alongside `image`; they refine what the model is offered for without changing its deployment mode:
 
