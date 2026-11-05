@@ -558,7 +558,7 @@ export interface SlotData {
   temperature: number;
   top_k: number;
   top_p: number;
-  cache_tokens: number[] | number;
+  cache_tokens?: number[] | number;
   n_cache_tokens?: number;
   timings?: SlotTimings;
   prompt: string;
@@ -566,13 +566,6 @@ export interface SlotData {
   stopped_eos: boolean;
   stopped_word: boolean;
   stopped_limit: boolean;
-}
-
-/** Get usable cache token count — prefers n_cache_tokens (number) over cache_tokens array length */
-export function getCacheTokenCount(s: SlotData): number {
-  if (typeof s.n_cache_tokens === 'number') return s.n_cache_tokens;
-  if (typeof s.cache_tokens === 'number') return s.cache_tokens;
-  return Array.isArray(s.cache_tokens) ? s.cache_tokens.length : 0;
 }
 
 export interface LogEntry {
