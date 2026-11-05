@@ -201,6 +201,7 @@
 .nexus-view-mode label:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
 .nexus-view-mode input { margin: 0; accent-color: var(--accent); width: 13px; height: 13px; }
 .nexus-hierarchy { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; margin-top: 20px; background: var(--surface-1); }
+.nexus-route-permissions + .nexus-hierarchy { margin-top: 0; }
 .nexus-hierarchy__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; }
 .nexus-hierarchy__toolbar strong { display: block; margin-bottom: 4px; font-size: var(--text-md); font-weight: var(--weight-semibold); }
 .nexus-hierarchy__search { display: flex; align-items: center; gap: 9px; margin: 0 20px 18px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-tertiary); background: var(--surface-2); }
@@ -378,6 +379,7 @@
 /* Mesh panel: the network's state, the server chat runs on, every device with its pills,
    and the networks this identity joined. Tokens only, so both themes apply. */
 .nexus-mesh { margin-top: 20px; padding: 18px 20px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-1); }
+.nexus-mesh + .nexus-route-permissions { margin-top: 12px; }
 .nexus-mesh__header { display: flex; align-items: center; gap: 12px; }
 .nexus-mesh__icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 38px; height: 38px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); color: var(--text-secondary); }
 .nexus-mesh__title { flex: 1; min-width: 0; }
@@ -392,12 +394,13 @@
 .nexus-mesh-list { list-style: none; margin: 0; padding: 0; }
 .nexus-mesh-row { display: flex; align-items: flex-start; gap: 10px; width: 100%; margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-2); color: var(--text-primary); text-align: left; }
 .nexus-mesh-list > .nexus-mesh-row + .nexus-mesh-row { border-top: 1px solid var(--border-subtle); }
+.nexus-mesh .nexus-devices > .nexus-mesh-row { padding-inline-start: var(--space-2); column-gap: calc(var(--space-4) - var(--space-2)); }
 .nexus-mesh-row--choice { cursor: pointer; }
 .nexus-mesh-row--choice:not(:disabled):hover { border-color: var(--border-strong); background: var(--surface-3); }
 .nexus-mesh-row--choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .nexus-mesh-row.is-selected { border-color: var(--accent); background: var(--accent-soft); }
 .nexus-mesh-row:disabled { cursor: default; }
-.nexus-mesh-row > .nexus-mesh-dot { margin-top: 6px; }
+.nexus-mesh-row > .nexus-mesh-dot { align-self: flex-start; margin-top: 6px; }
 .nexus-mesh-row__body { flex: 1; min-width: 0; }
 .nexus-mesh-row__name { display: block; font-size: var(--text-sm); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
 .nexus-mesh-row__sub { display: block; margin-top: 2px; color: var(--text-tertiary); font-size: var(--text-xs); overflow-wrap: anywhere; }
