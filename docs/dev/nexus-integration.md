@@ -473,7 +473,12 @@ this device holds on the target group; a name it lacks is dropped and logged
 rather than failing the invite, because the federation requires the inviter to
 hold what it grants. (The federation's own default is `read` and
 `connect_private`, from before route families, which leaves a new device
-without `svc:inference`.) Otherwise they are a list
+without `svc:inference`.) The federation places a new device that joins with
+the invite with `read` alone on the target group, whatever the invite carries,
+so `lemond` keeps each invite it minted and, as soon as a device with that
+bare entry appears under the target, replaces the entry with the invite's
+permissions (one invite per device, oldest first); an entry set on purpose is
+left alone. Otherwise they are a list
 from `read`, `write`, `add_child`, `connect_private`, `connect_shared` and the
 `svc:<family>` names, or a `role` that expands to such a list.
 `lemond` refuses `admin` and other names with 400. The reply carries the

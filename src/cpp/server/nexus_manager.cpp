@@ -413,6 +413,40 @@ json invite_permissions(const json& requested) {
     return ordered(result);
 }
 
+json pending_invite_grants(const json& group, const json& children, json& invites,
+                           const std::string& own_node_id, uint64_t now) {
+    json grants = json::array();
+    if (!invites.is_array() || invites.empty() || !children.is_array()) return grants;
+    json live = json::array();
+    for (const auto& invite : invites) {
+        if (invite.is_object() && invite.value("expires_at", uint64_t{0}) > now) live.push_back(invite);
+    }
+    const auto acl = group.is_object() ? group.value("assignments", json::array()) : json::array();
+    std::vector<const json*> endpoints;
+    for (const auto& child : children) {
+        if (child.is_object() && text(child, "type") == "endpoint" && text(child, "id") != own_node_id &&
+            !text(child, "mgmt_pubkey").empty()) {
+            endpoints.push_back(&child);
+        }
+    }
+    std::sort(endpoints.begin(), endpoints.end(),
+              [](const json* a, const json* b) { return text(*a, "id") < text(*b, "id"); });
+    for (const json* child : endpoints) {
+        if (live.empty()) break;
+        const auto key = text(*child, "mgmt_pubkey");
+        // `read` alone is what the federation writes at placement; any other entry was set
+        // on purpose, by a role, an access change or an earlier completion.
+        if (permissions_for(acl, key) != json::array({"read"})) continue;
+        auto permissions = string_list(live.front().value("permissions", json::array()));
+        if (!contains(permissions, "read")) permissions.push_back("read");
+        live.erase(live.begin());
+        if (permissions.size() == 1) continue;
+        grants.push_back({{"management_pubkey", key}, {"permissions", ordered(permissions)}});
+    }
+    invites = std::move(live);
+    return grants;
+}
+
 const unsigned kCatalogRevision = 2;
 
 uint64_t catalog_version(const std::string& lemond_version) {
@@ -1152,6 +1186,11 @@ struct NexusManager::Session {
     std::string error;
     bool error_retryable{false};  // `error` is a failure to reach the federation, not a refusal
     json devices = json::array();
+    // This device's outstanding invites ({target_node_id, permissions, expires_at}): the
+    // federation places an invited device with `read` alone on the group, and the inviter
+    // completes the entry once the device appears (nexus_access::pending_invite_grants).
+    json pending_invites = json::array();
+    bool completing_invites{false};
     // The last join's invite outcome for a device that already had a node
     // ({status, group_id, error}), or null.
     json join_membership = nullptr;
@@ -1393,6 +1432,7 @@ struct NexusManager::Session {
         ln_set_session_token(client.get(), "");
         ln_set_link_token(client.get(), "");
         devices = json::array();
+        pending_invites = json::array();
         detail = "locked";
         clear_error();
     }
@@ -1556,10 +1596,64 @@ struct NexusManager::Session {
         }
         const auto permissions = nexus_access::invite_permissions(requested);
         const auto list = permissions.is_null() ? std::string() : permissions.dump();
-        return sdk_call([&](auto out) {
+        auto result = sdk_call([&](auto out) {
             return ln_invite_create(client.get(), target.empty() ? nullptr : target.c_str(),
                 list.empty() ? nullptr : list.c_str(), static_cast<uint32_t>(ttl), out);
         }, 409);
+        if (result.is_object()) {
+            pending_invites.push_back({{"target_node_id", result.value("target_node_id", target.empty() ? group_id : target)},
+                {"permissions", result.contains("permissions") ? result["permissions"] : (permissions.is_null() ? json::array() : permissions)},
+                {"expires_at", result.value("expires_at", uint64_t{0})}});
+        }
+        return result;
+    }
+    // Applies the outstanding invites' permissions to the devices the federation placed
+    // with `read` alone. Returns true when an entry changed. A refusal is logged: the
+    // device is placed and the admin can still set its role.
+    bool complete_invites(const json& group, const json& children) {
+        if (!pending_invites.is_array() || pending_invites.empty() || !group_admin()) return false;
+        const auto now = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+        std::vector<std::string> targets;
+        for (const auto& invite : pending_invites) {
+            const auto target = invite.value("target_node_id", group_id);
+            if (std::find(targets.begin(), targets.end(), target) == targets.end()) targets.push_back(target);
+        }
+        bool changed = false;
+        json kept = json::array();
+        for (const auto& target : targets) {
+            json scoped = json::array();
+            for (const auto& invite : pending_invites) {
+                if (invite.value("target_node_id", group_id) == target) scoped.push_back(invite);
+            }
+            json node = group;
+            json kids = children;
+            if (target != group_id) {
+                try {
+                    node = private_call("GET", "/api/tree/node/" + target);
+                    kids = private_call("GET", "/api/tree/children/" + target);
+                } catch (const std::exception& e) {
+                    LOG(WARNING, "Nexus") << "Cannot read invite target " << target << ": " << e.what() << std::endl;
+                    for (const auto& invite : scoped) kept.push_back(invite);
+                    continue;
+                }
+            }
+            const auto grants = nexus_access::pending_invite_grants(node, kids, scoped, node_id, now);
+            for (const auto& invite : scoped) kept.push_back(invite);
+            for (const auto& grant : grants) {
+                const auto key = grant.at("management_pubkey").get<std::string>();
+                try {
+                    set_assignment(target, key, grant.at("permissions"));
+                    changed = true;
+                    LOG(INFO, "Nexus") << "Invite completed: the new device holds " << grant.at("permissions").dump()
+                                       << " on " << target << std::endl;
+                } catch (const NexusError& e) {
+                    LOG(WARNING, "Nexus") << "Invite completion refused on " << target << ": " << e.what() << std::endl;
+                }
+            }
+        }
+        pending_invites = std::move(kept);
+        return changed;
     }
     // After the federation deletes the account, the local identity has no use. Remove the
     // files the SDK leaves to the caller; preferences.json stays with NexusManager.
@@ -1621,6 +1715,16 @@ struct NexusManager::Session {
             } else ++it;
         }
         devices = std::move(next);
+        if (!completing_invites) {
+            completing_invites = true;
+            try {
+                if (complete_invites(group, children)) refresh_devices();
+            } catch (...) {
+                completing_invites = false;
+                throw;
+            }
+            completing_invites = false;
+        }
     }
     uint16_t relay_port(const std::string& id) {
         if (locked) throw NexusError(423, "Unlock your network first");
