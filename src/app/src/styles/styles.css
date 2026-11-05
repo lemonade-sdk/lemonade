@@ -11786,6 +11786,21 @@ a.backend-card__version:focus-visible {
 
 .backend-card__author .app-icon { transform: translateY(-0.5px); }
 
+.backend-card__format {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-tertiary);
+  font-size: var(--type-overline-size);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  cursor: default;
+}
+
 a.backend-card__author {
   text-decoration: none;
 }

@@ -32,6 +32,7 @@ interface BackendInfo {
   can_uninstall?: boolean;
   experimental?: boolean;
   display_name?: string;
+  format?: 'native' | 'python' | 'container';
   description?: string;
   author?: string;
   publisher?: string;
@@ -118,6 +119,12 @@ const BACKEND_LABELS: Record<string, string> = {
   npu:      'NPU',
   directml: 'DirectML',
   dml:      'DirectML',
+};
+
+const BACKEND_FORMATS: Record<string, { label: string; icon: IconName; title: string }> = {
+  native:    { label: 'Native',    icon: 'hard-drive', title: 'Runs a native binary directly on this machine' },
+  python:    { label: 'Python',    icon: 'code',       title: 'Runs in a Python environment that Lemonade manages' },
+  container: { label: 'Container', icon: 'box',        title: 'Runs inside a container' },
 };
 
 // Older lemond builds did not expose descriptor.experimental through
@@ -1170,6 +1177,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               ? releaseLinkForVersion(targetReleaseUrl, version)
               : targetReleaseUrl;
             const variantLabel = BACKEND_LABELS[backend] || backend;
+            const format = info.format ? BACKEND_FORMATS[info.format] : undefined;
             const description = cleanString(info.description);
             const author = cleanString(info.author);
             const publisher = cleanString(info.publisher);
@@ -1203,6 +1211,16 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                 </div>
 
                 <div className="backend-card__variant-meta">
+                  {format && (
+                    <span
+                      className={`backend-card__format backend-card__format--${info.format}`}
+                      data-backend-format={info.format}
+                      title={t(format.title)}
+                    >
+                      <Icon name={format.icon} size={11} aria-hidden="true" />
+                      {t(format.label)}
+                    </span>
+                  )}
                   {author && (projectUrl ? (
                     <a
                       className="backend-card__author"
