@@ -126,8 +126,10 @@ void test_missing_driver_is_unsupported() {
     const json recipes = build_recipes(devices_with_nvidia(rtx_4090("Unknown", true)));
     const json cuda = cuda_status(recipes);
     check(cuda.value("state", "") == "unsupported", "missing driver: cuda is unsupported");
-    check(cuda.value("message", "").find("driver is not installed") != std::string::npos,
+    check(cuda.value("message", "").find("driver is not installed or not loaded") != std::string::npos,
           "missing driver: message names the missing driver");
+    check(cuda.value("message", "").find("restart Lemonade") != std::string::npos,
+          "missing driver: message says to restart Lemonade");
     check(default_backend(recipes) != "cuda", "missing driver: cuda is not the auto default");
 }
 
@@ -137,6 +139,8 @@ void test_old_driver_requires_action() {
     check(cuda.value("state", "") == "action_required", "old driver: cuda is action_required");
     check(cuda.value("message", "").find(kOldDriver) != std::string::npos,
           "old driver: message names the installed driver");
+    check(cuda.value("message", "").find("Restart Lemonade") != std::string::npos,
+          "old driver: message says to restart Lemonade");
     check(cuda.value("action", "") == "https://www.nvidia.com/en-us/drivers/",
           "old driver: action is the NVIDIA driver download link");
     check(default_backend(recipes) != "cuda", "old driver: cuda is not the auto default");
@@ -187,7 +191,7 @@ void test_missing_driver_keeps_unsupported_arch() {
 void test_missing_driver_with_unknown_arch_names_driver() {
     const json recipes = build_recipes(
         devices_with_nvidia(nvidia_gpu("NVIDIA GPU [0x2684]", "", "Unknown", true)));
-    check(cuda_status(recipes).value("message", "").find("driver is not installed") !=
+    check(cuda_status(recipes).value("message", "").find("driver is not installed or not loaded") !=
               std::string::npos,
           "missing driver with unknown arch: message names the missing driver");
 }

@@ -702,7 +702,10 @@ static std::optional<NvidiaDriverBlock> nvidia_driver_block(const RecipeBackendD
     if (all_missing) {
         if (arch_supported || !any_known_family) {
             return NvidiaDriverBlock{
-                "unsupported", "NVIDIA GPU found, but the NVIDIA driver is not installed", ""};
+                "unsupported",
+                "NVIDIA GPU found, but the NVIDIA driver is not installed or not loaded; "
+                "restart Lemonade after installing it",
+                ""};
         }
         return std::nullopt;
     }
@@ -716,7 +719,8 @@ static std::optional<NvidiaDriverBlock> nvidia_driver_block(const RecipeBackendD
         system_info_detail::nvidia_driver_older_than(driver_version, minimum)) {
         return NvidiaDriverBlock{
             "action_required",
-            "NVIDIA driver " + driver_version + " is too old; " + minimum + " or newer is required",
+            "NVIDIA driver " + driver_version + " is too old; " + minimum +
+                " or newer is required. Restart Lemonade after updating",
             "https://www.nvidia.com/en-us/drivers/"};
     }
     return std::nullopt;
