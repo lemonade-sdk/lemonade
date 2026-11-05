@@ -65,7 +65,7 @@ public:
             "as `Wan2.1-T2V-1.3B` and is a Lemonade extension.";
         s.notes = {
             "The model loads when the job starts, not during this request.",
-            "The clip is kept on disk under the cache directory until its job is evicted or deleted.",
+            "The clip is kept on disk under the cache directory. Generating another video deletes the clips of deleted or evicted jobs.",
             "stable-diffusion.cpp generates a single frame when no frame count is given, and video "
             "models need a few dozen frames before they animate rather than drift, so Lemonade sends "
             "33 by default.",
