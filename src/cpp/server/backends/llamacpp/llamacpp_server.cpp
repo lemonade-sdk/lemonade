@@ -7,6 +7,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/systemone_classify.h"
 #include "lemon/gguf_capabilities.h"
 #include "lemon/gguf_reader.h"
 #include "lemon/gguf_shard_utils.h"
@@ -101,14 +102,6 @@ static bool is_llamacpp_rocm_backend(const std::string& backend) {
 
 static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
-}
-
-static json invalid_decision_request(const std::string& message) {
-    return json{{"error", {
-        {"message", message},
-        {"type", "invalid_request_error"},
-        {"status_code", 400},
-    }}};
 }
 
 // The container backends are Vulkan (nathanw) and ROCm (halobox) builds of llama.cpp.
@@ -736,20 +729,19 @@ json LlamaCppServer::classify(const json& request) {
     }
     const json text = request.contains("text") ? request["text"] : request.value("input", json());
     if (!text.is_string()) {
-        return invalid_decision_request("Missing 'input' (or 'text') string in classify request");
+        return systemone::invalid_decision_request("Missing 'input' (or 'text') string in classify request");
     }
     if (!request.contains("labels") || request["labels"].is_null()) {
-        return invalid_decision_request(
+        return systemone::invalid_decision_request(
             "this model scores a label list supplied per request; include a \"labels\" "
             "array in the request body");
     }
 
     nlohmann::ordered_json body;
     try {
-        body = llamacpp::build_systemone_classify_request(text.get<std::string>(),
-                                                          request["labels"]);
+        body = systemone::build_classify_request(text.get<std::string>(), request["labels"]);
     } catch (const std::invalid_argument& e) {
-        return invalid_decision_request(e.what());
+        return systemone::invalid_decision_request(e.what());
     }
 
     const json response(decide(body));
@@ -760,7 +752,7 @@ json LlamaCppServer::classify(const json& request) {
                           ? request["top_k"].get<int>()
                           : 0;
     try {
-        return llamacpp::systemone_classify_response(response, request["labels"], top_k);
+        return systemone::classify_response(response, request["labels"], top_k);
     } catch (const std::exception& e) {
         return ErrorResponse::create(e.what(), ErrorType::BACKEND_ERROR);
     }
@@ -805,7 +797,7 @@ std::optional<json> LlamaCppServer::laya_cut_error(const nlohmann::ordered_json&
         const std::string cut = llamacpp::laya_cut(question, option_tokens, question_tokens,
                                                    decision_max_head_tokens_);
         if (!cut.empty()) {
-            return invalid_decision_request(
+            return systemone::invalid_decision_request(
                 questions.size() > 1 ? "question '" + question.id + "': " + cut : cut);
         }
     }
