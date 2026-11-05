@@ -364,20 +364,37 @@ CAPABILITIES = {
             },
         },
     },
-    # SystemOne decision models: a llama.cpp model that deploys as
-    # classification and answers /v1/systemone (llama.cpp b11361 or later).
+    # SystemOne decision models: a model that deploys as classification and
+    # answers /v1/systemone (llama.cpp b11361 or later, or FLM's d3 models).
     "systemone": {
         "llamacpp": {
             "backends": ["cpu", "vulkan", "rocm", "metal"],
             "supports": {
                 "systemone": True,
                 "classify_labels": True,
+                "laya_decision_type": True,
             },
             "test_models": {
                 "systemone": "Julia-1-GGUF",
                 "systemone_router": "Laya-GGUF",
                 "llm": "Tiny-Test-Model-GGUF",
                 "llm_capable": "Qwen3-0.6B-GGUF",
+            },
+        },
+        # d3 decision models on the NPU (`flm serve --decision`, FLM 1.0.11 or
+        # later).
+        "flm": {
+            "backends": ["npu"],
+            "supports": {
+                "systemone": True,
+                "classify_labels": True,
+                "laya_decision_type": False,
+            },
+            "test_models": {
+                "systemone": "d3-lite-FLM",
+                "systemone_router": "d3-lite-FLM",
+                "llm": "llama3.2-1b-FLM",
+                "llm_capable": "qwen3-1.7b-FLM",
             },
         },
     },
