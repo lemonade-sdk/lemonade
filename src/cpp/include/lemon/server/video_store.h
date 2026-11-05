@@ -32,6 +32,8 @@ bool is_video_job(const nlohmann::json& job);
 
 // An interrupted job is a canceled video, unless the job engine recorded why it stopped:
 // it only does so when the server restarted mid-generation, and that video failed.
+// A pause only takes effect between steps, so a video paused while its one step ran
+// is held paused with the clip already made: that video is completed.
 std::string video_status(const nlohmann::json& job);
 
 } // namespace video_store

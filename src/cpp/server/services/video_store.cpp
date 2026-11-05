@@ -86,6 +86,10 @@ bool is_video_job(const nlohmann::json& job) {
 
 std::string video_status(const nlohmann::json& job) {
     const std::string status = job.value("status", std::string());
+    if (status == "paused" && is_video_job(job) &&
+        job["steps"][0].value("status", std::string()) == "completed") {
+        return "completed";
+    }
     if (status != "interrupted") return status;
     return job.value("error", std::string()).empty() ? "canceled" : "failed";
 }

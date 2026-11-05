@@ -38,10 +38,9 @@ public:
             write_unknown_video(res);
             return;
         }
-        const std::string status = job->value("status", "");
+        const std::string status = video_store::video_status(*job);
         if (status != "completed") {
-            write_plain_error(res, kVideoNotReady,
-                              "video is not ready: " + video_store::video_status(*job));
+            write_plain_error(res, kVideoNotReady, "video is not ready: " + status);
             return;
         }
         if (!job->contains("steps") || !(*job)["steps"].is_array() || (*job)["steps"].empty() ||

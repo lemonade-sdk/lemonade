@@ -93,6 +93,14 @@ static void test_video_status() {
           store::video_status(json{{"status", "interrupted"},
                                    {"error", "server restarted while the job was active"}}) ==
               "failed");
+    const auto paused = [](const char* step_status) {
+        return json{{"status", "paused"},
+                    {"steps", json::array({{{"op", "generate_video"}, {"status", step_status}}})}};
+    };
+    check("status: paused after the clip was made reads completed",
+          store::video_status(paused("completed")) == "completed");
+    check("status: paused before the clip reads paused",
+          store::video_status(paused("pending")) == "paused");
 }
 
 int main() {
