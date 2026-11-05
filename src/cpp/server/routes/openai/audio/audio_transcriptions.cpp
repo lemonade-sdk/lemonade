@@ -14,10 +14,8 @@ using ordered_json = nlohmann::ordered_json;
 
 const RouteError kCannotTranscribe{400, "", "`model` cannot transcribe, which is found after it loads; the error's `type` is "
     "`unsupported_operation`"};
-const RouteError kNoTimestamps{
-    400, "",
-    "`response_format` is `srt` or `vtt` and `model` is a FastFlowLM model, which reports no "
-    "segment timestamps"};
+const RouteError kNoSubtitles{
+    400, "", "`response_format` is `srt` or `vtt` and `model` is a FastFlowLM model"};
 
 const RouteArg kFile{"file", ArgIn::Form, {{"type", "string"}, {"format", "binary"}}, true, Support::Partial,
                      "The audio file to transcribe, as WAV."};
@@ -47,9 +45,6 @@ public:
         s.description =
             "Transcribes an audio file to text, loading the model on first use. Whisper "
             "(whisper.cpp), Moonshine and FastFlowLM models serve this endpoint.";
-        s.notes = {
-            "On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segments`.",
-        };
         s.args = {
             kFile, model_loading::kFormModel, kLanguage, kResponseFormat, kPrompt, kTemperature
         };
@@ -83,7 +78,7 @@ public:
 
         s.examples = {transcript_example, text_example};
         s.errors = join_errors({{kFormNotMultipart, kArgMissing, kArgInvalid, kCannotTranscribe,
-                                 kNoTimestamps, kBackendError, kUnexpectedException},
+                                 kNoSubtitles, kBackendError, kUnexpectedException},
                                 ModelLoader::errors()});
         s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Form;

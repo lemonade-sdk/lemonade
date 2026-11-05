@@ -105,38 +105,38 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
 
 ```json
 {
-  "id": "chatcmpl-gNDT8sExJxtiR4rOy3b11ADbUWEjLmPU",
+  "id": "chatcmpl-cJjl2vW81HgtjvknoAdqxCGKeEtNOG4u",
   "object": "chat.completion",
-  "created": 1792807169,
+  "created": 1793827645,
   "model": "Qwen3-0.6B-GGUF",
-  "system_fingerprint": "b11846-1a24df163",
+  "system_fingerprint": "b12109-13ec8f614",
   "choices": [
     {
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "The population of Paris, France, is approximately **2,200,000** as of the latest available data. This figure reflects a population estimate and may vary slightly depending on the source or time period. For the most recent year, as of 2023, the population of Paris was approximately 2,200,000.",
-        "reasoning_content": "Okay, so the user is asking about the population of Paris. Let me start by recal... (1,100 characters)"
+        "content": "The population of Paris, France, is approximately **1,215,000** as of the latest available data. This number reflects the city's significant size and historical importance as the capital of France.",
+        "reasoning_content": "Okay, so I need to find out the population of Paris. Let me think... I remember ... (1,176 characters)"
       },
       "finish_reason": "stop"
     }
   ],
   "usage": {
     "prompt_tokens": 15,
-    "completion_tokens": 350,
-    "total_tokens": 365,
+    "completion_tokens": 364,
+    "total_tokens": 379,
     "prompt_tokens_details": {"cached_tokens": 0}
   },
   "timings": {
     "cache_n": 0,
-    "predicted_ms": 1077.037,
-    "predicted_n": 350,
-    "predicted_per_second": 324.03715007005326,
-    "predicted_per_token_ms": 3.0860659025787966,
-    "prompt_ms": 360.596,
+    "predicted_ms": 3151.928,
+    "predicted_n": 364,
+    "predicted_per_second": 115.16760535139127,
+    "predicted_per_token_ms": 8.682997245179063,
+    "prompt_ms": 220.395,
     "prompt_n": 15,
-    "prompt_per_second": 41.597799199103704,
-    "prompt_per_token_ms": 24.039733333333334
+    "prompt_per_second": 68.05962022731913,
+    "prompt_per_token_ms": 14.693000000000001
   }
 }
 ```
@@ -172,11 +172,11 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
 **Response:** `200 OK`
 
 ```text
-data: {"id": "chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw", "object": "chat.completion.chunk", "created": 1792807169, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
-data: {"id": "chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw", "object": "chat.completion.chunk", "created": 1792807169, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}]}
-data: {"id": "chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw", "object": "chat.completion.chunk", "created": 1792807169, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}]}
+data: {"id": "chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1", "object": "chat.completion.chunk", "created": 1793827645, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
+data: {"id": "chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1", "object": "chat.completion.chunk", "created": 1793827645, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}]}
+data: {"id": "chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1", "object": "chat.completion.chunk", "created": 1793827645, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}]}
 ...
-data: {"id": "chatcmpl-qcgxaK06JWDivkB03OlhgUyXNjkUogTw", "object": "chat.completion.chunk", "created": 1792807170, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 4.407, "prompt_per_token_ms": 4.407, "prompt_per_second": 226.9117313365101, "predicted_n": 400, "predicted_ms": 1172.479, "predicted_per_token_ms": 2.938543859649123, "predicted_per_second": 340.304602470492}}
+data: {"id": "chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1", "object": "chat.completion.chunk", "created": 1793827647, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 13.334, "prompt_per_token_ms": 13.334, "prompt_per_second": 74.99625018749063, "predicted_n": 179, "predicted_ms": 1827.578, "predicted_per_token_ms": 10.267292134831461, "predicted_per_second": 97.39666378124491}}
 data: [DONE]
 ```
 
@@ -240,38 +240,38 @@ Asks a vision model what `image.png` shows. A `messages[*].content` array mixes 
 
 ```json
 {
-  "id": "chatcmpl-0yaTud0tMDlybgWABZbPAWrbZSVX0Xjd",
+  "id": "chatcmpl-bykV6FdzHGGdiC5ePf9PBFOxRu0AFTBi",
   "object": "chat.completion",
-  "created": 1792807182,
+  "created": 1793827657,
   "model": "Qwen3.5-0.8B-GGUF",
-  "system_fingerprint": "b11846-1a24df163",
+  "system_fingerprint": "b12109-13ec8f614",
   "choices": [
     {
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "Based on the visual content, the image features:\n\n*   **A large red circle:** The central focus of the image is a solid red circle.\n*   **A gradient background:** The background is a smooth color transition. On the far left, it is a medium blue and purple gradient, while on the far right, it is a greyish-blue and green gradient.\n\nThe red circle stands out clearly against the colorful background. It appears to be a graphic design or a logo icon.",
-        "reasoning_content": "The user wants me to describe the image provided.\n\n1.  **Identify the main subje... (1,770 characters)"
+        "content": "This is a logo image featuring a solid red circle centered on a gradient background. The background transitions from a teal and green mix on the left to a grey on the right side.",
+        "reasoning_content": "The user wants me to identify the visual content of the provided image.\n\n1.  **A... (1,535 characters)"
       },
       "finish_reason": "stop"
     }
   ],
   "usage": {
     "prompt_tokens": 82,
-    "completion_tokens": 522,
-    "total_tokens": 604,
+    "completion_tokens": 405,
+    "total_tokens": 487,
     "prompt_tokens_details": {"cached_tokens": 0}
   },
   "timings": {
     "cache_n": 0,
-    "predicted_ms": 2641.657,
-    "predicted_n": 522,
-    "predicted_per_second": 197.22469646892083,
-    "predicted_per_token_ms": 5.070358925143954,
-    "prompt_ms": 4811.837,
+    "predicted_ms": 1989.104,
+    "predicted_n": 405,
+    "predicted_per_second": 203.10652434462952,
+    "predicted_per_token_ms": 4.923524752475248,
+    "prompt_ms": 465.51,
     "prompt_n": 82,
-    "prompt_per_second": 17.04130875588678,
-    "prompt_per_token_ms": 58.68093902439025
+    "prompt_per_second": 176.15088827307684,
+    "prompt_per_token_ms": 5.676951219512195
   }
 }
 ```
@@ -414,6 +414,7 @@ Sent in place of the rest of the stream when the backend fails after the stream 
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is not an LLM, which is checked after it loads |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -489,15 +490,15 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 ```json
 {
-  "id": "chatcmpl-0oYtA00jtJ0cgg6P0zqYKYqJUZ8x6t8L",
+  "id": "chatcmpl-yRFRUAekD8zEgLPHmtMKr50iJa1iKKUU",
   "object": "text_completion",
-  "created": 1792807185,
+  "created": 1793827667,
   "model": "Qwen3-0.6B-GGUF",
-  "system_fingerprint": "b11846-1a24df163",
+  "system_fingerprint": "b12109-13ec8f614",
   "choices": [
     {
       "index": 0,
-      "text": " What is the population of Paris in 2022?\nAnswer:\n\nThe population of Paris in 2022 was approximately **16 million**. The population of Paris in 2022 was about 16 million.\n\n**Answer:** The population of Paris in 2022 was",
+      "text": " And what are the characteristics of Paris? Also, what is the capital of France? What is the capital of Italy? What is the capital of Spain? What is the capital of Nigeria? And what is the capital of India?\n\nOkay, let's tackle these questions. First, the population of Paris. I remember that",
       "logprobs": null,
       "finish_reason": "length"
     }
@@ -510,14 +511,14 @@ Naming a `collection.router` model routes the request to one of its candidates; 
   },
   "timings": {
     "cache_n": 0,
-    "predicted_ms": 180.322,
+    "predicted_ms": 3637.764,
     "predicted_n": 64,
-    "predicted_per_second": 349.3750069320438,
-    "predicted_per_token_ms": 2.8622539682539685,
-    "prompt_ms": 1476.666,
+    "predicted_per_second": 17.318330710843252,
+    "predicted_per_token_ms": 57.742285714285714,
+    "prompt_ms": 133.468,
     "prompt_n": 7,
-    "prompt_per_second": 4.740408460681021,
-    "prompt_per_token_ms": 210.9522857142857
+    "prompt_per_second": 52.44702850121378,
+    "prompt_per_token_ms": 19.066857142857142
   }
 }
 ```
@@ -555,11 +556,11 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 **Response:** `200 OK`
 
 ```text
-data: {"id": "chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ", "object": "text_completion", "created": 1792807185, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "text": " And", "logprobs": null, "finish_reason": null}]}
-data: {"id": "chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ", "object": "text_completion", "created": 1792807185, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "text": " what", "logprobs": null, "finish_reason": null}]}
-data: {"id": "chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ", "object": "text_completion", "created": 1792807185, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "text": " is", "logprobs": null, "finish_reason": null}]}
+data: {"id": "chatcmpl-NnGAa2fcrBou11qX4PgyeQCgXNJB9W6j", "object": "text_completion", "created": 1793827667, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "text": " And", "logprobs": null, "finish_reason": null}]}
+data: {"id": "chatcmpl-NnGAa2fcrBou11qX4PgyeQCgXNJB9W6j", "object": "text_completion", "created": 1793827667, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "text": " how", "logprobs": null, "finish_reason": null}]}
+data: {"id": "chatcmpl-NnGAa2fcrBou11qX4PgyeQCgXNJB9W6j", "object": "text_completion", "created": 1793827667, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "text": " is", "logprobs": null, "finish_reason": null}]}
 ...
-data: {"id": "chatcmpl-zri3AcEH7W5VFZwd9UN1ZAEwF2eoKPFQ", "object": "text_completion", "created": 1792807185, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11846-1a24df163", "choices": [{"index": 0, "text": "", "logprobs": null, "finish_reason": "length"}], "usage": {"prompt_tokens": 7, "completion_tokens": 64, "total_tokens": 71, "prompt_tokens_details": {"cached_tokens": 6}}, "timings": {"cache_n": 6, "prompt_n": 1, "prompt_ms": 3.129, "prompt_per_token_ms": 3.129, "prompt_per_second": 319.59092361776925, "predicted_n": 64, "predicted_ms": 176.423, "predicted_per_token_ms": 2.8003650793650796, "predicted_per_second": 357.0962969680824}}
+data: {"id": "chatcmpl-NnGAa2fcrBou11qX4PgyeQCgXNJB9W6j", "object": "text_completion", "created": 1793827670, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "text": "", "logprobs": null, "finish_reason": "length"}], "usage": {"prompt_tokens": 7, "completion_tokens": 64, "total_tokens": 71, "prompt_tokens_details": {"cached_tokens": 6}}, "timings": {"cache_n": 6, "prompt_n": 1, "prompt_ms": 5.813, "prompt_per_token_ms": 5.813, "prompt_per_second": 172.0282126268708, "predicted_n": 64, "predicted_ms": 3611.246, "predicted_per_token_ms": 57.32136507936508, "predicted_per_second": 17.445502189548982}}
 data: [DONE]
 ```
 
@@ -628,6 +629,7 @@ Sent in place of the rest of the stream when the backend fails after the stream 
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is not an LLM, which is checked after it loads |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -692,7 +694,7 @@ Requires `LEMONADE_API_KEY` when it is set.
     {
       "object": "embedding",
       "index": 0,
-      "embedding": [0.035327356308698654, -0.0001410358672728762, 0.003338671289384365, -0.02462325245141983, -0.028079617768526077, 0.029758796095848083, -0.010972246527671814, 0.016291150823235512, ... 760 more]
+      "embedding": [0.03605353832244873, 0.0006784393335692585, 0.004262526985257864, -0.02508561499416828, -0.028299998492002487, 0.030086658895015717, -0.012136111967265606, 0.01537393033504486, ... 760 more]
     },
     ... 1 more
   ],
@@ -721,6 +723,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model`'s backend cannot embed, such as a text-to-speech model |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -790,10 +793,10 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 ```json
 {
-  "id": "resp_JVO4S4mP7iKKGMPqCMiRRUxtdMTukXsc",
+  "id": "resp_Cxow6uUoxWRLPnhhXU7QEvXjMrKaBGYi",
   "object": "response",
-  "created_at": 1792807187,
-  "completed_at": 1792807187,
+  "created_at": 1793827678,
+  "completed_at": 1793827678,
   "model": "Llama-3.2-1B-Instruct-GGUF",
   "status": "completed",
   "output": [
@@ -802,11 +805,11 @@ Naming a `collection.router` model routes the request to one of its candidates; 
         {
           "annotations": [],
           "logprobs": [],
-          "text": "As of my knowledge cutoff in December 2023, the population of Paris, the capital city of France, is approximately 2.1 million people within the city limits and around 12.2 million people in the metropolitan area.",
+          "text": "As of the latest available data from the French National Institute for Statistics and Economic Studies (Institut National de la Statistique et des Études Économiques, INSEE), the population of Paris is approximately 2.1 million people within the city limits and over 12 million people in the metropolitan area, which includes the surrounding suburbs and regions.",
           "type": "output_text"
         }
       ],
-      "id": "msg_yrrn3oLfu5Ha0yvhJnyn4PGkmOFWtTn6",
+      "id": "msg_zkaZoMfka6ivKETrMiMf7f8NzXFj7FCQ",
       "role": "assistant",
       "status": "completed",
       "type": "message"
@@ -814,8 +817,8 @@ Naming a `collection.router` model routes the request to one of its candidates; 
   ],
   "usage": {
     "input_tokens": 42,
-    "output_tokens": 48,
-    "total_tokens": 90,
+    "output_tokens": 73,
+    "total_tokens": 115,
     "input_tokens_details": {"cached_tokens": 0}
   }
 }
@@ -853,14 +856,14 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 ```text
 event: response.created
-data: {"type": "response.created", "response": {"id": "resp_sEdqwsaCiN9lw0UMr5vdqMX8DG2HLcK8", "object": "response", "status": "in_progress"}}
+data: {"type": "response.created", "response": {"id": "resp_L7uzVj7alzqP0uYc4HYBpvdp60tAsd1Z", "object": "response", "status": "in_progress"}}
 event: response.in_progress
-data: {"type": "response.in_progress", "response": {"id": "resp_sEdqwsaCiN9lw0UMr5vdqMX8DG2HLcK8", "object": "response", "status": "in_progress"}}
+data: {"type": "response.in_progress", "response": {"id": "resp_L7uzVj7alzqP0uYc4HYBpvdp60tAsd1Z", "object": "response", "status": "in_progress"}}
 event: response.output_item.added
-data: {"type": "response.output_item.added", "item": {"content": [], "id": "msg_NSeiLWbMMIs3Tyy9rkAE53miBpCziSeM", "role": "assistant", "status": "in_progress", "type": "message"}, "output_index": 0}
+data: {"type": "response.output_item.added", "item": {"content": [], "id": "msg_depHpGR0ZqLNdgRXk7wGBHbhXKjkiC0M", "role": "assistant", "status": "in_progress", "type": "message"}, "output_index": 0}
 ...
 event: response.completed
-data: {"type": "response.completed", "response": {"id": "resp_sEdqwsaCiN9lw0UMr5vdqMX8DG2HLcK8", "object": "response", "created_at": 1792807187, "status": "completed", "model": "~\\.cache\\huggingface\\hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF\\snapshots\\b69aef112e9f895e6f98d7ae0949f72ff09aa401\\Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf", "output": [{"type": "message", "status": "completed", "id": "msg_NSeiLWbMMIs3Tyy9rkAE53miBpCziSeM", "content": [{"type": "output_text", "annotations": [], "logprobs": [], "text": "As of my knowledge cutoff in 2023, the population of Paris is approximately 2.1 million people within the city limits, and around 12 million in the metropolitan area. However, please note that these numbers may have changed since my knowledge cutoff date."}], "role": "assistant"}], "usage": {"input_tokens": 42, "output_tokens": 54, "total_tokens": 96, "input_tokens_details": {"cached_tokens": 41}}}, "timings": {"cache_n": 41, "prompt_n": 1, "prompt_ms": 4.928, "prompt_per_token_ms": 4.928, "prompt_per_second": 202.92207792207793, "predicted_n": 54, "predicted_ms": 234.54, "predicted_per_token_ms": 4.425283018867924, "predicted_per_second": 225.97424746311927}}
+data: {"type": "response.completed", "response": {"id": "resp_L7uzVj7alzqP0uYc4HYBpvdp60tAsd1Z", "object": "response", "created_at": 1793827678, "status": "completed", "model": "~/.cache/huggingface/hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF/snapshots/b69aef112e9f895e6f98d7ae0949f72ff09aa401/Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf", "output": [{"type": "message", "status": "completed", "id": "msg_depHpGR0ZqLNdgRXk7wGBHbhXKjkiC0M", "content": [{"type": "output_text", "annotations": [], "logprobs": [], "text": "As of my knowledge cutoff in December 2023, the population of Paris, France is approximately 2.1 million people within the city limits and 12.2 million people in the larger metropolitan area, according to official statistics from the French National Institute for Statistics and Economic Studies (INSEE)."}], "role": "assistant"}], "usage": {"input_tokens": 42, "output_tokens": 61, "total_tokens": 103, "input_tokens_details": {"cached_tokens": 41}}}, "timings": {"cache_n": 41, "prompt_n": 1, "prompt_ms": 16.128, "prompt_per_token_ms": 16.128, "prompt_per_second": 62.00396825396825, "predicted_n": 61, "predicted_ms": 375.356, "predicted_per_token_ms": 6.255933333333333, "predicted_per_second": 159.84825072730953}}
 data: [DONE]
 ```
 
@@ -917,6 +920,7 @@ Sent in place of the rest of the stream when the backend fails after the stream 
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The request does not stream and `model` is a FastFlowLM or cloud model, which has no Responses API |
 | `400` | `model_not_applicable` | The request does not stream and `model` is not an LLM |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -944,8 +948,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `response_format` | No | `json`, `verbose_json`, `text`, `srt` or `vtt`. Defaults to `json`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | No | Text to guide the transcription's style or continue a previous segment. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | Sampling temperature. Defaults to `0` for whisper.cpp models, and to the backend's own for FastFlowLM models. Moonshine models ignore it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segments`.
 
 ### Examples
 
@@ -1012,7 +1014,8 @@ On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segme
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` cannot transcribe, which is found after it loads; the error's `type` is `unsupported_operation` |
-| `400` |  | `response_format` is `srt` or `vtt` and `model` is a FastFlowLM model, which reports no segment timestamps |
+| `400` |  | `response_format` is `srt` or `vtt` and `model` is a FastFlowLM model |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1230,6 +1233,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1255,7 +1259,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `image` or `image[]` | Yes | PNG or JPEG image upload. For multiple references, repeat `image[]` in order. Files are forwarded without re-encoding. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mask` | No | A PNG mask: white areas are edited and black areas are kept. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `size` | No | Output size as `WIDTHxHEIGHT`, such as `512x512`. Defaults to the first reference image's size, scaled down to fit the model's `image_defaults.soft_pixel_cap` (2048x2048 pixels, about 4 MP, unless the model sets one). An explicit size skips that cap; backend limits still apply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `size` | No | Output size as `WIDTHxHEIGHT`, such as `512x512`. Defaults to the first reference image's size, scaled down to fit the model's `soft_pixel_cap` option (2048x2048 pixels, about 4 MP, unless the model sets one). An explicit size skips that cap; backend limits still apply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `n` | No | Number of images to generate, from `1` to `10`. Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Only `b64_json`, a base64-encoded image, is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `steps` | No | Number of inference steps. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -1342,6 +1346,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The form has files under both `image` and `image[]` |
 | `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1443,6 +1448,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1636,6 +1642,7 @@ Accepted `response_format` values depend on the backend: `kokoro-v1` encodes `mp
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` | `model_not_applicable` | `model` is not a text-to-speech model, which is checked before it loads |
 | `400` |  | `response_format` is not a format `model`'s backend produces, or, when streaming, one it streams |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1732,14 +1739,6 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
   - `update_available` - Whether the model's registry has a newer commit; `false` except for downloaded registry models.
   - `suggested` - Whether the model is recommended for general use.
   - `labels` - The model's capabilities and characteristics; see [Model Labels](./openai.md#model-labels).
-  - `image_defaults` - Image models only: default generation parameters.
-    - `steps` - Number of inference steps, such as `4` for turbo models or `20` for standard models.
-    - `cfg_scale` - Classifier-free guidance scale, such as `1.0` for turbo models or `7.5` for standard models.
-    - `width` - Default image width in pixels.
-    - `height` - Default image height in pixels.
-    - `sampling_method` - Default sampler, when the model sets one.
-    - `flow_shift` - Default flow shift, when the model sets one.
-    - `soft_pixel_cap` - Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted.
   - `components` - The names of a collection's component models, in order; empty for other models.
   - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
   - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
@@ -1752,12 +1751,11 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
     - `path` - Absolute path to the checkpoint file; present only with `include_paths=true` and when `present` is `true`.
   - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
   - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
-  - `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
+  - `recipe_options` - The model's own options: those its registry row authors, with what was saved in `recipe_options.json` on top.
   - `cloud_provider` - Cloud models only: the provider that serves the model.
   - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
   - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
   - `system_prompt` - Omni collections only: the collection's system prompt override.
-  - `audio_defaults` - Audio models only: default generation parameters.
   - `version` - Router collections only: the policy document's version.
   - `routing` - Router collections only: the routing policy.
 <!-- END GENERATED: openai.models -->
@@ -1790,9 +1788,10 @@ so on.
 Two label sets describe a model that cannot exist, and are refused rather than
 repaired:
 
-- **A mode the recipe's backend does not serve.** `/classify` is served only by
-  `onnxruntime`, so `labels: ["classification"]` on a `llamacpp` model is an
-  error; register it as the chat model it is.
+- **A mode the recipe's backend does not serve.** `/classify` is served by
+  `onnxruntime`, and by `llamacpp` only for a model that also has the
+  `systemone` label. `labels: ["classification"]` on a `llamacpp` model without
+  `systemone` is an error; register it as the chat model it is.
 - **Two different modes.** `labels: ["chat", "embeddings"]` on a `llamacpp` model
   is an error even though llama.cpp serves both: the subprocess is launched for
   one mode, so the second would name an endpoint it was never configured to
@@ -1827,6 +1826,12 @@ an error naming it; the file is left for you to correct.
 | Label | Description |
 |-------|-------------|
 | `mtp` | Enables llama.cpp MTP draft decoding defaults (`--spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75`); users can override these with `llamacpp_args`. |
+
+**Execution labels:** control how a model is invoked:
+
+| Label | Description |
+|-------|-------------|
+| `on-demand` | Runs through a task-specific endpoint without a resident model server, so `/v1/load` is not supported. Built-in upscalers use `/v1/images/upscale`. |
 
 **Image capability labels:** carried alongside `image`; they refine what the model is offered for without changing its deployment mode:
 
@@ -1918,14 +1923,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `update_available` - Whether the model's registry has a newer commit; `false` except for downloaded registry models.
 - `suggested` - Whether the model is recommended for general use.
 - `labels` - The model's capabilities and characteristics; see [Model Labels](./openai.md#model-labels).
-- `image_defaults` - Image models only: default generation parameters.
-  - `steps` - Number of inference steps, such as `4` for turbo models or `20` for standard models.
-  - `cfg_scale` - Classifier-free guidance scale, such as `1.0` for turbo models or `7.5` for standard models.
-  - `width` - Default image width in pixels.
-  - `height` - Default image height in pixels.
-  - `sampling_method` - Default sampler, when the model sets one.
-  - `flow_shift` - Default flow shift, when the model sets one.
-  - `soft_pixel_cap` - Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted.
 - `components` - The names of a collection's component models, in order; empty for other models.
 - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
 - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
@@ -1938,12 +1935,11 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `path` - Absolute path to the checkpoint file; present only with `include_paths=true` and when `present` is `true`.
 - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
 - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
-- `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
+- `recipe_options` - The model's own options: those its registry row authors, with what was saved in `recipe_options.json` on top.
 - `cloud_provider` - Cloud models only: the provider that serves the model.
 - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
 - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
 - `system_prompt` - Omni collections only: the collection's system prompt override.
-- `audio_defaults` - Audio models only: default generation parameters.
 - `version` - Router collections only: the policy document's version.
 - `routing` - Router collections only: the routing policy.
 

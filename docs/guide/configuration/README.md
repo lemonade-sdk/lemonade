@@ -66,6 +66,9 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "prefer_system": false
   },
   "global_timeout": 600,
+  "gufo": {
+    "args": ""
+  },
   "host": "localhost",
   "hrx": {
     "args": "",

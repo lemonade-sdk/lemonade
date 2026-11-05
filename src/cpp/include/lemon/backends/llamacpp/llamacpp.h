@@ -46,8 +46,9 @@ inline const BackendDescriptor descriptor = {
           {"gfx942", {/*os*/ {"linux"}, /*channels*/ {}}}}},
         {"cpu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64 CPU; ARM64 CPU (Linux)"},
         {"nathanw", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "AMD Strix Halo (Vulkan performance fork)"},
+        {"halobox", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "AMD Strix Halo (Halo Box ROCm fork)"},
     },
-    /*supported_modes*/ {"chat", "embeddings", "reranking"},
+    /*supported_modes*/ {"chat", "embeddings", "reranking", "classification"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
     /*web_display_name*/ "llama.cpp GPU",
@@ -67,7 +68,14 @@ inline const BackendDescriptor descriptor = {
             /*devices*/ {"/dev/dri"},
             /*cap_add*/ {},
         }},
+        {"halobox", {
+            /*image*/   "docker.io/kyuz0/amd-strix-halo-toolboxes",
+            /*devices*/ {"/dev/dri", "/dev/kfd"},
+            /*cap_add*/ {},
+        }},
     },
+    // see ISystemOneServer
+    /*mode_capability_requirements*/ {{"classification", "systemone"}},
 };
 
 }  // namespace llamacpp

@@ -47,6 +47,7 @@ CAPABILITIES = {
                 "cpu",
                 "system",
                 "nathanw",
+                "halobox",
             ],
             "supports": {
                 "chat_completions": True,
@@ -130,6 +131,30 @@ CAPABILITIES = {
             },
             "test_models": {
                 "llm": "Qwen3.8-Flash-Next-Halogen",
+            },
+            "chat_extra_body": {"enable_thinking": False},
+            "responses_extra_body": {"reasoning": {"effort": "none"}},
+        },
+        # gufo serves its own OpenAI-compatible surface: no slots or tokenize.
+        "gufo": {
+            "backends": ["rocm"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "multi_model": True,
+                "stop_parameter": True,
+                "static_max_context_window": True,
+            },
+            "test_models": {
+                "llm": "Qwen3.8-27B-Gufo",
             },
             "chat_extra_body": {"enable_thinking": False},
             "responses_extra_body": {"reasoning": {"effort": "none"}},
@@ -336,6 +361,40 @@ CAPABILITIES = {
             "test_models": {
                 "classification": "Phishing-Email-Detection-ONNX",
                 "zero_shot_classification": "LFM2.5-Encoder-350M-Prompt-Router-ONNX",
+            },
+        },
+    },
+    # SystemOne decision models: a model that deploys as classification and
+    # answers /v1/systemone (llama.cpp b11361 or later, or FLM's d3 models).
+    "systemone": {
+        "llamacpp": {
+            "backends": ["cpu", "vulkan", "rocm", "metal"],
+            "supports": {
+                "systemone": True,
+                "classify_labels": True,
+                "laya_decision_type": True,
+            },
+            "test_models": {
+                "systemone": "Julia-1-GGUF",
+                "systemone_router": "Laya-GGUF",
+                "llm": "Tiny-Test-Model-GGUF",
+                "llm_capable": "Qwen3-0.6B-GGUF",
+            },
+        },
+        # d3 decision models on the NPU (`flm serve --decision`, FLM 1.0.11 or
+        # later).
+        "flm": {
+            "backends": ["npu"],
+            "supports": {
+                "systemone": True,
+                "classify_labels": True,
+                "laya_decision_type": False,
+            },
+            "test_models": {
+                "systemone": "d3-lite-FLM",
+                "systemone_router": "d3-lite-FLM",
+                "llm": "llama3.2-1b-FLM",
+                "llm_capable": "qwen3-1.7b-FLM",
             },
         },
     },

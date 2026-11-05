@@ -37,7 +37,8 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
 const BackendOps* ops();
 constexpr uint32_t capabilities() {
-    return capability_mask_of<RocmFpxServer>() & ~(CAP_EMBEDDINGS | CAP_RERANKING);
+    return capability_mask_of<RocmFpxServer>() &
+           ~(CAP_EMBEDDINGS | CAP_RERANKING | CAP_CLASSIFICATION);
 }
 }  // namespace rocmfpx
 

@@ -1074,7 +1074,8 @@ jobs:
             suites: >-
               [{"name":"ryzenai","script":"server_llm.py","extra_args":"--wrapped-server ryzenai","backends":"cpu hybrid npu"},
                {"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"},
-               {"name":"flm-whisper","script":"server_whisper.py","extra_args":"--wrapped-server flm","backends":"npu"}]
+               {"name":"flm-whisper","script":"server_whisper.py","extra_args":"--wrapped-server flm","backends":"npu"},
+               {"name":"systemone-flm","script":"server_systemone.py","extra_args":"--wrapped-server flm","backends":"npu"}]
           - name: stx-halo
             runner: [Windows, X64, stx-halo, lemon-prod]
             suites: >-
@@ -1089,6 +1090,7 @@ jobs:
             suites: >-
               [{"name":"moonshine","script":"server_moonshine.py","extra_args":"--wrapped-server moonshine","backends":"cpu"},
                {"name":"classify-onnxruntime","script":"server_classify.py","extra_args":"--wrapped-server onnxruntime","backends":"cpu"},
+               {"name":"systemone-llamacpp","script":"server_systemone.py","extra_args":"--wrapped-server llamacpp","backends":"cpu"},
                {"name":"router-onnxruntime","script":"server_router.py","extra_args":"--wrapped-server onnxruntime","backends":"cpu"},
                {"name":"text-to-speech","script":"server_tts.py","extra_args":"","backends":""}]
     env:
@@ -1341,11 +1343,13 @@ jobs:
           - name: xdna2
             runner: [Linux, X64, xdna2, lemon-prod]
             suites: >-
-              [{"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"}]
+              [{"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"},
+               {"name":"systemone-flm","script":"server_systemone.py","extra_args":"--wrapped-server flm","backends":"npu"}]
           - name: generic
             runner: [self-hosted, Linux, X64, lemon-prod]
             suites: >-
               [{"name":"moonshine","script":"server_moonshine.py","extra_args":"--wrapped-server moonshine","backends":"cpu"},
+               {"name":"systemone-llamacpp","script":"server_systemone.py","extra_args":"--wrapped-server llamacpp","backends":"cpu"},
                {"name":"text-to-speech","script":"server_tts.py","extra_args":"","backends":""}]
     env:
       LEMONADE_CI_MODE: "True"
@@ -1471,6 +1475,10 @@ jobs:
             install: "llamacpp:nathanw"
             script: server_llm.py
             extra_args: "--wrapped-server llamacpp --backend nathanw"
+          - name: llamacpp-halobox
+            install: "llamacpp:halobox"
+            script: server_llm.py
+            extra_args: "--wrapped-server llamacpp --backend halobox"
           - name: rocmfpx
             install: "rocmfpx:rocm"
             script: server_llm.py
@@ -1479,6 +1487,10 @@ jobs:
             install: "halogen:rocm"
             script: server_llm.py
             extra_args: "--wrapped-server halogen --backend rocm"
+          - name: gufo
+            install: "gufo:rocm"
+            script: server_llm.py
+            extra_args: "--wrapped-server gufo --backend rocm"
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
