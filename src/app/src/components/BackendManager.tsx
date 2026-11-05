@@ -1131,7 +1131,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             <>
               <h3 className="sr-only">{engineName}</h3>
               <div
-                className={`backend-card__logo${logo?.plate === 'dark' ? ' backend-card__logo--dark' : ''}${logo && !logo.showName ? ' backend-card__logo--image-only' : ''}`}
+                className={`backend-card__logo${logo?.plate === 'dark' ? ' backend-card__logo--dark' : ''}${logo ? (logo.showName ? ' backend-card__logo--icon' : ' backend-card__logo--image-only') : ''}`}
                 aria-hidden="true"
                 data-backend-logo
               >
