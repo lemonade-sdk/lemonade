@@ -78,8 +78,10 @@ void clamp_context_size(const ModelInfo& model_info, RecipeOptions& options) {
     const json ctx_size = options.get_option("ctx_size");
     bool exceeds_context_limit = false;
     if (ctx_size.is_number()) {
+        const double requested_ctx_size = ctx_size.get<double>();
         exceeds_context_limit =
-            ctx_size.get<double>() > static_cast<double>(context_limit);
+            requested_ctx_size == 0 ||
+            requested_ctx_size > static_cast<double>(context_limit);
     }
     if (exceeds_context_limit) {
         options.set_option("ctx_size", context_limit);

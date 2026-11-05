@@ -141,6 +141,15 @@ void check_context_limit_contract() {
     gguf.int32("qwen3.context_length", 262144);
     gguf.write(gguf_path);
 
+    const auto lower_context_gguf_path =
+        std::filesystem::temp_directory_path() /
+        "lemonade_hrx_contract_qwen_lower.gguf";
+    GgufWriter lower_context_gguf;
+    lower_context_gguf.header(2);
+    lower_context_gguf.string("general.architecture", "qwen3");
+    lower_context_gguf.int32("qwen3.context_length", 16384);
+    lower_context_gguf.write(lower_context_gguf_path);
+
     lemon::ModelInfo qwen;
     qwen.model_name = "user.qWeN3.8-27b-HRX";
     qwen.checkpoints["main"] =
@@ -170,6 +179,8 @@ void check_context_limit_contract() {
 
     lemon::ModelInfo qwen_lower_context = qwen;
     qwen_lower_context.max_context_window = 16384;
+    qwen_lower_context.resolved_paths["main"] =
+        lower_context_gguf_path.string();
     hrx::ops()->populate_metadata(qwen_lower_context, context);
     check("HRX preserves a lower detected context window",
           qwen_lower_context.max_context_window == 16384);
@@ -204,6 +215,11 @@ void check_context_limit_contract() {
     check("HRX preserves automatic sizing for Qwen3.8-27B",
           auto_sized.get_option("ctx_size") == -1);
 
+    lemon::RecipeOptions model_sized("llamacpp-hrx", {{"ctx_size", 0}});
+    hrx::ops()->resolve_runtime_options(qwen, model_sized);
+    check("HRX clamps model-sized Qwen3.8-27B context",
+          model_sized.get_option("ctx_size") == 32768);
+
     lemon::ModelInfo other;
     other.model_name = "Qwen3-4B-Instruct-2507-HRX";
     other.checkpoints["main"] = "unsloth/Qwen3-4B-Instruct-2507-GGUF";
@@ -224,6 +240,7 @@ void check_context_limit_contract() {
           fractional_oversized.get_option("ctx_size") == 32768);
 
     std::filesystem::remove(gguf_path);
+    std::filesystem::remove(lower_context_gguf_path);
 }
 
 void check_admission_contract() {
