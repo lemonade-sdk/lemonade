@@ -19,6 +19,7 @@
 #include <chrono>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <thread>
 #include <cstring>
 #include <random>
@@ -614,7 +615,9 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
         // sd.cpp only generates 4n+1 frames and floors any other count, which
         // would cut a short clip by up to a third, so round to the nearest one.
         const double wanted = request["duration"].get<double>() * fps.value_or(16);
-        frames = std::max(1, 4 * static_cast<int>(std::lround((wanted - 1.0) / 4.0)) + 1);
+        const double max_steps = static_cast<double>((std::numeric_limits<int>::max() - 1) / 4);
+        const double steps = std::clamp(std::round((wanted - 1.0) / 4.0), 0.0, max_steps);
+        frames = 4 * static_cast<int>(steps) + 1;
     } else {
         frames = video_param("video_frames");
     }
