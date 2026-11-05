@@ -72,7 +72,7 @@ bool fetch_github_recipe_contents(const std::string& subpath,
 
     lemon::utils::HttpResponse res;
     try {
-        res = lemon::utils::github_api::get("https://api.github.com" + api_path, headers);
+        res = lemon::utils::github_api::get("https://api.github.com" + api_path, headers, 5);
     } catch (const std::exception& e) {
         error_out = "GitHub API request failed: " + std::string(e.what());
         return false;
@@ -335,20 +335,47 @@ int import_model_from_json_file(lemonade::LemonadeClient& client,
     try {
         model_data = nlohmann::json::parse(file);
         file.close();
-
-        if (!validate_and_transform_model_json(model_data)) {
-            return 1;
-        }
-
-        if (imported_model_out != nullptr && model_data.contains("model_name") && model_data["model_name"].is_string()) {
-            *imported_model_out = model_data["model_name"].get<std::string>();
-        }
     } catch (const nlohmann::json::exception& e) {
         std::cerr << "Error: Failed to parse JSON file '" << json_path << "': " << e.what() << std::endl;
         return 1;
     }
 
-    return client.pull_model(model_data);
+    return import_model_from_json(client, std::move(model_data), imported_model_out);
+}
+
+int import_model_from_json(lemonade::LemonadeClient& client,
+                           nlohmann::json model_data,
+                           std::string* imported_model_out) {
+    if (!validate_and_transform_model_json(model_data)) return 1;
+    const int result = client.pull_model(model_data);
+    if (result == 0 && imported_model_out != nullptr) {
+        *imported_model_out = model_data["model_name"].get<std::string>();
+    }
+    return result;
+}
+
+bool fetch_remote_recipe_json(const std::string& url,
+                              nlohmann::json& model_data,
+                              std::string& error_out) {
+    error_out.clear();
+    try {
+        const auto response = lemon::utils::HttpClient::get(
+            url, {}, 5, lemon::utils::HttpSecurityPolicy::ExternalHttpsOnly, 2 * 1024 * 1024);
+        if (response.status_code != 200) {
+            throw std::runtime_error("Preset request failed with status " + std::to_string(response.status_code));
+        }
+        model_data = nlohmann::json::parse(response.body);
+        if (!model_data.is_object() || !model_data.contains("recipe") ||
+            !model_data["recipe"].is_string() ||
+            (!(model_data.contains("model_name") && model_data["model_name"].is_string()) &&
+             !(model_data.contains("id") && model_data["id"].is_string()))) {
+            throw std::runtime_error("Preset must define a model name and backend recipe");
+        }
+        return true;
+    } catch (const std::exception& e) {
+        error_out = e.what();
+        return false;
+    }
 }
 
 bool list_remote_recipe_files(const std::string& repo_dir,

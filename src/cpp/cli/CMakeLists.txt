@@ -21,6 +21,8 @@ set(COMMON_SOURCES
     model_selection.cpp
     recipe_import.cpp
     hf_pull.cpp
+    tui_launch.cpp
+    tui_launch_model.cpp
     bench.cpp
     bench_output.cpp
     bench_comparison.cpp
@@ -84,6 +86,9 @@ target_link_libraries(lemonade PRIVATE
     nlohmann_json::nlohmann_json
     lemonade-digest-crypto
     lemonade-httplib
+    ftxui::component
+    ftxui::dom
+    ftxui::screen
 )
 
 # Link CLI11 based on what's available
