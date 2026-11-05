@@ -1453,7 +1453,7 @@ int LemonadeClient::show_backend_info(const std::string& recipe, const std::stri
             auto about = desc->about.find(backend);
             if (about != desc->about.end()) {
                 const auto fill = [&info](const char* key, const std::string& value) {
-                    if (info.value(key, "").empty()) info[key] = value;
+                    if (!info.contains(key)) info[key] = value;
                 };
                 fill("description", about->second.description);
                 fill("author", about->second.author);
@@ -1472,7 +1472,7 @@ int LemonadeClient::show_backend_info(const std::string& recipe, const std::stri
             info["format"] = lemon::backend_format_to_string(row->format);
             std::string os_list;
             for (const auto& name : row->supported_os) os_list += (os_list.empty() ? "" : ", ") + name;
-            info["state"] = "unsupported (runs on " + os_list + ", not on this server's OS)";
+            info["state"] = "not listed by this server (supported OS: " + os_list + ")";
         }
 
         std::cout << recipe << ":" << backend << std::endl;

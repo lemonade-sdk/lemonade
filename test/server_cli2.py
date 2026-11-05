@@ -628,6 +628,16 @@ sys.exit(0)
         self.assertRegex(output, r"Publisher\s+lemonade-sdk")
         self.assertRegex(output, r"License\s+MIT")
 
+        response = requests.get(
+            f"http://localhost:{PORT}/api/v1/system-info",
+            headers=_auth_headers(),
+            timeout=10,
+        )
+        self.assertEqual(response.status_code, 200)
+        rocm = response.json()["recipes"]["llamacpp"]["backends"]["rocm"]
+        for key in ("description", "author", "publisher", "license", "project_url"):
+            self.assertTrue(rocm.get(key), f"/system-info is missing {key}")
+
     def test_044_backends_info_unknown_backend(self):
         """Test backends info rejects a backend the recipe does not have."""
         self.assertCommandFails(["backends", "info", "llamacpp:no-such-backend"])
