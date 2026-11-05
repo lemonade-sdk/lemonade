@@ -12,6 +12,7 @@ import api, { friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
 import {
   recipeBackendOptionName,
+  recipeConfigurableOptionNames,
   recipeOptionHint,
   recipeOptionIsArgs,
   recipeOptionIsBackend,
@@ -19,9 +20,8 @@ import {
   recipeOptionIsDevice,
   recipeOptionIsNumeric,
   recipeOptionLabel,
-  recipeOptionNames,
 } from '../features/backends/recipeMetadata';
-import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo } from '../modelCapabilities';
+import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo, isOnDemandModelInfo } from '../modelCapabilities';
 import {
   modelBaseTuningForModel,
   modelSupportsContextSize, sanitizeRecipeOptions,
@@ -336,7 +336,7 @@ function tuningKeysForModel(
   info: SystemInfoLike,
 ): Array<keyof RecipeOptions> {
   const recipe = activeRecipeForModel(model);
-  const keys = recipeOptionNames(info, recipe)
+  const keys = recipeConfigurableOptionNames(info, recipe)
     .map(key => key as keyof RecipeOptions);
 
   // voice/speed are model sampling fields rather than backend descriptor
@@ -1437,7 +1437,12 @@ const ModelConfigurationTab: React.FC<{
   const { t } = useI18n();
   const name = mdName(model);
   const [notice, setNotice] = useState<string | null>(null);
-  const [isReloading, setIsReloading] = useState(false);
+  // This tab is not remounted when the selected model changes, so reload state
+  // and its result notice must stay with the model that was reloaded.
+  const [reloadingNames, setReloadingNames] = useState<ReadonlySet<string>>(() => new Set());
+  const isReloading = reloadingNames.has(name);
+  const currentNameRef = useRef(name);
+  currentNameRef.current = name;
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [systemInfoSettled, setSystemInfoSettled] = useState(() => api.systemInfoData !== null);
 
@@ -1722,16 +1727,22 @@ const ModelConfigurationTab: React.FC<{
 
   const reloadViaPanel = async () => {
     if (!loadedModel || !onReloadModel || !serverOptionsLoaded) return;
-    setIsReloading(true);
+    const reloadName = name;
+    const successNotice = hasLoadSettingChanges
+      ? 'Model reloaded with the settings shown here. Save to keep them.'
+      : 'Model reloaded with the settings shown here.';
+    setReloadingNames(prev => new Set(prev).add(reloadName));
     try {
       await onReloadModel(loadedModel, buildLoadOptions());
-      setNotice(hasLoadSettingChanges
-        ? 'Model reloaded with the settings shown here. Save to keep them.'
-        : 'Model reloaded with the settings shown here.');
+      if (currentNameRef.current === reloadName) setNotice(successNotice);
     } catch {
-      setNotice('Reload failed. Check the server logs.');
+      if (currentNameRef.current === reloadName) setNotice('Reload failed. Check the server logs.');
     } finally {
-      setIsReloading(false);
+      setReloadingNames(prev => {
+        const next = new Set(prev);
+        next.delete(reloadName);
+        return next;
+      });
     }
   };
 
@@ -2457,9 +2468,9 @@ export interface ModelDetailPanelProps {
   /** Registry models used to resolve collection component sources. */
   models?: ModelInfo[];
   loadedModel: LoadedModel | null;
-  loadingModel: string | null;
+  busyModels: ReadonlySet<string>;
   pulling: Record<string, number>;
-  loadError: { modelName: string; message: string } | null;
+  loadErrors: ReadonlyMap<string, { message: string }>;
   /** Load a model, optionally with load settings that override the stored ones. */
   onLoad: (model: ModelInfo, recipeOptions?: Record<string, unknown>) => void;
   onUnload: (model: LoadedModel) => void;
@@ -2522,14 +2533,15 @@ const CUSTOM_COLLECTION_TABS: Array<{ id: DetailTab; label: string }> = [
 ];
 
 const IMAGE_MODEL_TABS: Array<{ id: DetailTab; label: string }> = TABS;
+const ON_DEMAND_MODEL_TABS = TABS.filter(tab => tab.id !== 'config');
 
 export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   model,
   models = [],
   loadedModel,
-  loadingModel,
+  busyModels,
   pulling,
-  loadError,
+  loadErrors,
   onLoad,
   onUnload,
   onReloadModel,
@@ -2574,14 +2586,16 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const isRouterCollection = Boolean(model && activeRecipeForModel(model) === 'collection.router');
   const isCustomCollection = Boolean(model && modelIsCustom(model) && (isCollectionModel(model) || isRouterCollection));
   const imageOnly = isImageOnlyModel(model);
-  const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS : (imageOnly ? IMAGE_MODEL_TABS : TABS);
+  const isOnDemandModel = isOnDemandModelInfo(model);
+  const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS
+    : (isOnDemandModel ? ON_DEMAND_MODEL_TABS : (imageOnly ? IMAGE_MODEL_TABS : TABS));
 
   // Move focus to heading when model changes.
   useEffect(() => {
     if (model) panelHeadingRef.current?.focus();
-    setActiveTab(isCustomCollection ? 'settings' : 'config');
+    setActiveTab(isCustomCollection ? 'settings' : (isOnDemandModel ? 'readme' : 'config'));
     setConfigHasUnsavedChanges(false);
-  }, [detailName, isCustomCollection, imageOnly]);
+  }, [detailName, isCustomCollection, imageOnly, isOnDemandModel]);
 
   const confirmDiscardLoadSettings = useCallback(() => (
     !configHasUnsavedChanges || window.confirm('Discard unsaved load setting changes?')
@@ -2655,7 +2669,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
     ? `Open ${sourceRef.repo}${sourceRef.quant ? ` (${sourceRef.quant})` : ''} on ${sourceRef.providerLabel} (opens in new tab)`
     : '';
   const isLoaded = !!loadedModel;
-  const isLoadingThis = loadingModel === name;
+  const isLoadingThis = busyModels.has(name);
   const isPulling = pulling[name] !== undefined;
   const pullPct = pulling[name] ?? 0;
   const isDownloaded = Boolean((model as any).downloaded) && !isPulling;
@@ -2730,6 +2744,12 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             {isLoadingThis ? t('Working…') : t('Unload')}
           </WorkspaceActionButton>
         </>
+      ) : isOnDemandModel ? (
+        isDownloaded ? null : (
+          <WorkspaceActionButton appearance="primary" icon="download" onClick={() => onPull(model)} aria-label={`Download ${name}`}>
+            {t('Download')}
+          </WorkspaceActionButton>
+        )
       ) : (isDownloaded || isRouterCollection) ? (
         isRouterCollection ? (
           <>
@@ -2825,11 +2845,12 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
     </WorkspaceActionGroup>
   );
 
+  const modelError = loadErrors.get(name);
   const detailHeaderExtras = (
     <>
-      {loadError?.modelName === name && (
+      {modelError && (
         <div className="model-detail-panel__error" role="alert">
-          <Icon name="alert" size={13} /> {loadError.message}
+          <Icon name="alert" size={13} /> {modelError.message}
         </div>
       )}
     </>

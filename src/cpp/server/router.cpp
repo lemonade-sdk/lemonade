@@ -14,6 +14,7 @@
 #include "lemon/server_capabilities.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/error_types.h"
+#include "lemon/model_types.h"
 #include "lemon/recipe_options.h"
 #include "lemon/auto_tune.h"
 #include "telemetry.h"
@@ -850,10 +851,21 @@ void Router::load_model(const std::string& model_name,
                         std::optional<bool> pinned,
                         LoadPurpose load_purpose,
                         std::atomic<bool>* cancel_flag) {
+    if (!is_router_collection_recipe(model_info.recipe) &&
+        has_label(model_info.labels, "on-demand")) {
+        throw ModelLoadRefusedException("On-demand models do not support persistent loading");
+    }
     const std::string canonical_model_name = resolve_model_name(model_name);
     const ResidencyClass requested_residency_class =
         residency_class_for_load_purpose(load_purpose);
     RecipeOptions effective_options = resolve_effective_options(model_info, options);
+
+    if (const auto* ops = backends::ops_for(model_info.recipe)) {
+        const std::string refusal = ops->validate_load(model_info);
+        if (!refusal.empty()) {
+            throw ModelLoadRefusedException(refusal);
+        }
+    }
 
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
@@ -953,6 +965,35 @@ void Router::load_model(const std::string& model_name,
         ModelType model_type = model_info.type;
         DeviceType device_type = model_info.device;
 
+        // A host-exclusive backend shares the machine with no other local model:
+        // loading it evicts them all, and loading any other local model evicts it.
+        // Cloud models hold no local memory and stay.
+        if (!is_unmetered_recipe(model_info.recipe)) {
+            const bool exclusive_load =
+                slot_policy_for_recipe(model_info.recipe) == SlotPolicy::ExclusiveHost;
+            std::vector<std::pair<WrappedServer*, std::string>> displaced;
+            for (const auto& server : loaded_servers_) {
+                if (!server->is_backend_alive()) continue;
+                const std::string recipe = server->get_recipe_options().get_recipe();
+                const SlotPolicy policy = slot_policy_for_recipe(recipe);
+                if (policy == SlotPolicy::Unmetered) continue;
+                if (!exclusive_load && policy != SlotPolicy::ExclusiveHost) continue;
+                const std::string reason =
+                    (exclusive_load ? model_info.recipe : recipe) + " requires the machine to itself";
+                if (should_reject_residency_displacement(requested_residency_class,
+                                                         server->get_residency_class())) {
+                    throw RouterResidencyConflictException(canonical_model_name,
+                                                           server->get_model_name(), reason);
+                }
+                displaced.emplace_back(server.get(), reason);
+            }
+            for (const auto& [server, reason] : displaced) {
+                LOG(INFO, "Router") << reason << ", evicting: " << server->get_model_name()
+                                    << std::endl;
+                evict_server(server);
+            }
+        }
+
         // NPU EXCLUSIVITY CHECK — driven by the backend's slot policy (descriptor).
         //   ExclusiveNpu (ryzenai-llm, whisper-on-npu): lock the entire NPU,
         //                evicting ALL NPU servers first.
@@ -1029,6 +1070,7 @@ void Router::load_model(const std::string& model_name,
             }
             case SlotPolicy::Standard:
             case SlotPolicy::Unmetered:
+            case SlotPolicy::ExclusiveHost:
                 break;
         }
 
@@ -1193,6 +1235,17 @@ void Router::load_model(const std::string& model_name,
                       << "evicting all models and retrying..." << std::endl;
 
             evict_all_servers();
+
+            // The eviction freed memory the first auto-tune could not count.
+            if (ctx_size_auto) {
+                effective_options.set_option("ctx_size", -1);
+                const int64_t retry_ctx = resolve_auto_ctx_size(effective_options, model_info);
+                if (retry_ctx > 0) {
+                    LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << retry_ctx
+                                        << " for the retry" << std::endl;
+                    effective_options.set_option("ctx_size", retry_ctx);
+                }
+            }
 
             // Mark loading again for retry
             is_loading_ = true;
@@ -2108,11 +2161,40 @@ json Router::reranking(const json& request) {
 }
 
 json Router::classify(const json& request) {
+    return json(classifier_inference(
+        request, "classify", false, [&](WrappedServer* server) -> nlohmann::ordered_json {
+        auto classification_server = dynamic_cast<IClassificationServer*>(server);
+        if (!classification_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Classification", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return classification_server->classify(request);
+    }));
+}
+
+nlohmann::ordered_json Router::systemone(const nlohmann::ordered_json& request) {
+    return classifier_inference(
+        json(request), "systemone", true, [&](WrappedServer* server) -> nlohmann::ordered_json {
+        auto systemone_server = dynamic_cast<ISystemOneServer*>(server);
+        if (!systemone_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("SystemOne", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return systemone_server->systemone(request);
+    });
+}
+
+nlohmann::ordered_json Router::classifier_inference(
+        const json& request, const std::string& operation, bool report_usage,
+        const std::function<nlohmann::ordered_json(WrappedServer*)>& call) {
     std::string requested_model = request.value("model", "");
-    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", "classify", requested_model, request);
+    std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("CLASSIFIER", operation, requested_model, request);
 
     try {
-        json response = execute_inference(request, [&](WrappedServer* server) {
+        nlohmann::ordered_json response = execute_inference(
+            request, [&](WrappedServer* server) -> nlohmann::ordered_json {
             ModelTelemetryIdentity identity = get_telemetry_identity(server);
             if (span) {
                 span->set_attribute("classifier.backend", identity.recipe);
@@ -2120,13 +2202,7 @@ json Router::classify(const json& request) {
                 span->set_attribute("classifier.checkpoint", identity.checkpoint);
                 span->set_attribute("classifier.recipe", identity.recipe);
             }
-            auto classification_server = dynamic_cast<IClassificationServer*>(server);
-            if (!classification_server) {
-                return ErrorResponse::from_exception(
-                    UnsupportedOperationException("Classification", device_type_to_string(server->get_device_type()))
-                );
-            }
-            return classification_server->classify(request);
+            return call(server);
         });
 
         if (span) {
@@ -2137,8 +2213,14 @@ json Router::classify(const json& request) {
                 }
                 span->end_with_error(error_msg);
             } else {
-                // Label scores classify user content; keep them out of telemetry.
-                span->end_with_success(nlohmann::json::object(), "");
+                // Scores and answers judge user content; keep them out of telemetry.
+                nlohmann::json usage_payload = nlohmann::json::object();
+                if (report_usage && response.contains("usage") && response["usage"].is_object() &&
+                    response["usage"].contains("input_tokens") &&
+                    response["usage"]["input_tokens"].is_number_integer()) {
+                    usage_payload["prompt_tokens"] = response["usage"]["input_tokens"].get<int>();
+                }
+                span->end_with_success(usage_payload, "");
             }
         }
         return response;

@@ -246,12 +246,19 @@ async function main(): Promise<void> {
     function: { name: 'generate_image', arguments: JSON.stringify({ prompt: 'a teapot' }) },
   });
   assert.equal(chainGenerated.artifacts?.[0]?.url, CHAIN_GENERATED);
+  const secondGeneration = await chainRuntime!.execute({
+    id: 'chain-generate-again', type: 'function',
+    function: { name: 'generate_image', arguments: JSON.stringify({ prompt: 'a teapot' }) },
+  });
+  assert.notEqual(chainGenerated.artifacts?.[0]?.name, secondGeneration.artifacts?.[0]?.name,
+    'separate AI image calls must have different download names');
   editTarget = '';
   const chainEdited = await chainRuntime!.execute({
     id: 'chain-edit', type: 'function',
     function: { name: 'edit_image', arguments: JSON.stringify({ prompt: 'make it blue' }) },
   });
   assert.notEqual(chainEdited.error, true);
+  assert.equal(chainEdited.artifacts?.[0]?.name, 'image-edit-model-edit-chain-edit-1.png');
   assert.equal(editTarget, CHAIN_GENERATED,
     'an image generated earlier in the same turn is the newest image');
 

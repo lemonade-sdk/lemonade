@@ -4,6 +4,7 @@ import { capabilityFromLoaded } from '../modelCapabilities';
 import { backendCompactLabel } from '../modelPresentation';
 import { useMonitorData } from '../hooks/useMonitorData';
 import { monitorMemoryTopology } from '../features/monitor/memoryTopology';
+import { percentDigits } from '../features/monitor/throughput';
 import { evictionRuntimeSettingsFromConfig } from '../features/modelSettings/globalModelSettings';
 import { WorkspaceActionButton, WorkspaceList, WorkspaceListRow, WorkspacePaneHeader } from './WorkspacePanels';
 import { MonitorGpuVitals } from './MonitorGpuVitals';
@@ -13,7 +14,7 @@ import { useI18n } from '../i18n';
 
 function pct(value: number | null): string {
   if (value == null || value < 0) return '—';
-  return `${Math.round(value)}%`;
+  return `${percentDigits(value)}%`;
 }
 
 function fmtNum(n: number): string {
@@ -158,7 +159,7 @@ const RingGauge = React.memo<{
       </svg>
       <div className="dash2-gauge__center">
         <span className="dash2-gauge__value">
-          {unavailable ? '—' : (unit === '%' ? `${Math.round(safeVal)}` : safeVal.toFixed(1))}
+          {unavailable ? '—' : (unit === '%' ? percentDigits(safeVal) : safeVal.toFixed(1))}
         </span>
         <span className="dash2-gauge__unit">{unavailable ? '' : unit}</span>
       </div>
@@ -472,7 +473,7 @@ const Monitor: React.FC<MonitorProps> = ({ isActive }) => {
               {hasNpu && <RingGauge label="NPU" value={sysStats!.npu_percent!}
                 color="var(--chart-series-4)" subtitle={pct(sysStats!.npu_percent)} />}
               <RingGauge label={t('KV Cache')} value={overallCacheUtil}
-                color="var(--warn)" subtitle={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} />
+                color="var(--warn)" subtitle={pct(overallCacheUtil)} />
             </div>
             {multiGpu && <MonitorGpuVitals gpus={gpuDevices} selectedId={activeGpu?.id ?? null} onSelect={setSelectedGpuId} t={t} />}
             <SmoothChart

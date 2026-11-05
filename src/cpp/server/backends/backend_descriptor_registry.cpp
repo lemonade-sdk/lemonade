@@ -38,6 +38,15 @@ const std::vector<std::string>& supported_modes_for(const std::string& recipe) {
     return d != nullptr ? d->supported_modes : kNone;
 }
 
+bool recipe_gates_mode_on(const std::string& recipe, const std::string& label) {
+    const BackendDescriptor* d = descriptor_for(recipe);
+    if (d == nullptr) return false;
+    for (const auto& requirement : d->mode_capability_requirements) {
+        if (requirement.second == label) return true;
+    }
+    return false;
+}
+
 const std::string& default_mode_for(const std::string& recipe) {
     static const std::string kChat = "chat";
     const std::vector<std::string>& modes = supported_modes_for(recipe);
@@ -116,6 +125,28 @@ std::string illegal_deployment_labels(const std::vector<std::string>& labels,
             return "a model deploys in exactly one mode, but these labels name "
                    "two: '" + deploys_as + "' and '" + label +
                    "'. Register one model per mode.";
+        }
+    }
+
+    const BackendDescriptor* d = descriptor_for(recipe);
+    if (d != nullptr) {
+        if (deploys_as.empty() && !modes.empty()) {
+            deployment_mode_of(modes.front(), deployed);
+        }
+        for (const auto& [mode, capability] : d->mode_capability_requirements) {
+            ModelType gated = ModelType::LLM;
+            if (!deployment_mode_of(mode, gated)) continue;
+            const bool has_capability = has_label(labels, capability);
+            if (gated == deployed && !has_capability) {
+                return "recipe '" + recipe + "' cannot serve '" + mode +
+                       "' without the '" + capability + "' label. Add that label, or omit '" +
+                       mode + "' to deploy as '" + default_mode_for(recipe) + "'.";
+            }
+            if (gated != deployed && has_capability) {
+                return "the '" + capability + "' label needs the '" + mode +
+                       "' label: recipe '" + recipe + "' serves '" + capability +
+                       "' models only in that mode. Add '" + mode + "'.";
+            }
         }
     }
     return "";
