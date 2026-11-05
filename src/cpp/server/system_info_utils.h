@@ -129,6 +129,76 @@ inline std::string identify_cuda_arch_from_name(const std::string& device_name) 
     return "";
 }
 
+// Splits a dotted numeric version ("576.02", "575.51.03") into its parts. Empty
+// when any part is not a plain decimal number, so "Unknown" or "N/A" never compares.
+inline std::vector<int> parse_numeric_version(const std::string& version) {
+    std::vector<int> parts;
+    std::string part;
+    std::stringstream ss(version);
+    while (std::getline(ss, part, '.')) {
+        if (part.empty() || part.size() > 9 ||
+            !std::all_of(part.begin(), part.end(),
+                         [](unsigned char c) { return std::isdigit(c) != 0; })) {
+            return {};
+        }
+        parts.push_back(std::stoi(part));
+    }
+    return parts;
+}
+
+// True only when both versions parse and `installed` sorts before `minimum`. An
+// unreadable version is never treated as too old, so detection gaps cannot block a
+// working driver.
+inline bool nvidia_driver_older_than(const std::string& installed,
+                                     const std::string& minimum) {
+    const auto have = parse_numeric_version(installed);
+    const auto want = parse_numeric_version(minimum);
+    if (have.empty() || want.empty()) {
+        return false;
+    }
+    const size_t n = std::max(have.size(), want.size());
+    for (size_t i = 0; i < n; ++i) {
+        const int a = i < have.size() ? have[i] : 0;
+        const int b = i < want.size() ? want[i] : 0;
+        if (a != b) {
+            return a < b;
+        }
+    }
+    return false;
+}
+
+// Windows reports NVIDIA drivers in the Windows driver-store format, whose last five
+// digits are NVIDIA's own version: 32.0.15.7602 -> 576.02. Versions that are not in
+// that four-part form are returned unchanged.
+inline std::string nvidia_driver_version_from_windows(const std::string& version) {
+    const auto parts = parse_numeric_version(version);
+    if (parts.size() != 4) {
+        return version;
+    }
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%d%04d", parts[2], parts[3]);
+    const std::string digits(buf);
+    if (digits.size() < 5) {
+        return version;
+    }
+    const std::string tail = digits.substr(digits.size() - 5);
+    return std::to_string(std::stoi(tail.substr(0, 3))) + "." + tail.substr(3);
+}
+
+// Oldest NVIDIA driver that the CUDA toolkit a backend's binaries are built with
+// declares support for. Empty when no minimum is enforced. The llamacpp:cuda values
+// track the toolkit pinned in the lemonade-sdk/llama.cpp release workflow (CUDA
+// 12.9.0) and must move with it.
+inline std::string cuda_min_driver_version(const std::string& recipe,
+                                           const std::string& backend,
+                                           const std::string& os) {
+    if (recipe == "llamacpp" && backend == "cuda") {
+        if (os == "windows") return "576.02";
+        if (os == "linux") return "575.51.03";
+    }
+    return "";
+}
+
 // KFD publishes a GPU's ISA as packed decimal (110501 -> gfx1151), where the minor and
 // step fields are hex nibbles. Empty when the value is not a decimal integer; the CPU
 // node's 0 yields the unmatchable "gfx000" rather than an error.

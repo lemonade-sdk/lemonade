@@ -3823,6 +3823,14 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${_LLAMACPP_
     add_cpp_ci_test(LlamaCppSystemBackendTest CI ON COMMAND test_llamacpp_system_backend)
 endif()
 
+set(_NVIDIA_DRIVER_GATING_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_nvidia_driver_gating.cpp")
+if(BUILD_TESTING AND EXISTS "${_NVIDIA_DRIVER_GATING_TEST_SRC}")
+    add_executable(test_nvidia_driver_gating test/cpp/test_nvidia_driver_gating.cpp)
+    target_link_libraries(test_nvidia_driver_gating PRIVATE lemonade-server-core)
+    add_dependencies(test_nvidia_driver_gating copy_resources)
+    add_cpp_ci_test(NvidiaDriverGatingTest CI ON COMMAND test_nvidia_driver_gating)
+endif()
+
 set(_DLL_VERSION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_dll_version.cpp")
 if(BUILD_TESTING AND EXISTS "${_DLL_VERSION_TEST_SRC}")
     add_executable(test_backend_utils_dll_version test/cpp/test_backend_utils_dll_version.cpp)
