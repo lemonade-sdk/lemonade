@@ -5166,6 +5166,22 @@ optgroup {
   background: var(--surface-2);
 }
 
+.message__image-download--failed {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.message__image-download-status {
+  position: absolute;
+  right: var(--space-2);
+  bottom: calc(var(--space-2) + 36px);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
+
 .active-card__status--muted {
   background: var(--surface-3);
   color: var(--text-tertiary);

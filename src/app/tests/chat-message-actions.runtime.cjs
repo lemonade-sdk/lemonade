@@ -24,8 +24,11 @@ assert.match(styles, /\.message__action--failed[\s\S]*?color:\s*var\(--danger\)/
 const generatedImages = chat.slice(chat.indexOf('{message.generatedImages && message.generatedImages.length > 0 && ('), chat.indexOf('{message.audioUrl && ('));
 assert.doesNotMatch(generatedImages, /href=\{src\}/, 'generated images download through a Blob, not a data: href');
 assert.match(generatedImages, /downloadImage\(src, filename\)/);
+assert.match(generatedImages, /\.catch\(\(\) => setFailedImageIndex\(i\)\)/);
+assert.match(generatedImages, /message__image-download-status\" role=\"alert\"/);
+assert.match(styles, /\.message__image-download--failed\s*\{[^}]*color:\s*var\(--danger\)/);
 assert.match(generatedImages, /message\.generatedImageNames\?\.\[i\]/);
-assert.match(generatedImages, /aria-label=\{`\$\{t\('Download'\)\} \$\{t\('Image'\)\} \$\{i \+ 1\}`\}/);
+assert.match(generatedImages, /aria-label=\{`\$\{failedImageIndex === i \? t\('Retry download'\) : t\('Download'\)\} \$\{t\('Image'\)\} \$\{i \+ 1\}`\}/);
 assert.match(chat, /generatedImageNames: undefined,/, 'image names are stripped before persisting');
 assert.match(styles, /\.message__image-download\s*\{\s*position:\s*absolute;/);
 assert.match(styles, /\.message__image-item\s*\{[^}]*align-self:\s*flex-start;/);

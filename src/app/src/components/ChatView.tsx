@@ -5180,6 +5180,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
   const [thinkingOpen, setThinkingOpen] = useState(defaultThinkingOpen);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content || '');
+  const [failedImageIndex, setFailedImageIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isEditing) setEditDraft(message.content || '');
@@ -5274,16 +5275,20 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
                 <img src={src} alt={`Generated image ${i + 1}`} className="message__image message__image--generated" />
                 <button
                   type="button"
-                  className="message__image-download"
+                  className={`message__image-download${failedImageIndex === i ? ' message__image-download--failed' : ''}`}
                   onClick={() => {
                     const filename = imageDownloadName(src, message.generatedImageNames?.[i], `${displayModel?.name || 'lemonade-image'}-${i + 1}`);
-                    void downloadImage(src, filename).catch(err => console.warn('Could not download generated image:', err));
+                    setFailedImageIndex(null);
+                    void downloadImage(src, filename).catch(() => setFailedImageIndex(i));
                   }}
-                  title={t('Download')}
-                  aria-label={`${t('Download')} ${t('Image')} ${i + 1}`}
+                  title={failedImageIndex === i ? t('Retry download') : t('Download')}
+                  aria-label={`${failedImageIndex === i ? t('Retry download') : t('Download')} ${t('Image')} ${i + 1}`}
                 >
-                  <Icon name="download" size={16} />
+                  <Icon name={failedImageIndex === i ? 'rotate-ccw' : 'download'} size={16} />
                 </button>
+                {failedImageIndex === i && (
+                  <span className="message__image-download-status" role="alert">{t('Failed')}</span>
+                )}
               </div>
             ))}
           </div>
