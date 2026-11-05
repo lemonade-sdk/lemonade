@@ -393,7 +393,7 @@ async function executeLemonadeMultimodalTool(
         return mediaResult(
           call,
           `Generated ${urls.length} image${urls.length === 1 ? '' : 's'} with ${model.name}.`,
-          urls.map((url, index) => ({ type: 'image', url, name: `${model.name}-${index + 1}.png`, mime: 'image/png' })),
+          urls.map((url, index) => ({ type: 'image', url, name: `${model.name}-${call.id}-${index + 1}.png`, mime: 'image/png' })),
           { model: model.name },
         );
       }
@@ -409,7 +409,7 @@ async function executeLemonadeMultimodalTool(
         return mediaResult(
           call,
           `Edited the image with ${model.name}.`,
-          urls.map((url, index) => ({ type: 'image', url, name: `${model.name}-edit-${index + 1}.png`, mime: 'image/png' })),
+          urls.map((url, index) => ({ type: 'image', url, name: `${model.name}-edit-${call.id}-${index + 1}.png`, mime: 'image/png' })),
           { model: model.name },
         );
       }
