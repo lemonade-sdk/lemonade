@@ -231,6 +231,7 @@ void Server::run() {
 void Server::stop() {
     std::lock_guard<std::mutex> lock(stop_mutex_);
     if (listener_->stop()) {
+        job_manager_->shutdown();
         LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
         try {
             router_->unload_model();

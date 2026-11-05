@@ -23,6 +23,8 @@ namespace jobs {
 namespace {
 
 constexpr size_t kMaxJobs = 50;
+// Keeps an interrupted job's record apart from one a client interrupted.
+constexpr const char* kStoppedError = "server stopped while the job was active";
 
 std::string iso_now() {
     const auto now = std::chrono::system_clock::now();
@@ -88,9 +90,15 @@ JobManager::JobManager(std::string cache_dir, std::string config_dir, OpRegistry
 }
 
 JobManager::~JobManager() {
+    shutdown();
+}
+
+void JobManager::shutdown() {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         stop_ = true;
+        // Jobs still queued stay queued on disk, and the next start recovers them.
+        queue_.clear();
         for (auto& kv : controls_) {
             kv.second->interrupt_requested.store(true);
             kv.second->cancel.store(true);
@@ -479,6 +487,7 @@ void JobManager::worker_main() {
             auto it = jobs_.find(id);
             if (it != jobs_.end()) {
                 it->second.status = JobStatus::Interrupted;
+                if (stop_) it->second.error = kStoppedError;
                 persist_locked();
             }
             LOG(INFO, "Jobs") << "job " << id
@@ -534,6 +543,7 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
             if (ctrl->interrupt_requested.load()) {
                 if (StepRecord* s = find_step(job, job.cursor)) s->status = StepStatus::Pending;
                 job.status = JobStatus::Interrupted;
+                if (stop_) job.error = kStoppedError;
                 persist_locked();
                 LOG(INFO, "Jobs") << "job " << id << " interrupted at step '" << job.cursor << "'"
                                   << std::endl;
@@ -644,6 +654,7 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                 s->status = StepStatus::Pending;
                 s->error.clear();
                 job.status = JobStatus::Interrupted;
+                if (stop_) job.error = kStoppedError;
                 persist_locked();
                 LOG(INFO, "Jobs") << "job " << id << " interrupted during step '" << step_id << "'"
                                   << std::endl;
