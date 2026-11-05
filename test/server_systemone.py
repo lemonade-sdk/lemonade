@@ -3,10 +3,11 @@ SystemOne decision-model tests for Lemonade Server.
 
 Tests POST /v1/systemone, the /v1/classify zero-shot path, and the router's
 `systemone` and `zero_shot` classifier types against a llama.cpp decision model
-(llama-server b11361 or later).
+(llama-server b11361 or later) or a FastFlowLM d3 model (FLM 1.0.11 or later).
 
 Usage:
     python server_systemone.py --wrapped-server llamacpp --backend cpu
+    python server_systemone.py --wrapped-server flm --backend npu
 
 The negative tests run first and never pull the model.
 """
@@ -18,7 +19,7 @@ from utils.server_base import (
     run_server_tests,
     pull_model_with_retry,
 )
-from utils.capabilities import get_test_model
+from utils.capabilities import get_test_model, skip_if_unsupported
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
 TIMEOUT_DECISION = 600
@@ -47,7 +48,9 @@ PARAGRAPH = (
 # Long enough to overflow llama-server's default physical batch (512 tokens),
 # short of the 4096 tokens lemond lets an encoder decision model read by default.
 LONG_STATE = PARAGRAPH * 100
-TOO_LONG_STATE = PARAGRAPH * 400
+# About 37,000 tokens: over the 4096 tokens lemond lets an encoder decision
+# model read by default, and over the 32,768-token window of the d3 models.
+TOO_LONG_STATE = PARAGRAPH * 1600
 # One question of each form that lemond renders differently for a `laya` model.
 COUNT_QUESTIONS = {
     "choice": {
@@ -361,6 +364,32 @@ class SystemOneTests(ServerTestBase):
         )
         print(f"[OK] too-long state: {response.json()['error']['message']}")
 
+    def test_514_classify_text_longer_than_window(self):
+        """/v1/classify refuses a text beyond the context window with a 400."""
+        self._ensure_model_pulled()
+        response = self._post(
+            "classify",
+            {
+                "model": get_test_model("systemone"),
+                "input": TOO_LONG_STATE,
+                "labels": ["finance", "cooking"],
+            },
+        )
+        self.assertEqual(response.status_code, 400, response.text[:1000])
+        self.assertEqual(
+            response.json()["error"].get("code"), "context_length_exceeded"
+        )
+        print(f"[OK] too-long classify text: {response.json()['error']['message']}")
+
+    def test_515_ctx_size_is_not_forwarded(self):
+        """`ctx_size` only sizes the load; the backend never sees it."""
+        self._ensure_model_pulled()
+        response = self._post("systemone", self._payload(ctx_size=8192))
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        self.assertEqual(set(response.json()["answers"]), set(QUESTIONS))
+        print("[OK] ctx_size accepted")
+
+    @skip_if_unsupported("laya_decision_type")
     def test_508_null_state_reaches_model(self):
         """`state: null` passes lemond; a laya model then refuses it itself."""
         self._ensure_model_pulled()
@@ -371,6 +400,7 @@ class SystemOneTests(ServerTestBase):
         self.assertIn('"state" must be provided', message)
         print(f"[OK] null state reached the model: {message}")
 
+    @skip_if_unsupported("laya_decision_type")
     def test_509_classify_label_cut_error(self):
         """/v1/classify refuses a label that a laya model would cut."""
         self._ensure_model_pulled()
@@ -386,7 +416,7 @@ class SystemOneTests(ServerTestBase):
         )
 
     def test_510_answers_report_truncated(self):
-        """lemond adds truncated to each answer; a laya model never cuts the state."""
+        """lemond adds truncated to each answer; the decision model never cuts the state."""
         self._ensure_model_pulled()
         response = self._post("systemone", self._payload())
         self.assertEqual(response.status_code, 200, response.text[:1000])
@@ -394,6 +424,7 @@ class SystemOneTests(ServerTestBase):
             self.assertIs(answer.get("truncated"), False, question_id)
         print("[OK] every answer has truncated: false")
 
+    @skip_if_unsupported("laya_decision_type")
     def test_511_systemone_question_cut_error(self):
         """/v1/systemone refuses a question that a laya model would cut."""
         self._ensure_model_pulled()
@@ -447,6 +478,7 @@ class SystemOneTests(ServerTestBase):
         self.assertEqual(response.status_code, 200, response.text[:1000])
         return len(response.json()["tokens"])
 
+    @skip_if_unsupported("laya_decision_type")
     def test_513_laya_rendering_matches_prompt_length(self):
         """lemond counts the prompt that llama-server builds for a laya model.
 

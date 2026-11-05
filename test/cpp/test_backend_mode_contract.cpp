@@ -237,6 +237,11 @@ int main() {
         // /v1/systemone from an LLM slot and evict the user's chat model.
         {"llamacpp + systemone", "llamacpp", {"systemone"}, false, {}, {}},
         {"llamacpp + chat + systemone", "llamacpp", {"chat", "systemone"}, false, {}, {}},
+        // FLM serves d3 decision models (`flm serve --decision`) the same way.
+        {"flm + classification", "flm", {"classification"}, false, {}, {}},
+        {"flm + classification + systemone", "flm", {"classification", "systemone"}, true,
+         {"classification", "systemone"}, ModelType::CLASSIFICATION},
+        {"flm + systemone", "flm", {"systemone"}, false, {}, {}},
         // The mirror image: a fixed-modality backend cannot be talked into chat.
         {"sd-cpp + chat", "sd-cpp", {"chat"}, false, {}, {}},
         // Two modes the backend does serve are still two modes. llama-server is
