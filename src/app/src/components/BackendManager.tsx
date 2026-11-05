@@ -78,7 +78,7 @@ const RECIPE_LABELS: Record<string, string> = {
   thinksound:      'ThinkSound',
   openmoss:        'OpenMOSS TTS',
   trellis:         'TRELLIS.2',
-  halogen:         'Halogen Flash',
+  halogen:         'Halogen',
   gufo:            'Gufo',
   ds4:             'DwarfStar4',
   thenoise:        'TheNoise',
