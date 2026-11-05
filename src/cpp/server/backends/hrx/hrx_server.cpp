@@ -19,6 +19,8 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
@@ -43,9 +45,15 @@ namespace {
 
 constexpr int64_t kQwen38HrxContextLimit = 32768;
 
+std::string lower_ascii(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
 bool is_qwen38_27b(const ModelInfo& model_info) {
-    return model_info.model_name.find("Qwen3.8-27B") != std::string::npos ||
-           model_info.checkpoint().find("Qwen3.8-27B") != std::string::npos;
+    return lower_ascii(model_info.model_name).find("qwen3.8-27b") != std::string::npos ||
+           lower_ascii(model_info.checkpoint()).find("qwen3.8-27b") != std::string::npos;
 }
 
 int64_t effective_context_window(const ModelInfo& model_info,
@@ -69,11 +77,9 @@ void clamp_context_size(const ModelInfo& model_info, RecipeOptions& options) {
         effective_context_window(model_info, model_info.max_context_window);
     const json ctx_size = options.get_option("ctx_size");
     bool exceeds_context_limit = false;
-    if (ctx_size.is_number_unsigned()) {
+    if (ctx_size.is_number()) {
         exceeds_context_limit =
-            ctx_size.get<std::uint64_t>() > static_cast<std::uint64_t>(context_limit);
-    } else if (ctx_size.is_number_integer()) {
-        exceeds_context_limit = ctx_size.get<int64_t>() > context_limit;
+            ctx_size.get<double>() > static_cast<double>(context_limit);
     }
     if (exceeds_context_limit) {
         options.set_option("ctx_size", context_limit);

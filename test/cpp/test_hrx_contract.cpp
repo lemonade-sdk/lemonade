@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <limits>
 #include <set>
@@ -23,6 +25,46 @@ using lemon::backends::HrxServer;
 constexpr const char* kReleaseVersion = "hrx-b99";
 
 int failures = 0;
+
+class GgufWriter {
+public:
+    void header(std::uint64_t kv_count) {
+        bytes_.append("GGUF", 4);
+        put<std::uint32_t>(3);
+        put<std::uint64_t>(0);
+        put<std::uint64_t>(kv_count);
+    }
+
+    void string(const std::string& key, const std::string& value) {
+        put_string(key);
+        put<std::uint32_t>(8);
+        put_string(value);
+    }
+
+    void int32(const std::string& key, std::int32_t value) {
+        put_string(key);
+        put<std::uint32_t>(4);
+        put(value);
+    }
+
+    void write(const std::filesystem::path& path) const {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out.write(bytes_.data(), static_cast<std::streamsize>(bytes_.size()));
+    }
+
+private:
+    template <typename T>
+    void put(T value) {
+        bytes_.append(reinterpret_cast<const char*>(&value), sizeof(T));
+    }
+
+    void put_string(const std::string& value) {
+        put<std::uint64_t>(value.size());
+        bytes_.append(value);
+    }
+
+    std::string bytes_;
+};
 
 void check(const std::string& what, bool ok) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", what.c_str());
@@ -91,15 +133,23 @@ void check_launch_contract() {
 }
 
 void check_context_limit_contract() {
+    const auto gguf_path =
+        std::filesystem::temp_directory_path() / "lemonade_hrx_contract_qwen.gguf";
+    GgufWriter gguf;
+    gguf.header(2);
+    gguf.string("general.architecture", "qwen3");
+    gguf.int32("qwen3.context_length", 262144);
+    gguf.write(gguf_path);
+
     lemon::ModelInfo qwen;
-    qwen.model_name = "user.Qwen3.8-27B-HRX";
+    qwen.model_name = "user.qWeN3.8-27b-HRX";
     qwen.checkpoints["main"] =
         "bartowski/Qwen3.8-27B-GGUF:Qwen3.8-27B-Q4_K_M.gguf";
-    qwen.max_context_window = 262144;
+    qwen.resolved_paths["main"] = gguf_path.string();
     const lemon::backends::BackendOpsContext context;
 
     hrx::ops()->populate_metadata(qwen, context);
-    check("HRX advertises the reported Qwen3.8-27B limit",
+    check("HRX reads and caps the Qwen3.8-27B GGUF context",
           qwen.max_context_window == 32768);
 
     lemon::ModelInfo qwen_without_metadata;
@@ -111,7 +161,8 @@ void check_context_limit_contract() {
 
     lemon::ModelInfo qwen_checkpoint_only;
     qwen_checkpoint_only.model_name = "user.HRX-model";
-    qwen_checkpoint_only.checkpoints["main"] = qwen.checkpoint();
+    qwen_checkpoint_only.checkpoints["main"] =
+        "bartowski/qwen3.8-27b-gguf:qwen3.8-27b-q4_k_m.gguf";
     qwen_checkpoint_only.max_context_window = 262144;
     hrx::ops()->populate_metadata(qwen_checkpoint_only, context);
     check("HRX identifies Qwen3.8-27B from its checkpoint",
@@ -165,6 +216,14 @@ void check_context_limit_contract() {
     hrx::ops()->resolve_runtime_options(other, other_options);
     check("HRX leaves other models' explicit context unchanged",
           other_options.get_option("ctx_size") == 65536);
+
+    lemon::RecipeOptions fractional_oversized(
+        "llamacpp-hrx", {{"ctx_size", 65536.0}});
+    hrx::ops()->resolve_runtime_options(qwen, fractional_oversized);
+    check("HRX clamps a floating-point context size",
+          fractional_oversized.get_option("ctx_size") == 32768);
+
+    std::filesystem::remove(gguf_path);
 }
 
 void check_admission_contract() {
