@@ -64,6 +64,11 @@ bool read(const std::string& name, std::string& bytes) {
     return true;
 }
 
+bool exists(const std::string& name) {
+    std::error_code ec;
+    return is_valid_file_name(name) && fs::exists(dir() / name, ec);
+}
+
 void remove_all_except(const std::set<std::string>& keep) {
     std::error_code ec;
     for (fs::directory_iterator it(dir(), ec), end; !ec && it != end; it.increment(ec)) {

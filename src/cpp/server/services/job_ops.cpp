@@ -179,7 +179,10 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         }
         if (response.contains("b64_json") && response["b64_json"].is_string()) {
             std::string file = request.value("clip_file", std::string());
-            if (!video_store::is_valid_file_name(file)) file = video_store::new_file_name();
+            // clip_file comes from the job's params, which a generic job can fill with
+            // another video's name: writing there would replace that video's clip.
+            if (!video_store::is_valid_file_name(file) || video_store::exists(file))
+                file = video_store::new_file_name();
             video_store::write(file, utils::JsonUtils::base64_decode(response["b64_json"].get<std::string>()));
             response.erase("b64_json");
             response["clip_file"] = file;

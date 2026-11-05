@@ -24,6 +24,8 @@ void write(const std::string& name, const std::string& bytes);
 
 bool read(const std::string& name, std::string& bytes);
 
+bool exists(const std::string& name);
+
 void remove_all_except(const std::set<std::string>& keep);
 
 // Video ids are job ids, so without this check the video routes would report on, or

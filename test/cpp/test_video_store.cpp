@@ -45,6 +45,8 @@ static void test_write_read() {
     std::string back;
     check("io: a written clip reads back unchanged", store::read(name, back) && back == bytes);
     check("io: a missing clip does not read", !store::read(store::new_file_name(), back));
+    check("io: a written clip exists", store::exists(name));
+    check("io: a missing clip does not exist", !store::exists(store::new_file_name()));
     check("io: an invalid name does not read", !store::read("../" + name, back));
 
     bool threw = false;
