@@ -1075,7 +1075,8 @@ jobs:
             suites: >-
               [{"name":"ryzenai","script":"server_llm.py","extra_args":"--wrapped-server ryzenai","backends":"cpu hybrid npu"},
                {"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"},
-               {"name":"flm-whisper","script":"server_whisper.py","extra_args":"--wrapped-server flm","backends":"npu"}]
+               {"name":"flm-whisper","script":"server_whisper.py","extra_args":"--wrapped-server flm","backends":"npu"},
+               {"name":"systemone-flm","script":"server_systemone.py","extra_args":"--wrapped-server flm","backends":"npu"}]
           - name: stx-halo
             runner: [Windows, X64, stx-halo, lemon-prod]
             suites: >-
@@ -1343,7 +1344,8 @@ jobs:
           - name: xdna2
             runner: [Linux, X64, xdna2, lemon-prod]
             suites: >-
-              [{"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"}]
+              [{"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"},
+               {"name":"systemone-flm","script":"server_systemone.py","extra_args":"--wrapped-server flm","backends":"npu"}]
           - name: generic
             runner: [self-hosted, Linux, X64, lemon-prod]
             suites: >-
