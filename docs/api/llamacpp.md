@@ -111,7 +111,7 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 ## `POST /v1/systemone`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Asks a llama.cpp decision model typed questions about one piece of content and returns one answer per question, without generating tokens. lemond forwards the request to `llama-server` unchanged, including the order of each question's options, and `llama-server` builds the prompt from the template in the GGUF. Only `llamacpp` models labelled `classification` and `systemone`, such as `Laya-GGUF`, serve this endpoint.
+Asks a decision model typed questions about one piece of content and returns one answer per question, without generating tokens. lemond forwards the request to the backend unchanged, including the order of each question's options: `llama-server` builds the prompt from the template in the GGUF, and FastFlowLM serves its d3 models on the NPU with `flm serve --decision`. Only `llamacpp` and `flm` models labelled `classification` and `systemone`, such as `Laya-GGUF` or `d3-lite-FLM`, serve this endpoint.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -120,9 +120,9 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `model` | No | The classification model. Optional when exactly one classification model is loaded; that model is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `state` | Yes | The content to judge. A value that is not a string reaches the model as JSON text. `null` asks about the images only; `llama-server` refuses it for decision types that need text. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `state` | Yes | The content to judge. A value that is not a string reaches the model as JSON text. `null` asks about the images only; the backend refuses it for decision types that need text. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `questions` | Yes | Maps each question id to a question, which the model answers independently of the others. A question has a `type` (`choice`, `score` or `noul`), `instructions`, and `criteria`: for `choice`, an object that maps each option to a description or `null`; for `score`, an array of 2 to 10 levels, lowest first; for `noul`, optional `true` and `false` descriptions. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `images` | No | Data URLs of images to judge with the state. The model must load with an `mmproj` file, and `llama-server` decides which decision types read images. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `images` | No | Data URLs of images to judge with the state. A `llamacpp` model must load with an `mmproj` file, and `llama-server` decides which decision types read images. FLM's d3 models read images without one. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Cuts
@@ -222,6 +222,8 @@ Register the model with its projector file, for example on `/v1/pull`: `{"model_
     - `confidence` - `choice` and `score` questions: how clearly the model prefers its answer; `0` when every option is equally likely.
     - `noul` - `noul` questions: the probability that the answer is `true`.
     - `truncated` - Added by Lemonade. `false` when the decision type refuses a `state` that does not fit instead of cutting it. Absent when it can cut the `state` without saying so (`lfm2-d1-omni`; `h2o-lightning` with a `state` over 32,000 bytes), so absence means unknown.
+    - `error` - FastFlowLM: `max_length_exceeded` when this question does not fit in the model's context, so the answer has no scores. The other questions are still answered; when every question is refused, the status is 400 `context_length_exceeded` instead.
+    - `message` - With `error`: why the question was refused, with its token count and the context size.
 - `usage` - Tokens processed.
   - `input_tokens` - Prompt tokens across all questions.
   - `output_tokens` - Always `0`, because the model generates no tokens.
@@ -235,9 +237,9 @@ Register the model with its projector file, for example on `/v1/pull`: `{"model_
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is omitted and not exactly one classification model is loaded |
 | `400` |  | `model` lacks the `classification` or `systemone` label, or its backend does not answer SystemOne questions; checked before it loads |
-| `400` |  | `llama-server` rejects a question, such as a `score` question with one level; the backend's status replaces this one |
+| `400` |  | The backend rejects a question, such as a `score` question with one level; the backend's status replaces this one |
 | `400` |  | A `laya` model (Laya, Julia-1) would cut an option or the question; `llama-server` cuts them without saying so |
-| `400` | `context_length_exceeded` | `state` and a question do not fit in the model's context |
+| `400` | `context_length_exceeded` | `state` and a question do not fit in the model's context. FastFlowLM refuses only the questions that do not fit: while another question fits, the status is 200 and each refused answer carries `"error": "max_length_exceeded"` |
 | `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` |  | The model is unloaded while the request waits for it |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
