@@ -61,7 +61,6 @@ test('administrator access includes all service families and denied writes retai
 
 test('moderator invitations delegate their preset to the server and display denials', async ({ page }, testInfo) => {
   const fixture = await openLocalAccount(page);
-  await page.locator('.nexus-device-disclosure > summary').click();
   await page.getByRole('button', { name: 'Connect another device', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Connect another device', exact: true });
   await dialog.getByRole('textbox', { name: 'Device you are inviting', exact: true }).fill('Lab workstation');

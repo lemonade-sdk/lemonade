@@ -14,6 +14,9 @@ let local = true;
 let desktop = true;
 let failPasskey = false;
 let registered = false;
+let meshUp = false;
+let refuseMembership = false;
+let deletePending = false;
 let avatarError = false;
 let reply = {
   id: 'cluster', member_id: 'identity', device_node_id: 'this-device', role: 'admin',
@@ -23,7 +26,7 @@ let reply = {
 };
 const request = async (path, body) => {
   calls.push({path,body});
-  if (path === 'status') return { available:true,enabled:true,registered,locked:true,mesh_up:false,status:'locked',members:[] };
+  if (path === 'status') return { available:true,enabled:true,registered,locked:!meshUp,mesh_up:meshUp,status:meshUp?'running':'locked',members:[] };
   if (path === 'account') return structuredClone(reply);
   if (path === 'account/avatar') {
     if (avatarError) throw new Error('Image service unavailable');
@@ -35,6 +38,13 @@ const request = async (path, body) => {
     return structuredClone(reply.avatar);
   }
   if (path === 'join') return {};
+  if (path === 'invites/accept') return refuseMembership ? {status:'refused',group_id:'studio',error:'expired'} : {status:'member',group_id:'studio'};
+  if (path === 'memberships') return {group_node_id:'cluster',memberships:[{node_id:'cluster',hostname:'Home',role:'home',permissions:['admin']},{node_id:'studio',hostname:'Studio',role:'member',permissions:['read']},{node_id:'bad',role:'owner'}]};
+  if (path === 'memberships/studio/leave') return {left:true,node_id:'studio'};
+  if (path === 'account/delete') {
+    assert.deepEqual(body, {account_id:reply.id, member_id:reply.member_id, device_node_id:reply.device_node_id, confirm:'delete'}, 'deletion names the verified account, member and device');
+    return {status: deletePending ? 'pending' : 'deleted'};
+  }
   if (path === 'invites') return {code:'12345678',link_token:`lnk_${'a'.repeat(64)}`,device_name:body.device_name,expires_at:Date.now()/1000+600};
   throw new Error(`Unexpected operation ${path}`);
 };
@@ -111,6 +121,29 @@ const input = { action:'create',deviceName:'Workstation',source };
   const join = calls.findIndex(call=>call.path==='join');
   assert.equal(calls[join-2].path,'verify-passkey');
   assert.equal(calls[join].body.code,'12345678');
+  // A device whose mesh is already up accepts the invite as a member instead of joining again.
+  meshUp = true;
+  const accepts = calls.filter(call=>call.path==='invites/accept').length;
+  await service.signIn({...input,action:'join',invitation:`lnk_${'b'.repeat(64)}`});
+  assert.equal(calls.filter(call=>call.path==='invites/accept').length,accepts+1,'an enabled mesh accepts the invite');
+  assert.equal(calls.at(-2).path,'invites/accept');
+  assert.equal(calls.at(-2).body.code,`lnk_${'b'.repeat(64)}`);
+  assert.equal(calls.filter(call=>call.path==='join').length,1,'the join route is for a device without a mesh');
+  meshUp = false;
+  const joined = await service.joinNetwork(account,'12345678');
+  assert.deepEqual(joined,{status:'member',group_id:'studio'});
+  await assert.rejects(service.joinNetwork(account,'short'),/8-digit/);
+  refuseMembership = true;
+  assert.equal((await service.joinNetwork(account,'12345678')).status,'refused','a refused membership is reported, not thrown');
+  refuseMembership = false;
+  const groups = await service.memberships(account);
+  assert.deepEqual(groups.map(group=>[group.node_id,group.role]),[['cluster','home'],['studio','member']],'memberships keep home and member groups and drop unknown roles');
+  await service.leaveNetwork(account,'studio');
+  assert.equal(calls.at(-1).path,'memberships/studio/leave');
+  deletePending = true;
+  assert.equal(await service.deleteAccount(account),'pending');
+  deletePending = false;
+  assert.equal(await service.deleteAccount(account),'deleted');
   registered = true;
   await assert.rejects(service.signIn(input),/already has a registered key/);
   await service.signIn({...input,action:'return',expectedId:'cluster'});
@@ -122,6 +155,8 @@ const input = { action:'create',deviceName:'Workstation',source };
   for (const action of ['create', 'join', 'return']) {
     await assert.rejects(service.signIn({...input,source:currentSource,action,invitation:'12345678'}),/desktop app/);
   }
+  await assert.rejects(service.joinNetwork(account,'12345678'),/connection changed/);
+  await assert.rejects(service.deleteAccount(account),/connection changed/);
   assert.equal(calls.length,remoteCalls,'remote setup cannot issue identity or lifecycle requests');
   await assert.rejects(service.refresh(account),/connection changed/,'local sessions cannot mutate the remote server');
   currentSource = source; local = true; desktop = false;
@@ -144,5 +179,5 @@ const input = { action:'create',deviceName:'Workstation',source };
   reply = {...reply,member_id:'other-identity'};
   await assert.rejects(service.refresh(account),/membership changed/);
   assert.equal([...storage.values()][0],original);
-  console.log('Nexus account flow and synced images: verification, create/join/return, replace/remove, stale writes, errors, account/source isolation, permissions and non-secret labels passed.');
+  console.log('Nexus account flow and synced images: verification, create/join/return, membership join/leave, deletion, replace/remove, stale writes, errors, account/source isolation, permissions and non-secret labels passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

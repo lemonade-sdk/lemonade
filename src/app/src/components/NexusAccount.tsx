@@ -1,13 +1,12 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNexusAccount } from '../features/nexus/NexusAccountContext';
-import { isLoopbackUrl, nexusDeviceOnline, useNexusNetwork } from '../features/nexus/nexus';
+import { isLoopbackUrl, useNexusNetwork } from '../features/nexus/nexus';
 import { useI18n } from '../i18n';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
 import { NexusNetwork } from './NexusNetwork';
-import { NexusConnectionBadge } from './NexusConnectionBadge';
-import { NexusDeviceStatus } from './NexusDeviceStatus';
+import { NexusDeviceRows, NexusMeshPanel, nexusListedDevices } from './NexusMesh';
 import '../styles/nexus.css';
 
 function AccountAvatar({ small = false }: { small?: boolean }) {
@@ -126,37 +125,34 @@ function AccountSummary() {
 
 function AccountAccess({ showSignOut = false }: { showSignOut?: boolean }) {
   const { t } = useI18n();
-  const { account, onSignIn, onSignOut, notice } = useNexusAccount();
+  const { account, onSignIn, onSignOut, onDeleteAccount, notice } = useNexusAccount();
   const hintId = useId();
   if (account) return <div className="nexus-account-access">
-    {showSignOut && onSignOut && <WorkspaceActionButton onClick={onSignOut}>{t('Disable Mesh')}</WorkspaceActionButton>}
+    {showSignOut && <div className="nexus-group-actions">
+      {onSignOut && <WorkspaceActionButton onClick={onSignOut}>{t('Disable Mesh')}</WorkspaceActionButton>}
+      {onDeleteAccount && <WorkspaceActionButton appearance="quiet" icon="trash" onClick={onDeleteAccount}>{t('Delete account')}</WorkspaceActionButton>}
+    </div>}
     {notice && <p className="nexus-error" role="alert">{t(notice === 'reconnecting' ? 'The network is temporarily unavailable. Reconnecting…' : notice)}</p>}
   </div>;
   return <div className="nexus-account-access">
     <p>{t('Enable Mesh to bring your Lemonade devices together.')}</p>
     {notice === 'session-ended' && <p className="nexus-error" role="status">{t('Account access ended. Enable Mesh again to continue.')}</p>}
+    {notice === 'account-deleted' && <p className="nexus-hint" role="status">{t('Your account was deleted. Enable Mesh to create or join a network again.')}</p>}
     <WorkspaceActionButton onClick={onSignIn} disabled={!onSignIn} aria-describedby={!onSignIn ? hintId : undefined}>{t('Enable Mesh')}</WorkspaceActionButton>
     {!onSignIn && <p id={hintId} className="nexus-hint">{t('Nexus is not available yet.')}</p>}
   </div>;
 }
 
+// The account menu's device list: open by default, the same rows as the mesh panel.
 function MyDevices() {
   const { t } = useI18n();
-  const { account, devices, onConnectDevice, source } = useNexusAccount();
+  const { account, devices, onConnectDevice } = useNexusAccount();
   const { status } = useNexusNetwork(false);
-  return <details className="nexus-section nexus-device-disclosure">
+  const listed = account ? nexusListedDevices(status, devices) : [];
+  return <details className="nexus-section nexus-device-disclosure" open>
     <summary><span>{t('My devices')}</span><Icon name="chevron-right" size={16} /></summary>
     <div className="nexus-device-disclosure__content">
-    {account && devices.length ? <ul className="nexus-devices">
-      {devices.map(device => <li key={device.id}>
-        <Icon name={device.kind === 'phone' ? 'smartphone' : 'monitor'} size={23} />
-        <div><strong>{device.name}</strong><div className="nexus-device-subtitle">
-          <NexusDeviceStatus online={nexusDeviceOnline(status, device.id)} />
-          {device.current && <><span aria-hidden="true">·</span><span>{t(source && !isLoopbackUrl(source) ? 'Managed server' : 'Current device')}</span></>}
-        </div></div>
-        <NexusConnectionBadge status={status} nodeId={device.id} />
-      </li>)}
-    </ul> : <div className="nexus-device-empty">
+    {listed.length ? <NexusDeviceRows status={status} devices={listed} /> : <div className="nexus-device-empty">
       <Icon name="smartphone" size={25} />
       <div><strong>{t('Your devices')}</strong><p>{account ? t('No devices connected yet.') : t('Enable Mesh to connect your phone or another computer.')}</p></div>
     </div>}
@@ -190,18 +186,16 @@ export function NexusAccountPage() {
         <label className={advanced ? 'is-selected' : ''}><input type="radio" name={modeId} checked={advanced} onChange={() => changeMode(true)} />{t('Advanced')}</label>
       </fieldset>
     </div>
-    {!advanced && <MyDevices />}
+    <NexusMeshPanel />
     <NexusNetwork advanced={advanced} showCompact={false} />
     </React.Fragment>}
   </div>;
 }
 
-export function NexusAccountMenu({ open, onOpenChange, onOpenPage, theme, onToggleTheme }: {
+export function NexusAccountMenu({ open, onOpenChange, onOpenPage }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenPage: () => void;
-  theme?: 'light' | 'dark';
-  onToggleTheme?: () => void;
 }) {
   const { t } = useI18n();
   const { account, onSignOut } = useNexusAccount();
@@ -254,10 +248,6 @@ export function NexusAccountMenu({ open, onOpenChange, onOpenPage, theme, onTogg
         <WorkspaceActionButton ref={closeRef} appearance="quiet" size="small" iconOnly icon="x" aria-label={t('Close account menu')} onClick={() => close(true)} />
       </div>
       <AccountAccess />
-      {onToggleTheme && <button type="button" className="nexus-account-menu__link nexus-account-menu__theme" onClick={onToggleTheme}
-        aria-label={t('Toggle theme')} title={theme === 'dark' ? t('Switch to light mode') : t('Switch to dark mode')}>
-        <span>{theme === 'dark' ? t('Light mode') : t('Dark mode')}</span><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
-      </button>}
       <MyDevices />
       <button type="button" className="nexus-account-menu__link" onClick={() => { close(true); onOpenPage(); }}>
         <span>{t('Open Accounts')}</span><Icon name="chevron-right" size={16} />

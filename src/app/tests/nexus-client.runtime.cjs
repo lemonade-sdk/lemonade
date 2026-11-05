@@ -156,5 +156,32 @@ global.fetch = async (url, init = {}) => {
   api.baseUrl = local;
   await nexus.nexusRequest('status');
   assert.equal(calls.at(-1).url, 'http://127.0.0.1:15556/api/v1/nexus/status', 'a controller on another port is addressed directly');
-  console.log('Nexus client tests passed: discovery, restart, auth boundaries, relay, rollback, session-only credentials.');
+  // Device pills and the mesh summary follow the server's online flag and dataplane path.
+  const up = { available: true, enabled: true, locked: false, mesh_up: true, status: 'running', node_id: 'self', members: [] };
+  const device = (extra) => ({ node_id: 'peer', device_name: 'Peer', tunnel_ip: '10.8.0.9/32', management_pubkey: 'k', permissions: [], can_remove: false, ...extra });
+  assert.equal(nexus.nexusDeviceConnection(up, device({ is_online: true, connection_type: 'p2p' })), 'p2p');
+  assert.equal(nexus.nexusDeviceConnection(up, device({ is_online: true, connection_type: 'relay' })), 'relay');
+  assert.equal(nexus.nexusDeviceConnection(up, device({ is_online: true, connection_type: 'unknown' })), 'connecting', 'an online device without a path is connecting');
+  assert.equal(nexus.nexusDeviceConnection(up, device({ is_online: false, connection_type: 'relay' })), 'offline');
+  assert.equal(nexus.nexusDeviceConnection(up, device({ can_connect: true })), 'connecting', 'a reachable device the server has not reported yet is connecting');
+  assert.equal(nexus.nexusDeviceConnection(up, device({})), undefined);
+  assert.equal(nexus.nexusDeviceConnection(up, device({ node_id: 'self', is_online: true })), undefined, 'this device has no connection pill');
+  assert.equal(nexus.nexusDeviceConnection({ ...up, locked: true, mesh_up: false }, device({ is_online: true })), undefined, 'a locked mesh reports no paths');
+  assert.deepEqual(nexus.nexusDeviceTags(up, device({ node_id: 'self', is_inference: true, is_admin: true })), ['This device', 'Server', 'Admin']);
+  assert.deepEqual(nexus.nexusDeviceTags(up, device({ is_inference: false, member: true, group_role: 'member' })), ['Client', 'Member', 'Joined network']);
+  assert.deepEqual(nexus.nexusDeviceTags(up, device({})), [], 'a device without a tier reports no tier pill');
+  const servers = [device({ node_id: 'gpu', is_inference: true, can_connect: true, is_online: true, connection_type: 'p2p' }), device({ node_id: 'cpu', is_inference: true, can_connect: true, is_online: true }),
+    device({ node_id: 'denied', is_inference: true, can_connect: false, is_online: true }), device({ node_id: 'phone', is_inference: false, is_online: true }), device({ node_id: 'self', is_inference: true })];
+  assert.deepEqual(nexus.nexusInferenceServers({ ...up, members: servers }).map(d => d.node_id), ['gpu', 'cpu'], 'chat runs only on inference servers this device may connect to');
+  assert.deepEqual(nexus.nexusMeshSummary({ ...up, members: servers }), { state: 'connected', label: '1 server online' });
+  assert.deepEqual(nexus.nexusMeshSummary({ ...up, members: servers.map(d => d.node_id === 'gpu' ? { ...d, connection_type: 'relay' } : d.node_id === 'cpu' ? { ...d, connection_type: 'p2p' } : d) }), { state: 'connected', label: '{count} servers online', count: 2 });
+  assert.deepEqual(nexus.nexusMeshSummary({ ...up, members: servers.slice(1) }), { state: 'connected', label: 'Connecting…' });
+  assert.deepEqual(nexus.nexusMeshSummary({ ...up, members: [servers[1]].map(d => ({ ...d, is_online: false })) }), { state: 'connected', label: 'Servers offline' });
+  assert.deepEqual(nexus.nexusMeshSummary(up), { state: 'connected', label: 'No servers yet' });
+  assert.deepEqual(nexus.nexusMeshSummary(up, 'Cannot reach the server'), { state: 'offline', label: 'Offline' });
+  assert.deepEqual(nexus.nexusMeshSummary({ ...up, locked: true, mesh_up: false }), { state: 'locked', label: 'Locked' });
+  assert.deepEqual(nexus.nexusMeshSummary({ ...up, mesh_up: false, status: 'joining' }), { state: 'connecting', label: 'Connecting…' });
+  assert.deepEqual(nexus.nexusMeshSummary({ ...up, enabled: false }), { state: 'off', label: 'Not set up' });
+  assert.deepEqual(nexus.nexusMeshSummary(null), { state: 'off', label: 'Not set up' });
+  console.log('Nexus client tests passed: discovery, restart, auth boundaries, relay, rollback, session-only credentials, pills and mesh summary.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

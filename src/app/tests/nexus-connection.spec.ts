@@ -18,25 +18,22 @@ test('connection labels follow live path changes and stay hidden for unverified 
     fixture.branches.group.children.push({ ...treePeer, id, name });
   }
   await enableNexusMesh(page);
-  await page.locator('.nexus-device-disclosure > summary').click();
+  // The device list is open on the page: one row per device, pills for its role and path.
   const compact = page.locator('.nexus-page .nexus-devices');
-  await expect(compact.locator('li').filter({ hasText: 'Kitchen PC' }).locator('.nexus-connection-badge')).toHaveText('P2P');
-  await expect(compact.locator('li').filter({ hasText: 'Studio server' }).locator('.nexus-connection-badge')).toHaveText('Relay');
-  for (const name of ['My laptop', 'Office laptop', 'Travel laptop', 'Guest laptop']) {
-    await expect(compact.locator('li').filter({ hasText: name }).locator('.nexus-connection-badge')).toHaveCount(0);
-  }
-  for (const name of ['My laptop', 'Kitchen PC', 'Studio server', 'Office laptop']) {
-    await expect(compact.locator('li').filter({ hasText: name }).locator('.nexus-device-status')).toHaveText('Online');
-  }
-  await expect(compact.locator('li').filter({ hasText: 'Travel laptop' }).locator('.nexus-device-status')).toHaveText('Offline');
-  await expect(compact.locator('li').filter({ hasText: 'Guest laptop' }).locator('.nexus-device-status')).toHaveText('Status unknown');
+  const deviceRow = (name: string) => compact.locator('li').filter({ hasText: name });
+  await expect(deviceRow('Kitchen PC').locator('.nexus-pill--connection')).toHaveText('P2P');
+  await expect(deviceRow('Studio server').locator('.nexus-pill--connection')).toHaveText('Relay');
+  await expect(deviceRow('Office laptop').locator('.nexus-pill--connection')).toHaveText('Connecting', { ignoreCase: true });
+  await expect(deviceRow('Travel laptop').locator('.nexus-pill--connection')).toHaveText('Offline');
+  for (const name of ['My laptop', 'Guest laptop']) await expect(deviceRow(name).locator('.nexus-pill--connection')).toHaveCount(0);
+  await expect(deviceRow('My laptop').locator('.nexus-pill').first()).toHaveText('This device');
+  await expect(page.locator('.nexus-mesh__state')).toHaveText('No servers yet');
   await page.locator('.nexus-page').screenshot({ path: testInfo.outputPath('nexus-connection-compact.png') });
   await page.getByRole('button', { name: 'User: My laptop', exact: true }).click();
   const menu = page.getByRole('dialog', { name: 'Lemonade Account', exact: true });
-  await menu.locator('.nexus-device-disclosure > summary').click();
-  await expect(menu.locator('.nexus-devices li').filter({ hasText: 'Kitchen PC' }).locator('.nexus-connection-badge')).toHaveText('P2P');
-  await expect(menu.locator('.nexus-devices li').filter({ hasText: 'Kitchen PC' }).locator('.nexus-device-status')).toHaveText('Online');
-  await expect(menu.locator('.nexus-devices li').filter({ hasText: 'Travel laptop' }).locator('.nexus-device-status')).toHaveText('Offline');
+  await expect(menu.locator('.nexus-device-disclosure')).toHaveAttribute('open', '');
+  await expect(menu.locator('.nexus-devices li').filter({ hasText: 'Kitchen PC' }).locator('.nexus-pill--connection')).toHaveText('P2P');
+  await expect(menu.locator('.nexus-devices li').filter({ hasText: 'Travel laptop' }).locator('.nexus-pill--connection')).toHaveText('Offline');
   await menu.getByRole('button', { name: 'Close account menu' }).click();
   await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   const row = page.getByRole('treeitem', { name: 'Kitchen PC', exact: true });
@@ -65,8 +62,7 @@ test('connection labels follow live path changes and stay hidden for unverified 
   await expect(row.locator('.nexus-connection-badge')).toHaveCount(0);
   await page.setViewportSize({ width: 720, height: 1000 });
   await page.getByRole('radio', { name: 'Basic', exact: true }).check();
-  await page.locator('.nexus-device-disclosure > summary').click();
-  const relayBadge = compact.locator('li').filter({ hasText: 'Studio server' }).locator('.nexus-connection-badge');
+  const relayBadge = compact.locator('li').filter({ hasText: 'Studio server' }).locator('.nexus-pill--connection');
   await expect(relayBadge).toBeVisible();
   const bounds = await relayBadge.boundingBox();
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(720);

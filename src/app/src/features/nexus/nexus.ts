@@ -16,6 +16,22 @@ export interface NexusDevice {
   is_online?: boolean;
   connection_type?: 'local' | 'p2p' | 'relay' | 'unknown';
   latency_ms?: number;
+  // The device joined this group from its own network through an invite.
+  member?: boolean;
+  // `member` when the device belongs to a network this identity joined through an invite.
+  group_role?: 'home' | 'member';
+  group_id?: string;
+  can_connect?: boolean;
+}
+// What an invite did when this device already had its own network: the device stays
+// there and its identity becomes a member of the invite's group instead.
+export interface NexusJoinMembership { status: 'member' | 'pending' | 'refused'; group_id?: string; error?: string }
+export interface NexusMembership {
+  node_id: string;
+  hostname: string;
+  parent_id?: string;
+  role: 'home' | 'member';
+  permissions: string[];
 }
 export interface NexusAccessEntry {
   node_id: string;
@@ -85,6 +101,51 @@ export interface NexusStatus {
   unlock?: 'passkey' | 'device_key';
   // True while lemond has no device identity, for example while the macOS tray delivers the user's key.
   needs_user_key?: boolean;
+  join_membership?: NexusJoinMembership;
+}
+// How this device reaches another one, as its pill shows it. `connecting` is a device the
+// server reports online while the mesh still builds a path to it.
+export type NexusConnection = 'p2p' | 'relay' | 'connecting' | 'offline';
+export const NEXUS_CONNECTION_LABELS: Record<NexusConnection, string> = { p2p: 'P2P', relay: 'Relay', connecting: 'Connecting', offline: 'Offline' };
+export function nexusDeviceConnection(status: NexusStatus | null | undefined, device: NexusDevice): NexusConnection | undefined {
+  if (!status || device.node_id === status.node_id || !status.mesh_up || status.locked) return undefined;
+  if (device.is_online === false) return 'offline';
+  if (device.is_online !== true) return device.can_connect ? 'connecting' : undefined;
+  return device.connection_type === 'p2p' ? 'p2p' : device.connection_type === 'relay' ? 'relay' : 'connecting';
+}
+// The labels on a device row before its connection pill, in display order.
+export function nexusDeviceTags(status: NexusStatus | null | undefined, device: NexusDevice): string[] {
+  return [
+    ...(status && device.node_id === status.node_id ? ['This device'] : []),
+    ...(device.is_inference === undefined ? [] : [device.is_inference ? 'Server' : 'Client']),
+    ...(device.member ? ['Member'] : []),
+    ...(device.group_role === 'member' ? ['Joined network'] : []),
+    ...(device.is_admin ? ['Admin'] : []),
+  ];
+}
+// The Lemonade servers chat can run on: every inference device this device may connect to.
+export function nexusInferenceServers(status: NexusStatus | null | undefined): NexusDevice[] {
+  if (!status?.mesh_up || status.locked) return [];
+  const seen = new Set<string>();
+  return status.members.filter(device => device.node_id !== status.node_id && device.is_inference && device.can_connect !== false && seen.size < seen.add(device.node_id).size);
+}
+export type NexusMeshState = 'off' | 'locked' | 'connecting' | 'connected' | 'offline';
+// The mesh as one line: how many servers are reachable, else what the mesh is doing.
+// `label` is a translation key; `count` fills its {count}.
+export function nexusMeshSummary(status: NexusStatus | null | undefined, error?: string | null): { state: NexusMeshState; label: string; count?: number } {
+  if (!status?.enabled) return { state: 'off', label: 'Not set up' };
+  if (status.locked) return { state: 'locked', label: 'Locked' };
+  if (status.mesh_up) {
+    if (error) return { state: 'offline', label: 'Offline' };
+    const servers = nexusInferenceServers(status);
+    const online = servers.filter(device => { const connection = nexusDeviceConnection(status, device); return connection === 'p2p' || connection === 'relay'; }).length;
+    if (online === 1) return { state: 'connected', label: '1 server online' };
+    if (online) return { state: 'connected', label: '{count} servers online', count: online };
+    if (!servers.length) return { state: 'connected', label: 'No servers yet' };
+    return { state: 'connected', label: servers.some(device => nexusDeviceConnection(status, device) === 'connecting') ? 'Connecting…' : 'Servers offline' };
+  }
+  if (status.status === 'joining' || status.status === 'starting') return { state: 'connecting', label: 'Connecting…' };
+  return { state: 'offline', label: 'Offline' };
 }
 export function nexusDeviceOnline(status: NexusStatus | null | undefined, nodeId: string): boolean | undefined {
   if (!status) return undefined;
@@ -454,4 +515,14 @@ export function getNexusDeviceAccess(nodeId: string): Promise<NexusDeviceAccess>
 }
 export function setNexusDeviceAccess(nodeId: string, memberNodeId: string, see: boolean, connect: boolean): Promise<NexusDeviceAccess> {
   return nexusRequest(`devices/${encodeURIComponent(nodeId)}/access`, { member_node_id: memberNodeId, see, connect });
+}
+// A device that already joined accepts an invite into another network: nothing it owns moves.
+export function acceptNexusInvite(code: string, request = nexusRequest): Promise<{ status?: string; group_id?: string; error?: string }> {
+  return request('invites/accept', { code: code.trim() });
+}
+export function getNexusMemberships(request = nexusRequest): Promise<{ memberships: NexusMembership[]; group_node_id: string }> {
+  return request('memberships');
+}
+export function leaveNexusMembership(groupId: string, request = nexusRequest): Promise<{ left: boolean; node_id: string }> {
+  return request(`memberships/${encodeURIComponent(groupId)}/leave`, {});
 }

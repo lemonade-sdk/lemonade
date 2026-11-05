@@ -1,7 +1,7 @@
 import type { NexusAccount, NexusDevice } from './NexusAccountContext';
 import {
-  isNexusDesktop, nexusAccountController, prepareNexus,
-  type NexusDevice as NetworkDevice, type NexusInvite, type NexusStatus,
+  acceptNexusInvite, getNexusMemberships, isNexusDesktop, leaveNexusMembership, nexusAccountController, prepareNexus,
+  type NexusDevice as NetworkDevice, type NexusInvite, type NexusJoinMembership, type NexusMembership, type NexusStatus,
 } from './nexus';
 
 export interface SavedNexusAccount { id: string; displayName: string }
@@ -30,7 +30,23 @@ export interface NexusAccountService {
   signIn: (input: NexusSignInInput) => Promise<VerifiedNexusAccount>;
   refresh: (session: VerifiedNexusAccount) => Promise<VerifiedNexusAccount>;
   invite: (session: VerifiedNexusAccount, deviceName: string, role?: 'user' | 'moderator') => Promise<NexusInvite>;
+  // Accepts an invite into another network while this device keeps its own.
+  joinNetwork: (session: VerifiedNexusAccount, invitation: string) => Promise<NexusJoinMembership>;
+  memberships: (session: VerifiedNexusAccount) => Promise<NexusMembership[]>;
+  leaveNetwork: (session: VerifiedNexusAccount, groupId: string) => Promise<void>;
+  // Deletes the account on the network. `pending` means Tier 1 has not committed it yet
+  // and the device stays signed in; `deleted` means lemond removed the local account too.
+  deleteAccount: (session: VerifiedNexusAccount) => Promise<'deleted' | 'pending'>;
   setAvatar: (session: VerifiedNexusAccount, image: string | null) => Promise<NexusAvatarState & { state: 'ready' }>;
+}
+// What a join with an invite tells the user when the device already had a network of its own.
+export function nexusJoinNotice(membership: NexusJoinMembership | undefined): { message: string; error: boolean } | undefined {
+  if (!membership) return undefined;
+  if (membership.status === 'refused') {
+    return { error: true, message: membership.error?.trim() ? `The invite was not accepted (${membership.error.trim()}). This device stays in its own network.` : 'The invite was not accepted. This device stays in its own network.' };
+  }
+  if (membership.status === 'pending') return { error: false, message: 'The invite is waiting for the network to confirm it. This device stays in its own network and joins the invited one as a member once confirmed.' };
+  return { error: false, message: 'This device joined the invited network as a member and keeps its own network.' };
 }
 
 export function verifyAvatarReply(value: unknown): NexusAvatarState {
@@ -98,15 +114,52 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
       const controller = await requireController(input.source);
       const status = await controller.request<NexusStatus>('status');
       if (!status.available) throw new Error('This server does not include Nexus account support.');
-      await dependencies.prepare(input.deviceName.trim(), input.action === 'join', controller.request, prepared => {
-        if (input.action === 'create' && prepared.registered) throw new Error('This device already has a registered key. Choose Use this device’s key to continue.');
-        if (input.action === 'return' && !prepared.registered) throw new Error('Create an account or join by invitation before enabling Mesh on this device.');
-        if (input.action === 'join' && (prepared.mesh_up || prepared.group_node_id)) throw new Error('This device is already linked to an account. Choose Use this device’s key to continue.');
+      let prepared: NexusStatus | undefined;
+      await dependencies.prepare(input.deviceName.trim(), input.action === 'join', controller.request, current => {
+        prepared = current;
+        if (input.action === 'create' && current.registered) throw new Error('This device already has a registered key. Choose Use this device’s key to continue.');
+        if (input.action === 'return' && !current.registered) throw new Error('Create an account or join by invitation before enabling Mesh on this device.');
       });
-      if (input.action === 'join') await controller.request('join', { code: input.invitation!.trim() });
+      if (input.action === 'join') {
+        // A device whose mesh is already up accepts the invite as a member. Otherwise the
+        // deferred unlock leaves the join to the code: a new identity joins the invite's
+        // group, and one that already has a network becomes a member of the invite's
+        // group while it stays in its own (reported as join_membership).
+        const code = input.invitation!.trim();
+        if (prepared?.mesh_up) await acceptNexusInvite(code, controller.request);
+        else await controller.request('join', { code });
+      }
       const session = verifyAccountReply(await controller.request('account'), controller.source, input.expectedId, input.deviceName);
       await requireController(input.source);
       return session;
+    },
+    async joinNetwork(session, invitation) {
+      if (!validNexusInvitation(invitation)) throw new Error('Enter an 8-digit invitation code or a full invitation token.');
+      const controller = await requireController(session.source);
+      const reply = await acceptNexusInvite(invitation, controller.request);
+      const status = typeof reply?.status === 'string' ? reply.status : 'member';
+      if (!['member', 'pending', 'refused'].includes(status)) throw new Error('The server returned an invalid membership. Refresh and check your networks.');
+      return { status: status as NexusJoinMembership['status'], group_id: typeof reply.group_id === 'string' ? reply.group_id : undefined, ...(typeof reply.error === 'string' ? { error: reply.error } : {}) };
+    },
+    async memberships(session) {
+      const controller = await requireController(session.source);
+      const reply = await getNexusMemberships(controller.request);
+      if (!reply || !Array.isArray(reply.memberships)) throw new Error('The server returned invalid memberships.');
+      return reply.memberships.filter(group => group && typeof group.node_id === 'string' && (group.role === 'home' || group.role === 'member'))
+        .map(group => ({ ...group, hostname: typeof group.hostname === 'string' ? group.hostname : '', permissions: Array.isArray(group.permissions) ? group.permissions : [] }));
+    },
+    async leaveNetwork(session, groupId) {
+      const controller = await requireController(session.source);
+      const reply = await leaveNexusMembership(groupId, controller.request);
+      if (!reply?.left) throw new Error('The network did not confirm that this device left. Refresh and try again.');
+    },
+    async deleteAccount(session) {
+      const controller = await requireController(session.source);
+      const reply = await controller.request<{ status?: string }>('account/delete', {
+        account_id: session.account.id, member_id: session.memberId, device_node_id: session.deviceNodeId, confirm: 'delete',
+      });
+      if (reply?.status !== 'deleted' && reply?.status !== 'pending') throw new Error('The network did not confirm the deletion. Refresh and try again.');
+      return reply.status;
     },
     async refresh(session) {
       const controller = await requireController(session.source);

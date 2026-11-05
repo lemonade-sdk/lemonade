@@ -19,8 +19,10 @@ Nexus's upstream client treats a **Cluster as an account**, with device-key
 memberships authenticated by a passkey. The reference is
 [`login_view.dart`](https://github.com/lemonade-sdk/lemonade-nexus/blob/1c5d901b8c996020b9f9555d1484c29804408c00/apps/LemonadeNexusClient/lib/src/views/login_view.dart).
 This GUI3 flow follows that model: create an account, join an account by
-invitation, or return to this device's existing membership. It does not introduce
-an email/password service or a separate database of human users.
+invitation, or return to this device's existing membership. A device that
+already has its network can join another network as a member and leave it
+again, and the account owner can delete the account. It does not introduce an
+email/password service or a separate database of human users.
 
 `NexusAccountProvider` starts signed out. `NexusSignInDialog` inspects the local
 controller without enabling or unlocking it. Submitting the form explicitly
@@ -90,19 +92,33 @@ device copies are lost, an authorized writer must select the image again.
 
 This bridge uses the one persistent device identity already owned by `lemond`.
 It does not implement the upstream Flutter client's multi-keyring account
-switching. A device already linked to an account must use Sign in; creating a
-replacement identity is outside this flow. User administration and account/device
-settings remain outside this UI. The provider's typed `connection` and `service`
+switching. A device already linked to an account keeps its network: **Join by
+invitation** on such a device sends the code through `join` after a deferred
+unlock, and the SDK makes the identity a member of the invited group instead of
+moving the device (`status.join_membership`, shown as "Joined as a member" or
+"Invite not accepted"). An enabled device uses **Join another network** in the
+mesh panel, which calls `invites/accept`; **Leave network** calls
+`memberships/{id}/leave`. **Delete account** asks for the device name, sends
+`account/delete` with the verified account, member and device IDs, and signs
+the client out when the network answers `deleted`; a `pending` answer keeps the
+device enabled. Creating a replacement identity is outside this flow. User
+administration and account/device settings remain outside this UI. The provider's typed `connection` and `service`
 props preserve extension and isolated-test boundaries. Server permissions, not
 the displayed role, authorize every operation.
 
 ## Basic and Advanced
 
 Basic is the default. The client stores the selected mode in
-`lemonade_nexus_view`, without changing server configuration. Basic shows compact
-account devices after sign-in. Advanced exposes the server's recursive tree with
-a selected-node details panel; the hierarchy component also supports compact
-group browsing with breadcrumbs. Groups can contain other groups or device
+`lemonade_nexus_view`, without changing server configuration. Both modes show
+the **Mesh network** panel (`NexusMesh.tsx`) after sign-in, modelled on the
+mobile app's mesh view: the mesh state in one line (`nexusMeshSummary`), **Chat
+runs on** with this device and every inference server the device may connect
+to (`selectNexusInferenceServer`, with an API key field for the selected
+server), the open **Devices** list, the **Networks** list when the identity
+joined another network, and the invite and join actions. The account menu
+shows the same device rows in an open disclosure. Advanced adds the server's
+recursive tree with a selected-node details panel; the hierarchy component also
+supports compact group browsing with breadcrumbs. Groups can contain other groups or device
 nodes; a group is not constrained to represent a user. Device
 nodes are leaves. The UI has no fixed organizational depth; server ancestry
 validation rejects cycles and paths beyond 128 nodes.
@@ -122,12 +138,17 @@ the last sibling. Expand controls and guides sit in a gutter beside the selectab
 tile containing the group or device icon, name and status. Deep trees scroll
 within the tree panel without flattening indentation or widening the page.
 
-Device rows in My devices, the account menu and the hierarchy show **P2P** for
-an authenticated direct mesh path and **Relay** for a path through a relay server.
-The server supplies `connection_type` from the SDK's active tunnel status,
-not discovery candidates. Local devices, offline peers and peers without a
-confirmed path have no path badge; Advanced shows an unknown connection when
-the server cannot determine it. Older servers that omit the field remain supported.
+Device rows in the mesh panel and the account menu carry pills: **This
+device**, **Server** or **Client** (`is_inference`), **Member** (a device that
+joined this group from its own network), **Joined network** (`group_role` is
+`member`) and **Admin**, then a connection pill from `nexusDeviceConnection`:
+**P2P** for an authenticated direct mesh path, **Relay** for a path through a
+relay server, **Connecting** while the server reports the device online but the
+mesh has no path yet, and **Offline**. This device and devices without presence
+have no connection pill. The hierarchy shows **P2P** and **Relay** badges with
+Online, Offline or Status unknown. The server supplies `connection_type` from
+the SDK's active tunnel status, not discovery candidates. Advanced shows an
+unknown connection when the server cannot determine it. Older servers that omit the field remain supported.
 The current SDK's `path` is authoritative: `lan` and `direct` display as P2P,
 `relay` displays as Relay, and an empty path clears the badge even if old endpoint
 values remain. Endpoint-based detection is retained only for SDKs without `path`.
@@ -181,6 +202,10 @@ The server bridge adds these routes beneath every Nexus prefix listed in
 | Method and suffix | Operation |
 | --- | --- |
 | `GET account` | Verified current membership and bounded avatar state; local-only |
+| `POST account/delete` | Delete the account permanently using `{account_id, member_id, device_node_id, confirm: "delete"}`; local-only |
+| `POST invites/accept` | Join another network as an account that already joined, using `{code}` |
+| `GET memberships` | Groups this identity belongs to, `home` or `member` |
+| `POST memberships/{id}/leave` | Leave a group entered through an invite |
 | `POST account/avatar` | Replace/remove an image using `{account_id, member_id, device_node_id, revision, image}`; local-only |
 | `GET tree` | Current group and its direct children |
 | `GET tree/{id}/children` | A descendant group and its direct children |
@@ -221,7 +246,10 @@ roles, controller changes, cancellation, invitation validation and label-only
 persistence using a mock transport. `tests/nexus-tree.runtime.cjs` covers tree
 normalization and malformed-response rejection.
 `tests/nexus-account.spec.ts` contains browser account and recursive-group
-scenarios with mocked passkeys and API responses.
+scenarios with mocked passkeys and API responses. `tests/nexus-membership.spec.ts`
+covers joining another network, a refused invite, the member join of a device
+with its own network, the Chat runs on selection and account deletion;
+`tests/nexus-connection.spec.ts` covers the device pills.
 
 `NexusManagerTest` is registered with the CMake `cpp-ci` test label. It exercises
 listener separation, relay authorization, route prefixes, locked state and

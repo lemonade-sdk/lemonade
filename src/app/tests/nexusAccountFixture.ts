@@ -42,6 +42,7 @@ export async function setupNexusAccount(page: Page, options: {
   if (options.remote) { delete state.controller_url; state.remote_management = true; }
   const calls: { path: string; origin: string; method: string; body: Record<string, unknown> | null; authorization?: string }[] = [];
   const fixture = { state, calls, branches, accountRole, accountError: false, accountUnavailable: false, rejectWrites: false, invalidTree: false, unlockUnreachable: false,
+    hasOwnNetwork: false, refuseMembership: false, deletePending: false, joinedNetworks: [] as string[],
     avatarSaveGate: undefined as Promise<void> | undefined,
     avatar: {state: 'ready', image: null as string | null, revision: 0, can_write: !options.readOnly, pending: false} };
   await page.addInitScript(({ desktop, cancelPasskey, source, key }) => {
@@ -84,7 +85,35 @@ export async function setupNexusAccount(page: Page, options: {
       state.locked = false; state.registered = true; state.unlock = 'device_key';
       if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; }
     }
-    if (path.endsWith('/join')) { state.mesh_up = true; state.group_node_id = 'group'; }
+    if (path.endsWith('/join')) {
+      state.mesh_up = true; state.group_node_id = 'group';
+      // A device that already has a node stays in its network; the code makes it a member.
+      if (fixture.hasOwnNetwork) { state.join_membership = { status: 'member', group_id: 'studio' }; fixture.joinedNetworks.push('studio'); }
+    }
+    if (path.endsWith('/invites/accept')) {
+      if (!state.mesh_up) return route.fulfill({ status: 409, headers, json: { error: 'Join the network first' } });
+      if (fixture.refuseMembership) return route.fulfill({ headers, json: { status: 'refused', group_id: 'studio', error: 'the invite expired' } });
+      fixture.joinedNetworks.push('studio');
+      state.members = [...members, { ...peer, node_id: 'studio-server', device_name: 'Studio server', tunnel_ip: '10.8.1.4', is_inference: true, member: false, group_role: 'member', group_id: 'studio', can_connect: true, connection_type: 'p2p' }];
+      return route.fulfill({ headers, json: { status: 'member', group_id: 'studio' } });
+    }
+    if (path.endsWith('/memberships')) return route.fulfill({ headers, json: { group_node_id: 'group', memberships: [
+      { node_id: 'group', hostname: 'Home', parent_id: '', role: 'home', permissions: ['admin'] },
+      ...fixture.joinedNetworks.map(id => ({ node_id: id, hostname: 'Studio', parent_id: '', role: 'member', permissions: ['read'] })),
+    ] } });
+    const leaving = path.match(/\/memberships\/([^/]+)\/leave$/);
+    if (leaving) {
+      fixture.joinedNetworks = fixture.joinedNetworks.filter(id => id !== leaving[1]);
+      state.members = members;
+      return route.fulfill({ headers, json: { left: true, node_id: leaving[1] } });
+    }
+    if (path.endsWith('/account/delete')) {
+      if (body?.account_id !== state.group_node_id || body?.member_id !== 'fixture-identity' || body?.device_node_id !== 'self') return route.fulfill({ status: 409, headers, json: { error: 'The account changed. Sign in again.' } });
+      if (body?.confirm !== 'delete') return route.fulfill({ status: 400, headers, json: { error: 'Send "confirm": "delete" to delete this account permanently' } });
+      if (fixture.deletePending) return route.fulfill({ headers, json: { status: 'pending' } });
+      state.enabled = false; state.mesh_up = false; state.locked = true; state.registered = false; state.group_node_id = ''; state.members = [];
+      return route.fulfill({ headers, json: { status: 'deleted' } });
+    }
     if (path.endsWith('/account') && fixture.accountUnavailable) return route.fulfill({
       status: 429, headers, json: { error: 'The network is busy. Try again shortly.', retryable: true },
     });
