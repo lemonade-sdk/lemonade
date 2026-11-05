@@ -1117,7 +1117,7 @@ Loading a collection (`recipe: "collection.omni"`) loads each component in turn 
 
 Loading a model that is already loaded with the same options does nothing; different options reload it.
 
-Upscaling models run on demand through [`POST /v1/images/upscale`](openai.md#post-v1imagesupscale) and cannot be loaded here.
+On-demand models, including upscalers, cannot be loaded here. Upscalers run via [`POST /v1/images/upscale`](openai.md#post-v1imagesupscale).
 
 ### Option Priority
 
@@ -1236,7 +1236,7 @@ A collection, which has no checkpoint of its own.
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
-| `400` |  | Upscaling models run on demand through /v1/images/upscale |
+| `400` |  | On-demand models cannot be loaded through /v1/load |
 | `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |

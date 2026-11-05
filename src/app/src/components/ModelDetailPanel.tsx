@@ -21,7 +21,7 @@ import {
   recipeOptionIsNumeric,
   recipeOptionLabel,
 } from '../features/backends/recipeMetadata';
-import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo } from '../modelCapabilities';
+import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo, isOnDemandModelInfo } from '../modelCapabilities';
 import {
   modelBaseTuningForModel,
   modelSupportsContextSize, sanitizeRecipeOptions,
@@ -2533,7 +2533,7 @@ const CUSTOM_COLLECTION_TABS: Array<{ id: DetailTab; label: string }> = [
 ];
 
 const IMAGE_MODEL_TABS: Array<{ id: DetailTab; label: string }> = TABS;
-const UPSCALER_MODEL_TABS = TABS.filter(tab => tab.id !== 'config');
+const ON_DEMAND_MODEL_TABS = TABS.filter(tab => tab.id !== 'config');
 
 export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   model,
@@ -2586,16 +2586,16 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const isRouterCollection = Boolean(model && activeRecipeForModel(model) === 'collection.router');
   const isCustomCollection = Boolean(model && modelIsCustom(model) && (isCollectionModel(model) || isRouterCollection));
   const imageOnly = isImageOnlyModel(model);
-  const isOnDemandUpscaler = Boolean(model && !isRouterCollection && Array.isArray(model.labels) && model.labels.includes('upscaling'));
+  const isOnDemandModel = isOnDemandModelInfo(model);
   const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS
-    : (isOnDemandUpscaler ? UPSCALER_MODEL_TABS : (imageOnly ? IMAGE_MODEL_TABS : TABS));
+    : (isOnDemandModel ? ON_DEMAND_MODEL_TABS : (imageOnly ? IMAGE_MODEL_TABS : TABS));
 
   // Move focus to heading when model changes.
   useEffect(() => {
     if (model) panelHeadingRef.current?.focus();
-    setActiveTab(isCustomCollection ? 'settings' : (isOnDemandUpscaler ? 'readme' : 'config'));
+    setActiveTab(isCustomCollection ? 'settings' : (isOnDemandModel ? 'readme' : 'config'));
     setConfigHasUnsavedChanges(false);
-  }, [detailName, isCustomCollection, imageOnly, isOnDemandUpscaler]);
+  }, [detailName, isCustomCollection, imageOnly, isOnDemandModel]);
 
   const confirmDiscardLoadSettings = useCallback(() => (
     !configHasUnsavedChanges || window.confirm('Discard unsaved load setting changes?')
@@ -2744,7 +2744,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             {isLoadingThis ? t('Working…') : t('Unload')}
           </WorkspaceActionButton>
         </>
-      ) : isOnDemandUpscaler ? (
+      ) : isOnDemandModel ? (
         isDownloaded ? null : (
           <WorkspaceActionButton appearance="primary" icon="download" onClick={() => onPull(model)} aria-label={`Download ${name}`}>
             {t('Download')}

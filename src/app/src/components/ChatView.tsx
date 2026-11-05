@@ -42,6 +42,7 @@ import {
   snapshotIdentity,
   identityFor,
   isComposerSelectableCapability,
+  isOnDemandModelInfo,
   isRouterRecipe,
   modelStructure,
 } from '../modelCapabilities';
@@ -1320,10 +1321,10 @@ const ChatView: React.FC<ChatViewProps> = ({
     loadedModels.forEach(model => {
       const info = findModelInfoByName(knownModelInfos, model.model_name);
       const capability = info ? capabilityFromModelInfo(info) : capabilityFromLoaded(model);
-      if (capability === 'image') names.add(model.model_name);
+      if (capability === 'image' && !isOnDemandModelInfo(info)) names.add(model.model_name);
     });
     knownModelInfos.forEach(info => {
-      if (capabilityFromModelInfo(info) !== 'image' || !(info as any).downloaded) return;
+      if (isOnDemandModelInfo(info) || capabilityFromModelInfo(info) !== 'image' || !(info as any).downloaded) return;
       const name = String((info as any).model_name || info.name || info.id || '').trim();
       if (name && !activeDownloadForModel(downloadItems, name)) names.add(name);
     });
@@ -1578,6 +1579,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     }));
 
     knownModelInfos.forEach(info => {
+      if (isOnDemandModelInfo(info)) return;
       const name = String((info as any).model_name || info.name || info.id || '').trim();
       const capability = capabilityFromModelInfo(info);
       if ((!modelIsDownloaded(info) && !isRouterModelInfo(info)) || activeDownloadForModel(downloadItems, name)) return;

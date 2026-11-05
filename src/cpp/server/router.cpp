@@ -14,6 +14,7 @@
 #include "lemon/server_capabilities.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/error_types.h"
+#include "lemon/model_types.h"
 #include "lemon/recipe_options.h"
 #include "lemon/auto_tune.h"
 #include "telemetry.h"
@@ -850,6 +851,10 @@ void Router::load_model(const std::string& model_name,
                         std::optional<bool> pinned,
                         LoadPurpose load_purpose,
                         std::atomic<bool>* cancel_flag) {
+    if (!is_router_collection_recipe(model_info.recipe) &&
+        (has_label(model_info.labels, "on-demand") || has_label(model_info.labels, "upscaling"))) {
+        throw ModelLoadRefusedException("On-demand models do not support persistent loading");
+    }
     const std::string canonical_model_name = resolve_model_name(model_name);
     const ResidencyClass requested_residency_class =
         residency_class_for_load_purpose(load_purpose);
