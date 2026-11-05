@@ -6,13 +6,13 @@ namespace lemon {
 namespace backends {
 namespace halogen {
 
-// Halogen Flash is Peonist's inference engine with hand-written gfx1151
+// Halogen is Peonist's inference engine with hand-written gfx1151
 // kernels. It serves one model family, Qwen3.8-Flash-Next, as an HGN checkpoint
 // beside its lookup table, from its own image, and takes its settings as
 // HALOGEN_* environment variables rather than a command line.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "halogen",
-    /*display_name*/    "Halogen Flash",
+    /*display_name*/    "Halogen",
     /*binary*/          "",  // the image's entrypoint serves the model
     /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,
@@ -28,14 +28,14 @@ inline const BackendDescriptor descriptor = {
         {"rocm", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, /*device_summary*/ "AMD Strix Halo"},
     },
     /*about*/ {
-        {"rocm", {"Closed-source engine with hand-written Strix Halo kernels, serving Qwen3.8-Flash-Next.",
-                  "Peonist", "Peonist", "Halogen EULA (proprietary, free to use)",
+        {"rocm", {"Strix Halo engine for AI agents, with kernels purpose-built for each model it runs.",
+                  "Peonist (peonist-ai)", "Peonist (peonist-ai)", "halogen EULA (proprietary; free, including commercial use)",
                   "https://github.com/peonist-ai/halogen-flash-server"}},
     },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
-    /*web_display_name*/ "Halogen Flash",
+    /*web_display_name*/ "Halogen",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,
     /*rocm_requires_cwsr_fix*/ true,
