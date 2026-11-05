@@ -264,10 +264,8 @@ class WhisperTests(ServerTestBase):
         self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
 
         model = _get_whisper_model()
-        # FLM ignores response_format and always answers with compact
-        # {model, text} JSON, so it cannot produce timestamped subtitles.
-        # Those formats are rejected up front and covered by
-        # test_002d_transcription_subtitle_formats_unsupported_on_flm.
+        # lemond refuses SRT and VTT on FLM, which
+        # test_002d_transcription_subtitle_formats_unsupported_on_flm covers.
         is_flm = get_config().get("wrapped_server") == "flm"
         formats = ["json", "verbose_json", "text"]
         if not is_flm:

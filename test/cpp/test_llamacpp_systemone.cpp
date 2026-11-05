@@ -1,4 +1,5 @@
 #include "lemon/backends/llamacpp/llamacpp_systemone.h"
+#include "lemon/backends/systemone_classify.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -6,7 +7,6 @@
 #include <string>
 #include <vector>
 
-using lemon::backends::llamacpp::build_systemone_classify_request;
 using lemon::backends::llamacpp::decision_model_load_refusal;
 using lemon::backends::llamacpp::decision_text_truncated;
 using lemon::backends::llamacpp::encoder_decision_ctx_size;
@@ -17,7 +17,10 @@ using lemon::backends::llamacpp::map_encoder_overflow_error;
 using lemon::backends::llamacpp::mark_answers_truncated;
 using lemon::backends::llamacpp::plan_single_batch;
 using lemon::backends::llamacpp::SingleBatchPlan;
-using lemon::backends::llamacpp::systemone_classify_response;
+using lemon::backends::systemone::build_classify_request;
+using lemon::backends::systemone::classify_response;
+using lemon::backends::systemone::context_length_refusal;
+using lemon::backends::systemone::set_answers_truncated;
 using nlohmann::json;
 
 namespace {
@@ -56,7 +59,7 @@ LayaQuestionText options_of(std::vector<std::string> options) {
 int main() {
     const json labels = json::array({"coding", "pii", "cooking"});
 
-    const nlohmann::ordered_json body = build_systemone_classify_request("bake a cheesecake", labels);
+    const nlohmann::ordered_json body = build_classify_request("bake a cheesecake", labels);
     expect(body["state"] == "bake a cheesecake", "the input text is the state");
     expect(body["questions"].size() == 1, "the body asks exactly one question");
     const nlohmann::ordered_json& question = body["questions"]["label"];
@@ -67,19 +70,19 @@ int main() {
            "each label is an option without a description, in the order of the labels");
 
     expect(throws<std::invalid_argument>([] {
-               build_systemone_classify_request("x", json::array());
+               build_classify_request("x", json::array());
            }),
            "an empty label list is refused");
     expect(throws<std::invalid_argument>([] {
-               build_systemone_classify_request("x", json::array({"a", 7}));
+               build_classify_request("x", json::array({"a", 7}));
            }),
            "a non-string label is refused");
     expect(throws<std::invalid_argument>([] {
-               build_systemone_classify_request("x", json::array({"a", "  "}));
+               build_classify_request("x", json::array({"a", "  "}));
            }),
            "a blank label is refused");
     expect(throws<std::invalid_argument>([] {
-               build_systemone_classify_request("x", json::array({"a", "a"}));
+               build_classify_request("x", json::array({"a", "a"}));
            }),
            "a duplicate label is refused");
 
@@ -87,35 +90,34 @@ int main() {
         answer_with({{"coding", 0.0002}, {"pii", 0.0096}, {"cooking", 0.9888}});
     json reported = response;
     reported["answers"]["label"]["truncated"] = false;
-    const json all = systemone_classify_response(reported, labels, 0);
+    const json all = classify_response(reported, labels, 0);
     expect(all["labels"].size() == 3, "every label is returned without top_k");
     expect(all["labels"]["cooking"] == 0.9888, "the probabilities are returned unchanged");
     expect(all.contains("truncated") && all["truncated"] == false,
            "the answer's truncated reaches the classify response");
-    expect(!systemone_classify_response(response, labels, 0).contains("truncated"),
+    expect(!classify_response(response, labels, 0).contains("truncated"),
            "an answer without truncated leaves it out");
 
-    const json top = systemone_classify_response(response, labels, 1);
+    const json top = classify_response(response, labels, 1);
     expect(top["labels"].size() == 1 && top["labels"].contains("cooking"),
            "top_k keeps the highest scores");
 
     expect(throws<std::runtime_error>([&] {
-               systemone_classify_response(answer_with({{"coding", 0.5}, {"pii", 0.5}}), labels,
-                                           0);
+               classify_response(answer_with({{"coding", 0.5}, {"pii", 0.5}}), labels, 0);
            }),
            "an answer without one of the labels is refused");
     expect(throws<std::runtime_error>([&] {
-               systemone_classify_response(
+               classify_response(
                    answer_with({{"coding", 0.2}, {"pii", 0.2}, {"other", 0.6}}), labels, 0);
            }),
            "an answer with a label that was not asked is refused");
     expect(throws<std::runtime_error>([&] {
-               systemone_classify_response(
+               classify_response(
                    answer_with({{"coding", 2.0}, {"pii", 0.0}, {"cooking", 0.0}}), labels, 0);
            }),
            "a probability outside [0, 1] is refused");
     expect(throws<std::runtime_error>([&] {
-               systemone_classify_response(json{{"answers", json::object()}}, labels, 0);
+               classify_response(json{{"answers", json::object()}}, labels, 0);
            }),
            "a response without the answer is refused");
 
@@ -278,6 +280,34 @@ int main() {
     const json other = {{"error", {{"message", "Compute error."}, {"status_code", 500}}}};
     expect(map_encoder_overflow_error(other, 8192) == other, "other errors are left alone");
     expect(map_encoder_overflow_error(response, 8192) == response, "answers are left alone");
+
+    // FLM 1.0.11 refuses a question that does not fit inside a 200 answer.
+    const json flm_refused_answer = {
+        {"type", "choice"},
+        {"error", "max_length_exceeded"},
+        {"message", "the question prompt has 36892 tokens, over the maximum context length of "
+                    "32768 tokens; nothing was truncated"},
+    };
+    const json flm_refused = {{"model", "d3-lite"}, {"answers", {{"label", flm_refused_answer}}}};
+    const auto flm_refusal = context_length_refusal(flm_refused);
+    expect(flm_refusal.has_value() && (*flm_refusal)["error"]["status_code"] == 400 &&
+               (*flm_refusal)["error"]["code"] == "context_length_exceeded",
+           "a refused question is a 400 context_length_exceeded");
+    expect(flm_refusal.has_value() &&
+               (*flm_refusal)["error"]["message"].get<std::string>().find("36892 tokens") !=
+                   std::string::npos,
+           "the refusal keeps the backend's message");
+    json flm_partial = flm_refused;
+    flm_partial["answers"]["fits"] = {{"type", "noul"}, {"noul", 0.99}};
+    expect(!context_length_refusal(flm_partial).has_value(),
+           "a response with one answered question is kept");
+    auto flm_marked = nlohmann::ordered_json::parse(flm_partial.dump());
+    set_answers_truncated(flm_marked, false);
+    expect(flm_marked["answers"]["label"]["truncated"] == false &&
+               flm_marked["answers"]["fits"]["truncated"] == false,
+           "set_answers_truncated marks every answer");
+    expect(!context_length_refusal(response).has_value(), "a scored answer is not a refusal");
+    expect(!context_length_refusal(overflow).has_value(), "an error response is not a refusal");
 
     if (failures != 0) {
         std::cerr << failures << " check(s) failed" << std::endl;

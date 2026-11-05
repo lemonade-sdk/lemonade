@@ -10,7 +10,8 @@
 namespace lemon {
 namespace backends {
 
-class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public ITranscriptionServer {
+class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public ITranscriptionServer,
+                         public IClassificationServer, public ISystemOneServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -37,6 +38,13 @@ public:
     // ITranscriptionServer implementation
     json audio_transcriptions(const json& request) override;
 
+    // IClassificationServer implementation: zero-shot labels as one `choice`
+    // question to a d3 decision model
+    json classify(const json& request) override;
+
+    // ISystemOneServer implementation
+    nlohmann::ordered_json systemone(const nlohmann::ordered_json& request) override;
+
     // Override to transform model name to checkpoint for FLM
     void forward_streaming_request(const std::string& endpoint,
                                    const std::string& request_body,
@@ -46,6 +54,12 @@ public:
                                    TelemetryCallback telemetry_callback = nullptr) override;
 
 private:
+    bool serves_text() const;
+    json unsupported_decision_request(const std::string& operation) const;
+    // /v1/systemone for both systemone() and classify(): the window refusal as a
+    // 400, else `truncated` on each answer.
+    nlohmann::ordered_json decide(const nlohmann::ordered_json& body);
+
     // Get the path to the flm executable from the install directory
     std::string get_flm_path();
 };
