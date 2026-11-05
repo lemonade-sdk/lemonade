@@ -18,7 +18,21 @@ assert.deepEqual(
 // The import is type-only and disappears during transpilation.
 const exported = {};
 Function('exports', 'require', compiled.outputText)(exported, require);
-const { decodedTokensInSlot, isSlotProcessing, sampledSlotTps, selectGenerationTps } = exported;
+const {
+  decodedTokensInSlot, getCacheTokenCount, isSlotProcessing, percentDigits, sampledSlotTps, selectGenerationTps,
+} = exported;
+
+// Older schemas, then the current one that only reports n_prompt_tokens.
+assert.equal(getCacheTokenCount({ n_cache_tokens: 12, n_prompt_tokens: 99 }), 12);
+assert.equal(getCacheTokenCount({ cache_tokens: 13, n_prompt_tokens: 99 }), 13);
+assert.equal(getCacheTokenCount({ cache_tokens: [1, 2, 3], n_prompt_tokens: 99 }), 3);
+assert.equal(getCacheTokenCount({ n_prompt_tokens: 617, n_prompt_tokens_cache: 0 }), 617);
+assert.equal(getCacheTokenCount({ id: 0, n_ctx: 262144 }), 0, 'a fresh slot reports no prompt fields');
+
+assert.equal(percentDigits(0), '0');
+assert.equal(percentDigits(0.2), '<1');
+assert.equal(percentDigits(1), '1');
+assert.equal(percentDigits(42.6), '43');
 
 // Old llama.cpp, documented newer schema, and latest upstream array schema.
 assert.equal(decodedTokensInSlot({ n_decoded: 18 }), 18);

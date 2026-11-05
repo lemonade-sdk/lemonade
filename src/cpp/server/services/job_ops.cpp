@@ -9,6 +9,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/error_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/server.h"
@@ -80,6 +81,8 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         try {
             router->load_model(model, info, options, true, true, pinned,
                                LoadPurpose::UserInference, &cancel);
+        } catch (const ModelLoadRefusedException& e) {
+            throw lemon::jobs::JobError(400, e.what());
         } catch (const std::exception& e) {
             throw lemon::jobs::JobError(500, e.what());
         }
