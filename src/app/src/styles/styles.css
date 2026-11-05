@@ -5134,6 +5134,52 @@ optgroup {
 .message__image--generated {
   max-width: min(100%, 512px);
   max-height: 512px;
+  display: block;
+}
+
+.message__image-item {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  align-self: flex-start;
+}
+
+.message__image-download {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  padding: 0;
+  cursor: pointer;
+}
+
+.message__image-download:hover,
+.message__image-download:focus-visible {
+  background: var(--surface-2);
+}
+
+.message__image-download--failed {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.message__image-download-status {
+  position: absolute;
+  right: var(--space-2);
+  bottom: calc(var(--space-2) + 36px);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--danger);
+  font-size: var(--text-xs);
 }
 
 .active-card__status--muted {
@@ -5390,6 +5436,18 @@ optgroup {
 .message__action:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+.message__action--copied,
+.message__action--copied:hover:not(:disabled) {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.message__action--failed,
+.message__action--failed:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 /* Keep the collapsed conversations toggle available and visible. */
@@ -11674,6 +11732,8 @@ optgroup {
 
 .backend-card__logo--dark .backend-card__logo-name { color: #fff; }
 .backend-card__logo--image-only .backend-card__logo-name { display: none; }
+.backend-card__logo--icon { padding-block: var(--space-1); }
+.backend-card__logo--icon img { max-height: 38px; }
 
 .backend-card__footer,
 .backend-card__actions {

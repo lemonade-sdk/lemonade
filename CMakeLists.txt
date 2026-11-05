@@ -1142,6 +1142,7 @@ set(SOURCES_CORE
     src/cpp/server/utils/network_beacon.cpp
     src/cpp/server/utils/tcp_jsonl_client.cpp
     src/cpp/server/backends/backend_utils.cpp
+    src/cpp/server/backends/systemone_classify.cpp
     src/cpp/server/backend_manager.cpp
     src/cpp/server/mcp_server.cpp
     src/cpp/server/streaming_audio_buffer.cpp
@@ -1360,9 +1361,19 @@ if(BUILD_TESTING AND EXISTS "${LLAMACPP_SYSTEMONE_TEST_SOURCE}")
     add_executable(test_llamacpp_systemone
         ${LLAMACPP_SYSTEMONE_TEST_SOURCE}
         src/cpp/server/backends/llamacpp/llamacpp_systemone.cpp
+        src/cpp/server/backends/systemone_classify.cpp
     )
     target_link_libraries(test_llamacpp_systemone PRIVATE nlohmann_json::nlohmann_json)
     add_cpp_ci_test(llamacpp_systemone CI ON COMMAND test_llamacpp_systemone)
+endif()
+
+set(FLM_MODEL_LABELS_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_flm_model_labels.cpp")
+if(BUILD_TESTING AND EXISTS "${FLM_MODEL_LABELS_TEST_SOURCE}")
+    add_executable(test_flm_model_labels
+        ${FLM_MODEL_LABELS_TEST_SOURCE}
+        src/cpp/server/backends/fastflowlm/flm_model_labels.cpp
+    )
+    add_cpp_ci_test(flm_model_labels CI ON COMMAND test_flm_model_labels)
 endif()
 
 # libwebsockets for the realtime and log-stream WebSocket server
@@ -3810,6 +3821,14 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${_LLAMACPP_
     target_link_libraries(test_llamacpp_system_backend PRIVATE lemonade-server-core)
     add_dependencies(test_llamacpp_system_backend copy_resources)
     add_cpp_ci_test(LlamaCppSystemBackendTest CI ON COMMAND test_llamacpp_system_backend)
+endif()
+
+set(_NVIDIA_DRIVER_GATING_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_nvidia_driver_gating.cpp")
+if(BUILD_TESTING AND EXISTS "${_NVIDIA_DRIVER_GATING_TEST_SRC}")
+    add_executable(test_nvidia_driver_gating test/cpp/test_nvidia_driver_gating.cpp)
+    target_link_libraries(test_nvidia_driver_gating PRIVATE lemonade-server-core)
+    add_dependencies(test_nvidia_driver_gating copy_resources)
+    add_cpp_ci_test(NvidiaDriverGatingTest CI ON COMMAND test_nvidia_driver_gating)
 endif()
 
 set(_DLL_VERSION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_dll_version.cpp")

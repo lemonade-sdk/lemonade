@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useI18n } from '../i18n';
 import { Icon } from './Icon';
 import ModelViewer3D from './ModelViewer3D';
-import { downloadBlob, glbUrlToStlBlob } from '../features/model3d/exportStl';
+import { downloadBlob } from '../download';
+import { glbUrlToStlBlob } from '../features/model3d/exportStl';
 
 interface Model3DResultProps {
   src: string;
