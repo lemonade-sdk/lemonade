@@ -250,6 +250,10 @@ void SDServer::load(const std::string& model_name,
     if ((llm_path.empty() && t5xxl_path.empty()) || vae_path.empty()) {
         args.push_back("-m");
         args.push_back(model_path);
+        if (!t5xxl_path.empty()) {
+            args.push_back("--t5xxl");
+            args.push_back(t5xxl_path);
+        }
     } else {
         args.push_back("--diffusion-model");
         args.push_back(model_path);
