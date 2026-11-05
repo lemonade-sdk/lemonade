@@ -68,7 +68,9 @@ void ModelLoader::ensure_loaded(const std::string& requested_model, const json& 
                                    parse_remote_registry_source(info.registry_source))
                             << "..." << std::endl;
         LOG(INFO, "Server") << "This may take several minutes for large models." << std::endl;
-        model_manager_->download_registered_model(info, true);
+        utils::CancelToken download_cancel;
+        download_cancel.flag = cancel;
+        model_manager_->download_registered_model(info, true, nullptr, download_cancel);
         LOG(INFO, "Server") << "Model download complete: " << requested_model << std::endl;
 
         // resolved_path is computed from the filesystem, so refresh it now that the
