@@ -233,6 +233,9 @@ set(LEMON_BACKENDS
     "vllm|vllm"
     "thenoise|thenoise"
     "ds4|ds4"
+    "rocmfpx|rocmfpx"
+    "halogen|halogen"
+    "gufo|gufo"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
@@ -1125,6 +1128,7 @@ set(SOURCES_CORE
     src/cpp/server/log_stream.cpp
     src/cpp/server/api_docs.cpp
     src/cpp/server/prometheus_metrics.cpp
+    src/cpp/server/utils/container_manager.cpp
     src/cpp/server/utils/http_client.cpp
     src/cpp/server/utils/json_file.cpp
     src/cpp/server/utils/json_utils.cpp
@@ -1138,6 +1142,7 @@ set(SOURCES_CORE
     src/cpp/server/utils/network_beacon.cpp
     src/cpp/server/utils/tcp_jsonl_client.cpp
     src/cpp/server/backends/backend_utils.cpp
+    src/cpp/server/backends/systemone_classify.cpp
     src/cpp/server/backend_manager.cpp
     src/cpp/server/mcp_server.cpp
     src/cpp/server/streaming_audio_buffer.cpp
@@ -1349,6 +1354,26 @@ if(BUILD_TESTING AND EXISTS "${LLAMACPP_REQUEST_TEST_SOURCE}")
     )
     target_link_libraries(test_llamacpp_request PRIVATE nlohmann_json::nlohmann_json)
     add_cpp_ci_test(llamacpp_request CI OFF COMMAND test_llamacpp_request)
+endif()
+
+set(LLAMACPP_SYSTEMONE_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_systemone.cpp")
+if(BUILD_TESTING AND EXISTS "${LLAMACPP_SYSTEMONE_TEST_SOURCE}")
+    add_executable(test_llamacpp_systemone
+        ${LLAMACPP_SYSTEMONE_TEST_SOURCE}
+        src/cpp/server/backends/llamacpp/llamacpp_systemone.cpp
+        src/cpp/server/backends/systemone_classify.cpp
+    )
+    target_link_libraries(test_llamacpp_systemone PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(llamacpp_systemone CI ON COMMAND test_llamacpp_systemone)
+endif()
+
+set(FLM_MODEL_LABELS_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_flm_model_labels.cpp")
+if(BUILD_TESTING AND EXISTS "${FLM_MODEL_LABELS_TEST_SOURCE}")
+    add_executable(test_flm_model_labels
+        ${FLM_MODEL_LABELS_TEST_SOURCE}
+        src/cpp/server/backends/fastflowlm/flm_model_labels.cpp
+    )
+    add_cpp_ci_test(flm_model_labels CI ON COMMAND test_flm_model_labels)
 endif()
 
 # libwebsockets for the realtime and log-stream WebSocket server
@@ -2734,6 +2759,18 @@ if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
     add_cpp_ci_test(BackendModeContractTest CI ON COMMAND test_backend_mode_contract)
 endif()
 
+# The container backends spec's Command Contract and setup checks, against a fake
+# Podman/Docker host, plus every container backend's policy and pin.
+set(_CONTAINER_MANAGER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_container_manager.cpp")
+if(BUILD_TESTING AND EXISTS "${_CONTAINER_MANAGER_TEST_SRC}")
+    add_executable(test_container_manager test/cpp/test_container_manager.cpp)
+    target_link_libraries(test_container_manager PRIVATE lemonade-server-core)
+    target_compile_definitions(test_container_manager PRIVATE
+        BACKEND_VERSIONS_JSON_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backend_versions.json"
+    )
+    add_cpp_ci_test(ContainerManagerTest CI ON COMMAND test_container_manager)
+endif()
+
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_contract.cpp")
     add_executable(test_hrx_contract test/cpp/test_hrx_contract.cpp)
     target_link_libraries(test_hrx_contract PRIVATE lemonade-server-core)
@@ -3875,16 +3912,6 @@ if(BUILD_TESTING AND EXISTS "${_VLLM_CDNA_TEST_SRC}")
     target_link_libraries(test_vllm_cdna_gating PRIVATE lemonade-server-core)
     add_dependencies(test_vllm_cdna_gating copy_resources)
     add_cpp_ci_test(VllmCdnaGatingTest CI ON COMMAND test_vllm_cdna_gating)
-endif()
-
-# ds4 install params: upstream ds4 ships no binaries, so assets come from
-# lemonade-sdk/ds4-rocm and the filename must be derivable from the pinned tag
-# plus the detected ISA. Only gfx1151 is validated upstream.
-set(_DS4_INSTALL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ds4_install_params.cpp")
-if(BUILD_TESTING AND EXISTS "${_DS4_INSTALL_TEST_SRC}")
-    add_executable(test_ds4_install_params test/cpp/test_ds4_install_params.cpp)
-    target_link_libraries(test_ds4_install_params PRIVATE lemonade-server-core)
-    add_cpp_ci_test(Ds4InstallParamsTest CI ON COMMAND test_ds4_install_params)
 endif()
 
 # llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is

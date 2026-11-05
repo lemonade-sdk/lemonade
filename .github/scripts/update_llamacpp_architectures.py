@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Generate Lemonade's llama.cpp GGUF architecture allowlist."""
+"""Generate Lemonade's llama.cpp GGUF architecture and decision-type allowlists, and
+the decision-model limits that lemond mirrors."""
 
 from __future__ import annotations
 
@@ -12,8 +13,30 @@ import urllib.request
 from pathlib import Path
 
 ARCHITECTURE_RE = re.compile(r'\{\s*LLM_ARCH_[A-Z0-9_]+,\s*"([^"]+)"\s*\}')
+DECISION_TYPE_RE = re.compile(r'\{\s*COMMON_DECISION_TYPE_[A-Z0-9_]+,\s*"([^"]+)"\s*\}')
+# A ref's source is these files joined; each pattern finds its own entries.
+SOURCE_FILES = (
+    "src/llama-arch.cpp",
+    "common/common.cpp",
+    "tools/server/server-decision.cpp",
+    "tools/server/server-decision.h",
+)
 COMMIT_RE = re.compile(r"Llama\.cpp Commit Hash[^:]*:\s*`?([0-9a-f]+)", re.IGNORECASE)
 EXCLUDED_ARCHITECTURES = {"(unknown)", "clip"}
+# Both registry decision models have this type; without it the list is wrong.
+REQUIRED_DECISION_TYPE = "laya"
+# Limits lemond mirrors; each must have one value in every shipped ref.
+DECISION_LIMITS = {
+    "LLAMACPP_DECISION_H2O_MAX_STATE_TOKENS": re.compile(
+        r"DECISION_H2O_MAX_STATE_TOKENS\s*=\s*(\d+)"
+    ),
+    "LLAMACPP_DECISION_LAYA_MAX_OPTION_TOKENS": re.compile(
+        r"size_t\s+max_option_tokens\s*=\s*(\d+)"
+    ),
+    "LLAMACPP_DECISION_LAYA_QUESTION_RESERVE": re.compile(
+        r"n_options_tokens\s*\+\s*(\d+)\s*>\s*max_head_tokens"
+    ),
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,18 +53,42 @@ def parse_args() -> argparse.Namespace:
         "--source",
         action="append",
         metavar="REF=PATH",
-        help="Read a pinned llama-arch.cpp from a local file (repeatable)",
+        help="Read one of a pinned ref's source files (llama-arch.cpp, common.cpp, "
+        "server-decision.cpp/.h) from a local file (repeatable; files of one ref are joined)",
     )
     return parser.parse_args()
 
 
+def names_from_sources(pattern: re.Pattern, sources: dict[str, str]) -> set[str]:
+    name_sets = [set(pattern.findall(source)) for source in sources.values()]
+    if not name_sets:
+        return set()
+    return set.intersection(*name_sets)
+
+
 def architectures_from_sources(sources: dict[str, str]) -> list[str]:
-    architecture_sets = [
-        set(ARCHITECTURE_RE.findall(source)) for source in sources.values()
-    ]
-    if not architecture_sets:
-        return []
-    return sorted(set.intersection(*architecture_sets) - EXCLUDED_ARCHITECTURES)
+    return sorted(names_from_sources(ARCHITECTURE_RE, sources) - EXCLUDED_ARCHITECTURES)
+
+
+def decision_types_from_sources(sources: dict[str, str]) -> list[str]:
+    return sorted(names_from_sources(DECISION_TYPE_RE, sources))
+
+
+def decision_limits_from_sources(sources: dict[str, str]) -> dict[str, int]:
+    limits = {}
+    for name, pattern in DECISION_LIMITS.items():
+        values = {ref: set(pattern.findall(source)) for ref, source in sources.items()}
+        missing = sorted(ref for ref, found in values.items() if len(found) != 1)
+        if missing:
+            raise SystemExit(
+                f"{name}: no single value in server-decision.cpp/.h of {missing}; "
+                "llama.cpp changed it, so update the pattern and lemond's check"
+            )
+        distinct = {next(iter(found)) for found in values.values()}
+        if len(distinct) != 1:
+            raise SystemExit(f"{name}: the shipped refs disagree: {values}")
+        limits[name] = int(distinct.pop())
+    return limits
 
 
 def fetch_text(url: str) -> str:
@@ -56,9 +103,9 @@ def fetch_text(url: str) -> str:
 
 
 def fetch_upstream_source(ref: str) -> str:
-    return fetch_text(
-        "https://raw.githubusercontent.com/ggml-org/llama.cpp/"
-        f"{ref}/src/llama-arch.cpp"
+    return "\n".join(
+        fetch_text(f"https://raw.githubusercontent.com/ggml-org/llama.cpp/{ref}/{path}")
+        for path in SOURCE_FILES
     )
 
 
@@ -87,13 +134,42 @@ def fetch_rocm_nightly_source(ref: str) -> str:
     return fetch_upstream_source(matches[0])
 
 
+def render_allowlist(function: str, argument: str, names: list[str]) -> str:
+    entries = "\n".join(f'    "{name}",' for name in names)
+    initializer = f"{{{{\n{entries}\n    }}}}" if names else "{}"
+    return f"""inline bool {function}(
+    std::string_view {argument}) {{
+    static constexpr std::array<std::string_view, {len(names)}> names = {initializer};
+    return std::binary_search(names.begin(), names.end(), {argument});
+}}"""
+
+
 def render(configured_refs: list[str], sources: dict[str, str]) -> str:
     architectures = architectures_from_sources(sources)
     if not architectures:
         raise SystemExit("No architectures found in llama-arch.cpp")
     shipped_refs = ", ".join(configured_refs)
     source_refs = ", ".join(sorted(sources))
-    entries = "\n".join(f'    "{name}",' for name in architectures)
+    decision_types = decision_types_from_sources(sources)
+    if REQUIRED_DECISION_TYPE not in decision_types:
+        raise SystemExit(
+            f"Decision type '{REQUIRED_DECISION_TYPE}' is missing from common/common.cpp "
+            "of at least one shipped ref; lemond would refuse every decision model"
+        )
+    architecture_check = render_allowlist(
+        "llamacpp_architecture_is_supported_by_all_backends",
+        "architecture",
+        architectures,
+    )
+    decision_check = render_allowlist(
+        "llamacpp_decision_type_is_supported_by_all_backends",
+        "decision_type",
+        decision_types,
+    )
+    limits = "\n".join(
+        f"inline constexpr size_t {name} = {value};"
+        for name, value in decision_limits_from_sources(sources).items()
+    )
     return f"""// Generated by .github/scripts/update_llamacpp_architectures.py from
 // Common denominator for shipped refs: {shipped_refs}. Sources: {source_refs}.
 // Do not edit manually.
@@ -101,17 +177,16 @@ def render(configured_refs: list[str], sources: dict[str, str]) -> str:
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <string_view>
 
 namespace lemon {{
 
-inline bool llamacpp_architecture_is_supported_by_all_backends(
-    std::string_view architecture) {{
-    static constexpr std::array<std::string_view, {len(architectures)}> architectures = {{{{
-{entries}
-    }}}};
-    return std::binary_search(architectures.begin(), architectures.end(), architecture);
-}}
+{architecture_check}
+
+{decision_check}
+
+{limits}
 
 }}  // namespace lemon
 """
@@ -121,7 +196,9 @@ def main() -> int:
     args = parse_args()
     versions = json.loads(Path(args.versions).read_text(encoding="utf-8"))
     pins = versions["llamacpp"]
-    configured_refs = sorted(set(pins.values()))
+    # A container backend's pin is an image digest (<tag>@sha256:...), not a
+    # llama.cpp ref.
+    configured_refs = sorted({ref for ref in pins.values() if "@" not in ref})
     sources: dict[str, str] = {}
     if args.source:
         for item in args.source:
@@ -129,7 +206,8 @@ def main() -> int:
                 ref, path = item.split("=", 1)
             except ValueError as error:
                 raise SystemExit("--source must use REF=PATH") from error
-            sources[ref] = Path(path).read_text(encoding="utf-8")
+            text = Path(path).read_text(encoding="utf-8")
+            sources[ref] = sources[ref] + "\n" + text if ref in sources else text
     else:
         rocm_nightly_ref = pins.get("rocm-nightly")
         for ref in configured_refs:

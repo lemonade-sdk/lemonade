@@ -191,7 +191,7 @@ ordered_json system_info_schema() {
                         "modality": {"type": "string", "description": "The kind of model the recipe mainly serves, such as `Text generation`."},
                         "selectable_backend": {"type": "boolean", "description": "Whether a `<recipe>_backend` option chooses the recipe's backend."},
                         "uses_ctx_size": {"type": "boolean", "description": "Whether the recipe accepts the shared `ctx_size` option."},
-                        "slot_policy": {"enum": ["standard", "exclusive_npu", "coexist_by_type", "unmetered"], "description": "How the recipe's models count against loaded-model limits: `standard`, `exclusive_npu` (loading one evicts every NPU model), `coexist_by_type` (one per model type) or `unmetered` (never counted or evicted)."},
+                        "slot_policy": {"enum": ["standard", "exclusive_npu", "coexist_by_type", "exclusive_host", "unmetered"], "description": "How the recipe's models count against loaded-model limits: `standard`, `exclusive_npu` (loading one evicts every NPU model), `coexist_by_type` (one per model type), `exclusive_host` (shares the machine with no other local model) or `unmetered` (never counted or evicted)."},
                         "support": {"type": "array", "description": "Every backend's operating systems, devices and tier, the same on every host."},
                         "options": {"type": "array", "description": "The recipe's load options, with each one's CLI flag, default and help text."},
                         "backends": {
@@ -203,9 +203,10 @@ ordered_json system_info_schema() {
                                 "required": ["devices", "state", "tier", "format"],
                                 "properties": {
                                     "devices": {"type": "array", "items": {"type": "string"}, "description": "Devices **on this system** that support this backend; empty when none do."},
-                                    "state": {"enum": ["unsupported", "installable", "update_required", "update_available", "installed"], "description": "Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available` or `installed`."},
+                                    "state": {"enum": ["unsupported", "installable", "update_required", "update_available", "action_required", "installed"], "description": "Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available`, `action_required` or `installed`."},
                                     "message": {"type": "string", "description": "Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`."},
                                     "action": {"type": "string", "description": "An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL."},
+                                    "setup_checks": {"type": "array", "items": {"type": "string"}, "description": "For a container backend in the `action_required` state, the ids of its failed setup checks, in the order of `message`'s lines (for example `[\"container_tool\", \"device_groups\"]`). `message` then holds one failed check per line and `action` the numbered steps that fix them. See [Container Backends](../guide/configuration/container-backends.md)."},
                                     "version": {"type": "string", "description": "Installed or configured backend version (when available)"},
                                     "tier": {"enum": ["core", "experimental", "guest"], "description": "`core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
                                     "format": {"enum": ["native", "python", "container"], "description": "`native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
@@ -304,6 +305,15 @@ public:
         }
 
         json system_info = SystemInfoCache::get_system_info_with_cache();
+
+        // Container setup checks run on every request, so a completed setup step
+        // shows up without a restart.
+        if (system_info.contains("recipes") &&
+            SystemInfo::refresh_container_setup(system_info["recipes"])) {
+            SystemInfoCache::invalidate_recipes();
+            ctx_.model_manager->invalidate_models_cache();
+            system_info = SystemInfoCache::get_system_info_with_cache();
+        }
 
         if (system_info.contains("recipes")) {
             enrich_recipes(ctx_.backend_manager, ctx_.config, system_info["recipes"]);

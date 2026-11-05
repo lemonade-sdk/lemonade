@@ -212,7 +212,15 @@ std::string ModelManager::get_hf_cache_dir() const {
     return lemon::utils::get_hf_cache_dir();
 }
 
-void ModelManager::invalidate_models_cache() { store_.invalidate(); }
+void ModelManager::invalidate_models_cache(bool reset_pull_sources) {
+    if (reset_pull_sources) {
+        StoreWrite write(*this);
+        for (auto& [name, info] : write.draft()) info.pull_source_default.clear();
+        write.invalidate_cache();
+    } else {
+        store_.invalidate();
+    }
+}
 
 void ModelManager::on_models_changed(std::function<void(std::uint64_t)> subscriber) {
     change_notifier_.on_models_changed(std::move(subscriber));
@@ -549,14 +557,45 @@ models::CatalogSetDeps ModelManager::make_catalog_deps(
         return std::string();
     };
     rows.populate_components = [this](ModelInfo& info) {
+        const auto previous = store_.find(info.model_name);
+        if (previous && !previous->pull_source_default.empty() &&
+            previous->pull_source_default == info.registry_source &&
+            previous->recipe == info.recipe && previous->checkpoints == info.checkpoints) {
+            info.registry_source = previous->registry_source;
+            info.pull_source_default = previous->pull_source_default;
+        }
         ingest_->populate_from_cached_manifest(info);
     };
-    rows.resolve_paths = [this](ModelInfo& info) { resolve_all_model_paths(info); };
+    rows.resolve_paths = [this](ModelInfo& info) {
+        const auto previous = store_.find(info.model_name);
+        if (previous && !previous->pull_source_default.empty() &&
+            previous->pull_source_default == info.registry_source &&
+            previous->recipe == info.recipe && previous->checkpoints == info.checkpoints) {
+            info.registry_source = previous->registry_source;
+            info.pull_source_default = previous->pull_source_default;
+        }
+        resolve_all_model_paths(info);
+    };
     rows.recipe_options = [&json_recipe_options](const std::string& name, const json& authored) {
         json_recipe_options[name] = authored;
     };
     deps.registry_rows = std::move(rows);
-    deps.pin_registries = [this] { return registries_.pin(); };
+    deps.pin_registries = [this] {
+        auto pinned = registries_.pin();
+        auto builtin = std::make_shared<json>(*pinned.builtin);
+        const std::string default_source =
+            remote_registry_source_name(download_source_for(ModelInfo{}));
+        for (auto& [name, row] : builtin->items()) {
+            try {
+                apply_default_pull_source(row, default_source);
+            } catch (const std::exception& e) {
+                LOG(ERROR, "ModelManager") << "Cannot apply default source to built-in model '"
+                                          << name << "': " << e.what() << std::endl;
+            }
+        }
+        pinned.builtin = std::move(builtin);
+        return pinned;
+    };
     deps.scan_extra_models = [this](const models::CatalogAccumulator& claimed) {
         return scan_extra_models(claimed);
     };

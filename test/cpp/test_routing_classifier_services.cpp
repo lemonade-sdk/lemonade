@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -309,6 +310,91 @@ static void test_run_zero_shot_classifier_rejects_non_classification_model() {
           threw && !chat_called && !classify_called);
 }
 
+static lemon::ClassifierServices systemone_services(
+    std::function<json(const nlohmann::ordered_json&)> systemone,
+    lemon::ModelType type,
+    bool* loaded = nullptr) {
+    return lemon::make_classifier_services_from_router_calls(
+        [](const json&) { return json::object(); },
+        [](const json&) { return json::object(); },
+        [loaded](const std::string&) {
+            if (loaded) *loaded = true;
+        },
+        [](const json&) { return json::object(); },
+        // Like Router::get_model_type on a cold start: LLM until the model loads.
+        [type, loaded](const std::string&) {
+            return (loaded == nullptr || *loaded) ? type : lemon::ModelType::LLM;
+        },
+        std::move(systemone));
+}
+
+static void test_run_systemone_sends_one_question_and_returns_its_answer() {
+    // Not alphabetical on purpose: the model scores options by position.
+    const nlohmann::ordered_json question = {
+        {"type", "choice"},
+        {"instructions", "Which team?"},
+        {"criteria", {{"shipping", nullptr}, {"billing", nullptr}}},
+    };
+    nlohmann::ordered_json seen;
+    bool loaded = false;
+    auto services = systemone_services(
+        [&](const nlohmann::ordered_json& request) {
+            seen = request;
+            return json{{"model", "decider"},
+                        {"answers", {{"question", {{"type", "choice"},
+                                                   {"probabilities", {{"billing", 0.8},
+                                                                      {"shipping", 0.2}}}}}}}};
+        },
+        lemon::ModelType::CLASSIFICATION, &loaded);
+
+    json answer = services.run_systemone("decider", "my SSN is 123-45-6789", question);
+    check("run_systemone loads the model", loaded);
+    check("run_systemone sends the model and the input as the state",
+          seen.value("model", "") == "decider" &&
+              seen.value("state", "") == "my SSN is 123-45-6789");
+    check("run_systemone sends exactly one question, options in their order",
+          seen["questions"].size() == 1 &&
+              seen["questions"]["question"].dump() == question.dump());
+    check("run_systemone returns the answer to that question",
+          answer["probabilities"].value("billing", 0.0) == 0.8);
+}
+
+static void test_run_systemone_rejects_non_classification_model() {
+    bool systemone_called = false;
+    auto services = systemone_services(
+        [&](const nlohmann::ordered_json&) {
+            systemone_called = true;
+            return json::object();
+        },
+        lemon::ModelType::LLM);
+    bool threw = false;
+    try {
+        services.run_systemone("chat-model", "text", json{{"type", "noul"}});
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    check("run_systemone refuses a model that is not a classification model",
+          threw && !systemone_called);
+}
+
+static void test_run_systemone_throws_on_error_or_missing_answer() {
+    auto throws_for = [](json response) {
+        auto services = systemone_services(
+            [response](const nlohmann::ordered_json&) { return response; },
+            lemon::ModelType::CLASSIFICATION);
+        try {
+            services.run_systemone("decider", "text", json{{"type", "noul"}});
+        } catch (const std::exception&) {
+            return true;
+        }
+        return false;
+    };
+    check("run_systemone throws on a backend error",
+          throws_for(json{{"error", {{"message", "input is too large"}}}}));
+    check("run_systemone throws when the answer is missing",
+          throws_for(json{{"answers", json::object()}}));
+}
+
 static void test_run_classifier_falls_back_to_chat_for_non_classification_model() {
     bool classify_called = false;
     auto services = lemon::make_classifier_services_from_router_calls(
@@ -498,6 +584,27 @@ static void test_zero_shot_residency_conflict_propagates_through_route() {
 
     check("zero_shot: residency conflict propagates through engine.route",
           route_propagates_residency_conflict(zero_shot, std::move(services)));
+}
+
+static void test_systemone_residency_conflict_propagates_through_route() {
+    lemon::ClassifierServices services;
+    services.run_systemone = [](const std::string&, const std::string&,
+                                const nlohmann::ordered_json&) -> json {
+        throw residency_conflict();
+    };
+
+    ClassifierPtr systemone = lemon::make_classifier(json{
+        {"id", "probe"},
+        {"type", "systemone"},
+        {"model", "probe-model"},
+        {"question", {{"type", "noul"},
+                      {"instructions", "Does the message contain personal data?"}}},
+        {"default_label", "true"},
+        {"on_error", "match_true"},
+    });
+
+    check("systemone: residency conflict propagates through engine.route",
+          route_propagates_residency_conflict(systemone, std::move(services)));
 }
 
 static void test_classifier_residency_conflict_propagates_through_route() {
@@ -1178,6 +1285,9 @@ int main() {
     test_ort_server_reports_truncation_from_0_4_0();
     test_run_zero_shot_classifier_loads_before_resolving_type();
     test_run_zero_shot_classifier_rejects_non_classification_model();
+    test_run_systemone_sends_one_question_and_returns_its_answer();
+    test_run_systemone_rejects_non_classification_model();
+    test_run_systemone_throws_on_error_or_missing_answer();
     test_run_classifier_falls_back_to_chat_for_non_classification_model();
     test_run_classifier_loads_before_resolving_type();
     test_run_classifier_ignores_openai_metadata();
@@ -1185,6 +1295,7 @@ int main() {
     test_out_of_range_scores_are_rejected();
     test_out_of_range_scores_drive_on_error();
     test_zero_shot_residency_conflict_propagates_through_route();
+    test_systemone_residency_conflict_propagates_through_route();
     test_classifier_residency_conflict_propagates_through_route();
     test_llm_residency_conflict_propagates_through_route();
     test_semantic_similarity_residency_conflict_propagates_through_route();
