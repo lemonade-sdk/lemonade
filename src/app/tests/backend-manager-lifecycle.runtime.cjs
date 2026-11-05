@@ -74,8 +74,9 @@ function buildRuntimeHelpers(downloadStore) {
     declarationText('BackendDownloadMissingError', 'class'),
     declarationText('BackendDownloadRegistrationTimeoutError', 'class'),
     declarationText('backendActionIsReflected', 'function'),
+    declarationText('canShowUninstall', 'function'),
     declarationText('waitForBackendDownloadTerminal', 'function'),
-    'module.exports = { backendActionIsReflected, waitForBackendDownloadTerminal };',
+    'module.exports = { backendActionIsReflected, canShowUninstall, waitForBackendDownloadTerminal };',
   ].join('\n\n');
   const output = ts.transpileModule(helperSource, {
     compilerOptions: {
@@ -137,6 +138,20 @@ function backendItem(status, running) {
 }
 
 async function runBehaviorChecks() {
+  {
+    const { canShowUninstall } = buildRuntimeHelpers(createDownloadStore([]));
+    for (const state of ['installed', 'update_required', 'update_available']) {
+      assert.equal(canShowUninstall({ state, can_uninstall: false }), false, state);
+      assert.equal(canShowUninstall({ state, can_uninstall: true }), true, state);
+      assert.equal(canShowUninstall({ state }), true, state);
+    }
+    for (const state of ['installable', 'unsupported', 'action_required']) {
+      assert.equal(canShowUninstall({ state, can_uninstall: false }), false, state);
+      assert.equal(canShowUninstall({ state, can_uninstall: true }), false, state);
+      assert.equal(canShowUninstall({ state }), false, state);
+    }
+  }
+
   {
     const store = createDownloadStore([backendItem('downloading', true)]);
     const { waitForBackendDownloadTerminal } = buildRuntimeHelpers(store);
