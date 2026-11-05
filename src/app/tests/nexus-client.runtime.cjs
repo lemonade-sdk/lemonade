@@ -156,6 +156,28 @@ global.fetch = async (url, init = {}) => {
   api.baseUrl = local;
   await nexus.nexusRequest('status');
   assert.equal(calls.at(-1).url, 'http://127.0.0.1:15556/api/v1/nexus/status', 'a controller on another port is addressed directly');
+  // A client on the server's local network is a local operator: lemond names the public port
+  // as its controller and the page keeps the origin it reached. Only lemond decides: a status
+  // without controller_url, or one naming a port the client cannot reach, stays remote.
+  controller = 'http://127.0.0.1:13305';
+  api.baseUrl = 'http://192.168.10.20:13305';
+  await nexus.nexusRequest('enable', {});
+  assert.deepEqual(calls.slice(-2).map(call => call.url),
+    ['http://192.168.10.20:13305/api/v1/nexus/status', 'http://192.168.10.20:13305/api/v1/nexus/enable'],
+    'a local-network client discovers the controller once and keeps its origin');
+  const reuseBefore = calls.length;
+  await nexus.nexusRequest('status');
+  assert.equal(calls.length - reuseBefore, 1, 'the discovered controller is reused');
+  controller = 'http://127.0.0.1:15556';
+  api.baseUrl = 'http://192.168.10.21:13305';
+  const remoteBefore = calls.length;
+  await nexus.nexusRequest('status');
+  assert.equal(calls.length - remoteBefore, 2, 'a controller on a port the local-network client cannot reach is probed once');
+  assert.ok(calls.slice(remoteBefore).every(call => call.url.startsWith('http://192.168.10.21:13305/')), 'the client never addresses the ephemeral controller');
+  await nexus.nexusRequest('status');
+  assert.equal(calls.length - remoteBefore, 3, 'the remote decision is reused too');
+  controller = 'http://127.0.0.1:15556';
+  api.baseUrl = local;
   // Device pills and the mesh summary follow the server's online flag and dataplane path.
   const up = { available: true, enabled: true, locked: false, mesh_up: true, status: 'running', node_id: 'self', members: [] };
   const device = (extra) => ({ node_id: 'peer', device_name: 'Peer', tunnel_ip: '10.8.0.9/32', management_pubkey: 'k', permissions: [], can_remove: false, ...extra });

@@ -204,7 +204,8 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let pollRunning = false;
 let eventStream: AbortController | undefined;
 interface Controller { mode: NexusManagementMode; source: string; endpoint: string; key: string }
-let localController: Controller | undefined;
+// The controller found for the current base URL, local or remote, until a request cannot reach it.
+let knownController: Controller | undefined;
 const API_KEY_ERROR = 'The server requires a valid API key. Check it in Settings > Server, then try again.';
 // The server this client connected to before it selected a mesh peer. Relayed requests go to
 // `${home.endpoint}/api/v1/nexus/peers/<node>`; Nexus management keeps using home itself.
@@ -229,6 +230,29 @@ export function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
 export function isLoopbackUrl(value: string): boolean {
   return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(value).hostname);
 }
+// lemond names its controller only to a local operator: a loopback client, or a client on
+// the server's local network (RFC 1918). Remote status omits controller_url, and the server
+// is then managed through the mesh with its own authorization policy.
+async function discoverController(endpoint: string, key: string): Promise<Controller | undefined> {
+  const loopback = isLoopbackUrl(endpoint);
+  const response = await fetch(`${endpoint}/api/v1/nexus/status`, { headers: key ? { Authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(10000) });
+  if (response.status === 401) throw new Error(API_KEY_ERROR);
+  if (!response.ok) {
+    if (loopback) throw new Error(`Cannot access the local network controller (${response.status}).`);
+    return undefined;
+  }
+  const status = await response.json() as NexusStatus;
+  if (!loopback && !status.controller_url) return undefined;
+  const control = new URL(status.controller_url || endpoint);
+  if (control.protocol !== 'http:' || control.hostname !== '127.0.0.1') throw new Error('The server returned an invalid local network controller.');
+  // A controller on the public port is the server itself: keep the origin that already reached
+  // it, which stays same-origin for a page lemond serves and inside an SSH or container forward.
+  // A local-network client can reach no other port, so a controller elsewhere stays remote.
+  const reached = new URL(endpoint);
+  const publicPort = reached.protocol === 'http:' && reached.port === control.port;
+  if (!loopback && !publicPort) return undefined;
+  return { mode: 'local', source: endpoint, endpoint: publicPort ? endpoint : control.origin, key };
+}
 // Remote controllers use the selected server's public listener and authorization policy.
 // Loopback URLs reach the local management listener.
 async function controller(): Promise<Controller> {
@@ -240,25 +264,12 @@ async function controller(): Promise<Controller> {
   }
   const base = home?.endpoint ?? api.baseUrl;
   const baseKey = home ? home.key : api.apiKey;
-  if (!isLoopbackUrl(base)) return { mode: 'remote', source: base, endpoint: base, key: baseKey };
-  if (localController && localController.source !== base) localController = undefined;
-  if (localController) localController.key = baseKey;
-  if (!localController) {
-    const endpoint = base;
-    const key = baseKey;
-    const response = await fetch(`${endpoint}/api/v1/nexus/status`, { headers: key ? { Authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(10000) });
-    if (response.status === 401) throw new Error(API_KEY_ERROR);
-    if (!response.ok) throw new Error(`Cannot access the local network controller (${response.status}).`);
-    const status = await response.json() as NexusStatus;
-    const control = new URL(status.controller_url || endpoint);
-    if (control.protocol !== 'http:' || control.hostname !== '127.0.0.1') throw new Error('The server returned an invalid local network controller.');
-    // A controller on the public port is the server itself: keep the origin that already reached
-    // it, which stays same-origin for a page lemond serves and inside an SSH or container forward.
-    const reached = new URL(endpoint);
-    const controllerEndpoint = reached.protocol === 'http:' && reached.port === control.port ? endpoint : control.origin;
-    localController = { mode: 'local', source: endpoint, endpoint: controllerEndpoint, key };
+  if (knownController && knownController.source !== base) knownController = undefined;
+  if (knownController) knownController.key = baseKey;
+  if (!knownController) {
+    knownController = await discoverController(base, baseKey) ?? { mode: 'remote', source: base, endpoint: base, key: baseKey };
   }
-  return localController;
+  return knownController;
 }
 export async function nexusAccountController(): Promise<{ source: string; local: boolean; request: typeof nexusRequest }> {
   const target = { ...await controller() };
@@ -282,8 +293,8 @@ export async function nexusRequest<T>(path: string, body?: unknown, pinnedContro
     ({ response } = await send());
   } catch (error) {
     // A lost POST response may already have changed the server; only reads can be retried safely.
-    const previousController = localController;
-    localController = undefined;
+    const previousController = knownController;
+    knownController = undefined;
     if (pinnedController || !previousController || body !== undefined) throw error;
     ({ response } = await send());
   }

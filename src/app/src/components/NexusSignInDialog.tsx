@@ -48,7 +48,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
     document.addEventListener('keydown', escape);
     return () => document.removeEventListener('keydown', escape);
   }, [busy, passkeyActive, onClose]);
-  const available = inspection?.status.available && inspection.local && inspection.desktop;
+  const available = inspection?.status.available && inspection.ready;
   const remote = Boolean(inspection && !inspection.local);
   const waitingForKey = Boolean(available && inspection.status.needs_user_key);
   const deviceKey = Boolean(available && usesNexusDeviceKey(inspection.status));

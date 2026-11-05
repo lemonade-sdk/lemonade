@@ -14,6 +14,7 @@ let local = true;
 let desktop = true;
 let failPasskey = false;
 let registered = false;
+let unlock = 'passkey';
 let meshUp = false;
 let refuseMembership = false;
 let deletePending = false;
@@ -26,7 +27,7 @@ let reply = {
 };
 const request = async (path, body) => {
   calls.push({path,body});
-  if (path === 'status') return { available:true,enabled:true,registered,locked:!meshUp,mesh_up:meshUp,status:meshUp?'running':'locked',members:[] };
+  if (path === 'status') return { available:true,enabled:true,registered,unlock,locked:!meshUp,mesh_up:meshUp,status:meshUp?'running':'locked',members:[] };
   if (path === 'account') return structuredClone(reply);
   if (path === 'account/avatar') {
     if (avatarError) throw new Error('Image service unavailable');
@@ -153,15 +154,21 @@ const input = { action:'create',deviceName:'Workstation',source };
   currentSource = 'http://192.168.10.20:13305'; local = false;
   const remoteCalls = calls.length;
   for (const action of ['create', 'join', 'return']) {
-    await assert.rejects(service.signIn({...input,source:currentSource,action,invitation:'12345678'}),/desktop app/);
+    await assert.rejects(service.signIn({...input,source:currentSource,action,invitation:'12345678'}),/local controller or SSH forwarding/);
   }
   await assert.rejects(service.joinNetwork(account,'12345678'),/connection changed/);
   await assert.rejects(service.deleteAccount(account),/connection changed/);
   assert.equal(calls.length,remoteCalls,'remote setup cannot issue identity or lifecycle requests');
   await assert.rejects(service.refresh(account),/connection changed/,'local sessions cannot mutate the remote server');
   currentSource = source; local = true; desktop = false;
-  await assert.rejects(service.signIn(input),/desktop app/);
-  desktop = true;
+  await assert.rejects(service.signIn(input),/desktop app/,'a passkey can only be verified by the desktop app');
+  await assert.rejects(service.invite(account,'My phone'),/desktop app/);
+  unlock = 'device_key';
+  const browserCalls = calls.length;
+  assert.equal((await service.signIn({...input,action:'return',expectedId:'cluster'})).account.id,'cluster','a device-key device signs in from a browser');
+  assert.ok(!calls.slice(browserCalls).some(call => call.path.startsWith('passkey/')),'the browser sign-in never touches passkey routes');
+  assert.equal((await service.invite(account,'My phone')).code,'12345678','a device-key device is managed from a browser');
+  unlock = 'passkey'; desktop = true;
   const invite = await service.invite(account,'My phone');
   assert.equal(invite.code,'12345678');
   assert.throws(()=>verifyAccountReply({...reply,role:'superadmin'},source),/verified account/);

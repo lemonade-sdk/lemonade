@@ -190,8 +190,11 @@ the server's User and Moderator presets; the server limits delegated permissions
 to those the inviting device holds. Administrator access is assigned after joining.
 
 Account creation, invitation acceptance and unlocking remain local-controller
-operations. For a remote server, the setup dialog directs the operator to local
-setup or SSH forwarding instead of offering identity operations the server denies.
+operations. A client on the server's local network (RFC 1918 address) is a
+local operator and manages the server through its public port, which `status`
+names as `controller_url`; the page keeps the origin it reached. For a remote
+server, the setup dialog directs the operator to local setup or SSH forwarding
+instead of offering identity operations the server denies.
 Authenticated mesh management and public API authentication keep their existing
 authorization rules.
 
@@ -230,9 +233,11 @@ passkey options available on that Windows installation. Linux and macOS use
 USB FIDO2 security keys. User presence and user verification remain required;
 Windows Hello verification stays in the Windows dialog. The passkey dialog is hosted
 by the account provider, so signing in from the header works outside the Nexus
-page. Browser and remote clients show desktop guidance instead of offering a
-verification path they cannot complete. Advanced management of an already
-unlocked server still follows the existing listener authorization rules.
+page. A browser shows desktop guidance for a passkey it cannot verify. A device
+that unlocks with its device key has nothing to verify, so a browser on the
+server or on its local network enables and manages it directly. Remote clients
+show the local-setup guidance. Advanced management of an already unlocked
+server still follows the existing listener authorization rules.
 
 Users with verified invitation permission can open **Connect another device**,
 name the invited device and copy a single-use code or full token. Invitations

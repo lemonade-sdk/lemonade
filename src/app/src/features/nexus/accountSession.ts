@@ -1,6 +1,6 @@
 import type { NexusAccount, NexusDevice } from './NexusAccountContext';
 import {
-  acceptNexusInvite, getNexusMemberships, isNexusDesktop, leaveNexusMembership, nexusAccountController, prepareNexus,
+  acceptNexusInvite, getNexusMemberships, isNexusDesktop, leaveNexusMembership, nexusAccountController, prepareNexus, usesNexusDeviceKey,
   type NexusDevice as NetworkDevice, type NexusInvite, type NexusJoinMembership, type NexusMembership, type NexusStatus,
 } from './nexus';
 
@@ -16,7 +16,9 @@ export interface VerifiedNexusAccount {
   canInvite: boolean;
   avatar: NexusAvatarState;
 }
-export interface NexusAccountInspection { status: NexusStatus; source: string; local: boolean; desktop: boolean }
+// `ready`: identity operations can run from here, on the local controller with the desktop
+// app or with a device that unlocks with its device key.
+export interface NexusAccountInspection { status: NexusStatus; source: string; local: boolean; desktop: boolean; ready: boolean }
 export interface NexusSignInInput {
   action: 'create' | 'join' | 'return';
   deviceName: string;
@@ -92,11 +94,19 @@ export const validNexusInvitation = (value: string) => /^(?:[0-9]{8}|lnk_[0-9a-f
 const boundedName = (name: string) => Boolean(name.trim()) && new TextEncoder().encode(name.trim()).length <= 128;
 
 export function createNexusAccountService(dependencies = { controller: nexusAccountController, desktop: isNexusDesktop, prepare: prepareNexus }): NexusAccountService {
-  const requireController = async (source: string) => {
+  const currentController = async (source: string) => {
     const controller = await dependencies.controller();
     if (controller.source !== source) throw new Error('The server connection changed. Close this dialog and enable Mesh again.');
-    if (!controller.local || !dependencies.desktop()) throw new Error('Open the Lemonade desktop app on this computer to verify your passkey.');
     return controller;
+  };
+  // Identity operations need the local controller. Only a passkey needs the desktop app
+  // to verify it; a device that unlocks with its device key has nothing to verify here.
+  const requireController = async (source: string) => {
+    const controller = await currentController(source);
+    if (!controller.local) throw new Error('Set up this server through its local controller or SSH forwarding. After setup, manage it through the authenticated Nexus mesh.');
+    const status = await controller.request<NexusStatus>('status');
+    if (!dependencies.desktop() && !usesNexusDeviceKey(status)) throw new Error('Open the Lemonade desktop app on this computer to verify your passkey.');
+    return { ...controller, status };
   };
   return {
     async disconnect(session) {
@@ -106,13 +116,14 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
     },
     async inspect() {
       const controller = await dependencies.controller();
-      return { status: await controller.request<NexusStatus>('status'), source: controller.source, local: controller.local, desktop: dependencies.desktop() };
+      const status = await controller.request<NexusStatus>('status');
+      return { status, source: controller.source, local: controller.local, desktop: dependencies.desktop(), ready: controller.local && (dependencies.desktop() || usesNexusDeviceKey(status)) };
     },
     async signIn(input) {
       if (!boundedName(input.deviceName)) throw new Error('Enter a device name of up to 128 bytes.');
       if (input.action === 'join' && !validNexusInvitation(input.invitation || '')) throw new Error('Enter an 8-digit invitation code or a full invitation token.');
       const controller = await requireController(input.source);
-      const status = await controller.request<NexusStatus>('status');
+      const { status } = controller;
       if (!status.available) throw new Error('This server does not include Nexus account support.');
       let prepared: NexusStatus | undefined;
       await dependencies.prepare(input.deviceName.trim(), input.action === 'join', controller.request, current => {
@@ -130,7 +141,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
         else await controller.request('join', { code });
       }
       const session = verifyAccountReply(await controller.request('account'), controller.source, input.expectedId, input.deviceName);
-      await requireController(input.source);
+      await currentController(input.source);
       return session;
     },
     async joinNetwork(session, invitation) {
@@ -186,7 +197,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
         account_id: session.account.id, member_id: session.memberId, device_node_id: session.deviceNodeId,
         revision: session.avatar.revision, image,
       }));
-      await requireController(session.source);
+      await currentController(session.source);
       if (next.state !== 'ready' || next.revision <= session.avatar.revision) throw new Error('The mesh did not confirm the profile image change. Try again.');
       return next;
     },

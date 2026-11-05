@@ -4,11 +4,13 @@
 #include "lemon/server/route_registry.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/network_beacon.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
 #include <lemon/utils/aixlog.hpp>
 
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -19,7 +21,10 @@
 
 #ifdef _WIN32
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #else
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <unistd.h>
 #endif
 #include <LemonadeNexusSDK/lemonade_nexus.h>
@@ -58,6 +63,23 @@ const std::vector<NexusRoute>& nexus_routes() {
 }
 bool local_address(const std::string& address) {
     return address == "127.0.0.1" || address == "::1" || address == "::ffff:127.0.0.1";
+}
+// Policy: a client on the local network (RFC 1918) is a local operator for Nexus. The
+// IPv6 front reports an IPv4 client as an IPv4-mapped address, so that form is unwrapped
+// first; any other IPv6 address is not private here.
+bool private_network_address(const std::string& address) {
+    if (local_address(address)) return true;
+    std::string ipv4 = address;
+    if (address.find(':') != std::string::npos) {
+        in6_addr mapped{};
+        if (inet_pton(AF_INET6, address.c_str(), &mapped) != 1 || !IN6_IS_ADDR_V4MAPPED(&mapped)) return false;
+        in_addr unwrapped{};
+        std::memcpy(&unwrapped, &mapped.s6_addr[12], sizeof(unwrapped));
+        char text[INET_ADDRSTRLEN] = {};
+        if (!inet_ntop(AF_INET, &unwrapped, text, sizeof(text))) return false;
+        ipv4 = text;
+    }
+    return NetworkBeacon::isRFC1918(ipv4);
 }
 class NexusError : public std::runtime_error {
 public:
@@ -968,7 +990,8 @@ std::pair<int, std::string> route_access(NexusListener listener, const httplib::
     }
     if (loopback) return {0, ""};
     if (listener == NexusListener::Management) return {403, "Local network management only"};
-    return {403, "Connect through the authenticated Nexus mesh. Initial setup requires the local controller or SSH forwarding."};
+    if (private_network_address(req.remote_addr)) return {0, ""};
+    return {403, "Connect through the authenticated Nexus mesh. Initial setup requires the local controller, SSH forwarding or a client on the local network."};
 }
 
 const char* const kPeerAuthorizationHeader = "X-Lemonade-Peer-Authorization";
@@ -2480,7 +2503,6 @@ void NexusManager::relay(const httplib::Request& req, httplib::Response& res) {
 
 void NexusManager::register_routes(httplib::Server& server, NexusListener listener) {
     const auto dispatch = [this, listener](const httplib::Request& req, httplib::Response& res, const std::string& operation) {
-        const bool loopback = local_address(req.remote_addr);
         const auto access = nexus_access::route_access(listener, req, operation);
         if (access.first != 0) {
             res.set_header("Cache-Control", "no-store");
@@ -2488,11 +2510,14 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
             res.set_content(json{{"error", access.second}}.dump(), "application/json");
             return;
         }
-        // A loopback operator on the public port is told to keep using that port: it is the
-        // one port an SSH tunnel, a VM or a container forwards, unlike the ephemeral listener.
-        const auto controller = listener == NexusListener::Public && loopback
+        // A loopback or local-network operator on the public port is told to keep using that
+        // port: it is the one port an SSH tunnel, a VM or a container forwards, unlike the
+        // ephemeral listener, and the only port a local-network client reaches. The client
+        // keeps the origin it already used; the port is what it checks.
+        const bool local = listener != NexusListener::MeshIngress && private_network_address(req.remote_addr);
+        const auto controller = listener == NexusListener::Public && local
             ? "http://127.0.0.1:" + std::to_string(req.local_port) : std::string();
-        handle(req, res, operation, listener == NexusListener::MeshIngress || !loopback, controller);
+        handle(req, res, operation, !local, controller);
     };
     for (const auto* prefix : nexus_prefixes) {
         for (const auto& route : nexus_routes()) {

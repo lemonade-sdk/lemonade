@@ -82,16 +82,19 @@ its keystore, and the tray delivers it.
 
 ### Remote management
 
-Initial setup of a headless server uses the local desktop/controller or SSH
-port forwarding. Nexus setup on loopback requires no Lemonade API key. Enable,
-unlock and join the server locally before managing it over the mesh.
+Initial setup of a headless server uses the local desktop/controller, SSH
+port forwarding, or a client on the server's local network: a client with an
+RFC 1918 address (10/8, 172.16/12, 192.168/16) is a local operator on the
+public port. Nexus setup from loopback or the local network requires no
+Lemonade API key. Enable, unlock and join the server from there before
+managing it over the mesh.
 
 Remote callers connect through their own authenticated Nexus mesh session.
 The SDK attributes each request to its sending peer. Nexus administration
 requires the caller's `admin` permission; group operations additionally check
-that caller's current assignments on the affected group. An API key or an
-RFC1918 address cannot substitute for this authorization. Identity handoff,
-account deletion, unlock, lifecycle and local selection operations remain local.
+that caller's current assignments on the affected group. An API key cannot
+substitute for this authorization. Identity handoff, account deletion, unlock,
+lifecycle and local selection operations remain local-operator operations.
 The GUI remote-account bootstrap flow is not extended by this policy.
 
 An unlocked device creates and cancels invites without another passkey check.
@@ -203,9 +206,9 @@ The hand-off is the SDK's single-use sealed transfer:
 The management listener answers 409 to an envelope when no request is
 outstanding, 400 to a malformed envelope, and 403 to an envelope that does not
 open for the outstanding request, was already used, or whose request expired.
-The envelope is never logged. The routes are loopback only: the public and
-management listeners refuse other machines, and the mesh ingress listener
-refuses them.
+The envelope is never logged. The routes serve local operators only: the
+public listener serves loopback and local-network clients, the management
+listener refuses other machines, and the mesh ingress listener refuses them.
 
 When a different OS user's key arrives while another key is active, `lemond`
 locks the current session (mesh off, tokens dropped) and continues with the new
@@ -501,18 +504,23 @@ Each listener applies its own rules:
 | Listener | Client | Nexus routes |
 | --- | --- | --- |
 | Public | Loopback | All Nexus routes without an API key; `status.controller_url` names the public port itself |
-| Public | Any remote client, including RFC1918 | HTTP 403, even with a valid API key or supplied identity headers |
+| Public | Local network (RFC 1918 address, also as an IPv4-mapped IPv6 address) | All Nexus routes without an API key; `status.controller_url` names the public port, and the client keeps the origin it reached |
+| Public | Any other remote client | HTTP 403, even with a valid API key or supplied identity headers |
 | Management (`127.0.0.1`, ephemeral port) | Local operator / SSH-forwarded connection | All Nexus routes without an API key |
 | Mesh ingress (`127.0.0.1`, ephemeral port) | SDK-attributed mesh administrator | Status, devices, members, group/tree administration, invitations and device checks; local identity/lifecycle/relay operations remain refused |
 
-Local clients on `127.0.0.1`, `::1` or `::ffff:127.0.0.1` need no API key
-for Nexus discovery, setup, management or relay requests, and the public port
-serves them all, so an SSH tunnel, a VM or a container needs to forward only
-that port. Any connection that reaches `lemond` from its own loopback is a local
-operator, including one through an SSH tunnel or a reverse proxy on the same
-host, so authenticate those with the host's existing access policy. The
-management listener keeps its own ephemeral port for the SDK session and the
-tray.
+Local clients on `127.0.0.1`, `::1` or `::ffff:127.0.0.1`, and clients with
+an RFC 1918 address, need no API key for Nexus discovery, setup, management or
+relay requests, and the public port serves them all, so an SSH tunnel, a VM or
+a container needs to forward only that port. Any connection that reaches
+`lemond` from its own loopback is a local operator, including one through an
+SSH tunnel or a reverse proxy on the same host, so authenticate those with the
+host's existing access policy. Every host on the server's local network is a
+local operator too: a NAT or a reverse proxy that presents remote clients with
+a private address makes them local operators as well, so keep such a proxy off
+the public port or restrict it to the Nexus routes it should expose. Forwarded
+headers never change the client address. The management listener keeps its
+own ephemeral port for the SDK session and the tray.
 
 For remote access, the SDK verifies the sending mesh peer, strips client-supplied
 `X-Nexus-*` headers and supplies its own attribution to the dedicated ingress
@@ -552,7 +560,8 @@ clients and uses `RequestMiddleware::install` for origin, CORS and ordinary
 API authentication. Mesh traffic never
 reaches the public or management listener: userspace ingress arrives on
 loopback and cannot safely be treated as a desktop control request, so it has a
-listener of its own. Browser views on this device show device information
+listener of its own. A browser that reaches the server from loopback or from
+its local network manages it; from anywhere else it shows device information
 without management controls. Live events have a five-second polling fallback.
 
 ## Building and verification

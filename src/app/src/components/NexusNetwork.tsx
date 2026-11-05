@@ -2,7 +2,7 @@ import React, { useId, useState } from 'react';
 import { useI18n } from '../i18n';
 import { useNexusAccount } from '../features/nexus/NexusAccountContext';
 import {
-  isNexusDesktop, prepareNexus, refreshNexus, useNexusNetwork,
+  isNexusDesktop, prepareNexus, refreshNexus, useNexusNetwork, usesNexusDeviceKey,
 } from '../features/nexus/nexus';
 import { NexusHierarchy } from './NexusHierarchy';
 import { NexusRoutePermissions } from './NexusRoutePermissions';
@@ -18,7 +18,9 @@ export function NexusNetwork({ advanced, showCompact = true }: { advanced: boole
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const id = useId();
-  const desktop = isNexusDesktop();
+  // A passkey is verified by the desktop app; a device key needs no verification here.
+  const deviceKey = Boolean(status && usesNexusDeviceKey(status));
+  const desktop = isNexusDesktop() || deviceKey;
   const connected = Boolean(status?.mesh_up && !status.locked && !network.error);
   const prepare = async () => {
     setBusy(true); setError('');
@@ -35,8 +37,8 @@ export function NexusNetwork({ advanced, showCompact = true }: { advanced: boole
       <p>{t('Start with a group of your devices. Add teams, people or locations as your network grows.')}</p>
       {status?.available && desktop ? <form onSubmit={event => { event.preventDefault(); void prepare(); }}>
         {!status.enabled && <><label htmlFor={id}>{t('This device’s name')}</label><input id={id} className="input" value={deviceName} maxLength={128} placeholder={t('My Lemonade device')} onChange={event => setDeviceName(event.target.value)} /></>}
-        <WorkspaceActionButton type="submit" disabled={busy}>{busy ? t('Connecting…') : status.enabled && status.locked ? t('Unlock with passkey') : t('Create my network')}</WorkspaceActionButton>
-        <p className="nexus-hint">{t('Verify this device with a passkey to manage its network.')}</p>
+        <WorkspaceActionButton type="submit" disabled={busy}>{busy ? t('Connecting…') : status.enabled && status.locked ? (deviceKey ? t('Use this device’s key') : t('Unlock with passkey')) : t('Create my network')}</WorkspaceActionButton>
+        <p className="nexus-hint">{deviceKey ? t('Nexus uses this device’s key. Other devices see this device under its device name.') : t('Verify this device with a passkey to manage its network.')}</p>
       </form> : <p className="nexus-hint">{network.error || (status && !status.available) ? t('Nexus is not available on this server. Connect to a server with Nexus support to continue.') : !status ? t('Checking network status…') : t('Open the Lemonade desktop app on the server to set up or unlock its network.')}</p>}
       {error && <p className="nexus-error" role="alert">{error}</p>}
       {status?.error && <p className="nexus-error" role="alert">{status.error}</p>}

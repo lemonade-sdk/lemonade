@@ -167,6 +167,31 @@ test('browser Enable Mesh explains the desktop requirement', async ({ page }) =>
   await expect(dialog.getByRole('button', { name: 'Enable Mesh', exact: true })).toHaveCount(0);
 });
 
+test('a browser enables a device-key device without the desktop app', async ({ page }) => {
+  const fixture = await setupNexusAccount(page, { desktop: false, deviceKey: true, joined: false });
+  await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
+  await expect(dialog).not.toContainText('desktop app');
+  await expect(dialog.getByRole('radio', { name: 'Use this device’s key' })).toBeChecked();
+  await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  expect(fixture.calls.filter(call => call.path.endsWith('/key/unlock')).map(call => call.body)).toEqual([{ defer_join: false }]);
+  expect(fixture.calls.some(call => call.path.includes('/passkey/'))).toBe(false);
+});
+
+test('a browser on the local network manages a device-key server through its public port', async ({ page }) => {
+  const fixture = await setupNexusAccount(page, { localNetwork: true, desktop: false, deviceKey: true, joined: false });
+  await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
+  await expect(dialog).not.toContainText('local controller or SSH forwarding');
+  await expect(dialog.getByRole('radio', { name: 'Use this device’s key' })).toBeChecked();
+  await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'User: Inference server', exact: true })).toBeVisible();
+  expect(fixture.calls.filter(call => call.path.endsWith('/key/unlock')).map(call => call.body)).toEqual([{ defer_join: false }]);
+  expect(fixture.calls.some(call => call.path.includes('/passkey/'))).toBe(false);
+  expect(fixture.calls.every(call => call.origin === 'http://192.168.10.20:13305')).toBe(true);
+});
+
 test('creating an account registers and verifies before showing its role', async ({ page }) => {
   const fixture = await setupNexusAccount(page, { registered: false, joined: false });
   await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();

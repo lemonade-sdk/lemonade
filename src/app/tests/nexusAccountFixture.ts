@@ -10,11 +10,13 @@ const peer: NexusDevice = { node_id: 'peer', device_name: 'Kitchen PC', tunnel_i
 export async function setupNexusAccount(page: Page, options: {
   desktop?: boolean; registered?: boolean; joined?: boolean; readOnly?: boolean; cancelPasskey?: boolean; unauthorized?: boolean;
   avatarUnsupported?: boolean; needsUserKey?: boolean; inviteWithoutCode?: boolean; deviceKey?: boolean; freshKey?: boolean;
-  remote?: boolean; apiKey?: string; apiUnauthorized?: boolean;
+  remote?: boolean; localNetwork?: boolean; apiKey?: string; apiUnauthorized?: boolean;
   role?: NexusRole;
 } = {}) {
-  const source = options.remote ? 'http://192.168.10.20:13305' : 'http://127.0.0.1:13305';
-  const deviceName = options.remote ? 'Inference server' : 'My laptop';
+  // `remote`: a server elsewhere, which omits controller_url. `localNetwork`: a server on the
+  // client's RFC 1918 network, which names its public port as the controller.
+  const source = options.remote || options.localNetwork ? 'http://192.168.10.20:13305' : 'http://127.0.0.1:13305';
+  const deviceName = options.remote || options.localNetwork ? 'Inference server' : 'My laptop';
   const accountRole = options.role || (options.readOnly ? 'user' : 'admin');
   const members = [{ ...self, device_name: deviceName, is_admin: accountRole === 'admin',
     permissions: accountRole === 'admin' ? ['read', 'admin'] : accountRole === 'moderator'
@@ -41,6 +43,7 @@ export async function setupNexusAccount(page: Page, options: {
     lab: { parent: lab, children: [entry('workstation', 'Lab workstation', 'node', 'lab')] },
   };
   if (options.remote) { delete state.controller_url; state.remote_management = true; }
+  if (options.localNetwork) state.controller_url = 'http://127.0.0.1:13305';
   const calls: { path: string; origin: string; method: string; body: Record<string, unknown> | null; authorization?: string }[] = [];
   const fixture = { state, calls, branches, accountRole, accountError: false, accountUnavailable: false, rejectWrites: false, invalidTree: false, unlockUnreachable: false,
     hasOwnNetwork: false, refuseMembership: false, deletePending: false, joinedNetworks: [] as string[],
