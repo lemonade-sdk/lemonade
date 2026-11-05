@@ -54,6 +54,7 @@ void write(const std::string& name, const std::string& bytes) {
     fs::create_directories(dir(), ec);
     std::ofstream out(dir() / name, std::ios::binary | std::ios::trunc);
     out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    out.close();
     if (!out) throw std::runtime_error("could not write the video to " + utils::path_to_utf8(dir()));
 }
 
