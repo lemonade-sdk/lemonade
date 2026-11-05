@@ -979,6 +979,9 @@ void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade,
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
+    if (cancel.cancelled()) {
+        throw TransferError("Download cancelled", true);
+    }
 
     // The backend's ops own the download (shared registry engine by default; flm pulls
     // via the flm CLI; cloud is a no-op).
