@@ -47,6 +47,7 @@ export async function setupNexusAccount(page: Page, options: {
   const calls: { path: string; origin: string; method: string; body: Record<string, unknown> | null; authorization?: string }[] = [];
   const fixture = { state, calls, branches, accountRole, accountError: false, accountUnavailable: false, rejectWrites: false, invalidTree: false, unlockUnreachable: false,
     hasOwnNetwork: false, refuseMembership: false, deletePending: false, joinedNetworks: [] as string[],
+    access: {} as Record<string, { see: boolean; connect: boolean }>,
     avatarSaveGate: undefined as Promise<void> | undefined,
     avatar: {state: 'ready', image: null as string | null, revision: 0, can_write: !options.readOnly, pending: false} };
   await page.addInitScript(({ desktop, cancelPasskey, source, key }) => {
@@ -136,6 +137,51 @@ export async function setupNexusAccount(page: Page, options: {
     if (path.endsWith('/invites')) return route.fulfill(fixture.rejectWrites
       ? { status: 403, headers, json: { error: 'Nexus refused this invitation.' } }
       : { headers, json: { ...(options.inviteWithoutCode ? {} : { code: '12345678' }), link_token: `lnk_${'a'.repeat(64)}`, expires_at: Math.floor(Date.now() / 1000) + 600, device_name: body?.device_name } });
+    // Device access rows: every state member other than the device and this device, all
+    // visible and connectable until a write changes them.
+    const accessMatch = path.match(/\/devices\/([^/]+)\/access$/);
+    if (accessMatch) {
+      const target = accessMatch[1];
+      if (request.method() === 'POST') {
+        if (fixture.rejectWrites) return route.fulfill({ status: 403, headers, json: { error: 'Only a group admin can change device access' } });
+        fixture.access[`${target}:${body?.member_node_id}`] = { see: Boolean(body?.see) || Boolean(body?.connect), connect: Boolean(body?.connect) };
+      }
+      const rows = state.members.filter(member => member.node_id !== target && member.node_id !== state.node_id).map(member => {
+        const current = fixture.access[`${target}:${member.node_id}`] || { see: true, connect: true };
+        return { node_id: member.node_id, device_name: member.device_name, is_admin: member.is_admin === true, tier: 4, ...current, editable: accountRole === 'admin' && !member.is_admin };
+      });
+      const device = state.members.find(member => member.node_id === target);
+      return route.fulfill({ headers, json: { node_id: target, device_name: device?.device_name || '', access_known: true, can_manage: accountRole === 'admin', members: rows } });
+    }
+    const roleMatch = path.match(/\/members\/([^/]+)\/role$/);
+    if (roleMatch) {
+      if (fixture.rejectWrites) return route.fulfill({ status: 403, headers, json: { error: 'Only a group admin can change member access' } });
+      const presets: Record<string, string[]> = {
+        administrator: ['read', 'connect_private', 'admin'], moderator: ['read', 'write', 'add_child', 'connect_private', 'svc:inference', 'svc:mcp', 'svc:models_manage', 'svc:jobs'],
+        user: ['read', 'connect_private', 'svc:inference'],
+      };
+      const permissions = presets[String(body?.role)];
+      if (!permissions) return route.fulfill({ status: 400, headers, json: { error: 'Choose the administrator, moderator or user role' } });
+      const member = state.members.find(item => item.node_id === roleMatch[1]);
+      if (member) { member.permissions = permissions; member.is_admin = permissions.includes('admin'); }
+      const assignment = branches.group.parent.assignments.find(item => item.management_pubkey === `${roleMatch[1]}-key`);
+      if (assignment) assignment.permissions = permissions;
+      return route.fulfill({ headers, json: member || {} });
+    }
+    const move = path.match(/\/tree\/([^/]+)\/move$/);
+    if (move) {
+      if (fixture.rejectWrites) return route.fulfill({ status: 403, headers, json: { error: 'You do not have permission to add to that group' } });
+      const [, id] = move;
+      const destination = String(body?.parent_id);
+      const from = Object.values(branches).find(branch => branch.children.some(child => child.id === id));
+      const moved = from?.children.find(child => child.id === id);
+      if (!moved || !branches[destination]) return route.fulfill({ status: 404, headers, json: { error: 'That node is outside your group' } });
+      from!.children = from!.children.filter(child => child.id !== id);
+      moved.parent_id = destination;
+      branches[destination].children.push(moved);
+      if (branches[id]) branches[id].parent.parent_id = destination;
+      return route.fulfill({ headers, json: { node_id: id, parent_id: destination } });
+    }
     const mutation = path.match(/\/tree\/([^/]+)\/(groups|rename|permissions)$/);
     if (mutation) {
       if (fixture.rejectWrites) return route.fulfill({ status: 403, headers, json: { error: 'This group cannot be changed.' } });

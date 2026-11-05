@@ -520,7 +520,9 @@ export async function selectNexusInferenceServer(nodeId: string, suppliedKey?: s
   } finally { publish({ ...state, switchingServer: false }); }
 }
 
-export function setNexusMemberRole(nodeId: string, role: 'admin' | 'member'): Promise<NexusDevice> {
+export type NexusMemberRole = 'administrator' | 'moderator' | 'user';
+// Replaces the member's entry on this account's group with the preset (lemond members/{id}/role).
+export function setNexusMemberRole(nodeId: string, role: NexusMemberRole): Promise<NexusDevice> {
   return nexusRequest(`members/${encodeURIComponent(nodeId)}/role`, { role });
 }
 export function setNexusMemberPermissions(nodeId: string, permissions: string[]): Promise<NexusDevice> {

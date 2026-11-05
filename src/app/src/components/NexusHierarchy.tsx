@@ -1,8 +1,11 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
-import { NEXUS_GROUP_PERMISSIONS, NEXUS_SERVICE_PERMISSIONS, nexusConnectionLabel, nexusDeviceOnline, type NexusStatus } from '../features/nexus/nexus';
 import {
-  createNexusGroup, getNexusTreeBranch, renameNexusGroup, saveNexusGroupPermissions,
+  NEXUS_GROUP_PERMISSIONS, NEXUS_SERVICE_PERMISSIONS, getNexusDeviceAccess, nexusConnectionLabel, nexusDeviceOnline,
+  setNexusDeviceAccess, setNexusMemberRole, type NexusAccessEntry, type NexusDeviceAccess, type NexusMemberRole, type NexusStatus,
+} from '../features/nexus/nexus';
+import {
+  createNexusGroup, getNexusTreeBranch, moveNexusNode, renameNexusGroup, saveNexusGroupPermissions,
   nexusKeysEqual, treeBreadcrumbs, visibleTreeRows, type NexusTreeBranches, type NexusTreeEntry,
 } from '../features/nexus/tree';
 import { Icon } from './Icon';
@@ -12,6 +15,7 @@ import { WorkspaceActionButton } from './WorkspacePanels';
 
 export const nexusTreeService = {
   load: getNexusTreeBranch, create: createNexusGroup, rename: renameNexusGroup, permissions: saveNexusGroupPermissions,
+  move: moveNexusNode, access: getNexusDeviceAccess, setAccess: setNexusDeviceAccess, role: setNexusMemberRole,
 };
 
 export function NexusHierarchy({ status, advanced, service = nexusTreeService }: {
@@ -182,11 +186,17 @@ export function NexusHierarchy({ status, advanced, service = nexusTreeService }:
             {loading.has(selected.id) && <p role="status">{t('Loading group…')}</p>}
             {errors[selected.id] && <div role="alert"><p className="nexus-error">{errors[selected.id]}</p><WorkspaceActionButton size="small" onClick={() => void load(selected.id)}>{t('Retry')}</WorkspaceActionButton></div>}
             {branches[selected.id] && childCounts(selected.id)}
-            <GroupManagement key={selected.id} entry={selected} entries={entries} selfId={status.node_id} service={service} onSaved={async message => {
+            <GroupManagement key={selected.id} entry={selected} entries={entries} selfId={status.node_id} service={service} onSaved={async (message, movedTo) => {
               await load(selected.id); if (branches[selected.parent_id]) await load(selected.parent_id);
+              if (movedTo) { await load(movedTo); setExpanded(current => new Set(current).add(movedTo)); }
               setExpanded(current => new Set(current).add(selected.id)); setNotice(message);
             }} />
           </> : <dl className="nexus-tree-facts"><div><dt>{t('Status')}</dt><dd><NexusDeviceStatus online={online(selected)} /></dd></div><div><dt>{t('Connection')}</dt><dd>{selected.id === status.node_id ? t('This device') : nexusConnectionLabel(status, selected.id) ? <NexusConnectionBadge status={status} nodeId={selected.id} /> : online(selected) === false ? t('Not connected') : t('Unknown')}</dd></div><div><dt>{t('Mesh address')}</dt><dd>{selected.tunnel_ip || t('Not connected')}</dd></div></dl>}
+          {selected.kind === 'node' && <DeviceManagement key={selected.id} entry={selected} entries={entries} status={status} service={service} onSaved={async (message, movedTo) => {
+            if (branches[selected.parent_id]) await load(selected.parent_id);
+            if (movedTo) { await load(movedTo); setExpanded(current => new Set(current).add(movedTo)); }
+            setNotice(message);
+          }} />}
           <details className="nexus-tree-identifiers"><summary>{t('Technical details')}</summary><dl className="nexus-tree-facts"><div><dt>{t('Node ID')}</dt><dd>{selected.id}</dd></div><div><dt>{t('Parent group')}</dt><dd>{selected.parent_id || '—'}</dd></div></dl></details>
           {notice && <p className="nexus-tree-notice" role="status">{notice}</p>}
         </div>}
@@ -203,7 +213,7 @@ export function NexusHierarchy({ status, advanced, service = nexusTreeService }:
 
 function GroupManagement({ entry, entries, selfId, service, onSaved }: {
   entry: NexusTreeEntry; entries: ReadonlyMap<string, NexusTreeEntry>; selfId?: string;
-  service: typeof nexusTreeService; onSaved: (message: string) => Promise<void>;
+  service: typeof nexusTreeService; onSaved: (message: string, movedTo?: string) => Promise<void>;
 }) {
   const { t } = useI18n();
   const id = useId();
@@ -250,6 +260,7 @@ function GroupManagement({ entry, entries, selfId, service, onSaved }: {
       {entry.can_manage && <WorkspaceActionButton icon="user-round-cog" size="small" appearance="quiet" disabled={busy} onClick={event => { actionRef.current = event.currentTarget; chooseMember(''); setError(''); setEditor('permissions'); }}>{t('Permissions')}</WorkspaceActionButton>}
     </div>
     {!entry.can_add_group && !entry.can_rename && !entry.can_manage && <p className="nexus-hint">{t('You have read-only access to this group.')}</p>}
+    {!editor && <MoveForm entry={entry} entries={entries} service={service} onMoved={target => onSaved(t('Group moved.'), target)} />}
     {editor && <form className="nexus-group-editor" onSubmit={event => void run(event)}>
       <h5>{editor === 'create' ? t('Add a group inside {name}', { name: entry.name || t('Unnamed group') }) : editor === 'rename' ? t('Rename group') : t('Group permissions')}</h5>
       <fieldset disabled={busy || !canEdit}>
@@ -275,5 +286,153 @@ function GroupManagement({ entry, entries, selfId, service, onSaved }: {
       {!canEdit && <p className="nexus-error" role="alert">{t('Your access has changed. Refresh before editing.')}</p>}
       <div className="nexus-group-actions"><WorkspaceActionButton type="submit" disabled={busy || !canEdit || (editor === 'permissions' ? !memberId : !name.trim() || nameTooLong)}>{busy ? t('Saving…') : editor === 'create' ? t('Create group') : t('Save changes')}</WorkspaceActionButton><WorkspaceActionButton appearance="quiet" disabled={busy} onClick={() => { setEditor(undefined); actionRef.current?.focus(); }}>{t('Cancel')}</WorkspaceActionButton></div>
     </form>}
+  </div>;
+}
+
+// The groups `entry` can move into: discovered groups the account may add to, other than
+// the entry itself, its current parent and its own descendants.
+function moveDestinations(entry: NexusTreeEntry, entries: ReadonlyMap<string, NexusTreeEntry>): NexusTreeEntry[] {
+  const descendant = (candidate: NexusTreeEntry) => {
+    const seen = new Set<string>();
+    let current = entries.get(candidate.parent_id);
+    while (current && !seen.has(current.id)) {
+      if (current.id === entry.id) return true;
+      seen.add(current.id);
+      current = entries.get(current.parent_id);
+    }
+    return false;
+  };
+  return [...entries.values()].filter(group => group.kind === 'group' && group.can_add_group
+    && group.id !== entry.id && group.id !== entry.parent_id && !descendant(group));
+}
+
+function MoveForm({ entry, entries, service, onMoved }: {
+  entry: NexusTreeEntry; entries: ReadonlyMap<string, NexusTreeEntry>;
+  service: typeof nexusTreeService; onMoved: (target: string) => Promise<void>;
+}) {
+  const { t } = useI18n();
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  // The account's own top-level group stays where it is; everything below it can move.
+  const movable = entry.kind === 'node' || (Boolean(entry.parent_id) && entry.parent_id !== 'root');
+  const destinations = moveDestinations(entry, entries);
+  if (!movable) return null;
+  const label = (group: NexusTreeEntry) => treeBreadcrumbs(group, entries).map(step => step.name || t('Unnamed group')).join(' / ');
+  const move = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (busy || !target) return;
+    setBusy(true); setError('');
+    try { await service.move(entry.id, target); setOpen(false); setTarget(''); await onMoved(target); }
+    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  };
+  return <div className="nexus-group-move">
+    {!open && <div className="nexus-group-actions"><WorkspaceActionButton icon="layers" size="small" appearance="quiet" disabled={busy} onClick={() => { setError(''); setOpen(true); }}>{t('Move')}</WorkspaceActionButton></div>}
+    {open && <form className="nexus-group-editor" onSubmit={event => void move(event)}>
+      <h5>{t('Move {name}', { name: entry.name || (entry.kind === 'group' ? t('Unnamed group') : t('Unnamed device')) })}</h5>
+      <fieldset disabled={busy}>
+        <label htmlFor={`${id}-target`}>{t('Destination group')}</label>
+        <select id={`${id}-target`} className="input" value={target} onChange={event => setTarget(event.target.value)}>
+          <option value="">{t('Choose a group')}</option>
+          {destinations.map(group => <option key={group.id} value={group.id}>{label(group)}</option>)}
+        </select>
+        <p className="nexus-hint">{t('Open other groups in the tree to find more destinations. Access set on the moved item travels with it.')}</p>
+      </fieldset>
+      {error && <p className="nexus-error" role="alert">{error}</p>}
+      <div className="nexus-group-actions">
+        <WorkspaceActionButton type="submit" disabled={busy || !target}>{busy ? t('Moving…') : entry.kind === 'group' ? t('Move group') : t('Move device')}</WorkspaceActionButton>
+        <WorkspaceActionButton type="button" appearance="quiet" disabled={busy} onClick={() => { setOpen(false); setError(''); }}>{t('Cancel')}</WorkspaceActionButton>
+      </div>
+    </form>}
+  </div>;
+}
+
+// Management of one device from the tree: its role in this account's group, which devices
+// may see and connect to it (lemond devices/{id}/access) and where it sits in the tree.
+function DeviceManagement({ entry, entries, status, service, onSaved }: {
+  entry: NexusTreeEntry; entries: ReadonlyMap<string, NexusTreeEntry>; status: NexusStatus;
+  service: typeof nexusTreeService; onSaved: (message: string, movedTo?: string) => Promise<void>;
+}) {
+  const { t } = useI18n();
+  const id = useId();
+  const [access, setAccess] = useState<NexusDeviceAccess>();
+  const [accessError, setAccessError] = useState('');
+  const [loadingAccess, setLoadingAccess] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const self = entry.id === status.node_id;
+  const group = entries.get(entry.parent_id);
+  // Role presets replace the member's entry on this account's group; they exist only there.
+  const homeMember = !self && entry.parent_id === status.group_node_id && Boolean(group?.can_manage);
+  const assignment = group?.assignments.find(item => nexusKeysEqual(item.management_pubkey, entry.management_pubkey));
+  const role: NexusMemberRole = assignment?.permissions.includes('admin') ? 'administrator'
+    : assignment?.permissions.some(permission => permission === 'write' || permission === 'svc:mcp') ? 'moderator' : 'user';
+  const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+  useEffect(() => {
+    if (self) return;
+    let active = true;
+    setLoadingAccess(true); setAccessError('');
+    service.access(entry.id).then(result => { if (active) setAccess(result); })
+      .catch(error => { if (active) setAccessError(message(error)); })
+      .finally(() => { if (active) setLoadingAccess(false); });
+    return () => { active = false; };
+  }, [entry.id, self, service]);
+  const changeRole = async (next: NexusMemberRole) => {
+    if (busy || next === role) return;
+    setBusy(true); setError(''); setNotice('');
+    try { await service.role(entry.id, next); await onSaved(t('Role saved.')); }
+    catch (error) { setError(message(error)); }
+    finally { setBusy(false); }
+  };
+  const changeAccess = async (member: NexusAccessEntry, see: boolean, connect: boolean) => {
+    if (busy) return;
+    setBusy(true); setError(''); setNotice('');
+    // The toggle shows the requested state at once; the server's answer replaces it, and a
+    // refusal restores the list as it was.
+    const previous = access;
+    setAccess(current => current && { ...current, members: current.members.map(item =>
+      item.node_id === member.node_id ? { ...item, see: see || connect, connect } : item) });
+    try { setAccess(await service.setAccess(entry.id, member.node_id, see, connect)); setNotice(t('Access saved.')); }
+    catch (error) { setAccess(previous); setError(message(error)); }
+    finally { setBusy(false); }
+  };
+  return <div className="nexus-group-management nexus-device-management">
+    {homeMember && <div className="nexus-device-role">
+      <label htmlFor={`${id}-role`}>{t('Role in this group')}</label>
+      <select id={`${id}-role`} className="input" value={role} disabled={busy} onChange={event => void changeRole(event.target.value as NexusMemberRole)}>
+        <option value="user">{t('User')}</option>
+        <option value="moderator">{t('Moderator')}</option>
+        <option value="administrator">{t('Administrator')}</option>
+      </select>
+      <p className="nexus-hint">{t('User and Moderator can list models and chat on the group’s servers. Administrator manages the group.')}</p>
+    </div>}
+    {!self && <details className="nexus-device-access" open>
+      <summary>{t('Device access')}</summary>
+      <p className="nexus-hint">{t('Who can see this device and connect to it.')}</p>
+      {loadingAccess && <p role="status">{t('Loading…')}</p>}
+      {accessError && <p className="nexus-error" role="alert">{accessError}</p>}
+      {access && !access.access_known && <p className="nexus-hint">{t('This device’s access list is not visible to you.')}</p>}
+      {access?.access_known && access.members.length === 0 && <p className="nexus-hint">{t('No other devices in this group.')}</p>}
+      {access?.access_known && access.members.length > 0 && <table className="nexus-access-table">
+        <thead><tr><th>{t('Device')}</th><th>{t('See')}</th><th>{t('Connect')}</th></tr></thead>
+        <tbody>{access.members.map(member => {
+          const name = member.device_name || t('Unnamed device');
+          return <tr key={member.node_id}>
+            <td>{name}{member.is_admin && <span className="nexus-hint"> · {t('Admin')}</span>}</td>
+            <td><input type="checkbox" aria-label={t('{name} can see', { name })} checked={member.see || member.connect} disabled={busy || !member.editable}
+              onChange={event => void changeAccess(member, event.target.checked, event.target.checked && member.connect)} /></td>
+            <td><input type="checkbox" aria-label={t('{name} can connect', { name })} checked={member.connect} disabled={busy || !member.editable}
+              onChange={event => void changeAccess(member, member.see || event.target.checked, event.target.checked)} /></td>
+          </tr>;
+        })}</tbody>
+      </table>}
+    </details>}
+    <MoveForm entry={entry} entries={entries} service={service} onMoved={target => onSaved(t('Device moved.'), target)} />
+    {error && <p className="nexus-error" role="alert">{error}</p>}
+    {notice && <p className="nexus-tree-notice" role="status">{notice}</p>}
   </div>;
 }

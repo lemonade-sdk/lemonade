@@ -161,7 +161,15 @@ a hollow gray dot and Offline, or Status unknown when presence is unavailable.
 Presence and path badges use the same current network snapshot in every view.
 
 Advanced provides group creation, renaming, and group permissions for discovered
-device identities. Controls follow server-provided capabilities. The server
+device identities, and moves: a device, or any group below the account's
+top-level group, moves into another discovered group the account may add to
+(`tree/{id}/move`; the entry itself, its parent and its descendants are not
+offered). Selecting a device shows its management panel: for a member of this
+account's group, a role selector (User, Moderator, Administrator) that replaces
+the member's group entry through `members/{id}/role`; for every other device,
+its access list from `devices/{id}/access` with See and Connect toggles per
+group member, saved per change; and the move form. Controls follow
+server-provided capabilities. The server
 independently validates ancestry, passkey-unlocked state, group rights, principal
 membership, self-protection and group-owner protection before forwarding a
 change to the SDK's existing private API. Assignment editing is withheld when
