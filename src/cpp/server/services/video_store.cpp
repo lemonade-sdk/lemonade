@@ -29,7 +29,8 @@ fs::path dir() {
 
 std::string new_file_name() {
     std::random_device device;
-    std::mt19937_64 engine(device());
+    std::seed_seq seed{device(), device(), device(), device()};
+    std::mt19937_64 engine(seed);
     std::ostringstream name;
     name << kPrefix << std::hex;
     for (int i = 0; i < 2; ++i) {
