@@ -129,7 +129,7 @@ public:
 
             const auto job = ctx_.job_manager->get(id);
             json body = {{"id", id},
-                         {"status", job ? job->value("status", "queued") : "queued"},
+                         {"status", "queued"},
                          {"model", model}};
             if (job && job->contains("created_at")) body["created_at"] = (*job)["created_at"];
             res.status = 202;
