@@ -664,43 +664,49 @@ struct NvidiaDriverBlock {
     std::string action;
 };
 
-// A backend that needs an NVIDIA GPU cannot run when no detected NVIDIA GPU has the
-// NVIDIA driver, or when the driver predates the CUDA major version the backend's
-// binaries are built with. A too-old driver is action_required rather than
-// unsupported so clients surface the driver download link.
+// Only rows that run exclusively on an NVIDIA GPU (the CUDA rows) depend on the
+// NVIDIA driver. Rows that also list other devices, such as Vulkan, must stay
+// available: they are the fallback when CUDA cannot run.
+//
+// A missing driver blocks the row. A driver older than the row's CUDA major version
+// is action_required rather than unsupported so clients surface the driver download
+// link. Neither replaces an unsupported-architecture result, since no driver change
+// fixes that; the one exception is a missing driver on a GPU whose architecture is
+// unknown, which is what a driverless card looks like.
 static std::optional<NvidiaDriverBlock> nvidia_driver_block(const RecipeBackendDef& def,
                                                             const json& devices,
-                                                            const std::string& current_os) {
-    if (def.devices.count("nvidia_gpu") == 0 || !devices.contains("nvidia_gpu") ||
-        !devices["nvidia_gpu"].is_array()) {
+                                                            const std::string& current_os,
+                                                            bool arch_supported) {
+    if (def.devices.size() != 1 || def.devices.count("nvidia_gpu") == 0 ||
+        !devices.contains("nvidia_gpu") || !devices["nvidia_gpu"].is_array()) {
         return std::nullopt;
     }
 
     bool any_gpu = false;
+    bool all_missing = true;
+    bool any_known_family = false;
     std::string driver_version;
     for (const auto& gpu : devices["nvidia_gpu"]) {
         if (!gpu.value("available", false)) continue;
         any_gpu = true;
-        if (!gpu.value("driver_missing", false) && driver_version.empty()) {
-            driver_version = gpu.value("driver_version", "");
+        if (!gpu.value("family", "").empty()) any_known_family = true;
+        if (!gpu.value("driver_missing", false)) {
+            all_missing = false;
+            if (driver_version.empty()) driver_version = gpu.value("driver_version", "");
         }
     }
     if (!any_gpu) {
         return std::nullopt;
     }
 
-    const std::string driver_url = "https://www.nvidia.com/en-us/drivers/";
-    if (driver_version.empty()) {
-        bool all_missing = true;
-        for (const auto& gpu : devices["nvidia_gpu"]) {
-            if (gpu.value("available", false) && !gpu.value("driver_missing", false)) {
-                all_missing = false;
-            }
-        }
-        if (all_missing) {
+    if (all_missing) {
+        if (arch_supported || !any_known_family) {
             return NvidiaDriverBlock{
                 "unsupported", "NVIDIA GPU found, but the NVIDIA driver is not installed", ""};
         }
+        return std::nullopt;
+    }
+    if (!arch_supported) {
         return std::nullopt;
     }
 
@@ -711,7 +717,7 @@ static std::optional<NvidiaDriverBlock> nvidia_driver_block(const RecipeBackendD
         return NvidiaDriverBlock{
             "action_required",
             "NVIDIA driver " + driver_version + " is too old; " + minimum + " or newer is required",
-            driver_url};
+            "https://www.nvidia.com/en-us/drivers/"};
     }
     return std::nullopt;
 }
@@ -1663,7 +1669,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                                               def.recipe, def.backend, *container_setup));
         }
 
-        if (auto block = nvidia_driver_block(def, devices, current_os)) {
+        if (auto block = nvidia_driver_block(def, devices, current_os, supported)) {
             supported = false;
             backend["state"] = block->state;
             backend["message"] = block->message;
