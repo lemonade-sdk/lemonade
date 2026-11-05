@@ -78,6 +78,10 @@ const RECIPE_LABELS: Record<string, string> = {
   thinksound:      'ThinkSound',
   openmoss:        'OpenMOSS TTS',
   trellis:         'TRELLIS.2',
+  halogen:         'Halogen Flash',
+  gufo:            'Gufo',
+  ds4:             'DwarfStar4',
+  thenoise:        'TheNoise',
 };
 
 const ENGINE_LOGO_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/engines/';
@@ -100,6 +104,10 @@ const ENGINE_LOGOS: Record<string, EngineLogo> = {
   acestep:        { file: 'ace_step.png', plate: 'dark' },
   openmoss:       { file: 'openmoss.png' },
   trellis:        { file: 'trellis.png' },
+  halogen:        { file: 'halogen.png', plate: 'dark' },
+  gufo:           { file: 'gufo.png', plate: 'dark', showName: true },
+  ds4:            { file: 'dwarfstar.png', showName: true },
+  thenoise:       { file: 'thenoise.png', plate: 'dark' },
 };
 
 /** User-facing labels for backend variants */
