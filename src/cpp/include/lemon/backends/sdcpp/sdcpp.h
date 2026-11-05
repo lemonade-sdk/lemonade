@@ -53,7 +53,7 @@ inline const BackendDescriptor descriptor = {
                     "leejet", "lemonade-sdk", "MIT", "https://github.com/leejet/stable-diffusion.cpp"}},
         {"rocm", {"stable-diffusion.cpp specialized for AMD GPUs, built against ROCm from TheRock.",
                   "leejet", "lemonade-sdk", "MIT", "https://github.com/leejet/stable-diffusion.cpp"}},
-        {"cpu", {"stable-diffusion.cpp on the CPU alone; slow, but needs no GPU.",
+        {"cpu", {"stable-diffusion.cpp on the CPU alone.",
                  "leejet", "lemonade-sdk", "MIT", "https://github.com/leejet/stable-diffusion.cpp"}},
     },
     /*supported_modes*/ {"image"},

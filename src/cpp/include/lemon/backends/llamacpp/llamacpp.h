@@ -59,7 +59,7 @@ inline const BackendDescriptor descriptor = {
                     "ggml-org", "ggml-org", "MIT", "https://github.com/ggml-org/llama.cpp"}},
         {"rocm", {"GPU runtime specialized for AMD GPUs, built against ROCm from TheRock.",
                   "ggml-org", "lemonade-sdk", "MIT", "https://github.com/ggml-org/llama.cpp"}},
-        {"cpu", {"Upstream llama.cpp on the CPU alone, for machines without a supported GPU.",
+        {"cpu", {"Uses only the CPU for inference.",
                  "ggml-org", "ggml-org", "MIT", "https://github.com/ggml-org/llama.cpp"}},
         {"nathanw", {"llama.cpp fork tuned for Strix Halo's Vulkan driver, with faster flash attention, quantized KV cache and MoE prefill.",
                      "NathanW (Nathanw1014)", "Donato Capitella (kyuz0)", "MIT",

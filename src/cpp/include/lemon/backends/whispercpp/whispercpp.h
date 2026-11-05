@@ -45,7 +45,7 @@ inline const BackendDescriptor descriptor = {
                     "ggml-org", "lemonade-sdk", "MIT", "https://github.com/ggml-org/whisper.cpp"}},
         {"rocm", {"whisper.cpp specialized for AMD GPUs, built against ROCm from TheRock.",
                   "ggml-org", "lemonade-sdk", "MIT", "https://github.com/ggml-org/whisper.cpp"}},
-        {"cpu", {"whisper.cpp on the CPU alone, for machines without a supported GPU or NPU.",
+        {"cpu", {"whisper.cpp on the CPU alone.",
                  "ggml-org", "lemonade-sdk", "MIT", "https://github.com/ggml-org/whisper.cpp"}},
     },
     /*supported_modes*/ {"transcription"},
