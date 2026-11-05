@@ -3419,6 +3419,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Status | When |
 |--------|------|
 | `404` | `id` names no job, a deleted one, or one that is not paused or interrupted |
+| `503` | The server is shutting down |
 <!-- END GENERATED: lemonade.jobs_resume -->
 
 <!-- BEGIN GENERATED: lemonade.jobs_get -->

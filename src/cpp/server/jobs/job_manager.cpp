@@ -336,6 +336,8 @@ bool JobManager::interrupt(const std::string& id) {
 
 bool JobManager::resume(const std::string& id) {
     std::lock_guard<std::mutex> lock(mutex_);
+    // Resuming would clear the flags shutdown() set and hand the worker more to run.
+    if (stop_) throw JobError(503, "the server is shutting down");
     auto it = jobs_.find(id);
     if (it == jobs_.end() || it->second.deleted) return false;
     if (it->second.status != JobStatus::Paused && it->second.status != JobStatus::Interrupted)
