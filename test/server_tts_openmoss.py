@@ -425,18 +425,19 @@ class OpenMossTTSTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 200, response.text[:1000])
         model = response.json()
-        audio_defaults = model.get("audio_defaults", {})
-        self.assertIsInstance(audio_defaults, dict)
+        options = model.get("recipe_options", {})
+        self.assertIsInstance(options, dict)
         self.assertEqual(
-            audio_defaults.get("pcm_sample_rate"),
+            options.get("pcm_sample_rate"),
             48000,
             "MOSS-TTS-Local must export its native 48 kHz PCM rate",
         )
         self.assertEqual(
-            audio_defaults.get("pcm_channels"),
+            options.get("pcm_channels"),
             2,
             "MOSS-TTS-Local must export its native stereo PCM layout",
         )
+        self.assertNotIn("audio_defaults", model)
         self.assertNotIn("pcm_sample_rate", model)
         self.assertNotIn("pcm_channels", model)
 

@@ -12,6 +12,7 @@ import api, { friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
 import {
   recipeBackendOptionName,
+  recipeConfigurableOptionNames,
   recipeOptionHint,
   recipeOptionIsArgs,
   recipeOptionIsBackend,
@@ -19,7 +20,6 @@ import {
   recipeOptionIsDevice,
   recipeOptionIsNumeric,
   recipeOptionLabel,
-  recipeOptionNames,
 } from '../features/backends/recipeMetadata';
 import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo } from '../modelCapabilities';
 import {
@@ -336,7 +336,7 @@ function tuningKeysForModel(
   info: SystemInfoLike,
 ): Array<keyof RecipeOptions> {
   const recipe = activeRecipeForModel(model);
-  const keys = recipeOptionNames(info, recipe)
+  const keys = recipeConfigurableOptionNames(info, recipe)
     .map(key => key as keyof RecipeOptions);
 
   // voice/speed are model sampling fields rather than backend descriptor

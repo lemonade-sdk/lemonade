@@ -20,6 +20,7 @@ struct BackendOption {
     std::string type_name;            // "ARGS" | "SIZE" | "BACKEND" | "BOOL"
     std::string help;                 // CLI help text
     std::string group;                // CLI help group, e.g. "General Options"
+    bool user_configurable = true;    // false = not a preference; clients should show no control
 };
 
 // How a backend shares the accelerator.

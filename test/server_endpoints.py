@@ -3464,12 +3464,10 @@ class EndpointTests(ServerTestBase):
         print(f"[OK] Pull (multicheckpoint): model={USER_MODEL_NAME}")
 
     def test_021a_pull_sdcpp_import_preserves_merged_recipe_options(self):
-        """Test /pull keeps image_defaults + recipe_options visible immediately.
+        """Test /pull folds a retired image_defaults block into recipe_options.
 
-        This exercises the import/warm-cache path for user models:
-        add_model_to_cache() builds merged recipe options from image_defaults and
-        JSON recipe_options, and download_model() must not overwrite that merged
-        state with only the import recipe_options payload.
+        A payload naming the same key in both blocks resolves to the
+        recipe_options one, and the persisted row carries only recipe_options.
         """
         if platform.system() == "Darwin":
             self.skipTest("sd-cpp pull tests are skipped on macOS in this suite")
@@ -3486,6 +3484,7 @@ class EndpointTests(ServerTestBase):
             "flow_shift": 1.25,
         }
         recipe_options = {
+            "steps": 40,
             "sd-cpp_backend": "cpu",
             "sdcpp_args": "--diffusion-fa 1 --offload-to-cpu 1",
         }
@@ -3522,12 +3521,19 @@ class EndpointTests(ServerTestBase):
             self.assertIn("recipe_options", model_data)
 
             actual_options = model_data["recipe_options"]
+            self.assertNotIn(
+                "image_defaults",
+                model_data,
+                "A pull should persist only the recipe_options key",
+            )
             for key, value in image_defaults.items():
                 self.assertIn(
                     key,
                     actual_options,
                     f"Expected image_defaults key '{key}' in recipe_options after pull",
                 )
+                if key in recipe_options:
+                    continue
                 self.assertEqual(
                     actual_options[key],
                     value,

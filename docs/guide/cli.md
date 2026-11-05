@@ -284,7 +284,6 @@ The JSON file must contain the following fields:
 |-------|------|-------------|
 | `labels` | array | Array of label strings (e.g., `["reasoning", "coding"]`) |
 | `recipe_options` | object | Recipe-specific options (e.g., `{"ctx-size": 8192, "llamacpp": "vulkan"}`) |
-| `image_defaults` | object | Image generation defaults for image models |
 | `size` | string | Model size description |
 
 **Notes:**
