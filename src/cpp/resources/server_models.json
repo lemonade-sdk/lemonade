@@ -2231,7 +2231,7 @@
             "image"
         ],
         "size": 5.21,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 4,
             "cfg_scale": 1.0,
             "width": 512,
@@ -2246,7 +2246,7 @@
             "image"
         ],
         "size": 2.02,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 4,
             "cfg_scale": 1.0,
             "width": 512,
@@ -2262,7 +2262,7 @@
             "image"
         ],
         "size": 6.94,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 4,
             "cfg_scale": 1.0,
             "width": 512,
@@ -2278,7 +2278,7 @@
             "image"
         ],
         "size": 7.7,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 20,
             "cfg_scale": 7.5,
             "width": 512,
@@ -2294,7 +2294,7 @@
             "image"
         ],
         "size": 6.94,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 20,
             "cfg_scale": 7.5,
             "width": 1024,
@@ -2315,7 +2315,7 @@
             "edit"
         ],
         "size": 16.1,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 4,
             "cfg_scale": 1,
             "width": 1024,
@@ -2336,7 +2336,7 @@
             "edit"
         ],
         "size": 19.0,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 4,
             "cfg_scale": 1,
             "width": 256,
@@ -2356,16 +2356,14 @@
             "image"
         ],
         "size": 18.2,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 20,
             "cfg_scale": 2.5,
             "width": 512,
             "height": 512,
             "soft_pixel_cap": 2097152,
             "sampling_method": "euler",
-            "flow_shift": 3.0
-        },
-        "recipe_options": {
+            "flow_shift": 3.0,
             "sdcpp_args": "--diffusion-fa --offload-to-cpu"
         }
     },
@@ -2381,16 +2379,14 @@
             "image"
         ],
         "size": 19.4,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 20,
             "cfg_scale": 2.5,
             "width": 512,
             "height": 512,
             "soft_pixel_cap": 2097152,
             "sampling_method": "euler",
-            "flow_shift": 3.0
-        },
-        "recipe_options": {
+            "flow_shift": 3.0,
             "sdcpp_args": "--diffusion-fa --offload-to-cpu"
         }
     },
@@ -2406,7 +2402,7 @@
             "image"
         ],
         "size": 20.7,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 9,
             "cfg_scale": 1,
             "width": 1024,
@@ -2430,7 +2426,7 @@
         "labels": [
             "chat"
         ],
-        "size": 9.30
+        "size": 9.3
     },
     "RPG-HaloTales-V1": {
         "checkpoint": "lemonade-sdk/RPG-HaloTales-V1",
@@ -2460,7 +2456,14 @@
         "size": 0.354
     },
     "ThinkSound-SFX": {
-        "checkpoint": "ilintar/thinksound-gguf",
+        "checkpoints": {
+            "main": "ilintar/thinksound-gguf:dit-bf16.gguf",
+            "t5": "ilintar/thinksound-gguf:t5-bf16.gguf",
+            "metaclip_text": "ilintar/thinksound-gguf:metaclip-text-f32.gguf",
+            "vae": "ilintar/thinksound-gguf:vae-f32.gguf",
+            "t5_tokenizer": "ilintar/thinksound-gguf:t5-tokenizer.gguf",
+            "clip_tokenizer": "ilintar/thinksound-gguf:clip-tokenizer.gguf"
+        },
         "recipe": "thinksound",
         "suggested": true,
         "labels": [
@@ -2469,7 +2472,12 @@
         "size": 6.4
     },
     "ACE-Step-Music": {
-        "checkpoint": "Serveurperso/ACE-Step-1.5-GGUF:acestep-v15-xl-sft-Q8_0.gguf",
+        "checkpoints": {
+            "main": "Serveurperso/ACE-Step-1.5-GGUF:acestep-v15-xl-sft-Q8_0.gguf",
+            "lm": "Serveurperso/ACE-Step-1.5-GGUF:acestep-5Hz-lm-4B-Q8_0.gguf",
+            "text_encoder": "Serveurperso/ACE-Step-1.5-GGUF:Qwen3-Embedding-0.6B-BF16.gguf",
+            "vae": "Serveurperso/ACE-Step-1.5-GGUF:vae-BF16.gguf"
+        },
         "recipe": "acestep",
         "suggested": true,
         "labels": [
@@ -2499,7 +2507,7 @@
             "tts"
         ],
         "size": 12.5,
-        "audio_defaults": {
+        "recipe_options": {
             "pcm_sample_rate": 24000,
             "pcm_channels": 1
         }
@@ -2517,7 +2525,7 @@
             "tts"
         ],
         "size": 8.5,
-        "audio_defaults": {
+        "recipe_options": {
             "pcm_sample_rate": 48000,
             "pcm_channels": 2
         }
@@ -2534,7 +2542,7 @@
             "voice-design"
         ],
         "size": 7.3,
-        "audio_defaults": {
+        "recipe_options": {
             "pcm_sample_rate": 24000,
             "pcm_channels": 1
         }
@@ -2550,7 +2558,7 @@
             "audio-generation"
         ],
         "size": 6.6,
-        "audio_defaults": {
+        "recipe_options": {
             "pcm_sample_rate": 48000,
             "pcm_channels": 1
         }
@@ -2567,7 +2575,7 @@
             "image"
         ],
         "size": 5.4,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 30,
             "cfg_scale": 4,
             "width": 1024,
@@ -2587,7 +2595,7 @@
             "image"
         ],
         "size": 5.4,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 30,
             "cfg_scale": 4,
             "width": 1024,
@@ -2607,7 +2615,7 @@
             "image"
         ],
         "size": 5.4,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 8,
             "cfg_scale": 1.0,
             "width": 1024,
@@ -2628,7 +2636,7 @@
             "edit"
         ],
         "size": 16.1,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 4,
             "cfg_scale": 1,
             "width": 1024,
@@ -2649,7 +2657,7 @@
             "edit"
         ],
         "size": 32.5,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 4,
             "cfg_scale": 1,
             "width": 1024,
@@ -2670,7 +2678,7 @@
             "edit"
         ],
         "size": 16.1,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 8,
             "cfg_scale": 1,
             "width": 1440,
@@ -2690,7 +2698,7 @@
             "image"
         ],
         "size": 35,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 8,
             "cfg_scale": 1.0,
             "width": 1024,
@@ -2710,7 +2718,7 @@
             "image"
         ],
         "size": 20.7,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 8,
             "cfg_scale": 1.0,
             "width": 1024,
@@ -2724,6 +2732,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.064
@@ -2734,6 +2743,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.017
@@ -2746,6 +2756,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067
@@ -2758,6 +2769,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067
@@ -2770,6 +2782,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067
@@ -2782,6 +2795,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067
@@ -2794,6 +2808,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067
@@ -2945,6 +2960,24 @@
         ],
         "size": 0.27
     },
+    "Julia-1-GGUF": {
+        "checkpoint": "ggml-org/Julia-1-GGUF:Q8_0",
+        "recipe": "llamacpp",
+        "labels": [
+            "classification",
+            "systemone"
+        ],
+        "size": 0.17
+    },
+    "Laya-GGUF": {
+        "checkpoint": "ggml-org/Laya-GGUF:Q8_0",
+        "recipe": "llamacpp",
+        "labels": [
+            "classification",
+            "systemone"
+        ],
+        "size": 0.45
+    },
     "LFM2.5-Encoder-350M-Prompt-Router-ONNX": {
         "checkpoint": "lemonade-sdk/LFM2.5-Encoder-350M-Prompt-Router-ONNX",
         "recipe": "onnxruntime",
@@ -2955,7 +2988,10 @@
         "size": 1.43
     },
     "DeepSeek-V4-Flash-IQ2XXS-DS4": {
-        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
+        "checkpoints": {
+            "main": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
+            "draft": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-DSpark-support-0731.gguf"
+        },
         "recipe": "ds4",
         "suggested": true,
         "labels": [
@@ -2963,7 +2999,232 @@
             "reasoning",
             "tool-calling"
         ],
-        "size": 81.0,
+        "size": 92.7,
         "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4-Flash-Hybrid-Q2Q4-DS4": {
+        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Layers37-42Q4KExperts-OtherExpertLayersIQ2XXSGateUp-Q2KDown-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-fixed-0731.gguf",
+        "recipe": "ds4",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 97.6,
+        "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4-Flash-Q4-DS4": {
+        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Q4KExperts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-imatrix-0731.gguf",
+        "recipe": "ds4",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 164.6,
+        "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4-Flash-MXFP4-DS4": {
+        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-MXFP4Experts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-mxfp4-0731.gguf",
+        "recipe": "ds4",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 156.0,
+        "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4-Flash-Vision-IQ2XXS-DS4": {
+        "checkpoints": {
+            "main": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8.gguf",
+            "draft": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-DSpark-support.gguf"
+        },
+        "recipe": "ds4",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 92.7,
+        "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4-Flash-Vision-Hybrid-Q2Q4-DS4": {
+        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-Layers37-42Q4KExperts-OtherExpertLayersIQ2XXSGateUp-Q2KDown-AProjQ8-SExpQ8-OutQ8.gguf",
+        "recipe": "ds4",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "vision"
+        ],
+        "size": 97.6,
+        "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4-Flash-Vision-MXFP4-DS4": {
+        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-MXFP4Experts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out.gguf",
+        "recipe": "ds4",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "vision"
+        ],
+        "size": 156.0,
+        "min_resident_gb": 16.0
+    },
+    "GLM-5.3-Flash-Q2-DS4": {
+        "checkpoint": "antirez/glm-5.3-flash-gguf:GLM-5.3-Flash-Q2.gguf",
+        "recipe": "ds4",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 96.5,
+        "min_resident_gb": 16.0
+    },
+    "GLM-5.3-Flash-Q4_K-DS4": {
+        "checkpoint": "antirez/glm-5.3-flash-gguf:GLM-5.3-Flash-Q4_K.gguf",
+        "recipe": "ds4",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 190.9,
+        "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4.1-Flash-Q2-DS4": {
+        "checkpoint": "antirez/deepseek-v4.1-flash-gguf:DeepSeek-V4.1-Flash-Q2.gguf",
+        "recipe": "ds4",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 365.7,
+        "min_resident_gb": 16.0
+    },
+    "Qwen3.8-27B-ROCmFP4-STRIX-MTP": {
+        "checkpoints": {
+            "main": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:Qwen3.8-27B-Q4_0_ROCMFP4_STRIX.gguf",
+            "draft": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:mtp-Qwen3.8-27B-Q4_0.gguf",
+            "mmproj": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:mmproj-Qwen3.8-27B-BF16.gguf"
+        },
+        "recipe": "rocmfpx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 17.4,
+        "uploaded_by": "kingjones777"
+    },
+    "Gemma-4-26B-A4B-it-ROCmFP4": {
+        "checkpoints": {
+            "main": "kingjones777/Gemma-4-26B-A4B-it-ROCmFP4-GGUF:gemma-4-26B-A4B-it-Q4_0_ROCMFP4_FAST_COHERENT.gguf",
+            "mmproj": "kingjones777/Gemma-4-26B-A4B-it-ROCmFP4-GGUF:mmproj-BF16.gguf"
+        },
+        "recipe": "rocmfpx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 14.9,
+        "uploaded_by": "kingjones777"
+    },
+    "Qwen3.6-35B-A3B-ROCmFP4-MTP": {
+        "checkpoints": {
+            "main": "plunderstruck/Qwen3.6-35B-A3B-MTP-ROCmFP4-GGUF:Qwen3.6-35B-A3B-MTP-ROCmFP4-STRIX-embF16-headQ6.gguf",
+            "mmproj": "plunderstruck/Qwen3.6-35B-A3B-MTP-ROCmFP4-GGUF:mmproj-F32.gguf"
+        },
+        "recipe": "rocmfpx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision",
+            "mtp"
+        ],
+        "size": 21.7,
+        "uploaded_by": "plunderstruck"
+    },
+    "Qwen3.8-Flash-Next-Halogen": {
+        "checkpoints": {
+            "main": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-v2.hgn",
+            "lookup_table": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-ngram.hgn",
+            "vision_tower": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-vision.hgn",
+            "chat_template": "peonist-ai/halogen-qwen3.8-flash-next:tokenizer/chat_template.jinja",
+            "generation_config": "peonist-ai/halogen-qwen3.8-flash-next:tokenizer/generation_config.json",
+            "merges": "peonist-ai/halogen-qwen3.8-flash-next:tokenizer/merges.txt",
+            "tokenizer": "peonist-ai/halogen-qwen3.8-flash-next:tokenizer/tokenizer.json",
+            "tokenizer_config": "peonist-ai/halogen-qwen3.8-flash-next:tokenizer/tokenizer_config.json",
+            "vocab": "peonist-ai/halogen-qwen3.8-flash-next:tokenizer/vocab.json"
+        },
+        "recipe": "halogen",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 118.81,
+        "min_resident_gb": 33.0
+    },
+    "Qwen3.8-27B-Gufo": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_XL.gguf",
+            "draft": "z-lab/Qwen3.8-27B-DFlash2-GGUF:Qwen3.8-27B-DFlash2-Q4_K_M.gguf",
+            "mmproj": "unsloth/Qwen3.8-27B-GGUF:mmproj-BF16.gguf"
+        },
+        "recipe": "gufo",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 19.6
+    },
+    "Qwen3.8-Flash-Next-Gufo": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q4_K_XL",
+            "draft": "unsloth/Qwen3.8-Flash-Next-GGUF:MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+            "mmproj": "unsloth/Qwen3.8-Flash-Next-GGUF:mmproj-BF16.gguf"
+        },
+        "recipe": "gufo",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 115.0
+    },
+    "DeepSeek-V4-Flash-IQ2XXS-Gufo": {
+        "checkpoints": {
+            "main": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
+            "draft": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-DSpark-support-0731.gguf"
+        },
+        "recipe": "gufo",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 92.7
     }
 }

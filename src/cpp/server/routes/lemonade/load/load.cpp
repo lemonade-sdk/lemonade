@@ -5,6 +5,7 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/model_manager.h"
+#include "lemon/model_types.h"
 #include "lemon/recipe_options.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
@@ -16,6 +17,8 @@ namespace {
 
 using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
+
+const RouteError kOnDemandCannotLoad{400, "", "On-demand models cannot be loaded through /v1/load"};
 
 ordered_json load_schema() {
     return ordered_json::parse(R"({
@@ -62,7 +65,7 @@ const RouteArg kSaveOptions{"save_options", ArgIn::JsonBody, {{"type", "boolean"
                             "use [`POST /v1/models/{id}/options`](openai.md#post-v1modelsidoptions). Defaults to "
                             "`false`."};
 const RouteArg kLlamacppBackend{"llamacpp_backend", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
-                                "`llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, "
+                                "`llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, `nathanw`, `halobox`, "
                                 "or `system` for a `llama-server` already installed where supported."};
 const RouteArg kLlamacppArgs{"llamacpp_args", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
                              "`llamacpp`: extra arguments for `llama-server`. Flags Lemonade sets itself are rejected, "
@@ -107,6 +110,8 @@ public:
             "`collection.router` model loads nothing until a request routes to a candidate.",
             "Loading a model that is already loaded with the same options does nothing; different "
             "options reload it.",
+            "On-demand models, including upscalers, cannot be loaded here. Upscalers run via "
+            "[`POST /v1/images/upscale`](openai.md#post-v1imagesupscale).",
             "### Option Priority\n\n"
             "Each recipe option comes from the first of these layers that sets it:\n\n"
             "1. The `load` request\n"
@@ -160,7 +165,7 @@ public:
         collection_example.format = ResponseFormat::Json;
         collection_example.args = {{"model_name", "LMX-Omni-5.5B-Lite"}};
         s.examples = {example, collection_example};
-        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid}, ModelLoader::errors()});
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kOnDemandCannotLoad}, ModelLoader::errors()});
         s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
@@ -187,6 +192,12 @@ public:
             }
 
             auto info = model_manager.get_model_info(model_name);
+            if (!is_router_collection_recipe(info.recipe) &&
+                has_label(info.labels, "on-demand")) {
+                write_openai_error(res, kOnDemandCannotLoad,
+                                   "On-demand models cannot be loaded through this endpoint.");
+                return;
+            }
 
             // Omitted options keep saved values; a null masks its saved key for this
             // load only.

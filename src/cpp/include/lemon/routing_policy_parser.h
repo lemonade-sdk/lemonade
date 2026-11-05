@@ -35,10 +35,20 @@ using RoutingModelTypeResolver =
 // and each kind refuses the other's /classify body. Unset skips the check.
 using RoutingZeroShotResolver = std::function<bool(const std::string& resolved_model)>;
 
+// Whether a resolved component answers /v1/systemone. A CLASSIFICATION type
+// alone does not tell: ONNX classifiers have it too. Unset skips the check.
+using RoutingSystemOneResolver = std::function<bool(const std::string& resolved_model)>;
+
+// Why a resolved component's backend would refuse to load it, or "" when it
+// would load it. Unset skips the check.
+using RoutingLoadRefusalResolver = std::function<std::string(const std::string& resolved_model)>;
+
 struct RoutingPolicyParseOptions {
     RoutingComponentResolver resolve_component;
     RoutingModelTypeResolver get_model_type;
     RoutingZeroShotResolver serves_zero_shot;
+    RoutingSystemOneResolver serves_systemone;
+    RoutingLoadRefusalResolver load_refusal;
     bool require_declared_components = true;
 };
 

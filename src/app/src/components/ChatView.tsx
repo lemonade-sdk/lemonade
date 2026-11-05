@@ -42,6 +42,7 @@ import {
   snapshotIdentity,
   identityFor,
   isComposerSelectableCapability,
+  isOnDemandModelInfo,
   isRouterRecipe,
   modelStructure,
 } from '../modelCapabilities';
@@ -714,13 +715,11 @@ function partialImageSettingsFromSource(source?: Record<string, unknown> | null)
 }
 
 function imageDefaultsForModel(loadedModel: LoadedModel | null, modelInfo: ModelInfo | null, directRecipeOptions?: Record<string, unknown> | null): ImageGenerationSettings {
-  const modelImageDefaults = partialImageSettingsFromSource(modelInfo?.image_defaults as Record<string, unknown> | undefined);
   const modelRecipeOptions = partialImageSettingsFromSource(modelInfo?.recipe_options as Record<string, unknown> | undefined);
   const loadedRecipeOptions = partialImageSettingsFromSource(loadedModel?.recipe_options);
   const directDefaults = partialImageSettingsFromSource(directRecipeOptions);
   return {
     ...DEFAULT_IMAGE_SETTINGS,
-    ...modelImageDefaults,
     ...modelRecipeOptions,
     ...loadedRecipeOptions,
     ...directDefaults,
@@ -1322,10 +1321,10 @@ const ChatView: React.FC<ChatViewProps> = ({
     loadedModels.forEach(model => {
       const info = findModelInfoByName(knownModelInfos, model.model_name);
       const capability = info ? capabilityFromModelInfo(info) : capabilityFromLoaded(model);
-      if (capability === 'image') names.add(model.model_name);
+      if (capability === 'image' && !isOnDemandModelInfo(info)) names.add(model.model_name);
     });
     knownModelInfos.forEach(info => {
-      if (capabilityFromModelInfo(info) !== 'image' || !(info as any).downloaded) return;
+      if (isOnDemandModelInfo(info) || capabilityFromModelInfo(info) !== 'image' || !(info as any).downloaded) return;
       const name = String((info as any).model_name || info.name || info.id || '').trim();
       if (name && !activeDownloadForModel(downloadItems, name)) names.add(name);
     });
@@ -1580,6 +1579,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     }));
 
     knownModelInfos.forEach(info => {
+      if (isOnDemandModelInfo(info)) return;
       const name = String((info as any).model_name || info.name || info.id || '').trim();
       const capability = capabilityFromModelInfo(info);
       if ((!modelIsDownloaded(info) && !isRouterModelInfo(info)) || activeDownloadForModel(downloadItems, name)) return;

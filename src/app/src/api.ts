@@ -558,7 +558,7 @@ export interface SlotData {
   temperature: number;
   top_k: number;
   top_p: number;
-  cache_tokens: number[] | number;
+  cache_tokens?: number[] | number;
   n_cache_tokens?: number;
   timings?: SlotTimings;
   prompt: string;
@@ -566,13 +566,6 @@ export interface SlotData {
   stopped_eos: boolean;
   stopped_word: boolean;
   stopped_limit: boolean;
-}
-
-/** Get usable cache token count — prefers n_cache_tokens (number) over cache_tokens array length */
-export function getCacheTokenCount(s: SlotData): number {
-  if (typeof s.n_cache_tokens === 'number') return s.n_cache_tokens;
-  if (typeof s.cache_tokens === 'number') return s.cache_tokens;
-  return Array.isArray(s.cache_tokens) ? s.cache_tokens.length : 0;
 }
 
 export interface LogEntry {
@@ -1891,11 +1884,11 @@ class LemonadeAPI {
     return { blob, url: URL.createObjectURL(blob), filename: `${model}.glb` };
   }
 
-  async imageUpscale(model: string, imageUrl: string): Promise<string> {
+  async imageUpscale(model: string, imageUrl: string, upscaleFactor?: number): Promise<string> {
     const image = imageUrl.replace(/^data:image\/[^;]+;base64,/, '');
     const data = await this._json<Record<string, any>>('/api/v1/images/upscale', {
       method: 'POST',
-      body: { model, image },
+      body: { model, image, ...(upscaleFactor === undefined ? {} : { upscale_factor: upscaleFactor }) },
     });
     const item = Array.isArray(data.data) ? data.data[0] : null;
     const url = item?.b64_json ? `data:image/png;base64,${item.b64_json}` : item?.url;

@@ -12,6 +12,7 @@ import api, { friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
 import {
   recipeBackendOptionName,
+  recipeConfigurableOptionNames,
   recipeOptionHint,
   recipeOptionIsArgs,
   recipeOptionIsBackend,
@@ -19,9 +20,8 @@ import {
   recipeOptionIsDevice,
   recipeOptionIsNumeric,
   recipeOptionLabel,
-  recipeOptionNames,
 } from '../features/backends/recipeMetadata';
-import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo } from '../modelCapabilities';
+import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo, isOnDemandModelInfo } from '../modelCapabilities';
 import {
   modelBaseTuningForModel,
   modelSupportsContextSize, sanitizeRecipeOptions,
@@ -336,7 +336,7 @@ function tuningKeysForModel(
   info: SystemInfoLike,
 ): Array<keyof RecipeOptions> {
   const recipe = activeRecipeForModel(model);
-  const keys = recipeOptionNames(info, recipe)
+  const keys = recipeConfigurableOptionNames(info, recipe)
     .map(key => key as keyof RecipeOptions);
 
   // voice/speed are model sampling fields rather than backend descriptor
@@ -2533,6 +2533,7 @@ const CUSTOM_COLLECTION_TABS: Array<{ id: DetailTab; label: string }> = [
 ];
 
 const IMAGE_MODEL_TABS: Array<{ id: DetailTab; label: string }> = TABS;
+const ON_DEMAND_MODEL_TABS = TABS.filter(tab => tab.id !== 'config');
 
 export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   model,
@@ -2585,14 +2586,16 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const isRouterCollection = Boolean(model && activeRecipeForModel(model) === 'collection.router');
   const isCustomCollection = Boolean(model && modelIsCustom(model) && (isCollectionModel(model) || isRouterCollection));
   const imageOnly = isImageOnlyModel(model);
-  const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS : (imageOnly ? IMAGE_MODEL_TABS : TABS);
+  const isOnDemandModel = isOnDemandModelInfo(model);
+  const detailTabs = isCustomCollection ? CUSTOM_COLLECTION_TABS
+    : (isOnDemandModel ? ON_DEMAND_MODEL_TABS : (imageOnly ? IMAGE_MODEL_TABS : TABS));
 
   // Move focus to heading when model changes.
   useEffect(() => {
     if (model) panelHeadingRef.current?.focus();
-    setActiveTab(isCustomCollection ? 'settings' : 'config');
+    setActiveTab(isCustomCollection ? 'settings' : (isOnDemandModel ? 'readme' : 'config'));
     setConfigHasUnsavedChanges(false);
-  }, [detailName, isCustomCollection, imageOnly]);
+  }, [detailName, isCustomCollection, imageOnly, isOnDemandModel]);
 
   const confirmDiscardLoadSettings = useCallback(() => (
     !configHasUnsavedChanges || window.confirm('Discard unsaved load setting changes?')
@@ -2741,6 +2744,12 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             {isLoadingThis ? t('Working…') : t('Unload')}
           </WorkspaceActionButton>
         </>
+      ) : isOnDemandModel ? (
+        isDownloaded ? null : (
+          <WorkspaceActionButton appearance="primary" icon="download" onClick={() => onPull(model)} aria-label={`Download ${name}`}>
+            {t('Download')}
+          </WorkspaceActionButton>
+        )
       ) : (isDownloaded || isRouterCollection) ? (
         isRouterCollection ? (
           <>
