@@ -477,15 +477,15 @@ int main() {
     }
 
     failures += !expect_bool("Windows driver below minimum is too old",
-                             nvidia_driver_older_than("560.94", "576.02"), true);
+                             nvidia_driver_older_than("516.94", "528.33"), true);
     failures += !expect_bool("Windows driver at minimum is accepted",
-                             nvidia_driver_older_than("576.02", "576.02"), false);
+                             nvidia_driver_older_than("528.33", "528.33"), false);
     failures += !expect_bool("Windows driver above minimum is accepted",
-                             nvidia_driver_older_than("581.15", "576.02"), false);
+                             nvidia_driver_older_than("560.94", "528.33"), false);
     failures += !expect_bool("Linux driver with older patch is too old",
-                             nvidia_driver_older_than("575.51.02", "575.51.03"), true);
+                             nvidia_driver_older_than("525.60.12", "525.60.13"), true);
     failures += !expect_bool("Linux two-part driver compares against three-part minimum",
-                             nvidia_driver_older_than("580.95", "575.51.03"), false);
+                             nvidia_driver_older_than("580.95", "525.60.13"), false);
     failures += !expect_bool("Unknown driver version is never too old",
                              nvidia_driver_older_than("Unknown", "576.02"), false);
     failures += !expect_bool("Empty driver version is never too old",
@@ -503,9 +503,9 @@ int main() {
                                nvidia_driver_version_from_windows("Unknown"), "Unknown");
 
     failures += !expect_string("llamacpp:cuda Windows minimum",
-                               cuda_min_driver_version("llamacpp", "cuda", "windows"), "576.02");
+                               cuda_min_driver_version("llamacpp", "cuda", "windows"), "528.33");
     failures += !expect_string("llamacpp:cuda Linux minimum",
-                               cuda_min_driver_version("llamacpp", "cuda", "linux"), "575.51.03");
+                               cuda_min_driver_version("llamacpp", "cuda", "linux"), "525.60.13");
     failures += !expect_string("Non-CUDA backend has no minimum",
                                cuda_min_driver_version("llamacpp", "vulkan", "windows"), "");
     failures += !expect_string("Other CUDA backends have no minimum yet",

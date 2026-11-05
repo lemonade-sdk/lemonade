@@ -185,16 +185,17 @@ inline std::string nvidia_driver_version_from_windows(const std::string& version
     return std::to_string(std::stoi(tail.substr(0, 3))) + "." + tail.substr(3);
 }
 
-// Oldest NVIDIA driver that the CUDA toolkit a backend's binaries are built with
-// declares support for. Empty when no minimum is enforced. The llamacpp:cuda values
-// track the toolkit pinned in the lemonade-sdk/llama.cpp release workflow (CUDA
-// 12.9.0) and must move with it.
+// Oldest NVIDIA driver that can run a backend's CUDA binaries. Empty when no minimum
+// is enforced. llamacpp:cuda is built with CUDA 12.9 (lemonade-sdk/llama.cpp release
+// workflow), and CUDA minor-version compatibility lets any 12.x build run on the
+// CUDA 12.0 driver floor, so these are that floor rather than the 12.9 toolkit's own
+// minimum. They must move if the build switches CUDA major versions.
 inline std::string cuda_min_driver_version(const std::string& recipe,
                                            const std::string& backend,
                                            const std::string& os) {
     if (recipe == "llamacpp" && backend == "cuda") {
-        if (os == "windows") return "576.02";
-        if (os == "linux") return "575.51.03";
+        if (os == "windows") return "528.33";
+        if (os == "linux") return "525.60.13";
     }
     return "";
 }

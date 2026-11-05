@@ -1,6 +1,6 @@
 // Recipe-table coverage for NVIDIA driver gating: a CUDA backend must not be
 // offered when the NVIDIA driver is missing, and llamacpp:cuda must not be the
-// auto default when the driver predates its CUDA toolkit.
+// auto default when the driver predates its CUDA major version.
 //
 // Build: cmake --build --preset default --target test_nvidia_driver_gating
 // Run:   ctest --test-dir build -R '^NvidiaDriverGatingTest$' --output-on-failure
@@ -51,11 +51,11 @@ public:
 };
 
 #ifdef _WIN32
-const char* kOldDriver = "560.94";
-const char* kCurrentDriver = "581.15";
+const char* kOldDriver = "516.94";
+const char* kCurrentDriver = "560.94";
 #else
-const char* kOldDriver = "570.86.10";
-const char* kCurrentDriver = "580.95.05";
+const char* kOldDriver = "515.105.01";
+const char* kCurrentDriver = "550.163.01";
 #endif
 
 std::string cpu_family() {

@@ -665,10 +665,9 @@ struct NvidiaDriverBlock {
 };
 
 // A backend that needs an NVIDIA GPU cannot run when no detected NVIDIA GPU has the
-// NVIDIA driver, or when the driver predates what the backend's CUDA toolkit
-// supports. A too-old driver is action_required rather than unsupported so an
-// explicit backend choice still goes through: CUDA minor-version compatibility often
-// lets an older driver work.
+// NVIDIA driver, or when the driver predates the CUDA major version the backend's
+// binaries are built with. A too-old driver is action_required rather than
+// unsupported so clients surface the driver download link.
 static std::optional<NvidiaDriverBlock> nvidia_driver_block(const RecipeBackendDef& def,
                                                             const json& devices,
                                                             const std::string& current_os) {
