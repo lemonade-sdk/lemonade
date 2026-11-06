@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 #include <utility>
@@ -36,6 +37,12 @@ bool build_agent_config(const std::string& agent,
                         const AgentLaunchOptions& launch_options,
                         AgentConfig& config,
                         std::string& error_message);
+
+// Major version from `opencode --version`, or nullopt when it can't be determined.
+std::optional<int> opencode_major_version(const std::string& binary);
+
+// Adds --standalone where OpenCode v2 accepts it for the given arguments.
+void add_opencode_standalone_arg(std::vector<std::string>& args);
 
 // Locate the agent executable.
 // Returns absolute or PATH-resolved executable for ProcessManager::start_process.
