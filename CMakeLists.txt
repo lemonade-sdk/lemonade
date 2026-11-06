@@ -1867,6 +1867,8 @@ endif()
 # Add CLI application subdirectory
 add_subdirectory(src/cpp/cli)
 
+add_subdirectory(src/cpp/agent_host)
+
 # Add tray application subdirectory
 add_subdirectory(src/cpp/tray)
 
@@ -4088,6 +4090,27 @@ if(BUILD_TESTING AND EXISTS "${_PI_PROFILE_TEST_SRC}")
     target_include_directories(test_pi_profile PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
     target_link_libraries(test_pi_profile PRIVATE lemonade-server-core nlohmann_json::nlohmann_json)
     add_cpp_ci_test(PiProfileTest CI ON COMMAND test_pi_profile)
+endif()
+
+# Agent host modules, compiled in directly like the host itself.
+if(BUILD_TESTING)
+    foreach(_agent_test agent_paths agent_lock agent_pins agent_shim agent_installer)
+        add_executable(test_${_agent_test} test/cpp/test_${_agent_test}.cpp
+            ${LEMON_AGENT_HOST_CORE_SOURCES})
+        target_include_directories(test_${_agent_test} PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+        target_link_libraries(test_${_agent_test} PRIVATE lemonade-server-core)
+        string(REPLACE "_" ";" _agent_test_words "${_agent_test}")
+        set(_agent_test_name "")
+        foreach(_word ${_agent_test_words})
+            string(SUBSTRING "${_word}" 0 1 _first)
+            string(SUBSTRING "${_word}" 1 -1 _rest)
+            string(TOUPPER "${_first}" _first)
+            string(APPEND _agent_test_name "${_first}${_rest}")
+        endforeach()
+        add_cpp_ci_test(${_agent_test_name}Test CI ON COMMAND test_${_agent_test})
+    endforeach()
+    add_dependencies(test_agent_pins copy_resources)
 endif()
 
 set(_MODEL_SYNC_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_sync_service.cpp")
