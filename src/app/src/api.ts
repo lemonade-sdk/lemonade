@@ -6,6 +6,12 @@
 
 import type { RecipeOptions } from './modelConfiguration';
 import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageConfig';
+import {
+  runVideoJob,
+  videoFileExtension,
+  type VideoJobOptions,
+  type VideoJobRecord,
+} from './features/videoGeneration/videoJob';
 
 function detectDefaultBaseUrl(): string {
   if (typeof window !== 'undefined' && window.location) {
@@ -1882,6 +1888,34 @@ class LemonadeAPI {
     const blob = await resp.blob();
     if (blob.size === 0) throw new Error('3D generation endpoint returned an empty model.');
     return { blob, url: URL.createObjectURL(blob), filename: `${model}.glb` };
+  }
+
+  async videoGeneration(
+    model: string,
+    prompt: string,
+    opts: Record<string, unknown> = {},
+    control: Pick<VideoJobOptions, 'signal' | 'onStatus'> = {},
+  ): Promise<{ url: string; blob: Blob; filename: string; record: VideoJobRecord }> {
+    const videoPath = (id: string) => `/api/v1/videos/${encodeURIComponent(id)}`;
+    const { record, blob } = await runVideoJob({
+      create: body => this._json<VideoJobRecord>('/api/v1/videos', {
+        method: 'POST',
+        body,
+        includeSessionHeaders: true,
+      }),
+      get: (id, signal) => this._json<VideoJobRecord>(videoPath(id), {
+        cache: 'no-store',
+        signal,
+      } as LemonadeRequestInit),
+      content: async (id, signal) => (await this._fetch(`${videoPath(id)}/content`, { signal })).blob(),
+      cancel: async id => { await this._fetch(`${videoPath(id)}/cancel`, { method: 'POST' }); },
+    }, { ...opts, model, prompt }, control);
+    return {
+      record,
+      blob,
+      url: URL.createObjectURL(blob),
+      filename: `${model}.${videoFileExtension(record)}`,
+    };
   }
 
   async imageUpscale(model: string, imageUrl: string, upscaleFactor?: number): Promise<string> {
