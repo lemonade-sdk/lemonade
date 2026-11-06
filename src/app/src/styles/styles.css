@@ -5278,6 +5278,18 @@ optgroup {
   width: min(100%, 420px);
 }
 
+.message__video {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-3);
+}
+
+.message__video video {
+  width: min(100%, 640px);
+  border-radius: var(--radius-md);
+  background: #000;
+}
+
 .message__images--generated {
   margin-top: var(--space-3);
   margin-bottom: 0;
@@ -11136,7 +11148,8 @@ optgroup {
   }
 }
 
-.message__audio-download {
+.message__audio-download,
+.message__video-download {
   align-self: flex-start;
   margin-top: var(--space-2);
   text-decoration: none;
