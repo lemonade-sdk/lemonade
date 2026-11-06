@@ -1992,6 +1992,22 @@ if(APPLE)
         endif()
     endif()
 
+    # Agent host -> /usr/local/bin
+    if(TARGET lemonade-agent-host)
+        install(TARGETS lemonade-agent-host RUNTIME DESTINATION "bin" COMPONENT Runtime)
+        if(CMAKE_BUILD_TYPE STREQUAL "Release")
+            install(CODE "
+                execute_process(
+                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade-agent-host\"
+                    RESULT_VARIABLE SIGN_RESULT
+                )
+                if(NOT SIGN_RESULT EQUAL 0)
+                    message(FATAL_ERROR \"Failed to sign lemonade-agent-host\")
+                endif()
+            " COMPONENT Runtime)
+        endif()
+    endif()
+
     # Resources -> /Library/Application Support/Lemonade/resources
     install(DIRECTORY ${CMAKE_BINARY_DIR}/resources/ DESTINATION "/Library/Application Support/Lemonade/resources" COMPONENT Resources)
 
@@ -2167,6 +2183,16 @@ if(UNIX AND NOT APPLE)
     install(FILES ${CMAKE_BINARY_DIR}/lemond-user.service
         DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/user
         RENAME lemond.service
+    )
+
+    # Started by `lemonade agents enable`, never by default.
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/data/lemonade-agent-host.service.in
+        ${CMAKE_BINARY_DIR}/lemonade-agent-host.service
+        @ONLY
+    )
+    install(FILES ${CMAKE_BINARY_DIR}/lemonade-agent-host.service
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/user
     )
 
     # Install the optional environment-file template loaded by the unit via

@@ -1,6 +1,7 @@
 etc/
 usr/bin/lemond
 usr/bin/lemonade
+usr/bin/lemonade-agent-host
 usr/share/lemonade/
 usr/share/lemonade-server/
 usr/lib/

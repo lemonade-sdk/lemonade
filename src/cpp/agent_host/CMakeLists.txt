@@ -82,3 +82,18 @@ if(UNIX AND NOT APPLE)
     find_package(Threads REQUIRED)
     target_link_libraries(lemonade-agent-host PRIVATE Threads::Threads)
 endif()
+
+# macOS installs from the root CMakeLists with the other executables.
+if(NOT APPLE)
+    install(TARGETS lemonade-agent-host RUNTIME DESTINATION bin)
+endif()
+if(UNIX AND NOT APPLE AND NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+    install(CODE "
+        file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E create_symlink
+                ${CMAKE_INSTALL_PREFIX}/bin/lemonade-agent-host
+                \"\$ENV{DESTDIR}/usr/bin/lemonade-agent-host\"
+        )
+    ")
+endif()
