@@ -35,6 +35,24 @@ int main() {
     // A released waiter leaves nothing behind for the next holder.
     check("lock is free after the waiter exits", FileLock::try_acquire(lock_path) != nullptr);
 
+    // An on-demand host probes takeover.lock every second by briefly taking
+    // it; a persistent host arriving during a probe must not give up.
+    const fs::path takeover = dir / "takeover.lock";
+    std::atomic<bool> probing{true};
+    std::thread prober([&] {
+        while (probing) {
+            if (auto probe = FileLock::try_acquire(takeover)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    auto claimed = FileLock::try_acquire_for(takeover, std::chrono::seconds(2));
+    probing = false;
+    prober.join();
+    check("a waiter that retries gets a lock someone only probes", claimed != nullptr);
+
     std::error_code ec;
     fs::remove_all(dir, ec);
     return agent_test::finish();

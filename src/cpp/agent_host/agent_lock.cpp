@@ -3,6 +3,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <system_error>
+#include <thread>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -63,6 +64,20 @@ FileLock::~FileLock() {
 
 std::unique_ptr<FileLock> FileLock::try_acquire(const fs::path& path) {
     return lock_file(path, false);
+}
+
+std::unique_ptr<FileLock> FileLock::try_acquire_for(const fs::path& path,
+                                                    std::chrono::milliseconds wait) {
+    const auto deadline = std::chrono::steady_clock::now() + wait;
+    while (true) {
+        if (auto lock = try_acquire(path)) {
+            return lock;
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return nullptr;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
 }
 
 std::unique_ptr<FileLock> FileLock::acquire(const fs::path& path) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -18,6 +19,9 @@ public:
 
     // nullptr when another process holds it or the file can't be opened.
     static std::unique_ptr<FileLock> try_acquire(const std::filesystem::path& path);
+    // Retries try_acquire until `wait` passes, for locks others hold only briefly.
+    static std::unique_ptr<FileLock> try_acquire_for(const std::filesystem::path& path,
+                                                     std::chrono::milliseconds wait);
     // Waits for the lock; nullptr only when the file can't be opened.
     static std::unique_ptr<FileLock> acquire(const std::filesystem::path& path);
 

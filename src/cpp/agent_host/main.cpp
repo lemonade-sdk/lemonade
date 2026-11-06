@@ -139,8 +139,9 @@ int main(int argc, char** argv) {
         if (!persistent) {
             return 0;  // another host already serves this user
         }
-        // An on-demand host finishes its work and exits once it sees this.
-        takeover = FileLock::try_acquire(ctx.paths.takeover_lock());
+        // An on-demand host finishes its work and exits once it sees this. It
+        // probes the same lock each second, so a busy try is retried.
+        takeover = FileLock::try_acquire_for(ctx.paths.takeover_lock(), std::chrono::seconds(3));
         if (!takeover) {
             LOG(INFO, "AgentHost") << "Another persistent host is waiting; exiting" << std::endl;
             return 0;
@@ -201,7 +202,8 @@ int main(int argc, char** argv) {
     const LinkExit reason = run_link(ctx, routes, options);
     static const char* reasons[] = {"idle", "lemond unreachable", "API key rejected", "taken over"};
     LOG(INFO, "AgentHost") << "Exiting: " << reasons[static_cast<int>(reason)] << std::endl;
-    for (int i = 0; i < 600 && routes.in_flight() > 0; ++i) {
+    // Request threads use routes and ctx, so they finish before either goes.
+    while (routes.in_flight() > 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     // A token left behind would point clients at a host that's gone.
