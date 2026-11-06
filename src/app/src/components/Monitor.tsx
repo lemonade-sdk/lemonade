@@ -292,6 +292,12 @@ const Monitor: React.FC<MonitorProps> = ({ isActive }) => {
   const multiGpu = gpuDevices.length >= 2;
   const [selectedGpuId, setSelectedGpuId] = useState<string | null>(null);
   const selectedIndex = gpuDevices.findIndex(gpu => gpu.id === selectedGpuId);
+  // A hidden or removed GPU must not become selected again when it reappears.
+  useEffect(() => {
+    if (selectedGpuId && sysStats?.gpus && (selectedIndex < 0 || selectedIndex >= 4)) {
+      setSelectedGpuId(null);
+    }
+  }, [selectedGpuId, selectedIndex, sysStats?.gpus]);
   const activeGpuIndex = multiGpu && selectedIndex >= 0 && selectedIndex < 4 ? selectedIndex : 0;
   const activeGpu = multiGpu ? gpuDevices[activeGpuIndex] : null;
 
