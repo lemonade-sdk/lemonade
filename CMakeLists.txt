@@ -2194,6 +2194,12 @@ if(UNIX AND NOT APPLE)
     install(FILES ${CMAKE_BINARY_DIR}/lemonade-agent-host.service
         DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/user
     )
+    if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+        lemonade_install_systemd_symlink(
+            "/usr/lib/systemd/user/lemonade-agent-host.service"
+            "${CMAKE_INSTALL_PREFIX}/lib/systemd/user/lemonade-agent-host.service"
+        )
+    endif()
 
     # Install the optional environment-file template loaded by the unit via
     # EnvironmentFile=-/etc/default/lemond (LEMONADE_API_KEY and other secrets).
