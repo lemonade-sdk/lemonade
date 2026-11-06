@@ -183,7 +183,7 @@ json HostRoutes::uninstall(const std::string& id) {
     const auto& agent = find_agent(id);
     Installing guard(*this, agent.id);
     std::vector<std::string> warnings;
-    const bool removed = uninstall_agent(agent, ctx_.paths, warnings);
+    const bool removed = uninstall_agent(agent, ctx_.paths, warnings, &ctx_.leases);
     return {{"removed", removed}, {"warnings", warnings}};
 }
 

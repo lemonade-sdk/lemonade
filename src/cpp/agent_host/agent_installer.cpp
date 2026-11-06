@@ -413,6 +413,7 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
         retiring = std::unique_lock<std::mutex>(leases->mutex());
     }
     const auto shim_runs = shim_target(agent, paths);
+    std::vector<fs::path> retired;
     for (const fs::path& entry : list_dir(root)) {
         const std::string name = entry.filename().string();
         if (name.rfind(".removing-", 0) == 0) {
@@ -427,19 +428,35 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
         const fs::path aside = root / (".removing-" + name);
         fs::rename(entry, aside, ec);
         if (!ec) {
-            remove_quietly(aside, nullptr);
+            retired.push_back(aside);
         }
+    }
+    // Launches only wait for the rename, not for the payload to be deleted.
+    if (retiring) {
+        retiring.unlock();
+    }
+    for (const fs::path& aside : retired) {
+        remove_quietly(aside, nullptr);
     }
     return outcome;
 }
 
 bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
-                     std::vector<std::string>& warnings) {
+                     std::vector<std::string>& warnings, VersionLeases* leases) {
     bool removed = remove_shim(shim_path(paths, agent.binary));
     const fs::path root = paths.agent_dir(agent.id);
     std::error_code ec;
+    std::unique_lock<std::mutex> retiring;
+    if (leases != nullptr) {
+        retiring = std::unique_lock<std::mutex>(leases->mutex());
+    }
     for (const fs::path& entry : list_dir(root)) {
         removed = true;
+        if (leases != nullptr && leases->held(entry)) {
+            warnings.push_back(entry.filename().string() +
+                               " is being launched, so it stays; uninstall again later.");
+            continue;
+        }
         remove_quietly(entry, &warnings);
     }
     if (fs::exists(root, ec) && fs::is_empty(root, ec)) {

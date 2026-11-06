@@ -254,6 +254,17 @@ int main() {
         check("an install waits for a launch that is picking a version", !installed);
         picking.unlock();
         installer.join();
+
+        VersionLeases launching;
+        const fs::path v17 = leased.agent_dir("pi") / "1.7.0";
+        {
+            std::lock_guard<std::mutex> lock(launching.mutex());
+            launching.acquire(v17);
+        }
+        std::vector<std::string> uninstall_warnings;
+        uninstall_agent(pi, leased, uninstall_warnings, &launching);
+        check("uninstall keeps a version a launch holds, with a warning",
+              fs::exists(v17 / "pi") && !uninstall_warnings.empty());
     }
 #ifndef _WIN32
     if (geteuid() != 0) {

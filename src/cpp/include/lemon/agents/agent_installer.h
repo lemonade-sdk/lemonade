@@ -80,6 +80,6 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
 // behind with a warning and are retried by the next install. Returns whether
 // anything was removed.
 bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
-                     std::vector<std::string>& warnings);
+                     std::vector<std::string>& warnings, VersionLeases* leases = nullptr);
 
 } // namespace lemon::agents
