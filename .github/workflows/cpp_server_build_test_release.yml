@@ -2158,6 +2158,7 @@ jobs:
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu cli"
           .venv/bin/python test/server_cli2.py --cli-binary lemonade
+          .venv/bin/python test/server_agents.py --cli-binary "$(command -v lemonade)"
 
       - name: Test endpoints
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
@@ -2329,6 +2330,7 @@ jobs:
           if [ "${{ matrix.test_type }}" = "cli" ]; then
             echo "Running CLI tests..."
             $VENV_PYTHON test/server_cli2.py --cli-binary "$CLI_BINARY"
+            $VENV_PYTHON test/server_agents.py --cli-binary "$CLI_BINARY"
           elif [ "${{ matrix.test_type }}" = "endpoints" ]; then
             echo "Running endpoint tests..."
             $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
@@ -2598,6 +2600,7 @@ jobs:
         run: |
           $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "macos-latest cli"
           $VENV_PYTHON test/server_cli2.py --cli-binary "$CLI_BINARY"
+          $VENV_PYTHON test/server_agents.py --cli-binary "$CLI_BINARY"
 
       - name: Test endpoints
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}

@@ -38,6 +38,18 @@ struct FakeTransport : lemon::AgentHostTransport {
     }
 };
 
+// Records whether the link was already routable when welcome went out.
+struct WelcomeOrderTransport : FakeTransport {
+    AgentHostRegistry* registry = nullptr;
+    bool routable_at_welcome = true;
+    bool send(const std::string& text) override {
+        if (json::parse(text)["type"] == "welcome") {
+            routable_at_welcome = registry->link_count() > 0;
+        }
+        return FakeTransport::send(text);
+    }
+};
+
 std::string token_of(char c) {
     return std::string(64, c);
 }
@@ -55,6 +67,14 @@ int main() {
     auto t1 = std::make_shared<FakeTransport>();
     auto link1 = registry.attach(hello(token_of('a')), t1);
     check("hello attaches", link1 != nullptr && registry.link_count() == 1);
+    {
+        AgentHostRegistry ordered(false);
+        auto transport = std::make_shared<WelcomeOrderTransport>();
+        transport->registry = &ordered;
+        ordered.attach(hello(token_of('1')), transport);
+        check("welcome goes out before requests can be routed to the link",
+              !transport->routable_at_welcome);
+    }
     check("welcome carries auth_required",
           t1->last()["type"] == "welcome" && t1->last()["auth_required"] == true);
 
@@ -156,6 +176,27 @@ int main() {
         }
         const auto waited = std::chrono::steady_clock::now() - start;
         check("silent client is closed within 7 s", waited < 7s && waited >= 4s);
+    }
+    {
+        // A host that dials in after shutdown() but before the listener
+        // stops must not get a handler the pool join waits on.
+        AgentHostRegistry stopping(false);
+        httplib::Server stopping_server;
+        stopping.register_endpoint(stopping_server);
+        const int stopping_port = stopping_server.bind_to_any_port("127.0.0.1");
+        std::thread stopping_thread([&] { stopping_server.listen_after_bind(); });
+        stopping_server.wait_until_ready();
+        stopping.shutdown();
+        httplib::ws::WebSocketClient late("ws://127.0.0.1:" + std::to_string(stopping_port) +
+                                          protocol::kEndpoint);
+        late.connect();
+        late.send(protocol::hello(token_of('8'), "test", "linux-x64", false).dump());
+        late.set_read_timeout(3, 0);
+        std::string msg;
+        const auto result = late.read(msg);
+        check("a host connecting after shutdown is turned away", result != httplib::ws::Text);
+        stopping_server.stop();
+        stopping_thread.join();
     }
     {
         httplib::ws::WebSocketClient host(url);

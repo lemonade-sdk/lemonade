@@ -22,6 +22,7 @@
 #ifdef _WIN32
 #include <process.h>
 #else
+#include <csignal>
 #include <fcntl.h>
 #include <unistd.h>
 #endif
@@ -87,6 +88,10 @@ int usage() {
 } // namespace
 
 int main(int argc, char** argv) {
+#ifndef _WIN32
+    // A write to a WebSocket lemond already closed must fail, not kill the host.
+    std::signal(SIGPIPE, SIG_IGN);
+#endif
     std::string lemond;
     bool persistent = false;
     for (int i = 1; i < argc; ++i) {

@@ -186,7 +186,11 @@ json agent_request(const lemonade::LemonadeClient& client, const std::string& to
             path, method, body.is_null() ? "" : body.dump(),
             body.is_null() ? "" : "application/json", 3000, 120000,
             {{lemon::agents::protocol::kTokenHeader, token}});
-        return json::parse(response, nullptr, false);
+        json parsed = json::parse(response, nullptr, false);
+        if (!parsed.is_object()) {
+            throw std::runtime_error("Unexpected response from the agent host.");
+        }
+        return parsed;
     } catch (const lemonade::HttpError& e) {
         throw route_error(e);
     }

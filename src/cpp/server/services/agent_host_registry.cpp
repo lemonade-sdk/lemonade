@@ -189,13 +189,23 @@ std::shared_ptr<AgentHostRegistry::Link> AgentHostRegistry::attach(
     link->token_hash = protocol::token_hash(token);
     link->transport = std::move(transport);
 
+    // welcome must reach the host before any request routed to it can.
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (stopping_ || (links_.count(link->token_hash) == 0 && links_.size() >= kMaxLinks)) {
+            link->transport->close(protocol::kCloseTooManyHosts, "too many agent hosts");
+            return nullptr;
+        }
+    }
+    link->send(protocol::welcome(auth_required_));
+
     std::shared_ptr<Link> replaced;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = links_.find(link->token_hash);
         if (it != links_.end()) {
             replaced = it->second;
-        } else if (links_.size() >= kMaxLinks) {
+        } else if (stopping_ || links_.size() >= kMaxLinks) {
             link->transport->close(protocol::kCloseTooManyHosts, "too many agent hosts");
             return nullptr;
         }
@@ -211,7 +221,6 @@ std::shared_ptr<AgentHostRegistry::Link> AgentHostRegistry::attach(
                            << hello.value("platform", "?")
                            << (hello.value("persistent", false) ? ", persistent" : "") << ")"
                            << std::endl;
-    link->send(protocol::welcome(auth_required_));
     return link;
 }
 
@@ -264,7 +273,7 @@ void AgentHostRegistry::fail_pending(Link& link, const std::string& message) {
 }
 
 void AgentHostRegistry::shutdown() {
-    generation_++;
+    stopping_ = true;
     std::map<std::string, std::shared_ptr<Link>> links;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -281,6 +290,10 @@ size_t AgentHostRegistry::link_count() const {
 }
 
 void AgentHostRegistry::register_endpoint(httplib::Server& server) {
+    // Called for the new servers of a rebind, after the old ones have stopped.
+    stopping_ = false;
+    server.set_websocket_ping_interval(kPingIntervalSeconds);
+    server.set_websocket_max_missed_pongs(2);
     server.WebSocket(protocol::kEndpoint,
                      [this](const httplib::Request&, httplib::ws::WebSocket& ws) {
         auto transport = std::make_shared<WsTransport>(ws);
@@ -288,10 +301,9 @@ void AgentHostRegistry::register_endpoint(httplib::Server& server) {
         // shutdown() without another thread having to wake read().
         ws.set_read_timeout(1, 0);
         const auto deadline = std::chrono::steady_clock::now() + kHelloTimeout;
-        const uint64_t generation = generation_.load();
         std::shared_ptr<Link> link;
         std::string message;
-        while (generation_.load() == generation) {
+        while (!stopping_) {
             const auto result = ws.read(message);
             if (result == httplib::ws::Timeout) {
                 if (!link && std::chrono::steady_clock::now() >= deadline) {

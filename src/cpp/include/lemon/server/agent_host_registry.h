@@ -32,6 +32,8 @@ public:
     static constexpr size_t kMaxLinks = 4;
     static constexpr size_t kMaxRelays = 4;
     static constexpr std::chrono::seconds kHelloTimeout{5};
+    // A host that stops answering pings is dropped after two missed pongs.
+    static constexpr time_t kPingIntervalSeconds = 15;
 
     struct Link;
     struct ExchangeState;
@@ -75,10 +77,10 @@ public:
 
     void register_endpoint(httplib::Server& server);
 
-    // Fails every pending exchange and makes every current link handler
-    // return within about a second. Must run before the listener stops, since
-    // stopping joins the workers the handlers run on. Hosts that connect
-    // afterwards (after a rebind) are served normally.
+    // Fails every pending exchange, makes every link handler return within
+    // about a second and turns new connections away. Must run before the
+    // listener stops, since stopping joins the workers the handlers run on.
+    // register_endpoint() on the servers of a rebind serves hosts again.
     void shutdown();
 
     size_t link_count() const;
@@ -88,7 +90,7 @@ private:
     void fail_pending(Link& link, const std::string& message);
 
     const bool auth_required_;
-    std::atomic<uint64_t> generation_{0};
+    std::atomic<bool> stopping_{false};
     std::atomic<size_t> relays_{0};
     std::atomic<uint64_t> next_id_{1};
     mutable std::mutex mutex_;
