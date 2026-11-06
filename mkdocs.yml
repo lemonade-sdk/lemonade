@@ -76,6 +76,7 @@ nav:
       - Backends, Apps, Monitor, and Settings: guide/app/operations.md
     - CLI: guide/cli.md
     - Chat in your terminal: guide/cli-chat.md
+    - Agents: guide/agents.md
     - Configuration:
       - Service: guide/configuration/README.md
       - Custom Models: guide/configuration/custom-models.md
