@@ -40,7 +40,8 @@ A Pi you installed yourself, for example with npm, keeps working: `lemonade laun
 Agents are installed and configured by `lemonade-agent-host`, a small process that runs as you. lemond never touches your files: it passes `/v1/agents` requests to your agent host, which connects to lemond over a WebSocket on lemond's port.
 
 - `lemonade` starts the host when an `agents` command or `launch pi` needs it, and the host exits after 10 idle minutes. `lemonade agents enable` keeps one running instead.
-- When lemond requires an API key, the host presents the same key: the one `lemonade` was given when it starts the host, `LEMONADE_API_KEY` from `~/.config/lemonade/lemond.conf` or `~/.config/lemonade/agent-host.env` for the systemd and launchd host. Lemonade never writes the key to disk. On macOS the LaunchAgent reads those files with `/bin/sh`, so quote a value that has spaces or shell characters (`LEMONADE_API_KEY='…'`); systemd reads the same quoting.
+- On Windows, Lemonade Server (the tray app) runs the host while it runs.
+- When lemond requires an API key, the host presents the same key: the one `lemonade` was given when it starts the host, `LEMONADE_API_KEY` from `~/.config/lemonade/lemond.conf` or `~/.config/lemonade/agent-host.env` for the systemd and launchd host, or Lemonade Server's own key on Windows. Lemonade never writes the key to disk. On macOS the LaunchAgent reads those files with `/bin/sh`, so quote a value that has spaces or shell characters (`LEMONADE_API_KEY='…'`); systemd reads the same quoting.
 - One host serves one lemond. Agents need lemond on the same machine; against a remote server, `lemonade launch pi` runs the Pi on your `PATH` as before.
 - The host's log is `agent-host.log` in its state directory.
 
