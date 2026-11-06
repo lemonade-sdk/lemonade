@@ -262,9 +262,19 @@ int main() {
             launching.acquire(v17);
         }
         std::vector<std::string> uninstall_warnings;
-        uninstall_agent(pi, leased, uninstall_warnings, &launching);
-        check("uninstall keeps a version a launch holds, with a warning",
-              fs::exists(v17 / "pi") && !uninstall_warnings.empty());
+        std::string busy_code;
+        check("uninstall while a launch holds a version is busy",
+              error_status([&] { uninstall_agent(pi, leased, uninstall_warnings, &launching); },
+                           &busy_code) == 409 &&
+                  busy_code == "agent_busy");
+        check("a busy uninstall removes nothing",
+              fs::exists(v17 / "pi") && fs::exists(shim_path(leased, "pi")));
+        launching.release(v17, std::chrono::seconds(0));
+        check("once released, uninstall removes everything",
+              uninstall_agent(pi, leased, uninstall_warnings, &launching) &&
+                  !fs::exists(leased.agent_dir("pi")) && !fs::exists(shim_path(leased, "pi")));
+        check("uninstalling nothing reports nothing removed",
+              !uninstall_agent(pi, leased, uninstall_warnings, &launching));
     }
 #ifndef _WIN32
     if (geteuid() != 0) {

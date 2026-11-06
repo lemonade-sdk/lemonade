@@ -417,7 +417,7 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     for (const fs::path& entry : list_dir(root)) {
         const std::string name = entry.filename().string();
         if (name.rfind(".removing-", 0) == 0) {
-            remove_quietly(entry, nullptr);
+            retired.push_back(entry);
             continue;
         }
         if (entry == dir || name[0] == '.' || !fs::is_directory(entry, ec) ||
@@ -443,21 +443,44 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
 
 bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
                      std::vector<std::string>& warnings, VersionLeases* leases) {
-    bool removed = remove_shim(shim_path(paths, agent.binary));
     const fs::path root = paths.agent_dir(agent.id);
     std::error_code ec;
-    std::unique_lock<std::mutex> retiring;
-    if (leases != nullptr) {
-        retiring = std::unique_lock<std::mutex>(leases->mutex());
-    }
-    for (const fs::path& entry : list_dir(root)) {
-        removed = true;
-        if (leases != nullptr && leases->held(entry)) {
-            warnings.push_back(entry.filename().string() +
-                               " is being launched, so it stays; uninstall again later.");
-            continue;
+    std::vector<fs::path> retired;
+    bool removed = false;
+    {
+        std::unique_lock<std::mutex> retiring;
+        if (leases != nullptr) {
+            retiring = std::unique_lock<std::mutex>(leases->mutex());
         }
-        remove_quietly(entry, &warnings);
+        const std::vector<fs::path> entries = list_dir(root);
+        // Half an uninstall would leave pi looking installed, so a launch in
+        // progress makes it wait for the whole thing.
+        for (const fs::path& entry : entries) {
+            if (leases != nullptr && leases->held(entry)) {
+                throw AgentError(409, "agent_busy",
+                                 agent.name + " is being launched; uninstall it again in a minute.");
+            }
+        }
+        removed = remove_shim(shim_path(paths, agent.binary));
+        for (const fs::path& entry : entries) {
+            const std::string name = entry.filename().string();
+            const fs::path aside =
+                name.rfind(".removing-", 0) == 0 ? entry : root / (".removing-" + name);
+            if (aside != entry) {
+                fs::rename(entry, aside, ec);
+            }
+            if (ec) {
+                remove_quietly(entry, &warnings);
+                ec.clear();
+            } else {
+                retired.push_back(aside);
+            }
+            removed = true;
+        }
+    }
+    // Launches only wait for the renames, not for the payloads to be deleted.
+    for (const fs::path& aside : retired) {
+        remove_quietly(aside, &warnings);
     }
     if (fs::exists(root, ec) && fs::is_empty(root, ec)) {
         fs::remove(root, ec);
