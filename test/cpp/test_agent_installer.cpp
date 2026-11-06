@@ -94,10 +94,10 @@ int main() {
     releases["v1.5.0/" + asset] = build_asset(work, "a1", true);
     releases["v1.6.0/" + asset] = build_asset(work, "a2", true);
     releases["v2.0.0/" + asset] = build_asset(work, "a3", false);
+    releases["v1.7.0/" + asset] = build_asset(work, "a6", true);
 #ifndef _WIN32
     releases["v3.0.0/" + asset] = build_asset(work, "a4", true, "../../../../etc/passwd");
     releases["v3.1.0/" + asset] = build_asset(work, "a5", true, "chain");
-    releases["v1.7.0/" + asset] = build_asset(work, "a6", true);
 #endif
 
     std::atomic<int> requests{0};
@@ -236,7 +236,40 @@ int main() {
         check("with a foreign shim the last installed version is kept",
               fs::exists(foreign.agent_dir("pi") / "1.5.0"));
     }
+    {
+        // After a downgrade, a pin that isn't installed yet makes launch use the
+        // newest version, so the install that follows keeps that one too.
+        AgentPaths pinned = paths;
+        pinned.data_root = work / "fallback" / "agents";
+        pinned.bin_dir = work / "fallback" / "bin";
+        write_file(pinned.bin_dir / "pi", "#!/bin/sh\nexec /usr/bin/pi\n");
+        install_agent(pi, pin_for("v1.6.0"), pinned, false, nullptr, no_cancel, loopback);
+        install_agent(pi, pin_for("v1.5.0"), pinned, false, nullptr, no_cancel, loopback);
+        const auto launched = find_active(pi, pinned, "1.7.0");
+        install_agent(pi, pin_for("v1.7.0"), pinned, false, nullptr, no_cancel, loopback);
+        check("the version launch used before the install is kept",
+              launched && launched->version == "1.6.0" &&
+                  fs::exists(pinned.agent_dir("pi") / "1.6.0"));
+    }
 #ifndef _WIN32
+    {
+        // A shim written by another Lemonade build still names what it runs.
+        AgentPaths older = paths;
+        older.data_root = work / "older" / "agents";
+        older.bin_dir = work / "older" / "bin";
+        install_agent(pi, pin_for("v1.5.0"), older, false, nullptr, no_cancel, loopback);
+        const auto v16 =
+            install_agent(pi, pin_for("v1.6.0"), older, false, nullptr, no_cancel, loopback);
+        write_file(older.bin_dir / "pi", "#!/bin/sh\n# " + std::string(kShimMarker) +
+                                             " (agent=pi)\n# an older template\nexec '" +
+                                             v16.installed.binary.string() + "' \"$@\"\n");
+        fs::permissions(older.bin_dir, fs::perms::owner_read | fs::perms::owner_exec);
+        install_agent(pi, pin_for("v1.5.0"), older, false, nullptr, no_cancel, loopback);
+        install_agent(pi, pin_for("v1.7.0"), older, false, nullptr, no_cancel, loopback);
+        fs::permissions(older.bin_dir, fs::perms::owner_all);
+        check("a shim from another build still protects the version it runs",
+              geteuid() == 0 || fs::exists(older.agent_dir("pi") / "1.6.0"));
+    }
     if (geteuid() != 0) {
         // The shim can't be rewritten, so it keeps running 1.6.0: that payload must stay.
         AgentPaths stuck = paths;
