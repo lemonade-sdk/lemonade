@@ -145,6 +145,7 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     InstallOutcome outcome;
     const fs::path root = paths.agent_dir(agent.id);
     const fs::path dir = root / pin.version;
+    const auto previous = find_installed(agent, paths);
     std::error_code ec;
 
     if (force || !manifest_matches(dir, agent, pin)) {
@@ -276,10 +277,12 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     }
     outcome.shim = shim_state(shim);
 
-    // Older versions may still be running; on Windows their files stay
-    // locked, so removal is best effort and retried on the next install.
+    // A pi started from the version just replaced may still read its files,
+    // so that one stays until the next install. Older ones go, best effort:
+    // Windows keeps a running version's files locked, and the next install retries.
     for (const fs::path& entry : list_dir(root)) {
-        if (entry != dir && entry.filename() != ".download" && fs::is_directory(entry, ec)) {
+        if (entry != dir && (!previous || entry != previous->dir) &&
+            entry.filename() != ".download" && fs::is_directory(entry, ec)) {
             remove_quietly(entry, nullptr);
         }
     }

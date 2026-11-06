@@ -178,11 +178,15 @@ int main() {
                                         loopback);
     check("upgrade moves the shim", read_file(shim).find(upgraded.installed.binary.string()) !=
                                         std::string::npos);
-    check("upgrade removes the old version", !fs::exists(paths.agent_dir("pi") / "1.5.0"));
+    check("upgrade keeps the version it replaced, which a running pi may still use",
+          fs::exists(paths.agent_dir("pi") / "1.5.0"));
+    check("find_installed picks the newest version", find_installed(pi, paths)->version == "1.6.0");
 
     const auto forced = install_agent(pi, pin_for("v1.6.0"), paths, true, nullptr, no_cancel,
                                       loopback);
     check("force reinstalls", forced.downloaded && fs::is_regular_file(forced.installed.binary));
+    check("the next install removes the version before the last",
+          !fs::exists(paths.agent_dir("pi") / "1.5.0"));
 
     std::vector<std::string> warnings;
     check("uninstall removes payload and shim",

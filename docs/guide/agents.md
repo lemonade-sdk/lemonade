@@ -28,7 +28,7 @@ Pi's own update command is redirected to Lemonade (`PI_SELF_UPDATE_COMMAND`), so
 | Command | What it does |
 |---|---|
 | `lemonade agents` | List agents: the pinned version, the installed one, which `pi` is in use and where it is |
-| `lemonade agents install pi [--force]` | Install or move to the pinned version; `--force` downloads it again |
+| `lemonade agents install pi [--force]` | Install or move to the pinned version; `--force` downloads it again. The version it replaces stays until the next install, so a Pi already running from it keeps working |
 | `lemonade agents uninstall pi` | Remove the installed versions and the shim. Pi's settings in `~/.pi/agent` stay, including the Lemonade provider |
 | `lemonade agents configure pi [--mcp\|--no-mcp]` | Point Pi at this server again: rewrite the Lemonade provider with every chat model, and add or remove Lemonade's MCP server |
 | `lemonade agents enable` / `disable` | Start the agent host with your session (systemd `--user` on Linux, a LaunchAgent on macOS) |
