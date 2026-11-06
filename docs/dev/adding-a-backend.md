@@ -84,6 +84,11 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {                           // OS / device families ({} = no local gating)
         {"cpu", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"cpu", {"x86_64"}}}},
     },
+    /*about*/ {                             // one entry per backend named in `support`
+        {"cpu", {"One or two sentences on what this backend is for.",
+                 /*author*/ "upstream-org", /*publisher*/ "lemonade-sdk",
+                 /*license*/ "MIT", /*project_url*/ "https://github.com/upstream-org/my-engine"}},
+    },
     /*supported_modes*/ {"chat"},           // every mode you serve, most-default first
     /*required_checkpoints*/ {"main"},      // unconditional files; conditional ones checked in load()
     /*default_capabilities*/ {},            // non-mode labels stamped on a bare model
@@ -95,6 +100,8 @@ inline const BackendDescriptor descriptor = {
 `SlotPolicy` controls accelerator sharing: `Standard` (counts toward LRU slots), `ExclusiveNpu` (evicts all NPU servers first), `CoexistByType` (one per model type), `ExclusiveHost` (shares the machine with no other local model: loading it evicts every other local model, and loading another local model evicts it), `Unmetered` (never counted, never auto-evicted — cloud).
 
 Each `support` row names its backend's tier (`BackendTier::Core`, `BackendTier::Experimental` or `BackendTier::Guest`) and format (`BackendFormat::Native`, `BackendFormat::Python` or `BackendFormat::Container`) right after the backend name, so a row without them does not compile. Rows for the same backend on different OSes can carry different labels; `/system-info` reports the labels of the row for the current OS. Tiers are defined in [Support Tier](#support-tier) and formats in [Backend Tiers and Formats](../api/lemonade.md#backend-tiers-and-formats).
+
+`about` tells users what each backend is and where it comes from; `lemonade backends info` and the app's backend cards show it. The `author` wrote the engine or fork, and the `publisher` builds the artifact Lemonade installs. They differ when, for example, lemonade-sdk builds ggml-org's llama.cpp for ROCm, or Donato Capitella (kyuz0) packages a community fork as a container image. Leave `license` empty only when the upstream project declares none. For a backend that runs a binary Lemonade did not install, such as `llamacpp:system`, describe the upstream project and set `publisher` to who supplies the binary (for example, "Your system"). `BackendContractsTest` fails when a backend in `support` has no `about` entry, or an entry is missing its description, author, publisher or an `https://` project URL.
 
 `supported_modes` is the backend's contract with the model registry. A model whose labels name no mode is stamped with `supported_modes[0]`; a model whose labels name a mode absent from the list is refused by `POST /pull` with a 400 rather than failing later at inference time. `BackendModeContractTest` fails the build if this list disagrees with the capability interfaces your server class implements.
 

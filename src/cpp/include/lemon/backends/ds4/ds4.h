@@ -80,6 +80,10 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"rocm", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "Prebuilt ds4 for AMD Strix Halo"},
     },
+    /*about*/ {
+        {"rocm", {"DwarfStar, a self-contained DeepSeek V4 engine that streams weights from SSD when they do not fit in memory.",
+                  "Salvatore Sanfilippo (antirez)", "Donato Capitella (kyuz0)", "MIT", "https://github.com/antirez/ds4"}},
+    },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
