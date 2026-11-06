@@ -14,6 +14,8 @@ int main() {
     };
 
     RuntimeConfig cfg(json{{"global_timeout", 3600}, {"port", 13305}});
+    check(cfg.inference_inactivity_timeout_seconds() == 1800,
+          "default inference idle timeout remains active");
     check(!cfg.snapshot().contains("global_timeout"),
           "obsolete persisted key is discarded on load");
     check(cfg.snapshot().value("port", 0) == 13305,
@@ -55,5 +57,30 @@ int main() {
         invalid_persisted_rejected = true;
     }
     check(invalid_persisted_rejected, "invalid persisted startup timeout rejected");
+
+    cfg.set(json{{"inference_inactivity_timeout_seconds", 3600}});
+    check(cfg.inference_inactivity_timeout_seconds() == 3600,
+          "inference idle limit can be extended");
+    cfg.set(json{{"inference_inactivity_timeout_seconds", 0}});
+    check(cfg.inference_inactivity_timeout_seconds() == 0,
+          "inference idle guard can be disabled explicitly");
+    for (const json& bad : {json(-1), json(86401), json("3600"), json(1.5)}) {
+        bool invalid_rejected = false;
+        try {
+            cfg.set(json{{"inference_inactivity_timeout_seconds", bad}});
+        } catch (const std::invalid_argument&) {
+            invalid_rejected = true;
+        }
+        check(invalid_rejected, "invalid inference idle timeout rejected");
+    }
+    check(cfg.inference_inactivity_timeout_seconds() == 0,
+          "rejected inference config writes preserve the previous value");
+    bool invalid_idle_persisted_rejected = false;
+    try {
+        RuntimeConfig invalid(json{{"inference_inactivity_timeout_seconds", -1}});
+    } catch (const std::invalid_argument&) {
+        invalid_idle_persisted_rejected = true;
+    }
+    check(invalid_idle_persisted_rejected, "invalid persisted inference idle timeout rejected");
     return failed == 0 ? 0 : 1;
 }
