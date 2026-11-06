@@ -11,8 +11,38 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 namespace protocol = agents::protocol;
 
-const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}}, true, Support::Available,
-                   "The agent, e.g. `pi`."};
+const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}, {"enum", {"pi"}}}, true,
+                   Support::Available, "The agent. Lemonade manages `pi`."};
+const RouteArg kStream{"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                       "Stream progress as server-sent events. Defaults to `true`."};
+const RouteArg kForce{"force", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                      "Download and install again even if the pinned version is installed."};
+const RouteArg kMcp{"mcp", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                    "`true` adds Lemonade's MCP server to the agent, `false` removes it; unset "
+                    "refreshes an existing entry."};
+const RouteArg kAgentDir{"agent_dir", ArgIn::JsonBody, {{"type", "string"}}, false,
+                         Support::Available,
+                         "The agent's configuration directory in the client's environment, such "
+                         "as pi's `PI_CODING_AGENT_DIR`. Defaults to the host's."};
+const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                      "The model the agent starts with."};
+const RouteArg kCwd{"cwd", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
+                    "Absolute working directory for the agent."};
+const RouteArg kArgs{"args", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}},
+                     false, Support::Available, "Extra arguments for the agent."};
+const RouteArg kClientHasApiKey{"client_has_api_key", ArgIn::JsonBody, {{"type", "boolean"}}, false,
+                                Support::Available,
+                                "Whether the client gives the agent `LEMONADE_API_KEY`, so its "
+                                "config references the key instead of a placeholder."};
+const RouteArg kCodemode{"codemode", ArgIn::JsonBody, {{"type", "boolean"}}, false,
+                         Support::Available, "Start pi with its `codemode` tool."};
+const RouteArg kRecipeOptions{"recipe_options", ArgIn::JsonBody, {{"type", "object"}}, false,
+                              Support::Available,
+                              "Load options for the model, such as `ctx_size`, which also sets "
+                              "the agent's context window."};
+const RouteArg kSearchPath{"search_path", ArgIn::JsonBody, {{"type", "string"}}, false,
+                           Support::Available,
+                           "The client's `PATH`, searched for an agent Lemonade didn't install."};
 
 const RouteError kTokenMissing{400, "agent_token_missing",
                                "the request has no `X-Lemonade-Agent-Token` header"};
@@ -25,6 +55,16 @@ const RouteError kHostTimeout{504, "agent_host_timeout", "the agent host didn't 
 const RouteError kUnknownAgent{404, "unknown_agent", "`id` names no agent Lemonade manages"};
 const RouteError kNotInstalled{409, "agent_not_installed",
                                "the agent is neither installed by Lemonade nor on `PATH`"};
+const RouteError kOutdated{409, "agent_outdated", "the agent is too old for `codemode`"};
+const RouteError kUnsupportedPlatform{422, "unsupported_platform",
+                                      "the agent has no release for this OS and CPU"};
+const RouteError kDownloadFailed{502, "download_failed", "the release couldn't be downloaded"};
+const RouteError kChecksumMismatch{502, "checksum_mismatch",
+                                   "the download doesn't match its pinned checksum"};
+const RouteError kInvalidCwd{400, "invalid_cwd", "`cwd` isn't an absolute directory"};
+const RouteError kModelLoadFailed{424, "model_load_failed", "the model failed to load"};
+const RouteError kConfigWriteFailed{500, "config_write_failed",
+                                    "the agent's configuration couldn't be written"};
 
 constexpr auto kReplyTimeout = std::chrono::seconds(60);
 constexpr auto kTick = std::chrono::seconds(1);
@@ -48,7 +88,6 @@ protected:
         s.id = "lemonade.agents_" + name;
         s.experimental = true;
         s.notes = {kTokenNote};
-        s.errors = {kTokenMissing, kHostUnavailable, kHostBusy, kHostTimeout, kUnknownAgent};
         return s;
     }
 
@@ -155,6 +194,39 @@ ordered_json object_schema(const char* properties) {
     return schema;
 }
 
+const char* kWarningsField = R"("warnings": {"type": "array", "items": {"type": "string"},
+    "description": "Problems that didn't stop the request, such as a foreign shim."})";
+
+const char* kErrorFields = R"(
+    "error": {"type": "string", "description": "Error event: what went wrong."},
+    "code": {"type": "string", "description": "Error event: the error's code, as for a non-streamed error."},
+    "status": {"type": "integer", "description": "Error event: the HTTP status a non-streamed request would have had."})";
+
+ordered_json install_result_schema(bool stream) {
+    std::string fields = std::string(R"(
+        "agent": {"type": "string", "description": "The agent installed."},
+        "version": {"type": "string", "description": "The installed version, which is the pinned one."},
+        "binary": {"type": "string", "description": "Absolute path of the installed agent."},
+        "downloaded": {"type": "boolean", "description": "`false` when the pinned version was already installed."},
+        "shim": {"type": "object", "description": "The shim Lemonade writes, with its `path` and `state`: `ours`, `foreign` (someone else's file, left alone) or `absent`."},
+        )") + kWarningsField;
+    if (stream) {
+        fields += std::string(R"(,
+        "message": {"type": "string", "description": "Status and warning events: a line for the user."},
+        "file": {"type": "string", "description": "Progress events: the release asset being downloaded."},
+        "file_index": {"type": "integer", "description": "Progress events: always `1`."},
+        "total_files": {"type": "integer", "description": "Progress events: always `1`."},
+        "bytes_downloaded": {"type": "integer", "description": "Progress events: bytes downloaded so far."},
+        "bytes_total": {"type": "integer", "description": "Progress events: the asset's size."},)") +
+                  kErrorFields;
+    }
+    ordered_json schema = object_schema(("{" + fields + "}").c_str());
+    schema["description"] = stream ? "`status`, `progress` and `warning` events, then `complete` "
+                                     "with the result or `error`."
+                                   : "The install's result.";
+    return schema;
+}
+
 class AgentsListRoute : public AgentRelayRoute {
 public:
     using AgentRelayRoute::AgentRelayRoute;
@@ -168,10 +240,27 @@ public:
             "Reports, for each agent Lemonade can manage, the pinned version, the installed "
             "version, any copy found on `PATH`, which of them is in use and the state of the "
             "shim Lemonade writes.";
-        s.responses = {{ResponseFormat::Json, object_schema(R"({
-            "agents": {"type": "array", "items": {"type": "object"}},
-            "host": {"type": "object", "description": "The host's version, platform and paths."}
-        })")}};
+        ordered_json schema = object_schema(R"({
+            "agents": {"type": "array", "description": "One entry per agent Lemonade manages.",
+                "items": {"type": "object", "properties": {
+                    "id": {"type": "string", "description": "The agent's id, as routes take it."},
+                    "name": {"type": "string", "description": "The agent's display name."},
+                    "pinned": {"type": ["string", "null"], "description": "The version this Lemonade installs."},
+                    "sandbox": {"type": "string", "description": "Always `off`; reserved for running agents in a sandbox."},
+                    "installed": {"type": ["object", "null"], "description": "The installed `version` and its `binary`, or `null`."},
+                    "external": {"type": ["object", "null"], "description": "The `binary` of a copy Lemonade didn't install, found on the host's `PATH`, or `null`."},
+                    "active": {"type": "string", "enum": ["managed", "external", "none"], "description": "Which copy launch uses."},
+                    "shim": {"type": "object", "description": "The shim's `path`, its `state` (`ours`, `foreign` or `absent`), whether its directory is `on_path`, and the first match on `PATH` (`resolves_to`)."},
+                    "pin_error": {"type": "string", "description": "Why there's no pinned version for this platform, when there isn't."}
+                }}},
+            "host": {"type": "object", "description": "The host's `version`, `platform`, shim directory (`bin_dir`) and install directory (`data_dir`)."}
+        })");
+        schema["description"] = "The agents and the host serving them.";
+        s.responses = {{ResponseFormat::Json, schema}};
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = ordered_json::object();
+        s.examples = {example};
         s.errors = {kTokenMissing, kHostUnavailable, kHostBusy, kHostTimeout};
         return s;
     }
@@ -192,22 +281,28 @@ public:
             "Installing the version that is already installed does nothing unless `force` is "
             "set.";
         s.request_format = RequestFormat::OptionalJson;
-        s.args = {kId,
-                  {"stream", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                   "Stream progress as server-sent events. Default `true`."},
-                  {"force", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                   "Download and install again even if the version is installed."}};
-        s.responses = {{ResponseFormat::EventStream, {{"type", "object"}}},
-                       {ResponseFormat::Json, {{"type", "object"}}}};
-        s.errors.push_back({422, "unsupported_platform", "the agent has no release for this OS"});
-        s.errors.push_back({502, "download_failed", "the release couldn't be downloaded"});
-        s.errors.push_back({502, "checksum_mismatch", "the release doesn't match its pin"});
+        s.args = {kId, kStream, kForce, kAgentDir};
+        s.responses = {{ResponseFormat::EventStream, install_result_schema(true)},
+                       {ResponseFormat::Json, install_result_schema(false)}};
+        RouteExample streaming;
+        streaming.name = "streaming";
+        streaming.format = ResponseFormat::EventStream;
+        streaming.args = {{"id", "pi"}};
+        RouteExample installed;
+        installed.name = "installed";
+        installed.description = "Installing the pinned version again does nothing.";
+        installed.format = ResponseFormat::Json;
+        installed.args = {{"id", "pi"}, {"stream", false}};
+        installed.setup = {{"lemonade.agents_install", "streaming"}};
+        s.examples = {streaming, installed};
+        s.errors = {kBodyNotJson, kArgInvalid, kTokenMissing, kHostUnavailable, kHostBusy,
+                    kUnknownAgent, kUnsupportedPlatform, kDownloadFailed, kChecksumMismatch};
         return s;
     }
 
 protected:
     bool streaming(const RouteRequest& req) const override {
-        return !req.body.is_object() || req.body.value("stream", true);
+        return req.value(kStream, true);
     }
     bool bounded() const override { return false; }
 };
@@ -225,10 +320,17 @@ public:
             "Removes the agent's installed versions and Lemonade's shim. The agent's own "
             "settings, such as `~/.pi/agent`, are kept.";
         s.args = {kId};
-        s.responses = {{ResponseFormat::Json, object_schema(R"({
-            "removed": {"type": "boolean"},
-            "warnings": {"type": "array", "items": {"type": "string"}}
-        })")}};
+        s.errors = {kTokenMissing, kHostUnavailable, kHostBusy, kHostTimeout, kUnknownAgent};
+        ordered_json schema = object_schema((std::string(R"({
+            "removed": {"type": "boolean", "description": "`false` when nothing was installed."},
+            )") + kWarningsField + "}").c_str());
+        schema["description"] = "Whether anything was removed.";
+        s.responses = {{ResponseFormat::Json, schema}};
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = {{"id", "pi"}};
+        example.setup = {{"lemonade.agents_install", "streaming"}};
+        s.examples = {example};
         return s;
     }
 };
@@ -246,16 +348,16 @@ public:
             "Writes the Lemonade provider with every chat model into the agent's own "
             "configuration, and adds, refreshes or removes Lemonade's MCP server.";
         s.request_format = RequestFormat::OptionalJson;
-        s.args = {kId,
-                  {"mcp", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                   "`true` adds Lemonade's MCP server, `false` removes it; unset refreshes an "
-                   "existing entry."},
-                  {"agent_dir", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-                   "The agent's configuration directory, when the client's differs from the "
-                   "default."}};
-        s.responses = {{ResponseFormat::Json, object_schema(R"({
-            "warnings": {"type": "array", "items": {"type": "string"}}
-        })")}};
+        s.args = {kId, kMcp, kAgentDir};
+        s.errors = {kBodyNotJson, kArgInvalid, kTokenMissing, kHostUnavailable, kHostBusy,
+                    kHostTimeout, kUnknownAgent, kConfigWriteFailed};
+        ordered_json schema = object_schema((std::string("{") + kWarningsField + "}").c_str());
+        schema["description"] = "Problems that didn't stop the configuration.";
+        s.responses = {{ResponseFormat::Json, schema}};
+        RouteExample example;
+        example.format = ResponseFormat::Json;
+        example.args = {{"id", "pi"}, {"mcp", true}};
+        s.examples = {example};
         return s;
     }
 };
@@ -274,31 +376,34 @@ public:
             "host runs nothing itself. Status and warning events come first; the final "
             "`complete` event carries `binary`, `args`, `cwd`, `env` and `model_loaded`.";
         s.request_format = RequestFormat::Json;
-        s.args = {kId,
-                  {"model", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-                   "The model the agent starts with."},
-                  {"cwd", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-                   "Absolute working directory for the agent."},
-                  {"args", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}},
-                   false, Support::Available, "Extra arguments passed to the agent."},
-                  {"client_has_api_key", ArgIn::JsonBody, {{"type", "boolean"}}, false,
-                   Support::Available,
-                   "Whether the client exports `LEMONADE_API_KEY` to the agent."},
-                  {"mcp", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                   "As for configure."},
-                  {"codemode", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                   "Start pi with its codemode tool."},
-                  {"recipe_options", ArgIn::JsonBody, {{"type", "object"}}, false,
-                   Support::Available, "Load options, such as `ctx_size`, for the model."},
-                  {"agent_dir", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-                   "The agent's configuration directory in the client's environment."},
-                  {"search_path", ArgIn::JsonBody, {{"type", "string"}}, false,
-                   Support::Available,
-                   "The client's `PATH`, searched for an agent Lemonade didn't install."}};
-        s.responses = {{ResponseFormat::EventStream, {{"type", "object"}}}};
-        s.errors.push_back(kNotInstalled);
-        s.errors.push_back({400, "invalid_cwd", "`cwd` isn't an absolute directory"});
-        s.errors.push_back({424, "model_load_failed", "the model failed to load"});
+        s.args = {kId,   kModel,    kCwd,          kArgs,     kClientHasApiKey,
+                  kMcp,  kCodemode, kRecipeOptions, kAgentDir, kSearchPath};
+        ordered_json schema = object_schema((std::string(R"({
+            "message": {"type": "string", "description": "Status and warning events: a line for the user."},
+            "binary": {"type": "string", "description": "Complete event: absolute path of the agent to run."},
+            "args": {"type": "array", "items": {"type": "string"}, "description": "Complete event: its arguments."},
+            "cwd": {"type": "string", "description": "Complete event: the directory to run it in, as requested."},
+            "env": {"type": "object", "description": "Complete event: variables to add to its environment. They never include an API key; the client adds its own `LEMONADE_API_KEY`."},
+            "model_loaded": {"type": "boolean", "description": "Complete event: whether preparing the launch loaded the model, so the client needn't."},
+            "managed": {"type": "boolean", "description": "Complete event: whether `binary` is the copy Lemonade installed."},
+            )") + kErrorFields + "}").c_str());
+        schema["description"] = "`status` and `warning` events, then `complete` with the command "
+                                "to run, or `error`.";
+        s.responses = {{ResponseFormat::EventStream, schema}};
+        RouteExample example;
+        example.format = ResponseFormat::EventStream;
+        example.args = ordered_json::parse(R"({
+            "id": "pi",
+            "model": "Qwen3-0.6B-GGUF",
+            "cwd": "/tmp",
+            "args": ["--thinking", "off"],
+            "recipe_options": {"ctx_size": 4096}
+        })");
+        example.setup = {{"lemonade.agents_install", "streaming"}};
+        s.examples = {example};
+        s.errors = {kBodyNotJson,     kArgMissing,      kArgInvalid,    kTokenMissing,
+                    kHostUnavailable, kHostBusy,        kUnknownAgent,  kNotInstalled,
+                    kOutdated,        kInvalidCwd,      kModelLoadFailed, kConfigWriteFailed};
         return s;
     }
 

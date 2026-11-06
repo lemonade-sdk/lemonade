@@ -944,6 +944,174 @@
       "bytes": 4453452
     }
   },
+  "407b64100a24c0297ed4e8e0e81b6af3f12d9f43e0d8b858839cfaf13e191f1c": {
+    "route": "lemonade.agents_configure",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/agents/pi/configure",
+      "query": {},
+      "json": {
+        "mcp": true
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "warnings": []
+      }
+    }
+  },
+  "782859c1a236c312edfc063c47f29d66776f2f9c4eec6769728a628e45a0f9cb": {
+    "route": "lemonade.agents_install",
+    "format": "EventStream",
+    "request": {
+      "method": "POST",
+      "path": "/v1/agents/pi/install",
+      "query": {},
+      "json": null,
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "head": [
+        "event: status\ndata: {\"message\":\"Installing Pi 1.5.0\"}",
+        "event: progress\ndata: {\"bytes_downloaded\":0,\"bytes_total\":58876253,\"file\":\"pi-linux-x64.tar.gz\",\"file_index\":1,\"total_files\":1}",
+        "event: progress\ndata: {\"bytes_downloaded\":637139,\"bytes_total\":58876253,\"file\":\"pi-linux-x64.tar.gz\",\"file_index\":1,\"total_files\":1}"
+      ],
+      "tail": [
+        "event: progress\ndata: {\"bytes_downloaded\":58876253,\"bytes_total\":58876253,\"file\":\"pi-linux-x64.tar.gz\",\"file_index\":1,\"total_files\":1}",
+        "event: complete\ndata: {\"agent\":\"pi\",\"binary\":\"~/.local/share/lemonade/agents/pi/1.5.0/pi\",\"downloaded\":true,\"shim\":{\"path\":\"~/.local/bin/pi\",\"state\":\"ours\"},\"version\":\"1.5.0\",\"warnings\":[]}"
+      ],
+      "count": 56
+    }
+  },
+  "dd0844f58d35c9e84093b0d109a4392df11f86582b5667215210dae1f024cc68": {
+    "route": "lemonade.agents_install",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/agents/pi/install",
+      "query": {},
+      "json": {
+        "stream": false
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "agent": "pi",
+        "binary": "~/.local/share/lemonade/agents/pi/1.5.0/pi",
+        "downloaded": false,
+        "shim": {
+          "path": "~/.local/bin/pi",
+          "state": "ours"
+        },
+        "version": "1.5.0",
+        "warnings": []
+      }
+    }
+  },
+  "2f66de69aa8476021bd373e5893957f66f243655ff992cf821407e4ab8023524": {
+    "route": "lemonade.agents_launch",
+    "format": "EventStream",
+    "request": {
+      "method": "POST",
+      "path": "/v1/agents/pi/launch",
+      "query": {},
+      "json": {
+        "model": "Qwen3-0.6B-GGUF",
+        "cwd": "/tmp",
+        "args": [
+          "--thinking",
+          "off"
+        ],
+        "recipe_options": {
+          "ctx_size": 4096
+        }
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "head": [
+        "event: complete\ndata: {\"args\":[\"--provider\",\"Lemonade\",\"--model\",\"Qwen3-0.6B-GGUF\",\"--thinking\",\"off\"],\"binary\":\"~/.local/share/lemonade/agents/pi/1.5.0/pi\",\"cwd\":\"/tmp\",\"env\":{\"PI_CODING_AGENT_DIR\":\"~/.pi/agent\",\"PI_SELF_UPDATE_COMMAND\":\"lemonade agents install pi\",\"PI_SKIP_VERSION_CHECK\":\"1\"},\"managed\":true,\"model_loaded\":false}"
+      ],
+      "tail": [],
+      "count": 1
+    }
+  },
+  "93396e45a82b2f551b33f0ebbde52f1a7dab38d0ed2b1d86cfd42c8565456dfa": {
+    "route": "lemonade.agents_list",
+    "format": "Json",
+    "request": {
+      "method": "GET",
+      "path": "/v1/agents",
+      "query": {},
+      "json": null,
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "agents": [
+          {
+            "active": "none",
+            "external": null,
+            "id": "pi",
+            "installed": null,
+            "name": "Pi",
+            "pinned": "1.5.0",
+            "sandbox": "off",
+            "shim": {
+              "on_path": false,
+              "path": "~/.local/bin/pi",
+              "resolves_to": null,
+              "state": "absent"
+            }
+          }
+        ],
+        "host": {
+          "bin_dir": "~/.local/bin",
+          "data_dir": "~/.local/share/lemonade/agents",
+          "platform": "linux-x64",
+          "version": "2026.47.0~1788.a6ed024d"
+        }
+      }
+    }
+  },
+  "8878021041f77816212bf31714534e1d77bc66cb9387c65b167e8e026cb7e846": {
+    "route": "lemonade.agents_uninstall",
+    "format": "Json",
+    "request": {
+      "method": "DELETE",
+      "path": "/v1/agents/pi",
+      "query": {},
+      "json": null,
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "removed": true,
+        "warnings": []
+      }
+    }
+  },
   "ef19a068886c2ac92937213d9d7bf0ff4a2695c112d5cf81d78e9217d1bc4784": {
     "route": "lemonade.audio_generations",
     "format": "Binary",

@@ -32,7 +32,9 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -578,6 +580,21 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
+            "A backend install's force skips the hardware check; an agent install's "
+            "downloads the pinned version again",
+            [
+                "routes/lemonade/agents/agents.cpp:kForce",
+                "routes/lemonade/backends/install.cpp:kForce",
+            ],
+        ),
+        (
+            "An agent is configured for the model, which launch doesn't load on first use",
+            [
+                "routes/lemonade/agents/agents.cpp:kModel",
+                "routes/shared_args.cpp:model_loading::kModel",
+            ],
+        ),
+        (
             "Text to continue or an image to generate, versus text to route",
             [
                 "routes/ollama/generate.cpp:kPrompt",
@@ -586,8 +603,9 @@ DISTINCT_ARGUMENTS = {
         ),
         (
             "Speech streams audio; server-sent events default to false; Ollama's NDJSON "
-            "defaults to true",
+            "and an agent install's progress default to true",
             [
+                "routes/lemonade/agents/agents.cpp:kStream",
                 "routes/openai/audio/audio_speech.cpp:kStream",
                 "routes/shared_args.cpp:common::kStream",
                 "routes/shared_args.cpp:ollama::kStream",
@@ -922,6 +940,72 @@ def auth_headers() -> dict:
     return {"Authorization": f"Bearer {key}"} if key else {}
 
 
+class AgentHost:
+    """The lemonade-agent-host built next to lemond, serving it from a throwaway home,
+    for the /v1/agents examples."""
+
+    def __init__(self, lemond: Lemond):
+        name = "lemonade-agent-host" + (".exe" if os.name == "nt" else "")
+        binary = lemond.binary.parent / name
+        if not binary.exists():
+            raise GenerationError(f"the /v1/agents examples need {binary}")
+        self._home = tempfile.TemporaryDirectory(prefix="agent-host-docs-")
+        home = Path(self._home.name)
+        self.home = str(home)
+        env = dict(os.environ)
+        for name in [
+            "PI_CODING_AGENT_DIR",
+            "XDG_DATA_HOME",
+            "XDG_STATE_HOME",
+            "XDG_BIN_HOME",
+        ]:
+            env.pop(name, None)
+        env.update(
+            HOME=str(home),
+            USERPROFILE=str(home),
+            LOCALAPPDATA=str(home / "AppData" / "Local"),
+            # No pi of the generating machine's shows up in the examples.
+            PATH=(
+                os.pathsep.join(["/usr/bin", "/bin"])
+                if os.name != "nt"
+                else env["PATH"]
+            ),
+        )
+        self._proc = subprocess.Popen(
+            [str(binary), "--lemond", f"http://127.0.0.1:{lemond.port}"],
+            env=env,
+            cwd=home,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if os.name == "nt":
+            token_file = (
+                home / "AppData" / "Local" / "lemonade" / "agent-host" / "token"
+            )
+        elif sys.platform == "darwin":
+            token_file = home / "Library/Application Support/lemonade/agent-host/token"
+        else:
+            token_file = home / ".local" / "state" / "lemonade" / "agent-host" / "token"
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if token_file.exists() and len(token_file.read_text().strip()) == 64:
+                self.token = token_file.read_text().strip()
+                time.sleep(1)  # the host connects right after writing the token
+                return
+            time.sleep(0.2)
+        self.close()
+        raise GenerationError("lemonade-agent-host did not start")
+
+    def close(self):
+        if self._proc.poll() is None:
+            self._proc.terminate()
+            try:
+                self._proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+        self._home.cleanup()
+
+
 class ExampleRunner:
     """Runs examples against one lemond, restarting it after an example stops it."""
 
@@ -930,6 +1014,7 @@ class ExampleRunner:
         self.bin_dir = bin_dir
         self.specs = specs
         self.server: Lemond | None = None
+        self.agent_host: AgentHost | None = None
         self.last_body: dict[str, object] = {}
 
     def __enter__(self):
@@ -937,14 +1022,21 @@ class ExampleRunner:
         return self
 
     def __exit__(self, *exc):
+        self.stop_agent_host()
         if self.server:
             self.server.__exit__(None, None, None)
 
     def start(self):
         self.server = Lemond(self.binary, bin_dir=self.bin_dir).__enter__()
 
+    def stop_agent_host(self):
+        if self.agent_host:
+            self.agent_host.close()
+            self.agent_host = None
+
     def ensure_running(self):
         if self.server._proc.poll() is not None:
+            self.stop_agent_host()
             self.server.__exit__(None, None, None)
             self.start()
 
@@ -990,13 +1082,17 @@ class ExampleRunner:
                 request["json"][name] = value
         return request
 
-    def send(self, request: dict, response_format: str) -> dict:
+    def send(self, request: dict, response_format: str, route_id: str = "") -> dict:
         url = f"http://127.0.0.1:{self.server.port}{request['path']}"
         if request["query"]:
             url += "?" + urllib.parse.urlencode(
                 {k: json_scalar(v) for k, v in request["query"].items()}
             )
         headers = auth_headers()
+        if route_id.startswith("lemonade.agents_"):
+            if self.agent_host is None:
+                self.agent_host = AgentHost(self.server)
+            headers["X-Lemonade-Agent-Token"] = self.agent_host.token
         data = None
         if request["files"] or request["form"]:
             boundary = uuid.uuid4().hex
@@ -1032,7 +1128,12 @@ class ExampleRunner:
             )
             del error
         return record(
-            status, content_type, raw, response_format, self.server._cache.name
+            status,
+            content_type,
+            raw,
+            response_format,
+            self.server._cache.name,
+            self.agent_host.home if self.agent_host else None,
         )
 
     def run(self, route_id: str, name: str) -> dict:
@@ -1056,7 +1157,7 @@ class ExampleRunner:
         self.ensure_running()
         request = self.build_request(spec, values)
         print(f"  running {route_id} {name or response_format} ...", flush=True)
-        recorded = self.send(request, response_format or "Json")
+        recorded = self.send(request, response_format or "Json", route_id)
         if recorded["status"] >= 300:
             raise GenerationError(
                 f"{route_id} {name or response_format} example answered {recorded['status']}: "
@@ -1116,10 +1217,11 @@ def multipart_body(boundary: str, fields: dict, files: dict) -> bytes:
     return b"".join(parts)
 
 
-def redact(text: str, cache_dir: str) -> str:
+def redact(text: str, cache_dir: str, home_like: bool = False) -> str:
     """Recorded responses must not carry the recording machine's home directory, and show
-    the harness's temporary cache directory as the default one."""
-    replacements = [(cache_dir, "~/.cache/lemonade")]
+    the harness's temporary cache directory as the default one. A home_like directory,
+    such as the agent host's throwaway home, is shown as ~."""
+    replacements = [(cache_dir, "~" if home_like else "~/.cache/lemonade")]
     home = str(Path.home())
     if home and home != "/":
         replacements.append((home, "~"))
@@ -1176,8 +1278,15 @@ def truncate(items: list) -> dict:
 
 
 def record(
-    status: int, content_type: str, raw: bytes, response_format: str, cache_dir: str
+    status: int,
+    content_type: str,
+    raw: bytes,
+    response_format: str,
+    cache_dir: str,
+    agent_home: str | None = None,
 ) -> dict:
+    if agent_home:
+        raw = redact(raw.decode("utf-8"), agent_home, home_like=True).encode("utf-8")
     recorded = {"status": status, "content_type": content_type}
     if response_format == "Json":
         recorded["body"] = elide(json.loads(redact(raw.decode("utf-8"), cache_dir)))
