@@ -50,6 +50,14 @@ struct WelcomeOrderTransport : FakeTransport {
     }
 };
 
+// A peer that never answers the close handshake.
+struct SlowCloseTransport : FakeTransport {
+    void close(uint16_t code, const std::string& reason) override {
+        std::this_thread::sleep_for(std::chrono::milliseconds(800));
+        FakeTransport::close(code, reason);
+    }
+};
+
 std::string token_of(char c) {
     return std::string(64, c);
 }
@@ -140,6 +148,15 @@ int main() {
     auto t5 = std::make_shared<FakeTransport>();
     check("link cap closes with 4429", registry.attach(hello(token_of('e')), t5) == nullptr &&
                                            t5->close_code == protocol::kCloseTooManyHosts);
+    auto slow = std::make_shared<SlowCloseTransport>();
+    std::thread rejecting([&] { registry.attach(hello(token_of('7')), slow); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    const auto asked = std::chrono::steady_clock::now();
+    registry.link_count();
+    check("rejecting a host doesn't hold the registry while it closes",
+          std::chrono::steady_clock::now() - asked < std::chrono::milliseconds(300));
+    rejecting.join();
+
     auto t6 = std::make_shared<FakeTransport>();
     json old = hello(token_of('f'));
     old["protocol"] = 2;

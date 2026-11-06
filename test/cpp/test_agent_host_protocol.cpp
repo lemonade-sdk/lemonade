@@ -36,7 +36,9 @@ int main() {
               protocol::loopback_host("localhost") == "127.0.0.1");
     check("loopback: 127/8 and ::1 are kept",
           protocol::loopback_host("127.0.0.2") == "127.0.0.2" && protocol::loopback_host("::1") == "::1" &&
-              protocol::loopback_host("[::1]") == "[::1]");
+              protocol::loopback_host("[::1]") == "::1");
+    check("loopback URL brackets IPv6", protocol::loopback_url("::1", 13305) == "http://[::1]:13305" &&
+                                            protocol::loopback_url("127.0.0.1", 1) == "http://127.0.0.1:1");
     for (const char* remote : {"127.0.0.1.evil.example", "127.attacker.example", "127.0.0.256",
                                "127.0.0", "1270.0.0.1", "10.0.0.1", "example.com", "127.0.0.1:80",
                                "::2"}) {

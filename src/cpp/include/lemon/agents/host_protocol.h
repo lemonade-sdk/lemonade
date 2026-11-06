@@ -28,7 +28,7 @@ inline std::optional<std::string> loopback_host(const std::string& host) {
         return std::string("127.0.0.1");
     }
     if (host == "::1" || host == "[::1]") {
-        return host;
+        return std::string("::1");
     }
     int octets = 0;
     int first = -1;
@@ -57,6 +57,11 @@ inline std::optional<std::string> loopback_host(const std::string& host) {
         return std::nullopt;
     }
     return host;
+}
+
+inline std::string loopback_url(const std::string& host, int port) {
+    const bool v6 = host.find(':') != std::string::npos;
+    return "http://" + (v6 ? "[" + host + "]" : host) + ":" + std::to_string(port);
 }
 
 inline bool is_token(const std::string& token) {

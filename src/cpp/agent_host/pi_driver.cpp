@@ -151,7 +151,8 @@ json pi_status(HostContext& ctx) {
         entry["pin_error"] = e.what();
     }
 
-    const auto installed = find_installed(pi, ctx.paths);
+    const auto installed = find_active(
+        pi, ctx.paths, entry["pinned"].is_string() ? entry["pinned"].get<std::string>() : "");
     entry["installed"] = installed ? json{{"version", installed->version},
                                           {"binary", lemon::utils::path_to_utf8(installed->binary)}}
                                    : json(nullptr);
@@ -224,7 +225,7 @@ json pi_launch(HostContext& ctx, const json& body, const EventSink& events,
     AgentCommand command;
     command.cwd = cwd;
     bool managed = false;
-    if (const auto installed = find_installed(pi, ctx.paths)) {
+    if (const auto installed = find_active(pi, ctx.paths, pinned)) {
         command.binary = lemon::utils::path_to_utf8(installed->binary);
         managed = true;
     } else {

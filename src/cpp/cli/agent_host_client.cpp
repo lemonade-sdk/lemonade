@@ -137,9 +137,7 @@ std::string ensure_agent_host(const lemonade::LemonadeClient& client,
         return token;
     }
 
-    const std::string bracketed = loopback->find(':') != std::string::npos ? "[" + *loopback + "]"
-                                                                           : *loopback;
-    const std::string url = "http://" + bracketed + ":" + std::to_string(target.port);
+    const std::string url = lemon::agents::protocol::loopback_url(*loopback, target.port);
     // A running host may be reconnecting; one serving another lemond can't help.
     const bool host_running = lemon::agents::FileLock::is_held(paths.host_lock());
     if (host_running) {

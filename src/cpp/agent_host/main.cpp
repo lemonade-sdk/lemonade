@@ -109,8 +109,13 @@ int main(int argc, char** argv) {
     }
     if (lemond.empty()) {
         const std::string port = get_environment_variable_utf8("LEMONADE_PORT");
-        lemond = "http://" + loopback_host(get_environment_variable_utf8("LEMONADE_HOST")) + ":" +
-                 (port.empty() ? "13305" : port);
+        int port_number = 13305;
+        try {
+            port_number = port.empty() ? 13305 : std::stoi(port);
+        } catch (const std::exception&) {
+        }
+        lemond = lemon::agents::protocol::loopback_url(
+            loopback_host(get_environment_variable_utf8("LEMONADE_HOST")), port_number);
     }
     // Phase 1 serves only a lemond on this machine.
     const std::string prefix = "http://";

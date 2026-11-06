@@ -137,6 +137,16 @@ std::optional<InstalledAgent> find_installed(const AgentDescriptor& agent,
     return best;
 }
 
+std::optional<InstalledAgent> find_active(const AgentDescriptor& agent, const AgentPaths& paths,
+                                          const std::string& pinned_version) {
+    if (!pinned_version.empty()) {
+        if (auto pinned = find_installed(agent, paths, pinned_version)) {
+            return pinned;
+        }
+    }
+    return find_installed(agent, paths);
+}
+
 InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
                              const AgentPaths& paths, bool force,
                              const InstallProgress& progress,
@@ -145,7 +155,7 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     InstallOutcome outcome;
     const fs::path root = paths.agent_dir(agent.id);
     const fs::path dir = root / pin.version;
-    const auto previous = find_installed(agent, paths);
+    const auto previous = find_active(agent, paths, pin.version);
     std::error_code ec;
 
     if (force || !manifest_matches(dir, agent, pin)) {

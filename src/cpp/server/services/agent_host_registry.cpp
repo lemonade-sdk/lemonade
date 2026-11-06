@@ -189,13 +189,19 @@ std::shared_ptr<AgentHostRegistry::Link> AgentHostRegistry::attach(
     link->token_hash = protocol::token_hash(token);
     link->transport = std::move(transport);
 
+    // close() can wait seconds for the peer, so it never runs under mutex_.
+    const auto reject = [&link] {
+        link->transport->close(protocol::kCloseTooManyHosts, "too many agent hosts");
+        return nullptr;
+    };
     // welcome must reach the host before any request routed to it can.
+    bool full;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (stopping_ || (links_.count(link->token_hash) == 0 && links_.size() >= kMaxLinks)) {
-            link->transport->close(protocol::kCloseTooManyHosts, "too many agent hosts");
-            return nullptr;
-        }
+        full = stopping_ || (links_.count(link->token_hash) == 0 && links_.size() >= kMaxLinks);
+    }
+    if (full) {
+        return reject();
     }
     link->send(protocol::welcome(auth_required_));
 
@@ -205,11 +211,15 @@ std::shared_ptr<AgentHostRegistry::Link> AgentHostRegistry::attach(
         auto it = links_.find(link->token_hash);
         if (it != links_.end()) {
             replaced = it->second;
-        } else if (stopping_ || links_.size() >= kMaxLinks) {
-            link->transport->close(protocol::kCloseTooManyHosts, "too many agent hosts");
-            return nullptr;
+        } else {
+            full = stopping_ || links_.size() >= kMaxLinks;
         }
-        links_[link->token_hash] = link;
+        if (!full) {
+            links_[link->token_hash] = link;
+        }
+    }
+    if (full) {
+        return reject();
     }
     if (replaced) {
         fail_pending(*replaced, "The agent host reconnected.");

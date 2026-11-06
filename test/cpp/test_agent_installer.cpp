@@ -188,6 +188,14 @@ int main() {
     check("the next install removes the version before the last",
           !fs::exists(paths.agent_dir("pi") / "1.5.0"));
 
+    const auto downgraded = install_agent(pi, pin_for("v1.5.0"), paths, false, nullptr, no_cancel,
+                                          loopback);
+    check("after a downgrade the pinned version is the active one",
+          find_active(pi, paths, "1.5.0")->version == "1.5.0" &&
+              read_file(shim).find(downgraded.installed.binary.string()) != std::string::npos);
+    check("without the pinned version installed, the newest is active",
+          find_active(pi, paths, "9.9.9")->version == "1.6.0");
+
     std::vector<std::string> warnings;
     check("uninstall removes payload and shim",
           uninstall_agent(pi, paths, warnings) && !fs::exists(paths.agent_dir("pi")) &&

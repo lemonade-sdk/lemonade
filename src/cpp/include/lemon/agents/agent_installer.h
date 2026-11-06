@@ -26,6 +26,11 @@ std::optional<InstalledAgent> find_installed(const AgentDescriptor& agent,
                                              const AgentPaths& paths,
                                              const std::string& version = "");
 
+// The install launch uses: the pinned version when it is installed, else the
+// newest. An install keeps the version it replaced, which can be newer.
+std::optional<InstalledAgent> find_active(const AgentDescriptor& agent, const AgentPaths& paths,
+                                          const std::string& pinned_version);
+
 struct InstallOutcome {
     InstalledAgent installed;
     bool downloaded = false;

@@ -71,6 +71,8 @@ int main() {
         "pi", shim_dir.string() + "::relative:" + (dir / "noexec").string() + ":" + other_dir.string());
     check("PATH walk finds every executable in order",
           matches.size() == 2 && matches[0] == shim_dir / "pi" && matches[1] == other_dir / "pi");
+    check("PATH dirs drop a trailing slash",
+          path_dirs(shim_dir.string() + "/:/usr/bin").front() == shim_dir.lexically_normal());
     check("PATH walk results are absolute", !matches.empty() && matches[1].is_absolute());
     check("the first match is ours, the second foreign",
           matches.size() == 2 && is_lemonade_shim(matches[0]) && !is_lemonade_shim(matches[1]));

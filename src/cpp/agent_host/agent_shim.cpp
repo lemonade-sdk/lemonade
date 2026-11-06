@@ -218,7 +218,12 @@ std::vector<fs::path> path_dirs(const std::string& path_value) {
         // An empty entry means the current directory, which is never searched.
         const fs::path base = lemon::utils::path_from_utf8(dir);
         if (!dir.empty() && base.is_absolute()) {
-            dirs.push_back(base.lexically_normal());
+            fs::path normal = base.lexically_normal();
+            // "/a/b/" keeps an empty last element, which "/a/b" doesn't.
+            if (!normal.has_filename() && normal != normal.root_path()) {
+                normal = normal.parent_path();
+            }
+            dirs.push_back(normal);
         }
     }
     return dirs;
