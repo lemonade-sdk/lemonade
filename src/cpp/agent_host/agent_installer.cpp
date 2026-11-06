@@ -18,6 +18,9 @@ namespace lemon::agents {
 namespace {
 
 constexpr const char* kManifest = ".lemonade-install.json";
+// The version the last install committed, which launch may still be running
+// when the shim isn't ours to ask.
+constexpr const char* kLastInstalled = ".last-installed";
 
 fs::path binary_in(const fs::path& dir, const std::string& binary) {
 #ifdef _WIN32
@@ -147,26 +150,32 @@ std::optional<InstalledAgent> find_active(const AgentDescriptor& agent, const Ag
     return find_installed(agent, paths);
 }
 
-// The installed version our shim runs, or the newest when there's no shim of
-// ours to ask.
+std::string rendered_shim(const AgentDescriptor& agent, const fs::path& binary) {
+#ifdef _WIN32
+    return render_cmd_shim(agent.id, binary,
+                           {{"LOCALAPPDATA",
+                             lemon::utils::get_environment_variable_utf8("LOCALAPPDATA")}});
+#else
+    return render_posix_shim(agent.id, binary);
+#endif
+}
+
+// The installed version our shim runs: the one whose shim it is, byte for byte.
 std::optional<InstalledAgent> shim_target(const AgentDescriptor& agent, const AgentPaths& paths) {
     const fs::path shim = shim_path(paths, agent.binary);
-    if (shim_state(shim) == ShimState::Ours) {
-        std::ifstream in(shim, std::ios::binary);
-        std::stringstream content;
-        content << in.rdbuf();
-        const std::string text = content.str();
-        for (const fs::path& entry : list_dir(paths.agent_dir(agent.id))) {
-            const std::string version = entry.filename().string();
-            if (text.find("/" + version + "/") != std::string::npos ||
-                text.find("\\" + version + "\\") != std::string::npos) {
-                if (auto installed = find_installed(agent, paths, version)) {
-                    return installed;
-                }
-            }
+    if (shim_state(shim) != ShimState::Ours) {
+        return std::nullopt;
+    }
+    std::ifstream in(shim, std::ios::binary);
+    std::stringstream content;
+    content << in.rdbuf();
+    for (const fs::path& entry : list_dir(paths.agent_dir(agent.id))) {
+        auto installed = find_installed(agent, paths, entry.filename().string());
+        if (installed && rendered_shim(agent, installed->binary) == content.str()) {
+            return installed;
         }
     }
-    return find_installed(agent, paths);
+    return std::nullopt;
 }
 
 InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
@@ -177,7 +186,17 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     InstallOutcome outcome;
     const fs::path root = paths.agent_dir(agent.id);
     const fs::path dir = root / pin.version;
-    const auto previous = shim_target(agent, paths);
+    // Versions a running pi may still read from: the one the shim runs and the
+    // one the last install committed.
+    const auto previous_shim = shim_target(agent, paths);
+    std::optional<InstalledAgent> previous_install;
+    {
+        std::ifstream in(root / kLastInstalled);
+        std::string version;
+        std::getline(in, version);
+        previous_install = version.empty() ? find_installed(agent, paths)
+                                           : find_installed(agent, paths, version);
+    }
     std::error_code ec;
 
     if (force || !manifest_matches(dir, agent, pin)) {
@@ -289,15 +308,28 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     }
 
     outcome.installed = InstalledAgent{pin.version, dir, binary_in(dir, agent.binary)};
+    // Without a reliable record the next install could delete what launch
+    // runs, so cleanup only happens once the record is in place.
+    bool recorded = false;
+    {
+        const fs::path tmp = root / (std::string(kLastInstalled) + ".tmp");
+        {
+            std::ofstream out(tmp, std::ios::trunc);
+            out << pin.version << "\n";
+            out.close();
+            recorded = static_cast<bool>(out);
+        }
+        if (recorded) {
+            fs::rename(tmp, root / kLastInstalled, ec);
+            recorded = !ec;
+        }
+        if (!recorded) {
+            fs::remove(tmp, ec);
+        }
+    }
 
     const fs::path shim = shim_path(paths, agent.binary);
-#ifdef _WIN32
-    const std::string content = render_cmd_shim(
-        agent.id, outcome.installed.binary,
-        {{"LOCALAPPDATA", lemon::utils::get_environment_variable_utf8("LOCALAPPDATA")}});
-#else
-    const std::string content = render_posix_shim(agent.id, outcome.installed.binary);
-#endif
+    const std::string content = rendered_shim(agent, outcome.installed.binary);
     try {
         if (!write_shim(shim, content)) {
             outcome.warnings.push_back(shim.string() + " isn't Lemonade's, so it was left alone; `" +
@@ -313,9 +345,12 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     // that version stays until the next install, even when the shim couldn't
     // be rewritten. Older ones go, best effort:
     // Windows keeps a running version's files locked, and the next install retries.
-    for (const fs::path& entry : list_dir(root)) {
-        if (entry != dir && (!previous || entry != previous->dir) &&
-            fs::is_directory(entry, ec) && entry.filename().string()[0] != '.') {
+    const auto kept = [&](const fs::path& entry) {
+        return entry == dir || (previous_shim && entry == previous_shim->dir) ||
+               (previous_install && entry == previous_install->dir);
+    };
+    for (const fs::path& entry : recorded ? list_dir(root) : std::vector<fs::path>{}) {
+        if (!kept(entry) && fs::is_directory(entry, ec) && entry.filename().string()[0] != '.') {
             remove_quietly(entry, nullptr);
         }
     }

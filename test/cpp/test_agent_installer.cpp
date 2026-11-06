@@ -213,6 +213,29 @@ int main() {
               fs::exists(kept.agent_dir("pi") / "1.6.0") &&
                   find_active(pi, kept, "1.5.0")->version == "1.5.0");
     }
+    {
+        // A parent directory named like a version doesn't fool the shim check.
+        AgentPaths odd = paths;
+        odd.data_root = work / "1.5.0" / "agents";
+        odd.bin_dir = work / "odd-bin";
+        for (const char* tag : {"v1.5.0", "v1.6.0", "v1.7.0"}) {
+            install_agent(pi, pin_for(tag), odd, false, nullptr, no_cancel, loopback);
+        }
+        check("the version the shim ran is kept, whatever its parent directories are called",
+              fs::exists(odd.agent_dir("pi") / "1.6.0"));
+    }
+    {
+        // With someone else's shim, launch runs the last installed version: keep it.
+        AgentPaths foreign = paths;
+        foreign.data_root = work / "foreign" / "agents";
+        foreign.bin_dir = work / "foreign" / "bin";
+        write_file(foreign.bin_dir / "pi", "#!/bin/sh\nexec /usr/bin/pi\n");
+        for (const char* tag : {"v1.6.0", "v1.5.0", "v1.7.0"}) {
+            install_agent(pi, pin_for(tag), foreign, false, nullptr, no_cancel, loopback);
+        }
+        check("with a foreign shim the last installed version is kept",
+              fs::exists(foreign.agent_dir("pi") / "1.5.0"));
+    }
 #ifndef _WIN32
     if (geteuid() != 0) {
         // The shim can't be rewritten, so it keeps running 1.6.0: that payload must stay.
