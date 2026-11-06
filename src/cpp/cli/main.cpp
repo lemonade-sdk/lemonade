@@ -1040,6 +1040,12 @@ static std::optional<int> launch_pi_via_host(lemonade::LemonadeClient& client,
                                            print_agent_event);
             break;
         } catch (const lemon_cli::AgentRouteError& e) {
+            // The host went away or stopped answering: launch as if there were none.
+            if (e.status == 503 || e.status == 504) {
+                std::cerr << "Warning: " << e.what() << " Launching pi without the agent host."
+                          << std::endl;
+                return std::nullopt;
+            }
             if (e.code != "agent_not_installed" || attempt > 0) {
                 std::cerr << "Error: " << e.what() << std::endl;
                 return 1;
@@ -1060,8 +1066,9 @@ static std::optional<int> launch_pi_via_host(lemonade::LemonadeClient& client,
                 return 1;
             }
         } catch (const std::exception& e) {
-            std::cerr << "Error: " << e.what() << std::endl;
-            return 1;
+            std::cerr << "Warning: " << e.what() << " Launching pi without the agent host."
+                      << std::endl;
+            return std::nullopt;
         }
     }
 

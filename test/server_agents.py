@@ -147,6 +147,57 @@ class RecordingServer:
         self.httpd.server_close()
 
 
+class FakeHost:
+    """An agent host that answers list and drops its connection on launch."""
+
+    def __init__(self, token):
+        from websockets.sync.client import connect
+
+        headers = {}
+        if _config["api_key"]:
+            headers["Authorization"] = f"Bearer {_config['api_key']}"
+        self.ws = connect(
+            f"ws://127.0.0.1:{PORT}/v1/agents/host", additional_headers=headers
+        )
+        self.ws.send(
+            json.dumps(
+                {
+                    "type": "hello",
+                    "protocol": 1,
+                    "token": token,
+                    "version": "test",
+                    "platform": "test",
+                    "persistent": False,
+                }
+            )
+        )
+        assert json.loads(self.ws.recv())["type"] == "welcome"
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+        self.thread.start()
+
+    def serve(self):
+        try:
+            for message in self.ws:
+                frame = json.loads(message)
+                if frame.get("type") != "request":
+                    continue
+                if frame["route"] == "lemonade.agents_launch":
+                    self.ws.close()
+                    return
+                self.ws.send(
+                    json.dumps(
+                        {
+                            "type": "response",
+                            "id": frame["id"],
+                            "status": 200,
+                            "body": {"agents": [], "host": {}},
+                        }
+                    )
+                )
+        except Exception:  # pylint: disable=broad-except
+            pass
+
+
 def non_loopback_address():
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -511,6 +562,18 @@ class AgentManagerTests(unittest.TestCase):
             )
         finally:
             recorder.close()
+
+    def test_096_launch_falls_back_when_the_host_drops(self):
+        token = "ab" * 32
+        os.makedirs(self.state_dir)
+        with open(os.path.join(self.state_dir, "token"), "w", encoding="utf-8") as f:
+            f.write(token + "\n")
+        FakeHost(token)
+        external = self.write_external_pi(self.stub_bin)
+        result = self.cli(["launch", "pi", "--model", ENDPOINT_TEST_MODEL])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("without the agent host", result.stderr)
+        self.assertEqual(self.capture()["binary"], os.path.realpath(external))
 
     def test_095_launch_falls_back_without_the_host_binary(self):
         lonely = os.path.join(self.home, "cli-only")
