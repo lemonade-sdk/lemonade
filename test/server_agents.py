@@ -75,6 +75,12 @@ print("fake-pi-ok")
 """
 
 
+def auth_headers():
+    if _config["api_key"]:
+        return {"Authorization": f"Bearer {_config['api_key']}"}
+    return _auth_headers()
+
+
 def host_asset():
     machine = platform.machine().lower()
     arch = "arm64" if machine in ("arm64", "aarch64") else "x64"
@@ -103,9 +109,12 @@ class ReleaseServer:
 
     def __init__(self, releases):
         releases_ref = releases
+        server = self
+        self.delay = 0
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
+                time.sleep(server.delay)
                 body = releases_ref.get(self.path.lstrip("/"))
                 if body is None:
                     self.send_response(404)
@@ -376,7 +385,7 @@ class AgentManagerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         listing = requests.get(
             f"http://127.0.0.1:{PORT}/api/v1/agents",
-            headers={**_auth_headers(), "X-Lemonade-Agent-Token": self.token()},
+            headers={**auth_headers(), "X-Lemonade-Agent-Token": self.token()},
             timeout=TIMEOUT_DEFAULT,
         ).json()
         shim = listing["agents"][0]["shim"]
@@ -403,6 +412,82 @@ class AgentManagerTests(unittest.TestCase):
         self.assertRegex(listing.stdout, r"pi\s+1\.5\.0\s+1\.5\.0\s+managed")
         again = self.install()
         self.assertIn("Already installed", again.stdout)
+
+    def test_022_concurrent_installs_one_is_busy(self):
+        self.cli(["agents", "list"])
+        self.release_server.delay = 2
+        try:
+            cmd = [_config["cli_binary"], "--port", str(PORT)]
+            if _config["api_key"]:
+                cmd += ["--api-key", _config["api_key"]]
+            procs = [
+                subprocess.Popen(
+                    cmd + ["agents", "install", "pi"],
+                    env=self.env(),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
+                )
+                for _ in range(2)
+            ]
+            results = [
+                p.communicate(timeout=TIMEOUT_DEFAULT) + (p.returncode,) for p in procs
+            ]
+        finally:
+            self.release_server.delay = 0
+        codes = sorted(r[2] for r in results)
+        self.assertEqual(codes, [0, 1], results)
+        busy = next(r for r in results if r[2] == 1)
+        self.assertIn("already being installed", busy[1])
+
+    def test_024_persistent_host_takes_over(self):
+        self.cli(["agents", "list"])
+        with open(os.path.join(self.state_dir, "host.json"), encoding="utf-8") as f:
+            on_demand = json.load(f)["pid"]
+        old_token = self.token()
+        host = os.path.join(
+            os.path.dirname(_config["cli_binary"]), "lemonade-agent-host"
+        )
+        env = self.env()
+        if _config["api_key"]:
+            env["LEMONADE_API_KEY"] = _config["api_key"]
+        persistent = subprocess.Popen(
+            [host, "--persistent", "--lemond", f"http://127.0.0.1:{PORT}"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                try:
+                    os.kill(on_demand, 0)
+                except OSError:
+                    break
+                time.sleep(0.2)
+            else:
+                self.fail("the on-demand host didn't hand over")
+            deadline = time.time() + 15
+            info = {}
+            while time.time() < deadline:
+                try:
+                    with open(
+                        os.path.join(self.state_dir, "host.json"), encoding="utf-8"
+                    ) as f:
+                        info = json.load(f)
+                except (OSError, ValueError):
+                    pass
+                if info.get("pid") == persistent.pid:
+                    break
+                time.sleep(0.2)
+            self.assertTrue(info.get("persistent"))
+            self.assertNotEqual(self.token(), old_token)
+            result = self.cli(["agents", "list"])
+            self.assertEqual(result.returncode, 0, result.stderr)
+        finally:
+            persistent.terminate()
+            persistent.wait(timeout=10)
 
     def test_025_checksum_mismatch_installs_nothing(self):
         self.write_pins(b"something else")
@@ -545,18 +630,18 @@ class AgentManagerTests(unittest.TestCase):
     def test_080_wrong_or_missing_token(self):
         self.cli(["agents", "list"])
         url = f"http://127.0.0.1:{PORT}/api/v1/agents"
-        missing = requests.get(url, headers=_auth_headers(), timeout=TIMEOUT_DEFAULT)
+        missing = requests.get(url, headers=auth_headers(), timeout=TIMEOUT_DEFAULT)
         self.assertEqual(missing.status_code, 400)
         self.assertEqual(missing.json()["code"], "agent_token_missing")
         wrong = requests.get(
             url,
-            headers={**_auth_headers(), "X-Lemonade-Agent-Token": "0" * 64},
+            headers={**auth_headers(), "X-Lemonade-Agent-Token": "0" * 64},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(wrong.status_code, 503)
         right = requests.get(
             url,
-            headers={**_auth_headers(), "X-Lemonade-Agent-Token": self.token()},
+            headers={**auth_headers(), "X-Lemonade-Agent-Token": self.token()},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(right.status_code, 200)
@@ -570,7 +655,7 @@ class AgentManagerTests(unittest.TestCase):
 
     def test_085_host_rejects_bad_launch_input(self):
         self.cli(["agents", "list"])
-        headers = {**_auth_headers(), "X-Lemonade-Agent-Token": self.token()}
+        headers = {**auth_headers(), "X-Lemonade-Agent-Token": self.token()}
         base = f"http://127.0.0.1:{PORT}/api/v1/agents/pi"
         empty_model = requests.post(
             f"{base}/launch",
