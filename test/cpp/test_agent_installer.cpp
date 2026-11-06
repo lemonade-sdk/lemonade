@@ -275,6 +275,19 @@ int main() {
                   !fs::exists(leased.agent_dir("pi")) && !fs::exists(shim_path(leased, "pi")));
         check("uninstalling nothing reports nothing removed",
               !uninstall_agent(pi, leased, uninstall_warnings, &launching));
+
+        // Leftovers of an interrupted removal don't block or count.
+        install_agent(pi, pin_for("v1.5.0"), leased, false, nullptr, no_cancel, loopback, &launching);
+        write_file(leased.agent_dir("pi") / ".removing-1.5.0" / "stale", "x");
+        install_agent(pi, pin_for("v1.6.0"), leased, false, nullptr, no_cancel, loopback, &launching);
+        check("a leftover of the same name doesn't keep an old version",
+              !fs::exists(leased.agent_dir("pi") / "1.5.0") &&
+                  !fs::exists(leased.agent_dir("pi") / ".removing-1.5.0"));
+        uninstall_agent(pi, leased, uninstall_warnings, &launching);
+        write_file(leased.agent_dir("pi") / ".removing-1.6.0" / "stale", "x");
+        check("leftovers alone don't count as an uninstall",
+              !uninstall_agent(pi, leased, uninstall_warnings, &launching) &&
+                  !fs::exists(leased.agent_dir("pi")));
     }
 #ifndef _WIN32
     if (geteuid() != 0) {

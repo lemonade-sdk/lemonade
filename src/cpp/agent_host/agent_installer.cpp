@@ -103,6 +103,13 @@ std::vector<fs::path> list_dir(const fs::path& dir) {
     return entries;
 }
 
+// A removal is moved aside to a fresh name, since an interrupted one may
+// have left the plain name behind.
+fs::path aside_path(const fs::path& root, const std::string& name) {
+    return root / (".removing-" + name + "-" +
+                   std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+}
+
 void remove_quietly(const fs::path& dir, std::vector<std::string>* warnings) {
     std::error_code ec;
     fs::remove_all(dir, ec);
@@ -425,7 +432,7 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
             runs_from(entry)) {
             continue;
         }
-        const fs::path aside = root / (".removing-" + name);
+        const fs::path aside = aside_path(root, name);
         fs::rename(entry, aside, ec);
         if (!ec) {
             retired.push_back(aside);
@@ -461,21 +468,29 @@ bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
                                  agent.name + " is being launched; uninstall it again in a minute.");
             }
         }
-        removed = remove_shim(shim_path(paths, agent.binary));
+        bool kept = false;
         for (const fs::path& entry : entries) {
             const std::string name = entry.filename().string();
-            const fs::path aside =
-                name.rfind(".removing-", 0) == 0 ? entry : root / (".removing-" + name);
-            if (aside != entry) {
-                fs::rename(entry, aside, ec);
+            if (name[0] == '.') {
+                retired.push_back(entry);  // leftovers and downloads
+                continue;
             }
+            const fs::path aside = aside_path(root, name);
+            fs::rename(entry, aside, ec);
             if (ec) {
-                remove_quietly(entry, &warnings);
+                // Windows refuses while the version's executable runs.
+                warnings.push_back("Can't remove " + name + " while it's in use (" +
+                                   ec.message() + "); close it and uninstall again.");
                 ec.clear();
-            } else {
-                retired.push_back(aside);
+                kept = true;
+                continue;
             }
+            retired.push_back(aside);
             removed = true;
+        }
+        // The shim goes last, so pi never looks uninstalled while a version stays.
+        if (!kept) {
+            removed = remove_shim(shim_path(paths, agent.binary)) || removed;
         }
     }
     // Launches only wait for the renames, not for the payloads to be deleted.
