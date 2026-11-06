@@ -1339,6 +1339,16 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
         backend_status["tier"] = backend_tier_to_string(def.tier);
         backend_status["format"] = backend_format_to_string(def.format);
+        if (const auto* desc = backends::descriptor_for(recipe)) {
+            auto about = desc->about.find(backend_name);
+            if (about != desc->about.end()) {
+                backend_status["description"] = about->second.description;
+                backend_status["author"] = about->second.author;
+                backend_status["publisher"] = about->second.publisher;
+                backend_status["license"] = about->second.license;
+                backend_status["project_url"] = about->second.project_url;
+            }
+        }
         recipes[recipe]["backends"][backend_name] = backend_status;
         backend_status_priority[key] = priority;
     };

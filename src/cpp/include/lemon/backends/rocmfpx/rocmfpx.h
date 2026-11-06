@@ -48,6 +48,10 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"rocm", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "AMD Strix Halo"},
     },
+    /*about*/ {
+        {"rocm", {"llama.cpp fork adding the ROCmFP4, FP6 and FP8 weight formats and MTP drafting for AMD GPUs.",
+                  "charlie12345 (ROCmFPX)", "Donato Capitella (kyuz0)", "MIT", "https://github.com/ROCmFPX/ROCmFPX"}},
+    },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},

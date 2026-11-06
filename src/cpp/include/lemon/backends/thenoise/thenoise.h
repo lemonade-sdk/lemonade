@@ -46,6 +46,14 @@ inline const BackendDescriptor descriptor = {
         {"cuda", BackendTier::Experimental, BackendFormat::Python, {"linux"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
 #endif
     },
+    /*about*/ {
+        {"rocm", {"Lemonade's PyTorch text-to-image diffusion engine, tuned for AMD GPUs.",
+                  "lemonade-sdk", "lemonade-sdk", "Apache-2.0", "https://github.com/lemonade-sdk/thenoise"}},
+#if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
+        {"cuda", {"Lemonade's PyTorch text-to-image diffusion engine, on NVIDIA GPUs.",
+                  "lemonade-sdk", "lemonade-sdk", "Apache-2.0", "https://github.com/lemonade-sdk/thenoise"}},
+#endif
+    },
     /*supported_modes*/ {"image"},
     /*required_checkpoints*/ {"main"},  // text_encoder+vae validated together in load()
     /*default_capabilities*/ {},
