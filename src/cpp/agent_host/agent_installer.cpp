@@ -154,15 +154,18 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
             throw AgentError(500, "install_failed", "Can't create " + root.string() + ": " +
                                                         ec.message());
         }
-        const fs::path download = root / (".download-" + pin.asset);
-        struct FileGuard {
+        // download_file keeps its own temp files next to the target, so the
+        // whole directory goes when the install ends.
+        const fs::path download_dir = root / ".download";
+        fs::create_directories(download_dir, ec);
+        const fs::path download = download_dir / pin.asset;
+        struct DirGuard {
             fs::path path;
-            ~FileGuard() {
+            ~DirGuard() {
                 std::error_code ignored;
-                fs::remove(path, ignored);
-                fs::remove(path.string() + ".partial", ignored);
+                fs::remove_all(path, ignored);
             }
-        } download_guard{download};
+        } download_guard{download_dir};
 
         lemon::utils::DownloadOptions options;
         options.expected_hash = pin.sha256;
@@ -187,9 +190,9 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
 
         const fs::path staging = dir.string() + ".staging";
         fs::remove_all(staging, ec);
-        struct DirGuard {
+        struct StagingGuard {
             fs::path path;
-            ~DirGuard() {
+            ~StagingGuard() {
                 std::error_code ignored;
                 fs::remove_all(path, ignored);
             }
@@ -274,8 +277,7 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     // Older versions may still be running; on Windows their files stay
     // locked, so removal is best effort and retried on the next install.
     for (const fs::path& entry : list_dir(root)) {
-        if (entry != dir && entry.filename().string().rfind(".download-", 0) != 0 &&
-            fs::is_directory(entry, ec)) {
+        if (entry != dir && entry.filename() != ".download" && fs::is_directory(entry, ec)) {
             remove_quietly(entry, nullptr);
         }
     }
