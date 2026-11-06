@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "lemon/agents/agent_paths.h"
@@ -17,7 +18,11 @@ enum class ShimState { Ours, Foreign, Absent };
 std::filesystem::path shim_path(const AgentPaths& paths, const std::string& binary_name);
 
 std::string render_posix_shim(const std::string& agent_id, const std::filesystem::path& target);
-std::string render_cmd_shim(const std::string& agent_id, const std::filesystem::path& target);
+// cmd.exe reads batch files in the console code page, so a target below one
+// of env_dirs (name, UTF-8 value) is written through %name% instead.
+std::string render_cmd_shim(
+    const std::string& agent_id, const std::filesystem::path& target,
+    const std::vector<std::pair<std::string, std::string>>& env_dirs = {});
 
 // The launchd job `lemonade agents enable` writes on macOS. Like the systemd
 // unit, it reads ~/.config/lemonade/lemond.conf and agent-host.env.

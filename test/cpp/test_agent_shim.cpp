@@ -21,6 +21,17 @@ int main() {
     const std::string cmd = render_cmd_shim("pi", "C:\\Users\\u 100%\\pi.exe");
     check("cmd shim doubles %", cmd.find("\"C:\\Users\\u 100%%\\pi.exe\" %*") != std::string::npos);
     check("cmd shim has the marker", cmd.find(kShimMarker) != std::string::npos);
+    // cmd.exe reads a batch file in the console code page, so a non-ASCII
+    // profile path is written through %LOCALAPPDATA%, which it expands as Unicode.
+    const std::string unicode = render_cmd_shim(
+        "pi", "C:\\Users\\Jos\xc3\xa9\\AppData\\Local\\lemonade\\agents\\pi\\1.5.0\\pi.exe",
+        {{"LOCALAPPDATA", "C:\\Users\\Jos\xc3\xa9\\AppData\\Local"}});
+    check("cmd shim names the payload through %LOCALAPPDATA%",
+          unicode.find("\"%LOCALAPPDATA%\\lemonade\\agents\\pi\\1.5.0\\pi.exe\" %*") !=
+              std::string::npos);
+    bool ascii = true;
+    for (unsigned char c : unicode) ascii = ascii && c < 0x80;
+    check("cmd shim is ASCII", ascii);
 
     const std::string plist = render_launch_agent_plist("/Apps/R&D <x>/lemonade-agent-host");
     check("LaunchAgent exports what it sources",

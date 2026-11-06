@@ -258,7 +258,9 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
 
     const fs::path shim = shim_path(paths, agent.binary);
 #ifdef _WIN32
-    const std::string content = render_cmd_shim(agent.id, outcome.installed.binary);
+    const std::string content = render_cmd_shim(
+        agent.id, outcome.installed.binary,
+        {{"LOCALAPPDATA", lemon::utils::get_environment_variable_utf8("LOCALAPPDATA")}});
 #else
     const std::string content = render_posix_shim(agent.id, outcome.installed.binary);
 #endif

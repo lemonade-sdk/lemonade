@@ -71,10 +71,21 @@ std::string render_posix_shim(const std::string& agent_id, const fs::path& targe
            "exec " + posix_quote(lemon::utils::path_to_utf8(target)) + " \"$@\"\n";
 }
 
-std::string render_cmd_shim(const std::string& agent_id, const fs::path& target) {
+std::string render_cmd_shim(const std::string& agent_id, const fs::path& target,
+                            const std::vector<std::pair<std::string, std::string>>& env_dirs) {
+    std::string path = lemon::utils::path_to_utf8(target);
+    std::string prefix;
+    for (const auto& [name, dir] : env_dirs) {
+        if (!dir.empty() && path.size() > dir.size() && path.compare(0, dir.size(), dir) == 0 &&
+            (path[dir.size()] == '\\' || path[dir.size()] == '/')) {
+            prefix = "%" + name + "%";
+            path = path.substr(dir.size());
+            break;
+        }
+    }
     // cmd expands %VAR% even inside quotes, so a literal % is doubled.
-    std::string quoted;
-    for (char c : lemon::utils::path_to_utf8(target)) {
+    std::string quoted = prefix;
+    for (char c : path) {
         quoted += c == '%' ? std::string("%%") : std::string(1, c);
     }
     return "@echo off\r\n"
