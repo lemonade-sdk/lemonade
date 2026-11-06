@@ -181,6 +181,7 @@ Each line carries the next message piece with `done: false`. When the message en
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | `model` is not an LLM, such as an image or embedding model, which is checked before it loads |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
@@ -496,7 +497,7 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `families` - A list holding only `family`.
   - `parameter_size` - From the model name, e.g. `0.6B`; empty when the name has none.
   - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
-- `capabilities` - From the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels.
+- `capabilities` - From the model's labels: `completion` for chat models, `embedding` for embedding models, `image` for image generation models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels.
 - `model_info` - `general.architecture` (the recipe) and `<recipe>.context_length` (the context size in `parameters`); the other keys are always `0`.
 
 ### Errors

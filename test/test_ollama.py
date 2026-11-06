@@ -733,6 +733,54 @@ class OllamaTests(ServerTestBase):
             "Decoded image should start with PNG magic bytes",
         )
 
+    def test_022a_chat_rejects_image_model(self):
+        """Test /api/chat rejects an image model with 400 before loading it."""
+        if sys.platform == "darwin":
+            self.skipTest("sd-cpp not supported on macOS")
+        if sys.platform == "linux" and platform.machine() == "aarch64":
+            self.skipTest("sd-cpp not supported on Linux ARM64")
+        unload_all_models()
+
+        for stream in (False, True):
+            with self.subTest(stream=stream):
+                response = requests.post(
+                    f"{OLLAMA_BASE_URL}/api/chat",
+                    json={
+                        "model": SD_MODEL,
+                        "messages": [{"role": "user", "content": "A red circle"}],
+                        "stream": stream,
+                    },
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 400, response.text)
+                error = response.json()["error"]
+                self.assertIn("does not support chat", error)
+                self.assertIn("/api/generate", error)
+
+        ps = requests.get(f"{OLLAMA_BASE_URL}/api/ps", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(ps.status_code, 200)
+        loaded_names = [m["name"] for m in ps.json()["models"]]
+        self.assertFalse(
+            any(SD_MODEL in n for n in loaded_names),
+            f"{SD_MODEL} should not load for a rejected chat: {loaded_names}",
+        )
+
+    def test_022b_show_image_capability(self):
+        """Test /api/show reports the image capability for an image model."""
+        if sys.platform == "darwin":
+            self.skipTest("sd-cpp not supported on macOS")
+        if sys.platform == "linux" and platform.machine() == "aarch64":
+            self.skipTest("sd-cpp not supported on Linux ARM64")
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/show",
+            json={"name": SD_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        capabilities = response.json()["capabilities"]
+        self.assertIn("image", capabilities)
+        self.assertNotIn("completion", capabilities)
+
     def test_023_ollama_lib_chat_streaming(self):
         """Test ollama.chat() streaming via Python library."""
         client = self.get_ollama_client()

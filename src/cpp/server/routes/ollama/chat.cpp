@@ -3,6 +3,8 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/model_manager.h"
+#include "lemon/model_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
@@ -92,6 +94,29 @@ const RouteArg kThink{"think", ArgIn::JsonBody,
                       "`true`, `false`, `low`, `medium`, `high` or `max`. Not applied: reasoning models "
                       "think regardless. Qwen3 models skip their reasoning when the prompt ends with "
                       "`/no_think`."};
+
+const RouteError kNotChatModel{400, "",
+                               "`model` is not an LLM, such as an image or embedding model, which is "
+                               "checked before it loads"};
+
+// Checked before loading, as Ollama does: a non-LLM backend has no chat route, so loading
+// it first would spend a whole model load on a request that can only fail.
+bool require_chat_model(ModelManager& model_manager, const std::string& model,
+                        httplib::Response& res) {
+    if (!model_manager.model_exists(model)) {
+        return true;
+    }
+    ModelType model_type = get_model_type_from_labels(model_manager.get_model_info(model).labels);
+    if (model_type == ModelType::LLM) {
+        return true;
+    }
+    std::string message = "\"" + model + "\" does not support chat";
+    if (model_type == ModelType::IMAGE) {
+        message += "; use /api/generate to generate images";
+    }
+    write_plain_error(res, kNotChatModel, message);
+    return false;
+}
 
 json convert_ollama_to_openai_chat(ServerContext& ctx, const RouteRequest& req) {
     json openai_req;
@@ -371,7 +396,7 @@ public:
         })");
 
         s.examples = {full_example, stream_example};
-        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid}, gateway_load_errors(),
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNotChatModel}, gateway_load_errors(),
                                 {kOllamaBackendError, ApiRoute::kUnexpectedException}});
         s.request_format = RequestFormat::Json;
         return s;
@@ -398,6 +423,10 @@ public:
                     {"done_reason", "unload"}
                 };
                 res.set_content(ollama_res.dump(), "application/json");
+                return;
+            }
+
+            if (!require_chat_model(*ctx_.model_manager, model, res)) {
                 return;
             }
 

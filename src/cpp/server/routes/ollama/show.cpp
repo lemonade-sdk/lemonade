@@ -20,6 +20,8 @@ json build_ollama_capabilities(const ModelInfo& info) {
         capabilities.push_back("completion");
     } else if (model_type == ModelType::EMBEDDING) {
         capabilities.push_back("embedding");
+    } else if (model_type == ModelType::IMAGE) {
+        capabilities.push_back("image");
     }
 
     if (has_label(info.labels, "tool-calling") || has_label(info.labels, "tools")) {
@@ -61,7 +63,7 @@ public:
                 "parameters": {"type": "string", "description": "`num_ctx` followed by the model's configured context size, which is `-1` when Lemonade sizes the context at load time."},
                 "template": {"type": "string", "description": "Always empty."},
                 "details": {},
-                "capabilities": {"type": "array", "items": {"enum": ["completion", "embedding", "tools", "vision", "thinking"]}, "description": "From the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels."},
+                "capabilities": {"type": "array", "items": {"enum": ["completion", "embedding", "image", "tools", "vision", "thinking"]}, "description": "From the model's labels: `completion` for chat models, `embedding` for embedding models, `image` for image generation models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels."},
                 "model_info": {"type": "object", "description": "`general.architecture` (the recipe) and `<recipe>.context_length` (the context size in `parameters`); the other keys are always `0`."}
             }
         })");
