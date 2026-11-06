@@ -1604,6 +1604,17 @@ jobs:
           esac
           ${{ matrix.tool }} --version
 
+      # Newer nathanw images build ggml-cpu with AVX-512, which this runner
+      # lacks; test-container-backends runs the shipped pin on Strix Halo.
+      - name: Hold nathanw on an image this runner can run
+        run: |
+          set -e
+          versions="$HOME/.local/share/lemonade-server/resources/backend_versions.json"
+          jq '.llamacpp.nathanw = "vulkan-radv-performance@sha256:41018261e61b7e32fb38e4985ba569d0837804e727dcc62689c2fb1d73ec8f15"' \
+            "$versions" > "$versions.tmp"
+          mv "$versions.tmp" "$versions"
+          jq -r .llamacpp.nathanw "$versions"
+
       # sudo -u starts a fresh login, so lemond carries the groups added above.
       - name: Run the smoke test
         run: |

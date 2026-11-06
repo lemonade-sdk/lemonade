@@ -57,7 +57,7 @@
     "cuda": "b12109",
     "metal": "b12109",
     "cpu": "b12109",
-    "nathanw": "vulkan-radv-performance@sha256:41018261e61b7e32fb38e4985ba569d0837804e727dcc62689c2fb1d73ec8f15",
+    "nathanw": "vulkan-radv-performance@sha256:ca720eb6638b27843eb915c1b5a2554b9fef90b8dc0d0cd413833e41798bd0f7",
     "halobox": "rocm-10.0-strix-llama@sha256:015fddafc28bfdb1653a99905010e83a9327f072206cb1f882f1f9f922069f48"
   },
   "llamacpp-hrx": {
