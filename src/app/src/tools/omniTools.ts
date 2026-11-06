@@ -9,6 +9,8 @@ import {
 } from '../features/collections/collectionModels';
 import type { ChatToolRuntime, ToolCall, ToolExecutionPayload, ToolArtifact } from '../hooks/useChatStreaming';
 import { COLLECTION_IMAGE_SIZE } from '../features/collections/collectionImageConfig';
+import type { ConversationImageRegistry } from '../features/images/imageRegistry';
+import { prepareDirectImageAnalysis } from '../features/images/directImageAnalysis';
 
 interface ToolDefinitionEntry {
   requires_labels?: string[];
@@ -79,16 +81,22 @@ const DEFAULT_OMNI_TOOLS: ToolDefinitionEntry[] = [
     "requires_labels": [
       "edit"
     ],
-    "prompt_guidance": "When an image already exists in the conversation and the user asks to add, remove, change, modify, or adjust it, use edit_image rather than generate_image. Use generate_image for creating a brand new image from scratch. The edit_image tool automatically uses the most recent image as its source. If the user explicitly asks for final output canvas dimensions or aspect ratio for the edited image, set size with dimensions rounded to the nearest multiple of 8; otherwise omit size.",
+    "prompt_guidance": "Use edit_image to modify existing images. Optional image_ids select exact sources, base first, then references; default is current uploads, otherwise latest image. Omit size unless the user specifies final canvas dimensions.",
     "function": {
       "name": "edit_image",
-      "description": "Edit or modify the most recent generated image from this conversation. Use this for requested changes to an existing image, not for creating a brand new image.",
+      "description": "Edit available images, optionally selecting exact image_ids (base first, then references).",
       "parameters": {
         "type": "object",
         "properties": {
           "prompt": {
             "type": "string",
             "description": "A description of the desired edit or modification."
+          },
+          "image_ids": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "description": "Optional image IDs in order: base first, then references."
           },
           "size": {
             "type": "string",
@@ -178,24 +186,27 @@ const DEFAULT_OMNI_TOOLS: ToolDefinitionEntry[] = [
     "requires_llm_labels": [
       "vision"
     ],
-    "prompt_guidance": "When the user sends an image (as an image_url in their message), use the analyze_image tool to look at the image before responding about it.",
+    "prompt_guidance": "Analyze an image only when helpful or requested. Optional image_id selects an available uploaded or generated image; otherwise the current upload or latest image is used.",
     "function": {
       "name": "analyze_image",
-      "description": "Analyze, describe, or answer questions about an image. Use this when the user shares an image and asks you to look at it, describe it, read text from it, identify objects, or answer any question about what's in the image.",
+      "description": "Inspect a conversation image with a vision model; optional image_id.",
       "parameters": {
         "type": "object",
         "properties": {
+          "image_id": {
+            "type": "string",
+            "description": "Optional image ID to inspect."
+          },
           "image_url": {
             "type": "string",
-            "description": "The URL or base64 data URI of the image to analyze"
+            "description": "Deprecated data URI for compatibility; prefer image_id."
           },
           "question": {
             "type": "string",
-            "description": "The question to answer about the image, or 'describe' for a general description"
+            "description": "The question about the image."
           }
         },
         "required": [
-          "image_url",
           "question"
         ],
         "additionalProperties": false
@@ -351,6 +362,10 @@ export interface OmniToolContext {
   attachedImages: string[];
   attachedAudioFiles: File[];
   previousImages: string[];
+  imageRegistry?: ConversationImageRegistry;
+  conversationId?: string;
+  messageId?: string;
+  chatVisionModel?: string;
 }
 
 interface OmniComponentMap {
@@ -423,6 +438,15 @@ function normalizeCustomModelTools(model: ModelInfo): CustomOmniModelTool[] {
     if (!name || !targetModel || seen.has(name.toLowerCase())) continue;
     seen.add(name.toLowerCase());
     const maxTokens = Number(raw.max_tokens ?? raw.maxTokens);
+    const baseParameters = isPlainObject(raw.parameters) ? raw.parameters : DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS;
+    const parameters = targetType === 'vision'
+      ? {
+        ...baseParameters,
+        properties: {
+          ...(isPlainObject(baseParameters.properties) ? baseParameters.properties : {}),
+          image_id: { type: 'string', description: 'Optional conversation image ID to inspect.' },
+        },
+      } : baseParameters;
     tools.push({
       id: stringValue(raw.id) || name,
       name,
@@ -431,7 +455,7 @@ function normalizeCustomModelTools(model: ModelInfo): CustomOmniModelTool[] {
       target_type: targetType,
       system_prompt: stringValue(raw.system_prompt) || stringValue(raw.systemPrompt) || undefined,
       prompt_template: stringValue(raw.prompt_template) || stringValue(raw.promptTemplate) || undefined,
-      parameters: isPlainObject(raw.parameters) ? raw.parameters : DEFAULT_CUSTOM_LLM_TOOL_PARAMETERS,
+      parameters,
       max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? Math.floor(maxTokens) : undefined,
     });
   }
@@ -511,7 +535,7 @@ export function buildOmniToolRuntime(
   const toolGuidance = [
     ...builtInGuidance,
     models.text_to_speech ? 'Use text_to_speech when the user asks you to speak, read aloud, narrate, or create audio.' : '',
-    models.analyze_image ? "If the model cannot provide a real image_url for analyze_image, it may pass the visible placeholder; the UI will safely use the latest attached/generated image." : '',
+    models.analyze_image ? 'Use analyze_image with image_id when inspection is helpful; never invent URLs or claim an image was inspected without calling it.' : '',
     models.transcribe_audio ? "When the user message contains '[User provided audio file #N]', call transcribe_audio before answering audio-specific questions. Include language only when the user specified it or it is obvious." : '',
     customToolMap.size > 0 ? `Custom model tools use explicit Lemonade endpoints: ${Array.from(customToolMap.values()).map(tool => `${tool.name} -> ${tool.target_model} (${tool.target_type})`).join(', ')}.` : '',
     customToolMap.size > 0 ? 'Do not ask custom model tools to call tools recursively. Use their returned text or media artifacts in the final answer.' : '',
@@ -520,7 +544,9 @@ export function buildOmniToolRuntime(
   ].filter(Boolean).join('\n');
   const systemPrompt = renderOmniSystemPrompt(customSystemPromptTemplate(collectionModel), toolList, toolGuidance);
 
-  const execute = async (call: ToolCall): Promise<ToolExecutionPayload> => {
+  const acceptsImageReferences = Boolean(models.edit_image || models.analyze_image
+    || [...customToolMap.values()].some(tool => tool.target_type === 'vision'));
+  const execute = async (call: ToolCall, signal?: AbortSignal): Promise<ToolExecutionPayload> => {
     const name = call.function.name;
     let args: Record<string, unknown> = {};
     try { args = JSON.parse(call.function.arguments || '{}'); } catch { /* keep empty args */ }
@@ -534,10 +560,14 @@ export function buildOmniToolRuntime(
           const prompt = String(args.prompt || args.task || '').trim();
           if (!prompt) throw new Error(`${customTool.name} requires a prompt.`);
           const urls = await api.imageGeneration(customTool.target_model, prompt, imageGenerationOptions(args));
+          const registration = context.imageRegistry && context.conversationId
+            ? await context.imageRegistry.addOutputsBestEffort(context.conversationId, urls, 'generated', [], prompt, signal, context.messageId)
+            : { ids: undefined, warning: undefined };
           return mediaResult(
             call.id,
             `Image generated with ${customTool.target_model}.`,
             urls.map((url, index) => ({ ...artifactFromDataUrl(url, 'image', `${customTool.target_model}-${index + 1}.png`) })),
+            registration.ids, registration.warning,
           );
         }
 
@@ -547,7 +577,12 @@ export function buildOmniToolRuntime(
         }];
 
         if (customTool.target_type === 'vision') {
-          const sourceImage = latestImage(context);
+          if (args.image_id !== undefined && (!context.imageRegistry || !context.conversationId)) {
+            throw new Error('Image IDs are unavailable in this session.');
+          }
+          const sourceImage = context.imageRegistry && context.conversationId
+            ? await context.imageRegistry.getAnalysisInput(context.conversationId, args.image_id, context.messageId)
+            : latestImage(context);
           if (!sourceImage) throw new Error(`${customTool.name} requires an attached or previously generated image.`);
           messages.push({
             role: 'user',
@@ -560,7 +595,9 @@ export function buildOmniToolRuntime(
           messages.push({ role: 'user', content: renderCustomToolPrompt(customTool.prompt_template, args) });
         }
 
-        const content = await api.chatCompletionOnce(customTool.target_model, messages, params);
+        if (signal?.aborted) throw new Error('Image inspection was cancelled.');
+        const content = await api.chatCompletionOnce(customTool.target_model, messages, params, signal);
+        if (customTool.target_type === 'vision' && !content.trim()) throw new Error('Vision model returned no analysis.');
         return textResult(call.id, content || `${customTool.name} completed without text output.`, `${customTool.name} completed`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -569,11 +606,9 @@ export function buildOmniToolRuntime(
     }
 
     const builtInName = name as keyof OmniComponentMap;
-    const requestedModel = models[builtInName];
-    const sourceImage = latestImage(context);
-    const shouldAutoEdit = builtInName === 'generate_image' && !!sourceImage && !!models.edit_image && looksLikeImageEdit(args.prompt);
-    const effectiveName: keyof OmniComponentMap = shouldAutoEdit ? 'edit_image' : builtInName;
-    const model = shouldAutoEdit ? models.edit_image : requestedModel;
+    // An explicit tool call is authoritative; never rewrite generate_image to edit_image.
+    const effectiveName = builtInName;
+    const model = models[builtInName];
     if (!model) {
       return {
         tool_call_id: call.id,
@@ -589,15 +624,26 @@ export function buildOmniToolRuntime(
         const prompt = String(args.prompt || '').trim();
         if (!prompt) throw new Error('generate_image requires a prompt.');
         const urls = await api.imageGeneration(model, prompt, imageGenerationOptions(args));
-        return mediaResult(call.id, 'Image generated successfully.', urls.map(url => artifactFromDataUrl(url, 'image')));
+        const registration = context.imageRegistry && context.conversationId
+          ? await context.imageRegistry.addOutputsBestEffort(context.conversationId, urls, 'generated', [], prompt, signal, context.messageId)
+          : { ids: undefined, warning: undefined };
+        return mediaResult(call.id, 'Image generated successfully.', urls.map(url => artifactFromDataUrl(url, 'image')), registration.ids, registration.warning);
       }
 
       if (effectiveName === 'edit_image') {
         const prompt = String(args.prompt || '').trim();
         if (!prompt) throw new Error('edit_image requires a prompt.');
-        if (!sourceImage) throw new Error('No previous image is available to edit.');
-        const urls = await api.imageEdit(model, prompt, sourceImage, imageEditOptions(args));
-        return mediaResult(call.id, 'Image edited successfully.', urls.map(url => artifactFromDataUrl(url, 'image')));
+        const selected = context.imageRegistry && context.conversationId
+          ? context.imageRegistry.selectForEdit(context.conversationId, args.image_ids, context.messageId)
+          : null;
+        const legacyImage = selected ? null : latestImage(context);
+        if (!selected && args.image_ids !== undefined) throw new Error('Image IDs are unavailable in this session.');
+        if (!selected && !legacyImage) throw new Error('No previous image is available to edit.');
+        const urls = await api.imageEdit(model, prompt, selected ? selected.images : legacyImage!, imageEditOptions(args));
+        const registration = context.imageRegistry && context.conversationId
+          ? await context.imageRegistry.addOutputsBestEffort(context.conversationId, urls, 'edited', selected?.ids || [], prompt, signal, context.messageId)
+          : { ids: undefined, warning: undefined };
+        return mediaResult(call.id, 'Image edited successfully.', urls.map(url => artifactFromDataUrl(url, 'image')), registration.ids, registration.warning);
       }
 
       if (effectiveName === 'text_to_speech') {
@@ -617,22 +663,36 @@ export function buildOmniToolRuntime(
       }
 
       if (effectiveName === 'analyze_image') {
-        // Only trust LLM-provided image_url values if they are same-message
-        // data URLs. Otherwise fall back to the UI-owned latest image. This
-        // mirrors GUI2/main and prevents arbitrary http:/file:/javascript: URLs
-        // from being sent through the backend because a planner hallucinated one.
-        const rawImageUrl = typeof args.image_url === 'string' ? args.image_url.trim() : '';
-        const imageUrl = rawImageUrl.startsWith('data:image/') ? rawImageUrl : sourceImage;
+        // image_id wins; obsolete URL arguments are permitted only for actual
+        // UI-provided images, never invented remote or Base64 payloads.
+        const legacyUrl = typeof args.image_url === 'string' ? args.image_url.trim() : '';
+        if (args.image_id !== undefined && (!context.imageRegistry || !context.conversationId)) {
+          throw new Error('Image IDs are unavailable in this session.');
+        }
+        const knownLegacy = legacyUrl.startsWith('data:image/')
+          && [...context.attachedImages, ...context.previousImages].includes(legacyUrl);
+        if (args.image_id === undefined && legacyUrl.startsWith('data:image/') && !knownLegacy) {
+          throw new Error('Image URLs are not accepted from the planner. Use an available image_id.');
+        }
+        if ((args.image_id !== undefined || !knownLegacy) && context.chatVisionModel?.toLowerCase() === model.toLowerCase()) {
+          return await prepareDirectImageAnalysis(call.id, String(args.question || 'Describe this image.'), args.image_id, context, signal);
+        }
+        const imageUrl = args.image_id === undefined && knownLegacy ? legacyUrl
+          : context.imageRegistry && context.conversationId
+            ? await context.imageRegistry.getAnalysisInput(context.conversationId, args.image_id, context.messageId)
+            : latestImage(context);
         if (!imageUrl) throw new Error('No image was provided.');
         const question = String(args.question || 'Describe this image.');
+        if (signal?.aborted) throw new Error('Image inspection was cancelled.');
         const content = await api.chatCompletionOnce(model, [{
           role: 'user',
           content: [
             { type: 'image_url', image_url: { url: imageUrl } },
             { type: 'text', text: question },
           ],
-        } as ChatMessage]);
-        return textResult(call.id, content || 'Image analyzed.', 'Image analyzed');
+        } as ChatMessage], {}, signal);
+        if (!content.trim()) throw new Error('Vision model returned no analysis.');
+        return textResult(call.id, content, 'Image analyzed');
       }
 
       return textResult(call.id, `Unknown Omni tool: ${call.function.name}`, 'Error: unknown tool', true);
@@ -642,13 +702,13 @@ export function buildOmniToolRuntime(
     }
   };
 
-  return { tools, execute, systemPrompt };
+  return {
+    tools, execute, systemPrompt, acceptsImageReferences,
+    resolveImageAttachment: context.imageRegistry && context.conversationId
+      ? (id: string) => context.imageRegistry!.getAnalysisInput(context.conversationId!, id) : undefined,
+  };
 }
 
-function looksLikeImageEdit(value: unknown): boolean {
-  const text = String(value || '').toLowerCase();
-  return ['add ', 'remove ', 'change ', 'modify ', 'edit ', 'adjust ', 'fix ', 'replace ', 'make it ', 'turn it '].some(needle => text.includes(needle));
-}
 
 function imageGenerationOptions(args: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -742,12 +802,13 @@ function textResult(toolCallId: string, content: string, displayResult: string, 
   };
 }
 
-function mediaResult(toolCallId: string, message: string, artifacts: ToolArtifact[]): ToolExecutionPayload {
+function mediaResult(toolCallId: string, message: string, artifacts: ToolArtifact[], imageIds?: string[], registrationWarning?: string): ToolExecutionPayload {
   return {
     tool_call_id: toolCallId,
     role: 'tool',
-    content: message,
-    displayResult: message,
+    content: imageIds || registrationWarning
+      ? JSON.stringify({ status: 'success', message, image_ids: imageIds, image_registration_warning: registrationWarning }) : message,
+    displayResult: registrationWarning ? `${message} Image references unavailable: ${registrationWarning}` : message,
     artifacts,
   };
 }

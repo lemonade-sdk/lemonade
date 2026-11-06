@@ -214,8 +214,8 @@ assert.match(chatViewSource, /if \(!acceptsImageAttachments\) return;/,
   'paste, drop, and file selection must reject images for text-only models');
 assert.match(chatViewSource, /The selected text model does not support image input/,
   'stale or retried image messages must be blocked before reaching a text-only backend');
-assert.match(chatViewSource, /if \(m\.images\?\.length && supportsChatImageInput\)/,
-  'image-bearing conversation history must be stripped when switching to a text-only model');
+assert.match(chatViewSource, /if \(m\.images\?\.length && supportsChatImageInput && !omniRuntime\)/,
+  'image history must be passed only to a vision chat model, not to text-only or Omni tool planners');
 assert.match(chatViewSource, /const keepsAudioAttachments = currentCapability === 'audio'[\s\S]*modelSupportsChatAudioInput/,
   'switching to Chat + Audio must not immediately clear attached audio');
 assert.match(stylesSource, /\.capability-icon-pair[\s\S]*gap: var\(--space-0-5\)/,
