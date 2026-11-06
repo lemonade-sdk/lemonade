@@ -65,14 +65,19 @@ void HostRoutes::handle(const json& request, Responder& responder) {
     struct Done {
         HostRoutes& routes;
         uint64_t id;
+        std::shared_ptr<std::atomic<bool>> cancelled;
         ~Done() {
             {
+                // After a reconnect lemond can reuse an id still running here.
                 std::lock_guard<std::mutex> lock(routes.mutex_);
-                routes.cancels_.erase(id);
+                auto it = routes.cancels_.find(id);
+                if (it != routes.cancels_.end() && it->second == cancelled) {
+                    routes.cancels_.erase(it);
+                }
             }
             routes.in_flight_--;
         }
-    } done{*this, id};
+    } done{*this, id, cancelled};
     const std::string route = request["route"].get<std::string>();
     const json& params = request["params"];
     const json body = request["body"].is_object() ? request["body"] : json::object();

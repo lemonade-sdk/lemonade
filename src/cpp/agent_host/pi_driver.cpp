@@ -163,8 +163,8 @@ json pi_status(HostContext& ctx) {
     const fs::path shim = shim_path(ctx.paths, pi.binary);
     const auto on_path = path_matches(shim.filename().string(), path_value);
     bool shim_dir_on_path = false;
-    for (const auto& match : on_path) {
-        shim_dir_on_path = shim_dir_on_path || match.parent_path() == shim.parent_path();
+    for (const auto& dir : path_dirs(path_value)) {
+        shim_dir_on_path = shim_dir_on_path || dir == shim.parent_path().lexically_normal();
     }
     entry["shim"] = {{"path", lemon::utils::path_to_utf8(shim)},
                      {"state", shim_state_name(shim_state(shim))},

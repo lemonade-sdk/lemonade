@@ -357,6 +357,32 @@ class AgentManagerTests(unittest.TestCase):
             os.stat(os.path.join(self.state_dir, "token")).st_mode & 0o777, 0o600
         )
 
+    def test_015_a_second_host_keeps_the_running_hosts_log(self):
+        self.cli(["agents", "list"])
+        log = os.path.join(self.state_dir, "agent-host.log")
+        with open(log, encoding="utf-8") as f:
+            before = f.read()
+        host = os.path.join(
+            os.path.dirname(_config["cli_binary"]), "lemonade-agent-host"
+        )
+        subprocess.run([host], env=self.env(), timeout=TIMEOUT_DEFAULT, check=True)
+        with open(log, encoding="utf-8") as f:
+            self.assertEqual(f.read()[: len(before)], before)
+
+    def test_016_list_reports_the_shim_dir_on_path_before_install(self):
+        bin_dir = os.path.join(self.home, ".local", "bin")
+        os.makedirs(bin_dir)
+        result = self.cli(["agents", "list"], env=self.env(bin_dir))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        listing = requests.get(
+            f"http://127.0.0.1:{PORT}/api/v1/agents",
+            headers={**_auth_headers(), "X-Lemonade-Agent-Token": self.token()},
+            timeout=TIMEOUT_DEFAULT,
+        ).json()
+        shim = listing["agents"][0]["shim"]
+        self.assertEqual(shim["state"], "absent")
+        self.assertTrue(shim["on_path"])
+
     def test_020_install_writes_payload_shim_and_config(self):
         result = self.install()
         self.assertIn("pi-", result.stdout)

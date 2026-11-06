@@ -39,6 +39,9 @@ bool write_shim(const std::filesystem::path& file, const std::string& content);
 // Removes the shim if it is ours. Returns whether a file was removed.
 bool remove_shim(const std::filesystem::path& file);
 
+// The absolute directories of path_value (PATH syntax for this OS), in order.
+std::vector<std::filesystem::path> path_dirs(const std::string& path_value);
+
 // Every executable named `name` on path_value (PATH syntax for this OS), in
 // order, as absolute paths. On Windows each PATHEXT extension is tried.
 std::vector<std::filesystem::path> path_matches(const std::string& name,

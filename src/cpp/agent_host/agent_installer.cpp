@@ -168,7 +168,8 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
 
         lemon::utils::DownloadOptions options;
         options.expected_hash = pin.sha256;
-        // download_file retries a mismatch from scratch, which a pinned asset won't fix.
+        // download_file retries a checksum mismatch from scratch too, which a
+        // pinned asset rarely fixes, so retries stay few.
         options.max_retries = 2;
         const auto result = lemon::utils::HttpClient::download_file(
             pin.url, lemon::utils::path_to_utf8(download),

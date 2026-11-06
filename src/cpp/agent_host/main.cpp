@@ -129,9 +129,11 @@ int main(int argc, char** argv) {
     fs::create_directories(ctx.paths.state_dir, ec);
     fs::permissions(ctx.paths.state_dir, fs::perms::owner_all, ec);
 
-    AixLog::Log::init({std::make_shared<AixLog::SinkFile>(
-        AixLog::Severity::info, lemon::utils::path_to_utf8(ctx.paths.log_file()))});
-
+    // The log is opened only by the lock holder, since opening truncates it.
+    const auto init_log = [&ctx] {
+        AixLog::Log::init({std::make_shared<AixLog::SinkFile>(
+            AixLog::Severity::info, lemon::utils::path_to_utf8(ctx.paths.log_file()))});
+    };
     auto lock = FileLock::try_acquire(ctx.paths.host_lock());
     std::unique_ptr<FileLock> takeover;
     if (!lock) {
@@ -142,16 +144,15 @@ int main(int argc, char** argv) {
         // probes the same lock each second, so a busy try is retried.
         takeover = FileLock::try_acquire_for(ctx.paths.takeover_lock(), std::chrono::seconds(3));
         if (!takeover) {
-            LOG(INFO, "AgentHost") << "Another persistent host is waiting; exiting" << std::endl;
-            return 0;
+            return 0;  // another persistent host is already waiting
         }
-        LOG(INFO, "AgentHost") << "Waiting for the running host to finish" << std::endl;
         lock = FileLock::acquire(ctx.paths.host_lock());
         takeover.reset();
         if (!lock) {
             return 1;
         }
     }
+    init_log();
 
     ctx.lemond_origin = lemond;
     ctx.api_key = get_environment_variable_utf8("LEMONADE_ADMIN_API_KEY");

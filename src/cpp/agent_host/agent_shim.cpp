@@ -206,10 +206,27 @@ bool remove_shim(const fs::path& file) {
     return fs::remove(file, ec);
 }
 
+std::vector<fs::path> path_dirs(const std::string& path_value) {
+#ifdef _WIN32
+    const char separator = ';';
+#else
+    const char separator = ':';
+#endif
+    std::vector<fs::path> dirs;
+    std::stringstream stream(path_value);
+    for (std::string dir; std::getline(stream, dir, separator);) {
+        // An empty entry means the current directory, which is never searched.
+        const fs::path base = lemon::utils::path_from_utf8(dir);
+        if (!dir.empty() && base.is_absolute()) {
+            dirs.push_back(base.lexically_normal());
+        }
+    }
+    return dirs;
+}
+
 std::vector<fs::path> path_matches(const std::string& name, const std::string& path_value,
                                    const std::string& pathext) {
 #ifdef _WIN32
-    const char separator = ';';
     std::vector<std::string> extensions;
     std::stringstream ext_stream(pathext.empty() ? ".COM;.EXE;.BAT;.CMD" : pathext);
     for (std::string ext; std::getline(ext_stream, ext, ';');) {
@@ -218,25 +235,15 @@ std::vector<fs::path> path_matches(const std::string& name, const std::string& p
         }
     }
 #else
-    const char separator = ':';
     const std::vector<std::string> extensions = {""};
     (void)pathext;
 #endif
     std::vector<fs::path> matches;
-    std::stringstream stream(path_value);
-    for (std::string dir; std::getline(stream, dir, separator);) {
-        // An empty entry means the current directory, which is never searched.
-        if (dir.empty()) {
-            continue;
-        }
-        const fs::path base = lemon::utils::path_from_utf8(dir);
-        if (!base.is_absolute()) {
-            continue;
-        }
+    for (const fs::path& base : path_dirs(path_value)) {
         for (const auto& ext : extensions) {
             const fs::path candidate = base / (name + ext);
             if (is_executable_file(candidate)) {
-                matches.push_back(candidate.lexically_normal());
+                matches.push_back(candidate);
             }
         }
     }
