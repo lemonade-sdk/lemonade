@@ -289,7 +289,7 @@ set(MIN_CLI11_VERSION "2.4.2")
 set(MIN_CURL_VERSION "8.5.0")
 set(MIN_ZSTD_VERSION "1.5.5")
 set(DOWNLOAD_ZSTD_VERSION "1.5.7")
-set(MIN_HTTPLIB_VERSION "0.26.0")
+set(MIN_HTTPLIB_VERSION "0.64.0")
 set(MIN_LWS_VERSION "4.3.3")
 
 find_package(PkgConfig QUIET)
@@ -520,7 +520,7 @@ add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-        GIT_TAG d66d9a95997d51a8ba9822a611d1267757741535  # v0.51.0
+        GIT_TAG 24e58ce5b25d55045af4cd6f463e83a8082fbe6b  # v0.64.0
         GIT_SHALLOW TRUE
     )
     # Header-only mode compiles httplib's whole server, client and TLS code into
