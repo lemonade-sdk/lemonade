@@ -44,6 +44,9 @@ void ConfigEffects::apply(const std::string& key, const json& value) {
             LOG(INFO, "Server") << "Download rate limit disabled" << std::endl;
         }
         utils::HttpClient::set_download_rate_limit(bps);
+    } else if (key == "inference_inactivity_timeout_seconds") {
+        utils::HttpClient::set_inference_inactivity_timeout_seconds(
+            config.inference_inactivity_timeout_seconds());
     } else if (key == "allowed_origins") {
         LOG(INFO, "Server") << "Allowed origins updated: " << config.allowed_origins() << std::endl;
     } else if (key == "model_catalogs") {

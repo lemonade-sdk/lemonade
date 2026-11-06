@@ -108,6 +108,16 @@ public:
     static constexpr long kDefaultRequestTimeoutSeconds = 300;
     static constexpr long kDefaultInferenceInactivityTimeoutSeconds = 1800;
 
+    // A no-total-timeout inference request retains an independent idle guard.
+    // The value is captured per request, so runtime changes affect new calls.
+    // 0 disables only the idle guard; cancellation and connect timeout remain.
+    static void set_inference_inactivity_timeout_seconds(long seconds) {
+        inference_inactivity_timeout_seconds_.store(seconds, std::memory_order_relaxed);
+    }
+    static long inference_inactivity_timeout_seconds() {
+        return inference_inactivity_timeout_seconds_.load(std::memory_order_relaxed);
+    }
+
     // Global cap; when set, downloads are also serialized so concurrent
     // transfers cannot exceed it in aggregate.
     static void set_download_rate_limit(int64_t bytes_per_second) {
@@ -194,6 +204,7 @@ public:
 
 private:
     static std::atomic<int64_t> download_rate_limit_bytes_per_second_;
+    static std::atomic<long> inference_inactivity_timeout_seconds_;
 
     // Single download attempt, may resume from offset
     static DownloadResult download_attempt(const std::string& url,

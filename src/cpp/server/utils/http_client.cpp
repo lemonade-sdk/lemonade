@@ -28,6 +28,8 @@ namespace utils {
 std::atomic<bool> g_download_cancelled{false};
 
 std::atomic<int64_t> HttpClient::download_rate_limit_bytes_per_second_{0};
+std::atomic<long> HttpClient::inference_inactivity_timeout_seconds_{
+    HttpClient::kDefaultInferenceInactivityTimeoutSeconds};
 
 // Serializes transfers so concurrent downloads cannot exceed the cap in aggregate.
 static std::mutex g_download_gate;
@@ -811,7 +813,7 @@ HttpResponse HttpClient::post(const std::string& url,
     ResponseProgress progress;
     progress.cancel = &cancel;
     progress.inactivity_seconds = timeout_seconds == kNoTimeout
-        ? kDefaultInferenceInactivityTimeoutSeconds : 0;
+        ? inference_inactivity_timeout_seconds() : 0;
     if (progress.inactivity_seconds > 0 || cancel.flag || cancel.should_cancel) {
         enable_response_progress(curl, progress);
     }
@@ -907,7 +909,7 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
     ResponseProgress progress;
     progress.cancel = &cancel;
     progress.inactivity_seconds = timeout_seconds == kNoTimeout
-        ? kDefaultInferenceInactivityTimeoutSeconds : 0;
+        ? inference_inactivity_timeout_seconds() : 0;
     if (progress.inactivity_seconds > 0 || cancel.flag || cancel.should_cancel) {
         enable_response_progress(curl, progress);
     }
@@ -1020,7 +1022,7 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     ResponseProgress progress;
     progress.should_cancel = &should_cancel;
     progress.inactivity_seconds = timeout_seconds == kNoTimeout
-        ? kDefaultInferenceInactivityTimeoutSeconds : effective_timeout(timeout_seconds);
+        ? inference_inactivity_timeout_seconds() : effective_timeout(timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
     enable_response_progress(curl, progress);

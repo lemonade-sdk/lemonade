@@ -309,6 +309,9 @@ RuntimeConfig::RuntimeConfig(const json& config)
     if (config_.contains("backend_startup_timeout_seconds")) {
         validate("backend_startup_timeout_seconds", config_["backend_startup_timeout_seconds"]);
     }
+    if (config_.contains("inference_inactivity_timeout_seconds")) {
+        validate("inference_inactivity_timeout_seconds", config_["inference_inactivity_timeout_seconds"]);
+    }
 
     // Validate logging settings on startup
     if (config_.contains("log_max_file_size_mb")) {
@@ -455,6 +458,10 @@ void RuntimeConfig::set_broadcast_override(std::optional<bool> override_val) {
 
 long RuntimeConfig::backend_startup_timeout_seconds() const {
     return get_int_opt(nullptr, {"backend_startup_timeout_seconds"}, 0);
+}
+
+long RuntimeConfig::inference_inactivity_timeout_seconds() const {
+    return get_int_opt(nullptr, {"inference_inactivity_timeout_seconds"}, 1800);
 }
 
 int RuntimeConfig::max_loaded_models() const {
@@ -937,6 +944,11 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (!value.is_number_integer() || value < 0 || value > 86400) {
             throw std::invalid_argument(
                 "'backend_startup_timeout_seconds' must be an integer from 0 to 86400 (0 = backend default)");
+        }
+    } else if (key == "inference_inactivity_timeout_seconds") {
+        if (!value.is_number_integer() || value < 0 || value > 86400) {
+            throw std::invalid_argument(
+                "'inference_inactivity_timeout_seconds' must be an integer from 0 to 86400 (0 = disabled)");
         }
     } else if (key == "max_loaded_models") {
         if (!value.is_number_integer()) {

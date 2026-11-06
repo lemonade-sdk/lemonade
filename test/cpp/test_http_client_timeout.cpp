@@ -215,6 +215,60 @@ int main() {
         ++r.failed;
     }
 
+    // The idle guard can be configured without changing the total time budget
+    // or requiring every caller/backend to supply another HTTP argument.
+    const long original_idle = HttpClient::inference_inactivity_timeout_seconds();
+    HttpClient::set_inference_inactivity_timeout_seconds(0);
+    r.check(HttpClient::inference_inactivity_timeout_seconds() == 0,
+            "idle guard can be disabled at runtime");
+    try {
+        const auto response = HttpClient::post(base + "/delayed", "{}", {},
+                                               HttpClient::kNoTimeout, policy);
+        r.check(response.status_code == 200 && response.body == "ok",
+                "post: disabled guard allows delayed inference");
+    } catch (const std::exception& e) {
+        printf("[FAIL] post with idle guard disabled threw: %s\n", e.what());
+        ++r.failed;
+    }
+    try {
+        const auto response = HttpClient::post_multipart(base + "/delayed",
+            {MultipartField{"f", "v", "", ""}}, HttpClient::kNoTimeout, policy);
+        r.check(response.status_code == 200 && response.body == "ok",
+                "multipart: disabled guard allows delayed inference");
+    } catch (const std::exception& e) {
+        printf("[FAIL] multipart with idle guard disabled threw: %s\n", e.what());
+        ++r.failed;
+    }
+    try {
+        std::string body;
+        const auto response = HttpClient::post_stream(base + "/delayed", "{}",
+            [&body](const char* data, size_t size) {
+                body.append(data, size);
+                return true;
+            }, {}, HttpClient::kNoTimeout, nullptr, policy);
+        r.check(response.status_code == 200 && response.curl_code == 0 && body == "ok",
+                "stream: disabled guard allows delayed inference");
+    } catch (const std::exception& e) {
+        printf("[FAIL] stream with idle guard disabled threw: %s\n", e.what());
+        ++r.failed;
+    }
+
+    HttpClient::set_inference_inactivity_timeout_seconds(2);
+    {
+        bool timed_out = false;
+        const auto start = std::chrono::steady_clock::now();
+        try {
+            HttpClient::post(base + "/silent", "{}", {}, HttpClient::kNoTimeout, policy);
+        } catch (const std::exception&) {
+            timed_out = true;
+        }
+        const double elapsed = std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - start).count();
+        r.check(timed_out && elapsed < 8.0,
+                "runtime idle guard aborts silent inference without a total deadline");
+    }
+    HttpClient::set_inference_inactivity_timeout_seconds(original_idle);
+
     // The sentinel is the only way to ask for an unbounded transfer, so it must
     // not be confused with 0.
     r.check(HttpClient::kNoTimeout != 0,

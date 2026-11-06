@@ -223,6 +223,7 @@
           "hrx_bin": "builtin"
         },
         "inhibit_suspend": true,
+        "inference_inactivity_timeout_seconds": 1800,
         "kokoro": {
           "cpu_bin": "builtin"
         },
@@ -395,6 +396,7 @@
           "hrx_bin": "builtin"
         },
         "inhibit_suspend": true,
+        "inference_inactivity_timeout_seconds": 1800,
         "kokoro": {
           "cpu_bin": "builtin"
         },

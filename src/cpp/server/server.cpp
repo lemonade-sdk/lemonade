@@ -53,6 +53,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     config_effects_ = std::make_unique<ConfigEffects>(ctx_);
     ctx_.config_effects = config_effects_.get();
     utils::HttpClient::set_download_rate_limit(config_->download_rate_limit_bytes_per_second());
+    utils::HttpClient::set_inference_inactivity_timeout_seconds(
+        config_->inference_inactivity_timeout_seconds());
 
     cloud_registry_ = std::make_unique<CloudProviderRegistry>();
     // Seed installed providers from config.json. Runtime keys stay empty
