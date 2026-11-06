@@ -46,7 +46,11 @@ set(COMMON_SOURCES
     ../server/utils/safe_fs.cpp
     agent_launcher.cpp
     agent_config_file.cpp
+    agent_host_client.cpp
     agent_models.cpp
+    ../agent_host/agent_lock.cpp
+    ../agent_host/agent_paths.cpp
+    ../agent_host/agent_shim.cpp
     junie_profile.cpp
     opencode_profile.cpp
     pi_launch_prep.cpp

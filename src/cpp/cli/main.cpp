@@ -5,6 +5,8 @@
 #include "lemon_cli/bench.h"
 #include "lemon_cli/chat_repl.h"
 #include <lemon_cli/agent_config_file.h>
+#include <lemon_cli/agent_host_client.h>
+#include <lemon/agents/agent_shim.h>
 #include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
 #include <lemon/models/registry_types.h>
@@ -765,6 +767,331 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     return true;
 }
 
+static void start_background_load(const CliConfig& config) {
+    std::cout << "Loading model in background: " << config.model << std::endl;
+
+    // Trigger load asynchronously so launch is non-blocking for agent startup.
+    std::thread([host = config.host,
+                 port = config.port,
+                 api_key = config.api_key,
+                 is_ssl = config.is_ssl,
+                 model = config.model,
+                 recipe_options = config.recipe_options]() {
+        try {
+            lemonade::LemonadeClient async_client(host, port, api_key, is_ssl);
+            nlohmann::json request_body = recipe_options;
+            request_body["model_name"] = model;
+            request_body["save_options"] = false;
+            // Keep async load silent to avoid disrupting interactive agent UIs.
+            (void)async_client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json");
+        } catch (const std::exception& e) {
+            (void)e;
+        }
+    }).detach();
+}
+
+static lemon_cli::AgentHostTarget agent_host_target(const CliConfig& config) {
+    return {config.host, config.port, config.is_ssl, config.api_key};
+}
+
+static bool stdin_is_tty() {
+#ifdef _WIN32
+    return _isatty(_fileno(stdin)) != 0;
+#else
+    return isatty(STDIN_FILENO) != 0;
+#endif
+}
+
+static void print_agent_event(const std::string& event, const nlohmann::json& data) {
+    const std::string message = data.is_object() ? data.value("message", "") : "";
+    if (event == "status" && !message.empty()) {
+        std::cout << message << std::endl;
+    } else if (event == "warning" && !message.empty()) {
+        std::cerr << "Warning: " << message << std::endl;
+    }
+}
+
+static int install_agent_via_host(lemonade::LemonadeClient& client, const std::string& token,
+                                  const std::string& agent, bool force) {
+    lemonade::StreamingRequestState progress;
+    try {
+        const nlohmann::json result = lemon_cli::agent_stream(
+            client, token, "/api/v1/agents/" + agent + "/install",
+            {{"stream", true}, {"force", force}, {"agent_dir", lemon_cli::resolve_pi_agent_dir()}},
+            [&progress](const std::string& event, const nlohmann::json& data) {
+                if (event == "progress") {
+                    lemonade::parse_sse_progress(data.dump(), progress);
+                } else {
+                    if (!progress.last_file.empty() && progress.last_percent != 100) {
+                        std::cout << std::endl;
+                        progress.last_percent = 100;
+                    }
+                    print_agent_event(event, data);
+                }
+            });
+        if (!progress.last_file.empty() && progress.last_percent != 100) {
+            std::cout << std::endl;
+        }
+        std::cout << (result.value("downloaded", true) ? "Installed " : "Already installed: ")
+                  << agent << " " << result.value("version", "") << " at "
+                  << result.value("binary", "") << std::endl;
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+static void print_agents_table(const nlohmann::json& listing) {
+    std::printf("%-8s %-9s %-10s %-9s %s\n", "AGENT", "PINNED", "INSTALLED", "IN USE", "BINARY");
+    for (const auto& agent : listing.value("agents", nlohmann::json::array())) {
+        const auto field = [&agent](const char* key, const char* inner) -> std::string {
+            const auto it = agent.find(key);
+            return it != agent.end() && it->is_object() ? it->value(inner, "") : "";
+        };
+        const std::string active = agent.value("active", "none");
+        const std::string binary = active == "managed" ? field("installed", "binary")
+                                   : active == "external" ? field("external", "binary") : "-";
+        const std::string pinned = agent.contains("pinned") && agent["pinned"].is_string()
+                                       ? agent["pinned"].get<std::string>() : "-";
+        const std::string installed = field("installed", "version");
+        std::printf("%-8s %-9s %-10s %-9s %s\n", agent.value("id", "").c_str(), pinned.c_str(),
+                    installed.empty() ? "-" : installed.c_str(), active.c_str(), binary.c_str());
+    }
+    for (const auto& agent : listing.value("agents", nlohmann::json::array())) {
+        const auto shim = agent.value("shim", nlohmann::json::object());
+        const std::string shim_path = shim.value("path", "");
+        if (shim.value("state", "") == "foreign") {
+            std::cout << "\nNote: " << shim_path << " isn't Lemonade's shim, so `"
+                      << agent.value("id", "") << "` there runs something else." << std::endl;
+        } else if (shim.value("state", "") == "ours") {
+            const std::string dir =
+                lemon::utils::path_to_utf8(lemon::utils::path_from_utf8(shim_path).parent_path());
+            const auto on_path = lemon::agents::path_matches(
+                lemon::utils::path_from_utf8(shim_path).filename().string(),
+                lemon::utils::get_environment_variable_utf8("PATH"));
+            if (on_path.empty() || on_path.front() != lemon::utils::path_from_utf8(shim_path)) {
+                std::cout << "\nNote: " << dir << " isn't first on your PATH for `"
+                          << agent.value("id", "") << "`; add it to run the managed "
+                          << agent.value("name", "agent") << " directly." << std::endl;
+            }
+        }
+    }
+}
+
+static int handle_agents_enable(bool enable) {
+#if defined(_WIN32)
+    (void)enable;
+    std::cout << "On Windows, lemonade starts the agent host when a command needs it."
+              << std::endl;
+    return 0;
+#elif defined(__APPLE__)
+    const std::string home = lemon::utils::get_environment_variable_utf8("HOME");
+    const std::filesystem::path plist =
+        std::filesystem::path(home) / "Library" / "LaunchAgents" / "ai.lemonadeserver.agent-host.plist";
+    const std::string domain = "gui/" + std::to_string(getuid());
+    std::error_code ec;
+    if (!enable) {
+        lemon::utils::ProcessManager::run_process_with_output(
+            "launchctl", {"bootout", domain, plist.string()}, [](const std::string&) { return true; },
+            "", 30, false);
+        std::filesystem::remove(plist, ec);
+        std::cout << "The agent host no longer starts at login." << std::endl;
+        return 0;
+    }
+    const std::string host_exe =
+        (std::filesystem::path(lemon::utils::get_executable_dir()) / "lemonade-agent-host").string();
+    // Like the systemd unit's EnvironmentFile: a user with a key sets it there.
+    const std::string command = ". \"$HOME/.config/lemonade/agent-host.env\" 2>/dev/null; exec '" +
+                                host_exe + "' --persistent";
+    std::filesystem::create_directories(plist.parent_path(), ec);
+    std::ofstream out(plist);
+    out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+           "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" "
+           "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+           "<plist version=\"1.0\"><dict>\n"
+           "  <key>Label</key><string>ai.lemonadeserver.agent-host</string>\n"
+           "  <key>ProgramArguments</key><array><string>/bin/sh</string><string>-c</string>"
+           "<string>" << command << "</string></array>\n"
+           "  <key>RunAtLoad</key><true/>\n"
+           "  <key>KeepAlive</key><true/>\n"
+           "</dict></plist>\n";
+    out.close();
+    lemon::utils::ProcessManager::run_process_with_output(
+        "launchctl", {"bootout", domain, plist.string()}, [](const std::string&) { return true; },
+        "", 30, false);
+    const int rc = lemon::utils::ProcessManager::run_process_with_output(
+        "launchctl", {"bootstrap", domain, plist.string()},
+        [](const std::string& line) { std::cerr << line << std::endl; return true; }, "", 30, false);
+    if (rc != 0) {
+        std::cerr << "Error: launchctl bootstrap failed." << std::endl;
+        return 1;
+    }
+    std::cout << "The agent host now starts at login." << std::endl;
+    return 0;
+#else
+    const int rc = lemon::utils::ProcessManager::run_process_with_output(
+        "systemctl", {"--user", enable ? "enable" : "disable", "--now", "lemonade-agent-host.service"},
+        [](const std::string& line) { std::cout << line << std::endl; return true; }, "", 60, false);
+    if (rc != 0) {
+        std::cerr << "Error: systemctl --user " << (enable ? "enable" : "disable")
+                  << " lemonade-agent-host.service failed." << std::endl;
+        return 1;
+    }
+    std::cout << (enable ? "The agent host now starts with your session."
+                         : "The agent host no longer starts with your session.")
+              << std::endl;
+    return 0;
+#endif
+}
+
+struct AgentsCommand {
+    CLI::App* cmd = nullptr;
+    CLI::App* list = nullptr;
+    CLI::App* install = nullptr;
+    CLI::App* uninstall = nullptr;
+    CLI::App* configure = nullptr;
+    CLI::App* enable = nullptr;
+    CLI::App* disable = nullptr;
+    std::string id;
+    std::optional<bool> mcp;
+};
+
+static int handle_agents_command(lemonade::LemonadeClient& client, const CliConfig& config,
+                                 const AgentsCommand& agents) {
+    if (agents.enable->count() > 0 || agents.disable->count() > 0) {
+        return handle_agents_enable(agents.enable->count() > 0);
+    }
+    std::string token;
+    try {
+        token = lemon_cli::ensure_agent_host(client, agent_host_target(config));
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+    try {
+        if (agents.install->count() > 0) {
+            return install_agent_via_host(client, token, agents.id, config.force);
+        }
+        if (agents.uninstall->count() > 0) {
+            const auto result =
+                lemon_cli::agent_request(client, token, "DELETE", "/api/v1/agents/" + agents.id);
+            for (const auto& warning : result.value("warnings", nlohmann::json::array())) {
+                std::cerr << "Warning: " << warning.get<std::string>() << std::endl;
+            }
+            std::cout << (result.value("removed", false) ? "Removed " : "Nothing to remove for ")
+                      << agents.id << "." << std::endl;
+            return 0;
+        }
+        if (agents.configure->count() > 0) {
+            nlohmann::json body = {{"agent_dir", lemon_cli::resolve_pi_agent_dir()}};
+            if (agents.mcp) {
+                body["mcp"] = *agents.mcp;
+            }
+            const auto result = lemon_cli::agent_request(
+                client, token, "POST", "/api/v1/agents/" + agents.id + "/configure", body);
+            for (const auto& warning : result.value("warnings", nlohmann::json::array())) {
+                std::cerr << "Warning: " << warning.get<std::string>() << std::endl;
+            }
+            std::cout << "Configured " << agents.id << " for this Lemonade server." << std::endl;
+            return 0;
+        }
+        print_agents_table(lemon_cli::agent_request(client, token, "GET", "/api/v1/agents"));
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+// Launches pi through the agent host. Returns nullopt when the host can't be
+// used, so the caller falls back to finding pi itself.
+static std::optional<int> launch_pi_via_host(lemonade::LemonadeClient& client,
+                                             const CliConfig& config,
+                                             const lemon_tray::AgentConfig& agent_config) {
+    if (!lemon_cli::loopback_target(config.host) || config.is_ssl) {
+        return std::nullopt;
+    }
+    std::string token;
+    try {
+        token = lemon_cli::ensure_agent_host(client, agent_host_target(config));
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: " << e.what() << " Launching pi without the agent host."
+                  << std::endl;
+        return std::nullopt;
+    }
+
+    nlohmann::json body = {
+        {"model", config.model},
+        {"cwd", lemon::utils::path_to_utf8(std::filesystem::current_path())},
+        {"args", lemon::utils::parse_custom_args(config.agent_args)},
+        {"client_has_api_key", !config.api_key.empty()},
+        {"codemode", config.pi_codemode},
+        {"agent_dir", lemon_cli::resolve_pi_agent_dir()},
+        {"search_path", lemon::utils::get_environment_variable_utf8("PATH")},
+    };
+    if (config.pi_mcp) {
+        body["mcp"] = *config.pi_mcp;
+    }
+    if (config.recipe_options.is_object()) {
+        body["recipe_options"] = config.recipe_options;
+    }
+
+    nlohmann::json spec;
+    for (int attempt = 0;; ++attempt) {
+        try {
+            spec = lemon_cli::agent_stream(client, token, "/api/v1/agents/pi/launch", body,
+                                           print_agent_event);
+            break;
+        } catch (const lemon_cli::AgentRouteError& e) {
+            if (e.code != "agent_not_installed" || attempt > 0) {
+                std::cerr << "Error: " << e.what() << std::endl;
+                return 1;
+            }
+            const std::string version = e.body.value("version", "");
+            if (!stdin_is_tty()) {
+                std::cerr << "Error: pi isn't installed. Install it with `lemonade agents install pi`."
+                          << std::endl;
+                return 1;
+            }
+            std::cout << "Install pi " << version << " with Lemonade? [Y/n] " << std::flush;
+            std::string answer;
+            std::getline(std::cin, answer);
+            if (!answer.empty() && answer[0] != 'y' && answer[0] != 'Y') {
+                return 1;
+            }
+            if (install_agent_via_host(client, token, "pi", false) != 0) {
+                return 1;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Error: " << e.what() << std::endl;
+            return 1;
+        }
+    }
+
+    if (!spec.value("model_loaded", false)) {
+        start_background_load(config);
+    }
+    std::vector<std::pair<std::string, std::string>> env = agent_config.env_vars;
+    const nlohmann::json spec_env = spec.value("env", nlohmann::json::object());
+    for (const auto& [name, value] : spec_env.items()) {
+        if (value.is_string()) {
+            env.emplace_back(name, value.get<std::string>());
+        }
+    }
+    std::cout << "Launching pi..." << std::endl;
+    lemon::utils::ProcessHandle handle;
+    try {
+        handle = lemon::utils::ProcessManager::start_process(
+            spec.value("binary", ""), spec.value("args", std::vector<std::string>{}),
+            spec.value("cwd", ""), true, false, env);
+    } catch (const std::exception& e) {
+        LOG(ERROR, "AgentLauncher") << "Error: Failed to launch agent process: " << e.what() << std::endl;
+        return 1;
+    }
+    return lemon::utils::ProcessManager::wait_for_exit(handle, -1);
+}
+
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
     if (config.agent.empty() && !prompt_agent_selection(config.agent)) {
         return 1;
@@ -810,6 +1137,12 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         std::cout << "Launch auth: API key provided and propagated to the launched agent." << std::endl;
     }
 
+    if (config.agent == "pi") {
+        if (const auto result = launch_pi_via_host(client, config, agent_config)) {
+            return *result;
+        }
+    }
+
     if (config.agent == "pi" && config.pi_codemode) {
         agent_config.extra_args.push_back("--tools");
         agent_config.extra_args.push_back("+codemode");
@@ -846,26 +1179,7 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     }
 
     if (!model_loaded) {
-        std::cout << "Loading model in background: " << config.model << std::endl;
-
-        // Trigger load asynchronously so launch is non-blocking for agent startup.
-        std::thread([host = config.host,
-                     port = config.port,
-                     api_key = config.api_key,
-                     is_ssl = config.is_ssl,
-                     model = config.model,
-                     recipe_options = config.recipe_options]() {
-            try {
-                lemonade::LemonadeClient async_client(host, port, api_key, is_ssl);
-                nlohmann::json request_body = recipe_options;
-                request_body["model_name"] = model;
-                request_body["save_options"] = false;
-                // Keep async load silent to avoid disrupting interactive agent UIs.
-                (void)async_client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json");
-            } catch (const std::exception& e) {
-                (void)e;
-            }
-        }).detach();
+        start_background_load(config);
     }
 
     std::cout << "Launching " << config.agent << "..." << std::endl;
@@ -1335,6 +1649,19 @@ int main(int argc, char* argv[]) {
     // Server commands
     CLI::App* backends_cmd = app.add_subcommand("backends", "List supported recipes and backends. Use --all to show all backends")->group("Server");
     backends_cmd->alias("recipes");
+    AgentsCommand agents;
+    agents.cmd = app.add_subcommand("agents", "Install, configure and remove the agents Lemonade manages")->group("Server");
+    agents.list = agents.cmd->add_subcommand("list", "List agents and what is installed")->group("Subcommands");
+    agents.install = agents.cmd->add_subcommand("install", "Install or update an agent to its pinned version")->group("Subcommands");
+    agents.install->add_option("agent", agents.id, "Agent to install, e.g. pi")->required()->type_name("AGENT");
+    agents.install->add_flag("--force", config.force, "Download and install again");
+    agents.uninstall = agents.cmd->add_subcommand("uninstall", "Remove an installed agent and its shim")->group("Subcommands");
+    agents.uninstall->add_option("agent", agents.id, "Agent to remove")->required()->type_name("AGENT");
+    agents.configure = agents.cmd->add_subcommand("configure", "Point an agent at this Lemonade server")->group("Subcommands");
+    agents.configure->add_option("agent", agents.id, "Agent to configure")->required()->type_name("AGENT");
+    agents.configure->add_flag("--mcp,!--no-mcp", agents.mcp, "Add (--mcp) or remove (--no-mcp) Lemonade's MCP server");
+    agents.enable = agents.cmd->add_subcommand("enable", "Start the agent host with your session")->group("Subcommands");
+    agents.disable = agents.cmd->add_subcommand("disable", "Stop starting the agent host with your session")->group("Subcommands");
     backends_cmd->add_flag("--all", config.backends_showall, "Show all backends");
     CLI::App* backends_install_cmd = backends_cmd->add_subcommand("install", "Install a backend")->group("Subcommands");
     CLI::App* backends_uninstall_cmd = backends_cmd->add_subcommand("uninstall", "Uninstall a backend")->group("Subcommands");
@@ -1695,6 +2022,8 @@ int main(int argc, char* argv[]) {
                                        backends_install_cmd->count() > 0,
                                        backends_uninstall_cmd->count() > 0,
                                        backends_info_cmd->count() > 0);
+    } else if (agents.cmd->count() > 0) {
+        return handle_agents_command(client, config, agents);
     } else if (alias_cmd->count() > 0) {
         if (alias_add_cmd->count() > 0) {
             return client.alias_add(config.alias_name, config.alias_target);

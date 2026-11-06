@@ -184,9 +184,11 @@ static void print_response_warnings(const json& value, const std::string& indent
 // Overloaded make_request with configurable timeouts (in milliseconds)
 std::string LemonadeClient::make_request(const std::string& path, const std::string& method,
                                           const std::string& body, const std::string& content_type,
-                                          time_t connection_timeout_ms, time_t read_timeout_ms) const {
+                                          time_t connection_timeout_ms, time_t read_timeout_ms,
+                                          const std::map<std::string, std::string>& extra_headers) const {
     std::string normalized_host = normalize_host(host_);
     httplib::Client cli = make_client(normalized_host, port_, api_key_, is_ssl_, connection_timeout_ms, read_timeout_ms);
+    cli.set_default_headers(httplib::Headers(extra_headers.begin(), extra_headers.end()));
 
     httplib::Result res;
 
@@ -272,9 +274,11 @@ bool LemonadeClient::make_request(const std::string& path, const std::string& me
                                    const std::string& body, const std::string& content_type,
                                    std::function<void(const std::string& event_type, const std::string& event_data)> callback,
                                    time_t connection_timeout_ms, time_t read_timeout_ms,
-                                   std::function<bool()> should_abort) const {
+                                   std::function<bool()> should_abort,
+                                   const std::map<std::string, std::string>& extra_headers) const {
     std::string normalized_host = normalize_host(host_);
     httplib::Client cli = make_client(normalized_host, port_, api_key_, is_ssl_, connection_timeout_ms, read_timeout_ms);
+    cli.set_default_headers(httplib::Headers(extra_headers.begin(), extra_headers.end()));
 
     if (method == "POST") {
         auto res = handle_sse_stream(cli, path, body, content_type, callback, should_abort);
@@ -959,7 +963,7 @@ static std::string format_speed(double bytes_per_sec) {
     }
 }
 
-static bool parse_sse_progress(const std::string& event_data, StreamingRequestState& state) {
+bool parse_sse_progress(const std::string& event_data, StreamingRequestState& state) {
     std::string& last_file = state.last_file;
     int& last_percent = state.last_percent;
     std::string& error_message = state.error_message;
