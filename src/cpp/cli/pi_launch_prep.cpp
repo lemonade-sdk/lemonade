@@ -24,7 +24,14 @@ bool prepare_pi_config(const LemondCall& call,
                        bool* model_loaded,
                        std::mutex* write_mutex) {
     // A window of 0 marks a model without a saved size until the fallback is applied.
-    std::vector<AgentModelEntry> models = fetch_llm_models_for_sync(call, 0);
+    std::string fetch_error;
+    std::vector<AgentModelEntry> models = fetch_llm_models_for_sync(call, 0, &fetch_error);
+    // Launch still writes the selected model; without one, writing would empty
+    // the provider pi already has.
+    if (!request.model && !fetch_error.empty()) {
+        report(PrepLevel::Error, "Can't read Lemonade's models: " + fetch_error);
+        return false;
+    }
 
     bool selected_unknown = false;
     if (request.model) {

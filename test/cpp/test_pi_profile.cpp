@@ -299,6 +299,11 @@ struct FakeLemond {
     }
 };
 
+void write_file_in(const fs::path& dir, const std::string& name, const std::string& content) {
+    fs::create_directories(dir);
+    write_file(dir / name, content);
+}
+
 std::vector<std::string> prep_messages;
 void record(lemon_cli::PrepLevel, const std::string& message) {
     prep_messages.push_back(message);
@@ -369,6 +374,24 @@ void test_prepare_pi_config(const fs::path& root) {
         check("unknown model still launches", ok);
         check("unknown model warns", any_message_contains("is not a model on the Lemonade server"));
         check("unknown model is not loaded", !fake.called("POST /api/v1/load"));
+    }
+    {
+        const fs::path dir = root / "fetch-fails";
+        write_file_in(dir, "models.json",
+                      R"({"providers":{"Lemonade":{"models":[{"id":"Kept"}]}}})");
+        const lemon_cli::LemondCall failing = [](const std::string&, const std::string&,
+                                                 const std::string&, int) -> std::string {
+            throw lemon_cli::LemondHttpError(401, "Invalid or missing API key");
+        };
+        lemon_cli::PiPrepRequest request;
+        request.server_origin = "http://127.0.0.1:13305";
+        request.agent_dir = dir.string();
+        prep_messages.clear();
+        const bool ok = lemon_cli::prepare_pi_config(failing, request, record);
+        check("configure-only prep stops when lemond's model list can't be read",
+              !ok && any_message_contains("Invalid or missing API key"));
+        check("a failed model fetch leaves pi's models alone",
+              read_file(dir / "models.json").find("Kept") != std::string::npos);
     }
 #ifndef _WIN32
     if (geteuid() != 0) {

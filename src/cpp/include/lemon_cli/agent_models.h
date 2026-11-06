@@ -32,9 +32,11 @@ AgentModelEntry agent_model_entry_from_json(const std::string& id,
                                             const nlohmann::json& model,
                                             int default_context_window);
 
-// Downloaded models labeled chat. Failures yield an empty list.
+// Downloaded models labeled chat. A failure yields an empty list and, when
+// error_out is given, the reason.
 std::vector<AgentModelEntry> fetch_llm_models_for_sync(const LemondCall& call,
-                                                       int context_window);
+                                                       int context_window,
+                                                       std::string* error_out = nullptr);
 
 // Auto-tune sizes the context only when the model loads, so the window is
 // read from the server after loading. Returns false when the load fails;

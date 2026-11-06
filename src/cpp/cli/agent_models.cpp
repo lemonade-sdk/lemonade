@@ -32,7 +32,8 @@ AgentModelEntry agent_model_entry_from_json(const std::string& id,
 }
 
 std::vector<AgentModelEntry> fetch_llm_models_for_sync(const LemondCall& call,
-                                                       int context_window) {
+                                                       int context_window,
+                                                       std::string* error_out) {
     std::vector<AgentModelEntry> models;
 
     try {
@@ -55,8 +56,10 @@ std::vector<AgentModelEntry> fetch_llm_models_for_sync(const LemondCall& call,
             }
             models.push_back(std::move(entry));
         }
-    } catch (const std::exception&) {
-        // Non-fatal: the selected model is still added by the caller.
+    } catch (const std::exception& e) {
+        if (error_out != nullptr) {
+            *error_out = e.what();
+        }
     }
 
     return models;
