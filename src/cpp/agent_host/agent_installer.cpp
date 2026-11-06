@@ -16,10 +16,6 @@
 #ifdef __APPLE__
 #include <libproc.h>
 #endif
-#ifndef _WIN32
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
 
 namespace fs = std::filesystem;
 
@@ -105,16 +101,6 @@ std::vector<fs::path> list_dir(const fs::path& dir) {
         entries.push_back(it->path());
     }
     return entries;
-}
-
-bool owned_by_user(const fs::path& file) {
-#ifdef _WIN32
-    (void)file;
-    return true;
-#else
-    struct stat info {};
-    return ::lstat(file.c_str(), &info) == 0 && info.st_uid == ::geteuid();
-#endif
 }
 
 // A removal is moved aside to a fresh name, since an interrupted one may
@@ -504,13 +490,8 @@ bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
         }
         ec.clear();
         const fs::path shim = shim_path(paths, agent.binary);
-        const fs::file_status shim_status = fs::symlink_status(shim, ec);
-        // Our shim is the user's own file; one they can't read is only a
-        // problem if it is theirs, since someone else's is never ours.
-        if (!ec && fs::is_regular_file(shim_status) && !std::ifstream(shim).is_open() &&
-            owned_by_user(shim)) {
-            ec = std::make_error_code(std::errc::permission_denied);
-        }
+        // An unreadable shim directory can't be told apart from no shim.
+        (void)fs::symlink_status(shim, ec);
         if (ec && ec != std::errc::no_such_file_or_directory) {
             throw AgentError(500, "uninstall_failed",
                              "Can't inspect " + shim.string() + ": " + ec.message());
