@@ -463,6 +463,27 @@ class AgentManagerTests(unittest.TestCase):
             )
             self.assertEqual(unauthorized.status_code, 401)
 
+    def test_085_host_rejects_bad_launch_input(self):
+        self.cli(["agents", "list"])
+        headers = {**_auth_headers(), "X-Lemonade-Agent-Token": self.token()}
+        base = f"http://127.0.0.1:{PORT}/api/v1/agents/pi"
+        empty_model = requests.post(
+            f"{base}/launch",
+            json={"model": "", "cwd": self.home},
+            headers=headers,
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertIn('"code":"invalid_argument"', empty_model.text)
+        relative = requests.post(
+            f"{base}/configure",
+            json={"agent_dir": "relative-dir"},
+            headers=headers,
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(relative.status_code, 400)
+        self.assertEqual(relative.json()["code"], "invalid_argument")
+        self.assertFalse(os.path.exists(os.path.join(self.home, "relative-dir")))
+
     def test_090_remote_target_never_gets_the_token(self):
         address = non_loopback_address()
         if address is None:

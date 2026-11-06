@@ -123,6 +123,7 @@ json HostRoutes::list() {
 json HostRoutes::install(const std::string& id, const json& body, Responder& responder,
                          const std::shared_ptr<std::atomic<bool>>& cancelled) {
     const auto& agent = find_agent(id);
+    const std::string agent_dir = requested_agent_dir(body);
     Installing guard(*this, agent.id);
     const AgentPin pin = resolve_pin(agent, load_agent_versions(), host_os(), host_arch(),
                                      ctx_.release_base_url);
@@ -153,7 +154,7 @@ json HostRoutes::install(const std::string& id, const json& body, Responder& res
                                            progress, cancel, ctx_.download_policy);
     // pi's own config is best effort: the install stands without it.
     try {
-        for (auto& warning : pi_configure(ctx_, std::nullopt, body.value("agent_dir", ""))) {
+        for (auto& warning : pi_configure(ctx_, std::nullopt, agent_dir)) {
             outcome.warnings.push_back(warning);
         }
     } catch (const AgentError& e) {
@@ -186,7 +187,7 @@ json HostRoutes::configure(const std::string& id, const json& body) {
     if (body.contains("mcp") && body["mcp"].is_boolean()) {
         mcp = body["mcp"].get<bool>();
     }
-    return {{"warnings", pi_configure(ctx_, mcp, body.value("agent_dir", ""))}};
+    return {{"warnings", pi_configure(ctx_, mcp, requested_agent_dir(body))}};
 }
 
 json HostRoutes::launch(const std::string& id, const json& body, Responder& responder) {

@@ -790,6 +790,14 @@ static void start_background_load(const CliConfig& config) {
     }).detach();
 }
 
+// The host runs elsewhere, so a relative PI_CODING_AGENT_DIR is resolved here.
+static std::string pi_agent_dir_for_host() {
+    const std::string dir = lemon_cli::resolve_pi_agent_dir();
+    return dir.empty() ? dir
+                       : lemon::utils::path_to_utf8(
+                             std::filesystem::absolute(lemon::utils::path_from_utf8(dir)));
+}
+
 static lemon_cli::AgentHostTarget agent_host_target(const CliConfig& config) {
     return {config.host, config.port, config.is_ssl, config.api_key};
 }
@@ -817,7 +825,7 @@ static int install_agent_via_host(lemonade::LemonadeClient& client, const std::s
     try {
         const nlohmann::json result = lemon_cli::agent_stream(
             client, token, "/api/v1/agents/" + agent + "/install",
-            {{"stream", true}, {"force", force}, {"agent_dir", lemon_cli::resolve_pi_agent_dir()}},
+            {{"stream", true}, {"force", force}, {"agent_dir", pi_agent_dir_for_host()}},
             [&progress](const std::string& event, const nlohmann::json& data) {
                 if (event == "progress") {
                     lemonade::parse_sse_progress(data.dump(), progress);
@@ -972,7 +980,7 @@ static int handle_agents_command(lemonade::LemonadeClient& client, const CliConf
             return 0;
         }
         if (agents.configure->count() > 0) {
-            nlohmann::json body = {{"agent_dir", lemon_cli::resolve_pi_agent_dir()}};
+            nlohmann::json body = {{"agent_dir", pi_agent_dir_for_host()}};
             if (agents.mcp) {
                 body["mcp"] = *agents.mcp;
             }
@@ -1015,7 +1023,7 @@ static std::optional<int> launch_pi_via_host(lemonade::LemonadeClient& client,
         {"args", lemon::utils::parse_custom_args(config.agent_args)},
         {"client_has_api_key", !config.api_key.empty()},
         {"codemode", config.pi_codemode},
-        {"agent_dir", lemon_cli::resolve_pi_agent_dir()},
+        {"agent_dir", pi_agent_dir_for_host()},
         {"search_path", lemon::utils::get_environment_variable_utf8("PATH")},
     };
     if (config.pi_mcp) {

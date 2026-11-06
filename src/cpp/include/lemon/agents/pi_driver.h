@@ -48,6 +48,10 @@ AgentCommand apply_execution_policy(AgentCommand command);
 // isn't Lemonade's shim. Empty when there is none.
 std::string find_external_pi(const std::string& search_path);
 
+// The request's agent_dir, which must be absolute: the host's own working
+// directory means nothing to the client. Empty when the request has none.
+std::string requested_agent_dir(const nlohmann::json& body);
+
 nlohmann::json pi_status(HostContext& ctx);
 
 // Writes pi's provider and MCP entry for lemond. Returns warnings; throws

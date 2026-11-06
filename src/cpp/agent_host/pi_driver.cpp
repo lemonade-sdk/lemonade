@@ -131,6 +131,16 @@ std::string find_external_pi(const std::string& search_path) {
     return "";
 }
 
+std::string requested_agent_dir(const json& body) {
+    const std::string dir = body.contains("agent_dir") && body["agent_dir"].is_string()
+                                ? body["agent_dir"].get<std::string>()
+                                : "";
+    if (!dir.empty() && !lemon::utils::path_from_utf8(dir).is_absolute()) {
+        throw AgentError(400, "invalid_argument", "`agent_dir` must be an absolute path.");
+    }
+    return dir;
+}
+
 json pi_status(HostContext& ctx) {
     const auto& pi = find_agent("pi");
     json entry = {{"id", pi.id}, {"name", pi.name}, {"sandbox", "off"}};
@@ -196,6 +206,9 @@ json pi_launch(HostContext& ctx, const json& body, const EventSink& events,
         throw AgentError(400, "invalid_cwd", "`cwd` must be an absolute directory.");
     }
     const std::string model = body.value("model", "");
+    if (model.empty()) {
+        throw AgentError(400, "invalid_argument", "`model` must name a model.");
+    }
     const bool codemode = body.value("codemode", false);
     std::optional<bool> mcp;
     if (body.contains("mcp") && body["mcp"].is_boolean()) {
@@ -245,7 +258,7 @@ json pi_launch(HostContext& ctx, const json& body, const EventSink& events,
     if (body.contains("recipe_options") && body["recipe_options"].is_object()) {
         request.recipe_options = body["recipe_options"];
     }
-    request.agent_dir = body.value("agent_dir", "");
+    request.agent_dir = requested_agent_dir(body);
     if (request.agent_dir.empty()) {
         request.agent_dir = lemon_cli::resolve_pi_agent_dir();
     }
