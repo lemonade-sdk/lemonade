@@ -14,7 +14,7 @@ const DEPLOYMENT_LABEL_FOR_KIND: Partial<Record<ModelCapability, string>> = {
   chat: 'chat', audio: 'transcription', embedding: 'embeddings',
   reranking: 'reranking', image: 'image', tts: 'tts',
   'audio-generation': 'audio-generation', classification: 'classification',
-  model3d: '3d',
+  model3d: '3d', video: 'video',
 };
 
 const REMOTE_FEATURE_LABELS = new Map<string, string>([
