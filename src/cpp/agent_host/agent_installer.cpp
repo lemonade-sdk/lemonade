@@ -18,8 +18,6 @@ namespace lemon::agents {
 namespace {
 
 constexpr const char* kManifest = ".lemonade-install.json";
-// The version the last install pointed the shim at, kept when the next one replaces it.
-constexpr const char* kActive = ".active";
 
 fs::path binary_in(const fs::path& dir, const std::string& binary) {
 #ifdef _WIN32
@@ -149,6 +147,28 @@ std::optional<InstalledAgent> find_active(const AgentDescriptor& agent, const Ag
     return find_installed(agent, paths);
 }
 
+// The installed version our shim runs, or the newest when there's no shim of
+// ours to ask.
+std::optional<InstalledAgent> shim_target(const AgentDescriptor& agent, const AgentPaths& paths) {
+    const fs::path shim = shim_path(paths, agent.binary);
+    if (shim_state(shim) == ShimState::Ours) {
+        std::ifstream in(shim, std::ios::binary);
+        std::stringstream content;
+        content << in.rdbuf();
+        const std::string text = content.str();
+        for (const fs::path& entry : list_dir(paths.agent_dir(agent.id))) {
+            const std::string version = entry.filename().string();
+            if (text.find("/" + version + "/") != std::string::npos ||
+                text.find("\\" + version + "\\") != std::string::npos) {
+                if (auto installed = find_installed(agent, paths, version)) {
+                    return installed;
+                }
+            }
+        }
+    }
+    return find_installed(agent, paths);
+}
+
 InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
                              const AgentPaths& paths, bool force,
                              const InstallProgress& progress,
@@ -157,14 +177,7 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     InstallOutcome outcome;
     const fs::path root = paths.agent_dir(agent.id);
     const fs::path dir = root / pin.version;
-    std::optional<InstalledAgent> previous;
-    {
-        std::ifstream in(root / kActive);
-        std::string version;
-        std::getline(in, version);
-        previous = version.empty() ? find_installed(agent, paths)
-                                   : find_installed(agent, paths, version);
-    }
+    const auto previous = shim_target(agent, paths);
     std::error_code ec;
 
     if (force || !manifest_matches(dir, agent, pin)) {
@@ -276,10 +289,6 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     }
 
     outcome.installed = InstalledAgent{pin.version, dir, binary_in(dir, agent.binary)};
-    {
-        std::ofstream active(root / kActive, std::ios::trunc);
-        active << pin.version << "\n";
-    }
 
     const fs::path shim = shim_path(paths, agent.binary);
 #ifdef _WIN32
@@ -300,8 +309,9 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     }
     outcome.shim = shim_state(shim);
 
-    // A pi started from the version just replaced may still read its files,
-    // so that one stays until the next install. Older ones go, best effort:
+    // A pi started through the shim may still read its version's files, so
+    // that version stays until the next install, even when the shim couldn't
+    // be rewritten. Older ones go, best effort:
     // Windows keeps a running version's files locked, and the next install retries.
     for (const fs::path& entry : list_dir(root)) {
         if (entry != dir && (!previous || entry != previous->dir) &&

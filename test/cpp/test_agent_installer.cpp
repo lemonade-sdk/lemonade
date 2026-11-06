@@ -8,6 +8,10 @@
 
 #include <httplib.h>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 #include "lemon/agents/agent_installer.h"
 #include "lemon/agents/host_protocol.h"
 #include "lemon/utils/process_manager.h"
@@ -93,6 +97,7 @@ int main() {
 #ifndef _WIN32
     releases["v3.0.0/" + asset] = build_asset(work, "a4", true, "../../../../etc/passwd");
     releases["v3.1.0/" + asset] = build_asset(work, "a5", true, "chain");
+    releases["v1.7.0/" + asset] = build_asset(work, "a6", true);
 #endif
 
     std::atomic<int> requests{0};
@@ -208,6 +213,24 @@ int main() {
               fs::exists(kept.agent_dir("pi") / "1.6.0") &&
                   find_active(pi, kept, "1.5.0")->version == "1.5.0");
     }
+#ifndef _WIN32
+    if (geteuid() != 0) {
+        // The shim can't be rewritten, so it keeps running 1.6.0: that payload must stay.
+        AgentPaths stuck = paths;
+        stuck.data_root = work / "stuck" / "agents";
+        stuck.bin_dir = work / "stuck" / "bin";
+        install_agent(pi, pin_for("v1.6.0"), stuck, false, nullptr, no_cancel, loopback);
+        fs::permissions(stuck.bin_dir, fs::perms::owner_read | fs::perms::owner_exec);
+        const auto blocked =
+            install_agent(pi, pin_for("v1.5.0"), stuck, false, nullptr, no_cancel, loopback);
+        install_agent(pi, pin_for("v1.7.0"), stuck, false, nullptr, no_cancel, loopback);
+        fs::permissions(stuck.bin_dir, fs::perms::owner_all);
+        check("a shim that couldn't be rewritten is reported", !blocked.warnings.empty());
+        check("the payload the shim still runs is never removed",
+              fs::exists(stuck.agent_dir("pi") / "1.6.0" / "pi") &&
+                  read_file(stuck.bin_dir / "pi").find("1.6.0") != std::string::npos);
+    }
+#endif
 
     std::vector<std::string> warnings;
     check("uninstall removes payload and shim",
