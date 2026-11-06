@@ -87,6 +87,41 @@ std::string render_cmd_shim(const std::string& agent_id, const fs::path& target)
            "exit /b %ERRORLEVEL%\r\n";
 }
 
+std::string render_launch_agent_plist(const std::string& host_exe) {
+    std::string command = "set -a;";
+    for (const char* file : {"lemond.conf", "agent-host.env"}) {
+        const std::string path = "\"$HOME/.config/lemonade/" + std::string(file) + "\"";
+        command += " [ -f " + path + " ] && . " + path + ";";
+    }
+    command += " set +a; exec " + posix_quote(host_exe) + " --persistent";
+    std::string escaped;
+    for (char c : command) {
+        switch (c) {
+        case '&':
+            escaped += "&amp;";
+            break;
+        case '<':
+            escaped += "&lt;";
+            break;
+        case '>':
+            escaped += "&gt;";
+            break;
+        default:
+            escaped += c;
+        }
+    }
+    return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+           "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" "
+           "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+           "<plist version=\"1.0\"><dict>\n"
+           "  <key>Label</key><string>ai.lemonadeserver.agent-host</string>\n"
+           "  <key>ProgramArguments</key><array><string>/bin/sh</string><string>-c</string>"
+           "<string>" + escaped + "</string></array>\n"
+           "  <key>RunAtLoad</key><true/>\n"
+           "  <key>KeepAlive</key><true/>\n"
+           "</dict></plist>\n";
+}
+
 bool is_lemonade_shim(const fs::path& file) {
     return read_head(file, 512).find(kShimMarker) != std::string::npos;
 }

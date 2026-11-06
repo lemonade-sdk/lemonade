@@ -901,21 +901,9 @@ static int handle_agents_enable(bool enable) {
     }
     const std::string host_exe =
         (std::filesystem::path(lemon::utils::get_executable_dir()) / "lemonade-agent-host").string();
-    // Like the systemd unit's EnvironmentFile: a user with a key sets it there.
-    const std::string command = ". \"$HOME/.config/lemonade/agent-host.env\" 2>/dev/null; exec '" +
-                                host_exe + "' --persistent";
     std::filesystem::create_directories(plist.parent_path(), ec);
     std::ofstream out(plist);
-    out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-           "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" "
-           "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
-           "<plist version=\"1.0\"><dict>\n"
-           "  <key>Label</key><string>ai.lemonadeserver.agent-host</string>\n"
-           "  <key>ProgramArguments</key><array><string>/bin/sh</string><string>-c</string>"
-           "<string>" << command << "</string></array>\n"
-           "  <key>RunAtLoad</key><true/>\n"
-           "  <key>KeepAlive</key><true/>\n"
-           "</dict></plist>\n";
+    out << lemon::agents::render_launch_agent_plist(host_exe);
     out.close();
     lemon::utils::ProcessManager::run_process_with_output(
         "launchctl", {"bootout", domain, plist.string()}, [](const std::string&) { return true; },

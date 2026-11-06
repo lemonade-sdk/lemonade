@@ -19,6 +19,10 @@ std::filesystem::path shim_path(const AgentPaths& paths, const std::string& bina
 std::string render_posix_shim(const std::string& agent_id, const std::filesystem::path& target);
 std::string render_cmd_shim(const std::string& agent_id, const std::filesystem::path& target);
 
+// The launchd job `lemonade agents enable` writes on macOS. Like the systemd
+// unit, it reads ~/.config/lemonade/lemond.conf and agent-host.env.
+std::string render_launch_agent_plist(const std::string& host_exe);
+
 bool is_lemonade_shim(const std::filesystem::path& file);
 ShimState shim_state(const std::filesystem::path& file);
 const char* shim_state_name(ShimState state);

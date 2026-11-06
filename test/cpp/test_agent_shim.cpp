@@ -22,6 +22,18 @@ int main() {
     check("cmd shim doubles %", cmd.find("\"C:\\Users\\u 100%%\\pi.exe\" %*") != std::string::npos);
     check("cmd shim has the marker", cmd.find(kShimMarker) != std::string::npos);
 
+    const std::string plist = render_launch_agent_plist("/Apps/R&D <x>/lemonade-agent-host");
+    check("LaunchAgent exports what it sources",
+          plist.find("set -a;") != std::string::npos && plist.find("set +a;") != std::string::npos);
+    check("LaunchAgent reads lemond.conf, then agent-host.env",
+          plist.find("lemonade/lemond.conf") < plist.find("lemonade/agent-host.env") &&
+              plist.find("lemonade/agent-host.env") != std::string::npos);
+    check("LaunchAgent skips a missing env file instead of failing",
+          plist.find("[ -f ") != std::string::npos);
+    check("LaunchAgent escapes the command for XML",
+          plist.find("R&amp;D &lt;x&gt;") != std::string::npos &&
+              plist.find("R&D") == std::string::npos);
+
     const fs::path shim = dir / "bin" / "pi";
     check("missing shim is absent", shim_state(shim) == ShimState::Absent);
     check("writes a new shim", write_shim(shim, posix) && shim_state(shim) == ShimState::Ours);
