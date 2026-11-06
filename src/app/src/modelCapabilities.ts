@@ -15,6 +15,7 @@ export type ModelCapability =
   | 'audio-generation'
   | 'tts'
   | 'model3d'
+  | 'video'
   | 'embedding'
   | 'reranking'
   | 'classification'
@@ -50,6 +51,7 @@ export const DEPLOYMENT_LABEL_KIND: Record<string, ModelCapability> = {
   classification: 'classification',
   classifier: 'classification',
   '3d': 'model3d',
+  video: 'video',
 };
 
 /** ModelType strings the router reports for loaded models (model_type_to_string). */
@@ -63,6 +65,7 @@ const LOADED_TYPE_KIND: Record<string, ModelCapability> = {
   'audio-generation': 'audio-generation',
   classification: 'classification',
   mesh: 'model3d',
+  video: 'video',
 };
 
 const OMNI_COLLECTION_RECIPE = 'collection.omni';
@@ -233,6 +236,7 @@ export function capabilityLabel(capability: ModelIdentity): string {
     case 'audio-generation': return 'Music & SFX';
     case 'tts': return 'TTS';
     case 'model3d': return '3D';
+    case 'video': return 'Video';
     case 'embedding': return 'Embedding';
     case 'reranking': return 'Reranking';
     case 'classification': return 'Classification';
@@ -250,6 +254,7 @@ export function capabilityBadge(capability: ModelIdentity): string {
     case 'audio-generation': return 'audio-gen';
     case 'tts': return 'tts';
     case 'model3d': return 'model3d';
+    case 'video': return 'video';
     case 'embedding': return 'embed';
     case 'reranking': return 'rank';
     case 'classification': return 'classify';
@@ -308,12 +313,12 @@ export function modelInitial(model: ModelSnapshot | null | undefined): string { 
 /* Functional capability tags drive both the model filters and row badges. */
 export type CapabilityTag =
   | 'hot' | 'popular' | 'chat' | 'omni' | 'vision' | 'tool' | 'reasoning'
-  | 'code' | 'audio' | 'audio-generation' | 'image' | 'tts' | 'model3d'
+  | 'code' | 'audio' | 'audio-generation' | 'image' | 'tts' | 'model3d' | 'video'
   | 'embedding' | 'reranking' | 'classification';
 
 export const CAPABILITY_TAG_ORDER: CapabilityTag[] = [
   'hot', 'popular', 'chat', 'omni', 'vision', 'tool', 'reasoning',
-  'code', 'audio', 'audio-generation', 'image', 'tts', 'model3d',
+  'code', 'audio', 'audio-generation', 'image', 'tts', 'model3d', 'video',
   'embedding', 'reranking', 'classification',
 ];
 
@@ -321,7 +326,7 @@ export const CAPABILITY_TAG_LABELS: Record<CapabilityTag, string> = {
   hot: 'Hot', popular: 'Popular', chat: 'Chat', omni: 'Omni', vision: 'Vision',
   tool: 'Tool use', reasoning: 'Reasoning', code: 'Code', audio: 'Audio',
   'audio-generation': 'Music & SFX', image: 'Image', tts: 'Speech (TTS)',
-  model3d: '3D', embedding: 'Embeddings', reranking: 'Reranking',
+  model3d: '3D', video: 'Video', embedding: 'Embeddings', reranking: 'Reranking',
   classification: 'Classification',
 };
 
@@ -339,6 +344,7 @@ const CAPABILITY_TAG_ALIASES: Record<CapabilityTag, string[]> = {
   image: ['image', 'image-generation', 'diffusion', 'edit', 'upscaling', 'text-to-image'],
   tts: ['tts', 'speech', 'text-to-speech', 'voice-design'],
   model3d: ['3d', '3d-generation', 'model3d', 'image-to-3d', 'mesh-generation'],
+  video: ['video', 'video-generation', 'text-to-video'],
   embedding: ['embedding', 'embeddings'],
   reranking: ['reranking', 'reranker'],
   classification: ['classification', 'classifier'],
@@ -346,7 +352,7 @@ const CAPABILITY_TAG_ALIASES: Record<CapabilityTag, string[]> = {
 
 const BASE_CAPABILITY_TAG: Partial<Record<ModelIdentity, CapabilityTag>> = {
   chat: 'chat', omni: 'omni', image: 'image', audio: 'audio',
-  'audio-generation': 'audio-generation', tts: 'tts', model3d: 'model3d',
+  'audio-generation': 'audio-generation', tts: 'tts', model3d: 'model3d', video: 'video',
   embedding: 'embedding', reranking: 'reranking', classification: 'classification',
 };
 

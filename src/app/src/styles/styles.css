@@ -2801,6 +2801,7 @@ input[type="checkbox"]:disabled {
 .cap-chip--transcription,
 .cap-chip--audio         { --cap-color: var(--cap-audio); }
 .cap-chip--tts           { --cap-color: var(--cap-tts); }
+.cap-chip--video         { --cap-color: var(--cap-video); }
 
 /* ---------- Applied list ---------- */
 
@@ -10714,6 +10715,7 @@ optgroup {
 /* ---------- Generated audio + 3D modalities ---------- */
 .cap-badge--audio-gen { background: color-mix(in srgb, var(--cap-audio-generation) 16%, transparent); color: var(--cap-audio-generation); }
 .cap-badge--model3d { background: color-mix(in srgb, var(--cap-model3d) 17%, transparent); color: color-mix(in srgb, var(--cap-model3d) 75%, var(--text-primary)); }
+.cap-badge--video { background: color-mix(in srgb, var(--cap-video) 16%, transparent); color: var(--cap-video); }
 .composer__mode-badge--audio-gen { color: var(--cap-audio-generation); background: color-mix(in srgb, var(--cap-audio-generation) 12%, transparent); }
 .composer__mode-badge--model3d { color: var(--cap-model3d); background: color-mix(in srgb, var(--cap-model3d) 12%, transparent); }
 

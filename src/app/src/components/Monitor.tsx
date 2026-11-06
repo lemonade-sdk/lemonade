@@ -60,6 +60,7 @@ function typeIcon(type: string): string {
     case 'tts': return 'TTS';
     case '3d':
     case 'model3d': return '3D';
+    case 'video': return 'Video';
     default: return 'Model';
   }
 }
@@ -75,6 +76,7 @@ function typeLabel(type: string, t: (key: string, values?: Record<string, string
     case 'tts': return t('TTS');
     case '3d':
     case 'model3d': return t('3D');
+    case 'video': return t('Video');
     default: return t('Model');
   }
 }

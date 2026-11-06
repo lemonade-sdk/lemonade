@@ -8,12 +8,13 @@ import { routerRegistrationOptions } from '../router/routerStore';
  * What the custom-model editor offers, which is not the same vocabulary a model
  * is displayed under. `omni` is an authoring shortcut for "a chat model that
  * also takes images, or a collection of existing models" — both of which deploy
- * as chat. `classification` round-trips on import but is not offered as a new
- * model choice, because there is no /classify surface to author against yet.
+ * as chat. `classification` and `video` round-trip on import but are not offered
+ * as new model choices, because the GUI has no /classify or /videos surface to
+ * author against yet.
  */
 export type CustomModelCapability =
   | 'chat' | 'omni' | 'image' | 'audio' | 'audio-generation'
-  | 'tts' | 'model3d' | 'embedding' | 'reranking' | 'classification';
+  | 'tts' | 'model3d' | 'video' | 'embedding' | 'reranking' | 'classification';
 
 export interface CustomModelComponentRoles {
   llm?: string;
@@ -142,6 +143,7 @@ function defaultRecipe(capability: CustomModelCapability, components?: string[])
     case 'audio-generation': return 'thinksound';
     case 'tts': return 'kokoro';
     case 'model3d': return 'trellis';
+    case 'video': return 'sd-cpp';
     case 'embedding': return 'llamacpp';
     case 'reranking': return 'llamacpp';
     case 'classification': return 'onnxruntime';
@@ -165,6 +167,7 @@ function labelsFor(capability: CustomModelCapability, extra: string[] = []): str
     case 'audio-generation': base.push('audio-generation'); break;
     case 'tts': base.push('tts'); break;
     case 'model3d': base.push('3d', 'image-to-3d'); break;
+    case 'video': base.push('video'); break;
     case 'embedding': base.push('embeddings'); break;
     case 'reranking': base.push('reranking'); break;
     case 'classification': base.push('classification'); break;
