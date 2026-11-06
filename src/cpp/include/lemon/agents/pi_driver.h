@@ -1,10 +1,7 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
-#include <filesystem>
 #include <functional>
-#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -12,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "lemon/agents/agent_installer.h"
 #include "lemon/agents/agent_paths.h"
 #include "lemon/utils/http_security_policy.h"
 #include "lemon_cli/agent_models.h"
@@ -31,14 +29,7 @@ struct HostContext {
     // Held only while pi's config files are written.
     std::mutex write_mutex;
 
-    // Version directories a launch picked, kept by installs until the client
-    // has had time to run them.
-    void lease(const std::filesystem::path& dir, std::chrono::steady_clock::time_point until);
-    bool leased(const std::filesystem::path& dir);
-
-private:
-    std::mutex lease_mutex_;
-    std::map<std::filesystem::path, std::chrono::steady_clock::time_point> leases_;
+    VersionLeases leases;
 };
 
 lemon_cli::LemondCall make_lemond_call(const std::string& origin, const std::string& api_key);

@@ -229,9 +229,31 @@ int main() {
         leased.bin_dir = work / "leased" / "bin";
         install_agent(pi, pin_for("v1.6.0"), leased, false, nullptr, no_cancel, loopback);
         const fs::path v16 = leased.agent_dir("pi") / "1.6.0";
-        install_agent(pi, pin_for("v1.7.0"), leased, false, nullptr, no_cancel, loopback,
-                      [&](const fs::path& dir) { return dir == v16; });
-        check("a version a launch is using is kept", fs::exists(v16 / "pi"));
+        VersionLeases leases;
+        {
+            std::lock_guard<std::mutex> lock(leases.mutex());
+            leases.acquire(v16);
+            leases.acquire(v16);
+        }
+        leases.release(v16, std::chrono::seconds(0));
+        install_agent(pi, pin_for("v1.7.0"), leased, false, nullptr, no_cancel, loopback, &leases);
+        check("a version another launch still uses is kept", fs::exists(v16 / "pi"));
+        leases.release(v16, std::chrono::seconds(60));
+        install_agent(pi, pin_for("v1.7.0"), leased, true, nullptr, no_cancel, loopback, &leases);
+        check("a version stays through its grace period", fs::exists(v16 / "pi"));
+
+        // Retiring holds the lease lock, so a launch can't pick a version mid-removal.
+        VersionLeases busy;
+        std::unique_lock<std::mutex> picking(busy.mutex());
+        std::atomic<bool> installed{false};
+        std::thread installer([&] {
+            install_agent(pi, pin_for("v1.7.0"), leased, true, nullptr, no_cancel, loopback, &busy);
+            installed = true;
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        check("an install waits for a launch that is picking a version", !installed);
+        picking.unlock();
+        installer.join();
     }
 #ifndef _WIN32
     if (geteuid() != 0) {

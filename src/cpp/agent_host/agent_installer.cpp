@@ -143,6 +143,23 @@ std::optional<InstalledAgent> find_installed(const AgentDescriptor& agent,
     return best;
 }
 
+void VersionLeases::acquire(const fs::path& dir) {
+    leases_[dir].launches++;
+}
+
+bool VersionLeases::held(const fs::path& dir) {
+    const auto it = leases_.find(dir);
+    return it != leases_.end() &&
+           (it->second.launches > 0 || it->second.until > std::chrono::steady_clock::now());
+}
+
+void VersionLeases::release(const fs::path& dir, std::chrono::seconds grace) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    Lease& lease = leases_[dir];
+    lease.launches = std::max(lease.launches - 1, 0);
+    lease.until = std::max(lease.until, std::chrono::steady_clock::now() + grace);
+}
+
 std::optional<InstalledAgent> find_active(const AgentDescriptor& agent, const AgentPaths& paths,
                                           const std::string& pinned_version) {
     if (!pinned_version.empty()) {
@@ -258,7 +275,7 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
                              const InstallProgress& progress,
                              const lemon::utils::CancelToken& cancel,
                              lemon::utils::HttpSecurityPolicy policy,
-                             const std::function<bool(const fs::path&)>& in_use) {
+                             VersionLeases* leases) {
     InstallOutcome outcome;
     const fs::path root = paths.agent_dir(agent.id);
     const fs::path dir = root / pin.version;
@@ -391,6 +408,10 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     // names it (it could not be rewritten). A directory is renamed aside first: Windows refuses that while
     // its executable runs, so a running version is never half deleted. Leftovers
     // of an interrupted removal go on the next install.
+    std::unique_lock<std::mutex> retiring;
+    if (leases != nullptr) {
+        retiring = std::unique_lock<std::mutex>(leases->mutex());
+    }
     const auto shim_runs = shim_target(agent, paths);
     for (const fs::path& entry : list_dir(root)) {
         const std::string name = entry.filename().string();
@@ -399,7 +420,7 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
             continue;
         }
         if (entry == dir || name[0] == '.' || !fs::is_directory(entry, ec) ||
-            (shim_runs && entry == shim_runs->dir) || (in_use && in_use(entry)) ||
+            (shim_runs && entry == shim_runs->dir) || (leases && leases->held(entry)) ||
             runs_from(entry)) {
             continue;
         }
