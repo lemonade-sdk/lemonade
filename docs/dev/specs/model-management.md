@@ -1445,7 +1445,7 @@ class RecipeOptionsStore {
 public:
     json entry(const std::string& canonical_id) const;      // the user's own entry
     json resolved(const std::string& canonical_id,
-                  const ModelInfo&) const;                  // three-layer merge
+                  const ModelInfo&) const;                  // authored row + saved entry
     json registry_defaults(const std::string& canonical_id) const;
     json replace(const std::string& canonical_id, const json& entry);
     json merge(const std::string& canonical_id, const json& changes);
@@ -1487,7 +1487,7 @@ This section places each component in the tree and states how it is built.
 
 ```text
 src/cpp/include/lemon/models/     PUBLIC to consumers — exactly four:
-  model_info.h            ModelInfo, GgufMetadata, ImageDefaults, ModelFileInfo
+  model_info.h            ModelInfo, GgufMetadata, ModelFileInfo
   store_snapshot.h        StoreSnapshot, ResolvedModel, CheckpointStatus
   registry_types.h        wire facts that persist on disk or cross HTTP
   model_errors.h          what a refused call throws

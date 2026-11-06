@@ -18,19 +18,6 @@ namespace lemon {
 // holds it behind a shared_ptr, which supports incomplete types.
 struct RoutePolicy;
 
-// Image generation defaults for SD models
-struct ImageDefaults {
-    int steps = 20;
-    float cfg_scale = 7.0f;
-    int width = 512;
-    int height = 512;
-    std::string sampling_method;
-    float flow_shift = 0.0f;
-    std::uint64_t soft_pixel_cap = 0;  // 0 uses the server's inferred edit-size cap
-
-    bool has_defaults = false;  // True if explicit defaults were provided in JSON
-};
-
 /// Metadata extracted from a GGUF file's KV header.
 ///
 /// Stored inside ModelInfo for llama.cpp models so that auto-tune and other
@@ -97,9 +84,6 @@ struct ModelInfo {
     // Multi-model support fields
     ModelType type = ModelType::LLM;      // Model type for LRU cache management
     DeviceType device = DEVICE_NONE;      // Target device(s) for this model
-
-    // Image generation defaults (for sd-cpp models)
-    ImageDefaults image_defaults;
 
     // Per-collection system prompt template (collection.omni models only).
     // When non-empty, overrides the global default in toolDefinitions.json.

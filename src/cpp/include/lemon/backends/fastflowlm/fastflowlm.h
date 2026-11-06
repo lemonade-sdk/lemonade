@@ -31,7 +31,12 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"npu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
     },
-    /*supported_modes*/ {"chat", "embeddings", "transcription"},
+    /*about*/ {
+        {"npu", {"NPU-native runtime for LLMs, speech and embeddings, with kernels built for Ryzen AI NPUs.",
+                 "FastFlowLM (now AMD ROCm)", "AMD ROCm",
+                 "MIT (CLI) and FastFlowLM NPU Binary License (kernels; free, including commercial use)", "https://github.com/ROCm/FastFlowLM"}},
+    },
+    /*supported_modes*/ {"chat", "embeddings", "transcription", "classification"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
     /*web_display_name*/ "FastFlowLM NPU",
@@ -44,6 +49,10 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {},
     /*config_extra*/    {{"prefer_system", false}},
+    /*streams_model_from_storage*/ false,
+    /*containers*/ {},
+    // see ISystemOneServer
+    /*mode_capability_requirements*/ {{"classification", "systemone"}},
 };
 
 }  // namespace fastflowlm

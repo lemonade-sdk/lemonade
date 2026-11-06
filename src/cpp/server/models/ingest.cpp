@@ -895,8 +895,8 @@ void ModelIngest::pull(const std::string& model_name,
     }
 
     if (model_data.contains("recipe_options")) {
-        // On top of the 3-level merge, so an import's own overrides win without
-        // discarding the layers underneath (e.g. sdcpp_args).
+        // On top of everything the model already resolves to, so an import's own
+        // overrides win without discarding the layers underneath (e.g. sdcpp_args).
         json merged = model_info.recipe_options.to_json();
         for (auto& [key, value] : model_data["recipe_options"].items()) {
             merged[key] = value;
@@ -1015,7 +1015,7 @@ void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade,
 
 static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{
     "checkpoints", "checkpoint", "recipe", "mmproj", "size",
-    "image_defaults", "audio_defaults", "components", "recipe_options",
+    "components", "recipe_options",
     "routing", "system_prompt", "version", "source", "registry_source",
     "auto_update",
     // Cost and latency hints reach the router through ModelInfo::extras rather
@@ -1052,6 +1052,13 @@ void ModelIngest::register_user_model(const std::string& model_name,
             model_entry[prop] = model_data[prop];
         }
     }
+
+    // A registration may still carry a retired option block; rows this server
+    // writes name only `recipe_options`.
+    if (const json authored = row_recipe_options(model_data); authored.is_object()) {
+        model_entry["recipe_options"] = authored;
+    }
+
     // Every registration path funnels through here — direct registration, an
     // imported collection's inline components, re-registration — so this is the
     // one gate that refuses an illegal set of mode labels. Loading an
