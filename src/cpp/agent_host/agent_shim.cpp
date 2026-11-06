@@ -198,12 +198,16 @@ bool write_shim(const fs::path& file, const std::string& content) {
     return true;
 }
 
-bool remove_shim(const fs::path& file) {
+bool remove_shim(const fs::path& file, std::error_code* error) {
     if (shim_state(file) != ShimState::Ours) {
         return false;
     }
     std::error_code ec;
-    return fs::remove(file, ec);
+    const bool removed = fs::remove(file, ec);
+    if (error != nullptr) {
+        *error = ec;
+    }
+    return removed;
 }
 
 std::vector<fs::path> path_dirs(const std::string& path_value) {

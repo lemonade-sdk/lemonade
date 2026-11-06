@@ -62,6 +62,8 @@ const RouteError kChecksumMismatch{502, "checksum_mismatch",
                                    "the download doesn't match its pinned checksum"};
 const RouteError kInvalidCwd{400, "invalid_cwd", "`cwd` isn't an absolute directory"};
 const RouteError kModelLoadFailed{424, "model_load_failed", "the model failed to load"};
+const RouteError kUninstallFailed{500, "uninstall_failed",
+                                  "the shim couldn't be removed, or removal stopped partway"};
 const RouteError kConfigWriteFailed{500, "config_write_failed",
                                     "the agent's configuration couldn't be written"};
 
@@ -319,7 +321,8 @@ public:
             "Removes the agent's installed versions and Lemonade's shim. The agent's own "
             "settings, such as `~/.pi/agent`, are kept.";
         s.args = {kId};
-        s.errors = {kTokenMissing, kHostUnavailable, kHostBusy, kHostTimeout, kUnknownAgent};
+        s.errors = {kTokenMissing, kHostUnavailable, kHostBusy, kHostTimeout, kUnknownAgent,
+                    kUninstallFailed};
         ordered_json schema = object_schema((std::string(R"({
             "removed": {"type": "boolean", "description": "`false` when nothing was installed."},
             )") + kWarningsField + "}").c_str());

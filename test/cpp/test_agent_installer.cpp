@@ -291,6 +291,20 @@ int main() {
     }
 #ifndef _WIN32
     if (geteuid() != 0) {
+        // A shim that can't be removed fails the uninstall and keeps pi usable.
+        AgentPaths locked = paths;
+        locked.data_root = work / "locked" / "agents";
+        locked.bin_dir = work / "locked" / "bin";
+        const auto kept = install_agent(pi, pin_for("v1.6.0"), locked, false, nullptr, no_cancel, loopback);
+        fs::permissions(locked.bin_dir, fs::perms::owner_read | fs::perms::owner_exec);
+        std::vector<std::string> warnings_locked;
+        const int status = error_status([&] { uninstall_agent(pi, locked, warnings_locked); });
+        fs::permissions(locked.bin_dir, fs::perms::owner_all);
+        check("an uninstall that can't remove the shim fails",
+              status == 500 && fs::is_regular_file(kept.installed.binary) &&
+                  fs::exists(shim_path(locked, "pi")));
+    }
+    if (geteuid() != 0) {
         // The shim can't be rewritten, so it keeps running 1.6.0 from a path
         // with a quote in it: that payload must stay.
         AgentPaths stuck = paths;

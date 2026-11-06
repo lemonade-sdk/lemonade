@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -36,8 +37,9 @@ const char* shim_state_name(ShimState state);
 // Returns false when a foreign file is in the way. Throws on write failures.
 bool write_shim(const std::filesystem::path& file, const std::string& content);
 
-// Removes the shim if it is ours. Returns whether a file was removed.
-bool remove_shim(const std::filesystem::path& file);
+// Removes the shim if it is ours. Returns whether a file was removed; error
+// is set when ours couldn't be.
+bool remove_shim(const std::filesystem::path& file, std::error_code* error = nullptr);
 
 // The absolute directories of path_value (PATH syntax for this OS), in order.
 std::vector<std::filesystem::path> path_dirs(const std::string& path_value);

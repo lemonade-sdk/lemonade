@@ -3602,6 +3602,7 @@ Whether anything was removed.
 | `400` | `agent_token_missing` | the request has no `X-Lemonade-Agent-Token` header |
 | `404` | `unknown_agent` | `id` names no agent Lemonade manages |
 | `409` | `agent_busy` | the agent is being installed or removed, or too many agent requests are in flight |
+| `500` | `uninstall_failed` | the shim couldn't be removed, or removal stopped partway |
 | `503` | `agent_host_unavailable` | no agent host with the request's token is connected |
 | `504` | `agent_host_timeout` | the agent host didn't answer in time |
 <!-- END GENERATED: lemonade.agents_uninstall -->

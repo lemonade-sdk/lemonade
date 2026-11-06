@@ -450,6 +450,20 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
 
 bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
                      std::vector<std::string>& warnings, VersionLeases* leases) {
+    // Puts versions moved aside back, or says which one it couldn't: a
+    // later install would otherwise delete it as a leftover.
+    const auto put_back = [&agent](const std::vector<std::pair<fs::path, fs::path>>& moved) {
+        for (const auto& [from, to] : moved) {
+            std::error_code back_ec;
+            fs::rename(to, from, back_ec);
+            if (back_ec) {
+                throw AgentError(500, "uninstall_failed",
+                                 "Uninstalling " + agent.name + " stopped partway: " +
+                                     from.filename().string() + " is left at " + to.string() +
+                                     ". Run `lemonade agents uninstall " + agent.id + "` again.");
+            }
+        }
+    };
     const fs::path root = paths.agent_dir(agent.id);
     std::error_code ec;
     std::vector<fs::path> retired;
@@ -481,21 +495,25 @@ bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
             fs::rename(entry, aside, ec);
             if (ec) {
                 const std::string reason = ec.message();
-                for (const auto& [from, to] : moved) {
-                    std::error_code back_ec;
-                    fs::rename(to, from, back_ec);
-                }
+                put_back(moved);
                 throw AgentError(409, "agent_busy",
                                  "Can't remove " + agent.name + " " + name + " while it's in use (" +
                                      reason + "). Close it and uninstall again.");
             }
             moved.emplace_back(entry, aside);
         }
+        std::error_code shim_ec;
+        const bool shim_removed = remove_shim(shim_path(paths, agent.binary), &shim_ec);
+        if (shim_ec) {
+            put_back(moved);
+            throw AgentError(500, "uninstall_failed",
+                             "Can't remove " + shim_path(paths, agent.binary).string() + ": " +
+                                 shim_ec.message());
+        }
         for (const auto& [from, to] : moved) {
             retired.push_back(to);
         }
-        removed = !moved.empty();
-        removed = remove_shim(shim_path(paths, agent.binary)) || removed;
+        removed = !moved.empty() || shim_removed;
     }
     // Launches only wait for the renames, not for the payloads to be deleted.
     for (const fs::path& aside : retired) {

@@ -76,9 +76,9 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
                                  lemon::utils::HttpSecurityPolicy::ExternalHttpsOnly,
                              VersionLeases* leases = nullptr);
 
-// Removes every payload directory and our shim. Files Windows keeps open stay
-// behind with a warning and are retried by the next install. Returns whether
-// anything was removed.
+// Removes every payload directory and our shim, or nothing: a version a launch
+// holds or Windows keeps open is 409 agent_busy, and a shim that can't be
+// removed is 500 uninstall_failed. Returns whether anything was removed.
 bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
                      std::vector<std::string>& warnings, VersionLeases* leases = nullptr);
 
