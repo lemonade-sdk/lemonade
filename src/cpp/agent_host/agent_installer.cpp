@@ -468,7 +468,9 @@ bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
                                  agent.name + " is being launched; uninstall it again in a minute.");
             }
         }
-        bool kept = false;
+        // All versions move aside or none do: a version Windows keeps open
+        // (its executable runs) puts back the ones already moved.
+        std::vector<std::pair<fs::path, fs::path>> moved;
         for (const fs::path& entry : entries) {
             const std::string name = entry.filename().string();
             if (name[0] == '.') {
@@ -478,20 +480,22 @@ bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
             const fs::path aside = aside_path(root, name);
             fs::rename(entry, aside, ec);
             if (ec) {
-                // Windows refuses while the version's executable runs.
-                warnings.push_back("Can't remove " + name + " while it's in use (" +
-                                   ec.message() + "); close it and uninstall again.");
-                ec.clear();
-                kept = true;
-                continue;
+                const std::string reason = ec.message();
+                for (const auto& [from, to] : moved) {
+                    std::error_code back_ec;
+                    fs::rename(to, from, back_ec);
+                }
+                throw AgentError(409, "agent_busy",
+                                 "Can't remove " + agent.name + " " + name + " while it's in use (" +
+                                     reason + "). Close it and uninstall again.");
             }
-            retired.push_back(aside);
-            removed = true;
+            moved.emplace_back(entry, aside);
         }
-        // The shim goes last, so pi never looks uninstalled while a version stays.
-        if (!kept) {
-            removed = remove_shim(shim_path(paths, agent.binary)) || removed;
+        for (const auto& [from, to] : moved) {
+            retired.push_back(to);
         }
+        removed = !moved.empty();
+        removed = remove_shim(shim_path(paths, agent.binary)) || removed;
     }
     // Launches only wait for the renames, not for the payloads to be deleted.
     for (const fs::path& aside : retired) {
