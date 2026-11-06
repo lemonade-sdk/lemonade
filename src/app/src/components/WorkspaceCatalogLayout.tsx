@@ -120,10 +120,11 @@ interface WorkspaceCatalogSectionProps {
   title?: React.ReactNode;
   description?: React.ReactNode;
   aside?: React.ReactNode;
+  gridClassName?: string;
   children: React.ReactNode;
 }
 
-export const WorkspaceCatalogSection: React.FC<WorkspaceCatalogSectionProps> = ({ title, description, aside, children }) => (
+export const WorkspaceCatalogSection: React.FC<WorkspaceCatalogSectionProps> = ({ title, description, aside, gridClassName, children }) => (
   <section className="workspace-catalog__section">
     {title && (
       <header className="workspace-catalog__heading">
@@ -134,7 +135,7 @@ export const WorkspaceCatalogSection: React.FC<WorkspaceCatalogSectionProps> = (
         {aside && <span>{aside}</span>}
       </header>
     )}
-    <div className="workspace-catalog__grid">{children}</div>
+    <div className={`workspace-catalog__grid${gridClassName ? ` ${gridClassName}` : ''}`}>{children}</div>
   </section>
 );
 

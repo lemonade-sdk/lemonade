@@ -11666,6 +11666,48 @@ optgroup {
   align-items: start;
 }
 
+/* Grid rows alternate a logo track and a backend track. A card spans one pair
+   per backend and subgrids them, so a card's Nth backend shares its action
+   row with whatever card sits in that row of a neighbouring column. Every card
+   spans an even track count from an odd start line, which keeps dense
+   backfilling from ever starting a card on a backend track. */
+.workspace-catalog__grid.backends__grid {
+  grid-template-columns: repeat(auto-fill, minmax(max(300px, calc((100% - 2 * var(--space-3)) / 3)), 1fr));
+  grid-auto-rows: auto minmax(150px, auto);
+  grid-auto-flow: row dense;
+  align-items: stretch;
+}
+
+/* Subgrid padding only lands on a card's edge tracks, so the bottom padding
+   lives on each backend instead of the card to keep action rows aligned. */
+.backends__grid .backend-card {
+  display: grid;
+  grid-row: span var(--backend-card-tracks, 2);
+  grid-template-rows: subgrid;
+  padding-bottom: 0;
+}
+
+.backends__grid .backend-card__variants {
+  display: contents;
+}
+
+.backends__grid .backend-card__variant {
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 var(--space-4);
+}
+
+.backends__grid .backend-card__variant:not(:first-child) {
+  grid-row: span 2;
+  margin-top: calc(-1 * var(--space-3));
+  padding-top: var(--space-4);
+}
+
+.backends__grid .backend-card__footer {
+  order: 1;
+  margin-top: auto;
+}
+
 .workspace-card {
   display: flex;
   flex-direction: column;
@@ -11931,7 +11973,9 @@ a.backend-card__author:focus-visible {
 
 @media (max-width: 680px) {
   .workspace-catalog-layout__content { padding: var(--space-2) var(--space-4) var(--space-5); }
-  .workspace-catalog__grid { grid-template-columns: 1fr; }
+  .workspace-catalog__grid,
+  .workspace-catalog__grid.backends__grid { grid-template-columns: 1fr; }
+  .workspace-catalog__grid.backends__grid { grid-auto-rows: auto; }
   .workspace-catalog__heading { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
   .backend-card__variant-head { gap: var(--space-2); }
   .backend-card__footer { align-items: flex-start; flex-direction: column; }

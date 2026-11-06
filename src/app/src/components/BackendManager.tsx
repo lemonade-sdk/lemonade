@@ -1137,7 +1137,12 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     const logo = ENGINE_LOGOS[recipe];
 
     return (
-      <article className="workspace-card backend-card" key={recipe} data-recipe={recipe}>
+      <article
+        className="workspace-card backend-card"
+        key={recipe}
+        data-recipe={recipe}
+        style={{ '--backend-card-tracks': variants.length * 2 } as React.CSSProperties}
+      >
         <div className="workspace-card__head">
           {showLogos ? (
             <>
@@ -1533,6 +1538,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               key={capability}
               title={t(CAPABILITY_LABELS[capability])}
               description={t(CAPABILITY_DESCRIPTIONS[capability])}
+              gridClassName="backends__grid"
             >
               {visibleEntries.map(renderBackendCard)}
             </WorkspaceCatalogSection>
