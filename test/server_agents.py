@@ -575,6 +575,15 @@ class AgentManagerTests(unittest.TestCase):
         self.assertIn("without the agent host", result.stderr)
         self.assertEqual(self.capture()["binary"], os.path.realpath(external))
 
+    def test_091_a_name_starting_with_127_is_not_loopback(self):
+        self.cli(["agents", "list"])
+        result = self.cli(
+            ["--host", "127.0.0.1.invalid", "--port", str(PORT), "agents", "list"],
+            target=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("on this machine", result.stderr)
+
     def test_095_launch_falls_back_without_the_host_binary(self):
         lonely = os.path.join(self.home, "cli-only")
         os.makedirs(lonely)

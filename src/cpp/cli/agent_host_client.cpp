@@ -69,13 +69,7 @@ bool host_answers(const lemonade::LemonadeClient& client, const std::string& tok
 } // namespace
 
 std::optional<std::string> loopback_target(const std::string& host) {
-    if (host.empty() || host == "0.0.0.0" || host == "localhost") {
-        return std::string("127.0.0.1");
-    }
-    if (host == "::1" || host == "[::1]" || host.rfind("127.", 0) == 0) {
-        return host;
-    }
-    return std::nullopt;
+    return lemon::agents::protocol::loopback_host(host);
 }
 
 bool spawn_detached(const std::string& exe, const std::vector<std::string>& args) {

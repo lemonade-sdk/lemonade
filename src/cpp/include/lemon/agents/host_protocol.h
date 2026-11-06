@@ -20,6 +20,45 @@ constexpr uint16_t kCloseHelloTimeout = 4408;
 constexpr uint16_t kCloseProtocolMismatch = 4409;
 constexpr uint16_t kCloseTooManyHosts = 4429;
 
+// The loopback address to dial for a host name, or nullopt when it isn't this
+// machine. Empty, 0.0.0.0 and localhost map to 127.0.0.1; only literal
+// 127.0.0.0/8 and ::1 addresses pass, never a name that merely starts with 127.
+inline std::optional<std::string> loopback_host(const std::string& host) {
+    if (host.empty() || host == "0.0.0.0" || host == "localhost") {
+        return std::string("127.0.0.1");
+    }
+    if (host == "::1" || host == "[::1]") {
+        return host;
+    }
+    int octets = 0;
+    int first = -1;
+    size_t i = 0;
+    while (i < host.size()) {
+        size_t digits = 0;
+        int value = 0;
+        while (i < host.size() && host[i] >= '0' && host[i] <= '9' && digits < 3) {
+            value = value * 10 + (host[i++] - '0');
+            ++digits;
+        }
+        if (digits == 0 || value > 255) {
+            return std::nullopt;
+        }
+        if (++octets == 1) {
+            first = value;
+        }
+        if (i == host.size()) {
+            break;
+        }
+        if (host[i++] != '.' || i == host.size()) {
+            return std::nullopt;
+        }
+    }
+    if (octets != 4 || first != 127) {
+        return std::nullopt;
+    }
+    return host;
+}
+
 inline bool is_token(const std::string& token) {
     if (token.size() != 64) {
         return false;

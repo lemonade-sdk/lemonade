@@ -14,6 +14,7 @@
 
 #include "lemon/agents/agent_lock.h"
 #include "lemon/agents/host_link.h"
+#include "lemon/agents/host_protocol.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
@@ -73,15 +74,8 @@ bool write_private_file(const fs::path& path, const std::string& content) {
     return !ec;
 }
 
-// The CLI passes the server it targets; anything else keeps the old defaults.
 std::string loopback_host(const std::string& host) {
-    if (host.empty() || host == "0.0.0.0" || host == "localhost") {
-        return "127.0.0.1";
-    }
-    if (host == "::1" || host == "[::1]" || host.rfind("127.", 0) == 0) {
-        return host;
-    }
-    return "";
+    return lemon::agents::protocol::loopback_host(host).value_or("");
 }
 
 int usage() {
