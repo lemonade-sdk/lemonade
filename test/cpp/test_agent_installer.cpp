@@ -45,7 +45,11 @@ std::string build_asset(const fs::path& work, const std::string& name, bool with
 #endif
     }
 #ifndef _WIN32
-    if (!symlink_target.empty()) {
+    if (symlink_target == "chain") {
+        // Each link is lexically inside the payload; following them climbs out.
+        fs::create_symlink(".", root / "m1");
+        fs::create_symlink("m1/..", root / "m2");
+    } else if (!symlink_target.empty()) {
         fs::create_symlink(symlink_target, root / "escape");
     }
 #endif
@@ -88,6 +92,7 @@ int main() {
     releases["v2.0.0/" + asset] = build_asset(work, "a3", false);
 #ifndef _WIN32
     releases["v3.0.0/" + asset] = build_asset(work, "a4", true, "../../../../etc/passwd");
+    releases["v3.1.0/" + asset] = build_asset(work, "a5", true, "chain");
 #endif
 
     std::atomic<int> requests{0};
@@ -163,6 +168,10 @@ int main() {
           error_status([&] {
               install_agent(pi, pin_for("v3.0.0"), paths, false, nullptr, no_cancel, loopback);
           }) == 500 && !fs::exists(paths.agent_dir("pi") / "3.0.0"));
+    check("chained symlinks climbing out of the payload are rejected",
+          error_status([&] {
+              install_agent(pi, pin_for("v3.1.0"), paths, false, nullptr, no_cancel, loopback);
+          }) == 500 && !fs::exists(paths.agent_dir("pi") / "3.1.0"));
 #endif
 
     const auto upgraded = install_agent(pi, pin_for("v1.6.0"), paths, false, nullptr, no_cancel,

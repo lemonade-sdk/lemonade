@@ -43,13 +43,9 @@ bool manifest_matches(const fs::path& dir, const AgentDescriptor& agent, const A
            fs::is_regular_file(binary_in(dir, agent.binary), ec);
 }
 
-bool is_inside(const fs::path& root, const fs::path& candidate) {
-    const fs::path rel = candidate.lexically_normal().lexically_relative(root.lexically_normal());
-    return !rel.empty() && *rel.begin() != "..";
-}
-
 // The extractor writes below the staging directory, but a symlink in the
-// archive could still point out of it.
+// archive could still point out of it. A target is only allowed when it is
+// relative with no `..`: checked lexically, a chain of links can climb out.
 void check_contained(const fs::path& staging) {
     std::error_code ec;
     for (auto it = fs::recursive_directory_iterator(staging, ec);
@@ -58,8 +54,11 @@ void check_contained(const fs::path& staging) {
             continue;
         }
         const fs::path target = fs::read_symlink(it->path(), ec);
-        if (ec || target.is_absolute() ||
-            !is_inside(staging, it->path().parent_path() / target)) {
+        bool climbs = false;
+        for (const auto& part : target) {
+            climbs = climbs || part == "..";
+        }
+        if (ec || target.is_absolute() || target.has_root_name() || climbs) {
             throw AgentError(500, "install_failed",
                              "The archive has an entry outside its directory: " +
                                  it->path().filename().string());
