@@ -29,6 +29,10 @@ inline const BackendDescriptor descriptor = {
         // everything else is wired (incl. the rocm_arch_overrides pins), so re-add them here once that lands.
         {"rocm", BackendTier::Experimental, BackendFormat::Python, {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Strix Halo iGPU (gfx1151)"},
     },
+    /*about*/ {
+        {"rocm", {"vLLM, the high-throughput serving engine for batched requests, packaged with ROCm PyTorch.",
+                  "vLLM project", "lemonade-sdk", "Apache-2.0", "https://github.com/vllm-project/vllm"}},
+    },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
