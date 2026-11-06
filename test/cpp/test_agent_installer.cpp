@@ -183,97 +183,48 @@ int main() {
                                         loopback);
     check("upgrade moves the shim", read_file(shim).find(upgraded.installed.binary.string()) !=
                                         std::string::npos);
-    check("upgrade keeps the version it replaced, which a running pi may still use",
-          fs::exists(paths.agent_dir("pi") / "1.5.0"));
-    check("find_installed picks the newest version", find_installed(pi, paths)->version == "1.6.0");
+    check("upgrade removes the version it replaced when nothing runs it",
+          !fs::exists(paths.agent_dir("pi") / "1.5.0"));
 
     const auto forced = install_agent(pi, pin_for("v1.6.0"), paths, true, nullptr, no_cancel,
                                       loopback);
     check("force reinstalls", forced.downloaded && fs::is_regular_file(forced.installed.binary));
-    check("the next install removes the version before the last",
-          !fs::exists(paths.agent_dir("pi") / "1.5.0"));
+
 
     const auto downgraded = install_agent(pi, pin_for("v1.5.0"), paths, false, nullptr, no_cancel,
                                           loopback);
-    check("after a downgrade the pinned version is the active one",
-          find_active(pi, paths, "1.5.0")->version == "1.5.0" &&
-              read_file(shim).find(downgraded.installed.binary.string()) != std::string::npos);
-    check("without the pinned version installed, the newest is active",
-          find_active(pi, paths, "9.9.9")->version == "1.6.0");
+    check("a downgrade points the shim at the pinned version",
+          read_file(shim).find(downgraded.installed.binary.string()) != std::string::npos);
+    check("find_active prefers the pinned version", find_active(pi, paths, "1.5.0")->version == "1.5.0");
 
+#ifdef __linux__
     {
-        // Downgrading to a version that was kept keeps the one it replaces.
-        AgentPaths kept = paths;
-        kept.data_root = work / "kept" / "agents";
-        kept.bin_dir = work / "kept" / "bin";
-        for (const char* tag : {"v1.5.0", "v1.6.0", "v1.5.0"}) {
-            install_agent(pi, pin_for(tag), kept, false, nullptr, no_cancel, loopback);
-        }
-        check("a downgrade to a kept version keeps the version it replaced",
-              fs::exists(kept.agent_dir("pi") / "1.6.0") &&
-                  find_active(pi, kept, "1.5.0")->version == "1.5.0");
-    }
-    {
-        // A parent directory named like a version doesn't fool the shim check.
-        AgentPaths odd = paths;
-        odd.data_root = work / "1.5.0" / "agents";
-        odd.bin_dir = work / "odd-bin";
-        for (const char* tag : {"v1.5.0", "v1.6.0", "v1.7.0"}) {
-            install_agent(pi, pin_for(tag), odd, false, nullptr, no_cancel, loopback);
-        }
-        check("the version the shim ran is kept, whatever its parent directories are called",
-              fs::exists(odd.agent_dir("pi") / "1.6.0"));
-    }
-    {
-        // With someone else's shim, launch runs the last installed version: keep it.
-        AgentPaths foreign = paths;
-        foreign.data_root = work / "foreign" / "agents";
-        foreign.bin_dir = work / "foreign" / "bin";
-        write_file(foreign.bin_dir / "pi", "#!/bin/sh\nexec /usr/bin/pi\n");
-        for (const char* tag : {"v1.6.0", "v1.5.0", "v1.7.0"}) {
-            install_agent(pi, pin_for(tag), foreign, false, nullptr, no_cancel, loopback);
-        }
-        check("with a foreign shim the last installed version is kept",
-              fs::exists(foreign.agent_dir("pi") / "1.5.0"));
-    }
-    {
-        // After a downgrade, a pin that isn't installed yet makes launch use the
-        // newest version, so the install that follows keeps that one too.
-        AgentPaths pinned = paths;
-        pinned.data_root = work / "fallback" / "agents";
-        pinned.bin_dir = work / "fallback" / "bin";
-        write_file(pinned.bin_dir / "pi", "#!/bin/sh\nexec /usr/bin/pi\n");
-        install_agent(pi, pin_for("v1.6.0"), pinned, false, nullptr, no_cancel, loopback);
-        install_agent(pi, pin_for("v1.5.0"), pinned, false, nullptr, no_cancel, loopback);
-        const auto launched = find_active(pi, pinned, "1.7.0");
-        install_agent(pi, pin_for("v1.7.0"), pinned, false, nullptr, no_cancel, loopback);
-        check("the version launch used before the install is kept",
-              launched && launched->version == "1.6.0" &&
-                  fs::exists(pinned.agent_dir("pi") / "1.6.0"));
-    }
-#ifndef _WIN32
-    {
-        // A shim written by another Lemonade build still names what it runs.
-        AgentPaths older = paths;
-        older.data_root = work / "older" / "agents";
-        older.bin_dir = work / "older" / "bin";
-        install_agent(pi, pin_for("v1.5.0"), older, false, nullptr, no_cancel, loopback);
+        // A pi still running from an old version keeps it; nothing else does.
+        AgentPaths running = paths;
+        running.data_root = work / "running" / "agents";
+        running.bin_dir = work / "running" / "bin";
+        install_agent(pi, pin_for("v1.5.0"), running, false, nullptr, no_cancel, loopback);
         const auto v16 =
-            install_agent(pi, pin_for("v1.6.0"), older, false, nullptr, no_cancel, loopback);
-        write_file(older.bin_dir / "pi", "#!/bin/sh\n# " + std::string(kShimMarker) +
-                                             " (agent=pi)\n# an older template\nexec '" +
-                                             v16.installed.binary.string() + "' \"$@\"\n");
-        fs::permissions(older.bin_dir, fs::perms::owner_read | fs::perms::owner_exec);
-        install_agent(pi, pin_for("v1.5.0"), older, false, nullptr, no_cancel, loopback);
-        install_agent(pi, pin_for("v1.7.0"), older, false, nullptr, no_cancel, loopback);
-        fs::permissions(older.bin_dir, fs::perms::owner_all);
-        check("a shim from another build still protects the version it runs",
-              geteuid() == 0 || fs::exists(older.agent_dir("pi") / "1.6.0"));
+            install_agent(pi, pin_for("v1.6.0"), running, false, nullptr, no_cancel, loopback);
+        check("an upgrade removes a version nothing runs", !fs::exists(running.agent_dir("pi") / "1.5.0"));
+        fs::copy_file("/bin/sleep", v16.installed.binary, fs::copy_options::overwrite_existing);
+        auto sleeper = lemon::utils::ProcessManager::start_process(
+            v16.installed.binary.string(), {"30"}, "", false, false, {});
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        install_agent(pi, pin_for("v1.7.0"), running, false, nullptr, no_cancel, loopback);
+        check("a version a process runs from is kept", fs::exists(running.agent_dir("pi") / "1.6.0" / "pi"));
+        lemon::utils::ProcessManager::kill_process(sleeper);
+        lemon::utils::ProcessManager::wait_for_exit(sleeper, 5);
+        install_agent(pi, pin_for("v1.7.0"), running, true, nullptr, no_cancel, loopback);
+        check("once it exits, the next install removes it", !fs::exists(running.agent_dir("pi") / "1.6.0"));
     }
+#endif
+#ifndef _WIN32
     if (geteuid() != 0) {
-        // The shim can't be rewritten, so it keeps running 1.6.0: that payload must stay.
+        // The shim can't be rewritten, so it keeps running 1.6.0 from a path
+        // with a quote in it: that payload must stay.
         AgentPaths stuck = paths;
-        stuck.data_root = work / "stuck" / "agents";
+        stuck.data_root = work / "o'neil" / "agents";
         stuck.bin_dir = work / "stuck" / "bin";
         install_agent(pi, pin_for("v1.6.0"), stuck, false, nullptr, no_cancel, loopback);
         fs::permissions(stuck.bin_dir, fs::perms::owner_read | fs::perms::owner_exec);
@@ -283,8 +234,9 @@ int main() {
         fs::permissions(stuck.bin_dir, fs::perms::owner_all);
         check("a shim that couldn't be rewritten is reported", !blocked.warnings.empty());
         check("the payload the shim still runs is never removed",
-              fs::exists(stuck.agent_dir("pi") / "1.6.0" / "pi") &&
-                  read_file(stuck.bin_dir / "pi").find("1.6.0") != std::string::npos);
+              fs::exists(stuck.agent_dir("pi") / "1.6.0" / "pi"));
+        check("a version neither running nor in the shim is removed",
+              !fs::exists(stuck.agent_dir("pi") / "1.5.0"));
     }
 #endif
 

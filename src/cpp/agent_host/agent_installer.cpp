@@ -1,6 +1,7 @@
 #include "lemon/agents/agent_installer.h"
 
 #include <fstream>
+#include <vector>
 #include <sstream>
 #include <system_error>
 
@@ -10,6 +11,10 @@
 #include "lemon/utils/archive_platform.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
+
+#ifdef __APPLE__
+#include <libproc.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -157,8 +162,22 @@ std::string rendered_shim(const AgentDescriptor& agent, const fs::path& binary) 
 #endif
 }
 
-// The installed version whose binary our shim runs, found by its quoted path
-// so a shim from another Lemonade build still counts.
+// The line of a rendered shim that runs the binary.
+std::string command_line(const std::string& shim) {
+    std::stringstream lines(shim);
+    for (std::string line; std::getline(lines, line);) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        if (line.rfind("exec ", 0) == 0 || line.find(" %*") != std::string::npos) {
+            return line;
+        }
+    }
+    return "";
+}
+
+// The installed version our shim runs, from the line that runs it, so a shim
+// from another Lemonade build still counts.
 std::optional<InstalledAgent> shim_target(const AgentDescriptor& agent, const AgentPaths& paths) {
     const fs::path shim = shim_path(paths, agent.binary);
     if (shim_state(shim) != ShimState::Ours) {
@@ -173,44 +192,52 @@ std::optional<InstalledAgent> shim_target(const AgentDescriptor& agent, const Ag
         if (!installed) {
             continue;
         }
-        // Both shim forms quote the path exactly as the renderer writes it.
-        const std::string rendered = rendered_shim(agent, installed->binary);
-        const std::string path = lemon::utils::path_to_utf8(installed->binary);
-        for (const std::string& quoted : {"'" + path + "'", "\"" + path + "\""}) {
-            if (text.find(quoted) != std::string::npos && rendered.find(quoted) != std::string::npos) {
-                return installed;
-            }
-        }
-#ifdef _WIN32
-        const size_t start = rendered.find("\"%LOCALAPPDATA%");
-        if (start != std::string::npos &&
-            text.find(rendered.substr(start, rendered.find('"', start + 1) - start + 1)) !=
-                std::string::npos) {
+        const std::string runs = command_line(rendered_shim(agent, installed->binary));
+        // Earlier .cmd shims named the binary by its absolute path.
+        const std::string absolute = "\"" + lemon::utils::path_to_utf8(installed->binary) + "\" %*";
+        if ((!runs.empty() && text.find(runs) != std::string::npos) ||
+            text.find(absolute) != std::string::npos) {
             return installed;
         }
-#endif
     }
     return std::nullopt;
 }
 
-// The version whose manifest was written last, which launch ran after that
-// install. Taken from the files themselves so it can't go stale.
-std::optional<InstalledAgent> last_installed(const AgentDescriptor& agent, const AgentPaths& paths) {
-    std::optional<InstalledAgent> last;
-    fs::file_time_type last_time{};
+// Whether a process of this user runs an executable from dir.
+bool runs_from(const fs::path& dir) {
+    const std::string prefix = lemon::utils::path_to_utf8(dir) + "/";
+#if defined(__linux__)
     std::error_code ec;
-    for (const fs::path& entry : list_dir(paths.agent_dir(agent.id))) {
-        auto installed = find_installed(agent, paths, entry.filename().string());
-        if (!installed) {
+    for (auto it = fs::directory_iterator("/proc", ec); !ec && it != fs::directory_iterator();
+         it.increment(ec)) {
+        const std::string pid = it->path().filename().string();
+        if (pid.empty() || pid.find_first_not_of("0123456789") != std::string::npos) {
             continue;
         }
-        const auto written = fs::last_write_time(entry / kManifest, ec);
-        if (!ec && (!last || written > last_time)) {
-            last = installed;
-            last_time = written;
+        std::error_code link_ec;
+        const fs::path exe = fs::read_symlink(it->path() / "exe", link_ec);
+        if (!link_ec && exe.string().rfind(prefix, 0) == 0) {
+            return true;
         }
     }
-    return last;
+    return false;
+#elif defined(__APPLE__)
+    std::vector<pid_t> pids(4096);
+    const int bytes = proc_listallpids(pids.data(), static_cast<int>(pids.size() * sizeof(pid_t)));
+    for (int i = 0; i < bytes / static_cast<int>(sizeof(pid_t)); ++i) {
+        char path[PROC_PIDPATHINFO_MAXSIZE];
+        if (proc_pidpath(pids[i], path, sizeof(path)) > 0 &&
+            std::string(path).rfind(prefix, 0) == 0) {
+            return true;
+        }
+    }
+    return false;
+#else
+    // Windows refuses to rename a directory with a running executable, which
+    // the removal relies on instead.
+    (void)prefix;
+    return false;
+#endif
 }
 
 InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
@@ -221,11 +248,6 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     InstallOutcome outcome;
     const fs::path root = paths.agent_dir(agent.id);
     const fs::path dir = root / pin.version;
-    // Versions a running pi may still read from: the one the shim runs, the
-    // one the last install committed, and the one launch would pick right now.
-    const std::vector<std::optional<InstalledAgent>> in_use = {
-        shim_target(agent, paths), last_installed(agent, paths),
-        find_active(agent, paths, pin.version)};
     std::error_code ec;
 
     if (force || !manifest_matches(dir, agent, pin)) {
@@ -351,24 +373,25 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     }
     outcome.shim = shim_state(shim);
 
-    // A pi started through the shim may still read its version's files, so
-    // that version stays until the next install, even when the shim couldn't
-    // be rewritten. Older ones go, best effort:
-    // Windows keeps a running version's files locked, and the next install retries.
-    const auto kept = [&](const fs::path& entry) {
-        if (entry == dir) {
-            return true;
-        }
-        for (const auto& version : in_use) {
-            if (version && entry == version->dir) {
-                return true;
-            }
-        }
-        return false;
-    };
+    // Other versions go unless a pi still runs from one or the shim still
+    // names it (it could not be rewritten). A directory is renamed aside first: Windows refuses that while
+    // its executable runs, so a running version is never half deleted. Leftovers
+    // of an interrupted removal go on the next install.
+    const auto shim_runs = shim_target(agent, paths);
     for (const fs::path& entry : list_dir(root)) {
-        if (!kept(entry) && fs::is_directory(entry, ec) && entry.filename().string()[0] != '.') {
+        const std::string name = entry.filename().string();
+        if (name.rfind(".removing-", 0) == 0) {
             remove_quietly(entry, nullptr);
+            continue;
+        }
+        if (entry == dir || name[0] == '.' || !fs::is_directory(entry, ec) ||
+            (shim_runs && entry == shim_runs->dir) || runs_from(entry)) {
+            continue;
+        }
+        const fs::path aside = root / (".removing-" + name);
+        fs::rename(entry, aside, ec);
+        if (!ec) {
+            remove_quietly(aside, nullptr);
         }
     }
     return outcome;
