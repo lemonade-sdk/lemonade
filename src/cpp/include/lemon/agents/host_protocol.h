@@ -90,11 +90,12 @@ inline nlohmann::json response(uint64_t id, int status, const nlohmann::json& bo
     return {{"type", "response"}, {"id", id}, {"status", status}, {"body", body}};
 }
 
-// The body of every error response, and the data of an SSE error event.
+// lemond's plain error shape. As an SSE error event's data it also carries "status".
 inline nlohmann::json error_body(const std::string& code, const std::string& message,
                                  const nlohmann::json& extra = nlohmann::json::object()) {
     nlohmann::json body = extra.is_object() ? extra : nlohmann::json::object();
-    body["error"] = {{"code", code}, {"message", message}};
+    body["error"] = message;
+    body["code"] = code;
     return body;
 }
 
