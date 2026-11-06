@@ -4079,7 +4079,10 @@ set(_PI_PROFILE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_pi_profile.c
 if(BUILD_TESTING AND EXISTS "${_PI_PROFILE_TEST_SRC}")
     add_executable(test_pi_profile
         test/cpp/test_pi_profile.cpp
+        src/cpp/cli/agent_config_file.cpp
         src/cpp/cli/agent_launcher.cpp
+        src/cpp/cli/agent_models.cpp
+        src/cpp/cli/pi_launch_prep.cpp
         src/cpp/cli/pi_profile.cpp
     )
     target_include_directories(test_pi_profile PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)

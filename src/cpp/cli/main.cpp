@@ -12,6 +12,7 @@
 #include <lemon_cli/agent_launcher.h>
 #include <lemon_cli/junie_profile.h>
 #include <lemon_cli/opencode_profile.h>
+#include <lemon_cli/pi_launch_prep.h>
 #include <lemon_cli/pi_profile.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
@@ -630,183 +631,73 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
     return client.list_recipes(config.backends_showall);
 }
 
-static lemon_cli::AgentModelEntry agent_model_entry_from_json(const std::string& id,
-                                                              const nlohmann::json& model,
-                                                              int default_context_window) {
-    std::vector<std::string> labels;
-    const auto model_labels = model.find("labels");
-    if (model_labels != model.end() && model_labels->is_array()) {
-        for (const auto& label : *model_labels) {
-            if (label.is_string()) {
-                labels.push_back(label.get<std::string>());
-            }
+static lemon_cli::LemondCall lemond_call_for(lemonade::LemonadeClient& client) {
+    return [&client](const std::string& method, const std::string& path,
+                     const std::string& body, int timeout_ms) {
+        try {
+            return client.make_request(path, method, body,
+                                       body.empty() ? "" : "application/json", timeout_ms,
+                                       timeout_ms);
+        } catch (const lemonade::HttpError& e) {
+            throw lemon_cli::LemondHttpError(e.status_code(),
+                                             lemonade::extract_server_error_message(e));
         }
-    }
-
-    int context_window = default_context_window;
-    const auto options = model.find("recipe_options");
-    if (options != model.end() && options->is_object()) {
-        // A saved ctx_size of -1 means auto, which the CLI cannot resolve.
-        const auto ctx_size = options->find("ctx_size");
-        if (ctx_size != options->end() && ctx_size->is_number_integer() &&
-            ctx_size->get<int>() > 0) {
-            context_window = ctx_size->get<int>();
-        }
-    }
-
-    return {id, id + " (local)", context_window, std::move(labels)};
+    };
 }
 
-static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
-    lemonade::LemonadeClient& client,
-    int context_window) {
-    std::vector<lemon_cli::AgentModelEntry> models;
-
-    try {
-        std::string response = client.make_request(
-            "/api/v1/models?show_all=false", "GET", "", "", 3000, 3000);
-        const nlohmann::json parsed = nlohmann::json::parse(response);
-
-        if (!parsed.contains("data") || !parsed["data"].is_array()) {
-            return models;
-        }
-
-        for (const auto& model : parsed["data"]) {
-            if (!model.is_object() || !model.contains("id") || !model["id"].is_string()) {
-                continue;
-            }
-
-            lemon_cli::AgentModelEntry entry =
-                agent_model_entry_from_json(model["id"].get<std::string>(), model, context_window);
-            if (std::find(entry.labels.begin(), entry.labels.end(), "chat") == entry.labels.end()) {
-                continue;
-            }
-            models.push_back(std::move(entry));
-        }
-    } catch (const std::exception&) {
-        // Non-fatal: we still include the selected model below.
+static void print_prep_report(lemon_cli::PrepLevel level, const std::string& message) {
+    switch (level) {
+    case lemon_cli::PrepLevel::Status:
+        std::cout << message << std::endl;
+        break;
+    case lemon_cli::PrepLevel::Warning:
+        std::cerr << "Warning: " << message << std::endl;
+        break;
+    case lemon_cli::PrepLevel::Error:
+        std::cerr << "Error: " << message << std::endl;
+        break;
     }
-
-    return models;
 }
 
-// Auto-tune sizes the context only when the model loads, so the window is
-// read from the server after loading. Returns false when the load fails;
-// context_window stays 0 when the size can't be read.
-static bool load_for_context_window(lemonade::LemonadeClient& client, const CliConfig& config,
-                                    int& context_window) {
-    context_window = 0;
-    std::cout << "Loading " << config.model << " to read its context size..." << std::endl;
-    try {
-        nlohmann::json request_body =
-            config.recipe_options.is_object() ? config.recipe_options : nlohmann::json::object();
-        request_body["model_name"] = config.model;
-        request_body["save_options"] = false;
-        constexpr time_t load_timeout_ms = 86400000;
-        client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json",
-                            load_timeout_ms, load_timeout_ms);
-    } catch (const lemonade::HttpError& e) {
-        std::cerr << "Error: Failed to load " << config.model << ": "
-                  << lemonade::extract_server_error_message(e) << std::endl;
-        return false;
-    } catch (const std::exception& e) {
-        std::cerr << "Error: Failed to load " << config.model << ": " << e.what() << std::endl;
-        return false;
+static lemon_cli::PiPrepRequest pi_prep_request_for(const CliConfig& config) {
+    lemon_cli::PiPrepRequest request;
+    request.model = config.model;
+    request.server_origin =
+        lemon_tray::build_agent_server_base_url(config.host, config.port, config.is_ssl);
+    request.has_api_key = !config.api_key.empty();
+    request.mcp = config.pi_mcp;
+    if (config.recipe_options.is_object()) {
+        request.recipe_options = config.recipe_options;
     }
-
-    try {
-        const nlohmann::json model = nlohmann::json::parse(client.make_request(
-            "/api/v1/models/" + config.model, "GET", "", "", 3000, 3000));
-        const auto context_length = model.find("context_length");
-        if (context_length != model.end() && context_length->is_number_integer() &&
-            context_length->get<int>() > 0) {
-            context_window = context_length->get<int>();
-            return true;
-        }
-        std::cerr << "Warning: The server reported no context size for " << config.model
-                  << "." << std::endl;
-    } catch (const std::exception& e) {
-        std::cerr << "Warning: Failed to read the context size of " << config.model << ": "
-                  << e.what() << std::endl;
-    }
-    return true;
+    return request;
 }
 
-// Older pi starts fine with these flags but without what they enable, so
-// the version is checked only when one is passed. Returns false when launch
-// must not start pi.
-static bool check_pi_version_for_flags(const std::string& pi_binary, const CliConfig& config,
-                                       const std::string& install_instructions) {
-    if (!config.pi_codemode && !config.pi_mcp.value_or(false)) {
-        return true;
-    }
-
-    std::string output;
-    try {
-        lemon::utils::ProcessManager::run_process_with_output(
-            pi_binary, {"--version"},
-            [&output](const std::string& line) {
-                output += line + "\n";
-                return true;
-            },
-            "", 10, false);
-    } catch (const std::exception&) {
-        return true;
-    }
-    int major = 0;
-    int minor = 0;
-    if (!lemon_cli::parse_pi_version(output, major, minor)) {
-        return true;
-    }
-    const std::string found = output.substr(0, output.find('\n'));
-
-    if (config.pi_codemode && (major < 1 || (major == 1 && minor < 1))) {
-        std::cerr << "Error: --codemode needs pi 1.1 or newer (found " << found
-                  << "). Reinstall pi to update it." << std::endl;
-        std::cerr << install_instructions << std::endl;
-        return false;
-    }
-    if (config.pi_mcp.value_or(false) && major < 1) {
-        std::cerr << "Warning: --mcp needs pi 1.0 or newer (found " << found
-                  << "); this pi ignores mcp.json." << std::endl;
-    }
-    return true;
-}
-
-// Returns false when launch must not start the agent. model_loaded is set
-// when the sync already loaded the launched model.
+// Returns false when launch must not start the agent. Pi goes through
+// prepare_pi_config instead.
 static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
-                                         const CliConfig& config,
-                                         bool* model_loaded = nullptr) {
+                                         const CliConfig& config) {
     constexpr int default_context_window = 40960;
-    // A window of 0 marks a model without a saved size until the fallback is applied.
-    std::vector<lemon_cli::AgentModelEntry> models = fetch_llm_models_for_sync(client, 0);
+    const lemon_cli::LemondCall call = lemond_call_for(client);
+    std::vector<lemon_cli::AgentModelEntry> models =
+        lemon_cli::fetch_llm_models_for_sync(call, 0);
 
-    bool selected_present = false;
-    for (const auto& model : models) {
-        if (model.id == config.model) {
-            selected_present = true;
-            break;
-        }
-    }
+    const bool selected_present =
+        std::any_of(models.begin(), models.end(),
+                    [&](const lemon_cli::AgentModelEntry& m) { return m.id == config.model; });
 
     // The list holds only downloaded models; a selected model that is not
     // downloaded yet still needs its labels and saved window.
-    bool selected_unknown = false;
     if (!selected_present) {
         nlohmann::json selected = nlohmann::json::object();
         try {
-            selected = nlohmann::json::parse(client.make_request(
-                "/api/v1/models/" + config.model, "GET", "", "", 3000, 3000));
-        } catch (const lemonade::HttpError& e) {
-            selected_unknown = e.status_code() == 404;
+            selected = nlohmann::json::parse(call("GET", "/api/v1/models/" + config.model, "", 3000));
         } catch (const std::exception&) {
-            // Other failures: the model goes in without labels.
+            // The model goes in without labels.
         }
         if (!selected.is_object()) {
             selected = nlohmann::json::object();
         }
-        models.push_back(agent_model_entry_from_json(config.model, selected, 0));
+        models.push_back(lemon_cli::agent_model_entry_from_json(config.model, selected, 0));
     }
 
     // Launch loads the selected model with its own ctx_size, which outranks the saved one.
@@ -815,26 +706,6 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         for (auto& model : models) {
             if (model.id == config.model) {
                 model.context_window = launch_ctx_size > 0 ? launch_ctx_size : 0;
-            }
-        }
-    }
-
-    // Pi compacts by contextWindow, so it waits for the load rather than
-    // guessing a window the auto-tuned model may not have.
-    if (config.agent == "pi" && !selected_unknown) {
-        for (auto& model : models) {
-            if (model.id == config.model && model.context_window <= 0) {
-                if (!load_for_context_window(client, config, model.context_window)) {
-                    std::cerr << "Not launching pi, since the model failed to load." << std::endl;
-                    return false;
-                }
-                if (model_loaded != nullptr) {
-                    *model_loaded = true;
-                }
-                if (model.context_window <= 0) {
-                    std::cerr << "Launching pi anyway, using a context size of "
-                              << default_context_window << "." << std::endl;
-                }
             }
         }
     }
@@ -872,111 +743,24 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         return true;
     }
 
-    const lemon_cli::AgentConfigProfile* profile = nullptr;
-    if (config.agent == "opencode") {
-        profile = &lemon_cli::opencode_profile();
-    } else if (config.agent == "pi") {
-        profile = &lemon_cli::pi_profile();
-    }
-
-    if (profile == nullptr) {
+    if (config.agent != "opencode") {
         return true;
     }
 
-    // Pi decides between an env reference and a placeholder itself, so it
-    // needs to know whether a key was configured at all.
-    const std::string config_api_key =
-        (config.agent == "pi" || !config.api_key.empty()) ? config.api_key : "lemonade";
-
-    // Only pi's config follows the server's scheme; the other agents still get http.
+    const std::string config_api_key = config.api_key.empty() ? "lemonade" : config.api_key;
     const std::string base_url =
-        lemon_tray::build_agent_server_base_url(
-            config.host, config.port, config.agent == "pi" && config.is_ssl) + "/v1";
-
-    // Pi's config references the key launch exports, so starting pi on a
-    // config that still points at another server would send it this key.
-    const bool pi_with_key = config.agent == "pi" && !config.api_key.empty();
-    const char* pi_key_stop = "Not launching pi, since it would send this server's API key "
-                              "to the server in pi's old config.";
+        lemon_tray::build_agent_server_base_url(config.host, config.port) + "/v1";
 
     std::string error_message;
-    if (!lemon_cli::sync_agent_config_file(*profile,
+    if (!lemon_cli::sync_agent_config_file(lemon_cli::opencode_profile(),
                                            "Lemonade",
                                            base_url,
                                            config_api_key,
                                            models,
                                            error_message)) {
-        if (pi_with_key) {
-            std::cerr << "Error: Failed to sync pi config: " << error_message << std::endl;
-            std::cerr << pi_key_stop << std::endl;
-            return false;
-        }
         std::cerr << "Warning: Failed to sync " << config.agent
                   << " config: " << error_message << std::endl;
         std::cerr << "Continuing with launch anyway..." << std::endl;
-    }
-
-    if (config.agent == "pi") {
-        if (selected_unknown) {
-            std::cerr << "Warning: " << config.model
-                      << " is not a model on the Lemonade server; check the name with"
-                      << " `lemonade list`." << std::endl;
-        }
-        for (const auto& model : models) {
-            if (model.id == config.model && !model.labels.empty() &&
-                std::find(model.labels.begin(), model.labels.end(), "tool-calling") ==
-                    model.labels.end()) {
-                std::cerr << "Warning: " << config.model
-                          << " is not labeled tool-calling; pi may fail to use its tools."
-                          << std::endl;
-            }
-        }
-
-        // Pi may still load an mcp.json launch cannot parse (Node tolerates
-        // invalid UTF-8), so its lemonade entry could not be checked or refreshed.
-        std::string mcp_read_error;
-        if (pi_with_key && !lemon_cli::pi_mcp_config_readable(mcp_read_error)) {
-            std::cerr << "Error: Can't read pi's mcp.json: " << mcp_read_error << std::endl;
-            std::cerr << "Not launching pi with an API key until it can be read." << std::endl;
-            return false;
-        }
-
-        // An existing entry is refreshed so it follows the current host, port and key.
-        const bool had_mcp_entry = lemon_cli::pi_has_mcp_server();
-        if (config.pi_mcp.value_or(had_mcp_entry)) {
-            std::string mcp_error;
-            if (!lemon_cli::sync_pi_mcp_server(
-                    lemon_tray::build_agent_server_base_url(config.host, config.port,
-                                                            config.is_ssl),
-                    !config.api_key.empty(), mcp_error)) {
-                if (pi_with_key && had_mcp_entry) {
-                    std::cerr << "Error: Failed to update Lemonade MCP in pi: " << mcp_error
-                              << std::endl;
-                    std::cerr << pi_key_stop << std::endl;
-                    return false;
-                }
-                std::cerr << "Warning: Failed to add Lemonade MCP to pi: " << mcp_error << std::endl;
-                std::cerr << "Continuing with launch anyway..." << std::endl;
-            }
-        } else if (config.pi_mcp.has_value()) {
-            std::string mcp_error;
-            if (!lemon_cli::remove_pi_mcp_server(mcp_error)) {
-                std::cerr << "Error: Failed to remove Lemonade MCP from pi: " << mcp_error
-                          << std::endl;
-                std::cerr << "Not launching pi, since --no-mcp was requested." << std::endl;
-                return false;
-            }
-        }
-
-        // Only write settings.json if pi doesn't already have a default provider/model.
-        // This preserves existing user configuration while providing seamless first-time UX.
-        if (!lemon_cli::pi_has_default_config()) {
-            std::string settings_error;
-            if (!lemon_cli::sync_pi_settings_file("Lemonade", config.model, settings_error)) {
-                std::cerr << "Warning: Failed to sync pi settings: " << settings_error << std::endl;
-                std::cerr << "Continuing with launch anyway..." << std::endl;
-            }
-        }
     }
     return true;
 }
@@ -1047,13 +831,17 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     }
 
     if (config.agent == "pi" &&
-        !check_pi_version_for_flags(agent_binary, config, agent_config.install_instructions)) {
+        !lemon_cli::check_pi_version_for_flags(agent_binary, config.pi_codemode,
+                                               config.pi_mcp.value_or(false),
+                                               agent_config.install_instructions,
+                                               print_prep_report)) {
         return 1;
     }
 
     bool model_loaded = false;
     if (needs_config_sync && sync_after_binary_check &&
-        !sync_agent_config_for_launch(client, config, &model_loaded)) {
+        !lemon_cli::prepare_pi_config(lemond_call_for(client), pi_prep_request_for(config),
+                                      print_prep_report, &model_loaded)) {
         return 1;
     }
 

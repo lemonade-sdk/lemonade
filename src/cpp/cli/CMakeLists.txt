@@ -46,8 +46,10 @@ set(COMMON_SOURCES
     ../server/utils/safe_fs.cpp
     agent_launcher.cpp
     agent_config_file.cpp
+    agent_models.cpp
     junie_profile.cpp
     opencode_profile.cpp
+    pi_launch_prep.cpp
     pi_profile.cpp
     # Self-describing backend descriptors (plain data; CLI-safe). Lets the CLI
     # read recipe options/flags from descriptors without linking server classes.
