@@ -100,6 +100,12 @@ inline nlohmann::json error_body(const std::string& code, const std::string& mes
     return body;
 }
 
+// Messages can quote file contents and paths that aren't valid UTF-8, which
+// dump() would otherwise throw on.
+inline std::string serialize(const nlohmann::json& frame) {
+    return frame.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+}
+
 // Returns the frame when text is a well-formed frame of a known type, else nullopt.
 inline std::optional<nlohmann::json> parse_frame(const std::string& text) {
     nlohmann::json j = nlohmann::json::parse(text, nullptr, false);

@@ -26,7 +26,7 @@ public:
     void send(const json& frame) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (ws_ != nullptr) {
-            ws_->send(frame.dump());
+            ws_->send(protocol::serialize(frame));
         }
     }
     void close() {
@@ -130,7 +130,11 @@ LinkExit run_link(HostContext& ctx, HostRoutes& routes, const LinkOptions& optio
                 std::thread([&routes, outbox, request = *frame] {
                     Responder responder(request["id"].get<uint64_t>(),
                                         [outbox](const json& out) { outbox->send(out); });
-                    routes.handle(request, responder);
+                    try {
+                        routes.handle(request, responder);
+                    } catch (const std::exception& e) {
+                        LOG(ERROR, "AgentHost") << "Request failed: " << e.what() << std::endl;
+                    }
                 }).detach();
             } else if (type == "cancel") {
                 routes.cancel((*frame)["id"].get<uint64_t>());

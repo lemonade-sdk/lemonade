@@ -55,13 +55,24 @@ void HostRoutes::cancel(uint64_t id) {
 }
 
 void HostRoutes::handle(const json& request, Responder& responder) {
-    in_flight_++;
     const uint64_t id = request["id"].get<uint64_t>();
     auto cancelled = std::make_shared<std::atomic<bool>>(false);
     {
         std::lock_guard<std::mutex> lock(mutex_);
         cancels_[id] = cancelled;
     }
+    in_flight_++;
+    struct Done {
+        HostRoutes& routes;
+        uint64_t id;
+        ~Done() {
+            {
+                std::lock_guard<std::mutex> lock(routes.mutex_);
+                routes.cancels_.erase(id);
+            }
+            routes.in_flight_--;
+        }
+    } done{*this, id};
     const std::string route = request["route"].get<std::string>();
     const json& params = request["params"];
     const json body = request["body"].is_object() ? request["body"] : json::object();
@@ -92,12 +103,6 @@ void HostRoutes::handle(const json& request, Responder& responder) {
         LOG(ERROR, "AgentHost") << route << " failed: " << e.what() << std::endl;
         responder.respond(500, protocol::error_body("agent_host_error", e.what()));
     }
-
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        cancels_.erase(id);
-    }
-    in_flight_--;
 }
 
 json HostRoutes::list() {

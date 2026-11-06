@@ -30,7 +30,7 @@ struct AgentHostRegistry::Link {
 
     bool send(const json& frame) {
         std::lock_guard<std::mutex> lock(mutex);
-        return !dead && transport->send(frame.dump());
+        return !dead && transport->send(protocol::serialize(frame));
     }
 };
 

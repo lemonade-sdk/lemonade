@@ -101,7 +101,7 @@ protected:
             }
             if ((*frame)["type"] == "response") {
                 res.status = (*frame)["status"].get<int>();
-                res.set_content((*frame)["body"].dump(), "application/json");
+                res.set_content(protocol::serialize((*frame)["body"]), "application/json");
                 return;
             }
         }
