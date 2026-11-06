@@ -38,6 +38,7 @@ private:
     json handle_tools_call(const json& params, const json& id);
     json handle_ping(const json& id);
 
+    json tool_get_logs(const json& arguments);
     json tool_chat(const json& arguments);
     json tool_transcribe_audio(const json& arguments);
     json tool_generate_image(const json& arguments);

@@ -56,6 +56,7 @@ function summarizeResult(toolName: string, data: Record<string, unknown>): strin
       return Array.isArray(loaded) ? `${loaded.length} model(s) loaded` : JSON.stringify(data).slice(0, 80);
     }
     case 'get_server_health': return `${data.status}: ${data.loaded_models} model(s)`;
+    case 'get_logs': return `${data.returned} of ${data.matched} matching server logs`;
     case 'pull_model': {
       const anyData = data as any;
       if (anyData.status === 'needs_choice') {

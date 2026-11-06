@@ -9,6 +9,7 @@
 #include <fstream>
 #include <iomanip>
 #include <lemon/model_manager.h>
+#include <map>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -20,6 +21,7 @@
 
 #include "lemon/api_docs.h"
 #include "lemon/collection_orchestrator.h"
+#include "lemon/log_stream.h"
 #include "lemon/model_types.h"
 #include "lemon/models/store_snapshot.h"
 #include "lemon/utils/json_utils.h"
@@ -63,6 +65,30 @@ std::string extract_string_arg(const json& args, const char* key) {
     }
     return args[key].get<std::string>();
 }
+
+template <typename T>
+T optional_mcp_arg(const json& args, const char* key, T fallback) {
+    const auto it = args.find(key);
+    return it == args.end() || it->is_null() ? fallback : it->get<T>();
+}
+
+std::string lowercase(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+int log_severity_rank(const std::string& value) {
+    const std::string level = lowercase(value);
+    if (level == "fatal") return 5;
+    if (level == "error") return 4;
+    if (level == "warning" || level == "warn") return 3;
+    if (level == "info" || level == "notice") return 2;
+    if (level == "debug") return 1;
+    return 0;
+}
+
 
 // Some MCP clients (notably Claude Desktop) emit chat messages in Anthropic's
 // content-block form — `content: [{type:"text", text:"..."}]` — instead of
@@ -1028,6 +1054,88 @@ json McpServer::tool_omni(const json& arguments) {
     };
 }
 
+json McpServer::tool_get_logs(const json& arguments) {
+    const std::string min_level = optional_mcp_arg<std::string>(arguments, "min_level", "info");
+    const std::string tag = lowercase(optional_mcp_arg<std::string>(arguments, "tag", ""));
+    const std::string query = lowercase(optional_mcp_arg<std::string>(arguments, "query", ""));
+    const uint64_t after_seq = optional_mcp_arg<uint64_t>(arguments, "after_seq", 0);
+    const uint64_t limit = optional_mcp_arg<uint64_t>(arguments, "limit", 50);
+    const bool with_summary = optional_mcp_arg<bool>(arguments, "summary", true);
+    if (limit < 1 || limit > 200) {
+        throw std::invalid_argument("limit must be between 1 and 200");
+    }
+
+    const auto window = LogStreamHub::instance().snapshot(after_seq);
+    json selected = json::array();
+    json by_severity = json::object();
+    std::map<std::string, size_t> by_tag;
+    size_t matches = 0;
+    constexpr size_t kMaxLogLineBytes = 2048;
+    constexpr size_t kMaxReturnedEntriesBytes = 24 * 1024;
+    size_t returned_bytes = 0;
+    bool output_full = false;
+
+    // Scan newest first, but return the selected entries in chronological order.
+    for (auto it = window.rbegin(); it != window.rend(); ++it) {
+        const std::string severity = lowercase(it->severity);
+        const std::string source = lowercase(it->tag);
+        if (log_severity_rank(severity) < log_severity_rank(min_level)) continue;
+        if (!tag.empty() && source != tag) continue;
+        if (!query.empty() && lowercase(it->line).find(query) == std::string::npos &&
+            source.find(query) == std::string::npos &&
+            severity.find(query) == std::string::npos) continue;
+
+        ++matches;
+        if (with_summary) {
+            by_severity[severity] = by_severity.value(severity, size_t{0}) + 1;
+            ++by_tag[it->tag];
+        }
+        if (selected.size() < limit && !output_full) {
+            json entry = it->to_json();
+            if (it->line.size() > kMaxLogLineBytes) {
+                size_t end = kMaxLogLineBytes;
+                while (end > 0 && (static_cast<unsigned char>(it->line[end]) & 0xc0) == 0x80) {
+                    --end;
+                }
+                entry["line"] = it->line.substr(0, end);
+                entry["line_truncated"] = true;
+            }
+            const size_t bytes = entry.dump(-1, ' ', false, json::error_handler_t::replace).size();
+            if (bytes > kMaxReturnedEntriesBytes - returned_bytes) {
+                output_full = true;
+            } else {
+                returned_bytes += bytes;
+                selected.push_back(std::move(entry));
+            }
+        }
+    }
+    std::reverse(selected.begin(), selected.end());
+
+    json payload = {
+        {"scanned", window.size()},
+        {"matched", matches},
+        {"returned", selected.size()},
+        {"truncated", matches > selected.size()},
+        {"next_after_seq", window.empty() ? after_seq : window.back().seq},
+        {"entries", std::move(selected)},
+    };
+    if (with_summary) {
+        std::vector<std::pair<std::string, size_t>> ranked(by_tag.begin(), by_tag.end());
+        std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) {
+            return a.second != b.second ? a.second > b.second : a.first < b.first;
+        });
+        json sources = json::array();
+        for (size_t i = 0; i < std::min<size_t>(10, ranked.size()); ++i) {
+            sources.push_back({{"tag", ranked[i].first}, {"count", ranked[i].second}});
+        }
+        payload["summary"] = {{"by_severity", std::move(by_severity)},
+                              {"by_tag", std::move(sources)}};
+    }
+
+    return {{"content", json::array({text_content_block(payload.dump(-1, ' ', false, json::error_handler_t::replace))})},
+            {"isError", false}};
+}
+
 json McpServer::tool_list_models(const json& arguments) {
     const bool include_available = arguments.value("include_available", true);
     const bool include_suggested = arguments.value("include_suggested", true);
@@ -1152,6 +1260,44 @@ std::vector<McpTool> McpServer::build_tools() {
             },
             [this](const json& arguments) {
                 return tool_list_models(arguments);
+            }),
+        McpTool(
+            json{
+                {"name", "lemonade_get_logs"},
+                {"description",
+                 "Read recent buffered Lemonade server logs for diagnostics. Filter by minimum "
+                 "severity, source tag, substring, and sequence. Logs may contain sensitive "
+                 "information; use only when investigating a user-requested issue. "
+                 "Only the last 5000 captured server entries are available."},
+                {"inputSchema", {
+                    {"type", "object"},
+                    {"properties", {
+                        {"min_level", { {"type", "string"},
+                                        {"enum", json::array({"trace", "debug", "info", "warning", "error", "fatal"})},
+                                        {"description", "Minimum severity to include. Defaults to info."} }},
+                        {"tag", { {"type", "string"},
+                                  {"description", "Exact source tag (case-insensitive); omit for all sources."} }},
+                        {"query", { {"type", "string"},
+                                    {"description", "Case-insensitive substring in message, tag or severity."} }},
+                        {"after_seq", { {"type", "integer"}, {"minimum", 0},
+                                        {"description", "Only entries with a larger sequence number; default 0."} }},
+                        {"limit", { {"type", "integer"}, {"minimum", 1}, {"maximum", 200},
+                                    {"description", "Maximum returned entries, 1 to 200 (default 50)."} }},
+                        {"summary", { {"type", "boolean"},
+                                      {"description", "Include severity and top-10 source counts over all matching entries; default true."} }},
+                    }},
+                }},
+                {"_meta", {
+                    {"lemonade/result", {
+                        {"description", "Returns one JSON `text` block with matching counts, "
+                         "the latest sequence cursor, and up to `limit` chronological log entries "
+                         "within a 24 KiB entries budget. Lines over 2048 bytes are truncated "
+                         "and marked. With `summary=true`, includes severity and top-10 source counts."},
+                    }},
+                }},
+            },
+            [this](const json& arguments) {
+                return tool_get_logs(arguments);
             }),
         McpTool(
             json{
