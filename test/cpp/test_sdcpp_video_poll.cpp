@@ -1,4 +1,5 @@
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <string>
 #include <thread>
@@ -62,6 +63,46 @@ struct FakeBackend {
     }
 };
 
+// Accepts the clip, then never answers a poll or a cancel until released.
+struct StalledBackend {
+    httplib::Server server;
+    std::thread thread;
+    std::atomic<bool> released{false};
+    std::atomic<int> cancels{0};
+    int port = 0;
+
+    StalledBackend() {
+        server.Post("/sdcpp/v1/vid_gen", [](const httplib::Request&, httplib::Response& res) {
+            res.status = 202;
+            res.set_content(R"({"id":"j1","poll_url":"/sdcpp/v1/jobs/j1"})", "application/json");
+        });
+        server.Get("/sdcpp/v1/jobs/j1", [this](const httplib::Request&, httplib::Response& res) {
+            stall();
+            res.set_content(R"({"id":"j1","status":"generating","error":null})",
+                            "application/json");
+        });
+        server.Post("/sdcpp/v1/jobs/j1/cancel", [this](const httplib::Request&,
+                                                       httplib::Response& res) {
+            ++cancels;
+            stall();
+            res.set_content(R"({"id":"j1","status":"cancelled"})", "application/json");
+        });
+        port = server.bind_to_any_port("127.0.0.1");
+        thread = std::thread([this] { server.listen_after_bind(); });
+        server.wait_until_ready();
+    }
+
+    void stall() {
+        while (!released) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+
+    ~StalledBackend() {
+        released = true;
+        server.stop();
+        thread.join();
+    }
+};
+
 lemon::json request() {
     return {{"prompt", "a kite"}, {"width", 480}, {"height", 272}, {"video_frames", 17}};
 }
@@ -91,12 +132,31 @@ void test_cancel_before_submit_skips_the_backend() {
     check("early cancel: sd-server never sees the clip", backend.submits.load() == 0);
 }
 
+void test_cancel_is_not_held_by_a_stalled_backend() {
+    StalledBackend backend;
+    FakeSdServer sd(backend.port);
+    std::atomic<bool> cancel{false};
+    std::thread canceler([&cancel] {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        cancel = true;
+    });
+    const auto start = std::chrono::steady_clock::now();
+    const lemon::json result = sd.video_generations(request(), &cancel);
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    canceler.join();
+    check("stalled backend: the video is canceled", result.contains("error"));
+    check("stalled backend: the cancel was sent", backend.cancels.load() == 1);
+    check("stalled backend: one poll and one cancel timeout, not the 300 s default",
+          elapsed < std::chrono::seconds(20));
+}
+
 } // namespace
 
 int main() {
     test_a_few_failed_polls_are_tolerated();
     test_persistent_failed_polls_give_up();
     test_cancel_before_submit_skips_the_backend();
+    test_cancel_is_not_held_by_a_stalled_backend();
     if (g_failures) {
         std::printf("%d FAILURE(S)\n", g_failures);
         return 1;

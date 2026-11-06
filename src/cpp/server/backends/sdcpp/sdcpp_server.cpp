@@ -701,10 +701,16 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
     // reporting canceled while the clip is still running. stop_server() rather
     // than a watchdog reset, which the router would answer by reloading and
     // replaying the canceled request; the next request reloads the model instead.
+    // Both calls answer at once from a healthy sd-server, so a short timeout
+    // only cuts off a stalled one; the global 300 s default would hold a cancel
+    // or a shutdown for that long.
+    constexpr long kBackendCallTimeoutSeconds = 5;
+
     auto cancel_backend_job = [this, &poll_url]() {
         json reply;
         try {
-            reply = forward_request(poll_url + "/cancel", json::object(), 0);
+            reply = forward_request(poll_url + "/cancel", json::object(),
+                                    kBackendCallTimeoutSeconds);
         } catch (const std::exception& e) {
             reply = {{"error", {{"message", e.what()}}}};
         }
@@ -729,7 +735,7 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
                 BackendException(server_name_, "video generation canceled", 499));
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        json status = forward_get_request(poll_url, 0);
+        json status = forward_get_request(poll_url, kBackendCallTimeoutSeconds);
         // A job payload always carries a string "status"; anything else is a
         // transport/backend error envelope from forward_get_request. Checking
         // for a "status" field rather than for "error" matters: the job payload
