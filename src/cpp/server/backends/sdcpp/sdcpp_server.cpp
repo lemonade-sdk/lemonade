@@ -704,7 +704,7 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
     // Both calls answer at once from a healthy sd-server, so a short timeout
     // only cuts off a stalled one; the global 300 s default would hold a cancel
     // or a shutdown for that long.
-    constexpr long kBackendCallTimeoutSeconds = 5;
+    static constexpr long kBackendCallTimeoutSeconds = 5;
 
     auto cancel_backend_job = [this, &poll_url]() {
         json reply;
