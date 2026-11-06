@@ -3759,7 +3759,6 @@ data: {"binary": "~/.local/share/lemonade/agents/pi/1.5.0/pi", "args": ["--provi
 | `404` | `unknown_agent` | `id` names no agent Lemonade manages |
 | `409` | `agent_busy` | the agent is being installed or removed, or too many agent requests are in flight |
 | `409` | `agent_not_installed` | the agent is neither installed by Lemonade nor on `PATH` |
-| `409` | `agent_outdated` | the agent is too old for `codemode` |
 | `424` | `model_load_failed` | the model failed to load |
 | `500` | `config_write_failed` | the agent's configuration couldn't be written |
 | `503` | `agent_host_unavailable` | no agent host with the request's token is connected |
