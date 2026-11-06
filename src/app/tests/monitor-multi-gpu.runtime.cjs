@@ -25,9 +25,9 @@ const gpu = (index, fields = {}) => ({
   memory_type: 'dedicated', gpu_percent: 75, memory_used_gb: 8, memory_total_gb: 16,
   ...fields,
 });
-const render = (gpus, locale = 'en-US', selectedId = gpus[0]?.id) => renderToStaticMarkup(
+const render = (gpus, locale = 'en-US', selectedId = gpus[0]?.id, props = {}) => renderToStaticMarkup(
   React.createElement(MonitorGpuVitals, {
-    gpus, selectedId, onSelect: () => {}, t: (key, values) => translate(key, locale, values),
+    gpus, selectedId, onSelect: () => {}, t: (key, values) => translate(key, locale, values), ...props,
   }),
 );
 const devices = [gpu(0), gpu(1, { memory_type: 'shared', gpu_percent: null, memory_used_gb: null })];
@@ -35,7 +35,25 @@ const html = render(devices);
 assert.equal((html.match(/class="dash2-gpus__device"/g) || []).length, 2);
 assert.match(html, /aria-pressed="true"/);
 assert.match(html, /aria-pressed="false"/);
-assert.match(html, /8\.0\/16 GB/);
+assert.match(html, /8\.0\/16\.0 GB/);
+assert.match(render([gpu(0, { memory_used_gb: 100.4, memory_total_gb: 127.6 })]), />100\/128 GB</);
+assert.match(render([gpu(0, { memory_used_gb: 20.17, memory_total_gb: 23.98 })]), />20\.2\/24\.0 GB</);
+assert.match(render([gpu(0, { memory_total_gb: null })]), />8\.0 GB</);
+
+const threshold = (gpus, value) => render(gpus, 'en-US', gpus[0]?.id, { thresholdPercent: value });
+const ticks = markup => (markup.match(/class="dash2-gpus__threshold"/g) || []).length;
+const marked = threshold(devices, 80);
+assert.equal(ticks(marked), 2);
+assert.match(marked, /data-eviction-threshold="80"/);
+assert.match(marked, /left:80%/);
+assert.match(marked, /Eviction threshold: 80%/);
+assert.doesNotMatch(marked, /dash2-gpus__fill--over/);
+assert.match(threshold([gpu(0, { memory_used_gb: 14 })], 80), /dash2-gpus__fill--memory dash2-gpus__fill--over/);
+assert.equal(ticks(threshold([gpu(0, { memory_total_gb: null })], 80)), 0);
+assert.equal(ticks(threshold(devices, null)), 0);
+assert.equal(ticks(threshold(devices, 0)), 0);
+assert.equal(ticks(threshold(devices, 150)), 0);
+assert.equal(ticks(render(devices)), 0);
 assert.match(html, />MEM</);
 assert.match(html, /GPU 1, Test GPU 1\. Utilization —\. MEM —/);
 assert.match(render([gpu(0, { memory_type: 'unknown' }), gpu(1)]), />MEM</);
@@ -53,6 +71,7 @@ assert.match(monitor, /const multiGpu = gpuDevices\.length >= 2/);
 assert.match(monitor, /!multiGpu && hasGpu && <RingGauge label="GPU"/);
 assert.match(monitor, /!multiGpu && !memoryTopology\.unified && hasGpu/);
 assert.match(monitor, /MonitorGpuVitals gpus=\{gpuDevices\}.* t=\{t\}/);
+assert.match(monitor, /<MonitorGpuVitals [^>]*thresholdPercent=\{evictionThresholdPercent\}/);
 assert.match(monitor, /key: `gpu:\$\{activeGpu\.id\}`/);
 const monitorView = fs.readFileSync(src('components/MonitorView.tsx'), 'utf8');
 assert.match(monitorView, /api\.onStatusChange\(status =>/);

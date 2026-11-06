@@ -4299,15 +4299,26 @@ optgroup {
   white-space: nowrap;
 }
 .dash2-gpus__track {
+  position: relative;
   display: block;
   height: 5px;
   border-radius: var(--radius-pill);
   background: var(--border);
-  overflow: hidden;
 }
 .dash2-gpus__fill { display: block; height: 100%; border-radius: inherit; transition: width 0.4s ease; }
 .dash2-gpus__fill--gpu { background: var(--success); }
 .dash2-gpus__fill--memory { background: var(--warn); }
+.dash2-gpus__fill--over { background: var(--danger); }
+.dash2-gpus__threshold {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--text-primary);
+  box-shadow: 0 0 2px var(--surface-0);
+  transform: translateX(-50%);
+}
 .dash2-gpus__more { font-size: var(--type-overline-size); color: var(--text-tertiary); }
 
 @container (min-width: 960px) {

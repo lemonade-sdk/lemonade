@@ -475,7 +475,7 @@ const Monitor: React.FC<MonitorProps> = ({ isActive }) => {
               <RingGauge label={t('KV Cache')} value={overallCacheUtil}
                 color="var(--warn)" subtitle={pct(overallCacheUtil)} />
             </div>
-            {multiGpu && <MonitorGpuVitals gpus={gpuDevices} selectedId={activeGpu?.id ?? null} onSelect={setSelectedGpuId} t={t} />}
+            {multiGpu && <MonitorGpuVitals gpus={gpuDevices} selectedId={activeGpu?.id ?? null} onSelect={setSelectedGpuId} thresholdPercent={evictionThresholdPercent} t={t} />}
             <SmoothChart
               data={sysChartData}
               series={[
