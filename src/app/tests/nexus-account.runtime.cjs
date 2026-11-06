@@ -186,5 +186,16 @@ const input = { action:'create',deviceName:'Workstation',source };
   reply = {...reply,member_id:'other-identity'};
   await assert.rejects(service.refresh(account),/membership changed/);
   assert.equal([...storage.values()][0],original);
+  // Page load: a device-key server whose mesh is up is picked up without the dialog;
+  // a locked server, a passkey device and a server this page cannot manage are not.
+  reply = {...reply,member_id:'identity'};
+  meshUp = true; unlock = 'device_key'; registered = true; calls.length = 0;
+  const resumed = await service.resume();
+  assert.equal(resumed.account.id, 'cluster');
+  assert.deepEqual(calls.map(call => call.path), ['status','account']);
+  meshUp = false; assert.equal(await service.resume(), undefined);
+  meshUp = true; unlock = 'passkey'; assert.equal(await service.resume(), undefined);
+  unlock = 'device_key'; local = false; assert.equal(await service.resume(), undefined);
+  local = true;
   console.log('Nexus account flow and synced images: verification, create/join/return, membership join/leave, deletion, replace/remove, stale writes, errors, account/source isolation, permissions and non-secret labels passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

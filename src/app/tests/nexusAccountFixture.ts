@@ -217,3 +217,8 @@ export async function enableNexusMesh(page: Page) {
   await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
   await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
 }
+// A device-key server whose mesh is up signs the page in on load, with no Enable Mesh click.
+export async function resumedNexusMesh(page: Page) {
+  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Enable Mesh', exact: true })).toHaveCount(0);
+}

@@ -22,6 +22,10 @@ export function NexusNetwork({ advanced, showCompact = true }: { advanced: boole
   const deviceKey = Boolean(status && usesNexusDeviceKey(status));
   const desktop = isNexusDesktop() || deviceKey;
   const connected = Boolean(status?.mesh_up && !status.locked && !network.error);
+  // Set up and unlocked, but the mesh is not up or the server is out of reach: nothing to
+  // create or unlock here, the network comes back by itself.
+  const reconnecting = Boolean(status?.enabled && !status.locked);
+  const connecting = reconnecting && !network.error && (status?.status === 'starting' || status?.status === 'joining');
   const prepare = async () => {
     setBusy(true); setError('');
     try { await prepareNexus(deviceName.trim() || status?.device_name || t('My Lemonade device'), false); }
@@ -33,9 +37,10 @@ export function NexusNetwork({ advanced, showCompact = true }: { advanced: boole
       key={`${network.selectedServerId}:${status.group_node_id}:${status.node_id}`} viewerRole={account.role} />}
     {connected && status ? (advanced || showCompact) && <NexusHierarchy key={`${status.group_node_id}:${status.node_id}`} status={status} advanced={advanced} /> : advanced && <div className="nexus-network-empty">
       <span className="nexus-network-empty__icon"><Icon name="layers" size={28} /></span>
-      <h4>{status?.enabled && status.locked ? t('Unlock your network') : t('A place for every group and device')}</h4>
-      <p>{t('Start with a group of your devices. Add teams, people or locations as your network grows.')}</p>
-      {status?.available && desktop ? <form onSubmit={event => { event.preventDefault(); void prepare(); }}>
+      <h4>{!status?.enabled ? t('A place for every group and device') : status.locked ? t('Unlock your network') : connecting ? t('Connecting to your network…') : t('Your network is offline')}</h4>
+      <p>{reconnecting ? t('This device is set up. Its network comes back as soon as the server reconnects.') : t('Start with a group of your devices. Add teams, people or locations as your network grows.')}</p>
+      {reconnecting ? <p className="nexus-hint">{network.error || (connecting ? t('The server is joining its network. This takes a moment.') : t('The server has a network but is not connected to it. Check again in a moment.'))}</p>
+        : status?.available && desktop ? <form onSubmit={event => { event.preventDefault(); void prepare(); }}>
         {!status.enabled && <><label htmlFor={id}>{t('This device’s name')}</label><input id={id} className="input" value={deviceName} maxLength={128} placeholder={t('My Lemonade device')} onChange={event => setDeviceName(event.target.value)} /></>}
         <WorkspaceActionButton type="submit" disabled={busy}>{busy ? t('Connecting…') : status.enabled && status.locked ? (deviceKey ? t('Use this device’s key') : t('Unlock with passkey')) : t('Create my network')}</WorkspaceActionButton>
         <p className="nexus-hint">{deviceKey ? t('Nexus uses this device’s key. Other devices see this device under its device name.') : t('Verify this device with a passkey to manage its network.')}</p>

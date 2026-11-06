@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { enableNexusMesh, setupNexusAccount } from './nexusAccountFixture';
+import { enableNexusMesh, resumedNexusMesh, setupNexusAccount } from './nexusAccountFixture';
 
 for (const action of ['create', 'join'] as const) {
   test(`an unregistered device with a saved label can ${action} an account`, async ({ page }, testInfo) => {
@@ -241,12 +241,13 @@ test('a device-key device re-enables through key/unlock without a passkey', asyn
   expect(fixture.calls.some(call => call.path.endsWith('/join'))).toBe(false);
 });
 
-test('an unlocked device-key device skips the unlock', async ({ page }) => {
+test('a device-key server whose mesh is up resumes the account on load', async ({ page }) => {
   const fixture = await setupNexusAccount(page, { deviceKey: true });
-  await enableNexusMesh(page);
+  await resumedNexusMesh(page);
   expect(keyUnlocks(fixture)).toEqual([]);
   expect(passkeyCalls(fixture)).toEqual([]);
-  expect(fixture.calls.some(call => call.path.endsWith('/device'))).toBe(true);
+  expect(fixture.calls.some(call => call.path.endsWith('/device') || call.path.endsWith('/enable'))).toBe(false);
+  expect(fixture.calls.some(call => call.path.endsWith('/account'))).toBe(true);
 });
 
 test('a device-key device creates the account with its key', async ({ page }) => {

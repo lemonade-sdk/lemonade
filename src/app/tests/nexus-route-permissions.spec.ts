@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { NexusRole, NexusRoutePermissions } from '../src/features/nexus/routePermissions';
-import { enableNexusMesh, setupNexusAccount } from './nexusAccountFixture';
+import { resumedNexusMesh, setupNexusAccount } from './nexusAccountFixture';
 
 function policy(): NexusRoutePermissions {
   return {
@@ -30,7 +30,7 @@ async function openRoutes(page: Page, role: NexusRole = 'admin') {
     response.calls.push({ method: route.request().method(), origin: new URL(route.request().url()).origin, authorization: route.request().headers().authorization });
     return route.fulfill({ status: response.status, headers: { 'Access-Control-Allow-Origin': '*' }, json: response.body });
   });
-  await enableNexusMesh(page);
+  await resumedNexusMesh(page);
   await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   expect(response.calls).toHaveLength(0);
   await page.locator('.nexus-route-permissions > summary').click();

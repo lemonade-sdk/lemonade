@@ -29,6 +29,10 @@ export interface NexusSignInInput {
 export interface NexusAccountService {
   disconnect: (session: VerifiedNexusAccount) => Promise<void>;
   inspect: () => Promise<NexusAccountInspection>;
+  // The account of a device-key server whose mesh is already up, without the Enable Mesh
+  // dialog. Undefined when this page cannot manage the server, or the server still needs
+  // its setup, an unlock or a passkey.
+  resume: () => Promise<VerifiedNexusAccount | undefined>;
   signIn: (input: NexusSignInInput) => Promise<VerifiedNexusAccount>;
   refresh: (session: VerifiedNexusAccount) => Promise<VerifiedNexusAccount>;
   invite: (session: VerifiedNexusAccount, deviceName: string, role?: 'user' | 'moderator') => Promise<NexusInvite>;
@@ -118,6 +122,17 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
       const controller = await dependencies.controller();
       const status = await controller.request<NexusStatus>('status');
       return { status, source: controller.source, local: controller.local, desktop: dependencies.desktop(), ready: controller.local && (dependencies.desktop() || usesNexusDeviceKey(status)) };
+    },
+    async resume() {
+      const controller = await dependencies.controller();
+      if (!controller.local) return undefined;
+      const status = await controller.request<NexusStatus>('status');
+      // A passkey device verifies its user when Mesh is enabled; a device key has nothing
+      // to verify, so a server that is set up, unlocked and on its mesh is simply picked up.
+      if (!status.available || !status.enabled || status.locked || !status.mesh_up || !usesNexusDeviceKey(status)) return undefined;
+      const session = verifyAccountReply(await controller.request('account'), controller.source, undefined, status.device_name || '');
+      await currentController(controller.source);
+      return session;
     },
     async signIn(input) {
       if (!boundedName(input.deviceName)) throw new Error('Enter a device name of up to 128 bytes.');

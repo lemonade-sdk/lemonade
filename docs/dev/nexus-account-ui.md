@@ -41,7 +41,14 @@ the shared server's device and disconnects it from the mesh, affecting all clien
 using that server. After the server confirms the lock, the app clears its session
 and network display and stops polling and event updates. Device registration and
 identity remain available for reconnecting with a passkey. A failed disconnect
-shows an error. No unlock or sign-in request runs on application startup.
+shows an error. No unlock or passkey request runs on application startup. A
+device-key server that is set up, unlocked and on its mesh is picked up on load
+(`resume` in `accountSession.ts`: a status read, then the account read), so a
+page reload does not ask for **Enable Mesh** again. A locked server, a passkey
+device and a server the page cannot manage keep the explicit **Enable Mesh**.
+While a set-up server is joining its network or out of reach, the network panel
+shows a connecting or offline state with the server's error instead of the
+create or unlock form.
 
 The account name is a client-local label chosen by the user, separate from the
 device name. `lemonade_nexus_account_labels` retains only the verified account ID

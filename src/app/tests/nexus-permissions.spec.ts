@@ -1,11 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
-import { setupNexusAccount } from './nexusAccountFixture';
+import { resumedNexusMesh, setupNexusAccount } from './nexusAccountFixture';
 
 async function openLocalAccount(page: Page) {
   await page.setViewportSize({ width: 1440, height: 1100 });
   const fixture = await setupNexusAccount(page, { apiKey: '', deviceKey: true });
-  await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Enable Mesh' }).getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  await resumedNexusMesh(page);
   await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
   return fixture;
 }

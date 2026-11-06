@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { enableNexusMesh, setupNexusAccount } from './nexusAccountFixture';
+import { resumedNexusMesh, setupNexusAccount } from './nexusAccountFixture';
 
 test('connection labels follow live path changes and stay hidden for unverified devices', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1100 });
@@ -17,7 +17,9 @@ test('connection labels follow live path changes and stay hidden for unverified 
     fixture.state.members.push({ ...direct, node_id: id, device_name: name, is_online: online, connection_type: connection });
     fixture.branches.group.children.push({ ...treePeer, id, name });
   }
-  await enableNexusMesh(page);
+  // The page loaded before these devices existed: a reload picks the account up again.
+  await page.reload();
+  await resumedNexusMesh(page);
   // The device list is open on the page: one row per device, pills for its role and path.
   const compact = page.locator('.nexus-page .nexus-devices');
   const deviceRow = (name: string) => compact.locator('li').filter({ hasText: name });

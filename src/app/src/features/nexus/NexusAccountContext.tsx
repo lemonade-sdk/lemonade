@@ -77,6 +77,18 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
   const [avatarSaving, setAvatarSaving] = useState(false);
   const origin = useRef<HTMLElement | null>(null);
   const network = useNexusNetwork(Boolean(session) || dialog === 'signin');
+  // A device-key server whose mesh is already up needs no Enable Mesh click: the page
+  // picks its account up on load, as it would after that click.
+  useEffect(() => {
+    let stopped = false;
+    service.resume().then(found => {
+      if (stopped || !found) return;
+      generation.current += 1; saveNexusAccountLabel(found);
+      setSession(current => current || found);
+      void refreshNexus();
+    }).catch(() => {});
+    return () => { stopped = true; };
+  }, [service]);
   const restoreFocus = () => window.requestAnimationFrame(() => {
     const target = origin.current?.isConnected ? origin.current : document.querySelector<HTMLElement>('.nexus-account-trigger');
     target?.focus({ preventScroll: true });

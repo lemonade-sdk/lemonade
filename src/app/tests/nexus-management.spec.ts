@@ -1,11 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
-import { setupNexusAccount } from './nexusAccountFixture';
+import { resumedNexusMesh, setupNexusAccount } from './nexusAccountFixture';
 
 async function openAdvancedTree(page: Page) {
   await page.setViewportSize({ width: 1440, height: 1100 });
   const fixture = await setupNexusAccount(page, { apiKey: '', deviceKey: true });
-  await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Enable Mesh' }).getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  await resumedNexusMesh(page);
   await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
   await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   return fixture;
@@ -68,4 +67,19 @@ test('a refused move keeps the form and shows the server reason', async ({ page 
   await page.getByRole('button', { name: 'Move device', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('You do not have permission to add to that group');
   await expect(page.getByLabel('Destination group', { exact: true })).toHaveValue('team');
+});
+
+test('a set-up device whose mesh is down is not offered a new network', async ({ page }) => {
+  const fixture = await openAdvancedTree(page);
+  fixture.state.mesh_up = false; fixture.state.status = 'joining';
+  await expect(page.getByRole('heading', { name: 'Connecting to your network…' })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('button', { name: 'Create my network', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Use this device’s key', exact: true })).toHaveCount(0);
+
+  fixture.state.status = 'degraded'; fixture.state.error = 'the verified membership is stale';
+  await page.getByRole('button', { name: 'Check again', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your network is offline' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'the verified membership is stale' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Create my network', exact: true })).toHaveCount(0);
+  expect(fixture.calls.filter(call => call.path.endsWith('/enable'))).toEqual([]);
 });
