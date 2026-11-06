@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/lemonade-sdk/lemonade-nexus.git",
-  "commit": "1e263ac955b554be6f6882f5bac87406a03d78a5",
+  "commit": "d3dc189066fb73e1264545669ca3b9e7d27873b6",
   "version": "0.9.8",
   "paths": [
     "LICENSE",
@@ -72,9 +72,5 @@
   "exclude": [
     "projects/LemonadeNexusSDK/src/main.cpp"
   ],
-  "patches": [
-    "0001-mesh-port-auto-router-resends-once-on-no-answer.patch",
-    "0002-mesh-port-502-503-count-as-unavailable.patch",
-    "0003-mesh-port-cancelled-request-is-never-resent.patch"
-  ]
+  "patches": []
 }

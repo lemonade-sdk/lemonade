@@ -239,11 +239,8 @@ std::shared_ptr<EventSocketHandle> make_event_socket([[maybe_unused]] const std:
         return nullptr;
     } else {
         auto handle = std::make_shared<EventSocketHandle>();
-        // `ws` stays WsClient& (dependent) so a library without the client
-        // does not see these calls.
-        auto client = std::make_unique<WsClient>(url, headers);
-        WsClient& ws = *client;
-        handle->client = std::move(client);
+        handle->client = std::make_unique<WsClient>(url, headers);
+        auto& ws = *handle->client;
         if (!ws.is_valid()) return handle;
         ws.set_hostname_addr_map({{fqdn, "127.0.0.1"}});
         ws.set_websocket_ping_interval(ping_sec);
@@ -321,6 +318,10 @@ struct LemonadeNexusClient::Impl {
     std::string  server_private_fqdn;  // e.g. "private.<id>.<region>.seip.lemonade-nexus.io"
     std::string  server_tunnel_ip;    // session server in-mesh address, e.g. "10.64.252.37"
     uint16_t     private_port{9101};
+    // Guards the fields above and the mesh state below. Never hold it across a
+    // request: a private request checks the session's server against the
+    // verified membership and, when the server left Tier 1, reads the identity
+    // under this mutex (has_identity), so a caller that holds it waits on itself.
     mutable std::mutex mutex;
 
     // The Dart client calls in from worker isolates, so the public transport is
@@ -3418,7 +3419,6 @@ Result<GroupJoinResult> LemonadeNexusClient::join_group(const std::string& paren
 // ---------------------------------------------------------------------------
 
 Result<StatsResponse> LemonadeNexusClient::get_stats() {
-    std::lock_guard lock(impl_->mutex);
     int status = 0;
     auto resp = impl_->http_get("/api/stats", status);
     if (!resp) return {false, {}, status, "Connection failed"};
@@ -3430,7 +3430,6 @@ Result<StatsResponse> LemonadeNexusClient::get_stats() {
 }
 
 Result<std::vector<ServerEntry>> LemonadeNexusClient::get_servers() {
-    std::lock_guard lock(impl_->mutex);
     int status = 0;
     auto resp = impl_->http_get("/api/servers", status);
     if (!resp) return {false, {}, status, "Connection failed"};
@@ -3449,7 +3448,7 @@ Result<std::vector<ServerEntry>> LemonadeNexusClient::get_servers() {
 Result<std::string> LemonadeNexusClient::call_private_api(const std::string& method,
                                                          const std::string& path,
                                                          const std::string& body) {
-    std::lock_guard lock(impl_->mutex);
+    // No client lock here: the request path takes Impl::mutex itself.
     int status = 0;
     std::optional<json> resp;
     // App-initiated, so always attempt: the breaker is for periodic callers.
@@ -3470,7 +3469,6 @@ Result<std::string> LemonadeNexusClient::call_private_api(const std::string& met
 // ---------------------------------------------------------------------------
 
 Result<DdnsStatus> LemonadeNexusClient::get_ddns_status() {
-    std::lock_guard lock(impl_->mutex);
     int status = 0;
     auto resp = impl_->http_get("/api/ddns/status", status);
     if (!resp) return {false, {}, status, "Connection failed"};
@@ -3486,7 +3484,6 @@ Result<DdnsStatus> LemonadeNexusClient::get_ddns_status() {
 // ---------------------------------------------------------------------------
 
 Result<AttestationManifests> LemonadeNexusClient::get_attestation_manifests() {
-    std::lock_guard lock(impl_->mutex);
     int status = 0;
     auto resp = impl_->http_get("/api/attestation/manifests", status);
     if (!resp) return {false, {}, status, "Connection failed"};
