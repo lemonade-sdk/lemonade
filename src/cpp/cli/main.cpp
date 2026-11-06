@@ -1072,6 +1072,13 @@ static std::optional<int> launch_pi_via_host(lemonade::LemonadeClient& client,
         }
     }
 
+    if (!spec.value("managed", false) &&
+        !lemon_cli::check_pi_version_for_flags(spec.value("binary", ""), config.pi_codemode,
+                                               config.pi_mcp.value_or(false),
+                                               agent_config.install_instructions,
+                                               print_prep_report)) {
+        return 1;
+    }
     if (!spec.value("model_loaded", false)) {
         start_background_load(config);
     }

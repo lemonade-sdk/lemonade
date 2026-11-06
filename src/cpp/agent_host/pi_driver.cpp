@@ -242,13 +242,10 @@ json pi_launch(HostContext& ctx, const json& body, const EventSink& events,
                          {{"version", pinned}});
     }
 
+    // An external pi's version is checked by the client, which runs it anyway:
+    // the host never executes a binary a request pointed it at.
     std::vector<std::string> errors;
     const auto report = report_to(events, errors);
-    if (!managed && !lemon_cli::check_pi_version_for_flags(command.binary, codemode,
-                                                           mcp.value_or(false), pi_install_hint(),
-                                                           report)) {
-        throw AgentError(409, "agent_outdated", join(errors), {{"version", pinned}});
-    }
 
     lemon_cli::PiPrepRequest request;
     request.model = model;

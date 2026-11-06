@@ -49,6 +49,15 @@ _config = {"cli_binary": None, "api_key": None}
 FAKE_PI = """#!/usr/bin/env python3
 import json, os, sys
 if sys.argv[1:] == ["--version"]:
+    probes = os.environ.get("PI_TEST_VERSION_PROBES")
+    if probes:
+        try:
+            with open(f"/proc/{{os.getppid()}}/comm", encoding="utf-8") as f:
+                parent = f.read().strip()
+        except OSError:
+            parent = "unknown"
+        with open(probes, "a", encoding="utf-8") as f:
+            f.write(parent + "\\n")
     print("{version}")
     sys.exit(0)
 capture = os.environ.get("PI_TEST_CAPTURE")
@@ -269,6 +278,7 @@ class AgentManagerTests(unittest.TestCase):
         env["LEMONADE_AGENT_VERSIONS"] = self.versions_file
         env["LEMONADE_AGENT_HOST_IDLE_SECONDS"] = "10"
         env["PI_TEST_CAPTURE"] = os.path.join(self.home, "capture.json")
+        env["PI_TEST_VERSION_PROBES"] = os.path.join(self.home, "version-probes.txt")
         return env
 
     def cli(self, args, env=None, timeout=TIMEOUT_DEFAULT, binary=None, target=True):
@@ -477,6 +487,24 @@ class AgentManagerTests(unittest.TestCase):
         payload = self.capture()
         self.assertEqual(payload["binary"], os.path.realpath(external))
         self.assertEqual(payload["env"]["PI_SKIP_VERSION_CHECK"], "")
+
+    def test_066_host_never_runs_an_external_pi(self):
+        """The version check for --codemode runs in the CLI, not in the host."""
+        external_dir = os.path.join(self.home, "npm-bin")
+        os.makedirs(external_dir)
+        self.write_external_pi(external_dir, version="1.0.4")
+        result = self.cli(
+            ["launch", "pi", "--model", ENDPOINT_TEST_MODEL, "--codemode"],
+            env=self.env(external_dir),
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--codemode needs pi 1.1 or newer (found 1.0.4)", result.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.home, "capture.json")))
+        with open(os.path.join(self.home, "version-probes.txt"), encoding="utf-8") as f:
+            parents = f.read().split()
+        self.assertTrue(parents, "nobody checked pi's version")
+        if os.path.exists("/proc/self/comm"):
+            self.assertNotIn("lemonade-agent-", parents)
 
     def test_070_uninstall_keeps_pi_home(self):
         self.install()

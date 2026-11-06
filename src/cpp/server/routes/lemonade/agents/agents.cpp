@@ -55,7 +55,6 @@ const RouteError kHostTimeout{504, "agent_host_timeout", "the agent host didn't 
 const RouteError kUnknownAgent{404, "unknown_agent", "`id` names no agent Lemonade manages"};
 const RouteError kNotInstalled{409, "agent_not_installed",
                                "the agent is neither installed by Lemonade nor on `PATH`"};
-const RouteError kOutdated{409, "agent_outdated", "the agent is too old for `codemode`"};
 const RouteError kUnsupportedPlatform{422, "unsupported_platform",
                                       "the agent has no release for this OS and CPU"};
 const RouteError kDownloadFailed{502, "download_failed", "the release couldn't be downloaded"};
@@ -403,7 +402,7 @@ public:
         s.examples = {example};
         s.errors = {kBodyNotJson,     kArgMissing,      kArgInvalid,    kTokenMissing,
                     kHostUnavailable, kHostBusy,        kUnknownAgent,  kNotInstalled,
-                    kOutdated,        kInvalidCwd,      kModelLoadFailed, kConfigWriteFailed};
+                    kInvalidCwd,      kModelLoadFailed, kConfigWriteFailed};
         return s;
     }
 
