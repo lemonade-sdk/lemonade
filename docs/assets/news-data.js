@@ -1,6 +1,15 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+        title: "AMD-Backed Lemonade Local AI Server Ships Redesigned Desktop App & Web UI",
+        url: "https://www.phoronix.com/news/Lemonade-2026.45.3",
+        date: "November 5, 2026",
+        description: "Phoronix covers the Lemonade 2026.45.3 release: a rebuilt desktop app and web UI with built-in tools, a new model manager, and a mobile web UI.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/phoronix.svg",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "blog"
+        },
+    {
         title: "Lemonade's GUI has been completely overhauled!",
         url: "https://www.youtube.com/watch?v=mg2PqmRujMo",
         date: "November 4, 2026",

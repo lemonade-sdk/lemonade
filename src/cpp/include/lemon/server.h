@@ -89,14 +89,12 @@ private:
 
     std::thread model_cache_warmup_thread_;
 
-#if defined(__linux__) || defined(_WIN32)
     struct CpuStats {
         uint64_t total_idle = 0;
         uint64_t total = 0;
     };
     CpuStats last_cpu_stats_;
     std::mutex cpu_stats_mutex_;
-#endif
     std::atomic<bool> update_check_done_{false};
 
     std::mutex stop_mutex_;

@@ -2732,6 +2732,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.064
@@ -2742,6 +2743,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.017
@@ -2754,6 +2756,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067
@@ -2766,6 +2769,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067
@@ -2778,6 +2782,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067
@@ -2790,6 +2795,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067
@@ -2802,6 +2808,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067
