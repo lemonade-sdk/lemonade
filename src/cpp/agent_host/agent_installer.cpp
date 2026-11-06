@@ -18,6 +18,8 @@ namespace lemon::agents {
 namespace {
 
 constexpr const char* kManifest = ".lemonade-install.json";
+// The version the last install pointed the shim at, kept when the next one replaces it.
+constexpr const char* kActive = ".active";
 
 fs::path binary_in(const fs::path& dir, const std::string& binary) {
 #ifdef _WIN32
@@ -155,7 +157,14 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     InstallOutcome outcome;
     const fs::path root = paths.agent_dir(agent.id);
     const fs::path dir = root / pin.version;
-    const auto previous = find_active(agent, paths, pin.version);
+    std::optional<InstalledAgent> previous;
+    {
+        std::ifstream in(root / kActive);
+        std::string version;
+        std::getline(in, version);
+        previous = version.empty() ? find_installed(agent, paths)
+                                   : find_installed(agent, paths, version);
+    }
     std::error_code ec;
 
     if (force || !manifest_matches(dir, agent, pin)) {
@@ -267,6 +276,10 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     }
 
     outcome.installed = InstalledAgent{pin.version, dir, binary_in(dir, agent.binary)};
+    {
+        std::ofstream active(root / kActive, std::ios::trunc);
+        active << pin.version << "\n";
+    }
 
     const fs::path shim = shim_path(paths, agent.binary);
 #ifdef _WIN32
@@ -292,7 +305,7 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     // Windows keeps a running version's files locked, and the next install retries.
     for (const fs::path& entry : list_dir(root)) {
         if (entry != dir && (!previous || entry != previous->dir) &&
-            entry.filename() != ".download" && fs::is_directory(entry, ec)) {
+            fs::is_directory(entry, ec) && entry.filename().string()[0] != '.') {
             remove_quietly(entry, nullptr);
         }
     }

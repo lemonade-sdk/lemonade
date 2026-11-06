@@ -196,6 +196,19 @@ int main() {
     check("without the pinned version installed, the newest is active",
           find_active(pi, paths, "9.9.9")->version == "1.6.0");
 
+    {
+        // Downgrading to a version that was kept keeps the one it replaces.
+        AgentPaths kept = paths;
+        kept.data_root = work / "kept" / "agents";
+        kept.bin_dir = work / "kept" / "bin";
+        for (const char* tag : {"v1.5.0", "v1.6.0", "v1.5.0"}) {
+            install_agent(pi, pin_for(tag), kept, false, nullptr, no_cancel, loopback);
+        }
+        check("a downgrade to a kept version keeps the version it replaced",
+              fs::exists(kept.agent_dir("pi") / "1.6.0") &&
+                  find_active(pi, kept, "1.5.0")->version == "1.5.0");
+    }
+
     std::vector<std::string> warnings;
     check("uninstall removes payload and shim",
           uninstall_agent(pi, paths, warnings) && !fs::exists(paths.agent_dir("pi")) &&
