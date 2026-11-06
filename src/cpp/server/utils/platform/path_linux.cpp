@@ -2,11 +2,14 @@
 
 #include <lemon/utils/path_platform.h>
 
+#include <algorithm>
+#include <cerrno>
 #include <cstdlib>
 #include <filesystem>
 #include <limits.h>
 #include <sstream>
 #include <stdexcept>
+#include <sys/stat.h>
 #include <unistd.h>
 
 namespace lemon::utils {
@@ -82,17 +85,11 @@ public:
             return g_config_dir;
         }
 
-        // Systemd ConfigurationDirectory=lemonade exports the resolved path
-        // (CONFIGURATION_DIRECTORY=/etc/lemonade), so use it directly.
-        std::string config_dir = get_environment_variable_utf8("CONFIGURATION_DIRECTORY");
-        if (!config_dir.empty()) {
-            return config_dir;
-        }
-
-        // The shipped unit sets StateDirectory=lemonade, so keep honoring it for
-        // the existing /var/lib/lemonade/config.json layout. Checked before HOME
-        // to avoid nested /var/lib/lemonade/.config/lemonade when systemd sets
-        // both STATE_DIRECTORY and HOME to /var/lib/lemonade.
+        // config.json is mutable state, so systemd's StateDirectory is the right
+        // home for it (ConfigurationDirectory=/etc is read-only under
+        // ProtectSystem=full). Checked before HOME to avoid nested
+        // /var/lib/lemonade/.config/lemonade when systemd sets both
+        // STATE_DIRECTORY and HOME to /var/lib/lemonade.
         std::string state_dir = get_environment_variable_utf8("STATE_DIRECTORY");
         if (!state_dir.empty()) {
             return state_dir;
@@ -121,12 +118,13 @@ public:
     std::string get_runtime_dir() override {
         // Systemd RuntimeDirectory=lemonade exports the resolved path
         // (RUNTIME_DIRECTORY=/run/lemonade or /run/user/1000/lemonade), so use it directly.
+        std::error_code ec;
         std::string runtime_dir = get_environment_variable_utf8("RUNTIME_DIRECTORY");
-        if (!runtime_dir.empty()) {
+        if (!runtime_dir.empty() && fs::is_directory(runtime_dir, ec) && !ec &&
+            access(runtime_dir.c_str(), W_OK | X_OK) == 0) {
             return runtime_dir;
         }
 
-        std::error_code ec;
         std::string xdg_runtime_dir = get_environment_variable_utf8("XDG_RUNTIME_DIR");
         if (!xdg_runtime_dir.empty()) {
             fs::path base(xdg_runtime_dir);
@@ -143,33 +141,41 @@ public:
 
         // No session runtime dir (containers, tarball runs). Per-user so
         // concurrent users do not share single-instance locks or log files.
+        // mkdir/lstat rather than fs::create_directory so a path pre-created or
+        // symlinked by another user is rejected instead of adopted.
         fs::path fallback = fs::path("/tmp") / ("lemonade-" + std::to_string(getuid()));
-        ec.clear();
-        bool created = fs::create_directory(fallback, ec);
-        if (created) {
-            fs::permissions(fallback, fs::perms::owner_all, ec);
+        if (::mkdir(fallback.c_str(), 0700) != 0 && errno != EEXIST) {
+            throw std::runtime_error("Unable to create runtime directory " + fallback.string());
         }
-        std::error_code exists_ec;
-        if (fs::is_directory(fallback, exists_ec) && access(fallback.c_str(), W_OK | X_OK) == 0) {
+        struct stat st {};
+        if (::lstat(fallback.c_str(), &st) == 0 && S_ISDIR(st.st_mode) &&
+            st.st_uid == getuid() && (st.st_mode & (S_IWGRP | S_IWOTH)) == 0 &&
+            access(fallback.c_str(), W_OK | X_OK) == 0) {
             return fallback.string();
         }
 
-        throw std::runtime_error("Unable to resolve writable runtime directory from RUNTIME_DIRECTORY, XDG_RUNTIME_DIR, or /tmp");
+        throw std::runtime_error("Unable to resolve a secure writable runtime directory");
     }
 
     std::vector<std::string> get_install_prefixes() override {
         std::vector<std::string> prefixes;
 
+        auto add_prefix = [&prefixes](const std::string& prefix) {
+            if (std::find(prefixes.begin(), prefixes.end(), prefix) == prefixes.end()) {
+                prefixes.push_back(prefix);
+            }
+        };
+
         // In Flatpak sandbox, container resources take precedence
-        prefixes.push_back("/app/share/lemonade-server");
+        add_prefix("/app/share/lemonade-server");
 
         std::string xdg_data_home = get_environment_variable_utf8("XDG_DATA_HOME");
         if (!xdg_data_home.empty()) {
-            prefixes.push_back(xdg_data_home + "/lemonade-server");
+            add_prefix(xdg_data_home + "/lemonade-server");
         } else {
             std::string home = get_environment_variable_utf8("HOME");
             if (!home.empty()) {
-                prefixes.push_back(home + "/.local/share/lemonade-server");
+                add_prefix(home + "/.local/share/lemonade-server");
             }
         }
 
@@ -179,16 +185,16 @@ public:
             std::string dir;
             while (std::getline(ss, dir, ':')) {
                 if (!dir.empty()) {
-                    prefixes.push_back(dir + "/lemonade-server");
+                    add_prefix(dir + "/lemonade-server");
                 }
             }
-        } else {
-            prefixes.push_back("/usr/local/share/lemonade-server");
-            prefixes.push_back("/usr/share/lemonade-server");
         }
 
-        // /opt is not part of the XDG data dir search path
-        prefixes.push_back("/opt/share/lemonade-server");
+        // Always searched: minimal environments often leave XDG_DATA_DIRS unset
+        // or without the standard system paths. /opt is not in the XDG search path.
+        add_prefix("/usr/local/share/lemonade-server");
+        add_prefix("/usr/share/lemonade-server");
+        add_prefix("/opt/share/lemonade-server");
 
         return prefixes;
     }

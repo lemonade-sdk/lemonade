@@ -8,7 +8,8 @@ if [ "$#" -gt 0 ]; then
     if command -v "$1" >/dev/null 2>&1; then
         exec "$@"
     fi
-    /app/bin/lemonade-tray --spawn-server --silent >/dev/null 2>&1 &
+    mkdir -p "$HOME/.cache/lemonade"
+    /app/bin/lemonade-tray --spawn-server --silent >>"$HOME/.cache/lemonade/tray.log" 2>&1 &
     exec /app/bin/lemonade-app "$@"
 fi
 

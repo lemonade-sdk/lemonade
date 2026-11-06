@@ -100,6 +100,7 @@ modules:
           - build
           - _flatpak_build
           - dist
+          - packaging/flatpak/_repo
 
   # 5. Lemonade Desktop Tauri App (Frontend + Rust Host)
   - name: lemonade-app

@@ -12,6 +12,7 @@ on:
 concurrency:
   group: website-branch
   cancel-in-progress: false
+  queue: max
 
 jobs:
     build-n-publish-website:

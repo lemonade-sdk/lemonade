@@ -23,10 +23,10 @@ lint: ## Lint Flatpak manifest and AppStream metadata
 		aetherpak lint --config aetherpak.yaml; \
 	elif command -v flatpak-builder-lint >/dev/null 2>&1; then \
 		echo "=== Linting with flatpak-builder-lint ==="; \
-		flatpak-builder-lint manifest ai.lemonadeserver.app.yaml; \
+		flatpak-builder-lint manifest ai.lemonadeserver.app.yaml && \
 		flatpak-builder-lint appstream ../../data/ai.lemonadeserver.app.metainfo.xml; \
 	else \
-		echo "Neither aetherpak nor flatpak-builder-lint found."; \
+		echo "Neither aetherpak nor flatpak-builder-lint found."; exit 1; \
 	fi
 
 .PHONY: clean

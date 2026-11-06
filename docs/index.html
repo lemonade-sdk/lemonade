@@ -364,7 +364,10 @@
               '</div>' +
             '</div>' +
             '<div class="gs-install-block">' +
+              '<p class="gs-fedora-label">Run Stable</p>' +
               gsConsoleHtml(['flatpak run ai.lemonadeserver.app']) +
+              '<p class="gs-fedora-label">Run Nightly</p>' +
+              gsConsoleHtml(['flatpak run --branch=nightly ai.lemonadeserver.app']) +
             '</div>';
             break;
           case 'ubuntu':

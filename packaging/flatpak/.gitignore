@@ -2,3 +2,4 @@ _flatpak_stage/
 _flatpak_build/
 .flatpak-builder/
 *.flatpak
+_repo/
