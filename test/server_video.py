@@ -29,6 +29,9 @@ from utils.test_models import TIMEOUT_DEFAULT, TIMEOUT_MODEL_OPERATION
 # A short clip still runs a full diffusion loop per frame.
 TIMEOUT_VIDEO_GENERATION = 3600
 
+# Far less than the canceled clip in test_012 would take to finish.
+TIMEOUT_CANCELED_CLIP_RELEASED = 180
+
 # WebM/Matroska magic. Enough to prove real container bytes came back rather
 # than some other payload.
 WEBM_MAGIC = b"\x1a\x45\xdf\xa3"
@@ -111,6 +114,26 @@ class VideoGenerationTests(ServerTestBase):
                 return payload
             time.sleep(2)
         self.fail(f"video {job_id} did not finish within {timeout}s (last: {status})")
+
+    def _wait_until_generating(self, job_id, model):
+        """Return once the clip is on the GPU, past model load and submit."""
+        deadline = time.time() + TIMEOUT_MODEL_OPERATION
+        while time.time() < deadline:
+            payload = requests.get(
+                f"{self.base_url}/videos/{job_id}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            if payload.get("status") in TERMINAL:
+                self.fail(f"video finished before it was generating: {payload}")
+            health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            names = [m.get("model_name") for m in health.get("all_models_loaded", [])]
+            if payload.get("status") == "running" and model in names:
+                break
+            time.sleep(1)
+        else:
+            self.fail(f"video {job_id} never started generating")
+        time.sleep(5)
 
     # --- negative tests: these never pull the model ---
 
@@ -317,53 +340,58 @@ class VideoGenerationTests(ServerTestBase):
         )
 
     def test_012_cancel_releases_a_running_generation(self):
-        """Cancelling ends the job and frees the slot.
+        """Cancelling a clip that is generating stops it on the GPU.
 
-        The clip itself may still finish on the GPU: stable-diffusion.cpp
-        reports cancel_generating false and refuses to interrupt a job that is
-        already producing frames, so this asserts the job state rather than
-        that the backend stopped.
+        sd-server refuses to cancel a clip once it produces frames, so Lemonade
+        stops the process. The canceled clip would run for many minutes, so a
+        short clip that finishes soon after the cancel shows the GPU was freed.
+        The model is loaded first so the job does not own it: a job unloads a
+        model it loaded itself, which would free the GPU without the stop.
         """
         self._ensure_model_pulled()
         model = get_test_model("video")
+        response = load_model(model)
+        self.assertEqual(response.status_code, 200, response.text[:300])
 
         job_id = self._create(
             {
                 "model": model,
                 "prompt": "a lovely cat walking through tall grass",
-                "video_frames": 33,
-                "steps": 20,
+                "video_frames": 81,
+                "steps": 50,
                 "width": 832,
                 "height": 480,
             }
         )
-
-        # Let it reach the backend before asking it to stop.
-        deadline = time.time() + TIMEOUT_MODEL_OPERATION
-        while time.time() < deadline:
-            payload = requests.get(
-                f"{self.base_url}/videos/{job_id}", timeout=TIMEOUT_DEFAULT
-            ).json()
-            if payload.get("status") == "running":
-                break
-            if payload.get("status") in TERMINAL:
-                self.fail(f"job finished before it could be cancelled: {payload}")
-            time.sleep(2)
+        self._wait_until_generating(job_id, model)
 
         cancel = requests.post(
             f"{self.base_url}/videos/{job_id}/cancel",
             timeout=TIMEOUT_DEFAULT,
         )
+        canceled_at = time.time()
         self.assertEqual(cancel.status_code, 200, cancel.text[:200])
         self.assertEqual(cancel.json().get("status"), "canceling")
 
         payload = self._wait(job_id, timeout=TIMEOUT_MODEL_OPERATION)
-        self.assertIn(
-            payload["status"],
-            ("canceled", "failed"),
-            f"cancel did not stop the job: {payload}",
+        self.assertEqual(
+            payload["status"], "canceled", f"cancel did not stop the job: {payload}"
         )
-        print(f"[OK] cancelled generation ended as {payload['status']}")
+
+        next_id = self._create(
+            {
+                "model": model,
+                "prompt": "a lovely cat walking through tall grass",
+                "video_frames": 9,
+                "steps": 4,
+                "width": 480,
+                "height": 320,
+            }
+        )
+        payload = self._wait(next_id, timeout=TIMEOUT_CANCELED_CLIP_RELEASED)
+        self.assertEqual(payload["status"], "completed", f"next clip failed: {payload}")
+        elapsed = time.time() - canceled_at
+        print(f"[OK] canceled, and the next clip finished {elapsed:.1f}s later")
 
     def test_014_other_models_keep_serving_during_a_video(self):
         """A chat request on another model answers while a clip is generating."""
@@ -386,23 +414,7 @@ class VideoGenerationTests(ServerTestBase):
             }
         )
         try:
-            deadline = time.time() + TIMEOUT_MODEL_OPERATION
-            while time.time() < deadline:
-                payload = requests.get(
-                    f"{self.base_url}/videos/{job_id}", timeout=TIMEOUT_DEFAULT
-                ).json()
-                if payload.get("status") in TERMINAL:
-                    self.fail(f"video finished before the chat request: {payload}")
-                loaded = requests.get(
-                    f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
-                ).json()
-                names = [
-                    m.get("model_name") for m in loaded.get("all_models_loaded", [])
-                ]
-                if payload.get("status") == "running" and video_model in names:
-                    break
-                time.sleep(1)
-            time.sleep(5)
+            self._wait_until_generating(job_id, video_model)
 
             start = time.time()
             chat = requests.post(
