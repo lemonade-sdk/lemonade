@@ -303,6 +303,21 @@ int main() {
         check("an uninstall that can't remove the shim fails",
               status == 500 && fs::is_regular_file(kept.installed.binary) &&
                   fs::exists(shim_path(locked, "pi")));
+
+        fs::permissions(locked.bin_dir, fs::perms::none);
+        const int hidden = error_status([&] { uninstall_agent(pi, locked, warnings_locked); });
+        fs::permissions(locked.bin_dir, fs::perms::owner_all);
+        check("an uninstall that can't inspect the shim fails and keeps pi",
+              hidden == 500 && fs::is_regular_file(kept.installed.binary) &&
+                  fs::exists(shim_path(locked, "pi")));
+
+        std::error_code perm_ec;
+        fs::permissions(locked.agent_dir("pi"), fs::perms::owner_exec, perm_ec);
+        const int unlisted = error_status([&] { uninstall_agent(pi, locked, warnings_locked); });
+        fs::permissions(locked.agent_dir("pi"), fs::perms::owner_all, perm_ec);
+        check("an uninstall that can't list the versions fails and keeps the shim",
+              unlisted == 500 && fs::exists(shim_path(locked, "pi")) &&
+                  fs::is_regular_file(kept.installed.binary));
     }
     if (geteuid() != 0) {
         // The shim can't be rewritten, so it keeps running 1.6.0 from a path

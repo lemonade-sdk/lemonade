@@ -453,15 +453,20 @@ bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
     // Puts versions moved aside back, or says which one it couldn't: a
     // later install would otherwise delete it as a leftover.
     const auto put_back = [&agent](const std::vector<std::pair<fs::path, fs::path>>& moved) {
+        std::string stuck;
         for (const auto& [from, to] : moved) {
             std::error_code back_ec;
             fs::rename(to, from, back_ec);
             if (back_ec) {
-                throw AgentError(500, "uninstall_failed",
-                                 "Uninstalling " + agent.name + " stopped partway: " +
-                                     from.filename().string() + " is left at " + to.string() +
-                                     ". Run `lemonade agents uninstall " + agent.id + "` again.");
+                stuck += (stuck.empty() ? "" : ", ") + from.filename().string() + " at " +
+                         to.string();
             }
+        }
+        if (!stuck.empty()) {
+            throw AgentError(500, "uninstall_failed",
+                             "Uninstalling " + agent.name + " stopped partway; left aside: " +
+                                 stuck + ". Run `lemonade agents uninstall " + agent.id +
+                                 "` again.");
         }
     };
     const fs::path root = paths.agent_dir(agent.id);
@@ -473,7 +478,27 @@ bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
         if (leases != nullptr) {
             retiring = std::unique_lock<std::mutex>(leases->mutex());
         }
-        const std::vector<fs::path> entries = list_dir(root);
+        // Nothing changes unless the versions can be listed and the shim inspected.
+        std::vector<fs::path> entries;
+        for (auto it = fs::directory_iterator(root, ec); !ec && it != fs::directory_iterator();
+             it.increment(ec)) {
+            entries.push_back(it->path());
+        }
+        if (ec && ec != std::errc::no_such_file_or_directory) {
+            throw AgentError(500, "uninstall_failed",
+                             "Can't list " + root.string() + ": " + ec.message());
+        }
+        ec.clear();
+        const fs::path shim = shim_path(paths, agent.binary);
+        const fs::file_status shim_status = fs::symlink_status(shim, ec);
+        if (!ec && fs::is_regular_file(shim_status) && !std::ifstream(shim).is_open()) {
+            ec = std::make_error_code(std::errc::permission_denied);
+        }
+        if (ec && ec != std::errc::no_such_file_or_directory) {
+            throw AgentError(500, "uninstall_failed",
+                             "Can't inspect " + shim.string() + ": " + ec.message());
+        }
+        ec.clear();
         // Half an uninstall would leave pi looking installed, so a launch in
         // progress makes it wait for the whole thing.
         for (const fs::path& entry : entries) {
@@ -503,12 +528,11 @@ bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
             moved.emplace_back(entry, aside);
         }
         std::error_code shim_ec;
-        const bool shim_removed = remove_shim(shim_path(paths, agent.binary), &shim_ec);
+        const bool shim_removed = remove_shim(shim, &shim_ec);
         if (shim_ec) {
             put_back(moved);
             throw AgentError(500, "uninstall_failed",
-                             "Can't remove " + shim_path(paths, agent.binary).string() + ": " +
-                                 shim_ec.message());
+                             "Can't remove " + shim.string() + ": " + shim_ec.message());
         }
         for (const auto& [from, to] : moved) {
             retired.push_back(to);
