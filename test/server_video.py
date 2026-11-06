@@ -20,9 +20,10 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
     pull_model_with_retry,
+    load_model,
     unload_model,
 )
-from utils.capabilities import get_test_model
+from utils.capabilities import get_current_config, get_test_model
 from utils.test_models import TIMEOUT_DEFAULT, TIMEOUT_MODEL_OPERATION
 
 # A short clip still runs a full diffusion loop per frame.
@@ -363,6 +364,74 @@ class VideoGenerationTests(ServerTestBase):
             f"cancel did not stop the job: {payload}",
         )
         print(f"[OK] cancelled generation ended as {payload['status']}")
+
+    def test_014_other_models_keep_serving_during_a_video(self):
+        """A chat request on another model answers while a clip is generating."""
+        self._ensure_model_pulled()
+        _, backend, _ = get_current_config()
+        chat_model = get_test_model("llm", "llamacpp", backend, "llm")
+        pull_model_with_retry(chat_model)
+        response = load_model(chat_model, llamacpp_backend=backend)
+        self.assertEqual(response.status_code, 200, response.text[:300])
+
+        video_model = get_test_model("video")
+        job_id = self._create(
+            {
+                "model": video_model,
+                "prompt": "a lovely cat walking through tall grass",
+                "video_frames": 33,
+                "steps": 20,
+                "width": 832,
+                "height": 480,
+            }
+        )
+        try:
+            deadline = time.time() + TIMEOUT_MODEL_OPERATION
+            while time.time() < deadline:
+                payload = requests.get(
+                    f"{self.base_url}/videos/{job_id}", timeout=TIMEOUT_DEFAULT
+                ).json()
+                if payload.get("status") in TERMINAL:
+                    self.fail(f"video finished before the chat request: {payload}")
+                loaded = requests.get(
+                    f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+                ).json()
+                names = [
+                    m.get("model_name") for m in loaded.get("all_models_loaded", [])
+                ]
+                if payload.get("status") == "running" and video_model in names:
+                    break
+                time.sleep(1)
+            time.sleep(5)
+
+            start = time.time()
+            chat = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": chat_model,
+                    "messages": [{"role": "user", "content": "Say hi."}],
+                    "max_tokens": 8,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            elapsed = time.time() - start
+            self.assertEqual(chat.status_code, 200, chat.text[:300])
+
+            payload = requests.get(
+                f"{self.base_url}/videos/{job_id}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(
+                payload.get("status"),
+                "running",
+                f"chat waited for the video ({elapsed:.1f}s): {payload}",
+            )
+            print(f"[OK] chat answered in {elapsed:.1f}s while the clip was running")
+        finally:
+            requests.post(
+                f"{self.base_url}/videos/{job_id}/cancel", timeout=TIMEOUT_DEFAULT
+            )
+            self._wait(job_id, timeout=TIMEOUT_MODEL_OPERATION)
+            unload_model(chat_model)
 
 
 if __name__ == "__main__":

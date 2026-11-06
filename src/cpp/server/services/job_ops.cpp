@@ -147,31 +147,34 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         }
         return lemon::jobs::json::parse(response.dump());
     };
-    providers.video_op = [router, model_loader, job_states, current_job, state_mutex](
-                             const lemon::jobs::json& params,
-                             lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+    // generate_video does not take the router's exclusive slot, so a clip does not
+    // hold up other models; the slot is also what records job-owned models, so
+    // the op unloads a model it loaded itself when it is interrupted.
+    providers.video_op = [router, model_loader](const lemon::jobs::json& params,
+                                                lemon::jobs::CancelFlag& cancel)
+        -> lemon::jobs::json {
         nlohmann::json request = nlohmann::json::parse(params.dump());
         const std::string model = request.value("model", std::string());
+        std::map<std::string, int> loaded_here;
+        auto unload_if_interrupted = [&] {
+            if (cancel.load() && !loaded_here.empty())
+                router->unload_job_models(loaded_here, {});
+        };
         if (!model.empty()) {
+            const bool was_loaded = router->is_model_loaded(model);
             model_loader->ensure_loaded(
                 model, ModelLoader::load_options(request.value("ctx_size", nlohmann::json())),
                 LoadPurpose::UserInference, &cancel);
-            {
-                const std::string canonical = router->canonical_model_name(model);
-                const int pid = router->loaded_model_pid(model);
-                std::lock_guard<std::mutex> lk(*state_mutex);
-                if (!current_job->empty()) {
-                    auto it = job_states->find(*current_job);
-                    if (it != job_states->end())
-                        it->second.owned[canonical] = {{"pid", pid}};
-                }
-            }
+            if (!was_loaded)
+                loaded_here[router->canonical_model_name(model)] = router->loaded_model_pid(model);
             if (cancel.load()) {
+                unload_if_interrupted();
                 throw lemon::jobs::JobError(499, "interrupted");
             }
         }
         nlohmann::json response = router->video_generations(request, &cancel);
         if (response.contains("error")) {
+            unload_if_interrupted();
             std::string msg = "video generation failed";
             const auto& err = response["error"];
             if (err.is_object() && err.contains("message") && err["message"].is_string())

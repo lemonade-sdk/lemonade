@@ -78,7 +78,7 @@ OpRegistry build_op_registry(OpProviders providers) {
     reg.register_op("generate_video", {[providers](const json& params, const json&, CancelFlag& cancel) -> json {
         if (!providers.video_op) throw JobError(501, "generate_video op not available");
         return providers.video_op(params, cancel);
-    }, true});
+    }, false});
 
     reg.begin_exclusive = providers.begin_exclusive;
     reg.end_exclusive = providers.end_exclusive;
