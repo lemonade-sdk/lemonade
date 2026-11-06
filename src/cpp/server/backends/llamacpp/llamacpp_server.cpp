@@ -111,6 +111,11 @@ static std::string device_api(const std::string& backend) {
     return backend;
 }
 
+// RDNA3 iGPUs (780M/760M/740M, gfx1103) are not a ROCm-supported target on their
+// own; overriding the HSA ABI to the gfx1100 class (11.0.0) lets the ROCm runtime
+// load on them.
+static constexpr const char* kGfx110xHsaOverride = "11.0.0";
+
 static bool is_dflash_draft_checkpoint(std::string checkpoint) {
     std::transform(checkpoint.begin(), checkpoint.end(), checkpoint.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -596,6 +601,11 @@ void LlamaCppServer::load(const std::string& model_name,
         if ((arch == "gfx1151") || (arch == "gfx1152")){
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
             LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151/gfx1152 (enables loading larger models)" << std::endl;
+        }
+        if (arch == "gfx110X" && std::getenv("HSA_OVERRIDE_GFX_VERSION") == nullptr) {
+            env_vars.push_back({"HSA_OVERRIDE_GFX_VERSION", kGfx110xHsaOverride});
+            LOG(DEBUG, "LlamaCpp") << "Setting HSA_OVERRIDE_GFX_VERSION=" << kGfx110xHsaOverride
+                                   << " for gfx110X (enables ROCm on RDNA3 iGPU)" << std::endl;
         }
     } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
         // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
