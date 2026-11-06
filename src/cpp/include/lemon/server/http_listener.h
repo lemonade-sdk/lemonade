@@ -45,6 +45,9 @@ public:
     // the running listeners. Only what changed is restarted.
     void rebind();
 
+    // Runs before the servers stop, on shutdown and on a rebind.
+    void set_before_stop(std::function<void()> fn) { before_stop_ = std::move(fn); }
+
     // 0 when the WebSocket server is not running.
     int websocket_port() const;
     int port() const { return port_.load(); }
@@ -68,6 +71,7 @@ private:
     Router* router_;
     SetupFn setup_;
     std::function<void()> stop_server_;
+    std::function<void()> before_stop_;
     bool api_key_set_;
     bool admin_api_key_set_;
 

@@ -74,7 +74,8 @@ inline nlohmann::json welcome(bool auth_required) {
 
 inline nlohmann::json request(uint64_t id, const std::string& route, const nlohmann::json& params,
                               const std::string& token, const nlohmann::json& body) {
-    return {{"type", "request"}, {"id", id}, {"route", route}, {"params", params},
+    return {{"type", "request"}, {"id", id}, {"route", route},
+            {"params", params.is_object() ? params : nlohmann::json::object()},
             {"token", token}, {"body", body}};
 }
 

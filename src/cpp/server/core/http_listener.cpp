@@ -120,6 +120,9 @@ void HttpListener::create_servers() {
 }
 
 void HttpListener::stop_servers() {
+    if (before_stop_) {
+        before_stop_();
+    }
     // The routed servers never own the listen socket: clear the injected fd so
     // their per-connection keep-alive loops exit, then close it once via the
     // fronts (which are the servers actually listening).

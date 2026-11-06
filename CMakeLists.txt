@@ -4111,6 +4111,13 @@ if(BUILD_TESTING)
         add_cpp_ci_test(${_agent_test_name}Test CI ON COMMAND test_${_agent_test})
     endforeach()
     add_dependencies(test_agent_pins copy_resources)
+
+    foreach(_agent_test agent_host_protocol agent_host_registry)
+        add_executable(test_${_agent_test} test/cpp/test_${_agent_test}.cpp)
+        target_link_libraries(test_${_agent_test} PRIVATE lemonade-server-core)
+    endforeach()
+    add_cpp_ci_test(AgentHostProtocolTest CI ON COMMAND test_agent_host_protocol)
+    add_cpp_ci_test(AgentHostRegistryTest CI ON COMMAND test_agent_host_registry)
 endif()
 
 set(_MODEL_SYNC_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_sync_service.cpp")
