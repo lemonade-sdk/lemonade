@@ -40,7 +40,9 @@ struct InstallOutcome {
 
 using InstallProgress = std::function<bool(size_t downloaded, size_t total)>;
 
-// Installs the pinned payload and points the shim at it. Throws AgentError:
+// Installs the pinned payload and points the shim at it. Older versions are
+// removed unless a process runs from one, the shim still names it, or in_use
+// (versions a launch handed out) says so. Throws AgentError:
 // 502 download_failed / checksum_mismatch, 500 install_failed, 409 agent_busy
 // when Windows keeps the old files open.
 InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
@@ -48,7 +50,9 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
                              const InstallProgress& progress,
                              const lemon::utils::CancelToken& cancel,
                              lemon::utils::HttpSecurityPolicy policy =
-                                 lemon::utils::HttpSecurityPolicy::ExternalHttpsOnly);
+                                 lemon::utils::HttpSecurityPolicy::ExternalHttpsOnly,
+                             const std::function<bool(const std::filesystem::path&)>& in_use =
+                                 nullptr);
 
 // Removes every payload directory and our shim. Files Windows keeps open stay
 // behind with a warning and are retried by the next install. Returns whether

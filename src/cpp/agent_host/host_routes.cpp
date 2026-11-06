@@ -9,6 +9,7 @@
 #include "lemon/version.h"
 
 using json = nlohmann::json;
+namespace fs = std::filesystem;
 
 namespace lemon::agents {
 
@@ -156,7 +157,8 @@ json HostRoutes::install(const std::string& id, const json& body, Responder& res
     cancel.flag = cancelled.get();
 
     InstallOutcome outcome = install_agent(agent, pin, ctx_.paths, body.value("force", false),
-                                           progress, cancel, ctx_.download_policy);
+                                           progress, cancel, ctx_.download_policy,
+                                           [this](const fs::path& dir) { return ctx_.leased(dir); });
     // pi's own config is best effort: the install stands without it.
     try {
         for (auto& warning : pi_configure(ctx_, std::nullopt, agent_dir)) {

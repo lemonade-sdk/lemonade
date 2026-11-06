@@ -1,5 +1,6 @@
 #include "lemon/agents/agent_installer.h"
 
+#include <algorithm>
 #include <fstream>
 #include <vector>
 #include <sstream>
@@ -205,7 +206,11 @@ std::optional<InstalledAgent> shim_target(const AgentDescriptor& agent, const Ag
 
 // Whether a process of this user runs an executable from dir.
 bool runs_from(const fs::path& dir) {
-    const std::string prefix = lemon::utils::path_to_utf8(dir) + "/";
+    // The kernel reports executables by their resolved path.
+    std::error_code canonical_ec;
+    const fs::path resolved = fs::weakly_canonical(dir, canonical_ec);
+    const std::string prefix =
+        lemon::utils::path_to_utf8(canonical_ec ? dir : resolved) + "/";
 #if defined(__linux__)
     std::error_code ec;
     for (auto it = fs::directory_iterator("/proc", ec); !ec && it != fs::directory_iterator();
@@ -222,9 +227,17 @@ bool runs_from(const fs::path& dir) {
     }
     return false;
 #elif defined(__APPLE__)
-    std::vector<pid_t> pids(4096);
-    const int bytes = proc_listallpids(pids.data(), static_cast<int>(pids.size() * sizeof(pid_t)));
-    for (int i = 0; i < bytes / static_cast<int>(sizeof(pid_t)); ++i) {
+    // proc_listallpids returns a count of pids; a full buffer may be truncated.
+    std::vector<pid_t> pids(std::max(proc_listallpids(nullptr, 0), 0) + 256);
+    int count = 0;
+    while (true) {
+        count = proc_listallpids(pids.data(), static_cast<int>(pids.size() * sizeof(pid_t)));
+        if (count < static_cast<int>(pids.size())) {
+            break;
+        }
+        pids.resize(pids.size() * 2);
+    }
+    for (int i = 0; i < count; ++i) {
         char path[PROC_PIDPATHINFO_MAXSIZE];
         if (proc_pidpath(pids[i], path, sizeof(path)) > 0 &&
             std::string(path).rfind(prefix, 0) == 0) {
@@ -244,7 +257,8 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
                              const AgentPaths& paths, bool force,
                              const InstallProgress& progress,
                              const lemon::utils::CancelToken& cancel,
-                             lemon::utils::HttpSecurityPolicy policy) {
+                             lemon::utils::HttpSecurityPolicy policy,
+                             const std::function<bool(const fs::path&)>& in_use) {
     InstallOutcome outcome;
     const fs::path root = paths.agent_dir(agent.id);
     const fs::path dir = root / pin.version;
@@ -385,7 +399,8 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
             continue;
         }
         if (entry == dir || name[0] == '.' || !fs::is_directory(entry, ec) ||
-            (shim_runs && entry == shim_runs->dir) || runs_from(entry)) {
+            (shim_runs && entry == shim_runs->dir) || (in_use && in_use(entry)) ||
+            runs_from(entry)) {
             continue;
         }
         const fs::path aside = root / (".removing-" + name);

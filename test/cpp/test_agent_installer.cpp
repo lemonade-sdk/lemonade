@@ -200,6 +200,9 @@ int main() {
 #ifdef __linux__
     {
         // A pi still running from an old version keeps it; nothing else does.
+        // Reached through a symlink, as with a symlinked XDG_DATA_HOME.
+        fs::create_directories(work / "running-real");
+        fs::create_directory_symlink(work / "running-real", work / "running");
         AgentPaths running = paths;
         running.data_root = work / "running" / "agents";
         running.bin_dir = work / "running" / "bin";
@@ -219,6 +222,17 @@ int main() {
         check("once it exits, the next install removes it", !fs::exists(running.agent_dir("pi") / "1.6.0"));
     }
 #endif
+    {
+        // A launch that picked a version keeps it until the client has run it.
+        AgentPaths leased = paths;
+        leased.data_root = work / "leased" / "agents";
+        leased.bin_dir = work / "leased" / "bin";
+        install_agent(pi, pin_for("v1.6.0"), leased, false, nullptr, no_cancel, loopback);
+        const fs::path v16 = leased.agent_dir("pi") / "1.6.0";
+        install_agent(pi, pin_for("v1.7.0"), leased, false, nullptr, no_cancel, loopback,
+                      [&](const fs::path& dir) { return dir == v16; });
+        check("a version a launch is using is kept", fs::exists(v16 / "pi"));
+    }
 #ifndef _WIN32
     if (geteuid() != 0) {
         // The shim can't be rewritten, so it keeps running 1.6.0 from a path

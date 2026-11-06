@@ -79,6 +79,20 @@ std::string pi_install_hint() {
 
 } // namespace
 
+void HostContext::lease(const fs::path& dir, std::chrono::steady_clock::time_point until) {
+    std::lock_guard<std::mutex> lock(lease_mutex_);
+    leases_[dir] = until;
+}
+
+bool HostContext::leased(const fs::path& dir) {
+    std::lock_guard<std::mutex> lock(lease_mutex_);
+    const auto now = std::chrono::steady_clock::now();
+    for (auto it = leases_.begin(); it != leases_.end();) {
+        it = it->second < now ? leases_.erase(it) : std::next(it);
+    }
+    return leases_.count(dir) != 0;
+}
+
 lemon_cli::LemondCall make_lemond_call(const std::string& origin, const std::string& api_key) {
     return [origin, api_key](const std::string& method, const std::string& path,
                              const std::string& body, int timeout_ms) -> std::string {
@@ -225,9 +239,22 @@ json pi_launch(HostContext& ctx, const json& body, const EventSink& events,
     AgentCommand command;
     command.cwd = cwd;
     bool managed = false;
+    // An install running meanwhile must not remove the version picked here,
+    // until the client has had time to start it.
+    struct Lease {
+        HostContext& ctx;
+        fs::path dir;
+        ~Lease() {
+            if (!dir.empty()) {
+                ctx.lease(dir, std::chrono::steady_clock::now() + std::chrono::seconds(60));
+            }
+        }
+    } lease{ctx, {}};
     if (const auto installed = find_active(pi, ctx.paths, pinned)) {
         command.binary = lemon::utils::path_to_utf8(installed->binary);
         managed = true;
+        lease.dir = installed->dir;
+        ctx.lease(lease.dir, std::chrono::steady_clock::time_point::max());
     } else {
         const std::string search_path =
             body.contains("search_path") && body["search_path"].is_string()

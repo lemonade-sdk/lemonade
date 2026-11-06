@@ -1,7 +1,10 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
+#include <filesystem>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -27,6 +30,15 @@ struct HostContext {
         lemon::utils::HttpSecurityPolicy::ExternalHttpsOnly;
     // Held only while pi's config files are written.
     std::mutex write_mutex;
+
+    // Version directories a launch picked, kept by installs until the client
+    // has had time to run them.
+    void lease(const std::filesystem::path& dir, std::chrono::steady_clock::time_point until);
+    bool leased(const std::filesystem::path& dir);
+
+private:
+    std::mutex lease_mutex_;
+    std::map<std::filesystem::path, std::chrono::steady_clock::time_point> leases_;
 };
 
 lemon_cli::LemondCall make_lemond_call(const std::string& origin, const std::string& api_key);
