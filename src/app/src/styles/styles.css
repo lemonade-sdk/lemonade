@@ -11732,6 +11732,8 @@ optgroup {
 
 .backend-card__logo--dark .backend-card__logo-name { color: #fff; }
 .backend-card__logo--image-only .backend-card__logo-name { display: none; }
+.backend-card__logo--icon { padding-block: var(--space-1); }
+.backend-card__logo--icon img { max-height: 38px; }
 
 .backend-card__footer,
 .backend-card__actions {
@@ -11833,6 +11835,51 @@ a.backend-card__version:focus-visible {
   color: var(--text-primary);
   text-decoration: underline;
 }
+
+.backend-card__author {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-secondary);
+  font-weight: var(--weight-medium);
+}
+
+.backend-card__author .app-icon { transform: translateY(-0.5px); }
+
+.backend-card__format {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-tertiary);
+  font-size: var(--type-overline-size);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  cursor: default;
+}
+
+a.backend-card__author {
+  text-decoration: none;
+}
+
+a.backend-card__author:hover,
+a.backend-card__author:focus-visible {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.backend-card__description,
+.backend-card__provenance {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+}
+
+.backend-card__description { color: var(--text-secondary); }
+.backend-card__provenance { color: var(--text-tertiary); }
 
 .backend-card__footer {
   gap: var(--space-2);

@@ -181,7 +181,9 @@ BackendAvailability probe_backend_availability(
                         std::string family = gpu.value("family", "");
                         std::string cc = gpu.value("compute_capability", "");
                         std::string suffix;
-                        if (!cc.empty())
+                        if (gpu.value("driver_missing", false))
+                            suffix = " (NVIDIA driver not installed or not loaded)";
+                        else if (!cc.empty())
                             suffix = " (compute " + cc + ", " +
                                      (family.empty() ? "unsupported arch" : family) + ")";
                         else if (!family.empty())
