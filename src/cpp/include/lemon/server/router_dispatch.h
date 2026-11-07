@@ -11,7 +11,14 @@
 namespace lemon {
 
 class ModelManager;
+struct ModelInfo;
 struct ServerContext;
+
+// The one place that answers "does this model name a router collection?".
+// Dispatch and the responses-chain guard must agree on that, so neither derives
+// it on its own. Registry exceptions propagate: a failed lookup means something
+// different at each call site.
+std::optional<ModelInfo> router_collection_info(ServerContext& ctx, const std::string& model);
 
 struct RouterDispatchResult {
     std::string requested_model;

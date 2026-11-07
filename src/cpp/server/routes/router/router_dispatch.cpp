@@ -15,6 +15,17 @@ namespace lemon {
 
 using json = nlohmann::json;
 
+std::optional<ModelInfo> router_collection_info(ServerContext& ctx, const std::string& model) {
+    if (model.empty() || !ctx.model_manager->model_exists(model)) {
+        return std::nullopt;
+    }
+    ModelInfo info = ctx.model_manager->get_model_info(model);
+    if (!is_router_collection_recipe(info.recipe)) {
+        return std::nullopt;
+    }
+    return info;
+}
+
 std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::string& model,
                                                     bool want_trace, json& body) {
     if (model.empty()) {
@@ -22,13 +33,11 @@ std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::str
     }
     const std::string requested_model = model;
     try {
-        if (!ctx.model_manager->model_exists(requested_model)) {
+        std::optional<ModelInfo> collection = router_collection_info(ctx, requested_model);
+        if (!collection) {
             return std::nullopt;
         }
-        ModelInfo info = ctx.model_manager->get_model_info(requested_model);
-        if (!is_router_collection_recipe(info.recipe)) {
-            return std::nullopt;
-        }
+        ModelInfo& info = *collection;
         // The policy is parsed once when the models cache is built. A missing one means
         // the collection failed to parse, so the request keeps its model (fail open).
         if (!info.route_policy) {
