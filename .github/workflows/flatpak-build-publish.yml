@@ -1,0 +1,135 @@
+name: Reusable Flatpak Build & Publish 📦
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        description: 'Target Flatpak channel (e.g. nightly, stable)'
+        required: true
+        type: string
+      upload-bundle:
+        description: 'Whether to produce standalone .flatpak bundle'
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-and-publish-oci:
+    name: Build & Publish OCI (${{ matrix.flatpak-arch }})
+    runs-on: ${{ matrix.runs-on }}
+    container:
+      image: ghcr.io/aetherpak/cli:latest-builder
+      options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch-name: X86_64
+            runs-on: ubuntu-latest
+            flatpak-arch: x86_64
+          - arch-name: ARM64
+            runs-on: ubuntu-24.04-arm
+            flatpak-arch: aarch64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Build Flatpak with AetherPak
+        uses: aetherpak/actions/build@v3
+        with:
+          config: packaging/flatpak/aetherpak.yaml
+          app-id: ai.lemonadeserver.app
+          branch: ${{ inputs.channel }}
+          arch: ${{ matrix.flatpak-arch }}
+          repo-path: _repo
+          upload-bundle: ${{ inputs.upload-bundle }}
+
+      - name: Push OCI Layers with AetherPak
+        uses: aetherpak/actions/publish-oci@v3
+        with:
+          repo-path: _repo
+          branch: ${{ inputs.channel }}
+          arch: ${{ matrix.flatpak-arch }}
+          registry: ghcr.io
+          oci-repository: lemonade-sdk/flatpak
+          signing: off
+
+      # reconcile-pages runs in a separate job, so this cell's index record has
+      # to travel with the artifact.
+      - name: Upload index records
+        uses: actions/upload-artifact@v7
+        with:
+          name: flatpak-records-${{ matrix.flatpak-arch }}
+          path: _records
+          if-no-files-found: error
+
+  reconcile-pages:
+    name: Publish Flatpak Repository Index
+    needs: build-and-publish-oci
+    runs-on: ubuntu-latest
+    # The site is served from the `website` branch (docs/) with Pages in legacy
+    # branch mode, so the index is committed there instead of deployed as a
+    # Pages artifact. Shares a concurrency group with publish-website.yml so the
+    # two pushes serialize.
+    concurrency:
+      group: website-branch
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+
+      - name: Checkout website branch
+        uses: actions/checkout@v7
+        with:
+          ref: website
+          path: website
+          fetch-depth: 0
+
+      - name: Download index records
+        uses: actions/download-artifact@v7
+        with:
+          pattern: flatpak-records-*
+          path: _records
+          merge-multiple: true
+
+      - name: Reconcile Repository Index
+        uses: aetherpak/actions/publish-site@v3
+        with:
+          config: packaging/flatpak/aetherpak.yaml
+          pages-url: https://lemonade-server.ai
+          site-subpath: flatpak
+          site-dir: website/docs
+          oci-repository: lemonade-sdk/flatpak
+          signing: off
+          upload-pages-artifact: 'false'
+
+      - name: Commit and push index
+        working-directory: website
+        run: |
+          set -euo pipefail
+          if [ ! -d docs/flatpak ]; then
+            echo "::error::Flatpak index was not generated"
+            exit 1
+          fi
+          git config user.name "Lemonade Bot"
+          git config user.email "lemonade@amd.com"
+          git add docs/flatpak
+          if git diff --staged --quiet; then
+            echo "Flatpak index unchanged."
+            exit 0
+          fi
+          git commit -m "Update Flatpak repository index"
+          for attempt in 1 2 3; do
+            if git push; then exit 0; fi
+            git pull --rebase origin website
+          done
+          exit 1

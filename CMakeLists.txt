@@ -33,6 +33,25 @@ set(LEMONADE_MSI_VERSION
 )
 message(STATUS "Lemonade version: ${PROJECT_VERSION}")
 
+# AppStream metadata embeds the release version, so regenerate it from the
+# committed copy at configure time rather than letting the copy go stale.
+function(lemonade_generate_metainfo source_file output_file)
+    string(TIMESTAMP _release_date "%Y-%m-%d" UTC)
+    file(READ "${source_file}" _xml)
+    string(REGEX REPLACE
+        "<releases>.*</releases>"
+        "<releases>\n    <release version=\"${PROJECT_VERSION}\" date=\"${_release_date}\"/>\n  </releases>"
+        _xml "${_xml}")
+    file(WRITE "${output_file}" "${_xml}")
+endfunction()
+
+lemonade_generate_metainfo(
+    ${CMAKE_SOURCE_DIR}/data/ai.lemonadeserver.app.metainfo.xml
+    ${CMAKE_BINARY_DIR}/ai.lemonadeserver.app.metainfo.xml)
+lemonade_generate_metainfo(
+    ${CMAKE_SOURCE_DIR}/data/ai.lemonadeserver.webapp.metainfo.xml
+    ${CMAKE_BINARY_DIR}/ai.lemonadeserver.webapp.metainfo.xml)
+
 include(CTest)
 
 # Aggregate build target for the C++ tests selected by packaging CI.
@@ -1729,7 +1748,7 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
             DESTINATION share/applications
         )
         # Install MetaInfo file for web app
-        install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonadeserver.webapp.metainfo.xml
+        install(FILES ${CMAKE_BINARY_DIR}/ai.lemonadeserver.webapp.metainfo.xml
             DESTINATION share/metainfo
         )
         # Create symlink in standard applications path only if not installing to /usr
@@ -2252,12 +2271,14 @@ if(UNIX AND NOT APPLE)
         )
 
         if (NOT WIN32 AND NOT APPLE)
-            # Install .desktop file for the Tauri app
+            # Install .desktop file for the Tauri app under the app id so it
+            # matches the AppStream launchable and the Flatpak desktop file.
             install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-app.desktop
                 DESTINATION share/applications
+                RENAME ai.lemonadeserver.app.desktop
             )
             # Install MetaInfo file for the Tauri app
-            install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonadeserver.app.metainfo.xml
+            install(FILES ${CMAKE_BINARY_DIR}/ai.lemonadeserver.app.metainfo.xml
                 DESTINATION share/metainfo
             )
             # Create symlink in standard applications path only if not installing to /usr
@@ -2266,24 +2287,24 @@ if(UNIX AND NOT APPLE)
                     file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/applications\")
                     execute_process(
                         COMMAND ${CMAKE_COMMAND} -E create_symlink
-                            ${CMAKE_INSTALL_PREFIX}/share/applications/lemonade-app.desktop
-                            \"\$ENV{DESTDIR}/usr/share/applications/lemonade-app.desktop\"
+                            ${CMAKE_INSTALL_PREFIX}/share/applications/ai.lemonadeserver.app.desktop
+                            \"\$ENV{DESTDIR}/usr/share/applications/ai.lemonadeserver.app.desktop\"
                     )
                 ")
             endif()
             install(FILES ${CMAKE_SOURCE_DIR}/src/app/assets/logo.svg
-                DESTINATION share/pixmaps
-                RENAME lemonade-app.svg
+                DESTINATION share/icons/hicolor/scalable/apps
+                RENAME ai.lemonadeserver.app.svg
             )
 
-            # Create symlink in standard pixmaps path only if not installing to /usr
+            # Create symlink in standard icons path only if not installing to /usr
             if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
                 install(CODE "
-                    file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/pixmaps\")
+                    file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/icons/hicolor/scalable/apps\")
                     execute_process(
                         COMMAND ${CMAKE_COMMAND} -E create_symlink
-                            ${CMAKE_INSTALL_PREFIX}/share/pixmaps/lemonade-app.svg
-                            \"\$ENV{DESTDIR}/usr/share/pixmaps/lemonade-app.svg\"
+                            ${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/scalable/apps/ai.lemonadeserver.app.svg
+                            \"\$ENV{DESTDIR}/usr/share/icons/hicolor/scalable/apps/ai.lemonadeserver.app.svg\"
                     )
                 ")
             endif()
