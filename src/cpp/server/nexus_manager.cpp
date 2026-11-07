@@ -1882,9 +1882,16 @@ struct NexusManager::Session {
         start_mesh_port();
         remember_tier1_epoch();
         try {
-            const auto updates = json{{"hostname", device_name()}}.dump();
-            sdk_call([&](auto out) { return ln_update_node(client.get(), node_id.c_str(), updates.c_str(), out); });
             refresh_devices();
+            // The join names the node it creates. A returning device renamed while
+            // it was away still needs the write; it commits through Tier 1
+            // consensus, so an unchanged name sends none.
+            const auto self = find_member(devices, node_id);
+            if (!self.is_object() || self.value("device_name", std::string{}) != device_name()) {
+                const auto updates = json{{"hostname", device_name()}}.dump();
+                sdk_call([&](auto out) { return ln_update_node(client.get(), node_id.c_str(), updates.c_str(), out); });
+                refresh_devices();
+            }
         } catch (const std::exception& e) { set_error(e); }
     }
     // Keeps the verified Tier 1 epoch so a restart refuses an older membership list. The
