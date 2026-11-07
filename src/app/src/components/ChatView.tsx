@@ -2468,6 +2468,8 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const handleDeleteConversation = useCallback((id: string) => {
     streaming.stop(id);
+    // A video job would keep the GPU busy for a conversation that no longer exists.
+    videoAbortRef.current.get(id)?.abort();
     delete streamModelsRef.current[id];
     imageRegistry.clearConversation(id);
     setConversations(prev => prev.filter(c => c.id !== id));
