@@ -13,6 +13,10 @@ smoltcp = { version = ">=0.12, <0.15", default-features = false, features = [
     "medium-ip",
     "proto-ipv4",
     "socket-tcp",
+    # Congestion control for the bridged TCP connections. Without it a
+    # connection sends a full window at once and recovers from loss by
+    # retransmitting from the first lost byte.
+    "socket-tcp-cubic",
     "socket-udp",
     "socket-icmp",
     # Inbound UDP datagrams up to the IPv4 maximum, like a kernel socket:

@@ -29,8 +29,11 @@ use crate::bridge::{Bridge, BridgeTarget};
 use crate::device::VirtDevice;
 
 const WAKER_TOKEN: Token = Token(0);
-const SOCK_BUF: usize = 65536;
 const MAX_INNER_ITERS: usize = 32;
+/// Smallest TCP buffer a stack accepts: one unscaled window. smoltcp sets
+/// the window scale from the receive buffer, so a buffer above 64 KiB is
+/// what lets one connection keep more than 64 KiB in flight per round trip.
+pub const MIN_TCP_BUFFER: usize = 65536;
 // Inbound only: bursts of a few hundred datagrams, or a handful of
 // maximum-size ones, wait here until pump_udp hands them over.
 const UDP_QUEUE_DATAGRAMS: usize = 512;
@@ -117,6 +120,9 @@ struct EgressListener {
 struct Conn {
     tcp: SocketHandle,
     bridge: Bridge,
+    // Staging in each direction holds at most `tcp_buffer` bytes. Bytes
+    // beyond that stay in the smoltcp receive buffer, which closes the
+    // window, or in the bridge socket, which the next pump reads again.
     to_bridge: Vec<u8>,   // decrypted-side bytes waiting to flush to the bridge
     to_tcp: Vec<u8>,      // bridge-side bytes waiting to flush into smoltcp
     established: bool,     // virtual socket reached Established at least once
@@ -138,6 +144,8 @@ pub struct Stack {
     next_ip_ident: u16,
     next_token: usize,
     next_ephemeral: u16,
+    /// Receive and send buffer of every TCP socket, in bytes.
+    tcp_buffer: usize,
     base: StdInstant,
     cmd_rx: Receiver<Command>,
     pkt_rx: Receiver<Vec<u8>>,
@@ -163,6 +171,7 @@ fn initial_ephemeral() -> u16 {
 impl Stack {
     pub fn new(
         mtu: usize,
+        tcp_buffer: usize,
         output: Rc<crate::device::OutputFn>,
         cmd_rx: Receiver<Command>,
         pkt_rx: Receiver<Vec<u8>>,
@@ -171,6 +180,12 @@ impl Stack {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("mtu {mtu} is below the IPv4 minimum of {MIN_IPV4_MTU}"),
+            ));
+        }
+        if tcp_buffer < MIN_TCP_BUFFER {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("tcp buffer {tcp_buffer} is below the minimum of {MIN_TCP_BUFFER}"),
             ));
         }
         let mut device = VirtDevice::new(mtu, output);
@@ -198,6 +213,7 @@ impl Stack {
                 next_ip_ident: 1,
                 next_token: 1,
                 next_ephemeral: initial_ephemeral(),
+                tcp_buffer,
                 base: StdInstant::now(),
                 cmd_rx,
                 pkt_rx,
@@ -227,14 +243,16 @@ impl Stack {
         p
     }
 
-    fn make_tcp_socket() -> tcp::Socket<'static> {
-        let rx = tcp::SocketBuffer::new(vec![0u8; SOCK_BUF]);
-        let tx = tcp::SocketBuffer::new(vec![0u8; SOCK_BUF]);
-        tcp::Socket::new(rx, tx)
+    fn make_tcp_socket(&self) -> tcp::Socket<'static> {
+        let rx = tcp::SocketBuffer::new(vec![0u8; self.tcp_buffer]);
+        let tx = tcp::SocketBuffer::new(vec![0u8; self.tcp_buffer]);
+        let mut socket = tcp::Socket::new(rx, tx);
+        socket.set_congestion_control(tcp::CongestionControl::Cubic);
+        socket
     }
 
     fn new_listening_socket(&mut self, endpoint: IpListenEndpoint) -> Option<SocketHandle> {
-        let mut socket = Self::make_tcp_socket();
+        let mut socket = self.make_tcp_socket();
         if socket.listen(endpoint).is_err() {
             log::error!("virtual-netstack: failed to listen on {:?}", endpoint);
             return None;
@@ -547,7 +565,7 @@ impl Stack {
                     Err(_) => break,
                 };
 
-                let mut socket = Self::make_tcp_socket();
+                let mut socket = self.make_tcp_socket();
                 let local_port = self.alloc_ephemeral();
                 let local = IpEndpoint {
                     addr: IpAddress::Ipv4(src_ip),
@@ -604,6 +622,7 @@ impl Stack {
         let mut finished: Vec<Token> = Vec::new();
         let tokens: Vec<Token> = self.conns.keys().copied().collect();
         let mut buf = [0u8; 16384];
+        let staging_limit = self.tcp_buffer;
 
         for token in tokens {
             let mut remove = false;
@@ -616,7 +635,7 @@ impl Stack {
                 }
 
                 // smoltcp -> bridge
-                while socket.can_recv() {
+                while socket.can_recv() && conn.to_bridge.len() < staging_limit {
                     match socket.recv_slice(&mut buf) {
                         Ok(0) => break,
                         Ok(n) => {
@@ -642,9 +661,11 @@ impl Stack {
                     conn.fin_to_bridge = true;
                 }
 
-                // bridge -> smoltcp
+                // bridge -> smoltcp. The bridge is edge-triggered, so a read
+                // that stops at the limit leaves no event behind; the next
+                // pump reads again once send_slice made room.
                 if !conn.bridge_eof {
-                    loop {
+                    while conn.to_tcp.len() < staging_limit {
                         match conn.bridge.read(&mut buf) {
                             Ok(0) => {
                                 conn.bridge_eof = true;

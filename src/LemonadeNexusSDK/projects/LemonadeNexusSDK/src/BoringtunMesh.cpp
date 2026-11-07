@@ -46,6 +46,12 @@ int prefix_part(const std::string& cidr, int fallback) {
 constexpr const char* kPrivatePool = "10.128.0.0/9";
 /// The largest peer subnet accepted (IPAM allocates /24 to /30 blocks).
 constexpr uint8_t kMaxSubnetPrefixLen = 24;
+/// Receive and send buffer of every bridged TCP connection. One connection
+/// keeps at most this much in flight per round trip, so it sets the
+/// throughput of a transfer between two devices: 1 MiB carries about
+/// 50 MB/s at a 20 ms round trip, where the earlier 64 KiB carried 3 MB/s.
+/// A device holds a few connections, so the memory is small.
+constexpr uint32_t kTcpBufferBytes = 1u << 20;
 
 bool overlaps(const Cidr& a, const Cidr& b) {
     return a.contains(b.network) || b.contains(a.network);
@@ -192,7 +198,7 @@ bool BoringtunMesh::start(const BoringtunConfig& config) {
     dpcfg.public_key_b64  = config.public_key;
     dpcfg.listen_port     = config.listen_port;  // 0 = random
 
-    NsHandle* ns = ns_create(dpcfg.mtu, &mesh_output_trampoline, &impl_->dp);
+    NsHandle* ns = ns_create(dpcfg.mtu, kTcpBufferBytes, &mesh_output_trampoline, &impl_->dp);
     if (!ns) return false;
 
     // dp.stop() joins the receive workers, so this handler never runs after

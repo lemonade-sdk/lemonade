@@ -26,6 +26,7 @@ use smoltcp::wire::{IpCidr, IpEndpoint, Ipv4Address};
 
 use bridge::BridgeTarget;
 use stack::{Command, IngressNotify, Stack};
+pub use stack::MIN_TCP_BUFFER;
 
 /// Callback invoked with each outbound IP packet the stack emits.
 pub type NsOutputFn = unsafe extern "C" fn(ctx: *mut c_void, pkt: *const u8, len: usize);
@@ -167,14 +168,19 @@ fn parse_cidr(s: &str) -> Option<IpCidr> {
     Some(IpCidr::new(addr.into(), prefix))
 }
 
-/// Create a netstack. Returns null on failure, including an `mtu` below the
-/// IPv4 minimum of 68. A null return leaves no stack thread running.
+/// Create a netstack. `tcp_buffer` is the receive buffer and the send buffer
+/// of every TCP connection, in bytes; it bounds the bytes one connection
+/// keeps in flight per round trip, and a connection holds up to four times
+/// it. Returns null on failure, including an `mtu` below the IPv4 minimum of
+/// 68 or a `tcp_buffer` below `MIN_TCP_BUFFER`. A null return leaves no
+/// stack thread running.
 ///
 /// # Safety
 /// `output` must be a valid function pointer; `ctx` must outlive the stack.
 #[no_mangle]
 pub unsafe extern "C" fn ns_create(
     mtu: u32,
+    tcp_buffer: u32,
     output: NsOutputFn,
     ctx: *mut c_void,
 ) -> *mut NsHandle {
@@ -183,13 +189,14 @@ pub unsafe extern "C" fn ns_create(
     let (pkt_tx, pkt_rx) = channel::<Vec<u8>>();
 
     let mtu = mtu as usize;
+    let tcp_buffer = tcp_buffer as usize;
     let (ready_tx, ready_rx) = channel::<std::io::Result<Arc<Waker>>>();
 
     let join = std::thread::Builder::new()
         .name("virtual-netstack".into())
         .spawn(move || {
             let output_rc: Rc<device::OutputFn> = Rc::new(move |pkt: &[u8]| callback.emit(pkt));
-            match Stack::new(mtu, output_rc, cmd_rx, pkt_rx) {
+            match Stack::new(mtu, tcp_buffer, output_rc, cmd_rx, pkt_rx) {
                 Ok((stack, waker)) => {
                     let _ = ready_tx.send(Ok(Arc::new(waker)));
                     stack.run();

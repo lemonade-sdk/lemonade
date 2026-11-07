@@ -22,10 +22,14 @@ typedef struct NsHandle NsHandle;
 typedef void (*ns_output_fn)(void* ctx, const uint8_t* pkt, size_t len);
 
 /// Create a netstack with the given MTU. Spawns a dedicated stack thread.
-/// Returns NULL on failure, including an `mtu` below the IPv4 minimum of 68.
-/// After a NULL return no stack thread runs and `output` is never called.
-/// Callers must check for NULL. `ctx` must outlive the stack.
-NsHandle* ns_create(uint32_t mtu, ns_output_fn output, void* ctx);
+/// `tcp_buffer` is the receive buffer and the send buffer of every TCP
+/// connection, in bytes, at least 65536. It bounds the bytes one connection
+/// keeps in flight per round trip; a connection holds up to four times it.
+/// Returns NULL on failure, including an `mtu` below the IPv4 minimum of 68
+/// or a `tcp_buffer` below 65536. After a NULL return no stack thread runs
+/// and `output` is never called. Callers must check for NULL. `ctx` must
+/// outlive the stack.
+NsHandle* ns_create(uint32_t mtu, uint32_t tcp_buffer, ns_output_fn output, void* ctx);
 
 /// Stop the stack thread and free the handle. Safe to call with NULL.
 void ns_destroy(NsHandle* handle);
