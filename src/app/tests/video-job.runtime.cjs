@@ -14,6 +14,10 @@ const mod = { exports: {} };
 Function('exports', 'module', compiled.outputText)(mod.exports, mod);
 const { runVideoJob, isVideoJobCanceled, videoFileExtension } = mod.exports;
 
+function httpError(status) {
+  return Object.assign(new Error(`HTTP ${status}`), { status });
+}
+
 function fakeServer(statuses, final = {}) {
   const calls = { create: [], get: 0, content: 0, cancel: [] };
   let index = 0;
@@ -148,9 +152,48 @@ const noSleep = async () => {};
   }
 
   {
+    // A server that stops answering may still be generating: polling keeps the
+    // job, reports it, and picks the clip up once the server is back.
+    const server = fakeServer(['completed'], { output_format: 'webm' });
+    const get = server.transport.get;
+    let failures = 6;
+    server.transport.get = async id => {
+      if (failures > 0) { failures -= 1; throw new Error('down'); }
+      return get(id);
+    };
+    const seen = [];
+    const waits = [];
+    const result = await runVideoJob(server.transport, {}, {
+      sleep: async ms => { waits.push(ms); },
+      pollMs: 10,
+      maxPollBackoffMs: 50,
+      onStatus: record => seen.push(record.status),
+    });
+    assert.equal(result.blob.size, 4);
+    assert.ok(seen.includes('reconnecting'), 'reports that the server stopped answering');
+    assert.equal(Math.max(...waits), 50, 'backs off up to the cap');
+  }
+
+  {
+    // Stop still reaches /cancel while the server is not answering polls.
     const server = fakeServer(['running']);
+    const controller = new AbortController();
     server.transport.get = async () => { throw new Error('down'); };
-    await assert.rejects(runVideoJob(server.transport, {}, { sleep: noSleep, maxPollFailures: 3 }), /down/);
+    const job = runVideoJob(server.transport, {}, {
+      signal: controller.signal,
+      onStatus: record => { if (record.status === 'reconnecting') controller.abort(); },
+      sleep: noSleep,
+      maxCancelPolls: 2,
+    });
+    await assert.rejects(job);
+    assert.deepEqual(server.calls.cancel, ['job-1']);
+  }
+
+  {
+    // A job the server no longer knows is gone for good.
+    const server = fakeServer(['running']);
+    server.transport.get = async () => { throw httpError(404); };
+    await assert.rejects(runVideoJob(server.transport, {}, { sleep: noSleep }), /HTTP 404/);
   }
 
   assert.equal(videoFileExtension({ id: 'x', status: 'completed', output_format: 'webp' }), 'webp');

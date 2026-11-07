@@ -833,6 +833,7 @@ const ZH_CN: Record<string, string> = {
   'Video queued…': '视频已排队…',
   'Stopping video…': '正在停止视频…',
   'Generating video… this takes a few minutes.': '正在生成视频…需要几分钟。',
+  'Lost contact with the server, still checking on the video…': '与服务器失去联系，仍在检查视频…',
   'Describe a video for {model}…': '为 {model} 描述一段视频…',
   'Preparing 3D result…': '正在准备 3D 结果…',
   'RAM / VRAM': '内存 / 显存',

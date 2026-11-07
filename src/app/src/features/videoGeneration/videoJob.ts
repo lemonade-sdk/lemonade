@@ -21,12 +21,18 @@ export interface VideoJobResult {
   blob: Blob;
 }
 
+/**
+ * Server statuses plus two the client adds: 'reconnecting' while status polls
+ * fail, and 'canceling' after Stop.
+ */
 export interface VideoJobOptions {
   signal?: AbortSignal;
   onStatus?: (record: VideoJobRecord) => void;
   pollMs?: number;
   maxPollFailures?: number;
+  maxPollBackoffMs?: number;
   maxCancelPolls?: number;
+  requestTimeoutMs?: number;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
@@ -59,6 +65,21 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+function timeoutSignal(ms: number): AbortSignal | undefined {
+  return typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ms) : undefined;
+}
+
+function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal | undefined {
+  const timeout = timeoutSignal(ms);
+  if (!signal) return timeout;
+  if (!timeout || typeof AbortSignal.any !== 'function') return signal;
+  return AbortSignal.any([signal, timeout]);
+}
+
+function isGone(err: unknown): boolean {
+  return (err as { status?: number } | null)?.status === 404;
+}
+
 export function videoFileExtension(record: VideoJobRecord): string {
   const format = String(record.output_format || '').toLowerCase();
   if (/^[a-z0-9]{2,5}$/.test(format)) return format;
@@ -81,7 +102,9 @@ export async function runVideoJob(
     onStatus,
     pollMs = 2000,
     maxPollFailures = 3,
+    maxPollBackoffMs = 30000,
     maxCancelPolls = 30,
+    requestTimeoutMs = 15000,
     sleep = abortableSleep,
   } = options;
   if (signal?.aborted) throw new VideoJobCanceledError();
@@ -102,18 +125,22 @@ export async function runVideoJob(
   };
   onStatus?.(record);
 
+  // A server that stops answering may still be generating, so polling keeps
+  // the job and backs off instead of giving up; Stop stays available.
   let failures = 0;
   while (!TERMINAL.has(record.status)) {
     if (signal?.aborted) return stop();
-    await sleep(pollMs, signal);
+    const wait = failures === 0 ? pollMs : Math.min(pollMs * 2 ** failures, maxPollBackoffMs);
+    await sleep(wait, signal);
     if (signal?.aborted) return stop();
     try {
-      record = await transport.get(id, signal);
+      record = await transport.get(id, withTimeout(signal, requestTimeoutMs));
       failures = 0;
     } catch (err) {
       if (signal?.aborted) return stop();
+      if (isGone(err)) throw err;
       failures += 1;
-      if (failures >= maxPollFailures) throw err;
+      if (failures >= maxPollFailures) onStatus?.({ ...record, status: 'reconnecting' });
       continue;
     }
     onStatus?.(record);
@@ -123,6 +150,7 @@ export async function runVideoJob(
   if (record.status === 'failed') {
     throw new Error(record.error ? `Video generation failed: ${record.error}` : 'Video generation failed.');
   }
+
   let blob: Blob;
   try {
     blob = await transport.content(id, signal);

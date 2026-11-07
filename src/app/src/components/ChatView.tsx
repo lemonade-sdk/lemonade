@@ -4165,6 +4165,8 @@ ${index}`;
                         ? t('Video queued…')
                         : activeVideoStatus === 'canceling'
                           ? t('Stopping video…')
+                        : activeVideoStatus === 'reconnecting'
+                          ? t('Lost contact with the server, still checking on the video…')
                         : activeVideoStatus !== undefined
                           ? t('Generating video… this takes a few minutes.')
                           : <>Working in {capabilityLabel(snapshotIdentity(currentModelSnapshot))} mode…</>}
