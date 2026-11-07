@@ -470,7 +470,7 @@ std::uint64_t HttpFileTransfer::transfer(const DownloadFile& file,
     options.max_retry_delay_ms = 120000;
     options.resume_partial = true;
     options.low_speed_limit = 1000;
-    options.low_speed_time = static_cast<int>(utils::HttpClient::get_default_timeout());
+    options.low_speed_time = utils::DownloadOptions::kDefaultNoProgressTimeoutSeconds;
     options.connect_timeout = 60;
     options.expected_hash_algorithm = file.expected_hash_algorithm;
     options.expected_hash = file.expected_hash;

@@ -168,7 +168,7 @@ void GufoServer::load(const std::string& model_name, const ModelInfo& model_info
                      ProcessOutput{inherit_output, true}, gufo::descriptor.recipe, kBackend,
                      model_name, *gufo::descriptor.container_for(kBackend),
                      BackendUtils::get_backend_image(gufo::descriptor.recipe, kBackend)),
-                 command, utils::HttpClient::get_default_timeout());
+                 command);
     LOG(DEBUG, "Gufo") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 

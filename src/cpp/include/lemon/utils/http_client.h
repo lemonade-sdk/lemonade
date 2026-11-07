@@ -79,6 +79,7 @@ using StreamCallback = std::function<bool(const char* data, size_t length)>;
 
 // Download configuration options
 struct DownloadOptions {
+    static constexpr int kDefaultNoProgressTimeoutSeconds = 600;
     int max_retries = 5;              // Maximum retry attempts
     int initial_retry_delay_ms = 1000; // Initial delay between retries (doubles each time)
     int max_retry_delay_ms = 60000;   // Maximum delay between retries (1 minute)
@@ -86,7 +87,7 @@ struct DownloadOptions {
     int low_speed_limit = 0;       // Minimum bytes/sec before timeout (disabled — 0 = no limit)
     int low_speed_time = 0;        // Seconds below low_speed_limit before timeout (disabled)
     int connect_timeout = 30;         // Connection timeout in seconds
-    int no_progress_timeout = 0;       // Seconds without byte progress before aborting; 0 uses the default timeout
+    int no_progress_timeout = 0;       // 0 uses the download-specific 600s stall threshold; -1 disables it
     bool range_retry_on_zero_byte_retry = true; // Retry empty failed attempts with Range: 0-
     bool force_initial_range_request = false;   // Force Range: 0- even on the first attempt
 
@@ -101,17 +102,20 @@ struct DownloadOptions {
 
 class HttpClient {
 public:
-    // curl reads CURLOPT_TIMEOUT 0 as "no timeout", which collides with the
-    // 0-means-default convention every request method here uses. A caller that
-    // genuinely wants to block indefinitely passes this instead.
+    // A request argument of 0 keeps the bounded control-plane default. A
+    // caller doing inference opts out of an overall duration limit explicitly.
     static constexpr long kNoTimeout = -1;
+    static constexpr long kDefaultRequestTimeoutSeconds = 300;
+    static constexpr long kDefaultInferenceInactivityTimeoutSeconds = 1800;
 
-    static void set_default_timeout(long timeout_seconds) {
-        default_timeout_seconds_ = timeout_seconds;
+    // A no-total-timeout inference request retains an independent idle guard.
+    // The value is captured per request, so runtime changes affect new calls.
+    // 0 disables only the idle guard; cancellation and connect timeout remain.
+    static void set_inference_inactivity_timeout_seconds(long seconds) {
+        inference_inactivity_timeout_seconds_.store(seconds, std::memory_order_relaxed);
     }
-
-    static long get_default_timeout() {
-        return default_timeout_seconds_;
+    static long inference_inactivity_timeout_seconds() {
+        return inference_inactivity_timeout_seconds_.load(std::memory_order_relaxed);
     }
 
     // Global cap; when set, downloads are also serialized so concurrent
@@ -124,7 +128,6 @@ public:
         return download_rate_limit_bytes_per_second_.load();
     }
 
-    // Simple GET request. timeout_seconds=0 (default) uses default_timeout_seconds_.
     // max_body_bytes > 0 aborts and throws once the response grows past it.
     static HttpResponse get(const std::string& url,
                            const std::map<std::string, std::string>& headers = {},
@@ -133,8 +136,7 @@ public:
                            size_t max_body_bytes = 0);
 
     // Simple POST request. Redirects are never followed.
-    // timeout_seconds=0 uses default_timeout_seconds_, as in get(); pass
-    // kNoTimeout to opt out deliberately.
+    // 0 uses kDefaultRequestTimeoutSeconds; kNoTimeout disables the total limit.
     static HttpResponse post(
         const std::string& url,
         const std::string& body,
@@ -144,7 +146,6 @@ public:
         const RequestCancelToken& cancel = {});
 
     // Multipart form data POST request. Redirects are never followed.
-    // timeout_seconds=0 uses default_timeout_seconds_.
     static HttpResponse post_multipart(
         const std::string& url,
         const std::vector<MultipartField>& fields,
@@ -161,9 +162,8 @@ public:
     // (names lowercased) before on_status fires, so a caller deciding what to
     // send downstream can see them without waiting for the transfer to finish.
     //
-    // timeout_seconds bounds upstream silence, not total duration: a total
-    // timeout would cut off a long but healthy generation. 0 uses
-    // default_timeout_seconds_, as in get().
+    // This is an upstream inactivity limit, never a total duration limit.
+    // 0 selects the 300s default; kNoTimeout uses a separate 1800s idle guard.
     static HttpResponse post_stream(
         const std::string& url,
         const std::string& body,
@@ -203,8 +203,8 @@ public:
         HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
 private:
-    static std::atomic<long> default_timeout_seconds_;
     static std::atomic<int64_t> download_rate_limit_bytes_per_second_;
+    static std::atomic<long> inference_inactivity_timeout_seconds_;
 
     // Single download attempt, may resume from offset
     static DownloadResult download_attempt(const std::string& url,
