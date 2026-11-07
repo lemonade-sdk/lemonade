@@ -7,8 +7,11 @@ import {
   capabilityFromLoaded,
   capabilityFromModelInfo,
   type ModelCapability,
+  modelSupportsChatImageInput,
 } from '../modelCapabilities';
 import { findModelInfoByName } from '../features/collections/collectionModels';
+import type { ConversationImageRegistry } from '../features/images/imageRegistry';
+import { prepareDirectImageAnalysis } from '../features/images/directImageAnalysis';
 import type {
   ChatToolRuntime,
   ToolArtifact,
@@ -31,6 +34,11 @@ export interface McpRuntimeContext {
   attachedImages?: string[];
   attachedAudioFiles?: File[];
   previousImages?: string[];
+  imageRegistry?: ConversationImageRegistry;
+  conversationId?: string;
+  messageId?: string;
+  chatVisionModel?: string;
+  directInputImageIds?: string[];
 }
 
 export interface McpServerOption {
@@ -59,13 +67,13 @@ const MULTIMODAL_LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'generate_image',
-      description: 'Generate a new image with a downloaded Lemonade image model. Omit model to reuse a loaded/downloaded image model.',
+      description: 'Generate a new image; omit model to use an available image model.',
       parameters: {
         type: 'object',
         properties: {
           prompt: { type: 'string' },
           model: { type: 'string' },
-          size: { type: 'string', description: 'WIDTHxHEIGHT, for example 1024x1024.' },
+          size: { type: 'string', description: 'WIDTHxHEIGHT; omit for backend default. To resize 2x, double both known dimensions.' },
           steps: { type: 'integer', minimum: 1 },
           cfg_scale: { type: 'number' },
           seed: { type: 'integer' },
@@ -79,19 +87,38 @@ const MULTIMODAL_LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'edit_image',
-      description: 'Edit the most recent attached or generated image with a downloaded Lemonade image-edit model.',
+      description: 'Edit existing images; image_ids are base first, then references. Omit for current/latest.',
       parameters: {
         type: 'object',
         properties: {
           prompt: { type: 'string' },
           model: { type: 'string' },
-          image: { type: 'string', description: 'Optional data:image/... URL. The latest conversation image is used when omitted.' },
-          size: { type: 'string' },
+          image_ids: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'Base image ID first, then references.' },
+          image: { type: 'string', description: 'Deprecated data:image/... URL; prefer image_ids.' },
+          // Older data URI calls remain supported only for known UI attachments.
+          size: { type: 'string', description: 'WIDTHxHEIGHT; omit for source/backend default.' },
           steps: { type: 'integer', minimum: 1 },
           cfg_scale: { type: 'number' },
           seed: { type: 'integer' },
         },
         required: ['prompt'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'analyze_image',
+      description: 'Inspect image_id (or latest) with vision; use the current chat VLM when supported.',
+      parameters: {
+        type: 'object',
+        properties: {
+          image_id: { type: 'string', description: 'Optional ID; omit for current/latest image.' },
+          question: { type: 'string' },
+          model: { type: 'string', description: 'Only for a different VLM; omit to use this chat VLM if vision-capable.' },
+        },
+        required: ['question'],
         additionalProperties: false,
       },
     },
@@ -217,8 +244,9 @@ function mediaResult(
   return {
     tool_call_id: call.id,
     role: 'tool',
-    content: JSON.stringify({ status: 'completed', message, ...details }),
-    displayResult: message,
+    content: JSON.stringify({ status: details.image_ids ? 'success' : 'completed', message, ...details }),
+    displayResult: typeof details.image_registration_warning === 'string'
+      ? `${message} Image references unavailable: ${details.image_registration_warning}` : message,
     artifacts,
   };
 }
@@ -374,6 +402,7 @@ async function executeLemonadeMultimodalTool(
   call: ToolCall,
   context: McpRuntimeContext,
   generated: string[] = [],
+  signal?: AbortSignal,
 ): Promise<ToolExecutionPayload> {
   let args: Record<string, unknown>;
   try {
@@ -390,28 +419,78 @@ async function executeLemonadeMultimodalTool(
         const model = await resolveModel('image', stringArg(args, 'model'), 'image-generation');
         await ensureLoaded(model);
         const urls = await api.imageGeneration(model.name, prompt, imageOptions(args));
+        const registration = context.imageRegistry && context.conversationId
+          ? await context.imageRegistry.addOutputsBestEffort(context.conversationId, urls, 'generated', [], prompt, signal, context.messageId)
+          : { ids: undefined, warning: undefined };
         return mediaResult(
           call,
           `Generated ${urls.length} image${urls.length === 1 ? '' : 's'} with ${model.name}.`,
           urls.map((url, index) => ({ type: 'image', url, name: `${model.name}-${call.id}-${index + 1}.png`, mime: 'image/png' })),
-          { model: model.name },
+          { model: model.name, image_ids: registration.ids, image_registration_warning: registration.warning },
         );
       }
 
       case 'edit_image': {
         const prompt = stringArg(args, 'prompt');
         if (!prompt) throw new Error('edit_image requires prompt.');
-        const image = latestImage(context, stringArg(args, 'image'), generated);
-        if (!image) throw new Error('No attached or previously generated image is available to edit.');
+        const legacyDataUrl = stringArg(args, 'image');
+        const hasLegacyData = args.image_ids === undefined && legacyDataUrl.startsWith('data:image/');
+        if (hasLegacyData && context.imageRegistry && context.conversationId
+          && ![...(context.attachedImages || []), ...(context.previousImages || []), ...generated].includes(legacyDataUrl)) {
+          throw new Error('Image data URLs are not accepted from the planner. Use an available image_id.');
+        }
+        const useLegacy = hasLegacyData;
+        const selected = context.imageRegistry && context.conversationId && !useLegacy
+          ? context.imageRegistry.selectForEdit(context.conversationId, args.image_ids, context.messageId) : null;
+        if (!selected && args.image_ids !== undefined) throw new Error('Image IDs are unavailable in this session.');
+        const source = selected ? selected.images : latestImage(context, useLegacy ? legacyDataUrl : '', generated);
+        if (!source || (Array.isArray(source) && !source.length)) {
+          throw new Error('No attached or previously generated image is available to edit.');
+        }
         const model = await resolveModel('image', stringArg(args, 'model'), 'image-edit', supportsImageEdit);
         await ensureLoaded(model);
-        const urls = await api.imageEdit(model.name, prompt, image, imageOptions(args));
+        const urls = await api.imageEdit(model.name, prompt, source, imageOptions(args));
+        const registration = context.imageRegistry && context.conversationId
+          ? await context.imageRegistry.addOutputsBestEffort(context.conversationId, urls, 'edited', selected?.ids || [], prompt, signal, context.messageId)
+          : { ids: undefined, warning: undefined };
         return mediaResult(
           call,
           `Edited the image with ${model.name}.`,
           urls.map((url, index) => ({ type: 'image', url, name: `${model.name}-edit-${call.id}-${index + 1}.png`, mime: 'image/png' })),
-          { model: model.name },
+          { model: model.name, image_ids: registration.ids, image_registration_warning: registration.warning },
         );
+      }
+
+      case 'analyze_image': {
+        const question = stringArg(args, 'question');
+        if (!question) throw new Error('analyze_image requires a question.');
+        const explicitModel = stringArg(args, 'model');
+        if (args.image_id !== undefined && (!context.imageRegistry || !context.conversationId)) {
+          throw new Error('Image IDs are unavailable in this session.');
+        }
+        if (context.chatVisionModel && (!explicitModel || explicitModel.toLowerCase() === context.chatVisionModel.toLowerCase())) {
+          return await prepareDirectImageAnalysis(call.id, question, args.image_id, context, signal);
+        }
+        const model = await resolveModel('chat', explicitModel, 'vision', (name, info) => {
+          const loaded = api.loadedModels.find(item => item.model_name.toLowerCase() === name.toLowerCase());
+          return modelSupportsChatImageInput(info, loaded);
+        });
+        await ensureLoaded(model);
+        if (signal?.aborted) throw new Error('Image inspection was cancelled.');
+        const image = context.imageRegistry && context.conversationId
+          ? await context.imageRegistry.getAnalysisInput(context.conversationId, args.image_id, context.messageId)
+          : latestImage(context, '', generated);
+        if (!image) throw new Error('No image is available for analysis.');
+        if (signal?.aborted) throw new Error('Image inspection was cancelled.');
+        const content = await api.chatCompletionOnce(model.name, [{
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: image } },
+            { type: 'text', text: question },
+          ],
+        }], {}, signal);
+        if (!content.trim()) throw new Error('Vision model returned no analysis.');
+        return { tool_call_id: call.id, role: 'tool', content, displayResult: content.slice(0, 200) };
       }
 
       case 'generate_audio': {
@@ -508,13 +587,16 @@ async function executeLemonadeMultimodalTool(
           name: result.filename,
           mime: result.blob.type || 'model/gltf-binary',
         });
+        const registration = imageModelName && context.imageRegistry && context.conversationId
+          ? await context.imageRegistry.addOutputsBestEffort(context.conversationId, [image], 'generated', [], prompt, signal, context.messageId)
+          : { ids: undefined, warning: undefined };
         return mediaResult(
           call,
           imageModelName
             ? `Generated a reference image with ${imageModelName}, then reconstructed it with ${model.name}.`
             : `Reconstructed the image with ${model.name}.`,
           artifacts,
-          { model: model.name, image_model: imageModelName || undefined },
+          { model: model.name, image_model: imageModelName || undefined, image_ids: registration.ids, image_registration_warning: registration.warning },
         );
       }
 
@@ -547,20 +629,28 @@ function buildLemonadeRuntime(
   const generated: string[] = [];
   return {
     tools,
+    acceptsImageReferences: tools.some(tool => ['edit_image', 'analyze_image'].includes(
+      String((tool as { function?: { name?: unknown } }).function?.name || ''),
+    )),
+    resolveImageAttachment: context.imageRegistry && context.conversationId
+      ? (id: string) => context.imageRegistry!.getAnalysisInput(context.conversationId!, id) : undefined,
     systemPrompt: [
       'The Lemon-Tools MCP server controls local models and multimodal backends.',
       'Use management tools for models, recipes, hardware, downloads, health, and Router models.',
       'Router models use recipe=collection.router and are virtual Chat orchestration policies. Inspect them with get_model_info, list them with capability=router when useful, and never assign a backend/device to or expect a loaded runtime process for the Router itself. load_model validates/registers Router readiness; actual dispatch happens when chat/completions uses the Router model name.',
-      'For an attached image, answer questions about its content directly. Only call generate_image/edit_image if the user explicitly asks to create or edit an image.',
+      'Use edit_image for requested changes and optional image_ids (base first); the default is current uploads, otherwise latest image.',
+      context.chatVisionModel
+        ? 'This chat has vision: use analyze_image(image_id) directly. Do not search for another vision model unless asked.'
+        : 'Use analyze_image(image_id) to inspect images with a vision-capable model.',
       'Use generate_audio for music or sound, text_to_speech for speech, and transcribe_audio for attached audio.',
       'For text-to-3D call generate_3d with prompt: it MUST generate the reference image first and then reconstruct that image as a GLB. For image-to-3D pass or reuse the attached image.',
       'Do not invent local model names; use list_models/get_model_info when model selection is unclear.',
     ].join('\n'),
-    execute: async call => {
+    execute: async (call, signal) => {
       if (!multimodalNames.has(call.function.name)) {
         return executeTool(call) as Promise<ToolExecutionPayload>;
       }
-      const payload = await executeLemonadeMultimodalTool(call, context, generated);
+      const payload = await executeLemonadeMultimodalTool(call, context, generated, signal);
       for (const artifact of payload.artifacts || []) {
         if (artifact.type === 'image' && artifact.url.startsWith('data:image/')) {
           generated.push(artifact.url);
@@ -683,8 +773,10 @@ export function composeMcpRuntimes(runtimes: Array<ChatToolRuntime | null | unde
   }
   return {
     tools,
+    acceptsImageReferences: active.some(runtime => runtime.acceptsImageReferences),
+    resolveImageAttachment: active.find(runtime => runtime.resolveImageAttachment)?.resolveImageAttachment,
     systemPrompt: prompts.join('\n\n'),
-    execute: call => byName.get(call.function.name)?.execute(call)
+    execute: (call, signal) => byName.get(call.function.name)?.execute(call, signal)
       || Promise.resolve(errorResult(call, `Unknown MCP tool: ${call.function.name}`)),
   };
 }

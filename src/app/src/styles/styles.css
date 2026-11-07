@@ -4991,6 +4991,25 @@ optgroup {
   opacity: 1;
 }
 
+.composer__image-position {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.75);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.composer__image-error {
+  max-width: var(--max-content-width);
+  margin: 0 auto;
+  padding: var(--space-2) var(--space-3);
+  color: var(--error);
+}
+
 .composer__attach {
   background: none;
   border: none;
@@ -5267,12 +5286,13 @@ optgroup {
   max-width: min(100%, 512px);
   max-height: 512px;
   display: block;
+  box-sizing: border-box;
 }
 
 .message__image-item {
   position: relative;
   display: inline-block;
-  max-width: 100%;
+  max-width: min(100%, 512px);
   align-self: flex-start;
 }
 

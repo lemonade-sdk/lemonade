@@ -1921,9 +1921,13 @@ class LemonadeAPI {
     return { blob, url: URL.createObjectURL(blob) };
   }
 
-  async imageEdit(model: string, prompt: string, imageDataUrl: string, opts: Record<string, unknown> = {}): Promise<string[]> {
+  async imageEdit(
+    model: string, prompt: string, source: string | Blob | readonly (string | Blob)[],
+    opts: Record<string, unknown> = {},
+  ): Promise<string[]> {
     const requestedSize = typeof opts.size === 'string' && opts.size.trim() ? opts.size.trim() : '';
-    const imageBlob = blobFromDataUrl(imageDataUrl);
+    const sources: readonly (string | Blob)[] = typeof source === 'string' || source instanceof Blob ? [source] : source;
+    if (sources.length === 0) throw new Error('Image edit requires at least one source image.');
     const form = new FormData();
     form.append('model', model);
     form.append('prompt', prompt);
@@ -1936,7 +1940,25 @@ class LemonadeAPI {
         form.append(key, String(value));
       }
     });
-    form.append('image', imageBlob, 'image.png');
+    const maxRequestBytes = 128 * 1024 * 1024;
+    let requestBytes = 0;
+    const fieldName = sources.length === 1 ? 'image' : 'image[]';
+    sources.forEach((sourceImage, index) => {
+      const blob = typeof sourceImage === 'string' ? blobFromDataUrl(sourceImage) : sourceImage;
+      if (!(blob instanceof Blob) || !blob.type.startsWith('image/') || blob.size === 0) {
+        throw new Error(`Invalid image edit reference ${index + 1}.`);
+      }
+      requestBytes += blob.size;
+      if (requestBytes > maxRequestBytes) {
+        throw new Error('Image edit source images exceed the 128 MiB per-request limit.');
+      }
+      const extension = ({
+        'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
+        'image/gif': 'gif', 'image/bmp': 'bmp', 'image/avif': 'avif',
+      } as Record<string, string>)[blob.type.toLowerCase()] || 'img';
+      const filename = blob instanceof File && blob.name ? blob.name : `reference-${index + 1}.${extension}`;
+      form.append(fieldName, blob, filename);
+    });
 
     const data = await this._json<Record<string, any>>('/api/v1/images/edits', {
       method: 'POST',
@@ -2710,7 +2732,9 @@ class LemonadeAPI {
     model: string,
     messages: ChatMessage[],
     params: Record<string, unknown> = {},
+    signal?: AbortSignal,
   ): Promise<string> {
+    if (signal?.aborted) throw new DOMException('Chat completion was cancelled.', 'AbortError');
     const { samplingForModel } = await import(
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
@@ -2718,6 +2742,7 @@ class LemonadeAPI {
       method: 'POST',
       body: { model, messages, stream: false, ...samplingForModel(model, this.allModels.find(candidate => modelInfoKey(candidate).toLowerCase() === model.trim().toLowerCase()) || null), ...params },
       includeSessionHeaders: true,
+      signal,
     });
     if (data.error) {
       throw new Error(data.error?.message || 'Chat completion failed');
