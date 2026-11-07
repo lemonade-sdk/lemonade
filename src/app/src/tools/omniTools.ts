@@ -33,40 +33,40 @@ const DEFAULT_OMNI_TOOLS: ToolDefinitionEntry[] = [
     ],
     "function": {
       "name": "generate_image",
-      "description": "Generate a NEW image from scratch based on a text description. Use this only for a new image, not for modifying an existing image.",
+      "description": "Generate a new image from text; use edit_image to modify existing images.",
       "parameters": {
         "type": "object",
         "properties": {
           "prompt": {
             "type": "string",
-            "description": "A detailed description of the image to generate."
+            "description": "Image to generate."
           },
           "size": {
             "type": "string",
-            "description": "Optional output canvas size as WIDTHxHEIGHT pixels. Omit by default to use {image_size}. Use only when the user explicitly asks for the final output image/canvas dimensions or a specific aspect ratio. For aspect-ratio requests, choose reasonable dimensions and round dimensions to the nearest multiple of 8."
+            "description": "WIDTHxHEIGHT; default {image_size}. Set only for requested size/aspect ratio. To double size, double both dimensions."
           },
           "steps": {
             "type": "integer",
-            "description": "Optional sampling/denoising step count. Use only when the user asks for speed, quality, detail, or a specific step count.",
+            "description": "Optional steps for speed/quality; omit otherwise.",
             "minimum": 1,
             "maximum": 100
           },
           "cfg_scale": {
             "type": "number",
-            "description": "Optional text guidance scale. Higher values follow the prompt more strongly; lower values allow more variation. Use only when requested or clearly implied.",
+            "description": "Optional guidance scale; omit unless requested.",
             "minimum": 0
           },
           "seed": {
             "type": "integer",
-            "description": "Optional random seed for reproducible generation. Use when the user provides a seed or asks for reproducibility."
+            "description": "Optional reproducibility seed."
           },
           "sample_method": {
             "type": "string",
-            "description": "Optional sampler name/method. Use only when the user explicitly requests a sampler."
+            "description": "Optional sampler; omit unless requested."
           },
           "flow_shift": {
             "type": "number",
-            "description": "Optional flow shift value for models/backends that support it. Use only when requested or model guidance requires it.",
+            "description": "Optional flow shift; omit unless requested.",
             "minimum": 0
           }
         },
@@ -81,49 +81,49 @@ const DEFAULT_OMNI_TOOLS: ToolDefinitionEntry[] = [
     "requires_labels": [
       "edit"
     ],
-    "prompt_guidance": "Use edit_image to modify existing images. Optional image_ids select exact sources, base first, then references; default is current uploads, otherwise latest image. Omit size unless the user specifies final canvas dimensions.",
+    "prompt_guidance": "Edit existing images; image_ids order is base, then references. Omit for current/latest.",
     "function": {
       "name": "edit_image",
-      "description": "Edit available images, optionally selecting exact image_ids (base first, then references).",
+      "description": "Edit existing images using optional ordered image_ids.",
       "parameters": {
         "type": "object",
         "properties": {
           "prompt": {
             "type": "string",
-            "description": "A description of the desired edit or modification."
+            "description": "Requested edit."
           },
           "image_ids": {
             "type": "array",
             "items": { "type": "string" },
             "minItems": 1,
-            "description": "Optional image IDs in order: base first, then references."
+            "description": "Source IDs: base first, then references; omit for current/latest."
           },
           "size": {
             "type": "string",
-            "description": "Optional output canvas size as WIDTHxHEIGHT pixels for the edited image. Omit by default to preserve the edit source/default canvas. Use only when the user explicitly asks for final output image/canvas dimensions or aspect ratio. For aspect-ratio requests, choose reasonable dimensions and round dimensions to the nearest multiple of 8."
+            "description": "WIDTHxHEIGHT; omit to preserve source/default canvas. Set only for requested resize/aspect ratio."
           },
           "steps": {
             "type": "integer",
-            "description": "Optional sampling/denoising step count. Use only when the user asks for speed, quality, detail, or a specific step count.",
+            "description": "Optional steps for speed/quality; omit otherwise.",
             "minimum": 1,
             "maximum": 100
           },
           "cfg_scale": {
             "type": "number",
-            "description": "Optional text guidance scale. Higher values follow the prompt more strongly; lower values allow more variation. Use only when requested or clearly implied.",
+            "description": "Optional guidance scale; omit unless requested.",
             "minimum": 0
           },
           "seed": {
             "type": "integer",
-            "description": "Optional random seed for reproducible generation. Use when the user provides a seed or asks for reproducibility."
+            "description": "Optional reproducibility seed."
           },
           "sample_method": {
             "type": "string",
-            "description": "Optional sampler name/method. Use only when the user explicitly requests a sampler."
+            "description": "Optional sampler; omit unless requested."
           },
           "flow_shift": {
             "type": "number",
-            "description": "Optional flow shift value for models/backends that support it. Use only when requested or model guidance requires it.",
+            "description": "Optional flow shift; omit unless requested.",
             "minimum": 0
           }
         },
@@ -186,16 +186,15 @@ const DEFAULT_OMNI_TOOLS: ToolDefinitionEntry[] = [
     "requires_llm_labels": [
       "vision"
     ],
-    "prompt_guidance": "Analyze an image only when helpful or requested. Optional image_id selects an available uploaded or generated image; otherwise the current upload or latest image is used.",
     "function": {
       "name": "analyze_image",
-      "description": "Inspect a conversation image with a vision model; optional image_id.",
+      "description": "Inspect image_id (or current/latest) with a vision model.",
       "parameters": {
         "type": "object",
         "properties": {
           "image_id": {
             "type": "string",
-            "description": "Optional image ID to inspect."
+            "description": "Image ID; omit for current/latest."
           },
           "image_url": {
             "type": "string",
@@ -535,7 +534,9 @@ export function buildOmniToolRuntime(
   const toolGuidance = [
     ...builtInGuidance,
     models.text_to_speech ? 'Use text_to_speech when the user asks you to speak, read aloud, narrate, or create audio.' : '',
-    models.analyze_image ? 'Use analyze_image with image_id when inspection is helpful; never invent URLs or claim an image was inspected without calling it.' : '',
+    models.analyze_image ? (context.chatVisionModel?.toLowerCase() === models.analyze_image.toLowerCase()
+      ? 'This chat has vision. Use analyze_image(image_id) to inspect images directly; no other vision model or image URL is needed.'
+      : 'Use analyze_image(image_id) for inspection with the configured vision model; never invent image URLs.') : '',
     models.transcribe_audio ? "When the user message contains '[User provided audio file #N]', call transcribe_audio before answering audio-specific questions. Include language only when the user specified it or it is obvious." : '',
     customToolMap.size > 0 ? `Custom model tools use explicit Lemonade endpoints: ${Array.from(customToolMap.values()).map(tool => `${tool.name} -> ${tool.target_model} (${tool.target_type})`).join(', ')}.` : '',
     customToolMap.size > 0 ? 'Do not ask custom model tools to call tools recursively. Use their returned text or media artifacts in the final answer.' : '',

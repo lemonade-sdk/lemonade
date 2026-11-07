@@ -67,13 +67,13 @@ const MULTIMODAL_LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'generate_image',
-      description: 'Generate a new image with a downloaded Lemonade image model. Omit model to reuse a loaded/downloaded image model.',
+      description: 'Generate a new image; omit model to use an available image model.',
       parameters: {
         type: 'object',
         properties: {
           prompt: { type: 'string' },
           model: { type: 'string' },
-          size: { type: 'string', description: 'WIDTHxHEIGHT, for example 1024x1024.' },
+          size: { type: 'string', description: 'WIDTHxHEIGHT; omit for backend default. To resize 2x, double both known dimensions.' },
           steps: { type: 'integer', minimum: 1 },
           cfg_scale: { type: 'number' },
           seed: { type: 'integer' },
@@ -87,16 +87,16 @@ const MULTIMODAL_LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'edit_image',
-      description: 'Edit images by optional image_ids (base first, then references); default is this message uploads or latest image.',
+      description: 'Edit existing images; image_ids are base first, then references. Omit for current/latest.',
       parameters: {
         type: 'object',
         properties: {
           prompt: { type: 'string' },
           model: { type: 'string' },
-          image_ids: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'Optional image IDs, base first.' },
+          image_ids: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'Base image ID first, then references.' },
           image: { type: 'string', description: 'Deprecated data:image/... URL; prefer image_ids.' },
           // Older data URI calls remain supported only for known UI attachments.
-          size: { type: 'string' },
+          size: { type: 'string', description: 'WIDTHxHEIGHT; omit for source/backend default.' },
           steps: { type: 'integer', minimum: 1 },
           cfg_scale: { type: 'number' },
           seed: { type: 'integer' },
@@ -110,13 +110,13 @@ const MULTIMODAL_LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'analyze_image',
-      description: 'Inspect an image with an available vision-capable chat model, optionally by image_id.',
+      description: 'Inspect image_id (or latest) with vision; use the current chat VLM when supported.',
       parameters: {
         type: 'object',
         properties: {
-          image_id: { type: 'string', description: 'Optional available image ID.' },
+          image_id: { type: 'string', description: 'Optional ID; omit for current/latest image.' },
           question: { type: 'string' },
-          model: { type: 'string', description: 'Optional vision-capable chat model.' },
+          model: { type: 'string', description: 'Only for a different VLM; omit to use this chat VLM if vision-capable.' },
         },
         required: ['question'],
         additionalProperties: false,
@@ -639,7 +639,9 @@ function buildLemonadeRuntime(
       'Use management tools for models, recipes, hardware, downloads, health, and Router models.',
       'Router models use recipe=collection.router and are virtual Chat orchestration policies. Inspect them with get_model_info, list them with capability=router when useful, and never assign a backend/device to or expect a loaded runtime process for the Router itself. load_model validates/registers Router readiness; actual dispatch happens when chat/completions uses the Router model name.',
       'Use edit_image for requested changes and optional image_ids (base first); the default is current uploads, otherwise latest image.',
-      'Use analyze_image only to inspect an image when useful or requested; it requires a vision-capable model.',
+      context.chatVisionModel
+        ? 'This chat has vision: use analyze_image(image_id) directly. Do not search for another vision model unless asked.'
+        : 'Use analyze_image(image_id) to inspect images with a vision-capable model.',
       'Use generate_audio for music or sound, text_to_speech for speech, and transcribe_audio for attached audio.',
       'For text-to-3D call generate_3d with prompt: it MUST generate the reference image first and then reconstruct that image as a GLB. For image-to-3D pass or reuse the attached image.',
       'Do not invent local model names; use list_models/get_model_info when model selection is unclear.',
