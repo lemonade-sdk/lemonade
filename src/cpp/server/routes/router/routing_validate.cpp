@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <string>
@@ -28,6 +29,9 @@ const RouteArg kHasImages{"has_images", ArgIn::JsonBody, {{"type", "boolean"}}, 
                           "Simulate a request carrying image input. Defaults to `false`."};
 const RouteArg kHasTools{"has_tools", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                          "Simulate a request carrying tool definitions. Defaults to `false`."};
+const RouteArg kTurns{"turns", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 0}}, false, Support::Available,
+                      "Simulate conversation depth for `min_turns` and `max_turns` conditions. Defaults to `1`. "
+                      "An explicit `0` counts as `1`, like every real request."};
 const RouteArg kMetadata{"metadata", ArgIn::JsonBody,
                          {{"type", "object"}, {"additionalProperties", {{"type", "string"}}}}, false, Support::Available,
                          "String-valued metadata pairs matched by `metadata` conditions."};
@@ -113,7 +117,7 @@ public:
             "`routing.router` has no rules of its own, only the generated `__route_0`, "
             "`__route_1`, etc.",
         };
-        s.args = {kPolicy, kPrompt, kHasImages, kHasTools, kMetadata};
+        s.args = {kPolicy, kPrompt, kHasImages, kHasTools, kTurns, kMetadata};
 
         const ordered_json decision = {
             {"type", "object"},
@@ -166,6 +170,11 @@ public:
         const std::string prompt = req.value(kPrompt, std::string());
         const bool has_images = req.value(kHasImages, false);
         const bool has_tools = req.value(kHasTools, false);
+        // A request that reaches the engine is always at least one turn, and this
+        // simulates that request, so an explicit 0 counts as 1 instead of giving a
+        // 0-turn result no real request can produce.
+        const std::size_t turns =
+            static_cast<std::size_t>(std::max<long long>(1, req.value(kTurns, 1LL)));
 
         std::map<std::string, std::string> metadata;
         if (req.has(kMetadata)) {
@@ -203,6 +212,7 @@ public:
             route_context.params.total_chars = prompt.size();
             route_context.params.has_images = has_images;
             route_context.params.has_tools = has_tools;
+            route_context.params.turn_count = turns;
             route_context.metadata = std::move(metadata);
 
             Decision decision = engine.route(route_context, /*want_trace=*/true);
