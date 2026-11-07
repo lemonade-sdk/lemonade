@@ -5154,12 +5154,13 @@ optgroup {
   max-width: min(100%, 512px);
   max-height: 512px;
   display: block;
+  box-sizing: border-box;
 }
 
 .message__image-item {
   position: relative;
   display: inline-block;
-  max-width: 100%;
+  max-width: min(100%, 512px);
   align-self: flex-start;
 }
 
