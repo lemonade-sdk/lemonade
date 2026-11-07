@@ -12,6 +12,8 @@ that still exercises the frame loop. The negative tests run first and never
 pull the model; only the generation tests download it.
 """
 
+import base64
+import io
 import time
 
 import requests
@@ -37,6 +39,11 @@ TIMEOUT_CANCELED_CLIP_RELEASED = 180
 WEBM_MAGIC = b"\x1a\x45\xdf\xa3"
 
 TERMINAL = {"completed", "failed", "canceled"}
+
+# 1x1 red PNG, enough for the image endpoints to read an input image.
+TINY_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+)
 
 
 class VideoGenerationTests(ServerTestBase):
@@ -444,6 +451,42 @@ class VideoGenerationTests(ServerTestBase):
             )
             self._wait(job_id, timeout=TIMEOUT_MODEL_OPERATION)
             unload_model(chat_model)
+
+    def test_015_image_endpoints_reject_a_video_model(self):
+        """A video model is refused by image generation, edits and variations."""
+        self._ensure_model_pulled()
+        video_model = get_test_model("video")
+
+        def image_file():
+            return {"image": ("in.png", io.BytesIO(TINY_PNG), "image/png")}
+
+        responses = {
+            "generations": requests.post(
+                f"{self.base_url}/images/generations",
+                json={"model": video_model, "prompt": "a kite"},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            ),
+            "edits": requests.post(
+                f"{self.base_url}/images/edits",
+                files=image_file(),
+                data={"model": video_model, "prompt": "a kite"},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            ),
+            "variations": requests.post(
+                f"{self.base_url}/images/variations",
+                files=image_file(),
+                data={"model": video_model},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            ),
+        }
+        for endpoint, response in responses.items():
+            # Image routes report every backend error with one status, so the
+            # message is what tells this refusal apart.
+            self.assertNotEqual(
+                response.status_code, 200, f"{endpoint}: {response.text[:300]}"
+            )
+            self.assertIn("is a video model", response.text, endpoint)
+        print("[OK] image generations, edits and variations refuse a video model")
 
 
 if __name__ == "__main__":
