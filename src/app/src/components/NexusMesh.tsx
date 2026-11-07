@@ -3,7 +3,7 @@ import { useI18n } from '../i18n';
 import { useNexusAccount, type NexusDevice as AccountDevice } from '../features/nexus/NexusAccountContext';
 import {
   NEXUS_CONNECTION_LABELS, dismissNexusNotice, nexusDeviceConnection, nexusDeviceTags, nexusInferenceServers, nexusMeshSummary,
-  refreshNexus, selectNexusInferenceServer, useNexusNetwork, type NexusConnection, type NexusDevice, type NexusMeshState, type NexusStatus,
+  nexusRequest, refreshNexus, selectNexusInferenceServer, useNexusNetwork, type NexusConnection, type NexusDevice, type NexusMeshState, type NexusStatus,
 } from '../features/nexus/nexus';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
@@ -104,6 +104,15 @@ export function NexusMeshPanel() {
     catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   };
+  // The servers serve a network founded again: the account here belongs to the earlier
+  // one. Forgetting it clears the local account and floor; the user then joins again.
+  const forget = async () => {
+    if (busy) return;
+    setBusy(true); setError('');
+    try { await nexusRequest('forget', {}); await refreshNexus(); }
+    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  };
   const subtitle = [status?.device_name, status?.tunnel_ip?.split('/')[0]].filter(Boolean).join(' · ');
   return <section className="nexus-mesh" aria-labelledby={id}>
     <div className="nexus-mesh__header">
@@ -121,7 +130,12 @@ export function NexusMeshPanel() {
       <p className="nexus-error">{network.error}</p>
       <WorkspaceActionButton size="small" onClick={() => void refreshNexus()}>{t('Retry')}</WorkspaceActionButton>
     </div>}
-    {status?.error && !network.error && <p className="nexus-error" role="alert">{status.error}</p>}
+    {status?.needs_rejoin && !network.error && <div className="nexus-mesh__problem" role="alert">
+      <p className="nexus-error">{t('This network was founded again, so this device\'s account belongs to the earlier one. Forget it, then join again with a new invitation.')}</p>
+      <WorkspaceActionButton size="small" appearance="danger" disabled={busy} onClick={() => void forget()}>{t('Forget this network')}</WorkspaceActionButton>
+      {error && <p className="nexus-error" role="alert">{error}</p>}
+    </div>}
+    {status?.error && !network.error && !status.needs_rejoin && <p className="nexus-error" role="alert">{status.error}</p>}
     {network.notice && <p className="nexus-tree-notice" role="status">{network.notice} <button type="button" className="nexus-text-button" onClick={dismissNexusNotice}>{t('Dismiss')}</button></p>}
     {connected && status ? <>
       <div className="nexus-mesh__section">

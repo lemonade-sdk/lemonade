@@ -104,6 +104,9 @@ export interface NexusStatus {
   // False for an identity that never created or joined a network: Enable Mesh offers
   // Create account and Join by invitation, and the unlock defers the join until then.
   has_network?: boolean;
+  // True when the servers serve a network founded again under the same key: this device's
+  // account and node belong to the earlier one. The panel offers to forget the network.
+  needs_rejoin?: boolean;
   join_membership?: NexusJoinMembership;
 }
 // How this device reaches another one, as its pill shows it. `connecting` is a device the

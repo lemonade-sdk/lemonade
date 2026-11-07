@@ -1088,11 +1088,11 @@ void check_identity_rules(const std::function<void(bool, const char*)>& check) {
     check(access::account_file_tag("ed25519:YWRt+aW4/bg==") == "YWRt-aW4_bg", "An account tag is URL-safe base64 without padding");
     check(access::account_file_tag("ed25519:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstu=").size() == 16, "An account tag is 16 characters");
     check(access::account_file_tag("").empty() && access::account_file_tag("ed25519:../x").empty(), "A malformed key has no tag");
-    const json previous = {{"server", "sn01.example"}, {"genesis_pubkey", "g"}, {"tier1_epoch", 7}, {"device_name", "My laptop"},
+    const json previous = {{"server", "sn01.example"}, {"genesis_pubkey", "g"}, {"tier1_epoch", 7}, {"tier1_chain", "c0ffee"}, {"device_name", "My laptop"},
         {"user_id", "u1"}, {"unlock", "device_key"}, {"credential_id", "c1"}, {"public_key", "ed25519:a"}};
     const auto fresh = access::account_for_key(previous, nullptr, "ed25519:b");
-    check(fresh == json({{"server", "sn01.example"}, {"genesis_pubkey", "g"}, {"tier1_epoch", 7}, {"device_name", "My laptop"}, {"public_key", "ed25519:b"}}),
-          "A new key's account carries the network and machine facts only");
+    check(fresh == json({{"server", "sn01.example"}, {"genesis_pubkey", "g"}, {"tier1_epoch", 7}, {"tier1_chain", "c0ffee"}, {"device_name", "My laptop"}, {"public_key", "ed25519:b"}}),
+          "A new key's account carries the network and machine facts only, the epoch floor with its chain");
     const auto restored = access::account_for_key(previous, json{{"device_name", "Other"}, {"user_id", "u2"}, {"unlock", "device_key"}}, "ed25519:b");
     check(restored.at("device_name") == "Other" && restored.at("user_id") == "u2" && restored.at("server") == "sn01.example" &&
           restored.at("genesis_pubkey") == "g" && restored.at("public_key") == "ed25519:b" && !restored.contains("credential_id"),

@@ -44,7 +44,7 @@ const std::vector<NexusRoute>& nexus_routes() {
         for (const auto* operation : {"status", "passkey/challenge", "key/handoff", "devices", "members", "join/status", "events", "tree", "account", "selection", "memberships", "route-permissions"}) {
             result.push_back({"GET", operation, operation});
         }
-        for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "key/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device", "device/check", "account/avatar", "selection", "invites/accept", "account/delete"}) {
+        for (const auto* operation : {"enable", "disable", "passkey/register", "passkey/unlock", "key/unlock", "invites", "invites/cancel", "join", "egress", "lock", "device", "device/check", "account/avatar", "selection", "invites/accept", "account/delete", "forget"}) {
             result.push_back({"POST", operation, operation});
         }
         result.push_back({"POST", "devices/{node_id}/remove", "devices/remove"});
@@ -869,7 +869,7 @@ std::string account_file_tag(const std::string& pubkey) {
 
 json account_for_key(const json& previous, const json& archived, const std::string& pubkey) {
     json next = archived.is_object() ? archived : json::object();
-    for (const char* name : {"server", "genesis_pubkey", "tier1_epoch", "device_name"}) {
+    for (const char* name : {"server", "genesis_pubkey", "tier1_epoch", "tier1_chain", "device_name"}) {
         if (!next.contains(name) && previous.is_object() && previous.contains(name)) next[name] = previous.at(name);
     }
     next["public_key"] = pubkey;
@@ -1185,6 +1185,7 @@ struct NexusManager::Session {
     std::string detail{"locked"};
     std::string error;
     bool error_retryable{false};  // `error` is a failure to reach the federation, not a refusal
+    bool refounded{false};        // the servers serve another chain under the pinned key
     json devices = json::array();
     // This device's outstanding invites ({target_node_id, permissions, expires_at}): the
     // federation places an invited device with `read` alone on the group, and the inviter
@@ -1277,17 +1278,17 @@ struct NexusManager::Session {
         }
         // Tree, session and private-API calls go only to Tier 1 servers verified from this key.
         if (const auto genesis = utils::get_environment_variable_utf8("LEMONADE_NEXUS_GENESIS_PUBKEY"); !genesis.empty()) {
-            const auto min_epoch = account.value("tier1_epoch", uint64_t{0});
-            if (ln_set_genesis_key(client.get(), genesis.c_str(), min_epoch) != LN_OK) {
+            if (ln_set_genesis_key(client.get(), genesis.c_str(), 0) != LN_OK) {
                 throw NexusError(400, "LEMONADE_NEXUS_GENESIS_PUBKEY is not a base64 Ed25519 public key");
             }
             genesis_key_set = true;
         } else if (const auto pinned = account.value("genesis_pubkey", std::string{}); !pinned.empty()) {
-            if (ln_set_genesis_key(client.get(), pinned.c_str(), account.value("tier1_epoch", uint64_t{0})) != LN_OK) {
+            if (ln_set_genesis_key(client.get(), pinned.c_str(), 0) != LN_OK) {
                 throw NexusError(500, "Saved Genesis key is invalid; restore account.json");
             }
             genesis_key_set = true;
         }
+        if (genesis_key_set) apply_epoch_floor();
     }
     ~Session() {
         withdraw_client();
@@ -1449,6 +1450,7 @@ struct NexusManager::Session {
     void note_failure(const std::exception& e) {
         set_error(e);
         detail = "degraded";
+        note_refounded();
     }
     // First connect without a configured key: the SDK takes the key only when
     // several network hosts agree on it over verified HTTPS, then it stays pinned.
@@ -1752,7 +1754,7 @@ struct NexusManager::Session {
             {"exposed", json::array({{{"vport", 13305}, {"local_port", ingress_port}}})}, {"error", error},
             {"error_retryable", error_retryable}, {"genesis_key_set", genesis_key_set}, {"mesh_port", mesh_port_status()},
             {"catalog_error", catalog_error}, {"identity_source", nexus_access::identity_source_name(source)},
-            {"needs_user_key", !identity}, {"public_key", pubkey}};
+            {"needs_user_key", !identity}, {"public_key", pubkey}, {"needs_rejoin", refounded}};
         if (source == IdentitySource::User) result["identity_store"] = identity_store;
         if (!join_membership.is_null()) result["join_membership"] = join_membership;
         return result;
@@ -1895,16 +1897,42 @@ struct NexusManager::Session {
         } catch (const std::exception& e) { set_error(e); }
     }
     // Keeps the verified Tier 1 epoch so a restart refuses an older membership list. The
+    // The lowest epoch the SDK accepts, for the chain the device last verified. A floor
+    // stored before the chain was recorded (an earlier release) could belong to a network
+    // that was since founded again, so it is dropped rather than applied to any chain.
+    void apply_epoch_floor() {
+        const auto chain = account.value("tier1_chain", std::string{});
+        const auto epoch = account.value("tier1_epoch", uint64_t{0});
+        if (!chain.empty() && epoch != 0 && ln_set_epoch_floor(client.get(), chain.c_str(), epoch) == LN_OK) return;
+        if (account.contains("tier1_epoch") || account.contains("tier1_chain")) {
+            account.erase("tier1_epoch");
+            account.erase("tier1_chain");
+            persist();
+        }
+    }
     // SDK reports its last verified membership without network I/O, so this runs after
-    // every join and every successful poll and writes only when the epoch advanced.
+    // every join and every successful poll and writes only when the epoch advanced. A
+    // membership of another chain under the pinned key means the network was founded
+    // again: the SDK neither follows it nor applies the floor, and status reports
+    // needs_rejoin until the user forgets this network and joins it again.
     void remember_tier1_epoch() {
         try {
             const auto membership = sdk_call([&](auto out) { return ln_tier1_membership(client.get(), out); });
+            refounded = membership.value("refounded", false);
+            if (refounded) return;
             const auto epoch = nexus_access::newer_tier1_epoch(membership, account.value("tier1_epoch", uint64_t{0}));
-            if (epoch != 0) {
+            const auto chain = membership.value("chain", std::string{});
+            if (epoch != 0 && !chain.empty()) {
                 account["tier1_epoch"] = epoch;
+                account["tier1_chain"] = chain;
                 persist();
             }
+        } catch (const std::exception&) {}
+    }
+    void note_refounded() {
+        try {
+            const auto membership = sdk_call([&](auto out) { return ln_tier1_membership(client.get(), out); });
+            refounded = membership.value("refounded", false);
         } catch (const std::exception&) {}
     }
     void poll() {
@@ -2057,6 +2085,20 @@ struct NexusManager::Session {
             return status();
         }
         if (path == "/lock") { hold_locked = true; lock(); return status(); }
+        if (path == "/forget") {
+            // Only for a network that was founded again: the account, its node and its
+            // epoch floor belong to the earlier chain and nothing on the servers knows
+            // them. The caller disables the session afterwards; the next Enable Mesh
+            // starts from discovery and a new invitation.
+            if (!refounded) throw NexusError(409, "This network was not founded again; use Leave network or Delete account instead");
+            ln_mesh_disable(client.get());
+            ln_set_session_token(client.get(), "");
+            egress_ips.clear();
+            joined = false;
+            remove_local_account();
+            refounded = false;
+            return {{"forgotten", true}};
+        }
         if (path == "/link-token/cancel") return {{"cancelled", true}, {"revoked", false}};
         if (locked) throw NexusError(423, "Unlock your network first");
         if (path == "/device/check") {
@@ -2580,8 +2622,10 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
         else if (operation.rfind("tree/", 0) == 0) path = "/tree/" + req.matches[1].str() + "/" + operation.substr(5);
         else path = "/" + operation;
         auto result = control(req.method, path, body, remote ? req.get_header_value("X-Nexus-Peer-Key") : "");
-        // The federation deleted the account and the session removed its local files.
-        if (operation == "account/delete" && result.first == 200 && result.second.value("status", "") == "deleted") disable();
+        // The federation deleted the account and the session removed its local files, or
+        // the user forgot a network that was founded again.
+        if ((operation == "account/delete" && result.first == 200 && result.second.value("status", "") == "deleted") ||
+            (operation == "forget" && result.first == 200)) disable();
         std::lock_guard<std::mutex> lock(mutex_);
         if (result.first == 200) {
             if (operation == "invites") active_invite_ = result.second;
