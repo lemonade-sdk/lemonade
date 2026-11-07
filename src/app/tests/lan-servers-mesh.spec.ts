@@ -8,6 +8,7 @@ import { setupNexusAccount } from './nexusAccountFixture';
 const FOUND = [
   { id: 'cesarops2:13305', hostname: 'cesarops2', urls: ['http://192.168.4.24:13305/api/v1/'], zone: 'home', seen: true, secondsSinceSeen: 1, state: 'new' },
   { id: 'kitchen pc:13305', hostname: 'Kitchen PC', urls: ['http://192.168.4.30:13305/api/v1/'], zone: 'home', seen: true, secondsSinceSeen: 1, state: 'new' },
+  { id: 'my-laptop:13405', hostname: 'my-laptop', urls: ['http://192.168.4.50:13405/api/v1/'], zone: 'home', seen: true, secondsSinceSeen: 1, state: 'new' },
   { id: 'old-box:13305', hostname: 'old-box', urls: ['http://192.168.4.40:13305/api/v1/'], zone: 'home', seen: true, secondsSinceSeen: 2, state: 'new' },
 ];
 
@@ -30,8 +31,9 @@ async function withFoundServers(page: Page) {
 
 type Call = { path: string; body: unknown };
 
-// A found lemond: `fresh` is a device-key server that has never joined; `plain` has no Nexus at all.
-async function routeFound(page: Page, origin: string, kind: 'fresh' | 'plain') {
+// A found lemond: `fresh` is a device-key server that has never joined; `member` is already a device of
+// this network (its node id is the fixture's peer); `plain` has no Nexus at all.
+async function routeFound(page: Page, origin: string, kind: 'fresh' | 'member' | 'self' | 'plain') {
   const calls: Call[] = [];
   await page.route(`${origin}/**`, async route => {
     const url = new URL(route.request().url());
@@ -40,16 +42,32 @@ async function routeFound(page: Page, origin: string, kind: 'fresh' | 'plain') {
     if (url.pathname === '/api/v1/health') return route.fulfill({ json: { status: 'ok' } });
     if (kind === 'plain') return route.fulfill({ status: 404, json: { error: 'not found' } });
     const path = url.pathname.replace(/^\/api\/v1\/nexus\//, '');
+    if (path === 'status' && kind === 'self') return route.fulfill({ json: { available: true, enabled: true, node_id: 'self', mesh_up: true, status: 'running', members: [] } });
+    if (path === 'status' && kind === 'member') return route.fulfill({ json: { available: true, enabled: true, node_id: 'peer', mesh_up: true, status: 'running', members: [] } });
     if (path === 'status') return route.fulfill({ json: { available: true, enabled: true, registered: false, unlock: 'device_key', locked: true, mesh_up: false, status: 'locked', members: [] } });
     return route.fulfill({ json: { ok: true } });
   });
   return calls;
 }
 
+// The Nexus fixture routes every /api/v1 call to its own server; routes added after it win, so the
+// found servers are routed after setup and the page is reloaded to probe them again.
+async function routeAllFound(page: Page) {
+  const calls = {
+    cesarops2: await routeFound(page, 'http://192.168.4.24:13305', 'fresh'),
+    kitchen: await routeFound(page, 'http://192.168.4.30:13305', 'member'),
+    old: await routeFound(page, 'http://192.168.4.40:13305', 'plain'),
+    self: await routeFound(page, 'http://192.168.4.50:13405', 'self'),
+  };
+  await page.reload();
+  await expect(page.getByRole('region', { name: 'Found on this network' })).toBeVisible();
+  return calls;
+}
+
 test('Invite joins a found server into this network from here', async ({ page }) => {
   await withFoundServers(page);
   const fixture = await setupNexusAccount(page, { deviceKey: true });
-  const found = await routeFound(page, 'http://192.168.4.24:13305', 'fresh');
+  const found = (await routeAllFound(page)).cesarops2;
   const panel = page.getByRole('region', { name: 'Found on this network' });
   await expect(panel.getByText('cesarops2', { exact: true })).toBeVisible();
   // A server already in the network is marked, not offered an invite.
@@ -61,8 +79,9 @@ test('Invite joins a found server into this network from here', async ({ page })
   await expect(panel.getByText('cesarops2 joined your network.')).toBeVisible();
   const invite = fixture.calls.find(call => call.path.endsWith('/invites'));
   expect(invite?.body).toMatchObject({ device_name: 'cesarops2' });
+  // After the membership probe(s), the invite runs the Join-by-invitation steps on the found server.
   const nexus = found.filter(call => call.path.startsWith('/api/v1/nexus/')).map(call => call.path.replace('/api/v1/nexus/', ''));
-  expect(nexus).toEqual(['status', 'enable', 'status', 'device', 'key/unlock', 'join']);
+  expect(nexus.slice(nexus.indexOf('enable') - 1, nexus.indexOf('join') + 1)).toEqual(['status', 'enable', 'status', 'device', 'key/unlock', 'join']);
   expect(found.find(call => call.path.endsWith('/join'))?.body).toEqual({ code: '12345678' });
   expect(found.find(call => call.path.endsWith('/key/unlock'))?.body).toEqual({ defer_join: true });
 });
@@ -70,7 +89,7 @@ test('Invite joins a found server into this network from here', async ({ page })
 test('a found server without network support keeps the code for entering there', async ({ page }) => {
   await withFoundServers(page);
   await setupNexusAccount(page, { deviceKey: true });
-  await routeFound(page, 'http://192.168.4.40:13305', 'plain');
+  await routeAllFound(page);
   const panel = page.getByRole('region', { name: 'Found on this network' });
   await panel.getByRole('group', { name: 'Actions for old-box' }).getByRole('button', { name: 'Invite' }).click();
   await expect(panel.getByRole('alert')).toContainText('old-box did not join');
@@ -80,8 +99,21 @@ test('a found server without network support keeps the code for entering there',
 test('a member who cannot invite sees Use directly but no Invite', async ({ page }) => {
   await withFoundServers(page);
   await setupNexusAccount(page, { deviceKey: true, readOnly: true });
+  await routeAllFound(page);
   const panel = page.getByRole('region', { name: 'Found on this network' });
   const row = panel.getByRole('group', { name: 'Actions for cesarops2' });
   await expect(row.getByRole('button', { name: 'Use directly' })).toBeVisible();
   await expect(row.getByRole('button', { name: 'Invite' })).toHaveCount(0);
+});
+
+test('the server this account runs on is marked This device, with no Invite', async ({ page }) => {
+  await withFoundServers(page);
+  await setupNexusAccount(page, { deviceKey: true });
+  await routeAllFound(page);
+  const panel = page.getByRole('region', { name: 'Found on this network' });
+  const row = panel.getByRole('group', { name: 'Actions for my-laptop' });
+  await expect(panel.getByText('This device', { exact: true })).toBeVisible();
+  await expect(row.getByRole('button', { name: 'Invite' })).toHaveCount(0);
+  // A server whose hostname matches nothing but is not in the network still gets Invite.
+  await expect(panel.getByRole('group', { name: 'Actions for cesarops2' }).getByRole('button', { name: 'Invite' })).toBeVisible();
 });

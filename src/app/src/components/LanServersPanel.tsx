@@ -113,6 +113,9 @@ const LanServersPanel: React.FC<LanServersPanelProps> = ({ currentBaseUrl, onUse
   const { t } = useI18n();
   const nexus = useNexusAccount();
   const [invites, setInvites] = useState<Record<string, InviteNote>>({});
+  // Under Devices & mesh: each found server's own Nexus node id, from its status. Names can differ
+  // (a device is renamed, two servers share a host), so membership is decided by id.
+  const [nodeIds, setNodeIds] = useState<Record<string, string | null>>({});
   // The desktop shim installs window.api asynchronously; look again once it is ready.
   const [api, setApi] = useState(hostApi);
   useEffect(() => {
@@ -145,6 +148,30 @@ const LanServersPanel: React.FC<LanServersPanelProps> = ({ currentBaseUrl, onUse
     return () => { stop?.(); window.clearInterval(timer); };
   }, [api, refresh]);
 
+  useEffect(() => {
+    if (!mesh) return undefined;
+    let stopped = false;
+    void (async () => {
+      const next: Record<string, string | null> = {};
+      for (const server of servers.filter(s => s.seen)) {
+        next[server.id] = null;
+        for (const origin of candidateOrigins(server)) {
+          try {
+            const response = await fetch(`${origin}/api/v1/nexus/status`, { cache: 'no-store', signal: AbortSignal.timeout(2500) });
+            if (!response.ok) break;
+            const status = await response.json() as { node_id?: unknown };
+            next[server.id] = typeof status.node_id === 'string' && status.node_id ? status.node_id : null;
+            break;
+          } catch {
+            // try the next address
+          }
+        }
+      }
+      if (!stopped) setNodeIds(next);
+    })();
+    return () => { stopped = true; };
+  }, [mesh, servers, nexus.devices]);
+
   if (!api) return null;
 
   const setState = async (server: LanServer, state: LanServerState, url?: string) => {
@@ -168,8 +195,10 @@ const LanServersPanel: React.FC<LanServersPanelProps> = ({ currentBaseUrl, onUse
     if (await onUse(origin)) await setState(server, 'accepted', origin);
   };
 
-  const inNetwork = (server: LanServer) =>
-    nexus.devices.some(device => device.name.trim().toLowerCase() === server.hostname.trim().toLowerCase());
+  const meshDevice = (server: LanServer) => {
+    const node = nodeIds[server.id];
+    return node ? nexus.devices.find(device => device.id === node) : undefined;
+  };
 
   const handleInvite = async (server: LanServer) => {
     if (!nexus.onInviteFoundServer) return;
@@ -223,9 +252,10 @@ const LanServersPanel: React.FC<LanServersPanelProps> = ({ currentBaseUrl, onUse
           const where = shown
             ? <span title={all.join('\n')}>{others > 0 ? t('{url} (+{count} more)', { url: shown, count: String(others) }) : shown}</span>
             : null;
-          const member = mesh && inNetwork(server);
+          const device = mesh ? meshDevice(server) : undefined;
+          const member = Boolean(device);
           const note = invites[server.id];
-          const canInvite = mesh && !member && Boolean(nexus.onInviteFoundServer);
+          const canInvite = mesh && !member && !inUse && Boolean(nexus.onInviteFoundServer);
           return (
             <WorkspaceResourceRow
               key={server.id}
@@ -239,7 +269,9 @@ const LanServersPanel: React.FC<LanServersPanelProps> = ({ currentBaseUrl, onUse
                 {inUse
                   ? <WorkspaceMetadataChip tone="success">{t('In use')}</WorkspaceMetadataChip>
                   : server.state === 'accepted' && <WorkspaceMetadataChip tone="accent">{t('Used before')}</WorkspaceMetadataChip>}
-                {member && <WorkspaceMetadataChip tone="success">{t('In your network')}</WorkspaceMetadataChip>}
+                {device?.current
+                  ? <WorkspaceMetadataChip tone="success">{t('This device')}</WorkspaceMetadataChip>
+                  : member && <WorkspaceMetadataChip tone="success">{t('In your network')}</WorkspaceMetadataChip>}
                 {!server.seen && <WorkspaceMetadataChip tone="neutral">{t('Not heard right now')}</WorkspaceMetadataChip>}
               </>}
               actions={<WorkspaceActionGroup label={t('Actions for {server}', { server: server.hostname })}>
