@@ -1,4 +1,5 @@
 #include <lemon/system_metrics_platform.h>
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <filesystem>
@@ -56,10 +57,24 @@ std::vector<GpuDeviceMetrics> query_amd_gpu_metrics() {
     try {
         const fs::path drm_path = "/sys/class/drm";
         if (!fs::is_directory(drm_path)) return devices;
+        // First-poll order must not depend on unspecified directory iteration.
+        // Use numeric DRM card order (card2 before card10) for AMD devices.
+        std::vector<fs::directory_entry> cards;
         for (const auto& entry : fs::directory_iterator(drm_path)) {
             const std::string card = entry.path().filename().string();
-            if (card.rfind("card", 0) != 0 || card.find('-') != std::string::npos)
+            if (card.size() <= 4 || card.rfind("card", 0) != 0 ||
+                !std::all_of(card.begin() + 4, card.end(),
+                             [](char c) { return c >= '0' && c <= '9'; }))
                 continue;
+            cards.push_back(entry);
+        }
+        std::sort(cards.begin(), cards.end(), [](const auto& a, const auto& b) {
+            const auto ai = a.path().filename().string().substr(4);
+            const auto bi = b.path().filename().string().substr(4);
+            return ai.size() != bi.size() ? ai.size() < bi.size() : ai < bi;
+        });
+        for (const auto& entry : cards) {
+            const std::string card = entry.path().filename().string();
             const fs::path device_path = entry.path() / "device";
             std::ifstream vendor_file(device_path / "vendor");
             std::string vendor;
