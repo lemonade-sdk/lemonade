@@ -72,6 +72,17 @@ public:
     [[nodiscard]] StatusResult set_genesis_key(const std::string& genesis_pubkey_b64,
                                                uint64_t min_epoch = 0);
 
+    /// The lowest epoch to accept for one chain instance: `chain` and
+    /// `min_epoch` are the `chain` and `epoch` of a membership this
+    /// application stored (tier1_membership()). See
+    /// Tier1Directory::set_epoch_floor. Errors: `chain` is not 64 hex digits.
+    [[nodiscard]] StatusResult set_epoch_floor(const std::string& chain, uint64_t min_epoch);
+
+    /// True after a Tier 1 refresh found the servers serving another chain
+    /// under the pinned Genesis key: the network was founded again. The user
+    /// leaves the network and joins it again; see Tier1Directory.
+    [[nodiscard]] bool network_refounded() const;
+
     /// First-connect discovery of the Genesis key, for a client with no
     /// pinned key. Asks `hosts` (for example, servers the application found
     /// through DNS discovery), then the configured servers and the servers

@@ -1430,6 +1430,20 @@ StatusResult LemonadeNexusClient::set_genesis_key(const std::string& genesis_pub
     return result;
 }
 
+StatusResult LemonadeNexusClient::set_epoch_floor(const std::string& chain, uint64_t min_epoch) {
+    StatusResult result;
+    if (!impl_->tier1.set_epoch_floor(chain, min_epoch)) {
+        result.error = "the chain must be the 64 hex digits of a verified membership";
+        return result;
+    }
+    result.ok = true;
+    return result;
+}
+
+bool LemonadeNexusClient::network_refounded() const {
+    return impl_->tier1.network_refounded();
+}
+
 Result<GenesisKeyDiscovery> LemonadeNexusClient::discover_genesis_key(
     const std::vector<ServerEndpoint>& hosts) {
     if (impl_->tier1.has_genesis_key()) {

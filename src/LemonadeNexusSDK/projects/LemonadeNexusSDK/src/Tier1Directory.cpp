@@ -117,6 +117,12 @@ struct Tier1Directory::State {
     mutable std::mutex mutex;  // guards every field below except the walker
     std::optional<nexus::crypto::Ed25519PublicKey> genesis;
     uint64_t min_epoch = 0;
+    /// The chain instance this client knows under the pinned key: the Epoch 1
+    /// anchor digest a caller passed with set_epoch_floor, or the one the last
+    /// successful refresh verified. A verified chain with another Epoch 1 is
+    /// a re-founded network, never a refresh of this one.
+    std::optional<sec::Digest> known_chain;
+    bool refounded = false;
     uint64_t generation = 0;  // bumps when the pinned key changes
     Tier1Membership membership;
     std::optional<sec::VerifiedEpochAuthority> authority;
@@ -136,7 +142,8 @@ struct Tier1Directory::State {
     std::atomic<uint64_t> walk_page_links{0};  // links in the last page applied
 
     /// Pins `key` and raises the epoch floor. A different key drops every
-    /// verified result. Caller holds `mutex`.
+    /// verified result, the floor and the known chain with it: epochs of one
+    /// Genesis say nothing about another. Caller holds `mutex`.
     void pin_locked(const nexus::crypto::Ed25519PublicKey& key, uint64_t floor) {
         if (!genesis || *genesis != key) {
             genesis = key;
@@ -145,12 +152,18 @@ struct Tier1Directory::State {
             authority.reset();
             stale = true;
             preferred.clear();
+            min_epoch = 0;
+            known_chain.reset();
+            refounded = false;
         }
         min_epoch = std::max(min_epoch, floor);
     }
 
     /// Walks pages from `server` until it has nothing newer. io: network.
-    Walk walk_from(const ServerEndpoint& server, std::string& error) {
+    /// `behind` is set when the server reports a latest epoch below the one
+    /// the walker holds, or reports none at all on "nothing newer": the
+    /// server may serve another chain under the same key.
+    Walk walk_from(const ServerEndpoint& server, std::string& error, bool& behind) {
         bool advanced = false;
         int waits = 0;
         for (int page_count = 0; page_count < kMaxChainPages; ++page_count) {
@@ -167,7 +180,14 @@ struct Tier1Directory::State {
                 std::this_thread::sleep_for(rate_limit_wait);
                 continue;
             }
-            if (reply->status == 404) return advanced ? Walk::Advanced : Walk::Done;
+            if (reply->status == 404) {
+                const auto doc = json::parse(reply->body, nullptr, false);
+                const bool hinted = !doc.is_discarded() && doc.is_object() &&
+                                    doc.contains("latest_epoch") &&
+                                    doc["latest_epoch"].is_number_unsigned();
+                if (!hinted || doc["latest_epoch"].get<uint64_t>() < have) behind = true;
+                return advanced ? Walk::Advanced : Walk::Done;
+            }
             if (reply->status != 200) return advanced ? Walk::Advanced : Walk::Unreachable;
             const auto doc = json::parse(reply->body, nullptr, false);
             if (doc.is_discarded() || !doc.is_object() || !doc.contains("page") ||
@@ -188,6 +208,7 @@ struct Tier1Directory::State {
                 // A display hint only; the walk verifies every page.
                 const auto latest = doc["latest_epoch"].get<uint64_t>();
                 if (latest > walk_target.load()) walk_target.store(latest);
+                if (latest < have) behind = true;
             }
             switch (walker->apply(*page)) {
                 case sec::ChainPageResult::Advanced:
@@ -206,7 +227,37 @@ struct Tier1Directory::State {
         }
         return advanced ? Walk::Advanced : Walk::Done;
     }
+
+    /// The Epoch 1 anchor of the chain `server` serves, when its base page
+    /// verifies under the pinned key; nullopt when the server has no base,
+    /// does not answer, or serves a base the key did not sign. io: network.
+    std::optional<sec::Digest> other_chain_base(const ServerEndpoint& server) {
+        const auto reply = get(server, "/api/tier1/authority?have_epoch=0&max_links=1");
+        if (!reply || reply->status != 200) return std::nullopt;
+        const auto doc = json::parse(reply->body, nullptr, false);
+        if (doc.is_discarded() || !doc.is_object() || !doc.contains("page") ||
+            !doc["page"].is_string()) {
+            return std::nullopt;
+        }
+        const auto bytes = decode_b64(doc["page"].get<std::string>());
+        if (!bytes) return std::nullopt;
+        const auto page = sec::decode_authority_chain_page(*bytes, kChainPageLinks,
+                                                           sec::constants::kMaxHttpChainPageBytes);
+        if (!page || !page->has_base || !genesis) return std::nullopt;
+        sec::AuthorityChainWalker fresh(*genesis);
+        if (fresh.apply(*page) != sec::ChainPageResult::Advanced) return std::nullopt;
+        return fresh.epoch_one_anchor();
+    }
 };
+
+namespace {
+
+/// The first 12 hex digits of a digest, for log and error text.
+std::string short_hex(const sec::Digest& digest) {
+    return nexus::crypto::to_hex(digest).substr(0, 12);
+}
+
+}  // namespace
 
 Tier1Directory::Tier1Directory(Tier1DiscoveryGet get, std::chrono::milliseconds rate_limit_wait)
     : state_(std::make_unique<State>()) {
@@ -227,6 +278,23 @@ bool Tier1Directory::set_genesis_key(const std::string& genesis_pubkey_b64, uint
     std::lock_guard lock(state_->mutex);
     state_->pin_locked(key, min_epoch);
     return true;
+}
+
+bool Tier1Directory::set_epoch_floor(const std::string& chain, uint64_t min_epoch) {
+    sec::Digest anchor{};
+    if (chain.size() != anchor.size() * 2) return false;
+    const auto bytes = nexus::crypto::from_hex(chain);
+    if (bytes.size() != anchor.size()) return false;
+    std::memcpy(anchor.data(), bytes.data(), anchor.size());
+    std::lock_guard lock(state_->mutex);
+    state_->known_chain = anchor;
+    state_->min_epoch = std::max(state_->min_epoch, min_epoch);
+    return true;
+}
+
+bool Tier1Directory::network_refounded() const {
+    std::lock_guard lock(state_->mutex);
+    return state_->refounded;
 }
 
 bool Tier1Directory::has_genesis_key() const {
@@ -350,11 +418,15 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
     std::optional<nexus::crypto::Ed25519PublicKey> genesis;
     uint64_t min_epoch = 0;
     uint64_t generation = 0;
+    std::optional<sec::Digest> known_chain;
+    uint64_t known_epoch = 0;  // the epoch this client last verified or was given
     {
         std::lock_guard lock(state_->mutex);
         genesis = state_->genesis;
         min_epoch = state_->min_epoch;
         generation = state_->generation;
+        known_chain = state_->known_chain;
+        known_epoch = std::max(min_epoch, state_->membership.epoch);
     }
     // http_status 0: nothing reachable; 403: what the servers returned, or
     // the missing key, is refused.
@@ -398,24 +470,52 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
     // asked and what they offered.
     std::string chain_error;  // last refusal reason (a hostile or malformed page)
     std::vector<std::string> source_notes;
-    for (const auto& source : sources) {
-        std::string source_error;
-        const auto walk = state_->walk_from(source, source_error);
-        const auto epoch = state_->walker->epoch().underlying();
-        if (walk == Walk::Refused) chain_error = source_error;
-        std::string state;
-        if (walk == Walk::Refused) {
-            state = "refused";
-        } else if (walk == Walk::Unreachable) {
-            state = "unreachable";
-        } else if (walk == Walk::Advanced) {
-            state = "advanced to epoch " + std::to_string(epoch);
-        } else {
-            state = "nothing new from epoch " + std::to_string(epoch);
+    std::optional<ServerEndpoint> settled_source;  // a source that may serve another chain
+    const auto sweep = [&] {
+        settled_source.reset();
+        for (const auto& source : sources) {
+            std::string source_error;
+            bool behind = false;
+            const auto walk = state_->walk_from(source, source_error, behind);
+            const auto epoch = state_->walker->epoch().underlying();
+            if (walk == Walk::Refused) chain_error = source_error;
+            std::string state;
+            if (walk == Walk::Refused) {
+                state = "refused";
+            } else if (walk == Walk::Unreachable) {
+                state = "unreachable";
+            } else if (walk == Walk::Advanced) {
+                state = "advanced to epoch " + std::to_string(epoch);
+            } else {
+                state = "nothing new from epoch " + std::to_string(epoch);
+                if (!settled_source && behind && state_->walker->authority()) {
+                    settled_source = source;
+                }
+            }
+            source_notes.push_back(source.host + ":" + std::to_string(source.port) + " " +
+                                   state);
+            const auto settled = walk == Walk::Done || walk == Walk::Advanced;
+            if (settled && state_->walker->authority() && epoch >= min_epoch) break;
         }
-        source_notes.push_back(source.host + ":" + std::to_string(source.port) + " " + state);
-        const auto settled = walk == Walk::Done || walk == Walk::Advanced;
-        if (settled && state_->walker->authority() && epoch >= min_epoch) break;
+    };
+    sweep();
+    // A walker that holds a chain hears "nothing new" from a server that
+    // serves another chain under the same key, because that server has no
+    // page after the epoch the walker names; a server that is simply up to
+    // date says so with a latest epoch at or above it. One base page from a
+    // source that reported less, or nothing, tells the chains apart: a base
+    // that verifies under the pinned key but carries another Epoch 1 anchor
+    // is a re-founded network, and the walk starts over on it so the outcome
+    // names its epoch. A forged base does not verify and changes nothing.
+    if (settled_source) {
+        const auto other = state_->other_chain_base(*settled_source);
+        if (other && *other != state_->walker->epoch_one_anchor()) {
+            if (!known_chain) known_chain = state_->walker->epoch_one_anchor();
+            known_epoch = std::max(known_epoch, state_->walker->epoch().underlying());
+            state_->walker = std::make_unique<sec::AuthorityChainWalker>(*genesis);
+            state_->walk_epoch.store(0);
+            sweep();
+        }
     }
     const auto tried_detail = [&source_notes] {
         std::string detail;
@@ -431,6 +531,26 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
         return chain_error.empty()
                    ? fail("no server returned a verifiable authority chain" + tried_detail(), 0)
                    : fail(chain_error + tried_detail(), 403);
+    }
+    const sec::Digest chain = state_->walker->epoch_one_anchor();
+    if (known_chain && *known_chain != chain) {
+        // Another Epoch 1 under the pinned key. The floor belongs to the
+        // chain this client knows and says nothing about this one, and this
+        // one is never adopted on its own: the user leaves and joins again.
+        {
+            std::lock_guard lock(state_->mutex);
+            if (state_->generation == generation) state_->refounded = true;
+        }
+        // The next refresh walks from the base again, so the known chain is
+        // verified at once if the servers serve it again.
+        const auto served_epoch = state_->walker->epoch().underlying();
+        state_->walker.reset();
+        return fail("the network was re-founded under the pinned Genesis key: this device "
+                        "last verified epoch " + std::to_string(known_epoch) + " of chain " +
+                        short_hex(*known_chain) + ", the servers now serve chain " +
+                        short_hex(chain) + " at epoch " + std::to_string(served_epoch) +
+                        "; leave the network and join it again" + tried_detail(),
+                    409);
     }
     if (const auto epoch = state_->walker->epoch().underlying(); epoch < min_epoch) {
         return fail("the verified membership is stale: epoch " + std::to_string(epoch) +
@@ -558,7 +678,8 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
                 // before trusting anyone, then probe every candidate again.
                 ++rewalks;
                 std::string ignored;
-                if (state_->walk_from(candidate, ignored) == Walk::Advanced) {
+                bool ignored_hint = false;
+                if (state_->walk_from(candidate, ignored, ignored_hint) == Walk::Advanced) {
                     again = true;
                     break;
                 }
@@ -574,6 +695,7 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
 
     Tier1Membership membership;
     membership.epoch = state_->walker->epoch().underlying();
+    membership.chain = nexus::crypto::to_hex(chain);
     for (const auto& member : state_->walker->authority()->members) {
         membership.members.push_back(node_b64(member));
     }
@@ -588,6 +710,8 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
         state_->authority = *state_->walker->authority();
         state_->verified_at_ms = steady_ms();
         state_->stale = false;
+        state_->known_chain = chain;
+        state_->refounded = false;
     }
     spdlog::info("[Tier1Directory] verified Tier 1 epoch {}: {} member(s), {} reachable server(s)",
                  membership.epoch, membership.members.size(), membership.servers.size());

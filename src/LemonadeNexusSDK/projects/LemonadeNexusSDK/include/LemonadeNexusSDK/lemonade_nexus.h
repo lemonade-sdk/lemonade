@@ -1150,28 +1150,51 @@ int ln_mesh_is_active(ln_client_t* client);
  *
  *  @param genesis_pubkey_b64  The server config's `genesis_pubkey`: base64 of
  *                             32 bytes. Not retained after the call.
- *  @param min_epoch           The lowest Tier 1 epoch to accept (0 for none).
- *                             Store the epoch from ln_tier1_refresh and pass it
- *                             here after a restart to refuse an older list.
+ *  @param min_epoch           The lowest Tier 1 epoch to accept (0 for none),
+ *                             for any chain under the key. Prefer 0 here and
+ *                             ln_set_epoch_floor(), which names the chain.
  *  @return LN_OK, LN_ERR_NULL_ARG, or LN_ERR_REJECTED for a malformed key.
- *  Changing the key drops the verified membership. Thread-safe. */
+ *  Changing the key drops the verified membership and the floor. Thread-safe. */
 ln_error_t ln_set_genesis_key(ln_client_t* client, const char* genesis_pubkey_b64,
                               uint64_t min_epoch);
+
+/** The lowest Tier 1 epoch to accept, for one chain instance.
+ *
+ *  Store the "chain" and "epoch" of a verified membership (ln_tier1_refresh,
+ *  ln_tier1_membership) and pass both here after a restart: the SDK then
+ *  refuses an older list of that chain. Genesis signs one Epoch 1; a network
+ *  founded again after losing its data is another chain with another
+ *  "chain" value. When the servers serve another chain, ln_tier1_refresh
+ *  fails with {"error":"the network was re-founded ...","refounded":true}
+ *  and ln_tier1_membership reports "refounded":true until a refresh verifies
+ *  the stored chain again. The floor is never applied to the other chain,
+ *  and the other chain is never adopted on its own: the user leaves the
+ *  network and joins it again. A floor stored without a chain (an earlier
+ *  release) is better dropped than passed to ln_set_genesis_key.
+ *
+ *  @param chain      The 64 hex digits of the stored membership's "chain".
+ *  @param min_epoch  The stored membership's "epoch".
+ *  @return LN_OK, LN_ERR_NULL_ARG, or LN_ERR_REJECTED when `chain` is not 64
+ *  hex digits. Changing the Genesis key clears the floor. Thread-safe. */
+ln_error_t ln_set_epoch_floor(ln_client_t* client, const char* chain, uint64_t min_epoch);
 
 /** Verify the Tier 1 membership now from the client's server pool.
  *
  *  On LN_OK, *out_json receives
- *  {"epoch":N,"members":["<base64 node id>",...],
- *   "servers":[{"node_id":"<base64>","host":"<fqdn>","port":P},...]}.
- *  On failure it receives {"error":"..."} and the function returns
- *  LN_ERR_REJECTED (no pinned key, a chain that does not verify, or a stale
- *  epoch) or LN_ERR_CONNECT (no server reachable). The caller must ln_free()
- *  *out_json in both cases. Blocks on network I/O. Thread-safe. */
+ *  {"epoch":N,"chain":"<64 hex>","members":["<base64 node id>",...],
+ *   "servers":[{"node_id":"<base64>","host":"<fqdn>","port":P},...],
+ *   "refounded":false}.
+ *  On failure it receives {"error":"...","refounded":bool} and the function
+ *  returns LN_ERR_REJECTED (no pinned key, a chain that does not verify, a
+ *  stale epoch, or a re-founded network) or LN_ERR_CONNECT (no server
+ *  reachable). The caller must ln_free() *out_json in both cases. Blocks on
+ *  network I/O. Thread-safe. */
 ln_error_t ln_tier1_refresh(ln_client_t* client, char** out_json);
 
 /** The last verified Tier 1 membership, in the ln_tier1_refresh shape, with
- *  no network I/O. "servers" is empty when nothing is verified. The caller
- *  must ln_free() *out_json. Thread-safe. */
+ *  no network I/O. "servers" is empty when nothing is verified; "refounded"
+ *  is true after a refresh found the network founded again (see
+ *  ln_set_epoch_floor). The caller must ln_free() *out_json. Thread-safe. */
 ln_error_t ln_tier1_membership(ln_client_t* client, char** out_json);
 
 /** Progress of the Tier 1 authority chain walk running now, for display while

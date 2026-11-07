@@ -56,6 +56,10 @@ struct Tier1WalkProgress {
 /// The verified Tier 1 membership and the servers proven reachable.
 struct Tier1Membership {
     uint64_t                 epoch{0};
+    /// Lowercase hex of the chain's Epoch 1 anchor: the chain instance the
+    /// Genesis key founded. Store it with `epoch` and give both back through
+    /// set_epoch_floor(). Empty when nothing is verified.
+    std::string              chain;
     std::vector<std::string> members;  ///< base64 node ids, in Tier 1 set order
     std::vector<Tier1Server> servers;
 };
@@ -93,7 +97,18 @@ inline constexpr std::size_t kGenesisDiscoveryMinHosts = 3;
 /// verified one makes the directory walk the chain again before it trusts
 /// that server. A set of servers that all withhold newer handoffs can hold a
 /// client with no floor at an old epoch; the floor (`min_epoch`, for example
-/// the last epoch the application saw) closes that across restarts.
+/// the last epoch the application saw) closes that across restarts. Catching
+/// up has no limit: a client that was away for any number of epochs pages
+/// the chain forward from the epoch it has.
+///
+/// A re-founded network: Genesis signs one Epoch 1, and a network that lost
+/// its data and was founded again under the same key is another chain with
+/// another Epoch 1 anchor. A floor given with set_epoch_floor() names the
+/// chain it belongs to. When the servers serve a different chain, the refresh
+/// fails with http_status 409 and network_refounded() is true until a refresh
+/// verifies the known chain again; the application then has the user leave
+/// the network and join it again. The floor is never applied to the other
+/// chain, and the other chain is never adopted on its own.
 ///
 /// Thread-safe. refresh() runs one at a time; reads never wait for network
 /// I/O.
@@ -113,6 +128,20 @@ public:
     /// accept. Clears any verified state when the key changes. Returns false
     /// and pins nothing when the key is malformed.
     bool set_genesis_key(const std::string& genesis_pubkey_b64, uint64_t min_epoch = 0);
+
+    /// Set the lowest epoch to accept for one chain instance: `chain` is the
+    /// `Tier1Membership::chain` the application stored with `min_epoch`. The
+    /// floor applies when the servers serve that chain; another chain under
+    /// the pinned key is reported as re-founded instead. A floor given to
+    /// set_genesis_key() has no chain and applies to any chain. Returns false
+    /// and sets nothing when `chain` is not 64 hex digits. Changing the
+    /// pinned key clears the floor.
+    bool set_epoch_floor(const std::string& chain, uint64_t min_epoch);
+
+    /// True after a refresh found the servers serving another chain under the
+    /// pinned Genesis key (http_status 409); false again once a refresh
+    /// verifies the known chain, or when the key changes.
+    [[nodiscard]] bool network_refounded() const;
 
     [[nodiscard]] bool has_genesis_key() const;
 

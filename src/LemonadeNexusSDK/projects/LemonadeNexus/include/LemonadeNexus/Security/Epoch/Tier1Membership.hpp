@@ -116,6 +116,12 @@ public:
     /// The network the pinned Genesis key derives.
     [[nodiscard]] const NetworkId& network_id() const { return network_id_; }
 
+    /// The Epoch 1 anchor of the verified chain: the signing digest of the
+    /// Genesis certificate, which names this chain instance. Two chains under
+    /// one Genesis key (a network founded again after losing its data) have
+    /// different anchors. Zero before a base verified.
+    [[nodiscard]] const Digest& epoch_one_anchor() const { return epoch_one_anchor_; }
+
 private:
     crypto::Ed25519PublicKey genesis_public_key_{};
     NetworkId network_id_{};

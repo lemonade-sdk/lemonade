@@ -1892,14 +1892,16 @@ ln_error_t ln_routing_connection_status(ln_client_t* client, const char* connect
 // Tier 1 servers
 // ---------------------------------------------------------------------------
 
-static json tier1_membership_json(const lnsdk::Tier1Membership& membership) {
+static json tier1_membership_json(const lnsdk::Tier1Membership& membership, bool refounded) {
     json servers = json::array();
     for (const auto& s : membership.servers) {
         servers.push_back({{"node_id", s.node_id}, {"host", s.host}, {"port", s.port}});
     }
     return json{{"epoch", membership.epoch},
+                {"chain", membership.chain},
                 {"members", membership.members},
-                {"servers", std::move(servers)}};
+                {"servers", std::move(servers)},
+                {"refounded", refounded}};
 }
 
 // No exception crosses the C ABI: each entry point catches and reports
@@ -1915,15 +1917,26 @@ ln_error_t ln_set_genesis_key(ln_client_t* client, const char* genesis_pubkey_b6
     }
 }
 
+ln_error_t ln_set_epoch_floor(ln_client_t* client, const char* chain, uint64_t min_epoch) {
+    if (!client || !chain) return LN_ERR_NULL_ARG;
+    try {
+        const auto result = client->client.set_epoch_floor(chain, min_epoch);
+        return result.ok ? LN_OK : LN_ERR_REJECTED;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
 ln_error_t ln_tier1_refresh(ln_client_t* client, char** out_json) {
     if (!client || !out_json) return LN_ERR_NULL_ARG;
     try {
         const auto result = client->client.refresh_tier1();
         if (!result.ok) {
-            *out_json = strdup_json(json{{"error", result.error}});
+            *out_json = strdup_json(json{{"error", result.error},
+                                         {"refounded", client->client.network_refounded()}});
             return result.http_status == 0 ? LN_ERR_CONNECT : LN_ERR_REJECTED;
         }
-        *out_json = strdup_json(tier1_membership_json(result.value));
+        *out_json = strdup_json(tier1_membership_json(result.value, false));
         return LN_OK;
     } catch (...) {
         return LN_ERR_INTERNAL;
@@ -1933,7 +1946,8 @@ ln_error_t ln_tier1_refresh(ln_client_t* client, char** out_json) {
 ln_error_t ln_tier1_membership(ln_client_t* client, char** out_json) {
     if (!client || !out_json) return LN_ERR_NULL_ARG;
     try {
-        *out_json = strdup_json(tier1_membership_json(client->client.tier1_membership()));
+        *out_json = strdup_json(tier1_membership_json(client->client.tier1_membership(),
+                                                      client->client.network_refounded()));
         return LN_OK;
     } catch (...) {
         return LN_ERR_INTERNAL;
