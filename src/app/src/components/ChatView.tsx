@@ -62,6 +62,7 @@ import {
   tryWriteChatHistoryPreference,
 } from '../features/chatHistory/historySettings';
 import { prepareToolCallsForStorage } from '../features/chatHistory/toolCallPersistence';
+import { ConversationImageRegistry } from '../features/images/imageRegistry';
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel, virtualLoadedCollection } from '../features/collections/collectionModels';
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
@@ -89,7 +90,9 @@ import {
 interface Message {
   role: 'user' | 'assistant';
   content: string;
-  images?: string[];  // transient base64 data URLs for user messages with images
+  images?: string[];  // transient display/vision representations, never persisted
+  imageIds?: string[]; // stable within this session, never persisted
+  imageMessageId?: string; // scoped upload ordering, never persisted
   generatedImages?: string[]; // transient generated image data URLs
   generatedImageNames?: string[];
   audioUrl?: string; // transient object URL for TTS output
@@ -379,6 +382,8 @@ function saveConversations(convos: Conversation[]): boolean {
       ...m,
       content: m.images?.length ? '[image prompt not persisted]' : m.content,
       images: undefined,
+      imageIds: undefined,
+      imageMessageId: undefined,
       generatedImages: undefined,
       generatedImageNames: undefined,
       audioUrl: undefined,
@@ -965,7 +970,10 @@ const ChatView: React.FC<ChatViewProps> = ({
   const imageSettingsModelRef = useRef<string | null>(null);
   const imageSettingsTouchedRef = useRef(false);
   const imageSettingsCommittedRef = useRef(false);
-  const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const [pendingImages, setPendingImages] = useState<Array<{ preview: string; original: File }>>([]);
+  const [imageAttachmentError, setImageAttachmentError] = useState('');
+  const [imageRegistry] = useState(() => new ConversationImageRegistry());
+  const imageSizeTouchedRef = useRef(false);
   const [pendingAudioFiles, setPendingAudioFiles] = useState<File[]>([]);
   const [isLiveRecording, setIsLiveRecording] = useState(false);
   const [micPreparation, setMicPreparation] = useState<string | null>(null);
@@ -1066,10 +1074,30 @@ const ChatView: React.FC<ChatViewProps> = ({
     if (url.startsWith('blob:')) generatedMediaUrlsRef.current.add(url);
     return url;
   }, []);
+  const imagePreviewUrlsRef = useRef<Set<string>>(new Set());
+  const createImageEditPreview = useCallback((blob: Blob): string => {
+    const url = trackGeneratedMediaUrl(URL.createObjectURL(blob));
+    imagePreviewUrlsRef.current.add(url);
+    return url;
+  }, [trackGeneratedMediaUrl]);
+
+  useEffect(() => {
+    const active = new Set([
+      ...pendingImages.map(image => image.preview),
+      ...conversations.flatMap(conversation => conversation.messages.flatMap(message => message.images || [])),
+    ]);
+    for (const url of imagePreviewUrlsRef.current) {
+      if (active.has(url)) continue;
+      URL.revokeObjectURL(url);
+      imagePreviewUrlsRef.current.delete(url);
+      generatedMediaUrlsRef.current.delete(url);
+    }
+  }, [conversations, pendingImages]);
 
   useEffect(() => () => {
     generatedMediaUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
     generatedMediaUrlsRef.current.clear();
+    imageRegistry.clear();
   }, []);
 
   useEffect(() => {
@@ -1475,6 +1503,12 @@ const ChatView: React.FC<ChatViewProps> = ({
     return currentCapability === 'chat'
       && modelSupportsChatImageInput(currentKnownModelInfo, currentLoadedModel);
   }, [currentCapability, currentKnownModelInfo, currentLoadedModel, currentRecipe, knownModelInfos]);
+  const hasImageTools = currentCapability === 'chat' && (
+    currentIsOmniCollection || (
+      useMcp && selectedMcpServerIds.includes(LEMONADE_MCP_SERVER_ID)
+      && (!selectedMcpToolNames || ['edit_image', 'analyze_image'].some(name => selectedMcpToolNames.includes(name)))
+    )
+  );
 
   const defaultImageSettings = useMemo(
     () => imageDefaultsForModel(
@@ -1505,6 +1539,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       imageSettingsModelRef.current = modelKey;
       imageSettingsTouchedRef.current = false;
       imageSettingsCommittedRef.current = false;
+      imageSizeTouchedRef.current = false;
       setImageSettings(defaultImageSettings);
       setImageMode('generate');
       return;
@@ -1523,11 +1558,11 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, [supportsImageEdit, imageMode]);
 
   useEffect(() => {
-    const keepsImageAttachments = supportsChatImageInput
+    const keepsImageAttachments = supportsChatImageInput || hasImageTools
       || (currentCapability === 'image' && imageMode === 'edit')
       || (currentCapability === 'model3d' && model3dSettings.sourceMode === 'image');
     if (!keepsImageAttachments) setPendingImages([]);
-  }, [currentCapability, imageMode, model3dSettings.sourceMode, supportsChatImageInput]);
+  }, [currentCapability, hasImageTools, imageMode, model3dSettings.sourceMode, supportsChatImageInput]);
 
   const capabilityForLoaded = useCallback((model: LoadedModel) => {
     const customInfo = customModelInfos.find(m => (m.name || m.id) === model.model_name);
@@ -2390,6 +2425,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const handleDeleteConversation = useCallback((id: string) => {
     streaming.stop(id);
     delete streamModelsRef.current[id];
+    imageRegistry.clearConversation(id);
     setConversations(prev => prev.filter(c => c.id !== id));
     const wasActive = activeId === id;
     if (wasActive) setActiveId(null);
@@ -2726,6 +2762,8 @@ ${finalText}`
     text: string,
     audioFiles: File[],
     images: string[] = [],
+    imageIds: string[] = [],
+    messageId?: string,
   ) => {
     setCapabilityBusyConvoIds(prev => new Set(prev).add(convoId));
     try {
@@ -2733,15 +2771,19 @@ ${finalText}`
       if (model.capability === 'image') {
         if (!text) throw new Error(t('Image mode needs a text prompt.'));
         imageSettingsCommittedRef.current = true;
+        const effectiveImageMode: ImageMode = images.length > 0 ? 'edit' : imageMode;
         const imageOptions: Record<string, unknown> = {
-          size: `${imageSettings.width}x${imageSettings.height}`,
+          ...(effectiveImageMode === 'generate' || imageSizeTouchedRef.current
+            ? { size: `${imageSettings.width}x${imageSettings.height}` } : {}),
           steps: imageSettings.steps,
           cfg_scale: imageSettings.cfgScale,
           seed: imageSettings.seed === '' ? -1 : imageSettings.seed,
         };
-        const effectiveImageMode: ImageMode = images.length > 0 ? 'edit' : imageMode;
+        const sources = imageIds.length > 0
+          ? imageRegistry.resolve(convoId, imageIds).map(image => image.original)
+          : images.map(blobFromDataUrl);
         const resultImages = effectiveImageMode === 'edit'
-          ? await api.imageEdit(model.name, text, images[0], imageOptions)
+          ? await api.imageEdit(model.name, text, sources, imageOptions)
           : await api.imageGeneration(model.name, text, imageOptions);
         const generatedImages = [...resultImages];
         const nameStem = effectiveImageMode === 'edit' ? `${model.name}-edit` : model.name;
@@ -2754,6 +2796,18 @@ ${finalText}`
           generatedImages.push(upscaled);
           generatedImageNames.push(`${imageSettings.upscaleModel}-upscaled.png`);
           content = `${content} Added an upscaled version.`;
+        }
+        const registered = await imageRegistry.addOutputsBestEffort(
+          convoId, resultImages, effectiveImageMode === 'edit' ? 'edited' : 'generated',
+          effectiveImageMode === 'edit' ? imageIds : [], text, undefined, messageId,
+        );
+        const upscaledRegistration = generatedImages.length > resultImages.length
+          ? await imageRegistry.addOutputsBestEffort(
+            convoId, generatedImages.slice(resultImages.length), 'generated', [], text, undefined, messageId,
+          ) : null;
+        if (registered.warning || upscaledRegistration?.warning) {
+          console.warn('[Chat images] Could not register generated image references:', registered.warning || upscaledRegistration?.warning);
+          content += ` ${t('Image references are unavailable for one or more results.')}`;
         }
         appendAssistantMessage(convoId, {
           content,
@@ -2816,6 +2870,12 @@ ${finalText}`
           bg_removal: model3dSettings.backgroundRemoval,
           seed: model3dSettings.seed === '' ? -1 : model3dSettings.seed,
         });
+        if (generatedReference?.length) {
+          const registered = await imageRegistry.addOutputsBestEffort(
+            convoId, generatedReference, 'generated', [], text, undefined, messageId,
+          );
+          if (registered.warning) console.warn('[Chat images] 3D reference registration failed:', registered.warning);
+        }
         appendAssistantMessage(convoId, {
           content: model3dSettings.sourceMode === 'text'
             ? t('Rendered a reference image and reconstructed it as a textured 3D model.')
@@ -2953,7 +3013,7 @@ ${finalText}`
 
     thinkingSticky.current = true;
 
-    if (hasImages && modeSupportsChatCompletions && !collectionInfo && !supportsChatImageInput) {
+    if (hasImages && modeSupportsChatCompletions && !collectionInfo && !supportsChatImageInput && !hasImageTools) {
       appendAssistantMessage(convoId, {
         content: friendlyChatError(t('The selected text model does not support image input. Choose a vision-capable model to send images.')),
         model: modelSnapshot,
@@ -2971,7 +3031,7 @@ ${finalText}`
         });
         return;
       }
-      await runCapabilityRequest(convoId, modelSnapshot, text, audioFiles, images || []);
+      await runCapabilityRequest(convoId, modelSnapshot, text, audioFiles, images || [], userMessage.imageIds || [], userMessage.imageMessageId);
       return;
     }
 
@@ -2979,6 +3039,13 @@ ${finalText}`
     let requestText = text;
     let requestImages = images;
     let includeDirectAudioParts = canUseAudioInput && modeSupportsChatCompletions && audioFiles.length > 0;
+    const chatTargetName = collectionInfo && allowTools
+      ? getPrimaryChatComponent(collectionInfo, knownModelInfos) || requestModelName
+      : requestModelName;
+    const chatTargetInfo = findModelInfoByName(knownModelInfos, chatTargetName);
+    const chatTargetLoaded = loadedModels.find(item => item.model_name.toLowerCase() === chatTargetName.toLowerCase());
+    const chatVisionModel = !isRouterRecipe(currentRecipe)
+      && modelSupportsChatImageInput(chatTargetInfo, chatTargetLoaded) ? chatTargetName : undefined;
 
     let omniRuntime: ChatToolRuntime | null = null;
     if (collectionInfo && allowTools) {
@@ -2989,6 +3056,10 @@ ${finalText}`
         attachedImages: images || [],
         attachedAudioFiles: audioFiles,
         previousImages: collectConversationImages(priorMessages),
+        imageRegistry: imageRegistry,
+        conversationId: convoId,
+        messageId: userMessage.imageMessageId,
+        chatVisionModel,
       });
     }
 
@@ -3046,6 +3117,11 @@ ${finalText}`
             attachedImages: images || [],
             attachedAudioFiles: audioFiles,
             previousImages: collectConversationImages(priorMessages),
+            imageRegistry: imageRegistry,
+            conversationId: convoId,
+            messageId: userMessage.imageMessageId,
+            chatVisionModel,
+            directInputImageIds: requestImages?.length ? userMessage.imageIds : [],
           },
           selectedMcpToolNames || undefined,
         );
@@ -3075,6 +3151,29 @@ ${finalText}`
       toolRuntime = composeMcpRuntimes(activeToolRuntimes);
     }
 
+    // A text planner sees only image identities, never raw image bytes. A true VLM
+    // retains the existing direct image-input path.
+    const runtimeHasImageTools = Boolean(toolRuntime?.acceptsImageReferences);
+    if (hasImages && !supportsChatImageInput) {
+      // Do not forward an image to a text-only planner, including when tool
+      // setup failed, tool use was disabled, or no image tool is selectable.
+      requestImages = undefined;
+      if (!runtimeHasImageTools) {
+        appendAssistantMessage(convoId, {
+          content: friendlyChatError('Image references require an enabled image tool or a vision-capable model.'),
+          model: modelSnapshot,
+          isError: true,
+        });
+        return;
+      }
+    }
+    if (runtimeHasImageTools) {
+      const index = imageRegistry.listForPlanner(convoId, userMessage.imageMessageId);
+      if (index) requestText = `${requestText || 'Please work with the available images.'}
+
+${index}`;
+    }
+
     // Build chat history from the conversation's messages before this user prompt.
     // Do not feed prior friendly UI error messages or generated media artifacts back as assistant context.
     const chatMessages: ChatMessage[] = [];
@@ -3093,7 +3192,7 @@ ${finalText}`
     });
 
     chatMessages.push(...historyMessages.map(m => {
-      if (m.images?.length && supportsChatImageInput) {
+      if (m.images?.length && supportsChatImageInput && !omniRuntime) {
         return {
           role: m.role,
           content: [
@@ -3138,6 +3237,7 @@ ${finalText}`
     persistMcpEnabled,
     selectedMcpServerIds,
     selectedMcpToolNames,
+    hasImageTools,
     supportsChatImageInput,
     thinkingMode,
     runCapabilityRequest,
@@ -3164,6 +3264,11 @@ ${finalText}`
               ? (!!text && !openMossDescribeUnavailable && !openMossCloneUnavailable)
               : (!!text || hasImages || (canUseAudioInput && audioFiles.length > 0));
     if (!canSubmitContent || isBusy || !currentModelSnapshot) return;
+    if (hasImages && currentCapability === 'chat' && !supportsChatImageInput
+      && (isExternalPrompt || hasBrowserPromptContext(conversations.find(c => c.id === activeId)?.messages || []))) {
+      setImageAttachmentError(t('The selected text model does not support image input. Choose a vision-capable model to send images.'));
+      return;
+    }
     if (isExternalPrompt) {
       incomingPromptHandledRef.current = true;
       saveBrowserPromptDraft('');
@@ -3172,27 +3277,38 @@ ${finalText}`
     // Sending a new message explicitly resumes following the latest reply.
     threadFollowBottomRef.current = true;
     let convoId = isExternalPrompt ? null : activeId;
+    const isNewConvo = !convoId;
     const initialSnapshot = currentModelSnapshot;
     const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
+    if (!convoId) convoId = generateId();
+    const imageMessageId = generateId();
+    let imageIds: string[] | undefined;
+    try {
+      if (hasImages) imageIds = imageRegistry.addUploads(convoId, pendingImages.map(image => image.original), imageMessageId!);
+    } catch (error) {
+      setImageAttachmentError(friendlyErrorMessage(error));
+      return;
+    }
     const userMessage: Message = {
       role: 'user',
       content: text || (audioFiles[0] ? `Audio file: ${audioFiles[0].name}` : ''),
-      images: hasImages ? [...pendingImages] : undefined,
+      images: hasImages ? pendingImages.map(image => image.preview) : undefined,
+      imageIds,
+      imageMessageId,
       audioName: audioFiles[0]?.name,
       model: initialSnapshot,
       fromBrowserPrompt: isExternalPrompt || undefined,
     };
 
-    if (!convoId) {
+    if (isNewConvo) {
       const newConvo: Conversation = {
-        id: generateId(),
+        id: convoId,
         title: titleFromInput(text, hasImages, audioFiles),
         model: initialSnapshot,
         messages: [userMessage],
         updatedAt: Date.now(),
         schemaVersion: STORAGE_VERSION,
       };
-      convoId = newConvo.id;
       setConversations(prev => [newConvo, ...prev]);
       setActiveId(convoId);
     } else {
@@ -3276,6 +3392,11 @@ ${finalText}`
     }
 
     const trimmedMessages = convo.messages.slice(0, userIndex + 1);
+    imageRegistry.pruneForRestart(
+      activeId,
+      trimmedMessages.flatMap(message => message.imageMessageId ? [message.imageMessageId] : []),
+      originalUserMessage.imageMessageId,
+    );
     setConversations(prev => prev.map(c => c.id === activeId ? {
       ...c,
       messages: trimmedMessages,
@@ -3314,6 +3435,11 @@ ${finalText}`
       model: currentModelSnapshot,
     };
 
+    imageRegistry.pruneForRestart(
+      activeId,
+      [...priorMessages, editedUserMessage].flatMap(message => message.imageMessageId ? [message.imageMessageId] : []),
+      editedUserMessage.imageMessageId,
+    );
     setConversations(prev => prev.map(c => c.id === activeId ? {
       ...c,
       messages: [...priorMessages, editedUserMessage],
@@ -3354,7 +3480,9 @@ ${finalText}`
 
   // ── Attachment handling ────────────────────────────────────
 
-  const acceptsImageAttachments = supportsChatImageInput
+  const toolsDisabledByBrowserContext = Boolean(incomingPrompt && !incomingPromptHandledRef.current)
+    || hasBrowserPromptContext(conversations.find(c => c.id === activeId)?.messages || []);
+  const acceptsImageAttachments = supportsChatImageInput || (hasImageTools && !toolsDisabledByBrowserContext)
     || (currentCapability === 'image' && imageMode === 'edit')
     || (currentCapability === 'model3d' && model3dSettings.sourceMode === 'image');
   const acceptsAudioAttachments = canUseAudioInput
@@ -3378,6 +3506,11 @@ ${finalText}`
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
     if (imageFiles.length === 0) return;
     if (!acceptsImageAttachments) return;
+    if (imageFiles.some(file => file.size === 0 || file.size > 64 * 1024 * 1024)) {
+      setImageAttachmentError(t('Each image must be nonempty and at most 64 MiB.'));
+      return;
+    }
+    setImageAttachmentError('');
     if (currentCapability === 'image' && imageMode !== 'edit') return;
     if (currentCapability === 'model3d' && model3dSettings.sourceMode !== 'image') return;
 
@@ -3392,24 +3525,31 @@ ${finalText}`
       // TRELLIS accepts these source formats directly. Preserve alpha and the
       // original pixels instead of routing the reference through the generic
       // chat attachment JPEG compressor.
-      setPendingImages([await blobToDataUrl(source)]);
-      return;
-    }
-
-    if (currentCapability === 'image' && imageMode === 'edit') {
-      const encoded = await imageToBase64(imageFiles[0]);
-      setPendingImages([encoded]);
+      setPendingImages([{ preview: await blobToDataUrl(source), original: source }]);
       return;
     }
 
     const remaining = MAX_IMAGES - pendingImages.length;
     const toProcess = imageFiles.slice(0, remaining);
-    const encoded = await Promise.all(toProcess.map(imageToBase64));
-    setPendingImages(prev => [...prev, ...encoded].slice(0, MAX_IMAGES));
+    try {
+      if (currentCapability === 'image' && imageMode === 'edit') {
+        await imageRegistry.validateUploadBytes(toProcess);
+      }
+      const encoded = await Promise.all(toProcess.map(async original => ({
+        // JPEG thumbnails lose transparency and detail in image-edit previews.
+        preview: currentCapability === 'image' && imageMode === 'edit'
+          ? createImageEditPreview(original)
+          : await imageToBase64(original),
+        original,
+      })));
+      setPendingImages(prev => [...prev, ...encoded].slice(0, MAX_IMAGES));
+    } catch {
+      setImageAttachmentError(t('Could not preview the image. Use a browser-supported PNG, JPEG or WebP image.'));
+    }
   }, [
     acceptsImageAttachments, canUseAudioInput, currentCapability, imageMode, isOpenMossTts,
     modeSupportsChatCompletions, model3dSettings.sourceMode,
-    openMossSettings.mode, pendingImages.length,
+    openMossSettings.mode, pendingImages.length, t, createImageEditPreview,
   ]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -4207,7 +4347,7 @@ ${finalText}`
               <span>{t('Width')}</span>
               <select
                 value={imageSettings.width}
-                onChange={e => markImageSettingsEdited(prev => ({ ...prev, width: parseInt(e.target.value, 10) }))}
+                onChange={e => { imageSizeTouchedRef.current = true; markImageSettingsEdited(prev => ({ ...prev, width: parseInt(e.target.value, 10) })); }}
                 disabled={isBusy}
               >
                 {IMAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
@@ -4217,7 +4357,7 @@ ${finalText}`
               <span>{t('Height')}</span>
               <select
                 value={imageSettings.height}
-                onChange={e => markImageSettingsEdited(prev => ({ ...prev, height: parseInt(e.target.value, 10) }))}
+                onChange={e => { imageSizeTouchedRef.current = true; markImageSettingsEdited(prev => ({ ...prev, height: parseInt(e.target.value, 10) })); }}
                 disabled={isBusy}
               >
                 {IMAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
@@ -4464,14 +4604,16 @@ ${finalText}`
             role="list"
             aria-label={t('Image attachments')}
           >
-            {pendingImages.map((src, i) => (
+            {pendingImages.map((image, i) => (
               <div key={i} className="composer__image-thumb" role="listitem">
-                <img src={src} alt={`Attachment ${i + 1}`} />
+                <img src={image.preview} alt={`Image ${i + 1}`} />
+                <span className="composer__image-position">{i + 1}</span>
                 <button className="composer__image-remove" onClick={() => removeImage(i)} aria-label={t('Remove image')}>×</button>
               </div>
             ))}
           </div>
         )}
+        {imageAttachmentError && <div role="alert" className="composer__image-error">{imageAttachmentError}</div>}
         {pendingAudioFiles.length > 0 && (
           <div className="composer__files">
             {pendingAudioFiles.map((file, i) => (
