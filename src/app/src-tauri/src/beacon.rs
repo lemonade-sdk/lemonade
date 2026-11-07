@@ -65,6 +65,22 @@ fn is_local_machine(addr: IpAddr) -> bool {
     is_loopback(addr) || local_outbound_ip() == Some(addr)
 }
 
+/// Bind the beacon port with address reuse, so the app shares UDP 13305 with
+/// other listeners on the same machine (`lemonade scan`, a second app, lemond)
+/// instead of failing to bind. On macOS a plain bind fails outright when the
+/// port is already held, and the app then never learns the server's port.
+fn bind_beacon_socket() -> std::io::Result<UdpSocket> {
+    use socket2::{Domain, Protocol, Socket, Type};
+    let s = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+    s.set_reuse_address(true)?;
+    #[cfg(all(unix, not(any(target_os = "solaris", target_os = "illumos"))))]
+    s.set_reuse_port(true)?;
+    s.set_broadcast(true)?;
+    s.set_nonblocking(true)?;
+    s.bind(&std::net::SocketAddr::from((Ipv4Addr::UNSPECIFIED, BEACON_PORT)).into())?;
+    UdpSocket::from_std(s.into())
+}
+
 fn parse_port_from_url(raw: &str) -> Option<u16> {
     url::Url::parse(raw).ok()?.port().filter(|&p| p > 0)
 }
@@ -90,7 +106,7 @@ pub(crate) async fn run_beacon_listener(app: AppHandle) {
             continue;
         }
 
-        let socket = match UdpSocket::bind(("0.0.0.0", BEACON_PORT)).await {
+        let socket = match bind_beacon_socket() {
             Ok(s) => s,
             Err(err) => {
                 log::error!("Beacon listener bind failed: {err}, retrying in 10s");
@@ -98,7 +114,6 @@ pub(crate) async fn run_beacon_listener(app: AppHandle) {
                 continue;
             }
         };
-        let _ = socket.set_broadcast(true);
         log::info!("Beacon listener started on 0.0.0.0:{BEACON_PORT}");
 
         let mut buf = vec![0u8; 2048];
@@ -148,6 +163,16 @@ mod tests {
     fn parse_beacon_message_accepts_lemonade() {
         let msg = br#"{"service":"lemonade","hostname":"h","url":"http://127.0.0.1:13305/api/v1/"}"#;
         assert_eq!(parse_beacon_message(msg), Some(13305));
+    }
+
+    #[test]
+    fn two_listeners_can_share_the_beacon_port() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        rt.block_on(async {
+            let a = bind_beacon_socket();
+            let b = bind_beacon_socket();
+            assert!(a.is_ok() && b.is_ok(), "{:?} / {:?}", a.err(), b.err());
+        });
     }
 
     #[test]
