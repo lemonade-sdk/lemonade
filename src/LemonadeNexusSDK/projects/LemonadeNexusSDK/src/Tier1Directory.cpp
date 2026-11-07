@@ -15,6 +15,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstring>
+#include <future>
 #include <mutex>
 #include <thread>
 
@@ -484,61 +485,88 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
         break;
     }
 
-    // 3. Endpoint proofs over fresh nonces.
+    // 3. Endpoint proofs over fresh nonces, asked of every candidate at once:
+    //    a round costs one request time, not one per member. The answers are
+    //    judged in candidate order, so the verified list is the same list the
+    //    one-by-one round gave.
+    struct Probe {
+        std::size_t candidate = 0;
+        std::array<uint8_t, sec::kTier1EndpointNonceBytes> nonce{};
+        std::optional<HttpReply> reply;
+    };
     std::vector<Tier1Server> verified;
     int rewalks = 0;
-    std::size_t probes = 0;
-    for (std::size_t i = 0; i < candidates.size() && probes < kMaxProbes; ++i) {
-        const auto& candidate = candidates[i].endpoint;
-        const auto& listed = candidates[i].listed_node;
-        if (listed && std::find(authority->members.begin(), authority->members.end(),
-                                *listed) == authority->members.end()) {
-            continue;  // listed, but not a member of the verified epoch
-        }
-        ++probes;
-        std::array<uint8_t, sec::kTier1EndpointNonceBytes> nonce{};
-        randombytes_buf(nonce.data(), nonce.size());
-        const auto reply = state_->get(
-            candidate, "/api/tier1/proof?nonce=" + nexus::crypto::to_hex(nonce));
-        if (!reply || reply->status != 200) continue;
-        const auto doc = json::parse(reply->body, nullptr, false);
-        if (doc.is_discarded() || !doc.is_object()) continue;
-        const auto node = fixed_b64<32>(doc, "node_id");
-        const auto signature = fixed_b64<64>(doc, "signature");
-        if (!node || !signature || !doc.contains("epoch") || !doc["epoch"].is_number_unsigned() ||
-            !doc.contains("host") || !doc["host"].is_string() || !doc.contains("port") ||
-            !doc["port"].is_number_unsigned()) {
-            continue;
-        }
-        const auto port = doc["port"].get<uint64_t>();
-        const auto host = doc["host"].get<std::string>();
-        if (port > 0xFFFF || host.size() > sec::kTier1EndpointMaxHostBytes) continue;
-        sec::Tier1EndpointProof proof;
-        proof.node.bytes = *node;
-        proof.epoch = sec::EpochId{doc["epoch"].get<uint64_t>()};
-        proof.host = host;
-        proof.port = static_cast<uint16_t>(port);
-        proof.signature = *signature;
-        const auto check = sec::check_tier1_endpoint_proof(*state_->walker->authority(), proof,
-                                                           candidate.host, candidate.port, nonce);
-        if (check == sec::EndpointProofCheck::Valid) {
-            verified.push_back(Tier1Server{node_b64(proof.node), candidate.host, candidate.port});
-            continue;
-        }
-        if (check == sec::EndpointProofCheck::NewerEpoch && rewalks < kMaxRewalks) {
-            // The verified membership is behind this member. Walk further
-            // before trusting anyone, then probe every candidate again.
-            ++rewalks;
-            std::string ignored;
-            if (state_->walk_from(candidate, ignored) == Walk::Advanced) {
-                verified.clear();
-                probes = 0;
-                i = static_cast<std::size_t>(-1);
+    for (bool again = true; again;) {
+        again = false;
+        verified.clear();
+        std::vector<Probe> probes;
+        for (std::size_t i = 0; i < candidates.size() && probes.size() < kMaxProbes; ++i) {
+            const auto& listed = candidates[i].listed_node;
+            if (listed && std::find(authority->members.begin(), authority->members.end(),
+                                    *listed) == authority->members.end()) {
+                continue;  // listed, but not a member of the verified epoch
             }
-            continue;
+            Probe probe;
+            probe.candidate = i;
+            randombytes_buf(probe.nonce.data(), probe.nonce.size());
+            probes.push_back(probe);
         }
-        spdlog::debug("[Tier1Directory] {}:{} is not a Tier 1 endpoint: {}", candidate.host,
-                      candidate.port, sec::endpoint_proof_check_name(check));
+        std::vector<std::future<std::optional<HttpReply>>> replies;
+        replies.reserve(probes.size());
+        for (const auto& probe : probes) {
+            replies.push_back(std::async(
+                std::launch::async,
+                [this, endpoint = candidates[probe.candidate].endpoint,
+                 path = "/api/tier1/proof?nonce=" + nexus::crypto::to_hex(probe.nonce)] {
+                    return state_->get(endpoint, path);
+                }));
+        }
+        for (std::size_t i = 0; i < probes.size(); ++i) probes[i].reply = replies[i].get();
+
+        for (const auto& probe : probes) {
+            const auto& candidate = candidates[probe.candidate].endpoint;
+            const auto& reply = probe.reply;
+            if (!reply || reply->status != 200) continue;
+            const auto doc = json::parse(reply->body, nullptr, false);
+            if (doc.is_discarded() || !doc.is_object()) continue;
+            const auto node = fixed_b64<32>(doc, "node_id");
+            const auto signature = fixed_b64<64>(doc, "signature");
+            if (!node || !signature || !doc.contains("epoch") ||
+                !doc["epoch"].is_number_unsigned() || !doc.contains("host") ||
+                !doc["host"].is_string() || !doc.contains("port") ||
+                !doc["port"].is_number_unsigned()) {
+                continue;
+            }
+            const auto port = doc["port"].get<uint64_t>();
+            const auto host = doc["host"].get<std::string>();
+            if (port > 0xFFFF || host.size() > sec::kTier1EndpointMaxHostBytes) continue;
+            sec::Tier1EndpointProof proof;
+            proof.node.bytes = *node;
+            proof.epoch = sec::EpochId{doc["epoch"].get<uint64_t>()};
+            proof.host = host;
+            proof.port = static_cast<uint16_t>(port);
+            proof.signature = *signature;
+            const auto check = sec::check_tier1_endpoint_proof(
+                *state_->walker->authority(), proof, candidate.host, candidate.port, probe.nonce);
+            if (check == sec::EndpointProofCheck::Valid) {
+                verified.push_back(
+                    Tier1Server{node_b64(proof.node), candidate.host, candidate.port});
+                continue;
+            }
+            if (check == sec::EndpointProofCheck::NewerEpoch && rewalks < kMaxRewalks) {
+                // The verified membership is behind this member. Walk further
+                // before trusting anyone, then probe every candidate again.
+                ++rewalks;
+                std::string ignored;
+                if (state_->walk_from(candidate, ignored) == Walk::Advanced) {
+                    again = true;
+                    break;
+                }
+                continue;
+            }
+            spdlog::debug("[Tier1Directory] {}:{} is not a Tier 1 endpoint: {}", candidate.host,
+                          candidate.port, sec::endpoint_proof_check_name(check));
+        }
     }
     if (verified.empty()) {
         return fail("no verified Tier 1 server is reachable", 0);

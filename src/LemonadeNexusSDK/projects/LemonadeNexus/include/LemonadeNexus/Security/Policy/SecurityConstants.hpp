@@ -30,11 +30,11 @@ inline constexpr uint16_t kConsensusRulesetVersion = 1;
 inline constexpr uint16_t kBftProtocolVersion = 1;
 inline constexpr uint16_t kQcFormatVersion = 1;
 
-// On-disk format of the durable consensus store records
-// (hotstuff-safety-<epoch>.json, hotstuff-commit-<epoch>.json, and
-// hotstuff-chain-<epoch>.json). Every write carries this version and every
-// read requires it. A chain file can be absent: the releases before it did
-// not write one.
+// On-disk format of the durable consensus store records (the
+// hotstuff-safety-<epoch> and hotstuff-commit-<epoch> slot files, and the
+// hotstuff-chain-<epoch>.json of earlier releases). Every write carries this
+// version and every read requires it. The slot layout adds `seq` and `chain`
+// keys outside the versioned record; see ConsensusStore.hpp.
 inline constexpr uint32_t kConsensusStoreFormatVersion = 1;
 
 // --- Domain-separation strings ----------------------------------------------

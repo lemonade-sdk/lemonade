@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <ctime>
+#include <future>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -135,14 +136,22 @@ Result<std::vector<DiscoveredServer>> discover_servers_at(const std::vector<std:
     }
     if (port == 0) return fail<std::vector<DiscoveredServer>>("the server port must be 1 to 65535");
     Result<std::vector<DiscoveredServer>> result;
-    std::size_t probed = 0;
+    // Every address is asked at once: a handshake that waits out its timeout
+    // then costs the sweep one timeout, not one per address. The answers are
+    // taken in address order, so the result order is the address order.
+    std::vector<std::future<std::string>> names;
     for (const auto& address : addresses) {
-        if (probed++ == kMaxAddresses) break;
-        const auto name = canonical(certificate_name(address, port));
+        if (names.size() == kMaxAddresses) break;
+        names.push_back(std::async(std::launch::async, [address, port] {
+            return canonical(certificate_name(address, port));
+        }));
+    }
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        const auto name = names[i].get();
         if (!discovered_name_in_domain(name, domain)) continue;
         const bool seen = std::any_of(result.value.begin(), result.value.end(),
                                       [&](const DiscoveredServer& s) { return s.host == name; });
-        if (!seen) result.value.push_back({name, port, address});
+        if (!seen) result.value.push_back({name, port, addresses[i]});
     }
     if (result.value.empty()) {
         return fail<std::vector<DiscoveredServer>>(
