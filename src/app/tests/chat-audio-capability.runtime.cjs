@@ -238,7 +238,7 @@ assert.equal(updateDraftWithDictation('Draft', '', 'speaking'), 'Draft speaking'
 assert.equal(updateDraftWithDictation('Draft speaking', 'speaking', 'spoken words'), 'Draft spoken words');
 assert.equal(updateDraftWithDictation('Draft spoken words !', 'spoken words', 'final words'), 'Draft final words !');
 assert.match(chatViewSource, /const supportsDictation = canUseMicrophone\(\)/);
-assert.match(chatViewSource, /'chat', 'image', 'audio-generation', 'tts'/);
+assert.match(chatViewSource, /'chat', 'image', 'audio-generation', 'video', 'tts'/);
 assert.match(chatViewSource, /currentCapability === 'model3d' && model3dSettings.sourceMode === 'text'/);
 assert.match(chatViewSource, /const dictating = supportsDictation;/);
 assert.match(chatViewSource, /selectDictationModel\(/);

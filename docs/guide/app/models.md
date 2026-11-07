@@ -7,7 +7,7 @@
 Open **Models**. The left rail provides:
 
 - **All Models**, **Downloaded**, and client-local **Favorites**;
-- task filters for **Chat**, **Omni**, **Router**, **Image**, **Audio**, **Music & SFX**, **TTS**, **3D**, **Embed**, and **Classify**;
+- task filters for **Chat**, **Omni**, **Router**, **Image**, **Audio**, **Music & SFX**, **TTS**, **3D**, **Video**, **Embed**, and **Classify**;
 - backend and model-family tag filters;
 - **Hugging Face** and **ModelScope** switches for online search; and
 - a model-storage meter.

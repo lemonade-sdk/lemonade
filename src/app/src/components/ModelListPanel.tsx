@@ -240,7 +240,7 @@ function backendReadinessMessage(readiness: ModelBackendReadiness, translate: (k
   return translate(BACKEND_STATE_MESSAGES[readiness.state || ''] || 'Engine needs attention');
 }
 
-type FilterTab = 'all' | 'llm' | 'omni' | 'router' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding' | 'classification';
+type FilterTab = 'all' | 'llm' | 'omni' | 'router' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'video' | 'embedding' | 'classification';
 
 const FILTER_TABS: Array<{ key: FilterTab; label: string; iconName: IconName }> = [
   { key: 'all', label: 'All', iconName: 'globe' },
@@ -252,6 +252,7 @@ const FILTER_TABS: Array<{ key: FilterTab; label: string; iconName: IconName }> 
   { key: 'audio-generation', label: 'Music & SFX', iconName: 'audio' },
   { key: 'tts', label: 'TTS', iconName: 'tts' },
   { key: 'model3d', label: '3D', iconName: 'box' },
+  { key: 'video', label: 'Video', iconName: 'play' },
   { key: 'embedding', label: 'Embed', iconName: 'embedding' },
   { key: 'classification', label: 'Classify', iconName: 'search-check' },
 ];

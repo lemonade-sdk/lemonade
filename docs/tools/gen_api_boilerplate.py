@@ -492,9 +492,11 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
-            "Audio's prompt is the style caption, with lyrics separate; images' is the image",
+            "Audio's prompt is the style caption, with lyrics separate; images' is the image; "
+            "videos' is the clip",
             [
                 "routes/lemonade/inference/audio_generations.cpp:kPrompt",
+                "routes/lemonade/videos/videos_create.cpp:kPrompt",
                 "routes/openai/images/images_generations.cpp:openai::images::kPrompt",
             ],
         ),
@@ -548,10 +550,33 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
-            "Ollama's generate applies it only to image models",
+            "Ollama's generate applies it only to image models; images default it to 7.0, "
+            "videos to the model's own",
             [
+                "routes/lemonade/videos/videos_create.cpp:kCfgScale",
                 "routes/ollama/generate.cpp:kCfgScale",
                 "routes/openai/images/images_generations.cpp:openai::images::kCfgScale",
+            ],
+        ),
+        (
+            "Ollama's generate applies it only to image models",
+            [
+                "routes/lemonade/videos/videos_create.cpp:kWidth",
+                "routes/ollama/generate.cpp:kWidth",
+            ],
+        ),
+        (
+            "Ollama's generate applies it only to image models",
+            [
+                "routes/lemonade/videos/videos_create.cpp:kHeight",
+                "routes/ollama/generate.cpp:kHeight",
+            ],
+        ),
+        (
+            "A video id is a job id, but one created by POST /v1/videos",
+            [
+                "routes/lemonade/videos/video_shared.cpp:video_routes::kId",
+                "routes/shared_args.cpp:job_routes::kId",
             ],
         ),
         (
@@ -1893,7 +1918,8 @@ def render_route(spec: dict, entries: dict) -> str:
             in_example_order(example["args"], entries[example["name"]])
             for example in spec["examples"]
         ]
-        parts += ["", render_examples(spec, ordered)]
+        if ordered:
+            parts += ["", render_examples(spec, ordered)]
         fields = render_response_format(spec)
         if fields:
             parts += ["", fields]

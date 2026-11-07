@@ -673,8 +673,10 @@ backends::DownloadPolicy ModelManager::download_policy(const ModelInfo& info) co
     return artifacts_->download_policy(info);
 }
 
-void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
-    ingest_->fetch_model(info, do_not_upgrade, progress_callback);
+void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade,
+                                             DownloadProgressCallback progress_callback,
+                                             const utils::CancelToken& cancel) {
+    ingest_->fetch_model(info, do_not_upgrade, progress_callback, cancel);
 }
 
 void ModelManager::register_model(const std::string& model_name,
