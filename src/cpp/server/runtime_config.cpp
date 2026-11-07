@@ -493,6 +493,11 @@ int RuntimeConfig::ctx_size() const {
     return config_["ctx_size"].get<int>();
 }
 
+bool RuntimeConfig::auto_context_safer() const {
+    std::shared_lock lock(mutex_);
+    return config_.value("auto_context_safer", false);
+}
+
 bool RuntimeConfig::auto_evict() const {
     std::shared_lock lock(mutex_);
     if (config_.contains("auto_evict")) {
@@ -917,6 +922,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
     } else if (key == "broadcast" || key == "no_broadcast" || key == "offline" ||
                key == "auto_check_model_updates" ||
                key == "auto_update_models" ||
+                key == "auto_context_safer" ||
                key == "no_fetch_executables" ||
                key == "disable_model_filtering" ||
                key == "enable_dgpu_gtt") {
