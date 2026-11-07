@@ -235,9 +235,10 @@ it. `on_truncation` decides what the cut means:
 An older ort-server cuts without saying so, and lemond warns when it loads one.
 Against it, every evaluation under `fail` counts as a failure, so `on_error`
 applies. `score` is unaffected. Most llama.cpp decision models, Laya and
-Julia-1 among them, refuse a text that is too long, so they report `false`.
-`lfm2-d1-omni`, and `h2o-lightning` for a text over 32,000 bytes, can cut it
-without saying so, so they report nothing and `fail` fails closed.
+Julia-1 among them, and FastFlowLM's d3 models refuse a text that is too long,
+so they report `false`. `lfm2-d1-omni`, and `h2o-lightning` for a text over
+32,000 bytes, can cut it without saying so, so they report nothing and `fail`
+fails closed.
 
 `LFM2.5-Encoder-350M-Prompt-Router-ONNX` has a default 2,048-token window, so a text
 longer than about 8,000 characters is cut. To raise it, pass

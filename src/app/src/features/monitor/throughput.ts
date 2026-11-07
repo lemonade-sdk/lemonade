@@ -9,6 +9,22 @@ export function decodedTokensInSlot(slot: SlotData): number {
     : 0;
 }
 
+/**
+ * Current llama.cpp omits the cache fields; there n_prompt_tokens is the slot's
+ * live context, growing with generated tokens and retained while idle.
+ */
+export function getCacheTokenCount(slot: SlotData): number {
+  if (typeof slot.n_cache_tokens === 'number') return slot.n_cache_tokens;
+  if (typeof slot.cache_tokens === 'number') return slot.cache_tokens;
+  if (Array.isArray(slot.cache_tokens)) return slot.cache_tokens.length;
+  return slot.n_prompt_tokens || 0;
+}
+
+/** Large context windows put real usage below 0.5%, which must not read as empty. */
+export function percentDigits(value: number): string {
+  return value > 0 && value < 1 ? '<1' : `${Math.round(value)}`;
+}
+
 /** Respect explicit slot activity; old windowed deltas must not keep an idle slot alive. */
 export function isSlotProcessing(slot: SlotData, measuredTps = 0): boolean {
   if (typeof slot.is_processing === 'boolean') return slot.is_processing;

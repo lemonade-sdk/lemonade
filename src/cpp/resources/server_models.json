@@ -1481,6 +1481,29 @@
         ],
         "size": 14.9
     },
+    "LFM3-1.7B-GGUF": {
+        "checkpoint": "LiquidAI/LFM3-1.7B-GGUF:LFM3-1.7B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 1.1
+    },
+    "LFM3-VL-2B-GGUF": {
+        "checkpoint": "LiquidAI/LFM3-VL-2B-GGUF:LFM3-VL-2B-Q4_K_M.gguf",
+        "mmproj": "mmproj-LFM3-VL-2B-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "vision"
+        ],
+        "size": 1.48
+    },
     "K2-Horizon-0.9B-GGUF": {
         "checkpoint": "IFM/K2-Horizon-0.9B-GGUF:K2-Horizon-1B-Q4_K_M.gguf",
         "recipe": "llamacpp",
@@ -2231,7 +2254,7 @@
             "image"
         ],
         "size": 5.21,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 4,
             "cfg_scale": 1.0,
             "width": 512,
@@ -2246,7 +2269,7 @@
             "image"
         ],
         "size": 2.02,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 4,
             "cfg_scale": 1.0,
             "width": 512,
@@ -2262,7 +2285,7 @@
             "image"
         ],
         "size": 6.94,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 4,
             "cfg_scale": 1.0,
             "width": 512,
@@ -2278,7 +2301,7 @@
             "image"
         ],
         "size": 7.7,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 20,
             "cfg_scale": 7.5,
             "width": 512,
@@ -2294,7 +2317,7 @@
             "image"
         ],
         "size": 6.94,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 20,
             "cfg_scale": 7.5,
             "width": 1024,
@@ -2315,7 +2338,7 @@
             "edit"
         ],
         "size": 16.1,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 4,
             "cfg_scale": 1,
             "width": 1024,
@@ -2336,7 +2359,7 @@
             "edit"
         ],
         "size": 19.0,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 4,
             "cfg_scale": 1,
             "width": 256,
@@ -2356,16 +2379,14 @@
             "image"
         ],
         "size": 18.2,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 20,
             "cfg_scale": 2.5,
             "width": 512,
             "height": 512,
             "soft_pixel_cap": 2097152,
             "sampling_method": "euler",
-            "flow_shift": 3.0
-        },
-        "recipe_options": {
+            "flow_shift": 3.0,
             "sdcpp_args": "--diffusion-fa --offload-to-cpu"
         }
     },
@@ -2381,16 +2402,14 @@
             "image"
         ],
         "size": 19.4,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 20,
             "cfg_scale": 2.5,
             "width": 512,
             "height": 512,
             "soft_pixel_cap": 2097152,
             "sampling_method": "euler",
-            "flow_shift": 3.0
-        },
-        "recipe_options": {
+            "flow_shift": 3.0,
             "sdcpp_args": "--diffusion-fa --offload-to-cpu"
         }
     },
@@ -2406,7 +2425,7 @@
             "image"
         ],
         "size": 20.7,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 9,
             "cfg_scale": 1,
             "width": 1024,
@@ -2430,7 +2449,7 @@
         "labels": [
             "chat"
         ],
-        "size": 9.30
+        "size": 9.3
     },
     "RPG-HaloTales-V1": {
         "checkpoint": "lemonade-sdk/RPG-HaloTales-V1",
@@ -2511,7 +2530,7 @@
             "tts"
         ],
         "size": 12.5,
-        "audio_defaults": {
+        "recipe_options": {
             "pcm_sample_rate": 24000,
             "pcm_channels": 1
         }
@@ -2529,7 +2548,7 @@
             "tts"
         ],
         "size": 8.5,
-        "audio_defaults": {
+        "recipe_options": {
             "pcm_sample_rate": 48000,
             "pcm_channels": 2
         }
@@ -2546,7 +2565,7 @@
             "voice-design"
         ],
         "size": 7.3,
-        "audio_defaults": {
+        "recipe_options": {
             "pcm_sample_rate": 24000,
             "pcm_channels": 1
         }
@@ -2562,7 +2581,7 @@
             "audio-generation"
         ],
         "size": 6.6,
-        "audio_defaults": {
+        "recipe_options": {
             "pcm_sample_rate": 48000,
             "pcm_channels": 1
         }
@@ -2579,7 +2598,7 @@
             "image"
         ],
         "size": 5.4,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 30,
             "cfg_scale": 4,
             "width": 1024,
@@ -2599,7 +2618,7 @@
             "image"
         ],
         "size": 5.4,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 30,
             "cfg_scale": 4,
             "width": 1024,
@@ -2619,7 +2638,7 @@
             "image"
         ],
         "size": 5.4,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 8,
             "cfg_scale": 1.0,
             "width": 1024,
@@ -2640,7 +2659,7 @@
             "edit"
         ],
         "size": 16.1,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 4,
             "cfg_scale": 1,
             "width": 1024,
@@ -2661,7 +2680,7 @@
             "edit"
         ],
         "size": 32.5,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 4,
             "cfg_scale": 1,
             "width": 1024,
@@ -2682,7 +2701,7 @@
             "edit"
         ],
         "size": 16.1,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 8,
             "cfg_scale": 1,
             "width": 1440,
@@ -2702,7 +2721,7 @@
             "image"
         ],
         "size": 35,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 8,
             "cfg_scale": 1.0,
             "width": 1024,
@@ -2722,7 +2741,7 @@
             "image"
         ],
         "size": 20.7,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 8,
             "cfg_scale": 1.0,
             "width": 1024,
@@ -2736,6 +2755,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.064
@@ -2746,6 +2766,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.017
@@ -2758,6 +2779,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067
@@ -2770,6 +2792,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067
@@ -2782,6 +2805,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067
@@ -2794,6 +2818,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067
@@ -2806,6 +2831,7 @@
         "suggested": true,
         "labels": [
             "upscaling",
+            "on-demand",
             "image"
         ],
         "size": 0.067

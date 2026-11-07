@@ -20,6 +20,7 @@ struct BackendOption {
     std::string type_name;            // "ARGS" | "SIZE" | "BACKEND" | "BOOL"
     std::string help;                 // CLI help text
     std::string group;                // CLI help group, e.g. "General Options"
+    bool user_configurable = true;    // false = not a preference; clients should show no control
 };
 
 // How a backend shares the accelerator.
@@ -43,6 +44,18 @@ struct ContainerPolicy {
     std::string image;
     std::vector<std::string> devices;   // device nodes the container can open, e.g. "/dev/dri"
     std::vector<std::string> cap_add;   // capabilities given back after --cap-drop=all
+};
+
+// What one backend is and where it comes from, shown to people choosing among
+// backends. The author wrote the engine or fork; the publisher builds the
+// artifact Lemonade installs, which is often someone else (llamacpp:rocm is
+// ggml-org's code built by lemonade-sdk).
+struct BackendAbout {
+    std::string description;  // one or two sentences on what the backend is for
+    std::string author;
+    std::string publisher;
+    std::string license;      // SPDX id or license name; "" when upstream declares none
+    std::string project_url;  // the author's project, where its license file lives
 };
 
 inline const char* slot_policy_to_string(SlotPolicy p) {
@@ -73,6 +86,10 @@ struct BackendDescriptor {
 
     std::vector<BackendOption>    options;                       // backend-specific knobs (common ones are automatic)
     std::vector<BackendSupport>   support;                       // which OS / GPU families it runs on ({} = no local gating)
+
+    // One entry per backend named in `support`, keyed by that name.
+    // BackendContractsTest fails a support row without one.
+    std::map<std::string, BackendAbout> about;
 
     // Every deployment mode this backend can serve, most-default first. A model
     // whose labels name no mode falls back to supported_modes[0]; a model whose

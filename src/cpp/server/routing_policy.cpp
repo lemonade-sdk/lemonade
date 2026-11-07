@@ -477,8 +477,8 @@ private:
     mutable std::atomic<long long> last_truncation_log_s_{0};
 };
 
-// One SystemOne question (choice / noul / score) asked of a llama.cpp decision
-// model. The declared labels are the question's options: a choice's criteria
+// One SystemOne question (choice / noul / score) asked of a llama.cpp or FLM
+// decision model. The declared labels are the question's options: a choice's criteria
 // keys, "true"/"false" for noul, a score's level descriptions.
 class SystemOneClassifier final : public Classifier {
 public:
