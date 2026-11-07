@@ -38,6 +38,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | `status`            | Check if server can be reached. If it is, prints server information. Use `--json` for machine-readable output. |
 | `logs`              | Open server logs in the web UI. |
 | `backends`          | List supported recipes and backends or list all available recipes and backends with `--all`. Use `install` or `uninstall` to manage backends. |
+| `agents`            | Install, configure and remove the agents Lemonade manages. See command options [below](#options-for-agents). |
 | `cloud`             | Manage cloud OpenAI-compatible providers. See command options [below](#options-for-cloud). |
 | `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
 | `telemetry`         | Dynamically enable or disable telemetry tracing. See command options [below](#options-for-telemetry). |
@@ -676,6 +677,31 @@ lemonade backends install flm:npu
 lemonade backends install llamacpp:rocm --force
 ```
 
+## Options for agents
+
+The `agents` command manages the coding agents Lemonade installs for you, through your [agent host](./agents.md#the-agent-host). It needs a Lemonade server on this machine.
+
+```bash
+lemonade agents [list]
+lemonade agents install AGENT [--force]
+lemonade agents uninstall AGENT
+lemonade agents configure AGENT [--mcp|--no-mcp]
+lemonade agents enable
+lemonade agents disable
+```
+
+| Command | Description |
+|--------|-------------|
+| `lemonade agents` | List agents with their pinned and installed versions and the binary in use |
+| `lemonade agents install pi` | Install pi at the version Lemonade pins, or move to it |
+| `lemonade agents install pi --force` | Download and install the pinned version again |
+| `lemonade agents uninstall pi` | Remove the installed pi and its shim; pi's settings stay |
+| `lemonade agents configure pi` | Point pi at this server; `--mcp` adds Lemonade's MCP server and `--no-mcp` removes it |
+| `lemonade agents enable` | Keep an agent host running with your session (Linux and macOS) |
+| `lemonade agents disable` | Stop keeping an agent host running |
+
+See [Agents](./agents.md) for what gets installed where.
+
 ## Options for launch
 
 The `launch` command launches an agent and triggers model loading asynchronously. If no model is provided, launch prompts for recipe/model selection before starting the agent:
@@ -717,6 +743,7 @@ Pi-only options:
 - `--agent-args` is parsed and appended to the launched agent command.
 - Supported agents: `claude`, `codex`, `opencode`, `pi`, `junie`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
+- For `pi` against a Lemonade server on this machine, launch asks your [agent host](./agents.md) to prepare pi and runs the pi Lemonade installed, or else the one on your `PATH`. When neither exists, it offers to install pi (or, without a terminal, tells you to run `lemonade agents install pi`). Against a remote server, launch runs the pi on your `PATH`.
 - `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json` (honors `PI_CODING_AGENT_DIR`), plus `mcp.json` with `--mcp`. See [Pi](../integrations/pi.md).
 - `junie` uses an auto-managed custom model profile at `~/.junie/models/lemonade.json` (honors `JUNIE_HOME`) and is launched with `--model custom:lemonade`.
 - When no `--api-key` is provided, the generated `opencode`, `pi`, and `junie` providers use a default `apiKey` value of `lemonade`. With an API key, `pi`'s config references `${LEMONADE_API_KEY}`, which launch exports to pi, instead of storing the key.

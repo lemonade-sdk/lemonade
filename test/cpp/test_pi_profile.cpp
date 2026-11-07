@@ -4,6 +4,7 @@
 // Run with: ctest --test-dir build -R '^PiProfileTest$' --output-on-failure
 
 #include "lemon_cli/agent_launcher.h"
+#include "lemon_cli/pi_launch_prep.h"
 #include "lemon_cli/pi_profile.h"
 
 #include <nlohmann/json.hpp>
@@ -13,8 +14,14 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <vector>
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 namespace fs = std::filesystem;
 using nlohmann::json;
@@ -251,6 +258,164 @@ void test_mcp_file_kept(const fs::path& agent_dir) {
 }
 #endif
 
+// Serves /api/v1/models with one downloaded chat model "Listed" (no saved
+// ctx_size) and answers /api/v1/models/<id> for "Listed" with a loaded
+// window; any other id is a 404.
+struct FakeLemond {
+    std::vector<std::string> calls;
+    std::mutex* write_mutex = nullptr;
+    bool mutex_held_during_call = false;
+
+    lemon_cli::LemondCall call() {
+        return [this](const std::string& method, const std::string& path, const std::string&,
+                      int) -> std::string {
+            calls.push_back(method + " " + path);
+            if (write_mutex != nullptr) {
+                if (write_mutex->try_lock()) {
+                    write_mutex->unlock();
+                } else {
+                    mutex_held_during_call = true;
+                }
+            }
+            if (path == "/api/v1/models?show_all=false") {
+                return json{{"data", {{{"id", "Listed"}, {"labels", {"chat", "tool-calling"}}}}}}
+                    .dump();
+            }
+            if (path == "/api/v1/load") {
+                return "{}";
+            }
+            if (path == "/api/v1/models/Listed") {
+                return json{{"id", "Listed"}, {"context_length", 8192}}.dump();
+            }
+            throw lemon_cli::LemondHttpError(404, "model not found");
+        };
+    }
+
+    bool called(const std::string& entry) const {
+        for (const auto& c : calls) {
+            if (c == entry) return true;
+        }
+        return false;
+    }
+};
+
+void write_file_in(const fs::path& dir, const std::string& name, const std::string& content) {
+    fs::create_directories(dir);
+    write_file(dir / name, content);
+}
+
+std::vector<std::string> prep_messages;
+void record(lemon_cli::PrepLevel, const std::string& message) {
+    prep_messages.push_back(message);
+}
+
+bool any_message_contains(const std::string& text) {
+    for (const auto& m : prep_messages) {
+        if (m.find(text) != std::string::npos) return true;
+    }
+    return false;
+}
+
+void test_prepare_pi_config(const fs::path& root) {
+    {
+        const fs::path dir = root / "no-model";
+        FakeLemond fake;
+        lemon_cli::PiPrepRequest request;
+        request.server_origin = "http://127.0.0.1:13305";
+        request.agent_dir = dir.string();
+        prep_messages.clear();
+        const bool ok = lemon_cli::prepare_pi_config(fake.call(), request, record);
+        const json models = json::parse(read_file(dir / "models.json"));
+        const json& list = models["providers"]["Lemonade"]["models"];
+        check("configure-only prep succeeds", ok);
+        check("configure-only writes the listed models and no empty id",
+              list.size() == 1 && list[0]["id"] == "Listed");
+        check("configure-only writes no settings.json", !fs::exists(dir / "settings.json"));
+        check("configure-only loads nothing", !fake.called("POST /api/v1/load"));
+        check("explicit agent_dir is used instead of PI_CODING_AGENT_DIR",
+              fs::exists(dir / "models.json"));
+        check("no key writes the placeholder",
+              models["providers"]["Lemonade"]["apiKey"] == "lemonade");
+    }
+    {
+        const fs::path dir = root / "auto-ctx";
+        FakeLemond fake;
+        std::mutex write_mutex;
+        fake.write_mutex = &write_mutex;
+        lemon_cli::PiPrepRequest request;
+        request.model = "Listed";
+        request.server_origin = "http://127.0.0.1:13305";
+        request.has_api_key = true;
+        request.agent_dir = dir.string();
+        bool loaded = false;
+        prep_messages.clear();
+        const bool ok =
+            lemon_cli::prepare_pi_config(fake.call(), request, record, &loaded, &write_mutex);
+        const json models = json::parse(read_file(dir / "models.json"));
+        const json settings = json::parse(read_file(dir / "settings.json"));
+        check("auto-ctx prep succeeds", ok);
+        check("auto-ctx loads the model", loaded && fake.called("POST /api/v1/load"));
+        check("auto-ctx writes the loaded window",
+              models["providers"]["Lemonade"]["models"][0]["contextWindow"] == 8192);
+        check("client key writes the env reference",
+              models["providers"]["Lemonade"]["apiKey"] == "${LEMONADE_API_KEY}");
+        check("launch sets pi's default model", settings["defaultModel"] == "Listed");
+        check("write mutex is not held during lemond calls", !fake.mutex_held_during_call);
+    }
+    {
+        const fs::path dir = root / "unknown";
+        FakeLemond fake;
+        lemon_cli::PiPrepRequest request;
+        request.model = "Missing";
+        request.server_origin = "http://127.0.0.1:13305";
+        request.agent_dir = dir.string();
+        prep_messages.clear();
+        const bool ok = lemon_cli::prepare_pi_config(fake.call(), request, record);
+        check("unknown model still launches", ok);
+        check("unknown model warns", any_message_contains("is not a model on the Lemonade server"));
+        check("unknown model is not loaded", !fake.called("POST /api/v1/load"));
+    }
+    {
+        const fs::path dir = root / "fetch-fails";
+        write_file_in(dir, "models.json",
+                      R"({"providers":{"Lemonade":{"models":[{"id":"Kept"}]}}})");
+        const lemon_cli::LemondCall failing = [](const std::string&, const std::string&,
+                                                 const std::string&, int) -> std::string {
+            throw lemon_cli::LemondHttpError(401, "Invalid or missing API key");
+        };
+        lemon_cli::PiPrepRequest request;
+        request.server_origin = "http://127.0.0.1:13305";
+        request.agent_dir = dir.string();
+        prep_messages.clear();
+        const bool ok = lemon_cli::prepare_pi_config(failing, request, record);
+        check("configure-only prep stops when lemond's model list can't be read",
+              !ok && any_message_contains("Invalid or missing API key"));
+        check("a failed model fetch leaves pi's models alone",
+              read_file(dir / "models.json").find("Kept") != std::string::npos);
+    }
+#ifndef _WIN32
+    if (geteuid() != 0) {
+        const fs::path dir = root / "no-mcp";
+        fs::create_directories(dir);
+        write_file(dir / "mcp.json", R"({"mcpServers":{"lemonade":{"url":"http://x:1/mcp"}}})");
+        write_file(dir / "models.json", "{}");
+        fs::permissions(dir, fs::perms::owner_read | fs::perms::owner_exec);
+        FakeLemond fake;
+        lemon_cli::PiPrepRequest request;
+        request.model = "Listed";
+        request.recipe_options = {{"ctx_size", 4096}};
+        request.server_origin = "http://127.0.0.1:13305";
+        request.mcp = false;
+        request.agent_dir = dir.string();
+        prep_messages.clear();
+        const bool ok = lemon_cli::prepare_pi_config(fake.call(), request, record);
+        fs::permissions(dir, fs::perms::owner_all);
+        check("--no-mcp stops when removal fails",
+              !ok && any_message_contains("Failed to remove Lemonade MCP from pi"));
+    }
+#endif
+}
+
 }  // namespace
 
 int main() {
@@ -272,6 +437,7 @@ int main() {
 #ifndef _WIN32
     test_mcp_file_kept(agent_dir);
 #endif
+    test_prepare_pi_config(agent_dir / "prep");
 
     std::error_code ec;
     fs::remove_all(agent_dir, ec);

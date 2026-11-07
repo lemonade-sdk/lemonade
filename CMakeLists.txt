@@ -289,7 +289,7 @@ set(MIN_CLI11_VERSION "2.4.2")
 set(MIN_CURL_VERSION "8.5.0")
 set(MIN_ZSTD_VERSION "1.5.5")
 set(DOWNLOAD_ZSTD_VERSION "1.5.7")
-set(MIN_HTTPLIB_VERSION "0.26.0")
+set(MIN_HTTPLIB_VERSION "0.64.0")
 set(MIN_LWS_VERSION "4.3.3")
 
 find_package(PkgConfig QUIET)
@@ -520,7 +520,7 @@ add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-        GIT_TAG d66d9a95997d51a8ba9822a611d1267757741535  # v0.51.0
+        GIT_TAG 24e58ce5b25d55045af4cd6f463e83a8082fbe6b  # v0.64.0
         GIT_SHALLOW TRUE
     )
     # Header-only mode compiles httplib's whole server, client and TLS code into
@@ -1867,6 +1867,8 @@ endif()
 # Add CLI application subdirectory
 add_subdirectory(src/cpp/cli)
 
+add_subdirectory(src/cpp/agent_host)
+
 # Add tray application subdirectory
 add_subdirectory(src/cpp/tray)
 
@@ -1985,6 +1987,22 @@ if(APPLE)
                 )
                 if(NOT SIGN_RESULT EQUAL 0)
                     message(FATAL_ERROR \"Failed to sign lemonade\")
+                endif()
+            " COMPONENT Runtime)
+        endif()
+    endif()
+
+    # Agent host -> /usr/local/bin
+    if(TARGET lemonade-agent-host)
+        install(TARGETS lemonade-agent-host RUNTIME DESTINATION "bin" COMPONENT Runtime)
+        if(CMAKE_BUILD_TYPE STREQUAL "Release")
+            install(CODE "
+                execute_process(
+                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade-agent-host\"
+                    RESULT_VARIABLE SIGN_RESULT
+                )
+                if(NOT SIGN_RESULT EQUAL 0)
+                    message(FATAL_ERROR \"Failed to sign lemonade-agent-host\")
                 endif()
             " COMPONENT Runtime)
         endif()
@@ -2166,6 +2184,22 @@ if(UNIX AND NOT APPLE)
         DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/user
         RENAME lemond.service
     )
+
+    # Started by `lemonade agents enable`, never by default.
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/data/lemonade-agent-host.service.in
+        ${CMAKE_BINARY_DIR}/lemonade-agent-host.service
+        @ONLY
+    )
+    install(FILES ${CMAKE_BINARY_DIR}/lemonade-agent-host.service
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/user
+    )
+    if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+        lemonade_install_systemd_symlink(
+            "/usr/lib/systemd/user/lemonade-agent-host.service"
+            "${CMAKE_INSTALL_PREFIX}/lib/systemd/user/lemonade-agent-host.service"
+        )
+    endif()
 
     # Install the optional environment-file template loaded by the unit via
     # EnvironmentFile=-/etc/default/lemond (LEMONADE_API_KEY and other secrets).
@@ -4079,12 +4113,43 @@ set(_PI_PROFILE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_pi_profile.c
 if(BUILD_TESTING AND EXISTS "${_PI_PROFILE_TEST_SRC}")
     add_executable(test_pi_profile
         test/cpp/test_pi_profile.cpp
+        src/cpp/cli/agent_config_file.cpp
         src/cpp/cli/agent_launcher.cpp
+        src/cpp/cli/agent_models.cpp
+        src/cpp/cli/pi_launch_prep.cpp
         src/cpp/cli/pi_profile.cpp
     )
     target_include_directories(test_pi_profile PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
     target_link_libraries(test_pi_profile PRIVATE lemonade-server-core nlohmann_json::nlohmann_json)
     add_cpp_ci_test(PiProfileTest CI ON COMMAND test_pi_profile)
+endif()
+
+# Agent host modules, compiled in directly like the host itself.
+if(BUILD_TESTING)
+    foreach(_agent_test agent_paths agent_lock agent_pins agent_shim agent_installer)
+        add_executable(test_${_agent_test} test/cpp/test_${_agent_test}.cpp
+            ${LEMON_AGENT_HOST_CORE_SOURCES})
+        target_include_directories(test_${_agent_test} PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+        target_link_libraries(test_${_agent_test} PRIVATE lemonade-server-core)
+        string(REPLACE "_" ";" _agent_test_words "${_agent_test}")
+        set(_agent_test_name "")
+        foreach(_word ${_agent_test_words})
+            string(SUBSTRING "${_word}" 0 1 _first)
+            string(SUBSTRING "${_word}" 1 -1 _rest)
+            string(TOUPPER "${_first}" _first)
+            string(APPEND _agent_test_name "${_first}${_rest}")
+        endforeach()
+        add_cpp_ci_test(${_agent_test_name}Test CI ON COMMAND test_${_agent_test})
+    endforeach()
+    add_dependencies(test_agent_pins copy_resources)
+
+    foreach(_agent_test agent_host_protocol agent_host_registry)
+        add_executable(test_${_agent_test} test/cpp/test_${_agent_test}.cpp)
+        target_link_libraries(test_${_agent_test} PRIVATE lemonade-server-core)
+    endforeach()
+    add_cpp_ci_test(AgentHostProtocolTest CI ON COMMAND test_agent_host_protocol)
+    add_cpp_ci_test(AgentHostRegistryTest CI ON COMMAND test_agent_host_registry)
 endif()
 
 set(_MODEL_SYNC_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_sync_service.cpp")

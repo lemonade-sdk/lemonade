@@ -1,0 +1,17 @@
+[Unit]
+Description=Lemonade agent host
+Documentation=https://lemonade-server.ai/docs/guide/agents/
+After=lemond.service
+
+[Service]
+Type=simple
+# The same optional env file the user lemond unit reads, so a LEMONADE_API_KEY
+# set there reaches the host too; agent-host.env can override it.
+EnvironmentFile=-%E/lemonade/lemond.conf
+EnvironmentFile=-%E/lemonade/agent-host.env
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/lemonade-agent-host --persistent
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

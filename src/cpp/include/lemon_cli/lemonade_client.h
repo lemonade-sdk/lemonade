@@ -5,6 +5,7 @@
 #include <vector>
 #include <functional>
 #include <cstdint>
+#include <map>
 #include <chrono>
 #include <optional>
 #include <nlohmann/json.hpp>
@@ -42,6 +43,9 @@ struct StreamingRequestState {
     std::chrono::steady_clock::time_point file_start_time;
     uint64_t file_bytes_resumed = 0;
 };
+
+// Prints one download progress event; returns true on a "complete" field.
+bool parse_sse_progress(const std::string& event_data, StreamingRequestState& state);
 
 // Model information structure
 struct ModelInfo {
@@ -146,7 +150,8 @@ public:
     // Utility (timeouts are in milliseconds)
     std::string make_request(const std::string& path, const std::string& method = "GET",
                              const std::string& body = "", const std::string& content_type = "",
-                             time_t connection_timeout_ms = 30000, time_t read_timeout_ms = 30000) const;
+                             time_t connection_timeout_ms = 30000, time_t read_timeout_ms = 30000,
+                             const std::map<std::string, std::string>& extra_headers = {}) const;
 
     // Streaming request overload (timeouts are in milliseconds).
     // `should_abort`, if set, is polled on every received chunk; returning
@@ -155,7 +160,8 @@ public:
                       const std::string& body, const std::string& content_type,
                       std::function<void(const std::string& event_type, const std::string& event_data)> callback,
                       time_t connection_timeout_ms = 30000, time_t read_timeout_ms = 30000,
-                      std::function<bool()> should_abort = nullptr) const;
+                      std::function<bool()> should_abort = nullptr,
+                      const std::map<std::string, std::string>& extra_headers = {}) const;
 
 private:
     std::string host_;

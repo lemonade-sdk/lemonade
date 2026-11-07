@@ -9,10 +9,12 @@ This guide focuses on the most common launch flows.
 1. Install Pi:
 
     ```bash
-    npm install -g @earendil-works/pi-coding-agent
+    lemonade agents install pi
     ```
 
-    `--mcp` needs Pi 1.0 or newer, and `--codemode` needs Pi 1.1 or newer. Launch checks this when you pass either flag: it stops with an older Pi for `--codemode` and warns for `--mcp`. Check with `pi --version`, and update with the same install command.
+    This installs the version Lemonade pins, verified against its checksum, and puts a `pi` shim in `~/.local/bin`; see [Agents](../guide/agents.md). `lemonade launch pi` offers to do this when Pi is missing. `pi update` then points you at `lemonade agents install pi`.
+
+    A Pi from npm works too: `npm install -g @earendil-works/pi-coding-agent`. `--mcp` needs Pi 1.0 or newer, and `--codemode` needs Pi 1.1 or newer. Launch checks this when you pass either flag: it stops with an older Pi for `--codemode` and warns for `--mcp`. Check with `pi --version`, and update with the same install command.
 
 2. Make sure Lemonade Server is running (`lemond`).
 
