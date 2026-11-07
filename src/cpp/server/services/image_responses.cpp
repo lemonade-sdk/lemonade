@@ -43,6 +43,15 @@ ordered_json image_response_schema() {
     })");
 }
 
+ordered_json image_generation_response_schema() {
+    auto schema = image_response_schema();
+    schema["properties"]["data"]["items"]["properties"]["generation_info"] = {
+        {"type", "object"},
+        {"description", "Optional generation parameters and model metadata reported by the image backend."}
+    };
+    return schema;
+}
+
 std::vector<RouteError> image_route_exception_errors() {
     return {kImageInvalidJson, ApiRoute::kUnexpectedException};
 }

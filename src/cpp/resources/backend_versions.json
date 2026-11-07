@@ -71,11 +71,11 @@
     "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-957-90e86d1",
-    "rocm-stable": "master-957-90e86d1",
-    "vulkan": "master-957-90e86d1",
-    "cuda": "master-957-90e86d1",
-    "metal": "master-957-90e86d1"
+    "cpu": "master-1006-90e86d1",
+    "rocm-stable": "master-1006-90e86d1",
+    "vulkan": "master-1006-90e86d1",
+    "cuda": "master-1006-90e86d1",
+    "metal": "master-1006-90e86d1"
   },
   "rocmfpx": {
     "rocm": "rocm-10.0-rocmfpx@sha256:4df326e907a469f4acc6091fa7fb68fb275c2d5a7136bacd8e47e7339a5c49f7"
