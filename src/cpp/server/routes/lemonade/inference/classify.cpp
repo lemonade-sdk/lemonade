@@ -51,8 +51,9 @@ public:
             "Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on "
             "a string and returns a score for each label. It serves `onnxruntime` sequence "
             "classifiers (one label set), token classifiers (aggregated span labels) and zero-shot "
-            "models (labels sent with each request), and llama.cpp and FastFlowLM decision models, "
-            "which are zero-shot. It provides the classification that the router's `classifier` and "
+            "models (labels sent with each request), llama.cpp and FastFlowLM decision models, "
+            "and llama.cpp prompt-router encoders with a `rulehead` checkpoint, all of which are "
+            "zero-shot. It provides the classification that the router's `classifier` and "
             "`zero_shot` conditions use.";
         s.notes = {
             "A malformed request, such as one with a blank `input`, a non-positive `top_k`, or a "
@@ -73,7 +74,17 @@ public:
             "declares `problem_type: multi_label_classification` in its config or ships a "
             "`manifest.json`.\n\n"
             "Zero-shot family: LFM2 (`Lfm2BidirForSequenceRouting`), such as "
-            "`LFM2.5-Encoder-350M-Prompt-Router-ONNX`. Every request to it carries `labels`.",
+            "`LFM2.5-Encoder-350M-Prompt-Router-ONNX`. Every request to it carries `labels`.\n\n"
+            "The same family as a GGUF runs on `llamacpp`, on the GPU too. Its GGUF holds only the "
+            "encoder, and its head ships beside it as `rulehead.bin`. Register the GGUF with the "
+            "labels `classification` and `zero-shot`: `{\"model_name\": \"user.my-router\", "
+            "\"recipe\": \"llamacpp\", \"checkpoint\": \"<repo>:<file>-f16.gguf\", "
+            "\"labels\": [\"classification\", \"zero-shot\"]}`. Lemonade downloads `rulehead.bin` "
+            "from the same repository and refuses the model when the file is missing; a head "
+            "stored elsewhere is named as the `rulehead` checkpoint. llama-server returns one "
+            "vector per token and lemond applies the head. "
+            "The text is never cut: an input longer than the model's batch (4096 tokens unless "
+            "`ctx_size`, `-b` and `-ub` raise it) is refused with `context_length_exceeded`.",
             "Some upstream models declare only generic `LABEL_<n>` label names; their model card "
             "explains them.",
         };

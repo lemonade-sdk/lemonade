@@ -237,6 +237,11 @@ int main() {
         // /v1/systemone from an LLM slot and evict the user's chat model.
         {"llamacpp + systemone", "llamacpp", {"systemone"}, false, {}, {}},
         {"llamacpp + chat + systemone", "llamacpp", {"chat", "systemone"}, false, {}, {}},
+        // A prompt-router encoder whose rule head lemond applies.
+        {"llamacpp + classification + zero-shot", "llamacpp",
+         {"classification", "zero-shot"}, true, {"classification", "zero-shot"},
+         ModelType::CLASSIFICATION},
+        {"llamacpp + zero-shot", "llamacpp", {"zero-shot"}, false, {}, {}},
         // FLM serves d3 decision models (`flm serve --decision`) the same way.
         {"flm + classification", "flm", {"classification"}, false, {}, {}},
         {"flm + classification + systemone", "flm", {"classification", "systemone"}, true,

@@ -52,7 +52,7 @@ Some Lemonade endpoints live on other pages: the per-model [`/v1/models/{id}/fil
 ## `POST /v1/classify`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on a string and returns a score for each label. It serves `onnxruntime` sequence classifiers (one label set), token classifiers (aggregated span labels) and zero-shot models (labels sent with each request), and llama.cpp and FastFlowLM decision models, which are zero-shot. It provides the classification that the router's `classifier` and `zero_shot` conditions use.
+Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on a string and returns a score for each label. It serves `onnxruntime` sequence classifiers (one label set), token classifiers (aggregated span labels) and zero-shot models (labels sent with each request), llama.cpp and FastFlowLM decision models, and llama.cpp prompt-router encoders with a `rulehead` checkpoint, all of which are zero-shot. It provides the classification that the router's `classifier` and `zero_shot` conditions use.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -74,6 +74,8 @@ Single-sequence encoder families: BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERT
 A servable model directory holds `model.onnx`, `tokenizer.json` and `config.json`. The `config.json` is always required: its architecture is checked against the families above, so an unsupported family such as XLNet is rejected at load time rather than served with wrong scores. Label names (`id2label`), normalization and the token budget come from the same config, and an optional `manifest.json` overrides them. Without a manifest, inference assumes single-label softmax, so a multi-label (sigmoid) model declares `problem_type: multi_label_classification` in its config or ships a `manifest.json`.
 
 Zero-shot family: LFM2 (`Lfm2BidirForSequenceRouting`), such as `LFM2.5-Encoder-350M-Prompt-Router-ONNX`. Every request to it carries `labels`.
+
+The same family as a GGUF runs on `llamacpp`, on the GPU too. Its GGUF holds only the encoder, and its head ships beside it as `rulehead.bin`. Register the GGUF with the labels `classification` and `zero-shot`: `{"model_name": "user.my-router", "recipe": "llamacpp", "checkpoint": "<repo>:<file>-f16.gguf", "labels": ["classification", "zero-shot"]}`. Lemonade downloads `rulehead.bin` from the same repository and refuses the model when the file is missing; a head stored elsewhere is named as the `rulehead` checkpoint. llama-server returns one vector per token and lemond applies the head. The text is never cut: an input longer than the model's batch (4096 tokens unless `ctx_size`, `-b` and `-ub` raise it) is refused with `context_length_exceeded`.
 
 Some upstream models declare only generic `LABEL_<n>` label names; their model card explains them.
 
