@@ -1061,7 +1061,7 @@ void ModelIngest::register_user_model(const std::string& model_name,
     // load, where an entry written by an older version is skipped rather than
     // blocking startup.
     std::string illegal;
-    std::set<std::string> labels = normalized_definition_labels(model_data, &illegal);
+    std::set<std::string> labels = normalized_definition_labels(model_data, clean_name, &illegal);
     if (!illegal.empty()) {
         throw InvalidModelDefinitionError(describe_illegal_labels(model_name, illegal));
     }
