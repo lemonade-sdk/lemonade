@@ -890,7 +890,7 @@ static void print_agents_table(const nlohmann::json& listing) {
 static int handle_agents_enable(bool enable) {
 #if defined(_WIN32)
     (void)enable;
-    std::cout << "On Windows, lemonade starts the agent host when a command needs it."
+    std::cout << "On Windows, Lemonade Server (the tray app) runs the agent host while it runs."
               << std::endl;
     return 0;
 #elif defined(__APPLE__)
