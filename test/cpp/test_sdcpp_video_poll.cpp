@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -33,11 +34,17 @@ struct FakeBackend {
     std::thread thread;
     std::atomic<int> submits{0};
     std::atomic<int> polls{0};
+    std::mutex body_mutex;
+    std::string last_body;
     int port = 0;
 
     explicit FakeBackend(int failing_polls) {
-        server.Post("/sdcpp/v1/vid_gen", [this](const httplib::Request&, httplib::Response& res) {
+        server.Post("/sdcpp/v1/vid_gen", [this](const httplib::Request& req, httplib::Response& res) {
             ++submits;
+            {
+                std::lock_guard<std::mutex> lock(body_mutex);
+                last_body = req.body;
+            }
             res.status = 202;
             res.set_content(R"({"id":"j1","poll_url":"/sdcpp/v1/jobs/j1"})", "application/json");
         });
@@ -196,6 +203,26 @@ void test_cancel_is_not_held_by_a_stalled_submit() {
           elapsed < std::chrono::seconds(20));
 }
 
+lemon::json submitted_seed(lemon::json req) {
+    FakeBackend backend(0);
+    FakeSdServer sd(backend.port);
+    sd.video_generations(req);
+    std::lock_guard<std::mutex> lock(backend.body_mutex);
+    return lemon::json::parse(backend.last_body).value("seed", lemon::json());
+}
+
+void test_negative_seed_becomes_random() {
+    lemon::json req = request();
+    req["seed"] = 7;
+    check("seed: a fixed seed is passed through", submitted_seed(req) == 7);
+    req["seed"] = -1;
+    const lemon::json first = submitted_seed(req);
+    check("seed: -1 becomes a concrete seed", first.is_number_integer() && first.get<int>() >= 0);
+    bool varies = false;
+    for (int i = 0; i < 5 && !varies; ++i) varies = submitted_seed(req) != first;
+    check("seed: -1 gives a different seed across clips", varies);
+}
+
 } // namespace
 
 int main() {
@@ -204,6 +231,7 @@ int main() {
     test_cancel_before_submit_skips_the_backend();
     test_cancel_is_not_held_by_a_stalled_backend();
     test_cancel_is_not_held_by_a_stalled_submit();
+    test_negative_seed_becomes_random();
     if (g_failures) {
         std::printf("%d FAILURE(S)\n", g_failures);
         return 1;

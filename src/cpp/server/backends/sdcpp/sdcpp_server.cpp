@@ -623,8 +623,11 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
     }
     if (frames) body["video_frames"] = *frames;
     if (fps) body["fps"] = *fps;
+    // A negative seed means random, as for images; sd-server would otherwise
+    // fall back to its fixed default and give every clip the same noise.
     if (request.contains("seed") && request["seed"].is_number_integer()) {
-        body["seed"] = request["seed"];
+        int seed = request["seed"].get<int>();
+        body["seed"] = seed >= 0 ? seed : generate_random_seed();
     }
     if (request.contains("output_format") && request["output_format"].is_string()) {
         body["output_format"] = request["output_format"];
