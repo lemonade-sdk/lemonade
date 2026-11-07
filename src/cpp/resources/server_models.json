@@ -1481,6 +1481,29 @@
         ],
         "size": 14.9
     },
+    "LFM3-1.7B-GGUF": {
+        "checkpoint": "LiquidAI/LFM3-1.7B-GGUF:LFM3-1.7B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 1.1
+    },
+    "LFM3-VL-2B-GGUF": {
+        "checkpoint": "LiquidAI/LFM3-VL-2B-GGUF:LFM3-VL-2B-Q4_K_M.gguf",
+        "mmproj": "mmproj-LFM3-VL-2B-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "vision"
+        ],
+        "size": 1.48
+    },
     "K2-Horizon-0.9B-GGUF": {
         "checkpoint": "IFM/K2-Horizon-0.9B-GGUF:K2-Horizon-1B-Q4_K_M.gguf",
         "recipe": "llamacpp",
