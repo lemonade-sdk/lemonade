@@ -15,6 +15,7 @@
 #include "lemon/gguf_shard_utils.h"
 #include "lemon/model_manager.h"
 #include "lemon/models/artifact_ref.h"
+#include "lemon/models/registry_types.h"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -828,9 +829,6 @@ json LlamaCppServer::classify_with_rule_head(const json& request) {
         const llamacpp::RouterTokens tokens = llamacpp::router_tokens(
             with_special.value("tokens", json()), without_special.value("tokens", json()),
             input.text.size());
-        const llamacpp::RouterTokenGroups groups =
-            llamacpp::group_router_tokens(input, tokens.spans, labels);
-
         if (encoder_max_input_tokens_ > 0 &&
             tokens.ids.size() > static_cast<size_t>(encoder_max_input_tokens_)) {
             return json{{"error", {
@@ -842,6 +840,8 @@ json LlamaCppServer::classify_with_rule_head(const json& request) {
                 {"status_code", 400},
             }}};
         }
+        const llamacpp::RouterTokenGroups groups =
+            llamacpp::group_router_tokens(input, tokens.spans, labels);
 
         json embedded = forward_request("/embedding", json{{"content", tokens.ids}});
         if (embedded.is_object() && embedded.contains("error")) {
@@ -1085,7 +1085,7 @@ public:
             return;
         }
         info.checkpoints["rulehead"] =
-            models::repo_id_from_checkpoint(main) + ":" + llamacpp::RULE_HEAD_FILE;
+            llamacpp::implied_rule_head_checkpoint(main, is_local_origin(info.source));
     }
 
     void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,

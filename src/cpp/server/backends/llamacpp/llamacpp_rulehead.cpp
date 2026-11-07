@@ -47,6 +47,15 @@ std::vector<double> pooled_projection(const nlohmann::json& rows, const std::vec
 
 }  // namespace
 
+std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, bool local) {
+    if (!local) {
+        return main_checkpoint.substr(0, main_checkpoint.find(':')) + ":" + RULE_HEAD_FILE;
+    }
+    const size_t slash = main_checkpoint.find_last_of("/\\");
+    return (slash == std::string::npos ? std::string() : main_checkpoint.substr(0, slash + 1)) +
+           RULE_HEAD_FILE;
+}
+
 std::string missing_rule_head_message(const std::string& model_name, const std::string& checkpoint) {
     return "model '" + model_name + "' is labelled 'zero-shot', but its rule head file '" +
            checkpoint + "' is missing. A llama.cpp prompt-router GGUF holds only the encoder; "
@@ -171,6 +180,9 @@ RuleHead parse_rule_head(const std::string& bytes, int64_t hidden) {
     }
     std::vector<float> floats(n);
     std::memcpy(floats.data(), bytes.data(), n * sizeof(float));
+    if (!std::all_of(floats.begin(), floats.end(), [](float value) { return std::isfinite(value); })) {
+        throw std::runtime_error("the rule head contains a value that is not finite");
+    }
 
     RuleHead head;
     head.hidden = hidden;
@@ -183,9 +195,6 @@ RuleHead parse_rule_head(const std::string& bytes, int64_t hidden) {
     head.rule_b = take(floats, offset, static_cast<size_t>(head.proj));
     head.score_bias = floats[offset];
     head.logit_scale = floats[offset + 1];
-    if (!std::isfinite(head.score_bias) || !std::isfinite(head.logit_scale)) {
-        throw std::runtime_error("the rule head's score bias or logit scale is not finite");
-    }
     return head;
 }
 

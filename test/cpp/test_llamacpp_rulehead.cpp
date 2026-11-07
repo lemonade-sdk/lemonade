@@ -10,6 +10,7 @@
 
 using lemon::backends::llamacpp::build_router_input;
 using lemon::backends::llamacpp::group_router_tokens;
+using lemon::backends::llamacpp::implied_rule_head_checkpoint;
 using lemon::backends::llamacpp::parse_rule_head;
 using lemon::backends::llamacpp::router_classify_response;
 using lemon::backends::llamacpp::router_tokens;
@@ -148,6 +149,42 @@ int main() {
                std::abs(probabilities[1] - 1.0 / z) < 1e-12 &&
                std::abs(probabilities[2] - std::exp(-1.0) / z) < 1e-12,
            "scores are softmax(cos * e^logit_scale + bias)");
+
+    {
+        // Each projection has a different non-symmetric matrix and a bias, so a
+        // transposed or swapped matrix, or a dropped bias, changes every score.
+        const RuleHead skew = parse_rule_head(
+            bytes_of({1, 2, 0, 1,  0.5f, -1,  0, 1, 1, 0,  1, 0,  0, 0}), 2);
+        const std::vector<double> got = score_router_labels(skew, rows, tokens.ids.size(), groups);
+        // q = (1.5, -1); code (1, 3), math (3, 0), chat (1, -1)
+        const double q = std::sqrt(3.25);
+        const std::vector<double> logits = {-1.5 / (q * std::sqrt(10.0)), 4.5 / (q * 3.0),
+                                            2.5 / (q * std::sqrt(2.0))};
+        double sum = 0.0;
+        for (double l : logits) sum += std::exp(l);
+        bool close = true;
+        for (size_t i = 0; i < logits.size(); ++i) {
+            close = close && std::abs(got[i] - std::exp(logits[i]) / sum) < 1e-12;
+        }
+        expect(close, "an asymmetric head scores with tok_w and rule_w in place and their biases");
+    }
+
+    {
+        std::vector<float> nan_weight = identity_head(0.0f, 0.0f);
+        nan_weight[1] = std::nanf("");
+        expect(throws<std::runtime_error>([&] { parse_rule_head(bytes_of(nan_weight), 2); }),
+               "a head with a non-finite weight is refused");
+    }
+
+    expect(implied_rule_head_checkpoint("org/router-GGUF:router-f16.gguf", false) ==
+               "org/router-GGUF:rulehead.bin",
+           "a remote head is rulehead.bin in the same repository");
+    expect(implied_rule_head_checkpoint("user.my-router/router-f16.gguf", true) ==
+               "user.my-router/rulehead.bin",
+           "a local upload's head is the file beside the GGUF");
+    expect(implied_rule_head_checkpoint("C:\\models\\router-f16.gguf", true) ==
+               "C:\\models\\rulehead.bin",
+           "a Windows path keeps its drive and directory");
 
     const RuleHead capped = parse_rule_head(bytes_of(identity_head(0.0f, 10.0f)), 2);
     const std::vector<double> sharp = score_router_labels(capped, rows, tokens.ids.size(), groups);

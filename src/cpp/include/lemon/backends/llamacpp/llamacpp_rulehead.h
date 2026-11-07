@@ -19,6 +19,10 @@ namespace llamacpp {
 
 constexpr const char* RULE_HEAD_FILE = "rulehead.bin";
 
+// A local checkpoint is a file path, so its head is the file beside it; a remote
+// one is `repo:file`, so its head is RULE_HEAD_FILE in the same repository.
+std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, bool local);
+
 std::string missing_rule_head_message(const std::string& model_name, const std::string& checkpoint);
 
 // Ranges are in bytes, because llama-server's token pieces are bytes.
