@@ -123,14 +123,16 @@ pub(crate) struct Registry {
     seen: BTreeMap<String, Seen>,
 }
 
-/// The id a beacon is filed under: its hostname (lowercased), or the sender's address when it has none.
-/// v1 beacons carry no node identity; two machines with the same hostname share a row until beacon v2.
-pub(crate) fn server_id(hostname: &str, from: IpAddr) -> String {
+/// The id a beacon is filed under: its hostname (lowercased, or the sender's address when it has none)
+/// and the port in its URL. One server announcing several interfaces shares a port, so it stays one
+/// row; two servers on one machine (different ports) are two rows. v1 beacons carry no node identity,
+/// so two machines with the same hostname and port share a row until beacon v2.
+pub(crate) fn server_id(hostname: &str, url: &str, from: IpAddr) -> String {
     let h = hostname.trim().to_lowercase();
-    if h.is_empty() {
-        from.to_string()
-    } else {
-        h
+    let host = if h.is_empty() { from.to_string() } else { h };
+    match url::Url::parse(url).ok().and_then(|u| u.port_or_known_default()) {
+        Some(port) => format!("{host}:{port}"),
+        None => host,
     }
 }
 
@@ -138,7 +140,7 @@ impl Registry {
     /// Record one beacon from another machine. Returns true when the list changed (a new server or a new URL),
     /// not on every repeat beacon, so the renderer is only told about real changes.
     pub(crate) fn record(&mut self, hostname: &str, url: &str, from: IpAddr, now: Instant) -> bool {
-        let id = server_id(hostname, from);
+        let id = server_id(hostname, url, from);
         let zone = zone_of(from);
         match self.seen.get_mut(&id) {
             Some(s) => {
@@ -329,7 +331,7 @@ mod tests {
         assert!(r.record("t440", "http://192.168.4.29:13305/api/v1/", v4(192, 168, 4, 29), t));
         let rows = r.list(&BTreeMap::new(), t);
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].id, "c4");
+        assert_eq!(rows[0].id, "c4:13305");
         assert_eq!(rows[0].urls.len(), 2);
         assert_eq!(rows[0].state, "new");
         assert_eq!(rows[0].zone, Some(Zone::Home));
@@ -353,20 +355,34 @@ mod tests {
         r.record("c2", "http://192.168.4.23:13305/api/v1/", v4(192, 168, 4, 23), t);
         r.record("guest-laptop", "http://192.168.4.99:13305/api/v1/", v4(192, 168, 4, 99), t);
         let mut saved = BTreeMap::new();
-        apply_choice(&mut saved, "guest-laptop", "ignored", "guest-laptop", "").unwrap();
-        apply_choice(&mut saved, "c4", "accepted", "c4", "http://10.44.0.14:13305/api/v1/").unwrap();
+        apply_choice(&mut saved, "guest-laptop:13305", "ignored", "guest-laptop", "").unwrap();
+        apply_choice(&mut saved, "c4:13305", "accepted", "c4", "http://10.44.0.14:13305/api/v1/").unwrap();
         let rows = r.list(&saved, t);
         let states: Vec<_> = rows.iter().map(|x| (x.id.as_str(), x.state, x.seen)).collect();
-        assert_eq!(states, vec![("c2", "new", true), ("c4", "accepted", false), ("guest-laptop", "ignored", true)]);
-        apply_choice(&mut saved, "guest-laptop", "new", "", "").unwrap();
-        assert!(!saved.contains_key("guest-laptop"));
+        assert_eq!(states, vec![("c2:13305", "new", true), ("c4:13305", "accepted", false), ("guest-laptop:13305", "ignored", true)]);
+        apply_choice(&mut saved, "guest-laptop:13305", "new", "", "").unwrap();
+        assert!(!saved.contains_key("guest-laptop:13305"));
         assert!(apply_choice(&mut saved, "x", "bogus", "", "").is_err());
     }
 
     #[test]
-    fn a_beacon_without_hostname_is_filed_by_address() {
-        assert_eq!(server_id("  ", v4(192, 168, 4, 5)), "192.168.4.5");
-        assert_eq!(server_id("NautiK9", v4(192, 168, 4, 5)), "nautik9");
+    fn servers_are_filed_by_host_and_port() {
+        let u = "http://192.168.4.5:13305/api/v1/";
+        assert_eq!(server_id("  ", u, v4(192, 168, 4, 5)), "192.168.4.5:13305");
+        assert_eq!(server_id("NautiK9", u, v4(192, 168, 4, 5)), "nautik9:13305");
+        assert_eq!(server_id("c2", "not a url", v4(192, 168, 4, 5)), "c2");
+    }
+
+    #[test]
+    fn two_servers_on_one_machine_are_two_rows() {
+        let mut r = Registry::default();
+        let t = Instant::now();
+        r.record("c2", "http://192.168.4.24:13305/api/v1/", v4(192, 168, 4, 24), t);
+        r.record("c2", "http://192.168.4.24:9291/api/v1/", v4(192, 168, 4, 24), t);
+        r.record("c2", "http://10.44.0.12:9291/api/v1/", v4(10, 44, 0, 12), t);
+        let rows = r.list(&BTreeMap::new(), t);
+        let ids: Vec<_> = rows.iter().map(|x| (x.id.as_str(), x.urls.len())).collect();
+        assert_eq!(ids, vec![("c2:13305", 1), ("c2:9291", 2)]);
     }
 
     #[test]

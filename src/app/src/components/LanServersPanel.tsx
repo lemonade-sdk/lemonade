@@ -8,6 +8,7 @@ import {
 } from './WorkspacePanels';
 import { useI18n } from '../i18n';
 import { tauriReady } from '../tauriShim';
+import { useNexusAccount } from '../features/nexus/NexusAccountContext';
 
 // Lemonade servers found on the local network (#1221). The desktop app's beacon
 // listener keeps every beacon from another machine as a list; nothing switches
@@ -102,10 +103,16 @@ interface LanServersPanelProps {
   /** Connect to this origin through the normal Connect flow. Resolves true when it connected. */
   onUse: (origin: string) => Promise<boolean>;
   busy?: boolean;
+  /** Under Devices & mesh: offer Invite into this account's network next to Use directly (#3930). */
+  mesh?: boolean;
 }
 
-const LanServersPanel: React.FC<LanServersPanelProps> = ({ currentBaseUrl, onUse, busy }) => {
+type InviteNote = { state: 'working' | 'joined' | 'failed'; text: string };
+
+const LanServersPanel: React.FC<LanServersPanelProps> = ({ currentBaseUrl, onUse, busy, mesh = false }) => {
   const { t } = useI18n();
+  const nexus = useNexusAccount();
+  const [invites, setInvites] = useState<Record<string, InviteNote>>({});
   // The desktop shim installs window.api asynchronously; look again once it is ready.
   const [api, setApi] = useState(hostApi);
   useEffect(() => {
@@ -161,6 +168,32 @@ const LanServersPanel: React.FC<LanServersPanelProps> = ({ currentBaseUrl, onUse
     if (await onUse(origin)) await setState(server, 'accepted', origin);
   };
 
+  const inNetwork = (server: LanServer) =>
+    nexus.devices.some(device => device.name.trim().toLowerCase() === server.hostname.trim().toLowerCase());
+
+  const handleInvite = async (server: LanServer) => {
+    if (!nexus.onInviteFoundServer) return;
+    setError(null);
+    setInvites(current => ({ ...current, [server.id]: { state: 'working', text: t('Inviting {server}...', { server: server.hostname }) } }));
+    const origin = await firstReachableOrigin(candidateOrigins(server));
+    if (!origin) {
+      setInvites(current => ({ ...current, [server.id]: { state: 'failed', text: t('None of the addresses {server} announces answered from this device.', { server: server.hostname }) } }));
+      return;
+    }
+    try {
+      const result = await nexus.onInviteFoundServer(origin, server.hostname);
+      const minutes = String(Math.max(1, Math.round((result.expiresAt * 1000 - Date.now()) / 60000)));
+      setInvites(current => ({ ...current, [server.id]: result.joined
+        ? { state: 'joined', text: result.membership?.status === 'pending'
+          ? t('Invited. {server} joins as a member once the network confirms it.', { server: server.hostname })
+          : t('{server} joined your network.', { server: server.hostname }) }
+        : { state: 'failed', text: t('{server} did not join: {error} Enter code {code} on {server} instead (valid {minutes} min).',
+          { server: server.hostname, error: result.error ?? '', code: result.code, minutes }) } }));
+    } catch (err) {
+      setInvites(current => ({ ...current, [server.id]: { state: 'failed', text: String((err as Error)?.message ?? err) } }));
+    }
+  };
+
   const ignoredCount = servers.filter(s => s.state === 'ignored').length;
   const visible = servers.filter(s => showIgnored || s.state !== 'ignored');
   const current = serverOrigin(currentBaseUrl);
@@ -170,7 +203,9 @@ const LanServersPanel: React.FC<LanServersPanelProps> = ({ currentBaseUrl, onUse
       <div className="connect__lan-head">
         <h3 id="lan-servers-title">{t('Found on this network')}</h3>
         <p className="connect__hint">
-          {t('Lemonade servers that announce themselves on your network. Nothing is used until you press Use.')}
+          {mesh
+            ? t('Lemonade servers that announce themselves on your network. Invite one into your network, use it directly, or ignore it.')
+            : t('Lemonade servers that announce themselves on your network. Nothing is used until you press Use.')}
         </p>
       </div>
       {error && <div className="connect__error">{t('Warning')}: {error}</div>}
@@ -188,16 +223,23 @@ const LanServersPanel: React.FC<LanServersPanelProps> = ({ currentBaseUrl, onUse
           const where = shown
             ? <span title={all.join('\n')}>{others > 0 ? t('{url} (+{count} more)', { url: shown, count: String(others) }) : shown}</span>
             : null;
+          const member = mesh && inNetwork(server);
+          const note = invites[server.id];
+          const canInvite = mesh && !member && Boolean(nexus.onInviteFoundServer);
           return (
             <WorkspaceResourceRow
               key={server.id}
               title={server.hostname}
-              description={where ?? t('No address yet')}
+              description={<>
+                {where ?? t('No address yet')}
+                {note && <span className={`connect__lan-note connect__lan-note--${note.state}`} role={note.state === 'failed' ? 'alert' : 'status'}>{note.text}</span>}
+              </>}
               metadata={<>
                 {server.zone && <WorkspaceMetadataChip tone={server.zone === 'away' ? 'warning' : 'neutral'}>{t(ZONE_LABEL[server.zone])}</WorkspaceMetadataChip>}
                 {inUse
                   ? <WorkspaceMetadataChip tone="success">{t('In use')}</WorkspaceMetadataChip>
                   : server.state === 'accepted' && <WorkspaceMetadataChip tone="accent">{t('Used before')}</WorkspaceMetadataChip>}
+                {member && <WorkspaceMetadataChip tone="success">{t('In your network')}</WorkspaceMetadataChip>}
                 {!server.seen && <WorkspaceMetadataChip tone="neutral">{t('Not heard right now')}</WorkspaceMetadataChip>}
               </>}
               actions={<WorkspaceActionGroup label={t('Actions for {server}', { server: server.hostname })}>
@@ -205,7 +247,8 @@ const LanServersPanel: React.FC<LanServersPanelProps> = ({ currentBaseUrl, onUse
                   <WorkspaceActionButton appearance="quiet" size="small" onClick={() => { void setState(server, 'new'); }}>{t('Stop ignoring')}</WorkspaceActionButton>
                 ) : (
                   <>
-                    <WorkspaceActionButton appearance="primary" size="small" icon="plug" disabled={busy || checking !== null || inUse || !origin || !server.seen} onClick={() => { void handleUse(server); }}>{checking === server.id ? t('Checking...') : t('Use')}</WorkspaceActionButton>
+                    {canInvite && <WorkspaceActionButton appearance="primary" size="small" icon="plus" disabled={note?.state === 'working' || note?.state === 'joined' || !server.seen} onClick={() => { void handleInvite(server); }}>{note?.state === 'working' ? t('Inviting...') : t('Invite')}</WorkspaceActionButton>}
+                    <WorkspaceActionButton appearance={canInvite ? 'secondary' : 'primary'} size="small" icon="plug" disabled={busy || checking !== null || inUse || !origin || !server.seen} onClick={() => { void handleUse(server); }}>{checking === server.id ? t('Checking...') : mesh ? t('Use directly') : t('Use')}</WorkspaceActionButton>
                     <WorkspaceActionButton appearance="quiet" size="small" disabled={inUse} onClick={() => { void setState(server, 'ignored'); }}>{t('Ignore')}</WorkspaceActionButton>
                   </>
                 )}

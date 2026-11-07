@@ -361,7 +361,9 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
         />}
 
         <div className="connect__layout workspace-pane__scroll">
-        {activeSection === 'nexus' && <NexusAccountPage />}
+        {activeSection === 'nexus' && <NexusAccountPage foundServers={
+          <LanServersPanel mesh currentBaseUrl={status === 'connected' ? api.baseUrl : ''} busy={connecting} onUse={origin => handleConnect(origin)} />
+        } />}
         {activeSection === 'server' && (
         <section className="connect__section connect__section--server">
           <form className="connect__form" onSubmit={e => { e.preventDefault(); void handleConnect(); }}>
