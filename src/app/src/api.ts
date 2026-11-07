@@ -1920,7 +1920,9 @@ class LemonadeAPI {
         signal,
       } as LemonadeRequestInit),
       content: async (id, signal) => (await this._fetch(`${videoPath(id)}/content`, { signal })).blob(),
-      cancel: async id => { await this._fetch(`${videoPath(id)}/cancel`, { method: 'POST' }); },
+      cancel: async (id, signal) => {
+        await this._fetch(`${videoPath(id)}/cancel`, { method: 'POST', signal });
+      },
     }, { ...opts, model, prompt }, control);
     return {
       record,

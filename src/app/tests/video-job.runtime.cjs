@@ -12,7 +12,7 @@ const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
 assert.deepEqual((compiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error), []);
 const mod = { exports: {} };
 Function('exports', 'module', compiled.outputText)(mod.exports, mod);
-const { runVideoJob, isVideoJobCanceled, videoFileExtension } = mod.exports;
+const { runVideoJob, isVideoJobCanceled, isVideoJobStopUnconfirmed, videoFileExtension } = mod.exports;
 
 function httpError(status) {
   return Object.assign(new Error(`HTTP ${status}`), { status });
@@ -82,6 +82,10 @@ const noSleep = async () => {};
   {
     // Stop while the clip is generating must reach /cancel, or the GPU stays busy.
     const server = fakeServer(['running']);
+    const get = server.transport.get;
+    server.transport.get = async id => (
+      server.calls.cancel.length ? { id, status: 'canceled' } : get(id)
+    );
     const controller = new AbortController();
     const job = runVideoJob(server.transport, {}, {
       signal: controller.signal,
@@ -116,7 +120,8 @@ const noSleep = async () => {};
   }
 
   {
-    // A server that never reports the end must not hang Stop forever.
+    // A server that never reports the end must not hang Stop forever, and the
+    // outcome is reported as unconfirmed rather than as a clean stop.
     const server = fakeServer(['running']);
     const controller = new AbortController();
     const job = runVideoJob(server.transport, {}, {
@@ -125,8 +130,48 @@ const noSleep = async () => {};
       sleep: noSleep,
       maxCancelPolls: 5,
     });
-    await assert.rejects(job, err => isVideoJobCanceled(err));
+    await assert.rejects(job, err => isVideoJobStopUnconfirmed(err) && err.jobId === 'job-1');
     assert.equal(server.calls.get, 1 + 5);
+  }
+
+  {
+    // A failed cancel request is not a confirmed stop either.
+    const server = fakeServer(['running']);
+    server.transport.cancel = async () => { throw new Error('server gone'); };
+    const get = server.transport.get;
+    let afterCancel = false;
+    server.transport.get = async id => {
+      if (afterCancel) throw new Error('server gone');
+      return get(id);
+    };
+    const controller = new AbortController();
+    const job = runVideoJob(server.transport, {}, {
+      signal: controller.signal,
+      onStatus: record => {
+        if (record.status === 'running') controller.abort();
+        if (record.status === 'canceling') afterCancel = true;
+      },
+      sleep: noSleep,
+      maxCancelPolls: 3,
+    });
+    await assert.rejects(job, err => isVideoJobStopUnconfirmed(err));
+  }
+
+  {
+    // The stop requests carry their own deadline, so one hung request cannot
+    // hold Stop open.
+    const server = fakeServer(['running']);
+    const signals = [];
+    server.transport.cancel = async (id, signal) => { signals.push(signal); };
+    const controller = new AbortController();
+    const job = runVideoJob(server.transport, {}, {
+      signal: controller.signal,
+      onStatus: record => { if (record.status === 'running') controller.abort(); },
+      sleep: noSleep,
+      maxCancelPolls: 1,
+    });
+    await assert.rejects(job);
+    assert.ok(signals[0] instanceof AbortSignal, 'cancel is sent with a timeout signal');
   }
 
   {

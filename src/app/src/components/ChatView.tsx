@@ -86,7 +86,7 @@ import {
   GLOBAL_MODEL_SETTINGS_EVENT,
   loadGlobalModelSettings,
 } from '../features/modelSettings/globalModelSettings';
-import { isVideoJobCanceled } from '../features/videoGeneration/videoJob';
+import { isVideoJobCanceled, isVideoJobStopUnconfirmed } from '../features/videoGeneration/videoJob';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -3023,6 +3023,14 @@ ${finalText}`
             model,
           });
         } catch (err) {
+          if (isVideoJobStopUnconfirmed(err)) {
+            // Reloading now could race a backend that is still generating.
+            appendAssistantMessage(convoId, {
+              content: t('The server did not confirm that the video stopped. It may still be generating; try again in a moment.'),
+              model,
+            });
+            return;
+          }
           if (!isVideoJobCanceled(err)) throw err;
           // Stopping a clip stops its backend, which unloads the model. Bring it
           // back so the next prompt stays in video mode instead of falling back

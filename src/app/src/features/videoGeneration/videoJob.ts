@@ -13,7 +13,7 @@ export interface VideoJobTransport {
   create(body: Record<string, unknown>): Promise<VideoJobRecord>;
   get(id: string, signal?: AbortSignal): Promise<VideoJobRecord>;
   content(id: string, signal?: AbortSignal): Promise<Blob>;
-  cancel(id: string): Promise<void>;
+  cancel(id: string, signal?: AbortSignal): Promise<void>;
 }
 
 export interface VideoJobResult {
@@ -43,8 +43,20 @@ export class VideoJobCanceledError extends Error {
   }
 }
 
+/** Stop was pressed but the server never confirmed the job ended. */
+export class VideoJobStopUnconfirmedError extends Error {
+  constructor(readonly jobId: string) {
+    super(`Could not confirm that video job ${jobId} stopped; the server may still be generating it.`);
+    this.name = 'VideoJobStopUnconfirmedError';
+  }
+}
+
 export function isVideoJobCanceled(err: unknown): err is VideoJobCanceledError {
   return err instanceof VideoJobCanceledError;
+}
+
+export function isVideoJobStopUnconfirmed(err: unknown): err is VideoJobStopUnconfirmedError {
+  return err instanceof VideoJobStopUnconfirmedError;
 }
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled']);
@@ -111,17 +123,17 @@ export async function runVideoJob(
 
   let record = await transport.create(body);
   const id = record.id;
-  // The backend can take seconds to stop, and the model must not be reused
-  // until the job has actually ended.
+  // The model must not be reused until the server reports the job ended, so a
+  // stop that the server never confirms is reported as unconfirmed, not done.
   const stop = async (): Promise<never> => {
-    await transport.cancel(id).catch(() => undefined);
     onStatus?.({ ...record, status: 'canceling' });
+    await transport.cancel(id, timeoutSignal(requestTimeoutMs)).catch(() => undefined);
     for (let i = 0; i < maxCancelPolls; i += 1) {
       await sleep(pollMs);
-      const latest = await transport.get(id).catch(() => null);
-      if (!latest || TERMINAL.has(latest.status)) break;
+      const latest = await transport.get(id, timeoutSignal(requestTimeoutMs)).catch(() => null);
+      if (latest && TERMINAL.has(latest.status)) throw new VideoJobCanceledError();
     }
-    throw new VideoJobCanceledError();
+    throw new VideoJobStopUnconfirmedError(id);
   };
   onStatus?.(record);
 
