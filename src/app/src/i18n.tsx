@@ -398,6 +398,8 @@ const ZH_CN: Record<string, string> = {
   'Ignore': '忽略',
   'Hide ignored': '隐藏已忽略',
   'Show ignored ({count})': '显示已忽略（{count}）',
+  "This network was founded again, so this device's account belongs to the earlier one. Forget it, then join again with a new invitation.": '此网络已重新创建，因此此设备的账户属于之前的网络。请忘记该网络，然后使用新的邀请重新加入。',
+  'Forget this network': '忘记此网络',
   'Lemonade servers that announce themselves on your network. Invite one into your network, use it directly, or ignore it.': '在您的网络上自我通告的 Lemonade 服务器。可将其邀请加入您的网络、直接使用或忽略。',
   'Inviting {server}...': '正在邀请 {server}...',
   'Invited. {server} joins as a member once the network confirms it.': '已邀请。网络确认后，{server} 将作为成员加入。',
