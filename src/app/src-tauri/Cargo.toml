@@ -31,6 +31,9 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 dirs = "5"
 url = "2"
+# #1221: share the beacon port (SO_REUSEADDR/SO_REUSEPORT) and know this machine's own beacons by hostname.
+socket2 = { version = "0.6", features = ["all"] }
+gethostname = "1"
 log = "0.4"
 env_logger = "0.11"
 

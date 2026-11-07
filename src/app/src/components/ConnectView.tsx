@@ -5,6 +5,7 @@ import { Icon, IconName } from './Icon';
 import GlobalModelSettingsPanel from './GlobalModelSettingsPanel';
 import McpPanel from './McpPanel';
 import { NexusAccountPage } from './NexusAccount';
+import LanServersPanel from './LanServersPanel';
 import WorkspaceSectionRail from './WorkspaceSectionRail';
 import { WORKSPACE_NAVIGATION, type ConnectSection } from '../features/navigation/workspaceNavigation';
 import {
@@ -138,27 +139,28 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     setRememberApiKey(false);
   }, [status, isActive]);
 
-  const handleConnect = async () => {
+  const handleConnect = async (targetHost?: string): Promise<boolean> => {
     setConnecting(true);
     setError(null);
     setNotice(null);
     let normalized: string;
     try {
-      normalized = normalizeBaseUrl(host);
+      normalized = normalizeBaseUrl(targetHost ?? host);
     } catch (err) {
       setError(friendlyErrorMessage(err));
       setConnecting(false);
-      return;
+      return false;
     }
 
     try {
+      if (targetHost !== undefined) setHost(normalized);
       api.baseUrl = normalized;
       api.setSessionApiKey(apiKey);
 
       const connected = await api.connect();
       if (!connected) {
         setError(api.lastConnectionError || `Could not connect to ${normalized}.`);
-        return;
+        return false;
       }
 
       const saveResult = await api.saveConnectionSettings(normalized, apiKey, canPersistApiKey && rememberApiKey);
@@ -172,8 +174,10 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
         setNotice(t('Connected to {url}.', { url: normalized }));
       }
       await loadCloudProviders();
+      return true;
     } catch (err) {
       setError(friendlyErrorMessage(err));
+      return false;
     } finally {
       setConnecting(false);
     }
@@ -360,7 +364,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
         {activeSection === 'nexus' && <NexusAccountPage />}
         {activeSection === 'server' && (
         <section className="connect__section connect__section--server">
-          <form className="connect__form" onSubmit={e => { e.preventDefault(); handleConnect(); }}>
+          <form className="connect__form" onSubmit={e => { e.preventDefault(); void handleConnect(); }}>
             <div className="form-field">
               <label className="form-field__label" htmlFor="language-select">{t('Language')}</label>
               <select
@@ -422,6 +426,10 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
             </WorkspaceActionGroup>
           </form>
         </section>
+        )}
+
+        {activeSection === 'server' && (
+          <LanServersPanel currentBaseUrl={status === 'connected' ? api.baseUrl : ''} busy={connecting} onUse={origin => handleConnect(origin)} />
         )}
 
         {activeSection === 'chat' && (
