@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "../telemetry.h"
+#include "lemon/nexus_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/server/route_registry.h"
 #include "lemon/utils/origin_utils.h"
@@ -87,14 +88,14 @@ RequestMiddleware::RequestMiddleware(RuntimeConfig* config, const RouteRegistry*
     admin_api_key_ = admin_api_key_env ? std::string(admin_api_key_env) : api_key_;
 }
 
-void RequestMiddleware::install(httplib::Server& server) {
-    server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
-        return pre_route(req, res);
+void RequestMiddleware::install(httplib::Server& server, bool mesh_ingress) {
+    server.set_pre_routing_handler([this, mesh_ingress](const httplib::Request& req, httplib::Response& res) {
+        return pre_route(req, res, mesh_ingress);
     });
 
     server.set_default_headers({
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, mcp-protocol-version, traceparent, Mcp-Session-Id"}
+        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, X-Lemonade-Peer-Authorization, mcp-protocol-version, traceparent, Mcp-Session-Id"}
     });
 
     server.Options(".*", [](const httplib::Request&, httplib::Response& res) {
@@ -138,7 +139,11 @@ void RequestMiddleware::install(httplib::Server& server) {
 }
 
 httplib::Server::HandlerResponse RequestMiddleware::pre_route(const httplib::Request& req,
-                                                              httplib::Response& res) {
+                                                              httplib::Response& res, bool mesh_ingress) {
+    // httplib hands its pre-routing hook a const view of the request it is about to
+    // route; this is the one place that runs before every route, and removing a spoofed
+    // peer header here is what keeps it from any route or session-header setting.
+    nexus_access::accept_peer_headers(const_cast<httplib::Request&>(req), mesh_ingress);
     if (!registry_->is_quiet(req.path)) {
         LOG(DEBUG, "Server") << req.method << " " << req.path << std::endl;
     }
@@ -177,11 +182,11 @@ httplib::Server::HandlerResponse RequestMiddleware::pre_route(const httplib::Req
         }
     }
 
-    return authenticate(req, res);
+    return authenticate(req, res, mesh_ingress);
 }
 
 httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::Request& req,
-                                                                 httplib::Response& res) {
+                                                                 httplib::Response& res, bool mesh_ingress) {
     telemetry::g_request_start_time = std::chrono::steady_clock::now();
     telemetry::g_current_auth_token = "";
     if (req.has_header("X-Client-Session-Id")) {
@@ -251,6 +256,21 @@ httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::
 
     telemetry::g_current_auth_token = auth_token;
 
+    if (mesh_ingress) {
+        const auto access = nexus_access::mesh_request_access(req);
+        if (access.first != 0) {
+            res.status = access.first;
+            res.set_content(nlohmann::json{{"error", access.second}}.dump(), "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+        return httplib::Server::HandlerResponse::Unhandled;
+    }
+
+    // Nexus routes authorize local operators or SDK-attributed peers, never API keys.
+    if (nexus_access::nexus_request(req)) {
+        return httplib::Server::HandlerResponse::Unhandled;
+    }
+
     if (is_internal_route) {
         if (!admin_api_key_.empty() && req.method != "OPTIONS") {
             if (auth_token != admin_api_key_) {
@@ -305,7 +325,14 @@ void RequestMiddleware::log_response(const httplib::Request& req, const httplib:
         req.path.find(".woff") != std::string::npos
     ));
 
-    if (!is_quiet_get) {
+    // A request from a mesh peer is always logged at INFO with the peer and
+    // family the Nexus SDK attributed, quiet GETs included: it is the audit
+    // trail of what other devices did on this server.
+    const auto& peer = nexus_access::request_peer();
+    if (!peer.node_id.empty()) {
+        LOG(INFO, "Server") << req.method << " " << req.path << " - " << res.status
+                            << " peer " << peer.node_id << " family " << peer.family << std::endl;
+    } else if (!is_quiet_get) {
         LOG(DEBUG, "Server") << req.method << " " << req.path << " - " << res.status << std::endl;
     }
 }

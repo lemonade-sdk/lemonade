@@ -90,13 +90,27 @@ void method_not_allowed(const httplib::Request&, httplib::Response& res) {
 
 } // namespace
 
-void RouteRegistry::add(std::unique_ptr<ApiRoute> route) {
+bool valid_route_family(const std::string& name) {
+    if (name.empty() || name.size() > 63) return false;
+    const auto lower_or_digit = [](char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'); };
+    if (!lower_or_digit(name.front())) return false;
+    for (const char c : name) {
+        if (!lower_or_digit(c) && c != '_' && c != '.' && c != '-') return false;
+    }
+    return true;
+}
+
+void RouteRegistry::add(std::unique_ptr<ApiRoute> route, const std::string& family) {
     auto entry = std::make_shared<Entry>();
     entry->spec = route->spec();
+    entry->spec.family = family;
     const RouteSpec& spec = entry->spec;
 
     if (spec.id.empty() || spec.methods.empty() || spec.paths.empty()) {
         throw std::logic_error("Route '" + spec.id + "' needs an id, a method and a path");
+    }
+    if (!valid_route_family(family)) {
+        throw std::logic_error("Route '" + spec.id + "' needs a route policy family, got '" + family + "'");
     }
     for (const auto& existing : entries_) {
         if (existing->spec.id == spec.id) {
@@ -130,6 +144,14 @@ void RouteRegistry::add(std::unique_ptr<ApiRoute> route) {
 }
 
 void RouteRegistry::apply(httplib::Server& server) const {
+    apply(server, /*include_internal=*/true);
+}
+
+void RouteRegistry::apply_without_internal(httplib::Server& server) const {
+    apply(server, /*include_internal=*/false);
+}
+
+void RouteRegistry::apply(httplib::Server& server, bool include_internal) const {
     // A Quad path whose only method is POST also answers GET with 405, so a client that
     // forgot the method learns why instead of getting a 404.
     std::map<std::string, std::set<std::string>> methods_by_pattern;
@@ -143,6 +165,7 @@ void RouteRegistry::apply(httplib::Server& server) const {
     }
 
     for (const auto& entry : entries_) {
+        if (!include_internal && entry->spec.prefixes == Prefixes::Internal) continue;
         std::shared_ptr<Entry> shared = entry;
         auto handler = [shared](const httplib::Request& req, httplib::Response& res) {
             shared->route->serve(shared->spec, req, res);

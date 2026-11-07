@@ -20,6 +20,7 @@
 #include "lemon/server/web_ui.h"
 #include "lemon/system_metrics_platform.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/version.h"
 #include "telemetry.h"
 
 namespace lemon {
@@ -148,10 +149,25 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
 
     middleware_ = std::make_unique<RequestMiddleware>(config_.get(), registry_.get());
     web_ui_ = std::make_unique<WebUi>(ctx_);
+    nexus_manager_ = std::make_unique<NexusManager>(
+        config_dir,
+        [this](httplib::Server& server) { middleware_->install(server); },
+        [this](httplib::Server& server) {
+            middleware_->install(server, /*mesh_ingress=*/true);
+            // Mesh peers arrive on loopback, so the /internal/* control routes must not
+            // exist on this listener rather than rely on an admin key that is usually unset.
+            registry_->apply_without_internal(server);
+            web_ui_->register_routes(server);
+        },
+        13306,
+        nexus_access::service_catalog(registry_->list(), LEMON_VERSION_STRING), std::nullopt,
+        [this](httplib::Server& server) { registry_->apply_without_internal(server); },
+        nexus_access::route_permissions(registry_->list()));
     listener_ = std::make_unique<HttpListener>(
         config_.get(), router_.get(),
         [this](httplib::Server& server) {
             middleware_->install(server);
+            nexus_manager_->register_routes(server);
             registry_->apply(server);
             web_ui_->register_routes(server);
         },
@@ -228,6 +244,7 @@ void Server::run() {
 
 void Server::stop() {
     std::lock_guard<std::mutex> lock(stop_mutex_);
+    nexus_manager_->stop();
     if (listener_->stop()) {
         LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
         try {

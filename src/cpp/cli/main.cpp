@@ -1140,6 +1140,11 @@ struct BeaconListener {
 
         int reuse_addr = 1;
         setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse_addr, sizeof(reuse_addr));
+#ifdef SO_REUSEPORT
+        // The desktop app keeps the beacon port bound for its lifetime; macOS and
+        // Linux only share a UDP port between processes that both set SO_REUSEPORT.
+        setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, (char*)&reuse_addr, sizeof(reuse_addr));
+#endif
 
         sockaddr_in addr{};
         addr.sin_family = AF_INET;

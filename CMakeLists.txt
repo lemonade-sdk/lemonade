@@ -34,6 +34,14 @@ set(LEMONADE_MSI_VERSION
 message(STATUS "Lemonade version: ${PROJECT_VERSION}")
 
 include(CTest)
+# Every lemond carries the Nexus client SDK; a build that cannot find the Rust
+# toolchain stops here rather than producing a server without mesh support.
+include(${CMAKE_SOURCE_DIR}/cmake/NexusRustToolchain.cmake)
+if(NOT _nexus_toolchain_found)
+    message(FATAL_ERROR "The Nexus client SDK requires Cargo 1.85 or newer, in PATH or as "
+        "/usr/lib/rust-1.*/bin/cargo. Install Rust with rustup or the cargo-1.85 package, "
+        "or set LEMONADE_CARGO_EXECUTABLE.")
+endif()
 
 # Aggregate build target for the C++ tests selected by packaging CI.
 # Platform-specific tests add themselves only inside their existing if() block.
@@ -1057,6 +1065,7 @@ file(GLOB_RECURSE HTTP_SERVER_SOURCES CONFIGURE_DEPENDS
 
 set(SOURCES_CORE
     src/cpp/server/server.cpp
+    src/cpp/server/nexus_manager.cpp
     ${HTTP_SERVER_SOURCES}
     src/cpp/server/collection_orchestrator.cpp
     src/cpp/server/jobs/job_ops.cpp
@@ -2316,6 +2325,8 @@ if(UNIX AND NOT APPLE)
     include(CPack)
 endif()
 
+include(cmake/NexusSDK.cmake)
+
 # ============================================================
 # Embeddable Archive Target (Cross-Platform)
 # ============================================================
@@ -2363,6 +2374,8 @@ else()
         "${EMBEDDABLE_DIR_NAME}")
 endif()
 
+set(_embeddable_nexus_runtime COMMAND ${CMAKE_COMMAND} -E copy "${LEMONADE_NEXUS_RUNTIME}" "${EMBEDDABLE_STAGING_DIR}/")
+
 add_custom_target(embeddable
     # Clean and create staging directory
     COMMAND ${CMAKE_COMMAND} -E remove_directory "${EMBEDDABLE_STAGING_DIR}"
@@ -2371,6 +2384,7 @@ add_custom_target(embeddable
     # Copy binaries
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemond>" "${EMBEDDABLE_STAGING_DIR}/"
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemonade>" "${EMBEDDABLE_STAGING_DIR}/"
+    ${_embeddable_nexus_runtime}
 
     # Copy LICENSE
     COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${EMBEDDABLE_STAGING_DIR}/"
@@ -4097,4 +4111,15 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_SYNC_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelSyncServiceTest CI ON COMMAND test_model_sync_service)
+endif()
+
+set(_NEXUS_MANAGER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_nexus_manager.cpp")
+if(BUILD_TESTING AND EXISTS "${_NEXUS_MANAGER_TEST_SRC}")
+    add_executable(test_nexus_manager test/cpp/test_nexus_manager.cpp)
+    target_link_libraries(test_nexus_manager PRIVATE lemonade-server-core)
+    add_cpp_ci_test(NexusManagerTest CI ON COMMAND test_nexus_manager)
+    # The test finishes in well under a minute; a bound keeps a stalled keystore or
+    # listener from holding a CI runner.
+    set_tests_properties(NexusManagerTest PROPERTIES TIMEOUT 300)
+    add_dependencies(test_nexus_manager nexus-sdk-runtime)
 endif()

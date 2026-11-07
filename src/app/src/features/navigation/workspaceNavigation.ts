@@ -57,6 +57,7 @@ export const WORKSPACE_NAVIGATION = {
     defineSection('model-storage', 'Cache and custom directories', 'hard-drive'),
     defineSection('cloud-providers', 'OpenAI-compatible services', 'cloud'),
     defineSection('mcp-gateway', 'Tools and external servers', 'tools'),
+    { ...defineSection('nexus', 'Account and devices', 'user-round'), label: 'Accounts' },
     defineSection('help-and-support', 'Docs, releases and community', 'book-open'),
   ] as const, 'Settings'),
 } as const;
@@ -79,7 +80,9 @@ export function workspaceRouteFromPath(path: string): WorkspaceRoute | null {
   if (rest.length > 0 || !isRoutedWorkspace(workspaceValue)) return null;
 
   const definition = WORKSPACE_NAVIGATION[workspaceValue];
-  const section = sectionValue || definition.defaultSection;
+  const section = workspaceValue === 'connect' && sectionValue === 'devices-and-mesh'
+    ? 'nexus'
+    : sectionValue || definition.defaultSection;
   if (!definition.sections.some(item => item.id === section)) return null;
   return { workspace: workspaceValue, section } as WorkspaceRoute;
 }

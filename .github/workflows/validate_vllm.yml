@@ -104,6 +104,7 @@ jobs:
           path: |
             build/lemond
             build/lemonade
+            build/liblemonade_nexus_sdk.so
             build/resources/
           retention-days: 7
 

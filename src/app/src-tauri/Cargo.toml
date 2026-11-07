@@ -18,6 +18,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+authenticator = { version = "=0.4.1", default-features = false, features = ["crypto_openssl"] }
+base64 = "0.22"
+sha2 = "0.10"
 tauri = { version = "2", features = ["protocol-asset", "image-ico"] }
 tauri-plugin-opener = "2"
 tauri-plugin-clipboard-manager = "2"
@@ -49,7 +52,10 @@ glib = "0.18"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 webview2-com = "0.38"
-windows = { version = "0.61", features = ["Win32_Foundation"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Networking_WindowsWebServices"] }
+# authenticator 0.4.1 passes std's RawHandle where winapi expects its own c_void;
+# winapi's std feature makes the two types identical.
+winapi = { version = "0.3", features = ["std"] }
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
 objc2 = { version = "0.6.4", features = ["exception"] }
@@ -64,3 +70,6 @@ lto = true
 incremental = false
 opt-level = "s"
 strip = true
+
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+openssl = { version = "0.10", features = ["vendored"] }

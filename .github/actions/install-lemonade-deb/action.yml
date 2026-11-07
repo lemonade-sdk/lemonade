@@ -74,7 +74,87 @@ runs:
                 sudo apt-get update
                 sudo apt-get satisfy -y "$DEB_DEPENDS"
             else
-                echo "No root/passwordless sudo available; assuming runtime dependencies are already installed."
+                # Self-hosted runners without sudo cannot install packages.
+                # apt needs no root to refresh package lists into a private
+                # directory and download packages, so unpack each missing
+                # library package (and the libraries it needs in turn) into
+                # the workspace and load it through LD_LIBRARY_PATH. Ubuntu
+                # packages are built against ppa:lemonade-team/bleeding-edge
+                # (the build-environment image), so its packages are added,
+                # checked with the PPA's signing key.
+                echo "No root/passwordless sudo available; unpacking missing runtime libraries."
+                RUNTIME_ROOT="$(pwd)/deb-runtime-libs"
+                APT_DIR="$(mktemp -d)"
+                mkdir -p "$RUNTIME_ROOT" "$APT_DIR/lists/partial" "$APT_DIR/cache/archives/partial" \
+                    "$APT_DIR/sources" "$APT_DIR/download"
+                cp /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources "$APT_DIR/sources/" 2>/dev/null || true
+                OS_ID=$(. /etc/os-release && echo "${ID:-}")
+                OS_CODENAME=$(. /etc/os-release && echo "${VERSION_CODENAME:-}")
+                if [ "$OS_ID" = ubuntu ] && [ -n "$OS_CODENAME" ]; then
+                    PPA_KEY=881CF4B40B0BFA288D6776E83BF36CFA0BD50AEC
+                    if curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x$PPA_KEY" \
+                        -o "$APT_DIR/bleeding-edge.asc"; then
+                        echo "deb [signed-by=$APT_DIR/bleeding-edge.asc] https://ppa.launchpadcontent.net/lemonade-team/bleeding-edge/ubuntu $OS_CODENAME main" \
+                            > "$APT_DIR/sources/lemonade-bleeding-edge.list"
+                    fi
+                fi
+                APT_OPTS=(-o "Dir::State::Lists=$APT_DIR/lists" -o "Dir::Cache=$APT_DIR/cache"
+                    -o "Dir::Etc::SourceParts=$APT_DIR/sources" -o Debug::NoLocking=1)
+                apt-get "${APT_OPTS[@]}" update -qq || echo "WARNING: apt-get update failed; using what it fetched"
+                PROVIDED=$(dpkg-query -W -f='${db:Status-Abbrev} ${Provides}\n' 2>/dev/null |
+                    awk '$1 == "ii"' | cut -c4- | tr ',' '\n' | sed -E 's/\(.*\)//; s/[[:space:]]//g')
+                installed() {
+                    dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed' ||
+                        grep -qx "$1" <<<"$PROVIDED"
+                }
+                # A dependency may be a virtual package (libspdlog1.12-fmt9 is
+                # provided by libspdlog1.12); download the package providing it.
+                real_package() {
+                    if apt-cache "${APT_OPTS[@]}" policy "$1" 2>/dev/null | grep -q 'Candidate: [^(]'; then
+                        echo "$1"
+                    else
+                        apt-cache "${APT_OPTS[@]}" showpkg "$1" 2>/dev/null |
+                            sed -n '/^Reverse Provides:/,$p' | sed -n '2s/ .*//p'
+                    fi
+                }
+                missing_libraries() {
+                    tr ',' '\n' <<<"$1" | sed -E 's/\|.*//; s/\(.*\)//; s/:any//; s/[[:space:]]//g' |
+                        grep '^lib' | while read -r pkg; do
+                            installed "$pkg" && continue
+                            real=$(real_package "$pkg")
+                            if [ -z "$real" ]; then
+                                echo "WARNING: no package provides $pkg" >&2
+                            elif ! installed "$real"; then
+                                echo "$real"
+                            fi
+                        done
+                }
+                queue=$(missing_libraries "$DEB_DEPENDS")
+                seen=" "
+                while [ -n "$queue" ]; do
+                    next=""
+                    for pkg in $queue; do
+                        case "$seen" in *" $pkg "*) continue ;; esac
+                        seen="$seen$pkg "
+                        if ! (cd "$APT_DIR/download" && apt-get "${APT_OPTS[@]}" download "$pkg" >/dev/null 2>&1); then
+                            echo "WARNING: could not download $pkg"
+                            continue
+                        fi
+                        for deb in "$APT_DIR/download/${pkg}"_*.deb; do
+                            echo "Unpacking $(basename "$deb")"
+                            dpkg-deb -x "$deb" "$RUNTIME_ROOT"
+                            next="$next $(missing_libraries "$(dpkg-deb -f "$deb" Depends 2>/dev/null || true)")"
+                        done
+                    done
+                    queue=$next
+                done
+                rm -rf "$APT_DIR"
+                LIB_DIRS=$(find "$RUNTIME_ROOT" -name '*.so*' -printf '%h\n' | sort -u | paste -sd:)
+                if [ -n "$LIB_DIRS" ]; then
+                    export LD_LIBRARY_PATH="$LIB_DIRS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+                    echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
+                    echo "Runtime libraries loaded from: $LIB_DIRS"
+                fi
             fi
         fi
 

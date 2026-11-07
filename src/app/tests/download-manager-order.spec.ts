@@ -1,5 +1,41 @@
 import { expect, test } from '@playwright/test';
 
+test('first Downloads open keeps the workspace stable while its code loads', async ({ page }) => {
+  let releaseChunk: () => void = () => undefined;
+  const chunkReady = new Promise<void>(resolve => { releaseChunk = resolve; });
+  await page.route(/\/download-manager(?:\.[^/?]+)?\.js(?:\?.*)?$/, async route => {
+    await chunkReady;
+    await route.continue();
+  });
+  await page.route('**/api/v1/**', route => route.fulfill({
+    headers: { 'Access-Control-Allow-Origin': '*' },
+    json: { status: 'ok', available: false, enabled: false, locked: true, mesh_up: false, members: [], downloads: [], data: [], all_models_loaded: [] },
+  }));
+
+  try {
+    await page.goto('/#/connect/nexus');
+    await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
+    const workspace = page.locator('#main-content');
+    const bounds = await workspace.boundingBox();
+    const toggle = page.getByRole('button', { name: 'Open download manager', exact: true });
+    await toggle.click();
+    await expect(page.getByRole('status', { name: 'Loading downloads', exact: true })).toBeVisible();
+    expect(await workspace.boundingBox()).toEqual(bounds);
+
+    await toggle.click();
+    await expect(page.getByRole('dialog', { name: 'Download manager', exact: true })).toHaveCount(0);
+    releaseChunk();
+    await toggle.click();
+    await expect(page.getByRole('button', { name: 'Close download manager', exact: true })).toBeVisible();
+    expect(await workspace.boundingBox()).toEqual(bounds);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: 'Download manager', exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL(/#\/connect\/nexus$/);
+  } finally {
+    releaseChunk();
+  }
+});
+
 test('download manager keeps creation order while concurrent progress updates arrive', async ({ page }) => {
   const timestamp = Date.now();
   let serverDownloads = [
