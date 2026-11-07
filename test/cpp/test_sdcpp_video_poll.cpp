@@ -103,6 +103,33 @@ struct StalledBackend {
     }
 };
 
+// Never answers the clip submission until released.
+struct StalledSubmitBackend {
+    httplib::Server server;
+    std::thread thread;
+    std::atomic<bool> released{false};
+    std::atomic<int> submits{0};
+    int port = 0;
+
+    StalledSubmitBackend() {
+        server.Post("/sdcpp/v1/vid_gen", [this](const httplib::Request&, httplib::Response& res) {
+            ++submits;
+            while (!released) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            res.status = 202;
+            res.set_content(R"({"id":"j1","poll_url":"/sdcpp/v1/jobs/j1"})", "application/json");
+        });
+        port = server.bind_to_any_port("127.0.0.1");
+        thread = std::thread([this] { server.listen_after_bind(); });
+        server.wait_until_ready();
+    }
+
+    ~StalledSubmitBackend() {
+        released = true;
+        server.stop();
+        thread.join();
+    }
+};
+
 lemon::json request() {
     return {{"prompt", "a kite"}, {"width", 480}, {"height", 272}, {"video_frames", 17}};
 }
@@ -150,6 +177,25 @@ void test_cancel_is_not_held_by_a_stalled_backend() {
           elapsed < std::chrono::seconds(20));
 }
 
+void test_cancel_is_not_held_by_a_stalled_submit() {
+    StalledSubmitBackend backend;
+    FakeSdServer sd(backend.port);
+    std::atomic<bool> cancel{false};
+    std::thread canceler([&cancel] {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        cancel = true;
+    });
+    const auto start = std::chrono::steady_clock::now();
+    const lemon::json result = sd.video_generations(request(), &cancel);
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    canceler.join();
+    check("stalled submit: sd-server got the clip", backend.submits.load() == 1);
+    check("stalled submit: the video is canceled",
+          result.contains("error") && result.dump().find("canceled") != std::string::npos);
+    check("stalled submit: the cancel is not held by the 300 s default",
+          elapsed < std::chrono::seconds(20));
+}
+
 } // namespace
 
 int main() {
@@ -157,6 +203,7 @@ int main() {
     test_persistent_failed_polls_give_up();
     test_cancel_before_submit_skips_the_backend();
     test_cancel_is_not_held_by_a_stalled_backend();
+    test_cancel_is_not_held_by_a_stalled_submit();
     if (g_failures) {
         std::printf("%d FAILURE(S)\n", g_failures);
         return 1;

@@ -677,7 +677,24 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
     // vid_gen is asynchronous: it answers 202 with a job handle and does the
     // work in the background. forward_request reports any non-200 as a backend
     // error, so the 202 body is accepted here and the job polled to completion.
-    json accepted = forward_request("/sdcpp/v1/vid_gen", body, 0);
+    // The submit carries the job's cancel flag so a stalled sd-server cannot
+    // hold a cancel or a shutdown for the 300 s default timeout.
+    json accepted;
+    {
+        RequestCancelScope cancel_scope(utils::RequestCancelToken{cancel, nullptr});
+        accepted = forward_request("/sdcpp/v1/vid_gen", body, 0);
+    }
+    const bool submitted = !(accepted.contains("error") && accepted["error"].is_object() &&
+                             accepted["error"].value("status_code", 0) != 202);
+    if (cancel && cancel->load() && !submitted) {
+        // The abort can land after sd-server queued the clip but before its
+        // 202 reached us, which leaves a job with no handle to cancel it by.
+        LOG(INFO, "SDServer") << "video submit canceled before sd-server answered; "
+                              << "stopping sd-server in case it accepted the clip" << std::endl;
+        stop_server();
+        return ErrorResponse::from_exception(
+            BackendException(server_name_, "video generation canceled", 499));
+    }
     const json* handle = &accepted;
     if (accepted.contains("error") && accepted["error"].is_object()) {
         const json& err = accepted["error"];
