@@ -1367,6 +1367,16 @@ if(BUILD_TESTING AND EXISTS "${LLAMACPP_SYSTEMONE_TEST_SOURCE}")
     add_cpp_ci_test(llamacpp_systemone CI ON COMMAND test_llamacpp_systemone)
 endif()
 
+set(LLAMACPP_RULEHEAD_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_rulehead.cpp")
+if(BUILD_TESTING AND EXISTS "${LLAMACPP_RULEHEAD_TEST_SOURCE}")
+    add_executable(test_llamacpp_rulehead
+        ${LLAMACPP_RULEHEAD_TEST_SOURCE}
+        src/cpp/server/backends/llamacpp/llamacpp_rulehead.cpp
+    )
+    target_link_libraries(test_llamacpp_rulehead PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(llamacpp_rulehead CI ON COMMAND test_llamacpp_rulehead)
+endif()
+
 set(FLM_MODEL_LABELS_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_flm_model_labels.cpp")
 if(BUILD_TESTING AND EXISTS "${FLM_MODEL_LABELS_TEST_SOURCE}")
     add_executable(test_flm_model_labels

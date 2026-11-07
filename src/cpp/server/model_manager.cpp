@@ -554,6 +554,9 @@ models::CatalogSetDeps ModelManager::make_catalog_deps(
             return describe_illegal_labels(info.model_name, illegal);
         }
         lemon::backends::ensure_deployment_label(info.labels, info.recipe);
+        if (const auto* ops = lemon::backends::ops_for(info.recipe)) {
+            ops->add_implied_checkpoints(info);
+        }
         return std::string();
     };
     rows.populate_components = [this](ModelInfo& info) {

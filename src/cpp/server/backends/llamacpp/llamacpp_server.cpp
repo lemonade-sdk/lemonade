@@ -2,16 +2,19 @@
 #include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/llamacpp/llamacpp_gguf.h"
 #include "lemon/backends/llamacpp/llamacpp_request.h"
+#include "lemon/backends/llamacpp/llamacpp_rulehead.h"
 #include "lemon/backends/llamacpp/llamacpp_systemone.h"
 #include "llamacpp_system_utils.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/systemone_classify.h"
+#include "lemon/classification_labels.h"
 #include "lemon/gguf_capabilities.h"
 #include "lemon/gguf_reader.h"
 #include "lemon/gguf_shard_utils.h"
 #include "lemon/model_manager.h"
+#include "lemon/models/artifact_ref.h"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -32,7 +35,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <lemon/utils/aixlog.hpp>
 #include <set>
 #ifdef __APPLE__
@@ -350,6 +355,26 @@ void LlamaCppServer::load(const std::string& model_name,
                                  << model_info.model_name << "', so if it is an encoder it "
                                  << "keeps llama-server's default batch sizes" << std::endl;
     }
+    rule_head_.reset();
+    if (is_rule_head_router_model(model_info)) {
+        const std::string rule_head_path = model_info.resolved_path("rulehead");
+        if (rule_head_path.empty()) {
+            throw std::runtime_error(llamacpp::missing_rule_head_message(
+                model_name, model_info.checkpoint("rulehead")));
+        }
+        std::ifstream in(path_from_utf8(rule_head_path), std::ios::binary);
+        const std::string bytes((std::istreambuf_iterator<char>(in)),
+                                std::istreambuf_iterator<char>());
+        if (!in.good() && !in.eof()) {
+            throw std::runtime_error("Could not read the rule head file " + rule_head_path);
+        }
+        rule_head_ = std::make_shared<const llamacpp::RuleHead>(
+            llamacpp::parse_rule_head(bytes, model_info.gguf.embedding_length));
+        LOG(INFO, "LlamaCpp") << "Prompt-router encoder: lemond applies its rule head ("
+                              << rule_head_->proj << "x" << rule_head_->hidden
+                              << ") to llama-server's token vectors" << std::endl;
+    }
+
     encoder_max_input_tokens_ = 0;
     const bool encoder_decision_model = is_encoder_decision_model(model_info);
     if (encoder_decision_model) {
@@ -432,11 +457,14 @@ void LlamaCppServer::load(const std::string& model_name,
     push_reserved(reserved_flags, "--model-draft", std::vector<std::string>{"-md", "--spec-draft-model"});
 
     // Add embeddings support if the model supports it
-    if (supports_embeddings) {
+    if (supports_embeddings || rule_head_) {
         LOG(INFO, "LlamaCpp") << "Model supports embeddings, adding --embeddings flag" << std::endl;
         push_arg(args, reserved_flags, "--embeddings");
     }
     push_reserved(reserved_flags, "--embeddings", std::vector<std::string>{"--embedding"});
+    if (rule_head_) {
+        push_arg(args, reserved_flags, "--pooling", "none");
+    }
 
     // Add reranking support if the model supports it
     if (supports_reranking) {
@@ -449,7 +477,7 @@ void LlamaCppServer::load(const std::string& model_name,
     // the default -ub 512 rejects any state longer than about 500 tokens.
     // llama-server switches these models to embedding mode on its own, so no
     // --embeddings flag is added.
-    if (encoder_decision_model) {
+    if (encoder_decision_model || rule_head_) {
         const llamacpp::SingleBatchPlan batch =
             llamacpp::plan_single_batch(ctx_size, parse_custom_args(llamacpp_args));
         if (batch.add_batch_size) {
@@ -724,6 +752,9 @@ json LlamaCppServer::unsupported_decision_request(const std::string& operation) 
 }
 
 json LlamaCppServer::classify(const json& request) {
+    if (rule_head_) {
+        return classify_with_rule_head(request);
+    }
     if (!decision_model_) {
         return unsupported_decision_request("Classification");
     }
@@ -753,6 +784,81 @@ json LlamaCppServer::classify(const json& request) {
                           : 0;
     try {
         return systemone::classify_response(response, request["labels"], top_k);
+    } catch (const std::exception& e) {
+        return ErrorResponse::create(e.what(), ErrorType::BACKEND_ERROR);
+    }
+}
+
+json LlamaCppServer::classify_with_rule_head(const json& request) {
+    const json text = request.contains("text") ? request["text"] : request.value("input", json());
+    if (!text.is_string()) {
+        return systemone::invalid_decision_request("Missing 'input' (or 'text') string in classify request");
+    }
+    if (!request.contains("labels") || !request["labels"].is_array() || request["labels"].empty()) {
+        return systemone::invalid_decision_request(
+            "this model scores a label list supplied per request; include a non-empty "
+            "\"labels\" array in the request body");
+    }
+    std::vector<std::string> labels;
+    for (const auto& label : request["labels"]) {
+        if (!label.is_string()) {
+            return systemone::invalid_decision_request("\"labels\" must be an array of strings");
+        }
+        labels.push_back(label.get<std::string>());
+    }
+    if (const std::string reason = validate_label_list(labels); !reason.empty()) {
+        return systemone::invalid_decision_request(reason);
+    }
+    const int top_k = request.contains("top_k") && request["top_k"].is_number_integer()
+                          ? request["top_k"].get<int>()
+                          : 0;
+
+    const llamacpp::RouterInput input = llamacpp::build_router_input(labels, text.get<std::string>());
+    auto tokenized = [this, &input](bool add_special) {
+        return tokenize(json{{"content", input.text},
+                             {"add_special", add_special},
+                             {"with_pieces", true}});
+    };
+    const json with_special = tokenized(true);
+    if (with_special.contains("error")) return with_special;
+    const json without_special = tokenized(false);
+    if (without_special.contains("error")) return without_special;
+
+    try {
+        const llamacpp::RouterTokens tokens = llamacpp::router_tokens(
+            with_special.value("tokens", json()), without_special.value("tokens", json()),
+            input.text.size());
+        const llamacpp::RouterTokenGroups groups =
+            llamacpp::group_router_tokens(input, tokens.spans, labels);
+
+        if (encoder_max_input_tokens_ > 0 &&
+            tokens.ids.size() > static_cast<size_t>(encoder_max_input_tokens_)) {
+            return json{{"error", {
+                {"message", "the labels and the text are " + std::to_string(tokens.ids.size()) +
+                                " tokens, longer than this model accepts (" +
+                                std::to_string(encoder_max_input_tokens_) + " tokens)"},
+                {"type", "invalid_request_error"},
+                {"code", "context_length_exceeded"},
+                {"status_code", 400},
+            }}};
+        }
+
+        json embedded = forward_request("/embedding", json{{"content", tokens.ids}});
+        if (embedded.is_object() && embedded.contains("error")) {
+            return encoder_max_input_tokens_ > 0
+                       ? llamacpp::map_encoder_overflow_error(std::move(embedded),
+                                                              encoder_max_input_tokens_)
+                       : embedded;
+        }
+        if (!embedded.is_array() || embedded.empty() || !embedded[0].is_object() ||
+            !embedded[0].contains("embedding")) {
+            throw std::runtime_error("llama-server /embedding returned no token vectors");
+        }
+        const std::vector<double> probabilities = llamacpp::score_router_labels(
+            *rule_head_, embedded[0]["embedding"], tokens.ids.size(), groups);
+        return llamacpp::router_classify_response(labels, probabilities, top_k);
+    } catch (const std::invalid_argument& e) {
+        return systemone::invalid_decision_request(e.what());
     } catch (const std::exception& e) {
         return ErrorResponse::create(e.what(), ErrorType::BACKEND_ERROR);
     }
@@ -972,6 +1078,32 @@ bool is_ggml_hip_plugin_available() {
 // llamacpp model-management behavior: GGUF metadata + capability labels.
 class LlamaCppOps : public BackendOps {
 public:
+    void add_implied_checkpoints(ModelInfo& info) const override {
+        const std::string main = info.checkpoint();
+        if (!has_label(info.labels, "zero-shot") || !info.checkpoint("rulehead").empty() ||
+            main.empty()) {
+            return;
+        }
+        info.checkpoints["rulehead"] =
+            models::repo_id_from_checkpoint(main) + ":" + llamacpp::RULE_HEAD_FILE;
+    }
+
+    void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
+                        const BackendOpsContext& ctx) const override {
+        try {
+            BackendOps::download_model(info, do_not_upgrade, std::move(progress), ctx);
+        } catch (const std::runtime_error& e) {
+            const std::string rule_head = info.checkpoint("rulehead");
+            const std::string file = models::variant_from_checkpoint(rule_head);
+            const std::string message = e.what();
+            if (file.empty() || message.find(file) == std::string::npos ||
+                message.find("not found") == std::string::npos) {
+                throw;
+            }
+            throw std::runtime_error(llamacpp::missing_rule_head_message(info.model_name, rule_head));
+        }
+    }
+
     void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const override {
         const json merge_args_value = options.get_option("merge_args");
         const bool merge_args =
@@ -1045,6 +1177,15 @@ public:
     }
 
     std::string validate_load(const ModelInfo& info) const override {
+        if (is_rule_head_router_model(info) &&
+            (info.type != ModelType::CLASSIFICATION || has_label(info.labels, "systemone"))) {
+            return "model '" + info.model_name + "' has a 'rulehead' checkpoint, which lemond "
+                   "applies only to a prompt-router encoder labelled 'classification' and "
+                   "'zero-shot', not 'systemone'";
+        }
+        if (has_label(info.labels, "zero-shot") && !is_rule_head_router_model(info)) {
+            return llamacpp::missing_rule_head_message(info.model_name, llamacpp::RULE_HEAD_FILE);
+        }
         if (!has_label(info.labels, "systemone")) return "";
         return llamacpp::decision_model_load_refusal(info.model_name,
                                                      info.extra<bool>("hf_load", false),
