@@ -14,6 +14,7 @@
 
 #include <lemon/backends/backend_utils.h>
 #include <lemon/runtime_config.h>
+#include <lemon/recipe_options.h>
 
 #ifdef _WIN32
 #include <process.h>
@@ -114,6 +115,74 @@ int main() {
         }
         check(no_throw_matching,
               "validate_device_backend_match accepts matching pairs and system/auto backends gracefully");
+    }
+
+    // Test 2b: explicit CUDA selection uses the physical GPU UUID, not CUDA
+    // runtime ordinals (which can differ from nvidia-smi on 4090 + 5090 hosts).
+    {
+        const std::vector<std::pair<int, std::string>> gpus = {
+            {0, "GPU-test-4090"}, {1, "GPU-test-5090"}
+        };
+        check(BackendUtils::cuda_visible_device_for_selection("CUDA1", gpus) == "GPU-test-5090",
+              "CUDA1 resolves to the matching NVIDIA GPU UUID");
+        check(BackendUtils::cuda_visible_device_for_selection("cuda0", gpus) == "GPU-test-4090",
+              "CUDA0 resolves to the other NVIDIA GPU UUID");
+        bool rejected = false;
+        try { (void)BackendUtils::cuda_visible_device_for_selection("cuda2", gpus); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "nonexistent CUDA device is rejected");
+        rejected = false;
+        try { (void)BackendUtils::cuda_visible_device_for_selection("cuda0,cuda1", gpus); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "multi-GPU string is rejected for single-device backends");
+        rejected = false;
+        try { (void)BackendUtils::cuda_visible_device_for_selection("cuda1", {{0, "GPU-0"}, {1, ""}}); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "missing UUID is rejected instead of selecting an ambiguous CUDA ordinal");
+        check(BackendUtils::cuda_visible_device_for_selection("CUDA0", {{0, "GPU-one"}}) == "0",
+              "single NVIDIA GPU gets an explicit numeric visibility mask");
+        check(BackendUtils::cuda_visible_device_for_selection("CUDA0", {{0, ""}}) == "0",
+              "sole GPU with no UUID gets an explicit numeric mask");
+        bool valid_arch = true;
+        try {
+            BackendUtils::validate_cuda_device_arch_for_selection("CUDA1", "sm_120",
+                {{0, "sm_89"}, {1, "sm_120"}});
+        } catch (...) { valid_arch = false; }
+        check(valid_arch, "CUDA device matching sd.cpp asset architecture is accepted");
+        rejected = false;
+        try {
+            BackendUtils::validate_cuda_device_arch_for_selection("CUDA0", "sm_120",
+                {{0, "sm_89"}, {1, "sm_120"}});
+        } catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "CUDA device incompatible with installed sd.cpp asset is rejected");
+        check(BackendUtils::rocm_visible_device_for_selection("ROCm1", 2) == "1",
+              "ROCm1 maps to HIP_VISIBLE_DEVICES=1");
+        rejected = false;
+        try { (void)BackendUtils::rocm_visible_device_for_selection("ROCm2", 2); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "nonexistent ROCm device is rejected");
+    }
+
+    // Test 2c: explicit auto device selection masks any inherited model value.
+    {
+        const lemon::RecipeOptions thenoise_auto("thenoise", {{"thenoise_device", "auto"}});
+        const lemon::RecipeOptions thenoise_model("thenoise", {{"thenoise_device", "CUDA0"}});
+        check(thenoise_auto.inherit(thenoise_model).get_option("thenoise_device") == "auto",
+              "TheNoise explicit auto clears inherited device");
+
+        const lemon::RecipeOptions sd_auto("sd-cpp", {{"sd-cpp_device", "auto"}});
+        const lemon::RecipeOptions sd_model("sd-cpp", {{"sd-cpp_device", "CUDA0"}});
+        check(sd_auto.inherit(sd_model).get_option("sd-cpp_device") == "auto",
+              "sd.cpp explicit auto clears inherited device");
+    }
+
+    // Test 2d: a backend switch can explicitly suppress an inherited GPU on all single-GPU recipes.
+    for (const std::string& recipe : {"thenoise", "sd-cpp", "acestep", "trellis", "thinksound", "openmoss"}) {
+        const std::string key = recipe == "sd-cpp" ? "sd-cpp_device" : recipe + "_device";
+        const lemon::RecipeOptions requested(recipe, {{key, "auto"}});
+        const lemon::RecipeOptions inherited(recipe, {{key, "CUDA0"}});
+        check(requested.inherit(inherited).get_option(key) == "auto",
+              "explicit auto suppresses inherited GPU selection");
     }
 
     // Test 3: a custom backend binary environment variable takes precedence
