@@ -981,6 +981,10 @@ const ChatView: React.FC<ChatViewProps> = ({
   const pendingDeletionsRef = useRef<Set<string>>(new Set());
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+  const modelSelectionEpochRef = useRef(modelSelectionEpoch);
+  modelSelectionEpochRef.current = modelSelectionEpoch;
   const [incomingPrompt] = useState(readBrowserPromptDraft);
   const [inputValue, setInputValue] = useState(incomingPrompt);
   const [imageMode, setImageMode] = useState<ImageMode>('generate');
@@ -3039,11 +3043,16 @@ ${finalText}`
           if (!isVideoJobCanceled(err)) throw err;
           // Stopping a clip stops its backend, which unloads the model. Bring it
           // back so the next prompt stays in video mode instead of falling back
-          // to whatever chat model is still loaded.
+          // to whatever chat model is still loaded, unless the user has moved to
+          // another conversation or model since.
+          const epoch = modelSelectionEpochRef.current;
+          const stillHere = () => activeIdRef.current === convoId && modelSelectionEpochRef.current === epoch;
           try {
-            await loadModelForChat(model.name, findModelInfoByName(knownModelInfos, model.name) || null);
-            await Promise.resolve(onRefresh());
-            onModelSelect(model.name, { navigate: false });
+            if (stillHere()) {
+              await loadModelForChat(model.name, findModelInfoByName(knownModelInfos, model.name) || null);
+              await Promise.resolve(onRefresh());
+              if (stillHere()) onModelSelect(model.name, { navigate: false });
+            }
           } catch {
             // The stop itself succeeded; a failed reload only leaves the model unloaded.
           }
