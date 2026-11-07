@@ -2180,7 +2180,9 @@ const ChatView: React.FC<ChatViewProps> = ({
   const progressRecipe = String((progressModelInfo as any)?.recipe || (progressModelName === currentModel ? currentRecipe : '')).toLowerCase();
   const capabilityBusy = activeId ? capabilityBusyConvoIds.has(activeId) : false;
   const activeVideoStatus = activeId ? videoJobStatus[activeId] : undefined;
-  const videoStoppable = activeVideoStatus !== undefined && activeVideoStatus !== 'canceling';
+  // Once the clip is done, Stop would only throw the finished video away.
+  const videoStoppable = activeVideoStatus !== undefined
+    && !['canceling', 'completed', 'downloading'].includes(activeVideoStatus);
   const isBusy = isStreaming || capabilityBusy || isLiveRecording || micPreparation !== null || modelPreparation !== null;
 
   useEffect(() => {
@@ -4173,6 +4175,8 @@ ${index}`;
                         ? t('Video queued…')
                         : activeVideoStatus === 'canceling'
                           ? t('Stopping video…')
+                        : activeVideoStatus === 'completed' || activeVideoStatus === 'downloading'
+                          ? t('Downloading the video…')
                         : activeVideoStatus === 'reconnecting'
                           ? t('Lost contact with the server, still checking on the video…')
                         : activeVideoStatus !== undefined

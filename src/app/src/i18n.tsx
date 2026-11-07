@@ -835,6 +835,7 @@ const ZH_CN: Record<string, string> = {
   'Generating video… this takes a few minutes.': '正在生成视频…需要几分钟。',
   'Lost contact with the server, still checking on the video…': '与服务器失去联系，仍在检查视频…',
   'The server did not confirm that the video stopped. It may still be generating; try again in a moment.': '服务器未确认视频已停止，它可能仍在生成；请稍后再试。',
+  'Downloading the video…': '正在下载视频…',
   'Describe a video for {model}…': '为 {model} 描述一段视频…',
   'Preparing 3D result…': '正在准备 3D 结果…',
   'RAM / VRAM': '内存 / 显存',

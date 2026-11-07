@@ -22,8 +22,8 @@ export interface VideoJobResult {
 }
 
 /**
- * Server statuses plus two the client adds: 'reconnecting' while status polls
- * fail, and 'canceling' after Stop.
+ * Server statuses plus three the client adds: 'reconnecting' while status
+ * polls fail, 'canceling' after Stop, and 'downloading' once the clip is done.
  */
 export interface VideoJobOptions {
   signal?: AbortSignal;
@@ -32,6 +32,7 @@ export interface VideoJobOptions {
   maxPollFailures?: number;
   maxPollBackoffMs?: number;
   maxCancelPolls?: number;
+  maxDownloadAttempts?: number;
   requestTimeoutMs?: number;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
@@ -48,6 +49,15 @@ export class VideoJobStopUnconfirmedError extends Error {
   constructor(readonly jobId: string) {
     super(`Could not confirm that video job ${jobId} stopped; the server may still be generating it.`);
     this.name = 'VideoJobStopUnconfirmedError';
+  }
+}
+
+/** The clip finished on the server but could not be downloaded. */
+export class VideoJobDownloadError extends Error {
+  constructor(readonly jobId: string, cause: unknown) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    super(`Video job ${jobId} finished but its clip could not be downloaded: ${reason}`);
+    this.name = 'VideoJobDownloadError';
   }
 }
 
@@ -116,6 +126,7 @@ export async function runVideoJob(
     maxPollFailures = 3,
     maxPollBackoffMs = 30000,
     maxCancelPolls = 30,
+    maxDownloadAttempts = 3,
     requestTimeoutMs = 15000,
     sleep = abortableSleep,
   } = options;
@@ -163,13 +174,20 @@ export async function runVideoJob(
     throw new Error(record.error ? `Video generation failed: ${record.error}` : 'Video generation failed.');
   }
 
-  let blob: Blob;
-  try {
-    blob = await transport.content(id, signal);
-  } catch (err) {
-    if (signal?.aborted) throw new VideoJobCanceledError();
-    throw err;
+  // The clip already exists, so Stop no longer applies: the download ignores
+  // the caller's signal and is retried rather than thrown away.
+  onStatus?.({ ...record, status: 'downloading' });
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < maxDownloadAttempts; attempt += 1) {
+    if (attempt > 0) await sleep(pollMs);
+    try {
+      const blob = await transport.content(id, timeoutSignal(requestTimeoutMs * 4));
+      if (blob.size === 0) throw new Error('Video endpoint returned an empty clip.');
+      return { record, blob };
+    } catch (err) {
+      lastError = err;
+      if (isGone(err)) break;
+    }
   }
-  if (blob.size === 0) throw new Error('Video endpoint returned an empty clip.');
-  return { record, blob };
+  throw new VideoJobDownloadError(id, lastError);
 }

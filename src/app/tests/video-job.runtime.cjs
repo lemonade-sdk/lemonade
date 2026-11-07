@@ -58,7 +58,7 @@ const noSleep = async () => {};
       onStatus: record => seen.push(record.status),
     });
     assert.deepEqual(server.calls.create, [{ model: 'Wan', prompt: 'a cat' }]);
-    assert.deepEqual(seen, ['queued', 'running', 'running', 'completed']);
+    assert.deepEqual(seen, ['queued', 'running', 'running', 'completed', 'downloading']);
     assert.equal(server.calls.content, 1);
     assert.equal(result.blob.size, 4);
     assert.equal(result.record.duration, 2.06);
@@ -239,6 +239,50 @@ const noSleep = async () => {};
     const server = fakeServer(['running']);
     server.transport.get = async () => { throw httpError(404); };
     await assert.rejects(runVideoJob(server.transport, {}, { sleep: noSleep }), /HTTP 404/);
+  }
+
+  {
+    // Stop pressed while a finished clip downloads must not throw the clip away.
+    const server = fakeServer(['completed'], { output_format: 'webm' });
+    const controller = new AbortController();
+    const content = server.transport.content;
+    server.transport.content = async (id, signal) => {
+      controller.abort();
+      assert.notEqual(signal, controller.signal, 'the download ignores Stop');
+      return content(id);
+    };
+    const seen = [];
+    const result = await runVideoJob(server.transport, {}, {
+      signal: controller.signal,
+      sleep: noSleep,
+      onStatus: record => seen.push(record.status),
+    });
+    assert.equal(result.blob.size, 4);
+    assert.ok(seen.includes('downloading'));
+    assert.deepEqual(server.calls.cancel, []);
+  }
+
+  {
+    // A failed download is retried; the clip is still on the server.
+    const server = fakeServer(['completed'], { output_format: 'webm' });
+    const content = server.transport.content;
+    let failures = 2;
+    server.transport.content = async id => {
+      if (failures > 0) { failures -= 1; throw new Error('reset'); }
+      return content(id);
+    };
+    const result = await runVideoJob(server.transport, {}, { sleep: noSleep });
+    assert.equal(result.blob.size, 4);
+  }
+
+  {
+    // When every attempt fails, the error keeps the job id for a retry.
+    const server = fakeServer(['completed']);
+    server.transport.content = async () => { throw new Error('reset'); };
+    await assert.rejects(
+      runVideoJob(server.transport, {}, { sleep: noSleep, maxDownloadAttempts: 2 }),
+      err => err.name === 'VideoJobDownloadError' && err.jobId === 'job-1',
+    );
   }
 
   assert.equal(videoFileExtension({ id: 'x', status: 'completed', output_format: 'webp' }), 'webp');
