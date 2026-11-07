@@ -98,7 +98,7 @@ fn parse_beacon_message(bytes: &[u8]) -> Option<u16> {
 /// Bind the beacon port with address reuse, so the app can share UDP 13305 with
 /// other listeners on the same machine (`lemonade scan`, a second app, lemond on
 /// macOS) instead of failing to start.
-fn bind_beacon_socket() -> std::io::Result<UdpSocket> {
+fn bind_beacon_socket(port: u16) -> std::io::Result<UdpSocket> {
     use socket2::{Domain, Protocol, Socket, Type};
     let s = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
     s.set_reuse_address(true)?;
@@ -106,7 +106,7 @@ fn bind_beacon_socket() -> std::io::Result<UdpSocket> {
     s.set_reuse_port(true)?;
     s.set_broadcast(true)?;
     s.set_nonblocking(true)?;
-    s.bind(&std::net::SocketAddr::from((Ipv4Addr::UNSPECIFIED, BEACON_PORT)).into())?;
+    s.bind(&std::net::SocketAddr::from((Ipv4Addr::UNSPECIFIED, port)).into())?;
     UdpSocket::from_std(s.into())
 }
 
@@ -117,7 +117,7 @@ fn bind_beacon_socket() -> std::io::Result<UdpSocket> {
 /// quiet). Rebinds after any error, backing off 10 seconds.
 pub(crate) async fn run_beacon_listener(app: AppHandle) {
     loop {
-        let socket = match bind_beacon_socket() {
+        let socket = match bind_beacon_socket(BEACON_PORT) {
             Ok(s) => s,
             Err(err) => {
                 log::error!("Beacon listener bind failed: {err}, retrying in 10s");
@@ -217,9 +217,12 @@ mod tests {
     fn two_listeners_can_share_the_beacon_port() {
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         rt.block_on(async {
-            let a = bind_beacon_socket();
-            let b = bind_beacon_socket();
-            assert!(a.is_ok() && b.is_ok(), "{:?} / {:?}", a.err(), b.err());
+            // Port 0 first, then the port it was given: the test never touches the real beacon port,
+            // which a running app or lemond may hold on the machine running the tests.
+            let a = bind_beacon_socket(0).expect("first bind");
+            let port = a.local_addr().expect("local addr").port();
+            let b = bind_beacon_socket(port);
+            assert!(b.is_ok(), "second bind on {port}: {:?}", b.err());
         });
     }
 
