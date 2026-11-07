@@ -79,6 +79,9 @@ void ConfigEffects::apply(const std::string& key, const json& value) {
         // Recipe defaults (e.g. default_backend) are derived from these settings, so
         // drop the memoized recipes so the next /system-info recomputes them.
         SystemInfoCache::invalidate_recipes();
+        if (key == "llamacpp" && value.contains("backend")) {
+            ctx_.model_manager->invalidate_models_cache();
+        }
         for (auto& [sub_key, sub_value] : value.items()) {
             if (sub_key.size() >= 4
                 && sub_key.compare(sub_key.size() - 4, 4, "_bin") == 0) {

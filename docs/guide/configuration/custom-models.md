@@ -373,6 +373,8 @@ Every registered alias is exposed as an independent model entry in `/v1/models`,
 lemonade config set extra_models_dir="/home/you/.lmstudio/models"
 ```
 
+Every imported model runs on llama.cpp, so the scan reads each file's `general.architecture` and leaves out GGUFs that Lemonade's llama.cpp builds cannot run, such as the diffusion and audio models stable-diffusion.cpp and other engines load. The first shard of a split model decides for the whole set; `mmproj` files are not checked. A file whose header cannot be read is still listed. When `llamacpp.backend` is `system`, Lemonade cannot know which architectures your own build supports, so files under `chat/`, `embeddings/` or `reranking/` are listed whatever their architecture; elsewhere the check still applies.
+
 `lemonade pull` still downloads into `models_dir`. Point `extra_models_dir` at files you already have:
 
 | Source | Typical path |
