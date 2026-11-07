@@ -205,6 +205,7 @@ httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::
         }
     }
 
+    telemetry::g_current_route_decision.clear();
     telemetry::g_incoming_client_id.clear();
     telemetry::g_incoming_session_id.clear();
 
