@@ -3010,7 +3010,8 @@ ${finalText}`
             width: videoSettings.width,
             height: videoSettings.height,
             steps: videoSettings.steps,
-            ...(videoSettings.seed === '' || videoSettings.seed < 0 ? {} : { seed: videoSettings.seed }),
+            // -1 asks the server for a random seed; leaving it out gives a fixed one.
+            seed: videoSettings.seed === '' ? -1 : videoSettings.seed,
           }, {
             signal: controller.signal,
             onStatus: record => setVideoJobStatus(prev => ({ ...prev, [convoId]: record.status })),
