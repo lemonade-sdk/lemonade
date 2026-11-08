@@ -21,6 +21,7 @@
 #include "lemon/system_info.h"
 #include "lemon/system_metrics_platform.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/wrapped_server.h"
 
 namespace lemon {
 
@@ -71,7 +72,10 @@ lemon::jobs::json media_op_result(const std::string& op, lemon::jobs::CancelFlag
     };
     sink.is_writable = [&cancel, &overflow]() { return !cancel.load() && !overflow; };
     sink.done = []() {};
-    generate(sink);
+    {
+        WrappedServer::RequestCancelScope cancel_scope(utils::RequestCancelToken{&cancel});
+        generate(sink);
+    }
     throw_if_cancelled(cancel);
     if (overflow) {
         throw lemon::jobs::JobError(413, op + " output exceeds the job media output limit of " +
@@ -245,6 +249,7 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
             *router, request.value("model", ""), request.value("response_format", nlohmann::json()),
             false);
         throw_if_format_error(format);
+        request["response_format"] = format.format;
         return media_op_result(
             "audio_speech", cancel,
             [&](httplib::DataSink& sink) { router->audio_speech(request, sink); },
@@ -261,6 +266,7 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
             !is_known_audio_format(format.format))
             format.error = "Unsupported audio format requested";
         throw_if_format_error(format);
+        request["response_format"] = format.format;
         return media_op_result(
             "audio_generations", cancel,
             [&](httplib::DataSink& sink) { router->audio_generations(request, sink); },

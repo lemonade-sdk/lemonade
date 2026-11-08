@@ -130,9 +130,9 @@ std::function<json(const json& params, const json& context, CancelFlag& cancel)>
 | `image_generations` | yes | lambda in `services/job_ops.cpp` | Calls `router->image_generations(...)`; cancellable |
 | `image_edits` | yes | lambda in `services/job_ops.cpp` | Calls `router->image_edits(...)`; cancellable |
 | `image_variations` | yes | lambda in `services/job_ops.cpp` | Calls `router->image_variations(...)`; cancellable |
-| `audio_speech` | yes | lambda in `services/job_ops.cpp` | Negotiates `response_format`; base64 media (size-capped) |
-| `audio_generations` | yes | lambda in `services/job_ops.cpp` | Negotiates `response_format`; base64 media (size-capped) |
-| `model_3d_generations` | yes | lambda in `services/job_ops.cpp` | Returns base64 GLB (size-capped) |
+| `audio_speech` | yes | lambda in `services/job_ops.cpp` | Negotiates `response_format`; base64 media (size-capped); cancellable |
+| `audio_generations` | yes | lambda in `services/job_ops.cpp` | Negotiates `response_format`; base64 media (size-capped); cancellable |
+| `model_3d_generations` | yes | lambda in `services/job_ops.cpp` | Returns base64 GLB (size-capped); cancellable |
 
 ## Returning binary/media results
 
@@ -145,7 +145,10 @@ validate `response_format` against the backend's supported formats (reuse
 `negotiate_speech_format` / `negotiate_audio_generation_format` from
 `lemon/server/audio_formats.h`) and write the negotiated format back into the
 request so the backend encodes what the output's `mime_type` promises, and their sink
-must stop accepting data once `cancel` is set (see `configure_cancellable_sink`).
+must stop accepting data once `cancel` is set. `media_op_result` in
+`services/job_ops.cpp` does both: its sink refuses writes once cancelled or past the
+cap, and it binds `cancel` as the request cancel token so a backend's blocking HTTP
+call to its subprocess (e.g. Trellis' multipart `/generate`) is aborted too.
 
 ## Constraints from project notes
 
