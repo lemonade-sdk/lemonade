@@ -54,6 +54,8 @@ inline const BackendDescriptor descriptor = {
             /*image*/   "ghcr.io/peonist-ai/halogen-flash-server",
             /*devices*/ {"/dev/dri", "/dev/kfd"},
             /*cap_add*/ {},
+            // Its tags are releases; "latest" names the newest.
+            /*latest_tag*/ "latest",
         }},
     },
 };

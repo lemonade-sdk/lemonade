@@ -7,6 +7,7 @@
 #include "lemon/server/download_manager.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/container_manager.h"
+#include "lemon/utils/container_registry.h"
 #include "lemon/utils/github_api.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
@@ -161,8 +162,9 @@ fs::path container_version_file(const std::string& recipe, const std::string& ba
     return fs::path(backends::BackendUtils::get_install_directory(recipe, backend)) / "version.txt";
 }
 
-void install_container_backend(const std::string& recipe, const std::string& backend,
-                               bool force, DownloadProgressCallback progress_cb) {
+void install_container_backend(BackendManager& backend_manager, const std::string& recipe,
+                               const std::string& backend, bool force,
+                               DownloadProgressCallback progress_cb) {
     if (get_current_os() != "linux") {
         throw std::runtime_error(recipe + ":" + backend + " is a container backend, which runs on Linux");
     }
@@ -179,8 +181,13 @@ void install_container_backend(const std::string& recipe, const std::string& bac
                                  ", which is not one Lemonade pulls container backends from");
     }
 
-    const std::string pin = backends::BackendUtils::get_backend_version(recipe, backend);
-    const std::string image = backends::BackendUtils::get_backend_image(recipe, backend);
+    const std::string pin = backend_manager.resolve_container_pin(recipe, backend);
+    const auto parsed_pin = backends::parse_container_pin(pin);
+    if (!parsed_pin) {
+        throw std::runtime_error(recipe + ":" + backend + " is pinned to '" + pin +
+                                 "', which is not <tag>@sha256:<digest>");
+    }
+    const std::string image = policy->image + "@" + parsed_pin->digest;
     const fs::path version_file = container_version_file(recipe, backend);
     const std::string installed_pin = read_version_file(version_file);
 
@@ -654,6 +661,58 @@ std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
     }
 }
 
+std::string BackendManager::resolve_container_pin(const std::string& recipe,
+                                                  const std::string& backend) {
+    const ContainerPolicy* policy = backends::BackendUtils::get_container_policy(recipe, backend);
+    if (!policy) {
+        throw std::runtime_error(recipe + ":" + backend + " is not a container backend");
+    }
+    const std::string tag = backends::BackendUtils::get_container_bin_tag(recipe, backend);
+    if (tag.empty()) {
+        const std::string value = backends::BackendUtils::get_bin_config_value(recipe, backend);
+        return backends::parse_container_pin(value)
+                   ? value
+                   : backends::BackendUtils::get_backend_version(recipe, backend);
+    }
+
+    const std::string key = policy->image + ":" + tag;
+    {
+        std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
+        const auto it = container_digest_cache_.find(key);
+        if (it != container_digest_cache_.end()) return tag + "@" + it->second;
+    }
+
+    std::string error;
+    auto* cfg = RuntimeConfig::global();
+    if (cfg && cfg->offline()) {
+        error = "offline mode";
+    } else if (cfg && cfg->no_fetch_executables()) {
+        error = "no_fetch_executables is true";
+    } else {
+        try {
+            const std::string digest = utils::resolve_registry_digest(policy->image, tag);
+            {
+                std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
+                container_digest_cache_[key] = digest;
+            }
+            LOG(INFO, "BackendManager") << "Resolved " << key << " -> " << digest << std::endl;
+            return tag + "@" + digest;
+        } catch (const std::exception& e) {
+            error = e.what();
+        }
+    }
+
+    const std::string installed = read_version_file(container_version_file(recipe, backend));
+    const auto parsed = backends::parse_container_pin(installed);
+    if (parsed && parsed->tag == tag) {
+        LOG(WARNING, "BackendManager") << "Could not look up " << key << " (" << error
+                                       << "); using the installed "
+                                       << backends::short_container_pin(installed) << std::endl;
+        return installed;
+    }
+    throw std::runtime_error("Cannot look up " + key + ": " + error);
+}
+
 BackendManager::InstallParams BackendManager::get_install_params(const std::string& recipe, const std::string& backend) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
 
@@ -713,7 +772,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     } invalidate_backend_status_on_exit;
 
     if (backends::BackendUtils::get_container_policy(recipe, resolved_backend)) {
-        install_container_backend(recipe, resolved_backend, force, progress_cb);
+        install_container_backend(*this, recipe, resolved_backend, force, progress_cb);
         return;
     }
 
@@ -1078,10 +1137,10 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
         if (const ContainerPolicy* policy = backends::BackendUtils::get_container_policy(recipe, resolved_backend)) {
-            result.version = backends::short_container_pin(
-                backends::BackendUtils::get_backend_version(recipe, resolved_backend));
-            result.download_filename =
-                backends::BackendUtils::get_backend_image(recipe, resolved_backend);
+            const std::string pin = resolve_container_pin(recipe, resolved_backend);
+            result.version = backends::short_container_pin(pin);
+            const auto parsed = backends::parse_container_pin(pin);
+            result.download_filename = parsed ? policy->image + "@" + parsed->digest : "";
             result.release_url = container_registry_url(policy->image);
             return result;
         }

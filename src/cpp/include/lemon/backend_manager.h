@@ -68,6 +68,13 @@ public:
     std::string get_or_resolve_latest_tag(const std::string& recipe,
                                           const std::string& backend);
 
+    // The "<tag>@<digest>" pin a container backend runs: its backend_versions.json
+    // pin, unless its <backend>_bin names another pin, a tag, or "latest". A tag
+    // is looked up in its registry once per process, like "latest" releases
+    // above; when that lookup is skipped (offline) or fails, an installed image
+    // of the same tag stands in. Throws when neither answers.
+    std::string resolve_container_pin(const std::string& recipe, const std::string& backend);
+
     /// Set/get the global BackendManager instance. Mirrors RuntimeConfig::global()
     /// so non-Server contexts (status helpers in system_info.cpp) can reach it.
     /// Set once from Server's constructor; null until then.
@@ -88,6 +95,10 @@ private:
     // Restart `lemond` to re-resolve.
     std::unordered_map<std::string, std::string> latest_version_cache_;
     std::mutex latest_version_cache_mutex_;
+
+    // Registry digests keyed by "<image>:<tag>", cached like the releases above.
+    std::unordered_map<std::string, std::string> container_digest_cache_;
+    std::mutex container_digest_cache_mutex_;
 
     // Get version for a recipe/backend from the cached config
     std::string get_version_from_config(const std::string& recipe, const std::string& backend);

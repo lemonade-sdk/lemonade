@@ -68,6 +68,9 @@ namespace lemon::backends {
     // Podman and Docker print. Returns `pin` unchanged when it is not a pin.
     std::string short_container_pin(const std::string& pin);
 
+    // Whether `value` is one BackendUtils::get_container_bin_tag() accepts.
+    bool is_container_bin_value(const std::string& value);
+
     // Return the backend spec for recipes that use the standard BackendSpec flow.
     // Returns nullptr for recipes that require custom handling (e.g., flm) or unknown recipes.
     const BackendSpec* try_get_spec_for_recipe(const std::string& recipe);
@@ -255,8 +258,11 @@ namespace lemon::backends {
         /** The backend's container policy, or nullptr when it does not run from an image. */
         static const ContainerPolicy* get_container_policy(const std::string& recipe, const std::string& backend);
 
-        /** "<image>@<digest>" for a container backend: its descriptor's image and the digest its backend_versions.json pin names. Throws when the backend has no container policy or no valid pin. */
+        /** "<image>@<digest>" for the pin a container backend runs; a tag runs what install resolved it to. Throws when the backend has no container policy or no valid pin. */
         static std::string get_backend_image(const std::string& recipe, const std::string& backend);
+
+        /** A container backend's <backend>_bin is "builtin" (the backend_versions.json pin), a "<tag>@<digest>" pin, an image tag, or "latest". Returns the tag to look up in the registry: the one named, or for "latest" the policy's latest_tag, else the builtin pin's tag. "" for "builtin" and pins; throws for anything else. */
+        static std::string get_container_bin_tag(const std::string& recipe, const std::string& backend);
 
         /** The image get_backend_image() gave at install time, or "" when none is installed. */
         static std::string get_installed_backend_image(const std::string& recipe, const std::string& backend);

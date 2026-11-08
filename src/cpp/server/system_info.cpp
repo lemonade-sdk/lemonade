@@ -1578,16 +1578,32 @@ json SystemInfo::build_recipes_info(const json& devices) {
         } else {
             std::string installed_version = get_recipe_version(def.recipe, def.backend);
             std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
+            // A container backend whose *_bin names a tag or "latest" follows
+            // that tag: any install of it runs, and a newer digest for it is
+            // offered as an update.
+            std::string container_tag;
+            std::string container_update;
+            const std::string installed_pin = installed_version;
             if (container_backend) {
+                try {
+                    container_tag = BackendUtils::get_container_bin_tag(def.recipe, def.backend);
+                    if (auto* bm = BackendManager::global()) {
+                        expected_version = bm->resolve_container_pin(def.recipe, def.backend);
+                    }
+                } catch (const std::exception& e) {
+                    LOG(WARNING, "SystemInfo") << e.what() << std::endl;
+                }
+                const auto expected_pin = backends::parse_container_pin(expected_version);
+                if (!container_tag.empty() && expected_pin && expected_version != installed_pin) {
+                    container_update = backends::short_container_pin(expected_version);
+                }
                 installed_version = backends::short_container_pin(installed_version);
                 expected_version = backends::short_container_pin(expected_version);
-            }
-
-            // The user's *_bin pin overrides what the state machine considers
-            // "expected" — otherwise an explicit-tag pin (e.g. b8664) would
-            // perpetually emit update_required because the lemonade baseline
-            // differs, and a path pin would do the same with no version.txt.
-            {
+            } else {
+                // The user's *_bin pin overrides what the state machine considers
+                // "expected" — otherwise an explicit-tag pin (e.g. b8664) would
+                // perpetually emit update_required because the lemonade baseline
+                // differs, and a path pin would do the same with no version.txt.
                 std::string user_pin = BackendUtils::get_bin_config_value(def.recipe, def.backend);
                 if (!user_pin.empty() && user_pin != "builtin" && user_pin != "latest") {
                     if (utils::looks_like_path(user_pin)) {
@@ -1606,7 +1622,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
             bool version_known = !installed_version.empty() && installed_version != "unknown";
             bool has_expected = !expected_version.empty();
-            bool latest_pin = is_bin_pinned_to_latest(def.recipe, def.backend);
+            bool latest_pin = !container_backend && is_bin_pinned_to_latest(def.recipe, def.backend);
             bool needs_update;
 
             // Some recipes (e.g. vllm) install with per-GPU-target release
@@ -1634,6 +1650,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 needs_update = has_expected && (!version_known || !version_at_least_expected);
             } else
 #endif
+            if (!container_tag.empty()) {
+                const auto installed = backends::parse_container_pin(installed_pin);
+                needs_update = !installed || installed->tag != container_tag;
+            } else
             if (latest_pin) {
                 // For *_bin = "latest", the installed version is allowed to be
                 // newer than the lemonade-shipped baseline. Only force
@@ -1661,7 +1681,11 @@ json SystemInfo::build_recipes_info(const json& devices) {
                         latest_tag = bm->get_or_resolve_latest_tag(def.recipe, def.backend);
                     }
                 }
-                if (!latest_tag.empty()
+                if (!container_update.empty()) {
+                    backend["state"] = "update_available";
+                    backend["message"] = "Newer image available: " + container_update;
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+                } else if (!latest_tag.empty()
                     && version_compare(installed_version, latest_tag) < 0) {
                     backend["state"] = "update_available";
                     backend["message"] = "Newer upstream release available: " + latest_tag;
