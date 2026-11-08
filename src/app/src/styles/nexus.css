@@ -441,6 +441,9 @@
 .nexus-mesh__empty { margin: 0 0 8px; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
 .nexus-mesh__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .nexus-account-menu .nexus-mesh-row { padding: 8px 10px; }
+.nexus-chat-hosts > .nexus-mesh-row { align-items: center; margin-bottom: 6px; }
+.nexus-chat-hosts > .nexus-mesh-row > .nexus-mesh-row__check { margin-top: 0; }
+.nexus-chat-hosts > .nexus-mesh-row:last-of-type { margin-bottom: 0; }
 .nexus-account-menu .nexus-devices { margin-bottom: var(--space-3); }
 @media (max-width: 560px) {
   .nexus-mesh { padding: 14px; }

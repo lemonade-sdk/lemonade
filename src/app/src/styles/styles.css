@@ -6074,6 +6074,73 @@ optgroup {
   background: var(--danger-soft);
 }
 
+/* The picker's host groups: one collapsible run of rows per Lemonade server. */
+.composer__model-host + .composer__model-host { margin-top: var(--space-2); }
+
+.composer__model-host-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer__model-host-head:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.composer__model-host-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.composer__model-host-head > .app-icon {
+  flex-shrink: 0;
+  transition: transform .15s ease;
+}
+
+.composer__model-host-head[aria-expanded="true"] > .app-icon { transform: rotate(90deg); }
+
+.composer__model-host-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer__model-host-badge {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+  font-size: 10px;
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+
+.composer__model-host > .workspace-list-group__items > .composer__model-empty,
+.composer__model-host > .workspace-list-group__items > .composer__model-error {
+  margin-top: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer__model-host-head > .app-icon { transition: none; }
+}
+
 .composer__mode-badge--interactive {
   display: inline-flex;
   align-items: center;

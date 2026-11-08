@@ -505,6 +505,32 @@ export function nexusStatusLabel(status: NexusStatus | null): string {
   return 'Mesh offline';
 }
 
+// This device's own server: the one chat started on, whether or not a peer is selected now.
+async function homeServer(): Promise<{ endpoint: string; key: string }> {
+  if (home) return home;
+  const origin = await controller();
+  return { endpoint: origin.source, key: origin.key };
+}
+// A GET on a chat host's own Lemonade API: this device's server for `local`, else the peer
+// through this device's relay route. A saved peer key travels in the header the relay forwards.
+export async function nexusHostRequest<T>(hostId: string, path: string): Promise<T> {
+  const server = await homeServer();
+  const peerKey = hostId === 'local' ? '' : peerKeys.get(hostId) ?? '';
+  const base = hostId === 'local' ? server.endpoint : relayEndpoint(server.endpoint, hostId);
+  const response = await fetch(`${base}/${path}`, {
+    headers: { ...(server.key ? { Authorization: `Bearer ${server.key}` } : {}), ...(peerKey ? { 'X-Lemonade-Peer-Authorization': `Bearer ${peerKey}` } : {}) },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(35000),
+  });
+  if (response.status === 401) throw new Error(hostId === 'local' ? API_KEY_ERROR : 'That server requires an API key. Enter it in Settings > Devices & mesh.');
+  const data = await response.json().catch(() => undefined);
+  if (!response.ok) {
+    const message = data?.error?.message ?? data?.error;
+    throw new Error(typeof message === 'string' ? message : `Request failed (${response.status}).`);
+  }
+  return data as T;
+}
+
 // A peer is reached through this client's own server, which relays the request over the
 // mesh. The selection lives only in this client; other clients of the server are unaffected.
 export async function selectNexusInferenceServer(nodeId: string, suppliedKey?: string): Promise<void> {
@@ -514,12 +540,7 @@ export async function selectNexusInferenceServer(nodeId: string, suppliedKey?: s
     publish({ ...state, selectedServerId: 'local' });
     return;
   }
-  let server: { endpoint: string; key: string };
-  if (home) server = home;
-  else {
-    const origin = await controller();
-    server = { endpoint: origin.source, key: origin.key };
-  }
+  const server = await homeServer();
   const previous = { endpoint: api.baseUrl, key: api.apiKey, peerKey: api.peerApiKey, home };
   if (state.switchingServer) throw new Error('A server switch is already in progress.');
   publish({ ...state, switchingServer: true });

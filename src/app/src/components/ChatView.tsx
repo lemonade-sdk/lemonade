@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import type { ChatMessage, ChatCompletionStats, ConnectionStatus, LoadedModel, ModelInfo, RealtimeTranscriptionHandle } from '../api';
+import type { ChatMessage, ChatCompletionStats, ConnectionStatus, LoadedModel, ModelInfo, ModelsData, RealtimeTranscriptionHandle } from '../api';
 import { blobFromDataUrl } from '../api';
 import { copyTextToClipboard } from '../clipboard';
 import { downloadBlob } from '../download';
@@ -12,6 +12,12 @@ import { backendCompactLabel, capabilityColor } from '../modelPresentation';
 import { scheduleIdleWork } from '../startupScheduler';
 import { useI18n } from '../i18n';
 import ChatReadinessProgress from './ChatReadinessProgress';
+
+/** A chat model another mesh host reports; the row stays simple until that host serves chat. */
+type HostModel = { name: string; recipe?: string; loaded: boolean; info: ModelInfo };
+/** Empty while the host's list is on its way. */
+type HostModelList = { models?: HostModel[]; error?: string };
+const hostModelRowId = (hostId: string, name: string) => `host:${hostId}:${name}`;
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
 const LogViewer = lazy(() => import(/* webpackChunkName: "chat-logs" */ './LogViewer'));
@@ -66,6 +72,7 @@ import type { DownloadListItem } from '../features/downloadManager/downloadStore
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel, virtualLoadedCollection } from '../features/collections/collectionModels';
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
 import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';
+import { nexusHostRequest, nexusInferenceServers, selectNexusInferenceServer, useNexusNetwork } from '../features/nexus/nexus';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import { selectDictationModel, updateDraftWithDictation } from '../features/audio/dictationModels';
 import {
@@ -1011,6 +1018,16 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [modelPickerLoading, setModelPickerLoading] = useState<string | null>(null);
   const [modelPickerError, setModelPickerError] = useState<string | null>(null);
   const [modelPickerUnloading, setModelPickerUnloading] = useState<string | null>(null);
+  // The picker groups models by host. The host serving chat (`local` or a mesh peer's
+  // node id) shows the server-backed option list; every other host lists the chat
+  // models its own Lemonade API reports, fetched once per opening of the picker.
+  const nexusNetwork = useNexusNetwork(false);
+  const chatHostId = nexusNetwork.selectedServerId || 'local';
+  const chatHosts = useMemo(() => nexusInferenceServers(nexusNetwork.status), [nexusNetwork.status]);
+  const [modelPickerExpandedHosts, setModelPickerExpandedHosts] = useState<string[]>([]);
+  const [modelPickerHostModels, setModelPickerHostModels] = useState<Record<string, HostModelList>>({});
+  const modelPickerHostsRequested = useRef(new Set<string>());
+  const [modelPickerSwitching, setModelPickerSwitching] = useState<string | null>(null);
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>([]);
   const downloadAvailabilityKeyRef = useRef(chatBlockingDownloadsKey(downloadItems));
   const [unloadAnnouncement, setUnloadAnnouncement] = useState('');
@@ -3543,6 +3560,55 @@ ${finalText}`
     }
   }, [connectionStatus, currentModel, loadModelForChat, modelPickerLoading, onModelSelect, onRefresh]);
 
+  const loadHostModels = useCallback((hostId: string) => {
+    if (modelPickerHostsRequested.current.has(hostId)) return;
+    modelPickerHostsRequested.current.add(hostId);
+    setModelPickerHostModels(current => ({ ...current, [hostId]: {} }));
+    nexusHostRequest<ModelsData>(hostId, 'api/v1/models').then(data => {
+      const models = (Array.isArray(data?.data) ? data.data : []).flatMap((info): HostModel[] => {
+        const name = modelInfoName(info);
+        if (!name || capabilityFromModelInfo(info) !== 'chat') return [];
+        return [{ name, recipe: typeof info.recipe === 'string' ? info.recipe : undefined, loaded: (info as any).loaded === true, info }];
+      });
+      setModelPickerHostModels(current => ({ ...current, [hostId]: { models } }));
+    }).catch(error => {
+      setModelPickerHostModels(current => ({ ...current, [hostId]: { error: friendlyErrorMessage(error) } }));
+    });
+  }, []);
+
+  const toggleModelPickerHost = useCallback((hostId: string) => {
+    setModelPickerExpandedHosts(current => current.includes(hostId) ? current.filter(id => id !== hostId) : [...current, hostId]);
+    if (hostId !== chatHostId) loadHostModels(hostId);
+  }, [chatHostId, loadHostModels]);
+
+  // Searching reads every host: a host whose models match opens on its own.
+  const modelPickerHostIds = useMemo(() => ['local', ...chatHosts.map(device => device.node_id)], [chatHosts]);
+  useEffect(() => {
+    if (!modelPickerOpen || !modelPickerQuery.trim()) return;
+    modelPickerHostIds.forEach(hostId => { if (hostId !== chatHostId) loadHostModels(hostId); });
+  }, [chatHostId, loadHostModels, modelPickerHostIds, modelPickerOpen, modelPickerQuery]);
+
+  // A model on another host: chat moves to that host first, through the same switch
+  // Settings → Devices & mesh uses, then the model is chosen as any picker row is.
+  const handleHostModelSelect = useCallback(async (hostId: string, model: HostModel) => {
+    if (modelPickerSwitching || modelPickerLoading) return;
+    setModelPickerError(null);
+    setModelPickerSwitching(hostId);
+    try {
+      await selectNexusInferenceServer(hostId);
+      await Promise.resolve(onRefresh());
+    } catch (err) {
+      setModelPickerError(friendlyErrorMessage(err));
+      return;
+    } finally {
+      setModelPickerSwitching(null);
+    }
+    await handleModelPickerSelect({
+      name: model.name, capability: 'chat', recipe: model.recipe, loaded: model.loaded, downloaded: true,
+      audioInput: false, info: model.info, detail: model.loaded ? t('Loaded') : '',
+    });
+  }, [handleModelPickerSelect, modelPickerLoading, modelPickerSwitching, onRefresh, t]);
+
   // ── Option select from assistant messages ───────────────────
 
   const handleOptionSelect = useCallback((text: string) => {
@@ -3966,7 +4032,15 @@ ${finalText}`
                 <button
                   type="button"
                   className="composer__model-button"
-                  onClick={() => { setModelPickerOpen(v => !v); setModelPickerError(null); }}
+                  onClick={() => {
+                    if (!modelPickerOpen) {
+                      // Each opening starts from the host serving chat and fresh host lists.
+                      setModelPickerExpandedHosts([chatHostId]);
+                      setModelPickerHostModels({});
+                      modelPickerHostsRequested.current = new Set();
+                    }
+                    setModelPickerOpen(v => !v); setModelPickerError(null);
+                  }}
                   aria-haspopup="listbox"
                   aria-expanded={modelPickerOpen}
                 >
@@ -4016,12 +4090,34 @@ ${finalText}`
                     listRef={modelPickerListRef}
                     className="composer__model-results"
                     label={t('Models')}
-                    onRowActivate={name => {
-                      const option = modelPickerOptions.find(item => item.name === name);
-                      if (option) handleModelPickerSelect(option);
+                    onRowActivate={rowId => {
+                      const option = modelPickerOptions.find(item => item.name === rowId);
+                      if (option) { handleModelPickerSelect(option); return; }
+                      const match = /^host:([^:]+):(.*)$/.exec(rowId);
+                      const model = match && modelPickerHostModels[match[1]]?.models?.find(item => item.name === match[2]);
+                      if (match && model) void handleHostModelSelect(match[1], model);
                     }}
                   >
-                    {modelPickerOptions.map(option => {
+                    {modelPickerHostIds.map(hostId => {
+                      const device = hostId === 'local' ? undefined : chatHosts.find(item => item.node_id === hostId);
+                      const hostTitle = hostId === 'local' ? t('This device') : device?.device_name || t('Unnamed device');
+                      const serving = hostId === chatHostId;
+                      const query = modelPickerQuery.trim().toLowerCase();
+                      const hostList = modelPickerHostModels[hostId];
+                      const hostRows = serving ? [] : (hostList?.models || []).filter(model => !query || `${model.name} ${model.recipe || ''}`.toLowerCase().includes(query));
+                      const expanded = modelPickerExpandedHosts.includes(hostId) || (query !== '' && (serving ? modelPickerOptions.length : hostRows.length) > 0);
+                      return (
+                        <li key={hostId} role="group" aria-label={hostTitle} className="workspace-list-group composer__model-host">
+                          <button type="button" className="composer__model-host-head" aria-expanded={expanded} onClick={() => toggleModelPickerHost(hostId)}>
+                            <Icon name="chevron-right" size={14} />
+                            <span className="composer__model-host-name">{hostTitle}</span>
+                            {serving && <span className="composer__model-host-badge">{t('Chat runs here')}</span>}
+                          </button>
+                          {expanded && (
+                            <ul role="none" className="workspace-list-group__items">
+                              {serving ? <>
+                                {modelPickerOptions.length === 0 && <li className="composer__model-empty">{t('No matching models')}</li>}
+                                {modelPickerOptions.map(option => {
                       const isLoading = modelPickerLoading === option.name;
                       const isUnloading = modelPickerUnloading === option.name;
                       const busy = isLoading || isUnloading;
@@ -4050,7 +4146,7 @@ ${finalText}`
                           status={busy ? 'busy' : option.loaded ? 'live' : undefined}
                           statusText={isLoading ? 'Loading…' : isUnloading ? 'Ejecting…' : undefined}
                           selected={option.name === currentModel}
-                          disabled={busy}
+                          disabled={busy || Boolean(modelPickerSwitching)}
                           tabIndex={option.name === currentModel ? 0 : -1}
                           ariaLabel={`${option.name}, ${modelModeDisplayLabel(option.capability, option.audioInput, option.recipe)}, ${option.detail}${option.defaultLabel ? `, ${option.defaultLabel}` : ''}`}
                           onClick={() => handleModelPickerSelect(option)}
@@ -4073,8 +4169,34 @@ ${finalText}`
                         />
                       );
                     })}
-                    {modelPickerOptions.length === 0 && <li className="composer__model-empty">{t('No matching models')}</li>}
+                              </> : !hostList || (!hostList.models && !hostList.error)
+                                ? <li className="composer__model-empty">{t('Loading models…')}</li>
+                                : hostList.error
+                                  ? <li className="composer__model-error">{hostList.error}</li>
+                                  : hostRows.length === 0
+                                    ? <li className="composer__model-empty">{t(query ? 'No matching models' : 'No chat models on this device')}</li>
+                                    : hostRows.map(model => (
+                                      <WorkspaceListRow
+                                        key={model.name}
+                                        rowId={hostModelRowId(hostId, model.name)}
+                                        capability="chat"
+                                        title={model.name}
+                                        meta={[model.loaded ? t('Loaded') : '', model.recipe ? backendCompactLabel(model.recipe) : ''].filter(Boolean)}
+                                        status={modelPickerSwitching === hostId ? 'busy' : model.loaded ? 'live' : undefined}
+                                        statusText={modelPickerSwitching === hostId ? t('Switching…') : undefined}
+                                        disabled={Boolean(modelPickerSwitching)}
+                                        tabIndex={-1}
+                                        ariaLabel={`${model.name}, ${hostTitle}`}
+                                        onClick={() => { void handleHostModelSelect(hostId, model); }}
+                                      />
+                                    ))}
+                            </ul>
+                          )}
+                        </li>
+                      );
+                    })}
                   </WorkspaceList>
+                  {modelPickerSwitching && <div className="composer__model-loading-bar">{t('Switching chat to {host}…', { host: modelPickerSwitching === 'local' ? t('This device') : chatHosts.find(item => item.node_id === modelPickerSwitching)?.device_name || t('Unnamed device') })}</div>}
                   {modelPickerLoading && <div className="composer__model-loading-bar">{t('Loading {model}…', { model: modelPickerLoading })}</div>}
                   {modelPickerError && <div className="composer__model-error">{modelPickerError}</div>}
                 </div>
