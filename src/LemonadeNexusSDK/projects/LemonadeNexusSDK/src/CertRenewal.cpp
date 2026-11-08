@@ -4,6 +4,7 @@
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
 
 #include <sodium.h>
 #include <spdlog/spdlog.h>
@@ -145,6 +146,36 @@ void sync_directory([[maybe_unused]] const fs::path& dir) {
 
 } // namespace
 
+namespace {
+
+// The first DNS subject alternative name, else the subject common name.
+std::string leaf_name(X509* cert) {
+    std::string name;
+    if (auto* names = static_cast<GENERAL_NAMES*>(
+            X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr))) {
+        for (int i = 0; i < sk_GENERAL_NAME_num(names) && name.empty(); ++i) {
+            const GENERAL_NAME* entry = sk_GENERAL_NAME_value(names, i);
+            if (entry->type != GEN_DNS) continue;
+            const unsigned char* data = ASN1_STRING_get0_data(entry->d.dNSName);
+            const int length = ASN1_STRING_length(entry->d.dNSName);
+            if (data && length > 0) {
+                name.assign(reinterpret_cast<const char*>(data), static_cast<size_t>(length));
+            }
+        }
+        GENERAL_NAMES_free(names);
+    }
+    if (name.empty()) {
+        char common_name[256] = {};
+        if (X509_NAME_get_text_by_NID(X509_get_subject_name(cert), NID_commonName,
+                                      common_name, sizeof common_name) > 0) {
+            name = common_name;
+        }
+    }
+    return name;
+}
+
+} // namespace
+
 std::optional<CertValidity> read_cert_validity(const std::string& pem) {
     BIO* bio = memory_bio(pem);
     if (!bio) return std::nullopt;
@@ -154,6 +185,7 @@ std::optional<CertValidity> read_cert_validity(const std::string& pem) {
     CertValidity validity{
         .not_before = asn1_to_unix(X509_get0_notBefore(cert)),
         .not_after  = asn1_to_unix(X509_get0_notAfter(cert)),
+        .name       = leaf_name(cert),
     };
     X509_free(cert);
     if (validity.not_before == 0 || validity.not_after == 0) return std::nullopt;
@@ -272,7 +304,10 @@ CertRenewalResult CertRenewer::renew_locked(const std::string& target, const fs:
     }
     if (current) result.expires_at = current->not_after;
     if (current && !cert_renewal_due(*current, now)) {
+        // The caller installs the stored certificate under this name; without
+        // it the mesh port refused a valid certificate after every restart.
         result.status = CertRenewalStatus::NotDue;
+        result.domain = current->name;
         return result;
     }
 

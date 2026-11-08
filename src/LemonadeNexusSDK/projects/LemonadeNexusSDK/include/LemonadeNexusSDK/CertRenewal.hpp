@@ -19,14 +19,17 @@ namespace lnsdk {
 /// hostname, which names the device certificate "<hostname>.capi.<base>".
 inline constexpr std::string_view kGroupLoopbackCertTarget = "*";
 
-/// Validity period of the leaf certificate, Unix seconds.
+/// Validity period of the leaf certificate, Unix seconds, and its name.
 struct CertValidity {
     uint64_t not_before{0};
     uint64_t not_after{0};
+    /// The first DNS subject alternative name, else the subject common name;
+    /// empty when the certificate carries neither.
+    std::string name;
 };
 
-/// The validity period of the first certificate in a PEM chain, or nullopt
-/// when it does not parse.
+/// The validity period and name of the first certificate in a PEM chain, or
+/// nullopt when it does not parse.
 [[nodiscard]] std::optional<CertValidity> read_cert_validity(const std::string& pem);
 
 /// True when the certificate must be requested again at `now`: less than one
