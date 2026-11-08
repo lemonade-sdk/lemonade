@@ -10,6 +10,7 @@
 #include "lemon/backends/gufo/gufo_server.h"
 #include "lemon/backends/halogen/halogen_server.h"
 #include "lemon/utils/container_manager.h"
+#include "lemon/utils/container_registry.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -677,6 +678,73 @@ void test_descriptors_and_pins() {
     }
 }
 
+void test_registry_digest() {
+    using lemon::utils::HttpResponse;
+    const std::string digest = "sha256:" + std::string(64, 'a');
+    std::vector<std::string> urls;
+    std::string authorization;
+    auto registry = [&](const std::string& url, const std::map<std::string, std::string>& headers) {
+        urls.push_back(url);
+        HttpResponse response;
+        if (url.rfind("https://auth.docker.io/token?", 0) == 0) {
+            response.status_code = 200;
+            response.body = R"({"token":"t0k"})";
+            return response;
+        }
+        const auto auth = headers.find("Authorization");
+        if (auth == headers.end()) {
+            response.status_code = 401;
+            response.headers["www-authenticate"] =
+                "Bearer realm=\"https://auth.docker.io/token\",service=\"registry.docker.io\","
+                "scope=\"repository:kyuz0/amd-strix-halo-toolboxes:pull\"";
+            return response;
+        }
+        authorization = auth->second;
+        if (url.find("/manifests/missing") != std::string::npos) {
+            response.status_code = 404;
+            return response;
+        }
+        response.status_code = 200;
+        response.headers["docker-content-digest"] = digest;
+        return response;
+    };
+
+    const std::string resolved = lemon::utils::resolve_registry_digest(
+        "docker.io/kyuz0/amd-strix-halo-toolboxes", "rocm-10.0-gufo", registry);
+    check("a tag resolves to the digest its manifest names", resolved == digest);
+    check("Docker Hub manifests are asked of registry-1.docker.io",
+          !urls.empty() && urls.front() ==
+              "https://registry-1.docker.io/v2/kyuz0/amd-strix-halo-toolboxes/manifests/rocm-10.0-gufo");
+    check("the pull token comes from the challenge's realm, service and scope",
+          urls.size() == 3 &&
+              urls[1] == "https://auth.docker.io/token?service=registry.docker.io"
+                         "&scope=repository%3Akyuz0%2Famd-strix-halo-toolboxes%3Apull");
+    check("the manifest is asked again with the token", authorization == "Bearer t0k");
+
+    bool missing_threw = false;
+    try {
+        lemon::utils::resolve_registry_digest("docker.io/kyuz0/amd-strix-halo-toolboxes",
+                                              "missing", registry);
+    } catch (const std::runtime_error& e) {
+        missing_threw = std::string(e.what()).find("has no tag 'missing'") != std::string::npos;
+    }
+    check("a tag the registry does not have is an error naming it", missing_threw);
+
+    auto no_digest = [](const std::string&, const std::map<std::string, std::string>&) {
+        HttpResponse response;
+        response.status_code = 200;
+        return response;
+    };
+    bool no_digest_threw = false;
+    try {
+        lemon::utils::resolve_registry_digest("ghcr.io/peonist-ai/halogen-flash-server", "latest",
+                                              no_digest);
+    } catch (const std::runtime_error&) {
+        no_digest_threw = true;
+    }
+    check("a manifest answer without a digest is an error", no_digest_threw);
+}
+
 }  // namespace
 
 int main() {
@@ -697,6 +765,7 @@ int main() {
     test_gufo_argv();
     test_ds4_memory_plan();
     test_descriptors_and_pins();
+    test_registry_digest();
 
     if (failures == 0) {
         std::printf("\nAll container manager checks passed.\n");
