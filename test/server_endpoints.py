@@ -6758,7 +6758,12 @@ class EndpointTests(ServerTestBase):
             print("[OK] a plaintext catalog url costs the setting")
 
     def _write_stub_gguf_file(self, path):
-        """Write a tiny valid-enough GGUF file at an exact path."""
+        """Write a tiny GGUF file with a supported architecture at an exact path.
+
+        The header declares ``general.architecture = "llama"`` so discovery's
+        llama.cpp architecture filter (see PR #4097) keeps the stub instead of
+        skipping it as an undecodable/unsupported model.
+        """
         import struct
 
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -6766,7 +6771,14 @@ class EndpointTests(ServerTestBase):
             f.write(b"GGUF")
             f.write(struct.pack("<I", 3))  # version
             f.write(struct.pack("<Q", 0))  # tensor_count
-            f.write(struct.pack("<Q", 0))  # kv_count
+            f.write(struct.pack("<Q", 1))  # kv_count
+            key = b"general.architecture"
+            f.write(struct.pack("<Q", len(key)))
+            f.write(key)
+            f.write(struct.pack("<I", 8))  # value type: string
+            value = b"llama"
+            f.write(struct.pack("<Q", len(value)))
+            f.write(value)
 
     @contextlib.contextmanager
     def _extra_models_dir(self, ggufs=(), gguf_sizes=None, refs=None, other_files=()):
