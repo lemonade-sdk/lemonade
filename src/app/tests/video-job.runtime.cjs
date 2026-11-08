@@ -260,6 +260,46 @@ const noSleep = async () => {};
   }
 
   {
+    // An error that will not clear, such as a 401, ends polling at once and
+    // keeps the job id, without claiming the job stopped.
+    const server = fakeServer(['running']);
+    server.transport.get = async () => { throw httpError(401); };
+    await assert.rejects(
+      runVideoJob(server.transport, {}, { sleep: noSleep }),
+      err => err.name === 'VideoJobPollError' && err.jobId === 'job-1' && /HTTP 401/.test(err.message),
+    );
+    assert.deepEqual(server.calls.cancel, []);
+  }
+
+  {
+    // Timeouts and rate limits are worth retrying.
+    const server = fakeServer(['completed'], { output_format: 'webm' });
+    const get = server.transport.get;
+    const errors = [httpError(429), httpError(408)];
+    server.transport.get = async id => {
+      if (errors.length) throw errors.shift();
+      return get(id);
+    };
+    const result = await runVideoJob(server.transport, {}, { sleep: noSleep });
+    assert.equal(result.blob.size, 4);
+  }
+
+  {
+    // A Stop the server refuses outright is unconfirmed at once, not after
+    // every cancel poll.
+    const server = fakeServer(['running']);
+    server.transport.cancel = async () => { throw httpError(403); };
+    const controller = new AbortController();
+    const job = runVideoJob(server.transport, {}, {
+      signal: controller.signal,
+      onStatus: record => { if (record.status === 'running') controller.abort(); },
+      sleep: noSleep,
+    });
+    await assert.rejects(job, err => isVideoJobStopUnconfirmed(err));
+    assert.equal(server.calls.get, 1, 'no cancel polls after a refused cancel');
+  }
+
+  {
     // Stop pressed while a finished clip downloads must not throw the clip away.
     const server = fakeServer(['completed'], { output_format: 'webm' });
     const controller = new AbortController();

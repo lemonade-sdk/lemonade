@@ -61,6 +61,15 @@ export class VideoJobDownloadError extends Error {
   }
 }
 
+/** Status polls failed in a way that retrying will not fix, such as a 401. */
+export class VideoJobPollError extends Error {
+  constructor(readonly jobId: string, cause: unknown) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    super(`Lost track of video job ${jobId}: ${reason}. It may still be running on the server.`);
+    this.name = 'VideoJobPollError';
+  }
+}
+
 export function isVideoJobCanceled(err: unknown): err is VideoJobCanceledError {
   return err instanceof VideoJobCanceledError;
 }
@@ -100,6 +109,13 @@ function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal |
 
 function isGone(err: unknown): boolean {
   return (err as { status?: number } | null)?.status === 404;
+}
+
+// A client error other than a timeout or rate limit will not clear by itself,
+// so retrying it would only keep the conversation busy.
+function isPermanent(err: unknown): boolean {
+  const status = (err as { status?: number } | null)?.status;
+  return typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429;
 }
 
 export function videoFileExtension(record: VideoJobRecord): string {
@@ -159,10 +175,19 @@ export async function runVideoJob(
   // A clip that finished before the cancel landed is kept, not discarded.
   const stop = async (): Promise<VideoJobResult> => {
     onStatus?.({ ...record, status: 'canceling' });
-    await transport.cancel(id, timeoutSignal(requestTimeoutMs)).catch(() => undefined);
+    try {
+      await transport.cancel(id, timeoutSignal(requestTimeoutMs));
+    } catch (err) {
+      if (isPermanent(err)) throw new VideoJobStopUnconfirmedError(id);
+    }
     for (let i = 0; i < maxCancelPolls; i += 1) {
       await sleep(pollMs);
-      const latest = await transport.get(id, timeoutSignal(requestTimeoutMs)).catch(() => null);
+      let latest: VideoJobRecord | null = null;
+      try {
+        latest = await transport.get(id, timeoutSignal(requestTimeoutMs));
+      } catch (err) {
+        if (isPermanent(err)) throw new VideoJobStopUnconfirmedError(id);
+      }
       if (latest?.status === 'completed') {
         record = latest;
         return download();
@@ -186,7 +211,7 @@ export async function runVideoJob(
       failures = 0;
     } catch (err) {
       if (signal?.aborted) return stop();
-      if (isGone(err)) throw err;
+      if (isPermanent(err)) throw new VideoJobPollError(id, err);
       failures += 1;
       if (failures >= maxPollFailures) onStatus?.({ ...record, status: 'reconnecting' });
       continue;
