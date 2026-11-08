@@ -16,6 +16,22 @@ const hookPath = path.join(root, 'src/hooks/useChatStreaming.ts');
 const apiPath = path.join(root, 'src/api.ts');
 
 const source = fs.readFileSync(hookPath, 'utf8');
+const chatView = fs.readFileSync(path.join(root, 'src/components/ChatView.tsx'), 'utf8');
+assert.match(chatView, /const canInterruptAndContinue = isStreaming && !interruptPending/);
+assert.match(chatView, /!currentStream\?\.toolCalls\.length/, 'steering must not overlap tool execution');
+assert.match(chatView, /connectionStatus === 'connected'/, 'offline requests must not be interrupted');
+assert.match(chatView, /currentStream\?\.interruptible === true/, 'eligibility must follow the actual in-flight request');
+assert.match(chatView, /const interruptible = !hasImages && !userMessage\.imageIds\?\.length/);
+assert.match(chatView, /deletedConversationIdsRef\.current\.add\(id\)/);
+assert.match(chatView, /streaming\.hasActiveRequest\(activeId\)/, 'stale React stream state must not permit a second send');
+assert.match(chatView, /startAttemptRef\.current\.get\(convoId\) !== startAttempt/, 'obsolete preparation must not start');
+assert.match(chatView, /startAttemptRef\.current\.set\(activeId, Symbol\('chat-edit'\)\)/);
+assert.match(chatView, /if \(deletedConversationIdsRef\.current\.has\(convoId\)/);
+assert.match(chatView, /const partial = interrupting \? streaming\.stop\(convoId, true\)/);
+assert.match(chatView, /imageRegistry\.addUploads\(/, 'image registry must survive main integration');
+assert.match(chatView, /const isNewConvo = !convoId/, 'new chat handling must survive main integration');
+assert.match(chatView, /messages: \[\.\.\.conversation\.messages, \.\.\.\(interruptedMessage/);
+assert.match(chatView, /await startAssistantResponse\([\s\S]*?priorMessages,/);
 
 const compiled = ts.transpileModule(source, {
   compilerOptions: {
@@ -273,6 +289,136 @@ async function main() {
     false,
     'a resolved orphaned tool must not abort the new request controller',
   );
+}
+
+/* Case 4: stop before the 50ms flush must keep both content and reasoning. */
+{
+  reset();
+  render().send('c1', 'm', [{ role: 'user', content: 'Start with Python' }], null);
+  await tick();
+  assert.equal(calls.length, 1);
+  calls[0].onReasoning('Think', 'Think about Python');
+  calls[0].onToken('Code', 'Partial code');
+  const firstId = render().getStream('c1')?.requestId;
+  assert.equal(typeof firstId, 'number');
+  const partial = render().stop('c1');
+  assert.deepEqual(partial, { content: 'Partial code', thinking: 'Think about Python' });
+  assert.equal(calls[0].signal.aborted, true);
+  assert.equal(render().streamingConvoIds.has('c1'), false);
+
+  render().send('c1', 'm', [
+    { role: 'user', content: 'Start with Python' },
+    { role: 'assistant', content: partial.content },
+    { role: 'user', content: 'Use HTML instead' },
+  ], null);
+  await tick();
+  assert.equal(calls.length, 2);
+  assert.ok(render().getStream('c1')?.requestId > firstId, 'resumed request must have a new generation');
+  calls[0].onToken('late', 'late');
+  calls[1].onToken('HTML', 'HTML response');
+  runTimers();
+  assert.equal(render().getStream('c1')?.content, 'HTML response');
+  assert.equal(calls[1].signal.aborted, false);
+}
+
+/* Case 5: an active request with no tokens still returns a stop receipt. */
+{
+  reset();
+  render().send('c1', 'm', [{ role: 'user', content: 'Think' }], null);
+  await tick();
+  assert.deepEqual(render().stop('c1'), { content: '', thinking: undefined });
+}
+
+/* Case 6: tokens flushed after a render snapshot must survive Stop. */
+{
+  reset();
+  render().send('c1', 'm', [{ role: 'user', content: 'Think' }], null);
+  await tick();
+  const staleStop = render().stop;
+  calls[0].onReasoning('thinking', 'all reasoning');
+  calls[0].onToken('answer', 'all content');
+  runTimers(); // Token buffer emptied; staleStop still has old React state.
+  assert.deepEqual(staleStop('c1'), { content: 'all content', thinking: 'all reasoning' });
+}
+
+/* Case 7: a token flush must not remove tool metadata or permit a tool abort. */
+{
+  reset();
+  let settleTool;
+  const pending = new Promise(resolve => { settleTool = resolve; });
+  render().send('c1', 'm', [{ role: 'user', content: 'download it' }], toolRuntime(() => pending), 'normal', true);
+  await tick();
+  calls[0].onToken('draft', 'partial output');
+  calls[0].onToolCalls([TOOL_CALL]);
+  await tick();
+  runTimers();
+  assert.equal(render().getStream('c1')?.toolCalls.length, 1);
+  assert.equal(render().stop('c1', true), null, 'cannot interrupt after a tool call');
+  assert.equal(calls[0].signal.aborted, false);
+  render().stop('c1'); // Explicit Stop remains available.
+  settleTool({ content: '{}', tool_call_id: 'call_1' });
+  await tick();
+}
+
+/* Case 8: a media request stays non-interruptible even after UI errors. */
+{
+  reset();
+  render().send('c1', 'm', [{ role: 'user', content: 'audio request' }], null, 'normal', false);
+  await tick();
+  assert.equal(render().getStream('c1')?.interruptible, false);
+  assert.equal(render().stop('c1', true), null);
+  assert.equal(calls[0].signal.aborted, false);
+  assert.notEqual(render().stop('c1'), null, 'explicit Stop still works');
+}
+
+/* Case 9: an eligible text request can be interrupted. */
+{
+  reset();
+  render().send('c1', 'm', [{ role: 'user', content: 'text request' }], null, 'normal', true);
+  await tick();
+  assert.equal(render().getStream('c1')?.interruptible, true);
+  assert.notEqual(render().stop('c1', true), null);
+  assert.equal(calls[0].signal.aborted, true);
+}
+
+/* Case 10: an overlapping send aborts the old controller and owns the stream. */
+{
+  reset();
+  render().send('c1', 'm', [{ role: 'user', content: 'first' }], null, 'normal', true);
+  await tick();
+  const oldSignal = calls[0].signal;
+  render().send('c1', 'm', [{ role: 'user', content: 'edited' }], null, 'normal', true);
+  await tick();
+  assert.equal(calls.length, 2);
+  assert.equal(oldSignal.aborted, true, 'the superseded request must be cancelled');
+  assert.equal(calls[1].signal.aborted, false);
+  calls[0].onToken('old', 'old result');
+  calls[1].onToken('new', 'edited result');
+  runTimers();
+  assert.equal(render().getStream('c1')?.content, 'edited result');
+  assert.equal(calls[1].signal.aborted, false);
+}
+
+/* Case 11: a stale second send must never abort an active tool. */
+{
+  reset();
+  let settleTool;
+  const pending = new Promise(resolve => { settleTool = resolve; });
+  render().send('c1', 'm', [{ role: 'user', content: 'use tool' }], toolRuntime(() => pending));
+  await tick();
+  const oldSignal = calls[0].signal;
+  calls[0].onToolCalls([TOOL_CALL]);
+  await tick();
+  await assert.rejects(
+    render().send('c1', 'm', [{ role: 'user', content: 'second' }], null),
+    /Cannot replace a chat request after tools have started/,
+  );
+  assert.equal(calls.length, 1, 'no second inference should start');
+  assert.equal(oldSignal.aborted, false, 'tool-running request must remain intact');
+  assert.equal(render().getStream('c1')?.toolCalls[0]?.status, 'running');
+  render().stop('c1');
+  settleTool({ content: '{}', tool_call_id: 'call_1' });
+  await tick();
 }
 
 }
