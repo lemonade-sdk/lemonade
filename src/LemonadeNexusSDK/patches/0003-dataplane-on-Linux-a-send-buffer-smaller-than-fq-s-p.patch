@@ -1,0 +1,51 @@
+From f1fe8f2674ff0c85d59432d11d1d9b636cc69ede Mon Sep 17 00:00:00 2001
+From: Thom Hadfield <100659456+festeraeb@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 03:13:24 +0000
+Subject: [PATCH 3/3] dataplane: on Linux, a send buffer smaller than fq's
+ per-flow queue
+
+A datagram stays charged to the socket until the NIC has sent it, so the
+send buffer is what makes sendto wait for a busy link. At 1 MiB it never
+does: fq, a common server qdisc, holds 100 packets per flow and drops the
+rest, and Linux reports that to sendto only with IP_RECVERR, so the drop is
+silent. The virtual TCP stack has no pacing and sends a window at once; each
+lost burst stalls a connection until a retransmit.
+
+On a server with fq, 64 MiB uploads through the mesh dropped 390-1,750
+datagrams each and ran at 5-14 MB/s once the netstack stopped being the
+bottleneck; with a 64 KiB send buffer (about 50 tunnel packets) none were
+dropped and the wire ran at line rate. Windows and macOS keep 1 MiB.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../src/Boringtun/UserspaceDataplane.cpp            | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/projects/LemonadeNexus/src/Boringtun/UserspaceDataplane.cpp b/projects/LemonadeNexus/src/Boringtun/UserspaceDataplane.cpp
+index ad45475..fb4dd6d 100644
+--- a/projects/LemonadeNexus/src/Boringtun/UserspaceDataplane.cpp
++++ b/projects/LemonadeNexus/src/Boringtun/UserspaceDataplane.cpp
+@@ -204,8 +204,19 @@ intptr_t UserspaceDataplane::open_socket(uint16_t port, uint16_t& bound_port) co
+     int bufsize = 1 << 20;
+     setsockopt(sock, SOL_SOCKET, SO_RCVBUF,
+                reinterpret_cast<const char*>(&bufsize), sizeof(bufsize));
++#ifdef __linux__
++    // A datagram stays charged to the socket until the NIC has sent it, so the send buffer
++    // is what makes sendto wait for a busy link. It must be smaller than the queue below:
++    // fq (common on servers) holds 100 packets per flow and drops the rest silently (Linux
++    // reports ENOBUFS to sendto only with IP_RECVERR). 64 KiB, doubled by the kernel, is
++    // about 50 tunnel packets in flight, and the virtual TCP stack, which has no pacing,
++    // waits here instead of losing a burst and stalling until a retransmit.
++    int sndbuf = 64 << 10;
++#else
++    int sndbuf = bufsize;
++#endif
+     setsockopt(sock, SOL_SOCKET, SO_SNDBUF,
+-               reinterpret_cast<const char*>(&bufsize), sizeof(bufsize));
++               reinterpret_cast<const char*>(&sndbuf), sizeof(sndbuf));
+     // Receive timeout so rx workers notice shutdown promptly.
+ #ifdef _WIN32
+     DWORD timeout_ms = 250;
+-- 
+2.43.0
+

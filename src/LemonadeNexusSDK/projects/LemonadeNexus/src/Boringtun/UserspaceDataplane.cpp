@@ -204,8 +204,19 @@ intptr_t UserspaceDataplane::open_socket(uint16_t port, uint16_t& bound_port) co
     int bufsize = 1 << 20;
     setsockopt(sock, SOL_SOCKET, SO_RCVBUF,
                reinterpret_cast<const char*>(&bufsize), sizeof(bufsize));
+#ifdef __linux__
+    // A datagram stays charged to the socket until the NIC has sent it, so the send buffer
+    // is what makes sendto wait for a busy link. It must be smaller than the queue below:
+    // fq (common on servers) holds 100 packets per flow and drops the rest silently (Linux
+    // reports ENOBUFS to sendto only with IP_RECVERR). 64 KiB, doubled by the kernel, is
+    // about 50 tunnel packets in flight, and the virtual TCP stack, which has no pacing,
+    // waits here instead of losing a burst and stalling until a retransmit.
+    int sndbuf = 64 << 10;
+#else
+    int sndbuf = bufsize;
+#endif
     setsockopt(sock, SOL_SOCKET, SO_SNDBUF,
-               reinterpret_cast<const char*>(&bufsize), sizeof(bufsize));
+               reinterpret_cast<const char*>(&sndbuf), sizeof(sndbuf));
     // Receive timeout so rx workers notice shutdown promptly.
 #ifdef _WIN32
     DWORD timeout_ms = 250;
