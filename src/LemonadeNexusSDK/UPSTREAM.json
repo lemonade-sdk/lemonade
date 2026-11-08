@@ -73,6 +73,7 @@
     "projects/LemonadeNexusSDK/src/main.cpp"
   ],
   "patches": [
-    "0001-netstack-turn-off-Nagle-and-delayed-ACK-on-mesh-TCP-.patch"
+    "0001-netstack-turn-off-Nagle-and-delayed-ACK-on-mesh-TCP-.patch",
+    "0002-netstack-move-bridge-bytes-in-place-without-staging-.patch"
   ]
 }
