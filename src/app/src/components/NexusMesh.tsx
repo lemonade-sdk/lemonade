@@ -1,9 +1,11 @@
-import React, { useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { copyTextToClipboard } from '../clipboard';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useI18n } from '../i18n';
 import { useNexusAccount, type NexusDevice as AccountDevice } from '../features/nexus/NexusAccountContext';
 import {
-  NEXUS_CONNECTION_LABELS, dismissNexusNotice, nexusDeviceConnection, nexusDeviceTags, nexusInferenceServers, nexusMeshSummary,
-  nexusRequest, refreshNexus, selectNexusInferenceServer, useNexusNetwork, type NexusConnection, type NexusDevice, type NexusMeshState, type NexusStatus,
+  NEXUS_CONNECTION_LABELS, dismissNexusNotice, nexusDeviceConnection, nexusDeviceTags, nexusInferenceServers, nexusMeshPortUrl, nexusMeshSummary,
+  nexusRequest, refreshNexus, relayEndpoint, selectNexusInferenceServer, useNexusNetwork, type NexusConnection, type NexusDevice, type NexusMeshState, type NexusStatus,
 } from '../features/nexus/nexus';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
@@ -57,19 +59,106 @@ export function NexusDeviceRows({ status, devices }: { status: NexusStatus | nul
   </ul>;
 }
 
-function ServerChoice({ selected, title, subtitle, connection, disabled, onChoose }: {
-  selected: boolean; title: string; subtitle?: string; connection?: NexusConnection; disabled: boolean; onChoose: () => void;
+// The row is one button that selects the server; the info control beside it must not nest
+// inside it, so both sit in a wrapper.
+function ServerChoice({ selected, title, subtitle, connection, disabled, onChoose, onInfo }: {
+  selected: boolean; title: string; subtitle?: string; connection?: NexusConnection; disabled: boolean; onChoose: () => void; onInfo: () => void;
 }) {
+  const { t } = useI18n();
   const tone = connection ? CONNECTION_TONES[connection] : 'good';
-  return <button type="button" className={`nexus-mesh-row nexus-mesh-row--choice${selected ? ' is-selected' : ''}`} aria-pressed={selected} disabled={disabled} onClick={onChoose}>
-    <Dot tone={tone} pulse={connection !== 'offline'} />
-    <span className="nexus-mesh-row__body">
-      <span className="nexus-mesh-row__name">{title}</span>
-      {subtitle && <span className="nexus-mesh-row__sub">{subtitle}</span>}
-    </span>
-    {connection && <NexusPill label={NEXUS_CONNECTION_LABELS[connection]} tone={tone} connection />}
-    {selected && <Icon name="check" size={16} className="nexus-mesh-row__check" />}
-  </button>;
+  return <div className="nexus-mesh-choice">
+    <button type="button" className={`nexus-mesh-row nexus-mesh-row--choice${selected ? ' is-selected' : ''}`} aria-pressed={selected} disabled={disabled} onClick={onChoose}>
+      <Dot tone={tone} pulse={connection !== 'offline'} />
+      <span className="nexus-mesh-row__body">
+        <span className="nexus-mesh-row__name">{title}</span>
+        {subtitle && <span className="nexus-mesh-row__sub">{subtitle}</span>}
+      </span>
+      {connection && <NexusPill label={NEXUS_CONNECTION_LABELS[connection]} tone={tone} connection />}
+      {selected && <Icon name="check" size={16} className="nexus-mesh-row__check" />}
+    </button>
+    <WorkspaceActionButton iconOnly icon="info" size="small" appearance="quiet" aria-label={t('How to use {name} from other apps', { name: title })} onClick={onInfo} />
+  </div>;
+}
+
+function Endpoint({ label, value, copied, onCopy }: { label: string; value: string; copied: boolean; onCopy: () => void }) {
+  const { t } = useI18n();
+  return <div className="nexus-endpoint">
+    <code>{value}</code>
+    <WorkspaceActionButton size="small" appearance="quiet" icon={copied ? 'check' : 'copy'} aria-label={t('Copy {label}', { label })} onClick={onCopy}>{copied ? t('Copied') : t('Copy')}</WorkspaceActionButton>
+  </div>;
+}
+
+// How other apps (pi, curl, any OpenAI-compatible client) reach one inference server:
+// its mesh-port hostname on this computer, and the local API path that needs none.
+// `nodeId` is `local` for this device's own server.
+function ServerInfoDialog({ status, nodeId, onClose }: { status: NexusStatus; nodeId: string; onClose: () => void }) {
+  const { t } = useI18n();
+  const ref = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const [copied, setCopied] = useState<string>();
+  const [error, setError] = useState('');
+  useFocusTrap(ref, true);
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', escape);
+    return () => document.removeEventListener('keydown', escape);
+  }, [onClose]);
+  const self = nodeId === 'local';
+  const device = self ? undefined : status.members.find(member => member.node_id === nodeId);
+  const serverId = self ? status.node_id || '' : nodeId;
+  const name = self ? t('This device') : device?.device_name || t('Unnamed device');
+  const meshUrl = nexusMeshPortUrl(status, serverId);
+  const localBase = status.controller_url ? `${self ? status.controller_url : relayEndpoint(status.controller_url, serverId)}/api/v1` : undefined;
+  const base = meshUrl ? `${meshUrl}/api/v1` : localBase;
+  const connection = device && nexusDeviceConnection(status, device);
+  const address = (self ? status.tunnel_ip : device?.tunnel_ip)?.split('/')[0];
+  const copy = (value: string) => void copyTextToClipboard(value)
+    .then(() => { setError(''); setCopied(value); window.setTimeout(() => setCopied(current => current === value ? undefined : current), 1200); })
+    .catch(() => setError(t('Could not copy. Select the address and copy it manually.')));
+  const example = base && `curl ${base}/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{"model":"<model id>","messages":[{"role":"user","content":"Hello"}]}'`;
+  return <div className="nexus-account-dialog-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <div ref={ref} className="nexus-account-dialog nexus-server-info" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}>
+      <div className="nexus-account-dialog__header"><span className="nexus-tree-detail__icon"><Icon name="router" size={23} /></span><div><h2 id={`${id}-title`}>{name}</h2><p>{t('Use this server from pi, curl or any OpenAI-compatible client.')}</p></div><WorkspaceActionButton iconOnly icon="x" size="small" appearance="quiet" aria-label={t('Close server details')} onClick={onClose} /></div>
+      <div className="nexus-server-info__section">
+        <p className="nexus-mesh__label">{t('Hostname (mesh port on this computer)')}</p>
+        {meshUrl ? <>
+          <Endpoint label={t('hostname')} value={meshUrl} copied={copied === meshUrl} onCopy={() => copy(meshUrl)} />
+          <p className="nexus-hint">{t('This name resolves to 127.0.0.1. Lemonade on this computer carries the request over the mesh to {name}.', { name })}</p>
+        </> : <p className="nexus-hint">{t('The mesh port is not running on this computer, so this server has no hostname here.')}</p>}
+      </div>
+      {meshUrl && <div className="nexus-server-info__section">
+        <p className="nexus-mesh__label">{t('OpenAI-compatible base URL')}</p>
+        <Endpoint label={t('base URL')} value={`${meshUrl}/api/v1`} copied={copied === `${meshUrl}/api/v1`} onCopy={() => copy(`${meshUrl}/api/v1`)} />
+        <p className="nexus-hint">{t('The shorter /v1 path works too.')}</p>
+        <p className="nexus-mesh__label">{t('Models')}</p>
+        <Endpoint label={t('models URL')} value={`${meshUrl}/api/v1/models`} copied={copied === `${meshUrl}/api/v1/models`} onCopy={() => copy(`${meshUrl}/api/v1/models`)} />
+      </div>}
+      {localBase && <div className="nexus-server-info__section">
+        <p className="nexus-mesh__label">{t('Through the local API (no hostname needed)')}</p>
+        <Endpoint label={t('local API URL')} value={localBase} copied={copied === localBase} onCopy={() => copy(localBase)} />
+      </div>}
+      <div className="nexus-server-info__section">
+        <p className="nexus-mesh__label">{t('Details')}</p>
+        <dl>
+          <dt>{t('Node ID')}</dt><dd>{serverId || '—'}</dd>
+          <dt>{t('Mesh address')}</dt><dd>{address || '—'}</dd>
+          <dt>{t('Path')}</dt><dd>{self ? t('This device') : connection ? t(NEXUS_CONNECTION_LABELS[connection]) : '—'}</dd>
+        </dl>
+      </div>
+      <div className="nexus-server-info__section">
+        <p className="nexus-mesh__label">{t('API key')}</p>
+        <p className="nexus-hint">{t('No API key is needed unless that computer sets LEMONADE_API_KEY. Then send that key as the bearer token.')}</p>
+      </div>
+      {example && <div className="nexus-server-info__section">
+        <p className="nexus-mesh__label">{t('Example')}</p>
+        <pre><code>{example}</code></pre>
+        <p className="nexus-hint">{t('Replace <model id> with a name from the models URL.')}</p>
+        <WorkspaceActionButton size="small" appearance="quiet" icon={copied === example ? 'check' : 'copy'} onClick={() => copy(example)}>{copied === example ? t('Copied') : t('Copy example')}</WorkspaceActionButton>
+      </div>}
+      {error && <p className="nexus-error" role="alert">{error}</p>}
+      <div className="nexus-group-actions"><WorkspaceActionButton appearance="quiet" onClick={onClose}>{t('Close')}</WorkspaceActionButton></div>
+    </div>
+  </div>;
 }
 
 // Settings → Devices & mesh: the mesh, the server that serves chat, every device of this
@@ -83,6 +172,8 @@ export function NexusMeshPanel() {
   const [error, setError] = useState('');
   const [key, setKey] = useState('');
   const [leaving, setLeaving] = useState<string>();
+  // The server whose "use from other apps" details are open: `local` or a node id.
+  const [info, setInfo] = useState<string>();
   const id = useId();
   const summary = nexusMeshSummary(status, network.error);
   const connected = Boolean(status?.mesh_up && !status.locked);
@@ -140,9 +231,10 @@ export function NexusMeshPanel() {
     {connected && status ? <>
       <div className="nexus-mesh__section">
         <p className="nexus-mesh__label">{t('Chat runs on')}</p>
-        <ServerChoice selected={selected === 'local'} title={t('This device')} subtitle={t('Models on this computer')} disabled={busy} onChoose={() => void choose('local')} />
+        <ServerChoice selected={selected === 'local'} title={t('This device')} subtitle={t('Models on this computer')} disabled={busy} onChoose={() => void choose('local')} onInfo={() => setInfo('local')} />
         {servers.map(device => <ServerChoice key={device.node_id} selected={selected === device.node_id} title={device.device_name || t('Unnamed device')}
-          subtitle={device.tunnel_ip.split('/')[0]} connection={nexusDeviceConnection(status, device)} disabled={busy} onChoose={() => void choose(device.node_id)} />)}
+          subtitle={device.tunnel_ip.split('/')[0]} connection={nexusDeviceConnection(status, device)} disabled={busy} onChoose={() => void choose(device.node_id)} onInfo={() => setInfo(device.node_id)} />)}
+        {info && <ServerInfoDialog status={status} nodeId={info} onClose={() => setInfo(undefined)} />}
         {!servers.length && <p className="nexus-mesh__empty">{t('No other Lemonade servers in this mesh yet. Invite a computer running Lemonade.')}</p>}
         {selected !== 'local' && <form className="nexus-mesh__key" onSubmit={event => { event.preventDefault(); void choose(selected, key); }}>
           <label className="sr-only" htmlFor={`${id}-key`}>{t('API key (only if that computer sets one)')}</label>

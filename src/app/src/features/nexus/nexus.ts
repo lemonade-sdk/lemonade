@@ -80,6 +80,17 @@ export function hasNexusPermission(permissions: string[] | undefined, name: stri
 export function nexusTierLabel(device: NexusDevice): string {
   return device.is_inference ? 'Tier 3 · Inference server' : 'Tier 4 · Client';
 }
+// lemond's mesh port: one listener on this computer that names every inference server
+// under the network's local domain and carries each request over the mesh to it.
+export interface NexusMeshPortUrl { device_name: string; node_id: string; self: boolean; url: string }
+export interface NexusMeshPort {
+  running: boolean;
+  port?: number;
+  scheme?: string;
+  local_domain?: string;
+  urls?: NexusMeshPortUrl[];
+  error?: string;
+}
 export interface NexusStatus {
   controller_url?: string;
   available: boolean;
@@ -111,6 +122,12 @@ export interface NexusStatus {
   // until a new key is in use. lemond reports why in `error`; the tray replaces the key.
   revoked_public_key?: string;
   join_membership?: NexusJoinMembership;
+  mesh_port?: NexusMeshPort;
+}
+// The mesh-port URL of a server on this computer, when the port runs and names it.
+export function nexusMeshPortUrl(status: NexusStatus | null | undefined, nodeId: string): string | undefined {
+  if (!status?.mesh_port?.running) return undefined;
+  return status.mesh_port.urls?.find(entry => entry.node_id === nodeId || (entry.self && nodeId === status.node_id))?.url;
 }
 // How this device reaches another one, as its pill shows it. `connecting` is a device the
 // server reports online while the mesh still builds a path to it.
@@ -216,7 +233,7 @@ const API_KEY_ERROR = 'The server requires a valid API key. Check it in Settings
 // The server this client connected to before it selected a mesh peer. Relayed requests go to
 // `${home.endpoint}/api/v1/nexus/peers/<node>`; Nexus management keeps using home itself.
 let home: { endpoint: string; key: string } | undefined;
-const relayEndpoint = (endpoint: string, nodeId: string) => `${endpoint}/api/v1/nexus/peers/${encodeURIComponent(nodeId)}`;
+export const relayEndpoint = (endpoint: string, nodeId: string) => `${endpoint}/api/v1/nexus/peers/${encodeURIComponent(nodeId)}`;
 export function isNexusInferencePeer(device: NexusDevice, selfId?: string): boolean {
   return device.node_id !== selfId && Boolean(device.is_inference) && device.is_online === true;
 }

@@ -422,6 +422,20 @@
 .nexus-pill--info { color: var(--info); }
 .nexus-pill--muted { color: var(--text-tertiary); }
 .nexus-pill--faint { color: var(--text-tertiary); border-color: var(--border-strong); }
+.nexus-mesh-choice { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.nexus-mesh-choice > .nexus-mesh-row { flex: 1; min-width: 0; margin: 0; }
+.nexus-mesh-choice > .workspace-action-button { flex-shrink: 0; color: var(--text-tertiary); }
+.nexus-server-info { width: min(560px, 100%); }
+.nexus-server-info__section { margin-top: 16px; }
+.nexus-server-info__section > .nexus-mesh__label { margin-bottom: 6px; }
+.nexus-server-info__section > .nexus-hint { margin: 6px 0 10px; }
+.nexus-endpoint { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-2); }
+.nexus-endpoint > code { flex: 1; min-width: 0; font-family: monospace; font-size: var(--text-xs); overflow-wrap: anywhere; user-select: all; }
+.nexus-endpoint > .workspace-action-button { flex-shrink: 0; }
+.nexus-server-info pre { margin: 0 0 6px; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-2); font-size: var(--text-xs); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+.nexus-server-info dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; margin: 0; font-size: var(--text-sm); }
+.nexus-server-info dt { color: var(--text-tertiary); }
+.nexus-server-info dd { margin: 0; overflow-wrap: anywhere; }
 .nexus-mesh__key { display: flex; gap: 8px; margin: 2px 0 10px; }
 .nexus-mesh__key .input { flex: 1; min-width: 0; }
 .nexus-mesh__empty { margin: 0 0 8px; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
