@@ -35,6 +35,7 @@ from utils.server_base import (
     OpenAI,
     AsyncOpenAI,
     httpx,
+    set_server_config,
 )
 from utils.capabilities import (
     skip_if_unsupported,
@@ -956,6 +957,8 @@ class LLMTests(ServerTestBase):
     @skip_if_unsupported("multi_model")
     def test_019a_failed_model_load_preserves_pinned_resident(self):
         """A failed second-model load must not evict a pinned resident model."""
+        set_server_config({"max_loaded_models": 3})
+        self.addCleanup(set_server_config, {"max_loaded_models": 2})
         self.addCleanup(
             requests.post,
             f"{self.base_url}/unload",
@@ -965,6 +968,13 @@ class LLMTests(ServerTestBase):
         requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
         pinned_model = self.get_test_model("llm")
+        unpinned_model = MULTI_MODEL_TERTIARY
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": unpinned_model},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
         response = requests.post(
             f"{self.base_url}/load",
             json={"model_name": pinned_model, "pinned": True},
@@ -994,6 +1004,7 @@ class LLMTests(ServerTestBase):
             "A failed second-model load must retain the pinned resident model",
         )
         self.assertTrue(loaded_models[pinned_model].get("pinned"))
+        self.assertNotIn(unpinned_model, loaded_models)
         self.assertNotIn(MULTI_MODEL_SECONDARY, loaded_models)
 
     @skip_if_unsupported("multi_model")
