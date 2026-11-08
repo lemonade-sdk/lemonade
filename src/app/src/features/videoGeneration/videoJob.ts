@@ -134,14 +134,39 @@ export async function runVideoJob(
 
   let record = await transport.create(body);
   const id = record.id;
+
+  // The clip already exists, so Stop no longer applies: the download ignores
+  // the caller's signal and is retried rather than thrown away.
+  const download = async (): Promise<VideoJobResult> => {
+    onStatus?.({ ...record, status: 'downloading' });
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < maxDownloadAttempts; attempt += 1) {
+      if (attempt > 0) await sleep(pollMs);
+      try {
+        const blob = await transport.content(id, timeoutSignal(requestTimeoutMs * 4));
+        if (blob.size === 0) throw new Error('Video endpoint returned an empty clip.');
+        return { record, blob };
+      } catch (err) {
+        lastError = err;
+        if (isGone(err)) break;
+      }
+    }
+    throw new VideoJobDownloadError(id, lastError);
+  };
+
   // The model must not be reused until the server reports the job ended, so a
   // stop that the server never confirms is reported as unconfirmed, not done.
-  const stop = async (): Promise<never> => {
+  // A clip that finished before the cancel landed is kept, not discarded.
+  const stop = async (): Promise<VideoJobResult> => {
     onStatus?.({ ...record, status: 'canceling' });
     await transport.cancel(id, timeoutSignal(requestTimeoutMs)).catch(() => undefined);
     for (let i = 0; i < maxCancelPolls; i += 1) {
       await sleep(pollMs);
       const latest = await transport.get(id, timeoutSignal(requestTimeoutMs)).catch(() => null);
+      if (latest?.status === 'completed') {
+        record = latest;
+        return download();
+      }
       if (latest && TERMINAL.has(latest.status)) throw new VideoJobCanceledError();
     }
     throw new VideoJobStopUnconfirmedError(id);
@@ -173,21 +198,5 @@ export async function runVideoJob(
   if (record.status === 'failed') {
     throw new Error(record.error ? `Video generation failed: ${record.error}` : 'Video generation failed.');
   }
-
-  // The clip already exists, so Stop no longer applies: the download ignores
-  // the caller's signal and is retried rather than thrown away.
-  onStatus?.({ ...record, status: 'downloading' });
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt < maxDownloadAttempts; attempt += 1) {
-    if (attempt > 0) await sleep(pollMs);
-    try {
-      const blob = await transport.content(id, timeoutSignal(requestTimeoutMs * 4));
-      if (blob.size === 0) throw new Error('Video endpoint returned an empty clip.');
-      return { record, blob };
-    } catch (err) {
-      lastError = err;
-      if (isGone(err)) break;
-    }
-  }
-  throw new VideoJobDownloadError(id, lastError);
+  return download();
 }
