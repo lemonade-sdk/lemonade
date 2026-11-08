@@ -52,9 +52,13 @@ public:
         put(value);
     }
 
-    void write(const std::filesystem::path& path) const {
+    bool write(const std::filesystem::path& path) const {
         std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            return false;
+        }
         out.write(bytes_.data(), static_cast<std::streamsize>(bytes_.size()));
+        return static_cast<bool>(out);
     }
 
 private:
@@ -144,7 +148,10 @@ void check_context_limit_contract() {
     gguf.header(2);
     gguf.string("general.architecture", "qwen3");
     gguf.int32("qwen3.context_length", 262144);
-    gguf.write(gguf_path);
+    if (!gguf.write(gguf_path)) {
+        check("writes the primary GGUF fixture", false);
+        return;
+    }
 
     const auto lower_context_gguf_path =
         std::filesystem::temp_directory_path() /
@@ -153,7 +160,10 @@ void check_context_limit_contract() {
     lower_context_gguf.header(2);
     lower_context_gguf.string("general.architecture", "qwen3");
     lower_context_gguf.int32("qwen3.context_length", 16384);
-    lower_context_gguf.write(lower_context_gguf_path);
+    if (!lower_context_gguf.write(lower_context_gguf_path)) {
+        check("writes the lower-context GGUF fixture", false);
+        return;
+    }
 
     lemon::ModelInfo qwen;
     qwen.model_name = "user.qWeN3.8-27b-HRX";
