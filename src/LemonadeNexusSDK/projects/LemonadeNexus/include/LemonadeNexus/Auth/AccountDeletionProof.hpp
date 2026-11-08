@@ -18,6 +18,12 @@ namespace nexus::auth {
 /// and a deletion proof never opens a session.
 inline constexpr std::string_view kAccountDeleteProofDomain = "lemonade-nexus/account-delete:v1";
 
+/// The refusal the server gives a key it revoked (Ed25519AuthProvider): the
+/// key of a deleted account, or of a device an administrator removed. The
+/// revocation is part of the committed deletion, so the SDK reads this text
+/// to tell a deletion whose answer was lost from one that failed.
+inline constexpr std::string_view kIdentityRevokedError = "This identity has been revoked";
+
 /// The bytes the account key signs to delete its account: the canonical
 /// encoding (domain kAccountDeleteProofDomain) of the raw challenge bytes the
 /// server issued and the raw 32-byte Ed25519 public key of the account.

@@ -387,7 +387,12 @@ ln_error_t ln_join_group(ln_client_t* client,
  *  device that already has a node: the device stays in its own network and
  *  the invite makes its identity a member of the invite's group instead.
  *  It is {status: "member" | "pending" | "refused", group_id, error (when
- *  refused)}. The join itself succeeds either way. */
+ *  refused)}. The join itself succeeds either way.
+ *  With an identity set and empty username and password, a key the server
+ *  refuses is reported as the server states it; there is no password to
+ *  fall back to. `identity_revoked` is true when the server revoked the
+ *  key (its account was deleted, or an administrator removed the device):
+ *  the key never authenticates again, so the caller replaces it. */
 ln_error_t ln_join_network(ln_client_t* client,
                             const char* username,
                             const char* password,
@@ -764,7 +769,9 @@ ln_identity_t* ln_identity_from_json(const char* json_text);
 
 /** Authenticate using the client's Ed25519 identity (challenge-response).
  *  Requires ln_set_identity() to have been called first.
- *  Returns JSON: {authenticated, user_id, session_token, error}. */
+ *  Returns JSON: {authenticated, user_id, session_token, error,
+ *  identity_revoked}. `identity_revoked` is true when the server revoked
+ *  the key (a deleted account or a removed device); see ln_join_network. */
 ln_error_t ln_auth_ed25519(ln_client_t* client, char** out_json);
 
 /* ------------------------------------------------------------------ */
@@ -1031,6 +1038,12 @@ ln_error_t ln_check_device_name(ln_client_t* client,
  *  session token and node id, and stops the account image service. With tree
  *  operations on, the answer can be status "pending" with an op_id while
  *  Tier 1 commits the deletion.
+ *  A committed deletion revokes the key before its answer travels back, and
+ *  the tunnel the answer takes can end with the account. When the request
+ *  gets no answer (or no session is left to ask for the challenge), the
+ *  client authenticates once more: a key refused as revoked confirms the
+ *  deletion, and the answer is status "deleted" with `confirmed: "revoked"`
+ *  and an empty account_id. A key still accepted leaves the failure as is.
  *  Local files stay. The caller deletes them after success: the identity
  *  file (ln_identity_save path), the account image cache
  *  (ln_account_avatar_configure cache_root), the certificate directory

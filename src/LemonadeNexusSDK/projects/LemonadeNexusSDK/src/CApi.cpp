@@ -6,6 +6,7 @@
 #include <LemonadeNexusSDK/IdentityHandoff.hpp>
 #include <LemonadeNexusSDK/IdentityStore.hpp>
 #include <LemonadeNexusSDK/MeshPort.hpp>
+#include <LemonadeNexus/Auth/AccountDeletionProof.hpp>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -1034,6 +1035,12 @@ ln_error_t ln_join_group(ln_client_t* client,
 // High-level operations
 // ---------------------------------------------------------------------------
 
+// Marks a refusal of the device key itself, as the server revoked it: the
+// caller replaces the key instead of trying again.
+static void note_identity_revoked(json& j, const std::string& error) {
+    if (error == nexus::auth::kIdentityRevokedError) j["identity_revoked"] = true;
+}
+
 ln_error_t ln_join_network(ln_client_t* client,
                             const char* username,
                             const char* password,
@@ -1057,7 +1064,10 @@ ln_error_t ln_join_network(ln_client_t* client,
         if (!result.value.membership.error.empty()) m["error"] = result.value.membership.error;
         j["membership"] = std::move(m);
     }
-    if (!result.ok) j["error"] = result.error;
+    if (!result.ok) {
+        j["error"] = result.error;
+        note_identity_revoked(j, result.error);
+    }
 
     *out_json = strdup_json(j);
     return result.ok ? LN_OK : LN_ERR_AUTH;
@@ -1381,7 +1391,10 @@ ln_error_t ln_auth_ed25519(ln_client_t* client, char** out_json) {
     j["authenticated"] = result.value.authenticated;
     j["user_id"]       = result.value.user_id;
     j["session_token"] = result.value.session_token;
-    if (!result.ok) j["error"] = result.error;
+    if (!result.ok) {
+        j["error"] = result.error;
+        note_identity_revoked(j, result.error);
+    }
 
     *out_json = strdup_json(j);
     return result.ok ? LN_OK : LN_ERR_AUTH;

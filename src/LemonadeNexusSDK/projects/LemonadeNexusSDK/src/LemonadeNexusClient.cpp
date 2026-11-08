@@ -1714,12 +1714,47 @@ Result<nlohmann::json> LemonadeNexusClient::delete_account() {
         return result;
     }
 
+    // The account is gone once the server refuses the key as revoked: the
+    // deletion revokes the key when it commits, before its answer travels
+    // back over a tunnel the deletion itself may tear down. A request that
+    // gets no answer is therefore settled by one more authentication.
+    const auto account_gone = [this] {
+        const auto probe = authenticate_ed25519();
+        return !probe.ok && probe.error == nexus::auth::kIdentityRevokedError;
+    };
+    const auto end_account = [this](json value) {
+        Result<nlohmann::json> result;
+        result.ok          = true;
+        result.http_status = 200;
+        result.value       = std::move(value);
+        // The account is gone: its key is revoked and its node removed, so
+        // the session and the mesh session end here.
+        disable_mesh();
+        impl_->meshplane.stop();
+        {
+            std::lock_guard lock(impl_->mutex);
+            impl_->node_id.clear();
+        }
+        // Drop the token with its server binding, so no session move joins
+        // the deleted account again.
+        set_session_token({});
+        spdlog::info("[LemonadeNexusClient] deleted account {}{}",
+                     result.value.value("account_id", std::string{}),
+                     result.value.contains("confirmed") ? " (confirmed by the revoked key)" : "");
+        return result;
+    };
+    const json deleted_by_revocation = {{"success", true},
+                                        {"status", "deleted"},
+                                        {"account_id", ""},
+                                        {"confirmed", "revoked"}};
+
     // The challenge comes from the session's server over the private API, so
     // the server that verifies the proof is the one that issued it.
     int status = 0;
     auto challenge_resp =
         impl_->private_http_post("/api/account/delete/challenge", json::object(), status);
     if (!challenge_resp || status != 200) {
+        if (!challenge_resp && account_gone()) return end_account(deleted_by_revocation);
         return json_result(challenge_resp, status, "account deletion challenge");
     }
     const auto challenge_b64 = challenge_resp->value("challenge", std::string{});
@@ -1743,22 +1778,9 @@ Result<nlohmann::json> LemonadeNexusClient::delete_account() {
     const json body = {{"challenge", challenge_b64},
                        {"signature", Identity::to_base64(std::span<const uint8_t>(signature))}};
     auto resp = impl_->private_http_post("/api/account/delete", body, status);
+    if (!resp && account_gone()) return end_account(deleted_by_revocation);
     auto result = json_result(resp, status, "account deletion");
-    if (result.ok && status == 200) {
-        // The account is gone: its key is revoked and its node removed, so
-        // the session and the mesh session end here.
-        disable_mesh();
-        impl_->meshplane.stop();
-        {
-            std::lock_guard lock(impl_->mutex);
-            impl_->node_id.clear();
-        }
-        // Drop the token with its server binding, so no session move joins
-        // the deleted account again.
-        set_session_token({});
-        spdlog::info("[LemonadeNexusClient] deleted account {}",
-                     result.value.value("account_id", std::string{}));
-    }
+    if (result.ok && status == 200) return end_account(std::move(result.value));
     return result;
 }
 
@@ -2812,7 +2834,10 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
         Result<AuthResponse> auth;
         if (local_identity.is_valid()) {
             auth = authenticate_ed25519();
-            if (!auth) {
+            // Without credentials there is nothing to fall back to: the
+            // server's reason for refusing the key (a revoked key, for one)
+            // is the answer, not a complaint about an empty password.
+            if (!auth && (!username.empty() || !password.empty())) {
                 spdlog::warn("[LemonadeNexusClient] Ed25519 auth failed ({}), "
                              "falling back to password", auth.error);
                 auth = authenticate(username, password);
