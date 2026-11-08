@@ -14,7 +14,6 @@
 #include "lemon/gguf_reader.h"
 #include "lemon/gguf_shard_utils.h"
 #include "lemon/model_manager.h"
-#include "lemon/models/artifact_ref.h"
 #include "lemon/models/registry_types.h"
 #include <algorithm>
 #include <cctype>
@@ -1080,8 +1079,8 @@ class LlamaCppOps : public BackendOps {
 public:
     void add_implied_checkpoints(ModelInfo& info) const override {
         const std::string main = info.checkpoint();
-        if (!has_label(info.labels, "zero-shot") || !info.checkpoint("rulehead").empty() ||
-            main.empty()) {
+        if (!has_label(info.labels, "zero-shot") || has_label(info.labels, "systemone") ||
+            !info.checkpoint("rulehead").empty() || main.empty()) {
             return;
         }
         info.checkpoints["rulehead"] =
@@ -1094,7 +1093,7 @@ public:
             BackendOps::download_model(info, do_not_upgrade, std::move(progress), ctx);
         } catch (const std::runtime_error& e) {
             const std::string rule_head = info.checkpoint("rulehead");
-            const std::string file = models::variant_from_checkpoint(rule_head);
+            const std::string file = rule_head.substr(rule_head.find_last_of(":/\\") + 1);
             const std::string message = e.what();
             if (file.empty() || message.find(file) == std::string::npos ||
                 message.find("not found") == std::string::npos) {
@@ -1183,7 +1182,8 @@ public:
                    "applies only to a prompt-router encoder labelled 'classification' and "
                    "'zero-shot', not 'systemone'";
         }
-        if (has_label(info.labels, "zero-shot") && !is_rule_head_router_model(info)) {
+        if (has_label(info.labels, "zero-shot") && !has_label(info.labels, "systemone") &&
+            !is_rule_head_router_model(info)) {
             return llamacpp::missing_rule_head_message(info.model_name, llamacpp::RULE_HEAD_FILE);
         }
         if (!has_label(info.labels, "systemone")) return "";

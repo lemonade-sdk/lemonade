@@ -48,8 +48,10 @@ std::vector<double> pooled_projection(const nlohmann::json& rows, const std::vec
 }  // namespace
 
 std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, bool local) {
-    if (!local) {
-        return main_checkpoint.substr(0, main_checkpoint.find(':')) + ":" + RULE_HEAD_FILE;
+    const size_t scheme = main_checkpoint.find("://");
+    if (!local && main_checkpoint.rfind("file://", 0) != 0) {
+        const size_t repo = scheme == std::string::npos ? 0 : scheme + 3;
+        return main_checkpoint.substr(0, main_checkpoint.find(':', repo)) + ":" + RULE_HEAD_FILE;
     }
     const size_t slash = main_checkpoint.find_last_of("/\\");
     return (slash == std::string::npos ? std::string() : main_checkpoint.substr(0, slash + 1)) +

@@ -179,6 +179,12 @@ int main() {
     expect(implied_rule_head_checkpoint("org/router-GGUF:router-f16.gguf", false) ==
                "org/router-GGUF:rulehead.bin",
            "a remote head is rulehead.bin in the same repository");
+    expect(implied_rule_head_checkpoint("hf://org/router-GGUF:router-f16.gguf", false) ==
+               "hf://org/router-GGUF:rulehead.bin",
+           "a scheme-prefixed head keeps its scheme");
+    expect(implied_rule_head_checkpoint("file:///models/router-f16.gguf", false) ==
+               "file:///models/rulehead.bin",
+           "a file:// head is the file beside the GGUF");
     expect(implied_rule_head_checkpoint("user.my-router/router-f16.gguf", true) ==
                "user.my-router/rulehead.bin",
            "a local upload's head is the file beside the GGUF");

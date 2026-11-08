@@ -2,6 +2,8 @@
 #include <lemon/models/json_catalog.h>
 
 #include <lemon/backends/backend_descriptor_registry.h>
+#include <lemon/backends/backend_ops.h>
+#include <lemon/backends/backend_registry.h>
 #include <lemon/canonical_id.h>
 #include <lemon/models/registry_types.h>
 #include <lemon/utils/aixlog.hpp>
@@ -180,6 +182,7 @@ std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& 
             return std::nullopt;
         }
     }
+    backends::ops_for(info.recipe)->add_implied_checkpoints(info);
 
     parse_extras(info, row);
 
