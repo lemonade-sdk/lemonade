@@ -12,6 +12,7 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/utils/safe_fs.h"
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -555,6 +556,14 @@ namespace lemon::backends {
             // Check if already installed with correct version
             exe_path = find_executable_in_install_dir(install_dir, spec.binary);
             needs_install = exe_path.empty();
+            if (!needs_install && spec.additional_assets_fn) {
+                for (const auto& asset : spec.additional_assets_fn(backend)) {
+                    if (!asset.is_complete(install_dir)) {
+                        needs_install = true;
+                        break;
+                    }
+                }
+            }
 
             if (!needs_install && fs::exists(version_file)) {
                 std::string installed_version;
@@ -585,6 +594,9 @@ namespace lemon::backends {
         }
 
         if (needs_install) {
+            const auto additional_assets = spec.additional_assets_fn
+                ? spec.additional_assets_fn(backend) : std::vector<BackendAsset>{};
+            const int asset_count = 1 + static_cast<int>(additional_assets.size());
             LOG(INFO, spec.log_name()) << "Installing " << spec.binary << " (version: "
                     << expected_version << ")" << std::endl;
 
@@ -719,11 +731,11 @@ namespace lemon::backends {
 
                 utils::ProgressCallback http_progress_cb;
                 if (progress_cb) {
-                    http_progress_cb = [&progress_cb, &filename](size_t downloaded, size_t total) -> bool {
+                    http_progress_cb = [&progress_cb, &filename, asset_count](size_t downloaded, size_t total) -> bool {
                         DownloadProgress p;
                         p.file = filename;
                         p.file_index = 1;
-                        p.total_files = 1;
+                        p.total_files = asset_count;
                         p.bytes_downloaded = downloaded;
                         p.bytes_total = total;
                         p.percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
@@ -833,6 +845,46 @@ namespace lemon::backends {
                 throw std::runtime_error("Failed to extract archive: " + zip_path);
             }
 
+            for (size_t i = 0; i < additional_assets.size(); ++i) {
+                const auto& asset = additional_assets[i];
+                if (!utils::is_safe_path_component(asset.directory)) {
+                    throw std::runtime_error("Invalid backend asset directory: " + asset.directory);
+                }
+                const std::string name = resolve_asset_wildcard(
+                    repo, expected_version, asset.filename, spec);
+                const std::string path = (fs::path(staging_dir).parent_path() /
+                    (spec.recipe + "_" + backend + "_" + name)).string();
+                ZipGuard extra_guard{path};
+                utils::ProgressCallback report;
+                if (progress_cb) {
+                    report = [&, i](size_t downloaded, size_t total) {
+                        DownloadProgress p;
+                        p.file = name;
+                        p.file_index = static_cast<int>(i) + 2;
+                        p.total_files = asset_count;
+                        p.bytes_downloaded = downloaded;
+                        p.bytes_total = total;
+                        p.percent = total > 0 ? static_cast<int>(downloaded * 100 / total) : 0;
+                        return progress_cb(p);
+                    };
+                }
+                utils::DownloadOptions opts;
+                opts.expected_hash = lookup_expected_asset_hash(
+                    spec.recipe, backend, expected_version, repo, name);
+                const auto result = utils::HttpClient::download_file(
+                    "https://github.com/" + repo + "/releases/download/" +
+                        expected_version + "/" + name,
+                    path, report, {}, opts);
+                if (!result.success) {
+                    throw std::runtime_error("Failed to download " + name + ": " + result.error_message);
+                }
+                const std::string destination = (fs::path(staging_dir) / asset.directory).string();
+                if (!extract_archive(path, destination, spec.log_name()) ||
+                    !asset.is_complete(staging_dir)) {
+                    throw std::runtime_error("Incomplete backend asset: " + name);
+                }
+            }
+
             // Save version info into the staging tree so it travels with the
             // atomic swap below. Fail cleanly on a write error rather than
             // promoting a backend with no version.txt (which would make the next
@@ -892,12 +944,12 @@ namespace lemon::backends {
             // all parts have been downloaded, so intermediate progress events
             // intentionally do not claim a total_download_size.
             if (progress_cb) {
-                const int archive_total_files = is_split ? static_cast<int>(part_assets.size()) : 1;
+                const int archive_total_files = is_split ? static_cast<int>(part_assets.size()) : asset_count;
                 DownloadProgress p;
                 p.file = filename;
                 p.file_index = archive_total_files;
                 p.total_files = archive_total_files;
-                if (!is_split) {
+                if (!is_split && additional_assets.empty()) {
                     p.bytes_downloaded = static_cast<size_t>(file_size);
                     p.bytes_total = static_cast<size_t>(file_size);
                     p.total_download_size = static_cast<size_t>(file_size);

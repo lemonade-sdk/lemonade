@@ -388,6 +388,13 @@ The following options are available depending on the recipe being used:
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--hrx-args ARGS` | Custom arguments to pass to the HRX llama-server | `""` |
 
+#### Strata (`strata` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--strata BACKEND` | Strata backend to use | Auto-detected |
+
 #### Whisper.cpp (`whispercpp` recipe)
 
 | Option | Description | Default |

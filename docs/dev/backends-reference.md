@@ -23,6 +23,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `rocmfpx` | ROCm FPX | no | yes | rocm |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
+| `strata` | Strata | yes | yes | cuda, rocm |
 | `thenoise` | TheNoise | yes | no | cuda, rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, cuda12, rocm, vulkan |
@@ -70,6 +71,8 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `sd-cpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | rocm | core | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | core | native | linux, windows | cpu (x86_64) |
+| `strata` | cuda | experimental | python | linux, windows | nvidia_gpu (sm_120, sm_75, sm_86, sm_89) |
+| `strata` | rocm | experimental | python | linux, windows | amd_gpu (gfx1100, gfx1101, gfx1102, gfx1151, gfx1200, gfx1201) |
 | `thenoise` | rocm | core | python | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `thenoise` | cuda | experimental | python | linux | nvidia_gpu |
 | `thinksound` | cuda | experimental | native | linux, windows | nvidia_gpu |
@@ -181,6 +184,13 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
 | `soft_pixel_cap` | — | SIZE | 0 | Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default) |
 
+#### `strata` — Strata
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `strata_backend` | `--strata` | BACKEND | "" | Strata backend to use |
+
 #### `thenoise` — TheNoise
 
 | Option | CLI flag | Type | Default | Description |
@@ -263,6 +273,10 @@ Voice design is opt-in through the `voice_design_description` extension and is n
 ### llama.cpp (`llamacpp`)
 
 Lemonade launches `llama-server` with `--parallel 1` and leaves the upstream `--cache-ram` host prompt cache at its default. `LlamaCppServer` does not override `downsize()`: slot `erase` frees no device memory (the KV buffer is allocated once at model load) and discards the slot's KV state without going through the host-cache save path, so soft idle leaves the slot resident and a resumed conversation reuses its cached prefix.
+
+### Strata (`strata`)
+
+Experimental; maintained by Julian Xhokaxhiu. Runs the native engine with its bundled Python HTTP server. Supports text-only Qwen3.6 GGUFs (UD-Q4_K_XL, UD-Q6_K_XL, Q8_0), sharing weights with llama.cpp. Engine and Control archives are installed together from the release pinned in `backend_versions.json`; no system Python is required. CUDA requires driver 580+.
 
 ### Backend auto-selection
 

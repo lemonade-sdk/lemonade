@@ -66,6 +66,11 @@ class BackendOps {
 public:
     virtual ~BackendOps() = default;
 
+    virtual std::string device_family(const std::string& family, const std::string& name) const {
+        (void)name;
+        return family;
+    }
+
     // Populate model-specific metadata (context window, capability labels, …)
     // for a downloaded model. Default: nothing.
     virtual void populate_metadata(ModelInfo& info, const BackendOpsContext& ctx) const {

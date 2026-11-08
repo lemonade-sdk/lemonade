@@ -1431,8 +1431,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
             for (const auto& detected : detected_devices) {
                 if (detected.type == required_device_type) {
                     device_type_found = true;
-                    if (device_matches_constraint(detected.family, required_families) &&
-                        arch_gate_allows(def.arch_gates, detected.family, current_os, row_channel)) {
+                    const auto family = backends::ops_for(def.recipe)->device_family(
+                        detected.family, detected.name);
+                    if (device_matches_constraint(family, required_families) &&
+                        arch_gate_allows(def.arch_gates, family, current_os, row_channel)) {
                         matching_devices.push_back(detected.type);
                         family_matched = true;
                     }

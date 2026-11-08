@@ -18,6 +18,7 @@ const RECIPE_PRIORITY = [
   'rocmfpx',
   'ryzenai-llm',
   'sd-cpp',
+  'strata',
   'thenoise',
   'thinksound',
   'trellis',

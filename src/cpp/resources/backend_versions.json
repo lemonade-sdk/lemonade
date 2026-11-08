@@ -158,6 +158,10 @@
   "flm": {
     "npu": "v1.0.11"
   },
+  "strata": {
+    "cuda": "v0.2.12",
+    "rocm": "v0.2.12"
+  },
   "kokoro": {
     "cpu": "b21",
     "metal": "b21"

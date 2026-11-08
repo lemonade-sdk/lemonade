@@ -966,6 +966,12 @@
         ],
         "size": 17.4
     },
+    "Qwen3.6-35B-A3B-Strata": {
+        "checkpoint": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        "recipe": "strata",
+        "labels": ["chat", "reasoning", "tool-calling", "mtp"],
+        "size": 22.9
+    },
     "Qwen3.5-35B-A3B-HRX": {
         "checkpoint": "unsloth/Qwen3.5-35B-A3B-MTP-GGUF:Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
         "recipe": "llamacpp-hrx",
