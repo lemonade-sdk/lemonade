@@ -18,6 +18,13 @@ inline bool wants_device_key(const nlohmann::json& status) {
         status.value("needs_user_key", false);
 }
 
+/// True when lemond's `nexus/status` names `pubkey` as the key the network revoked
+/// (`revoked_public_key`): its account was deleted, or the device was removed. The key
+/// never authenticates again, so the holder removes it from the store and makes a new one.
+inline bool key_revoked(const nlohmann::json& status, const std::string& pubkey) {
+    return !pubkey.empty() && status.is_object() && status.value("revoked_public_key", std::string()) == pubkey;
+}
+
 /// The loopback port of lemond's local controller from `status.controller_url`
 /// ("http://127.0.0.1:<port>"), or 0 when it is absent or malformed.
 inline int controller_port(const nlohmann::json& status) {

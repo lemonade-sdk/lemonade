@@ -87,6 +87,7 @@ public:
         : std::runtime_error(message), status(status), retryable(retryable) {}
     int status;
     bool retryable;  // the federation was not reached; the same request may succeed later
+    bool identity_revoked{false};  // the network revoked this device's key; no retry succeeds
 };
 std::string text(const json& object, const char* key) {
     const auto it = object.find(key);
@@ -1115,7 +1116,9 @@ SdkFailure sdk_failure(int code, const json& reply, int rejected_status) {
     // nor an unreachable federation refuses this device.
     if (code == LN_ERR_CONNECT || federation_unreachable(message)) return {503, message, true};
     const int status = code == LN_ERR_AUTH ? 403 : code == LN_ERR_NOT_FOUND ? 404 : code == LN_ERR_REJECTED ? rejected_status : 502;
-    return {status, message, false};
+    SdkFailure failure{status, message, false};
+    failure.identity_revoked = reply.is_object() && reply.value("identity_revoked", false);
+    return failure;
 }
 // The vendored SDK (UPSTREAM.json) carries the route policy interface; the SDK
 // enforces the catalog at the mesh ingress once lemond registers it.
@@ -1139,7 +1142,9 @@ json sdk_call(const std::function<ln_error_t(char**)>& operation, int rejected_s
     if (value.is_discarded()) throw NexusError(502, "The network returned invalid data");
     if (code != LN_OK) {
         const auto failure = nexus_access::sdk_failure(code, value, rejected_status);
-        throw NexusError(failure.status, failure.message, failure.retryable);
+        NexusError error(failure.status, failure.message, failure.retryable);
+        error.identity_revoked = failure.identity_revoked;
+        throw error;
     }
     return value;
 }
@@ -1182,6 +1187,7 @@ struct NexusManager::Session {
     std::string host;                         // bootstrap server: configured, remembered, or discovered
     std::string rp_id;                        // configured, else the network's own value from /api/health
     std::string pubkey;
+    std::string revoked_pubkey;  // the key the network revoked, until another key is in use
     std::string detail{"locked"};
     std::string error;
     bool error_retryable{false};  // `error` is a failure to reach the federation, not a refusal
@@ -1264,15 +1270,9 @@ struct NexusManager::Session {
         // Only a system service keeps an identity file of its own. A desktop identity
         // belongs to the signed-in OS user: lemond loads it from the SDK's keystore-backed
         // store when it runs as that user, and otherwise waits for a sealed hand-off.
+        load_revoked_key();
         if (source == IdentitySource::System) {
-            const auto path = utils::path_to_utf8(root / "identity.json");
-            IdentityPtr loaded(ln_identity_load(path.c_str()), ln_identity_destroy);
-            if (!loaded) {
-                if (std::filesystem::exists(root / "identity.json")) throw NexusError(500, "Device identity is invalid; restore identity.json");
-                loaded.reset(ln_identity_generate());
-                if (!loaded || ln_identity_save(loaded.get(), path.c_str()) != LN_OK) throw NexusError(500, "Cannot save device identity");
-            }
-            adopt_identity(std::move(loaded));
+            load_system_identity();
         } else if (source == IdentitySource::User) {
             load_user_identity();
         }
@@ -1310,6 +1310,7 @@ struct NexusManager::Session {
     void adopt_identity(IdentityPtr next) {
         const auto key = sdk_string(ln_identity_pubkey(next.get()));
         if (key.empty()) throw NexusError(500, "Cannot read the device identity");
+        if (key == revoked_pubkey) throw NexusError(409, "The network revoked that device key; create a new key and unlock again");
         if (identity) {
             if (key == pubkey) return;
             lock();
@@ -1322,11 +1323,23 @@ struct NexusManager::Session {
         if (ln_set_identity(client.get(), next.get()) != LN_OK) throw NexusError(500, "Cannot load device identity");
         identity = std::move(next);
         pubkey = key;
+        forget_revoked_key();
         switch_account(key);
         const auto avatar_cache = utils::path_to_utf8(root / "avatar-cache");
         avatar_configured = ln_account_avatar_configure(client.get(), identity.get(), avatar_cache.c_str()) == LN_OK;
         clear_error();
         LOG(INFO, "Nexus") << "Device identity in use: " << pubkey << " (" << nexus_access::identity_source_name(source) << ")" << std::endl;
+    }
+    // System mode: the identity file under the data root, created on first use.
+    void load_system_identity() {
+        const auto path = utils::path_to_utf8(root / "identity.json");
+        IdentityPtr loaded(ln_identity_load(path.c_str()), ln_identity_destroy);
+        if (!loaded) {
+            if (std::filesystem::exists(root / "identity.json")) throw NexusError(500, "Device identity is invalid; restore identity.json");
+            loaded.reset(ln_identity_generate());
+            if (!loaded || ln_identity_save(loaded.get(), path.c_str()) != LN_OK) throw NexusError(500, "Cannot save device identity");
+        }
+        adopt_identity(std::move(loaded));
     }
     // User mode: the identity comes from the SDK's per-user store, created on first use.
     // A store that is locked, refused or unsupported leaves the device without an
@@ -1334,6 +1347,12 @@ struct NexusManager::Session {
     void load_user_identity() {
         ln_error_t code = LN_OK;
         IdentityPtr loaded(ln_identity_user_load(&code), ln_identity_destroy);
+        // The store still holds the key the network revoked: it never authenticates
+        // again, so the store makes a new one.
+        if (loaded && !revoked_pubkey.empty() && sdk_string(ln_identity_pubkey(loaded.get())) == revoked_pubkey) {
+            loaded.reset();
+            code = ln_identity_user_remove() == LN_OK ? LN_ERR_NOT_FOUND : LN_ERR_REJECTED;
+        }
         if (!loaded && code == LN_ERR_NOT_FOUND) loaded.reset(ln_identity_user_create(&code));
         char* out = nullptr;
         if (ln_identity_user_status(&out) == LN_OK && out) {
@@ -1451,6 +1470,54 @@ struct NexusManager::Session {
         set_error(e);
         detail = "degraded";
         note_refounded();
+        if (const auto* failure = dynamic_cast<const NexusError*>(&e); failure && failure->identity_revoked) {
+            replace_key("The network revoked this device's key: its account was deleted or the device was removed.");
+        }
+    }
+    // The device's key is of no further use: the network revoked it, with the account it
+    // deleted or the device an administrator removed. The account files go with the key,
+    // and the device gets a new one: made here (System), by the user store at the next
+    // poll (User), or by the tray, which status asks through revoked_public_key (Handoff).
+    // `why` is reported until the new key is in use; empty after a deletion the user asked for.
+    void replace_key(const std::string& why) {
+        if (!identity) return;
+        const auto revoked = pubkey;
+        remove_local_account();
+        remember_revoked_key(revoked);
+        identity.reset();
+        pubkey.clear();
+        node_id.clear();
+        group_id.clear();
+        tunnel_ip.clear();
+        LOG(WARNING, "Nexus") << "The network revoked device key " << revoked << "; the account files are removed and a new key replaces it" << std::endl;
+        std::string next = source == IdentitySource::Handoff ? "Unlock Nexus from the Lemonade tray for a new device key, then join again."
+                                                               : "A new device key is in use; join again with an invitation or create a network.";
+        try {
+            if (source == IdentitySource::System) load_system_identity();
+            else if (source == IdentitySource::User) load_user_identity();  // the store replaces the revoked key
+        } catch (const std::exception& e) { next = e.what(); }
+        if (!identity && source == IdentitySource::User) next = error;  // the store's failure text
+        if (why.empty()) return;
+        error = why + " " + next;
+        error_retryable = false;
+    }
+    // The revoked key outlives this session: the mesh is disabled after a deletion, and
+    // a restart must not take the same key from the user store or the tray again.
+    std::filesystem::path revoked_key_path() const { return root / "revoked-key.json"; }
+    void remember_revoked_key(const std::string& key) {
+        revoked_pubkey = key;
+        write_json(revoked_key_path(), json{{"public_key", key}});
+    }
+    void load_revoked_key() {
+        std::ifstream input(revoked_key_path());
+        if (!input) return;
+        const auto saved = json::parse(input, nullptr, false);
+        if (saved.is_object()) revoked_pubkey = saved.value("public_key", std::string{});
+    }
+    void forget_revoked_key() {
+        revoked_pubkey.clear();
+        std::error_code ec;
+        std::filesystem::remove(revoked_key_path(), ec);
     }
     // First connect without a configured key: the SDK takes the key only when
     // several network hosts agree on it over verified HTTPS, then it stays pinned.
@@ -1754,7 +1821,8 @@ struct NexusManager::Session {
             {"exposed", json::array({{{"vport", 13305}, {"local_port", ingress_port}}})}, {"error", error},
             {"error_retryable", error_retryable}, {"genesis_key_set", genesis_key_set}, {"mesh_port", mesh_port_status()},
             {"catalog_error", catalog_error}, {"identity_source", nexus_access::identity_source_name(source)},
-            {"needs_user_key", !identity}, {"public_key", pubkey}, {"needs_rejoin", refounded}};
+            {"needs_user_key", !identity}, {"public_key", pubkey}, {"needs_rejoin", refounded},
+            {"revoked_public_key", revoked_pubkey}};
         if (source == IdentitySource::User) result["identity_store"] = identity_store;
         if (!join_membership.is_null()) result["join_membership"] = join_membership;
         return result;
@@ -2148,7 +2216,8 @@ struct NexusManager::Session {
                 body.value("device_node_id", "") != node_id) throw NexusError(409, "The account changed. Sign in again.");
             if (body.value("confirm", "") != "delete") throw NexusError(400, "Send \"confirm\": \"delete\" to delete this account permanently");
             auto result = sdk_call([&](auto out) { return ln_account_delete(client.get(), out); }, 409);
-            if (text(result, "status") == "deleted") remove_local_account();
+            // The deletion revoked the key with the account: the files and the key go.
+            if (text(result, "status") == "deleted") replace_key("");
             return result;
         }
         if (path == "/account") {

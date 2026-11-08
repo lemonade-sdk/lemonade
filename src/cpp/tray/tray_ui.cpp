@@ -710,6 +710,18 @@ bool TrayUI::offer_device_key(const nlohmann::json& status) {
     ln_error_t code = LN_OK;
     std::unique_ptr<ln_identity_t, decltype(&ln_identity_destroy)> identity(ln_identity_user_load(&code), ln_identity_destroy);
     const char* origin = "loaded";
+    if (identity) {
+        // lemond names the key the network revoked: it never authenticates again, so
+        // the store makes a new one instead of handing the same key back.
+        char* loaded_key = ln_identity_pubkey(identity.get());
+        const bool revoked = user_key::key_revoked(status, loaded_key ? loaded_key : "");
+        ln_free(loaded_key);
+        if (revoked) {
+            identity.reset();
+            code = ln_identity_user_remove() == LN_OK ? LN_ERR_NOT_FOUND : LN_ERR_REJECTED;
+            origin = "replaced";
+        }
+    }
     if (!identity && code == LN_ERR_NOT_FOUND) {
         identity.reset(ln_identity_user_create(&code));
         origin = "created";

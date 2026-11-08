@@ -107,6 +107,9 @@ export interface NexusStatus {
   // True when the servers serve a network founded again under the same key: this device's
   // account and node belong to the earlier one. The panel offers to forget the network.
   needs_rejoin?: boolean;
+  // The device key the network revoked (its account was deleted, or the device was removed),
+  // until a new key is in use. lemond reports why in `error`; the tray replaces the key.
+  revoked_public_key?: string;
   join_membership?: NexusJoinMembership;
 }
 // How this device reaches another one, as its pill shows it. `connecting` is a device the

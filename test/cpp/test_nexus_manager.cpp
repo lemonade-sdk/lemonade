@@ -1344,6 +1344,14 @@ void check_sdk_failures(const std::function<void(bool, const char*)>& check) {
     check(access::sdk_failure(LN_ERR_NOT_FOUND, json(), 409).status == 404, "A missing node is 404");
     const auto internal = access::sdk_failure(LN_ERR_INTERNAL, json(), 409);
     check(internal.status == 502 && !internal.retryable && internal.message.find("SDK error") != std::string::npos, "Other failures are 502 and name the code");
+    const auto revoked = access::sdk_failure(LN_ERR_AUTH, json{{"error", "This identity has been revoked"}, {"identity_revoked", true}}, 409);
+    check(revoked.status == 403 && !revoked.retryable && revoked.identity_revoked && !refused.identity_revoked,
+          "A key the network revoked is marked for replacement; other refusals keep the key");
+    namespace user_key = lemon::nexus_user_key;
+    check(user_key::key_revoked(json{{"revoked_public_key", "ed25519:dead"}}, "ed25519:dead") &&
+          !user_key::key_revoked(json{{"revoked_public_key", "ed25519:dead"}}, "ed25519:live") &&
+          !user_key::key_revoked(json{{"revoked_public_key", ""}}, "") && !user_key::key_revoked(json::array(), "ed25519:dead"),
+          "Status names the revoked key the store must replace, and only that key");
 }
 }
 

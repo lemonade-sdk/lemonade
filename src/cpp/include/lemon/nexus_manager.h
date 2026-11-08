@@ -166,13 +166,17 @@ struct SdkFailure {
     int status;
     std::string message;
     bool retryable;
+    // The network revoked this device's key (its account was deleted, or the device was
+    // removed): the key never authenticates again, so the device needs a new one.
+    bool identity_revoked{false};
 };
 /// Maps an SDK result to the answer lemond gives. `code` is the ln_error_t, `reply` the
 /// SDK's {"error": ...} output and `rejected_status` the status for LN_ERR_REJECTED (the
 /// federation refused the request as invalid for the current state). LN_ERR_CONNECT (no
 /// transport, a timeout or a 5xx) and the SDK's messages for a federation it could not
 /// reach answer 503 and are retryable. Any other LN_ERR_AUTH answers 403: the SDK
-/// reports a federation 401 and 403 alike.
+/// reports a federation 401 and 403 alike. `identity_revoked` carries the SDK's flag of
+/// the same name.
 SdkFailure sdk_failure(int code, const nlohmann::json& reply, int rejected_status);
 /// Compares two secrets in time that depends only on the length of `expected`.
 bool constant_time_equals(const std::string& candidate, const std::string& expected);
