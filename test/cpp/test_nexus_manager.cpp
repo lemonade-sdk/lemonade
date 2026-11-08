@@ -577,13 +577,14 @@ void check_peer_headers(const std::function<void(bool, const char*)>& check) {
     access::accept_peer_headers(req, false);
     bool stripped = true;
     for (const auto& name : access::kPeerHeaders) stripped = stripped && !req.has_header(name);
-    check(stripped && req.get_header_value("Authorization") == "Bearer key" && access::request_peer().node_id.empty(),
+    check(stripped && req.get_header_value("Authorization") == "Bearer key" && access::request_peer().node_id.empty() && !access::request_from_mesh_peer(),
           "A non-mesh listener drops every peer header and keeps the rest");
     httplib::Request mesh;
     mesh.headers = spoofed;
     access::accept_peer_headers(mesh, true);
     check(mesh.get_header_value("X-Nexus-Peer-Node") == "node-a" && access::request_peer().node_id == "node-a" &&
-          access::request_peer().family == "inference", "The mesh ingress listener keeps the headers and records the peer");
+          access::request_peer().family == "inference" && access::request_from_mesh_peer(),
+          "The mesh ingress listener keeps the headers and records the peer");
     httplib::Request plain;
     access::accept_peer_headers(plain, false);
     check(access::request_peer().node_id.empty() && access::request_peer().family.empty(), "The next request clears the peer");

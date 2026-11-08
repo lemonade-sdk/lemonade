@@ -615,6 +615,7 @@ void accept_peer_headers(httplib::Request& req, bool mesh_ingress) {
 const PeerContext& request_peer() {
     return g_request_peer;
 }
+bool request_from_mesh_peer() { return !request_peer().node_id.empty(); }
 
 bool invite_code(const std::string& code) {
     const bool full_token = code.size() == 68 && code.rfind("lnk_", 0) == 0 &&

@@ -6,6 +6,7 @@
 
 #include "lemon/model_manager.h"
 #include "lemon/model_types.h"
+#include "lemon/nexus_manager.h"
 #include "lemon/recipe_options.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
@@ -209,7 +210,11 @@ public:
                 }
             }
 
-            bool save_options = req.value(kSaveOptions, false);
+            // A mesh peer uses this server's models; it does not change how the
+            // operator loaded them or what is stored for them. Its load keeps a
+            // loaded model as it is and reports that.
+            const bool mesh_peer = nexus_access::request_from_mesh_peer();
+            bool save_options = !mesh_peer && req.value(kSaveOptions, false);
             std::optional<bool> pinned_opt = std::nullopt;
             if (req.arg(kPinned).is_boolean()) {
                 pinned_opt = req.arg(kPinned).get<bool>();
@@ -278,9 +283,11 @@ public:
                 res.set_content(response.dump(), "application/json");
             } else {
                 // Declarative: a no-op when already loaded with matching options; a
-                // reload only when the options differ.
+                // reload only when the options differ and the operator asked. A mesh
+                // peer never reloads a loaded model: its options are its own machine's.
+                const bool already_loaded = ctx_.router->is_model_loaded(model_name);
                 ctx_.router->load_model(model_name, info, options, true,
-                                        /*allow_reload_on_option_change=*/true,
+                                        /*allow_reload_on_option_change=*/!mesh_peer,
                                         pinned_opt);
 
                 json response = {
@@ -289,6 +296,7 @@ public:
                     {"checkpoint", info.checkpoint()},
                     {"recipe", info.recipe}
                 };
+                if (mesh_peer) response["already_loaded"] = already_loaded;
                 res.set_content(response.dump(), "application/json");
             }
 

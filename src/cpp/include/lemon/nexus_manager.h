@@ -236,6 +236,10 @@ struct PeerContext {
 void accept_peer_headers(httplib::Request& req, bool mesh_ingress);
 /// The peer of the request the calling thread serves; empty outside a mesh ingress request.
 const PeerContext& request_peer();
+/// True while the calling thread serves a request a mesh peer sent. A peer uses this
+/// server's models; it does not change how the operator loaded them (a load from a peer
+/// keeps a loaded model as it is) or what is stored for them.
+bool request_from_mesh_peer();
 /// True when the loaded SDK exports the route catalog and refusal-event functions.
 bool route_policy_available();
 /// Sends a GET or POST `req` to http://127.0.0.1:`port``path` with lemond's HTTP client.

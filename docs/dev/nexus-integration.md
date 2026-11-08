@@ -276,6 +276,8 @@ URL. `nexus_access::kFamilies` lists the families:
 | `system` | docs, `docs/{page}`, metrics |
 | `management` | routing/validate, `slots/{id}` actions, and the five Nexus route prefixes; Nexus operations additionally require Admin |
 
+A mesh peer uses this server's models; it does not change how the operator loaded them. `POST /api/v1/load` from a peer (`nexus_access::request_from_mesh_peer()`) keeps a loaded model as it is instead of reloading it on an option difference, ignores `save_options`, and reports `already_loaded` in its response. Loading a model that is not loaded works as for a local caller.
+
 `nexus_access::service_catalog(registry.list(), LEMON_VERSION_STRING)` builds:
 
 ```json
