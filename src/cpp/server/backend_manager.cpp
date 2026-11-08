@@ -676,40 +676,58 @@ std::string BackendManager::resolve_container_pin(const std::string& recipe,
     }
 
     const std::string key = policy->image + ":" + tag;
+    const std::string installed = read_version_file(container_version_file(recipe, backend));
+    const auto installed_pin = backends::parse_container_pin(installed);
+    const bool installed_tag = installed_pin && installed_pin->tag == tag;
+
+    // Without fetching, the installed image of the tag runs even when a newer
+    // digest was looked up earlier: install could not pull that one.
+    auto* cfg = RuntimeConfig::global();
+    if (cfg && (cfg->offline() || cfg->no_fetch_executables()) && installed_tag) {
+        return installed;
+    }
+
+    std::string error;
     {
         std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
         const auto it = container_digest_cache_.find(key);
         if (it != container_digest_cache_.end()) return tag + "@" + it->second;
+        const auto failed = container_lookup_failures_.find(key);
+        if (failed != container_lookup_failures_.end() &&
+            std::chrono::steady_clock::now() - failed->second.first < kContainerLookupRetry) {
+            error = failed->second.second;
+        }
     }
 
-    std::string error;
-    auto* cfg = RuntimeConfig::global();
     if (cfg && cfg->offline()) {
         error = "offline mode";
     } else if (cfg && cfg->no_fetch_executables()) {
         error = "no_fetch_executables is true";
-    } else {
+    } else if (error.empty()) {
         try {
-            const std::string digest = utils::resolve_registry_digest(policy->image, tag);
+            const std::string digest = utils::resolve_registry_digest(policy->image, tag, registry_get_);
             {
                 std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
                 container_digest_cache_[key] = digest;
+                container_lookup_failures_.erase(key);
             }
             LOG(INFO, "BackendManager") << "Resolved " << key << " -> " << digest << std::endl;
             return tag + "@" + digest;
         } catch (const std::exception& e) {
             error = e.what();
+            {
+                std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
+                container_lookup_failures_[key] = {std::chrono::steady_clock::now(), error};
+            }
+            LOG(WARNING, "BackendManager") << "Could not look up " << key << ": " << error
+                                           << (installed_tag ? "; using the installed " +
+                                                                   backends::short_container_pin(installed)
+                                                             : std::string())
+                                           << std::endl;
         }
     }
 
-    const std::string installed = read_version_file(container_version_file(recipe, backend));
-    const auto parsed = backends::parse_container_pin(installed);
-    if (parsed && parsed->tag == tag) {
-        LOG(WARNING, "BackendManager") << "Could not look up " << key << " (" << error
-                                       << "); using the installed "
-                                       << backends::short_container_pin(installed) << std::endl;
-        return installed;
-    }
+    if (installed_tag) return installed;
     throw std::runtime_error("Cannot look up " + key + ": " + error);
 }
 
@@ -1137,11 +1155,11 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
         if (const ContainerPolicy* policy = backends::BackendUtils::get_container_policy(recipe, resolved_backend)) {
+            result.release_url = container_registry_url(policy->image);
             const std::string pin = resolve_container_pin(recipe, resolved_backend);
             result.version = backends::short_container_pin(pin);
             const auto parsed = backends::parse_container_pin(pin);
             result.download_filename = parsed ? policy->image + "@" + parsed->digest : "";
-            result.release_url = container_registry_url(policy->image);
             return result;
         }
         // All standard recipes (including ryzenai-llm): one get_install_params() call gives us everything

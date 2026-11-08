@@ -2,6 +2,7 @@
 // against ContainerManager, with a fake host in place of Podman and Docker, and
 // checks every container backend's descriptor and pin.
 
+#include "lemon/backend_manager.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
@@ -9,8 +10,11 @@
 #include "lemon/backends/ds4/ds4.h"
 #include "lemon/backends/gufo/gufo_server.h"
 #include "lemon/backends/halogen/halogen_server.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/container_manager.h"
 #include "lemon/utils/container_registry.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -745,6 +749,91 @@ void test_registry_digest() {
     check("a manifest answer without a digest is an error", no_digest_threw);
 }
 
+// A registry that answers every manifest request with `digest`, or fails with
+// `status` when it is not 200, counting the requests it gets.
+struct FakeRegistry {
+    std::string digest;
+    int status = 200;
+    mutable int requests = 0;
+
+    lemon::utils::RegistryGet get() const {
+        return [this](const std::string&, const std::map<std::string, std::string>&) {
+            ++requests;
+            lemon::utils::HttpResponse response;
+            response.status_code = status;
+            if (status == 200) response.headers["docker-content-digest"] = digest;
+            return response;
+        };
+    }
+};
+
+void write_installed_pin(const std::string& recipe, const std::string& backend,
+                         const std::string& pin) {
+    const std::filesystem::path dir =
+        lemon::backends::BackendUtils::get_install_directory(recipe, backend);
+    std::filesystem::create_directories(dir);
+    std::ofstream(dir / "version.txt") << pin << "\n";
+}
+
+void test_container_pin_resolution() {
+    namespace fs = std::filesystem;
+    const fs::path cache = fs::temp_directory_path() / "lemonade-test-container-pins";
+    fs::remove_all(cache);
+    lemon::utils::set_cache_dir(cache.string());
+    const auto defaults = lemon::utils::JsonUtils::load_from_file(
+        lemon::utils::get_resource_path("resources/defaults.json"));
+    lemon::RuntimeConfig config(defaults);
+    lemon::RuntimeConfig::set_global(&config);
+
+    const std::string d1 = "sha256:" + std::string(64, '1');
+    const std::string d2 = "sha256:" + std::string(64, '2');
+    const std::string tag = "rocm-10.0-gufo";
+
+    {
+        config.set({{"gufo", {{"rocm_bin", tag}}}});
+        write_installed_pin("gufo", "rocm", tag + "@" + d1);
+        FakeRegistry registry{d2};
+        lemon::BackendManager manager;
+        manager.set_registry_get(registry.get());
+        check("a tag resolves to the digest the registry gives it",
+              manager.resolve_container_pin("gufo", "rocm") == tag + "@" + d2);
+        config.set({{"offline", true}});
+        check("offline, the installed image of the tag wins over a newer digest already looked up",
+              manager.resolve_container_pin("gufo", "rocm") == tag + "@" + d1);
+        config.set({{"offline", false}, {"no_fetch_executables", true}});
+        check("with no_fetch_executables, the installed image of the tag wins too",
+              manager.resolve_container_pin("gufo", "rocm") == tag + "@" + d1);
+        config.set({{"no_fetch_executables", false}});
+    }
+
+    {
+        FakeRegistry registry{d2, 503};
+        lemon::BackendManager manager;
+        manager.set_registry_get(registry.get());
+        const std::string first = manager.resolve_container_pin("gufo", "rocm");
+        const int after_first = registry.requests;
+        const std::string second = manager.resolve_container_pin("gufo", "rocm");
+        check("a failed lookup falls back to the installed image of the tag",
+              first == tag + "@" + d1 && second == first);
+        check("a failed lookup is not retried on the next resolution",
+              after_first > 0 && registry.requests == after_first);
+    }
+
+    {
+        config.set({{"halogen", {{"rocm_bin", "0.99.0"}}}});
+        FakeRegistry registry{d2, 404};
+        lemon::BackendManager manager;
+        manager.set_registry_get(registry.get());
+        const auto enrichment = manager.get_backend_enrichment("halogen", "rocm");
+        check("a tag the registry lacks still leaves the registry page in the enrichment",
+              enrichment.release_url ==
+                  "https://github.com/orgs/peonist-ai/packages/container/package/halogen-flash-server");
+    }
+
+    lemon::RuntimeConfig::set_global(nullptr);
+    fs::remove_all(cache);
+}
+
 }  // namespace
 
 int main() {
@@ -766,6 +855,7 @@ int main() {
     test_ds4_memory_plan();
     test_descriptors_and_pins();
     test_registry_digest();
+    test_container_pin_resolution();
 
     if (failures == 0) {
         std::printf("\nAll container manager checks passed.\n");

@@ -1,11 +1,13 @@
 #pragma once
 
+#include <chrono>
 #include <mutex>
 #include <string>
 #include <functional>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
 #include <lemon/models/download_progress.h>
+#include <lemon/utils/container_registry.h>
 
 namespace lemon {
 
@@ -74,6 +76,8 @@ public:
     // above; when that lookup is skipped (offline) or fails, an installed image
     // of the same tag stands in. Throws when neither answers.
     std::string resolve_container_pin(const std::string& recipe, const std::string& backend);
+    // Replaces how registry lookups reach the network.
+    void set_registry_get(utils::RegistryGet get) { registry_get_ = std::move(get); }
 
     /// Set/get the global BackendManager instance. Mirrors RuntimeConfig::global()
     /// so non-Server contexts (status helpers in system_info.cpp) can reach it.
@@ -98,7 +102,13 @@ private:
 
     // Registry digests keyed by "<image>:<tag>", cached like the releases above.
     std::unordered_map<std::string, std::string> container_digest_cache_;
+    // Failed lookups, with when they failed and why, so status refreshes do not
+    // wait on an unreachable or rate-limited registry each time.
+    static constexpr std::chrono::minutes kContainerLookupRetry{5};
+    std::unordered_map<std::string, std::pair<std::chrono::steady_clock::time_point, std::string>>
+        container_lookup_failures_;
     std::mutex container_digest_cache_mutex_;
+    utils::RegistryGet registry_get_;
 
     // Get version for a recipe/backend from the cached config
     std::string get_version_from_config(const std::string& recipe, const std::string& backend);
