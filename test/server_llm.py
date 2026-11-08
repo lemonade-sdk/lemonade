@@ -918,6 +918,8 @@ class LLMTests(ServerTestBase):
     @skip_if_unsupported("multi_model")
     def test_019_multi_model_load(self):
         """Test loading multiple models simultaneously."""
+        set_server_config({"max_loaded_models": 3})
+        self.addCleanup(set_server_config, {"max_loaded_models": 2})
         requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
         model1 = self.get_test_model("llm")
@@ -982,6 +984,15 @@ class LLMTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 200, response.text)
 
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        health.raise_for_status()
+        loaded_models = {
+            model["model_name"]
+            for model in health.json().get("all_models_loaded", [])
+        }
+        self.assertIn(unpinned_model, loaded_models)
+        self.assertIn(pinned_model, loaded_models)
+
         response = requests.post(
             f"{self.base_url}/load",
             json={
@@ -991,6 +1002,7 @@ class LLMTests(ServerTestBase):
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertNotEqual(response.status_code, 200, response.text)
+        self.assertIn("Retry", response.text)
 
         health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         health.raise_for_status()

@@ -1268,8 +1268,10 @@ void Router::load_model(const std::string& model_name,
                 is_loading_ = false;
                 load_cv_.notify_all();
 
-                LOG(ERROR, "Router") << "Retry also failed: " << retry_error.what() << std::endl;
-                throw;
+                const std::string retry_message =
+                    std::string("Retry also failed: ") + retry_error.what();
+                LOG(ERROR, "Router") << retry_message << std::endl;
+                throw std::runtime_error(retry_message);
             }
         }
 
