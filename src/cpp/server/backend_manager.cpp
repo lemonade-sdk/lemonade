@@ -705,7 +705,7 @@ std::string BackendManager::resolve_container_pin(const std::string& recipe,
         error = "no_fetch_executables is true";
     } else if (error.empty()) {
         try {
-            const std::string digest = utils::resolve_registry_digest(policy->image, tag, registry_get_);
+            const std::string digest = utils::resolve_registry_digest(policy->image, tag, registry_request_);
             {
                 std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
                 container_digest_cache_[key] = digest;

@@ -77,7 +77,7 @@ public:
     // of the same tag stands in. Throws when neither answers.
     std::string resolve_container_pin(const std::string& recipe, const std::string& backend);
     // Replaces how registry lookups reach the network.
-    void set_registry_get(utils::RegistryGet get) { registry_get_ = std::move(get); }
+    void set_registry_request(utils::RegistryRequest request) { registry_request_ = std::move(request); }
 
     /// Set/get the global BackendManager instance. Mirrors RuntimeConfig::global()
     /// so non-Server contexts (status helpers in system_info.cpp) can reach it.
@@ -108,7 +108,7 @@ private:
     std::unordered_map<std::string, std::pair<std::chrono::steady_clock::time_point, std::string>>
         container_lookup_failures_;
     std::mutex container_digest_cache_mutex_;
-    utils::RegistryGet registry_get_;
+    utils::RegistryRequest registry_request_;
 
     // Get version for a recipe/backend from the cached config
     std::string get_version_from_config(const std::string& recipe, const std::string& backend);

@@ -686,9 +686,12 @@ void test_registry_digest() {
     using lemon::utils::HttpResponse;
     const std::string digest = "sha256:" + std::string(64, 'a');
     std::vector<std::string> urls;
+    std::vector<std::string> methods;
     std::string authorization;
-    auto registry = [&](const std::string& url, const std::map<std::string, std::string>& headers) {
+    auto registry = [&](const std::string& method, const std::string& url,
+                        const std::map<std::string, std::string>& headers) {
         urls.push_back(url);
+        methods.push_back(method);
         HttpResponse response;
         if (url.rfind("https://auth.docker.io/token?", 0) == 0) {
             response.status_code = 200;
@@ -724,6 +727,8 @@ void test_registry_digest() {
               urls[1] == "https://auth.docker.io/token?service=registry.docker.io"
                          "&scope=repository%3Akyuz0%2Famd-strix-halo-toolboxes%3Apull");
     check("the manifest is asked again with the token", authorization == "Bearer t0k");
+    check("manifests are asked with HEAD and the token with GET",
+          methods == std::vector<std::string>({"HEAD", "GET", "HEAD"}));
 
     bool missing_threw = false;
     try {
@@ -734,7 +739,8 @@ void test_registry_digest() {
     }
     check("a tag the registry does not have is an error naming it", missing_threw);
 
-    auto no_digest = [](const std::string&, const std::map<std::string, std::string>&) {
+    auto no_digest = [](const std::string&, const std::string&,
+                        const std::map<std::string, std::string>&) {
         HttpResponse response;
         response.status_code = 200;
         return response;
@@ -756,8 +762,9 @@ struct FakeRegistry {
     int status = 200;
     mutable int requests = 0;
 
-    lemon::utils::RegistryGet get() const {
-        return [this](const std::string&, const std::map<std::string, std::string>&) {
+    lemon::utils::RegistryRequest request() const {
+        return [this](const std::string&, const std::string&,
+                      const std::map<std::string, std::string>&) {
             ++requests;
             lemon::utils::HttpResponse response;
             response.status_code = status;
@@ -794,7 +801,7 @@ void test_container_pin_resolution() {
         write_installed_pin("gufo", "rocm", tag + "@" + d1);
         FakeRegistry registry{d2};
         lemon::BackendManager manager;
-        manager.set_registry_get(registry.get());
+        manager.set_registry_request(registry.request());
         check("a tag resolves to the digest the registry gives it",
               manager.resolve_container_pin("gufo", "rocm") == tag + "@" + d2);
         config.set({{"offline", true}});
@@ -809,7 +816,7 @@ void test_container_pin_resolution() {
     {
         FakeRegistry registry{d2, 503};
         lemon::BackendManager manager;
-        manager.set_registry_get(registry.get());
+        manager.set_registry_request(registry.request());
         const std::string first = manager.resolve_container_pin("gufo", "rocm");
         const int after_first = registry.requests;
         const std::string second = manager.resolve_container_pin("gufo", "rocm");
@@ -823,7 +830,7 @@ void test_container_pin_resolution() {
         config.set({{"halogen", {{"rocm_bin", "0.99.0"}}}});
         FakeRegistry registry{d2, 404};
         lemon::BackendManager manager;
-        manager.set_registry_get(registry.get());
+        manager.set_registry_request(registry.request());
         const auto enrichment = manager.get_backend_enrichment("halogen", "rocm");
         check("a tag the registry lacks still leaves the registry page in the enrichment",
               enrichment.release_url ==

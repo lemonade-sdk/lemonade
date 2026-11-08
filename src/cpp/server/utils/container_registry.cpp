@@ -52,11 +52,13 @@ bool is_digest(const std::string& value) {
 }  // namespace
 
 std::string resolve_registry_digest(const std::string& repository, const std::string& tag,
-                                    const RegistryGet& get_override) {
-    const RegistryGet get = get_override
-        ? get_override
-        : [](const std::string& url, const std::map<std::string, std::string>& headers) {
-              return HttpClient::get(url, headers, kRegistryTimeoutSeconds);
+                                    const RegistryRequest& request_override) {
+    const RegistryRequest request = request_override
+        ? request_override
+        : [](const std::string& method, const std::string& url,
+             const std::map<std::string, std::string>& headers) {
+              return method == "HEAD" ? HttpClient::head(url, headers, kRegistryTimeoutSeconds)
+                                      : HttpClient::get(url, headers, kRegistryTimeoutSeconds);
           };
 
     const auto slash = repository.find('/');
@@ -69,7 +71,9 @@ std::string resolve_registry_digest(const std::string& repository, const std::st
         "https://" + host + "/v2/" + repository.substr(slash + 1) + "/manifests/" + tag;
 
     std::map<std::string, std::string> headers = {{"Accept", kManifestTypes}};
-    HttpResponse response = get(url, headers);
+    // Docker Hub counts a manifest GET against its anonymous pull limit; HEAD
+    // carries the same digest header without counting.
+    HttpResponse response = request("HEAD", url, headers);
     if (response.status_code == 401) {
         const std::string challenge = header(response, "www-authenticate");
         const std::string realm = challenge_param(challenge, "realm");
@@ -77,7 +81,7 @@ std::string resolve_registry_digest(const std::string& repository, const std::st
             throw std::runtime_error(repository + "'s registry asks for credentials Lemonade does not have");
         }
         const HttpResponse token_response =
-            get(realm + "?service=" + url_encode(challenge_param(challenge, "service")) +
+            request("GET", realm + "?service=" + url_encode(challenge_param(challenge, "service")) +
                     "&scope=" + url_encode(challenge_param(challenge, "scope")),
                 {});
         std::string token;
@@ -92,7 +96,7 @@ std::string resolve_registry_digest(const std::string& repository, const std::st
                                      std::to_string(token_response.status_code) + ")");
         }
         headers["Authorization"] = "Bearer " + token;
-        response = get(url, headers);
+        response = request("HEAD", url, headers);
     }
     if (response.status_code == 404) {
         throw std::runtime_error(repository + " has no tag '" + tag + "'");
