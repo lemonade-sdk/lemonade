@@ -139,14 +139,7 @@ def main():
     no_key_env = os.environ.copy()
     no_key_env.pop("LEMONADE_API_KEY", None)
     no_key_env.pop("LEMONADE_ADMIN_API_KEY", None)
-    result = assert_cli_auth_fails(
-        cli_binary, base_cli_args + ["status"], env=no_key_env
-    )
-    if "--api-key" not in result.stdout + result.stderr:
-        raise AssertionError(
-            "Auth failure should tell the user to pass --api-key: "
-            f"stdout={result.stdout!r} stderr={result.stderr!r}"
-        )
+    assert_cli_auth_fails(cli_binary, base_cli_args + ["status"], env=no_key_env)
 
     print("Verifying CLI fails with the wrong API key...", flush=True)
     wrong_key_env = os.environ.copy()

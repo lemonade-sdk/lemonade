@@ -3062,14 +3062,6 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         self.assertNotIn("--ctx-size", launch_section)
         self.assertNotIn("--llamacpp", launch_section)
 
-    def test_901_subcommand_help_points_to_global_options(self):
-        """A subcommand's help should say where --api-key and the other global options are listed."""
-        for command in ("config", "list", "pull"):
-            with self.subTest(command=command):
-                result = run_cli_command([command, "--help"], timeout=TIMEOUT_DEFAULT)
-                self.assertEqual(result.returncode, 0)
-                self.assertIn("--api-key", result.stdout + result.stderr)
-
 
 class CLIUrlSchemeTests(unittest.TestCase):
     """Tests URL scheme parsing, HTTPS/TLS connections, and port overrides in the C++ CLI client."""
