@@ -424,7 +424,10 @@
 .nexus-pill--faint { color: var(--text-tertiary); border-color: var(--border-strong); }
 .nexus-mesh-choice { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
 .nexus-mesh-choice > .nexus-mesh-row { flex: 1; min-width: 0; margin: 0; }
-.nexus-mesh-choice > .workspace-action-button { flex-shrink: 0; color: var(--text-tertiary); }
+/* The info control is a target of its own beside the row: as tall as the row and easy to hit. */
+.nexus-mesh-choice > .workspace-action-button { flex-shrink: 0; width: 44px; height: 44px; padding: 0; border-radius: var(--radius-md, 10px); color: var(--text-secondary); }
+.nexus-mesh-choice > .workspace-action-button svg { width: 28px; height: 28px; }
+.nexus-mesh-choice > .workspace-action-button:hover { color: var(--text-primary); }
 .nexus-server-info { width: min(560px, 100%); }
 .nexus-server-info__section { margin-top: 16px; }
 .nexus-server-info__section > .nexus-mesh__label { margin-bottom: 6px; }

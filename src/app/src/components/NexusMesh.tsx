@@ -76,7 +76,7 @@ function ServerChoice({ selected, title, subtitle, connection, disabled, onChoos
       {connection && <NexusPill label={NEXUS_CONNECTION_LABELS[connection]} tone={tone} connection />}
       {selected && <Icon name="check" size={16} className="nexus-mesh-row__check" />}
     </button>
-    <WorkspaceActionButton iconOnly icon="info" size="small" appearance="quiet" aria-label={t('How to use {name} from other apps', { name: title })} onClick={onInfo} />
+    <WorkspaceActionButton iconOnly icon="info" appearance="quiet" aria-label={t('How to use {name} from other apps', { name: title })} onClick={onInfo} />
   </div>;
 }
 
