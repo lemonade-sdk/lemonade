@@ -4,7 +4,6 @@ import {
   type NexusDevice as NetworkDevice, type NexusInvite, type NexusJoinMembership, type NexusMembership, type NexusStatus,
 } from './nexus';
 
-export interface SavedNexusAccount { id: string; displayName: string }
 export type NexusAvatarState = { state: 'ready'; image: string | null; revision: number; can_write: boolean; pending?: boolean }
   | { state: 'unsupported' | 'unavailable' };
 export interface VerifiedNexusAccount {
@@ -24,7 +23,6 @@ export interface NexusSignInInput {
   deviceName: string;
   source: string;
   invitation?: string;
-  expectedId?: string;
 }
 export interface NexusAccountService {
   disconnect: (session: VerifiedNexusAccount) => Promise<void>;
@@ -70,14 +68,16 @@ export function verifyAvatarReply(value: unknown): NexusAvatarState {
 
 interface AccountReply { id: string; member_id: string; device_node_id: string; role: NonNullable<NexusAccount['role']>; devices: NetworkDevice[]; avatar?: unknown }
 // lemond reports no account name, so the label is this device's name from the membership
-// reply; `fallbackName` covers a reply without one (the name the user entered, or the saved label).
+// reply; `fallbackName` covers a reply without one (the name the user entered). `expectedId`
+// is the account of a running session: lemond replaces the device key, and with it the
+// account, when the network revokes it, so a changed id ends that session.
 export function verifyAccountReply(value: unknown, source: string, expectedId?: string, fallbackName = ''): VerifiedNexusAccount {
   const reply = value as AccountReply | null;
   if (!reply || typeof reply.id !== 'string' || !reply.id || typeof reply.member_id !== 'string' || !reply.member_id
     || typeof reply.device_node_id !== 'string' || !reply.device_node_id || !['admin', 'moderator', 'user'].includes(reply.role) || !Array.isArray(reply.devices)) {
     throw new Error('The server did not return a verified account. Update the server and try again.');
   }
-  if (expectedId && reply.id !== expectedId) throw new Error('This device belongs to a different account. The saved account has been kept.');
+  if (expectedId && reply.id !== expectedId) throw new Error('The account on this device changed. Enable Mesh again.');
   const self = reply.devices.find(device => device?.node_id === reply.device_node_id);
   if (!self || self.permissions_known !== true || (reply.role === 'admin') !== (self.is_admin === true)) {
     throw new Error('Account permissions could not be verified. Try again.');
@@ -155,7 +155,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
         if (prepared?.mesh_up) await acceptNexusInvite(code, controller.request);
         else await controller.request('join', { code });
       }
-      const session = verifyAccountReply(await controller.request('account'), controller.source, input.expectedId, input.deviceName);
+      const session = verifyAccountReply(await controller.request('account'), controller.source, undefined, input.deviceName);
       await currentController(input.source);
       return session;
     },
@@ -220,17 +220,3 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
 }
 
 export const nexusAccountService = createNexusAccountService();
-
-const PROFILE_KEY = 'lemonade_nexus_account_labels';
-export function loadNexusAccountLabel(source: string): SavedNexusAccount | undefined {
-  try {
-    const entry = JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}')[source] as SavedNexusAccount;
-    return entry && typeof entry.id === 'string' && boundedName(entry.displayName) ? { id: entry.id, displayName: entry.displayName } : undefined;
-  } catch { return undefined; }
-}
-export function saveNexusAccountLabel(session: VerifiedNexusAccount) {
-  try {
-    const current = JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}');
-    localStorage.setItem(PROFILE_KEY, JSON.stringify({ ...current, [session.source]: { id: session.account.id, displayName: session.account.displayName } }));
-  } catch { /* Account access does not depend on retaining a display label. */ }
-}

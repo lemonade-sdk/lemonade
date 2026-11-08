@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { createPortal } from 'react-dom';
 import { NexusAccountInviteDialog, NexusDeleteAccountDialog, NexusJoinNetworkDialog, NexusSignInDialog } from '../../components/NexusSignInDialog';
 import { NexusPasskeyDialog } from '../../components/NexusPasskeyDialog';
-import { nexusAccountService, saveNexusAccountLabel, type NexusAccountService, type VerifiedNexusAccount } from './accountSession';
+import { nexusAccountService, type NexusAccountService, type VerifiedNexusAccount } from './accountSession';
 import { clearNexusNetwork, NexusRequestError, refreshNexus, useNexusNetwork, type NexusMembership } from './nexus';
 import type { NexusRole } from './routePermissions';
 
@@ -83,7 +83,7 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
     let stopped = false;
     service.resume().then(found => {
       if (stopped || !found) return;
-      generation.current += 1; saveNexusAccountLabel(found);
+      generation.current += 1;
       setSession(current => current || found);
       void refreshNexus();
     }).catch(() => {});
@@ -177,7 +177,7 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
   }}>
     {children}
     {dialog === 'signin' && createPortal(<NexusSignInDialog service={service} onClose={close} passkeyActive={Boolean(network.passkey)} onSignedIn={verified => {
-      generation.current += 1; saveNexusAccountLabel(verified); setSession(verified); void refreshNexus(); close();
+      generation.current += 1; setSession(verified); void refreshNexus(); close();
     }} />, document.body)}
     {dialog === 'invite' && session && createPortal(<NexusAccountInviteDialog service={service} session={session} onClose={close} />, document.body)}
     {dialog === 'join' && session && createPortal(<NexusJoinNetworkDialog service={service} session={session} onClose={close}

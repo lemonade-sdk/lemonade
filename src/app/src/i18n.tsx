@@ -137,7 +137,7 @@ const ZH_CN: Record<string, string> = {
   "Create invitation": "创建邀请",
   "Account access ended. Enable Mesh again to continue.": "账户访问已结束，请重新启用 Mesh 以继续。",
   "The server did not return a verified account. Update the server and try again.": "服务器未返回已验证的账户。请更新服务器后重试。",
-  "This device belongs to a different account. The saved account has been kept.": "此设备属于其他账户。已保存的账户仍被保留。",
+  "The account on this device changed. Enable Mesh again.": "此设备上的账户已更改。请重新启用 Mesh。",
   "Account permissions could not be verified. Try again.": "无法验证账户权限，请重试。",
   "The server connection changed. Close this dialog and enable Mesh again.": "服务器连接已更改。请关闭此对话框并重新启用 Mesh。",
   "Enter a device name of up to 128 bytes.": "请输入最多 128 字节的设备名称。",

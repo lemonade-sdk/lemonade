@@ -2,8 +2,8 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useI18n } from '../i18n';
 import {
-  loadNexusAccountLabel, nexusJoinNotice, validNexusInvitation,
-  type NexusAccountInspection, type NexusAccountService, type NexusSignInInput, type SavedNexusAccount, type VerifiedNexusAccount,
+  nexusJoinNotice, validNexusInvitation,
+  type NexusAccountInspection, type NexusAccountService, type NexusSignInInput, type VerifiedNexusAccount,
 } from '../features/nexus/accountSession';
 import { usesNexusDeviceKey, type NexusInvite } from '../features/nexus/nexus';
 import { Icon } from './Icon';
@@ -16,7 +16,6 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
   const ref = useRef<HTMLDivElement>(null);
   const id = useId();
   const [inspection, setInspection] = useState<NexusAccountInspection>();
-  const [saved, setSaved] = useState<SavedNexusAccount>();
   const [action, setAction] = useState<NexusSignInInput['action']>('create');
   const [deviceName, setDeviceName] = useState('');
   const [invitation, setInvitation] = useState('');
@@ -35,8 +34,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
     try {
       const result = await service.inspect();
       if (revision !== request.current) return;
-      const profile = result.status.registered ? loadNexusAccountLabel(result.source) : undefined;
-      setInspection(result); setSaved(profile);
+      setInspection(result);
       setAction(result.status.registered && result.status.has_network !== false ? 'return' : 'create');
       setDeviceName(result.status.device_name || t('This computer'));
     } catch (error) { if (revision === request.current) setError(error instanceof TypeError ? t('Cannot reach the Lemonade server. Start it or check the connection in Settings.') : error instanceof Error ? error.message : String(error)); }
@@ -59,8 +57,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
     setBusy(true); setError('');
     const revision = request.current;
     try {
-      const session = await service.signIn({ action, deviceName, invitation,
-        source: inspection.source, expectedId: saved?.id });
+      const session = await service.signIn({ action, deviceName, invitation, source: inspection.source });
       if (revision !== request.current) return;
       if (action === 'join') {
         const notice = nexusJoinNotice((await service.inspect().catch(() => undefined))?.status.join_membership);
@@ -91,7 +88,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
             <legend className="sr-only">{t('Account access')}</legend>
             <div className="nexus-sign-in__choices">
               {inspection.status.registered && inspection.status.has_network !== false && <label><input type="radio" name={id} checked={action === 'return'} onChange={() => { setAction('return'); setError(''); }} />{t('Use this device’s key')}</label>}
-              {!saved && (!inspection.status.registered || inspection.status.has_network === false) && <label><input type="radio" name={id} checked={action === 'create'} onChange={() => { setAction('create'); setError(''); }} />{t('Create account')}</label>}
+              {(!inspection.status.registered || inspection.status.has_network === false) && <label><input type="radio" name={id} checked={action === 'create'} onChange={() => { setAction('create'); setError(''); }} />{t('Create account')}</label>}
               <label><input type="radio" name={id} checked={action === 'join'} onChange={() => { setAction('join'); setError(''); }} />{t('Join by invitation')}</label>
             </div>
             <label htmlFor={`${id}-device`}>{t('Device name')}</label><input autoFocus id={`${id}-device`} className="input" value={deviceName} maxLength={128} onChange={event => setDeviceName(event.target.value)} />
