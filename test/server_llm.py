@@ -20,12 +20,14 @@ Usage:
 """
 
 import asyncio
+import json
 import os
 import time
 import requests
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 import threading
+from websockets.sync.client import connect
 
 from utils.server_base import (
     ServerTestBase,
@@ -970,7 +972,9 @@ class LLMTests(ServerTestBase):
         requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
         pinned_model = self.get_test_model("llm")
-        unpinned_model = MULTI_MODEL_TERTIARY
+        # Reuse the secondary model covered by test_019_multi_model_load so the
+        # resident-state setup does not depend on a third model's availability.
+        unpinned_model = MULTI_MODEL_SECONDARY
         response = requests.post(
             f"{self.base_url}/load",
             json={"model_name": unpinned_model},
@@ -987,22 +991,38 @@ class LLMTests(ServerTestBase):
         health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         health.raise_for_status()
         loaded_models = {
-            model["model_name"]
-            for model in health.json().get("all_models_loaded", [])
+            model["model_name"] for model in health.json().get("all_models_loaded", [])
         }
         self.assertIn(unpinned_model, loaded_models)
         self.assertIn(pinned_model, loaded_models)
 
+        ws_port = health.json()["websocket_port"]
+        with connect(f"ws://localhost:{ws_port}/logs/stream") as logs:
+            logs.send(json.dumps({"type": "logs.subscribe"}))
+            snapshot = json.loads(logs.recv(timeout=TIMEOUT_DEFAULT))
+            self.assertEqual(snapshot["type"], "logs.snapshot")
+            snapshot_entries = snapshot.get("entries", [])
+            last_seq = max((entry["seq"] for entry in snapshot_entries), default=0)
+
         response = requests.post(
             f"{self.base_url}/load",
             json={
-                "model_name": MULTI_MODEL_SECONDARY,
+                "model_name": MULTI_MODEL_TERTIARY,
                 "llamacpp_args": "--lemonade-invalid-test-arg",
             },
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertNotEqual(response.status_code, 200, response.text)
-        self.assertIn("Retry", response.text)
+
+        with connect(f"ws://localhost:{ws_port}/logs/stream") as logs:
+            logs.send(json.dumps({"type": "logs.subscribe", "after_seq": last_seq}))
+            snapshot = json.loads(logs.recv(timeout=TIMEOUT_DEFAULT))
+            self.assertEqual(snapshot["type"], "logs.snapshot")
+            attempts = sum(
+                entry["tag"] == "LlamaCpp" and "Starting llama-server" in entry["line"]
+                for entry in snapshot.get("entries", [])
+            )
+            self.assertGreaterEqual(attempts, 2, snapshot)
 
         health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
         health.raise_for_status()
@@ -1017,7 +1037,7 @@ class LLMTests(ServerTestBase):
         )
         self.assertTrue(loaded_models[pinned_model].get("pinned"))
         self.assertNotIn(unpinned_model, loaded_models)
-        self.assertNotIn(MULTI_MODEL_SECONDARY, loaded_models)
+        self.assertNotIn(MULTI_MODEL_TERTIARY, loaded_models)
 
     @skip_if_unsupported("multi_model")
     def test_020_multi_model_unload_specific(self):
