@@ -2784,6 +2784,8 @@ endif()
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_contract.cpp")
     add_executable(test_hrx_contract test/cpp/test_hrx_contract.cpp)
     target_link_libraries(test_hrx_contract PRIVATE lemonade-server-core)
+    target_compile_definitions(test_hrx_contract PRIVATE
+        HRX_TEST_CATALOG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/server_models.json")
     add_cpp_ci_test(HrxContractTest CI ON COMMAND test_hrx_contract)
 endif()
 
