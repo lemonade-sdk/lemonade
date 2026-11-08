@@ -13,6 +13,10 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+_flatpak_stage/
+_flatpak_build/
+.flatpak-builder/
+node_modules/
 develop-eggs/
 dist/
 downloads/
