@@ -1,5 +1,6 @@
 import React, { Suspense, useEffect, useRef, useState } from 'react';
 import Monitor from './Monitor';
+import api from '../api';
 import WorkspaceSectionRail from './WorkspaceSectionRail';
 import { WORKSPACE_NAVIGATION, type MonitorSection } from '../features/navigation/workspaceNavigation';
 import {
@@ -35,6 +36,10 @@ export default function MonitorView({
 }: MonitorViewProps) {
   const [railCollapsed, setRailCollapsed] = useState(false);
   const { t } = useI18n();
+  const [connectionEpoch, setConnectionEpoch] = useState(0);
+  useEffect(() => api.onStatusChange(status => {
+    if (status !== 'connected') setConnectionEpoch(epoch => epoch + 1);
+  }), []);
   const mountedSectionsRef = useRef<Set<MonitorSection>>(new Set([activeSection]));
   mountedSectionsRef.current.add(activeSection);
 
@@ -70,7 +75,7 @@ export default function MonitorView({
       <div className="monitor-content">
         {mountedSectionsRef.current.has('performance') && (
           <div className="monitor-section" hidden={activeSection !== 'performance'}>
-            <Monitor isActive={isActive && activeSection === 'performance'} />
+            <Monitor key={`${api.baseUrl}:${connectionEpoch}`} isActive={isActive && activeSection === 'performance'} />
           </div>
         )}
         {mountedSectionsRef.current.has('telemetry') && (

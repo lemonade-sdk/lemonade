@@ -27,6 +27,10 @@ inline const BackendDescriptor descriptor = {
         {"cpu", BackendTier::Core, BackendFormat::Python, {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/arm64 CPU"},
         {"cpu", BackendTier::Core, BackendFormat::Python, {"macos"}, {{"cpu", {"arm64"}}}, "x86_64/arm64 CPU"},
     },
+    /*about*/ {
+        {"cpu", {"Moonshine speech recognition on the CPU, small and fast enough for live transcription.",
+                 "Moonshine AI (Useful Sensors)", "lemonade-sdk", "MIT", "https://github.com/moonshine-ai/moonshine"}},
+    },
     /*supported_modes*/ {"transcription"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {"realtime-transcription"},

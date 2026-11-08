@@ -1117,6 +1117,8 @@ Loading a collection (`recipe: "collection.omni"`) loads each component in turn 
 
 Loading a model that is already loaded with the same options does nothing; different options reload it.
 
+On-demand models, including upscalers, cannot be loaded here. Upscalers run via [`POST /v1/images/upscale`](openai.md#post-v1imagesupscale).
+
 ### Option Priority
 
 Each recipe option comes from the first of these layers that sets it:
@@ -1234,6 +1236,7 @@ A collection, which has no checkpoint of its own.
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | On-demand models cannot be loaded through /v1/load |
 | `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
@@ -2180,6 +2183,11 @@ The same backend can carry different labels on different operating systems. Each
         - `version` - Installed or configured backend version (when available)
         - `tier` - `core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
         - `format` - `native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
+        - `description` - One or two sentences on what the backend is for.
+        - `author` - Who wrote the engine or fork the backend runs, such as `ggml-org`.
+        - `publisher` - Who builds the artifact Lemonade installs. Differs from `author` when someone other than the author builds it, as `lemonade-sdk` builds `llamacpp:rocm` from ggml-org's code.
+        - `license` - The author's license, as an SPDX id such as `MIT` or a license name. Empty when the author declares none.
+        - `project_url` - The upstream project's URL. Metadata may describe the upstream project rather than a custom or system-provided binary.
         - `release_url` - Where the backend's release asset downloads from.
         - `download_filename` - The release asset's filename.
         - `can_uninstall` - Whether the backend can be uninstalled. Lemonade sets it only on a backend that does not run on this operating system, always to `true`, so a missing value also means `true`.

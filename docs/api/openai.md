@@ -1827,6 +1827,12 @@ an error naming it; the file is left for you to correct.
 |-------|-------------|
 | `mtp` | Enables llama.cpp MTP draft decoding defaults (`--spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75`); users can override these with `llamacpp_args`. |
 
+**Execution labels:** control how a model is invoked:
+
+| Label | Description |
+|-------|-------------|
+| `on-demand` | Runs through a task-specific endpoint without a resident model server, so `/v1/load` is not supported. Built-in upscalers use `/v1/images/upscale`. |
+
 **Image capability labels:** carried alongside `image`; they refine what the model is offered for without changing its deployment mode:
 
 | Label | Description |

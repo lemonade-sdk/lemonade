@@ -19,6 +19,7 @@
 #include <vector>
 
 using lemon::system_info_detail::compute_cap_to_sm;
+using lemon::system_info_detail::cuda_min_driver_version;
 using lemon::system_info_detail::cuda_supported_archs;
 using lemon::system_info_detail::device_matches_constraint;
 using lemon::system_info_detail::gfx_target_version_to_arch;
@@ -26,7 +27,8 @@ using lemon::system_info_detail::gpu_display_name;
 using lemon::system_info_detail::identify_cuda_arch_from_name;
 using lemon::system_info_detail::hip_visible_device;
 using lemon::system_info_detail::kfd_gpu_properties;
-using lemon::system_info_detail::rocm_gpu_uuid_from_identifier;
+using lemon::system_info_detail::nvidia_driver_older_than;
+using lemon::system_info_detail::nvidia_driver_version_from_windows;
 using lemon::system_info_detail::rocm_device_memory_from_sysfs;
 
 static bool expect_string(const char* name,
@@ -268,21 +270,6 @@ int main() {
     failures += !expect_string(
         "an empty version has no ISA",
         gfx_target_version_to_arch(""), "");
-    failures += !expect_string(
-        "a decimal KFD unique_id becomes a ROCr GPU UUID",
-        rocm_gpu_uuid_from_identifier("123456789"), "GPU-00000000075bcd15");
-    failures += !expect_string(
-        "a hexadecimal KFD unique_id becomes a ROCr GPU UUID",
-        rocm_gpu_uuid_from_identifier("0x1F"), "GPU-000000000000001f");
-    failures += !expect_string(
-        "a valid HSA UUID is normalized",
-        rocm_gpu_uuid_from_identifier("gpu-00000000000000AB"),
-        "GPU-00000000000000ab");
-    for (const char* invalid : {"", "0", "-1", "GPU-XX", "GPU-123", "0xGG"}) {
-        failures += !expect_string(
-            (std::string("invalid ROCm GPU identifier ") + invalid).c_str(),
-            rocm_gpu_uuid_from_identifier(invalid), "");
-    }
 
     {
         // 27.07 of 32.0 GiB free: the reading from the gfx1151 merge-queue failures.
@@ -488,6 +475,41 @@ int main() {
         failures += !expect_string("NVML memory totals do not prove dedicated VRAM",
                                    sample.memory_type, "unknown");
     }
+
+    failures += !expect_bool("Windows driver below minimum is too old",
+                             nvidia_driver_older_than("516.94", "528.33"), true);
+    failures += !expect_bool("Windows driver at minimum is accepted",
+                             nvidia_driver_older_than("528.33", "528.33"), false);
+    failures += !expect_bool("Windows driver above minimum is accepted",
+                             nvidia_driver_older_than("560.94", "528.33"), false);
+    failures += !expect_bool("Linux driver with older patch is too old",
+                             nvidia_driver_older_than("525.60.12", "525.60.13"), true);
+    failures += !expect_bool("Linux two-part driver compares against three-part minimum",
+                             nvidia_driver_older_than("580.95", "525.60.13"), false);
+    failures += !expect_bool("Unknown driver version is never too old",
+                             nvidia_driver_older_than("Unknown", "576.02"), false);
+    failures += !expect_bool("Empty driver version is never too old",
+                             nvidia_driver_older_than("", "576.02"), false);
+    failures += !expect_bool("No minimum never blocks",
+                             nvidia_driver_older_than("400.00", ""), false);
+
+    failures += !expect_string("Windows driver-store version maps to NVIDIA version",
+                               nvidia_driver_version_from_windows("32.0.15.7602"), "576.02");
+    failures += !expect_string("Windows driver-store version keeps leading-zero minor",
+                               nvidia_driver_version_from_windows("31.0.15.2802"), "528.02");
+    failures += !expect_string("NVIDIA-format version passes through",
+                               nvidia_driver_version_from_windows("576.02"), "576.02");
+    failures += !expect_string("Unparseable version passes through",
+                               nvidia_driver_version_from_windows("Unknown"), "Unknown");
+
+    failures += !expect_string("llamacpp:cuda Windows minimum",
+                               cuda_min_driver_version("llamacpp", "cuda", "windows"), "528.33");
+    failures += !expect_string("llamacpp:cuda Linux minimum",
+                               cuda_min_driver_version("llamacpp", "cuda", "linux"), "525.60.13");
+    failures += !expect_string("Non-CUDA backend has no minimum",
+                               cuda_min_driver_version("llamacpp", "vulkan", "windows"), "");
+    failures += !expect_string("Other CUDA backends have no minimum yet",
+                               cuda_min_driver_version("sd-cpp", "cuda", "windows"), "");
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

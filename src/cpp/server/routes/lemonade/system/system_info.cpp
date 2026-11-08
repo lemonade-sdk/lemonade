@@ -210,6 +210,11 @@ ordered_json system_info_schema() {
                                     "version": {"type": "string", "description": "Installed or configured backend version (when available)"},
                                     "tier": {"enum": ["core", "experimental", "guest"], "description": "`core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
                                     "format": {"enum": ["native", "python", "container"], "description": "`native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
+                                    "description": {"type": "string", "description": "One or two sentences on what the backend is for."},
+                                    "author": {"type": "string", "description": "Who wrote the engine or fork the backend runs, such as `ggml-org`."},
+                                    "publisher": {"type": "string", "description": "Who builds the artifact Lemonade installs. Differs from `author` when someone other than the author builds it, as `lemonade-sdk` builds `llamacpp:rocm` from ggml-org's code."},
+                                    "license": {"type": "string", "description": "The author's license, as an SPDX id such as `MIT` or a license name. Empty when the author declares none."},
+                                    "project_url": {"type": "string", "description": "The upstream project's URL. Metadata may describe the upstream project rather than a custom or system-provided binary."},
                                     "release_url": {"type": "string", "description": "Where the backend's release asset downloads from."},
                                     "download_filename": {"type": "string", "description": "The release asset's filename."},
                                     "can_uninstall": {"type": "boolean", "description": "Whether the backend can be uninstalled. Lemonade sets it only on a backend that does not run on this operating system, always to `true`, so a missing value also means `true`."}
