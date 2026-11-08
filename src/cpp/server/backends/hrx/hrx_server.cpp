@@ -21,6 +21,8 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include <algorithm>
+#include <cctype>
+#include <cstdint>
 #include <stdexcept>
 #include <vector>
 
@@ -39,6 +41,55 @@ void validate_supported_build_host() {
 }  // namespace
 
 namespace hrx {
+
+namespace {
+
+constexpr int64_t kQwen38HrxContextLimit = 32768;
+
+std::string lower_ascii(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+bool is_qwen38_27b(const ModelInfo& model_info) {
+    return lower_ascii(model_info.model_name).find("qwen3.8-27b") != std::string::npos ||
+           lower_ascii(model_info.checkpoint()).find("qwen3.8-27b") != std::string::npos;
+}
+
+int64_t effective_context_window(const ModelInfo& model_info,
+                                 int64_t detected_context_window) {
+    if (!is_qwen38_27b(model_info)) {
+        return detected_context_window;
+    }
+    if (detected_context_window <= 0 ||
+        detected_context_window > kQwen38HrxContextLimit) {
+        return kQwen38HrxContextLimit;
+    }
+    return detected_context_window;
+}
+
+void clamp_context_size(const ModelInfo& model_info, RecipeOptions& options) {
+    if (!is_qwen38_27b(model_info)) {
+        return;
+    }
+
+    const int64_t context_limit =
+        effective_context_window(model_info, model_info.max_context_window);
+    const json ctx_size = options.get_option("ctx_size");
+    bool exceeds_context_limit = false;
+    if (ctx_size.is_number()) {
+        const double requested_ctx_size = ctx_size.get<double>();
+        exceeds_context_limit =
+            requested_ctx_size == 0 ||
+            requested_ctx_size > static_cast<double>(context_limit);
+    }
+    if (exceeds_context_limit) {
+        options.set_option("ctx_size", context_limit);
+    }
+}
+
+}  // namespace
 
 std::vector<std::string> build_server_argv(const std::string& gguf_path,
                                            int ctx_size,
@@ -168,6 +219,14 @@ public:
     void populate_metadata(ModelInfo& info,
                            const BackendOpsContext& ctx) const override {
         llamacpp::ops()->populate_metadata(info, ctx);
+        info.max_context_window =
+            hrx::effective_context_window(info, info.max_context_window);
+    }
+
+    void resolve_runtime_options(const ModelInfo& info,
+                                 RecipeOptions& options) const override {
+        llamacpp::ops()->resolve_runtime_options(info, options);
+        hrx::clamp_context_size(info, options);
     }
 
     std::string resolve_checkpoint_path(
