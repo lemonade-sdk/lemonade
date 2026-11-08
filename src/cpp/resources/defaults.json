@@ -19,7 +19,8 @@
   "disable_model_filtering": false,
   "download_rate_limit": "",
   "ds4": {
-    "args": ""
+    "args": "",
+    "rocm_bin": "builtin"
   },
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",
@@ -29,7 +30,11 @@
   },
   "global_timeout": 600,
   "gufo": {
-    "args": ""
+    "args": "",
+    "rocm_bin": "builtin"
+  },
+  "halogen": {
+    "rocm_bin": "builtin"
   },
   "host": "localhost",
   "hrx": {
@@ -47,6 +52,8 @@
     "cpu_bin": "builtin",
     "cuda_args": "",
     "cuda_bin": "builtin",
+    "halobox_bin": "builtin",
+    "nathanw_bin": "builtin",
     "prefer_system": true,
     "rocm_args": "",
     "rocm_bin": "builtin",
@@ -81,7 +88,8 @@
   "rocm_channel": "stable",
   "rocm_install_method": "auto",
   "rocmfpx": {
-    "args": ""
+    "args": "",
+    "rocm_bin": "builtin"
   },
   "ryzenai": {
     "server_bin": "builtin"

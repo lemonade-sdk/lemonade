@@ -43,7 +43,7 @@ inline const BackendDescriptor descriptor = {
     /*self_manages_downloads*/ false,
     /*takes_args*/      false,
     /*arg_variants*/    {},
-    /*bin_variants*/    {},
+    /*bin_variants*/    {"rocm"},
     /*config_extra*/    nlohmann::json::object(),
     // The HGN checkpoint is mapped read-only and registered with the GPU in
     // place, so what must fit in the GPU's pool is each model's
