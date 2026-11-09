@@ -50,11 +50,11 @@ public:
         s.description =
             "Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on "
             "a string and returns a score for each label. It serves `onnxruntime` sequence "
-            "classifiers (one label set), token classifiers (aggregated span labels) and zero-shot "
-            "models (labels sent with each request), llama.cpp and FastFlowLM decision models, "
-            "and llama.cpp prompt-router encoders with a `rulehead` checkpoint, all of which are "
-            "zero-shot. It provides the classification that the router's `classifier` and "
-            "`zero_shot` conditions use.";
+            "classifiers (one label set) and token classifiers (aggregated span labels), and "
+            "zero-shot models that take `labels` with each request: `onnxruntime` zero-shot "
+            "models, llama.cpp and FastFlowLM decision models, and llama.cpp prompt-router "
+            "encoders with a `rulehead` checkpoint. It provides the classification that the "
+            "router's `classifier` and `zero_shot` conditions use.";
         s.notes = {
             "A malformed request, such as one with a blank `input`, a non-positive `top_k`, or a "
             "`labels` entry that is blank, repeated or holds a control character, is rejected "
@@ -83,8 +83,9 @@ public:
             "from the same repository and refuses the model when the file is missing; a head "
             "stored elsewhere is named as the `rulehead` checkpoint. llama-server returns one "
             "vector per token and lemond applies the head. "
-            "The text is never cut: an input longer than the model's batch (4096 tokens unless "
-            "`ctx_size`, `-b` and `-ub` raise it) is refused with `context_length_exceeded`.",
+            "The text is never cut: an input longer than the model's batch is refused with "
+            "`context_length_exceeded`. The batch is 4096 tokens by default, or 2048 on the "
+            "`nathanw` and `halobox` backends; `ctx_size` caps it, and `-b` and `-ub` change it.",
             "Some upstream models declare only generic `LABEL_<n>` label names; their model card "
             "explains them.",
         };

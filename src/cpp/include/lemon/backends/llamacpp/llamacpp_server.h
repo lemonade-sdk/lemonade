@@ -46,8 +46,7 @@ public:
     // IRerankingServer implementation
     json reranking(const json& request) override;
 
-    // IClassificationServer implementation: through /v1/systemone for a
-    // `systemone` model, or classify_with_rule_head() (see llamacpp_rulehead.h).
+    // IClassificationServer implementation
     json classify(const json& request) override;
 
     nlohmann::ordered_json systemone(const nlohmann::ordered_json& request) override;
