@@ -1,1 +1,4 @@
 *.py text eol=lf
+# Recorded on Windows runners and committed from Linux ones.
+docs/api/*.md text eol=lf
+docs/tools/api_examples_cache.json text eol=lf

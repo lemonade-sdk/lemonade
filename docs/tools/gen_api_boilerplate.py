@@ -13,12 +13,15 @@ docs/api pages:
 
 Each route section shows real requests and the responses lemond returned to
 them. Those responses are recorded in docs/tools/api_examples_cache.json, keyed
-by everything that determines them, and an example runs only when its entry is
-missing. --check runs no examples and loads no model: it fails when any region,
-cache entry or recorded response is stale or invalid.
+by the request, and an example runs only when its entry is missing. --refresh
+RECIPE re-runs the examples a recipe serves, such as after a backend update, and
+replaces a recorded response only when its shape changed. --check runs no
+examples and loads no model: it fails when any region, cache entry or recorded
+response is stale or invalid.
 
 Usage:
     python docs/tools/gen_api_boilerplate.py [--lemond PATH] [--check] [--bin-dir DIR]
+                                             [--refresh RECIPE ...]
 """
 
 from __future__ import annotations
@@ -49,7 +52,6 @@ CACHE_FILE = REPO_ROOT / "docs" / "tools" / "api_examples_cache.json"
 FIXTURES = REPO_ROOT / "docs" / "tools" / "fixtures"
 # A fixture can stand for a whole value or follow a prefix, as in a data URL.
 FIXTURE = re.compile(r"@fixtures/[\w.-]+")
-BACKEND_VERSIONS = REPO_ROOT / "src" / "cpp" / "resources" / "backend_versions.json"
 SERVER_MODELS = REPO_ROOT / "src" / "cpp" / "resources" / "server_models.json"
 
 DOCS_HOST = "http://localhost:13305"
@@ -174,42 +176,62 @@ def step_payload(specs: dict, step: dict) -> dict:
     }
 
 
-def pinned_backend(examples: list[dict], backend_versions: dict, server_models: dict):
+def example_recipe(specs: dict, route_id: str, example: dict, server_models: dict):
     """A pass-through route's response depends on the backend serving its model, which
-    its own example names, or else the setup example that loads it. Examples are
-    recorded on a recipe's Vulkan backend when it has one, so only that pin counts."""
-    for example in examples:
-        model = example.get("model", example.get("model_name"))
+    its own example names, or else the setup example that loads it."""
+    ref = {"route": route_id, "example": example["name"]}
+    setup = [step_payload(specs, step) for step in setup_chain(specs, ref)]
+    for request in [example["args"]] + [
+        entry.get("example", entry.get("args")) for entry in reversed(setup)
+    ]:
+        model = request.get("model", request.get("model_name"))
         if isinstance(model, str):
-            recipe = server_models.get(model, {}).get("recipe")
-            pins = backend_versions.get(recipe) if recipe else None
-            if isinstance(pins, dict) and "vulkan" in pins:
-                return pins["vulkan"]
-            return pins
+            return server_models.get(model, {}).get("recipe")
     return None
 
 
-def cache_key(
-    specs: dict,
-    route_id: str,
-    example: dict,
-    backend_versions: dict,
-    server_models: dict,
-) -> str:
+def cache_key(specs: dict, route_id: str, example: dict) -> str:
     ref = {"route": route_id, "example": example["name"]}
-    setup = [step_payload(specs, step) for step in setup_chain(specs, ref)]
-    requests = [example["args"]] + [
-        entry.get("example", entry.get("args")) for entry in reversed(setup)
-    ]
     payload = {
         "route": route_id,
         "format": example["format"],
         "example": example["args"],
-        "setup": setup,
-        "backend": pinned_backend(requests, backend_versions, server_models),
+        "setup": [step_payload(specs, step) for step in setup_chain(specs, ref)],
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def value_shape(value):
+    """Keys, types and SSE event names, without values, array lengths or order."""
+    if isinstance(value, str):
+        event = re.match(r"event: (\S+)", value)
+        data = re.search(r"(\{.*\})\s*$", value, re.S)
+        if data:
+            try:
+                parsed = json.loads(data.group(1))
+            except ValueError:
+                return "string"
+            return {"event": event and event.group(1), "data": value_shape(parsed)}
+        return "string"
+    if isinstance(value, dict):
+        return {key: value_shape(item) for key, item in value.items()}
+    if isinstance(value, list):
+        shapes = {json.dumps(value_shape(item), sort_keys=True) for item in value}
+        return sorted(shapes)
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "bool"
+    return "number" if isinstance(value, (int, float)) else type(value).__name__
+
+
+def response_shape(response: dict) -> dict:
+    return {
+        key: value if key in ("status", "content_type") else value_shape(value)
+        for key, value in response.items()
+        if key not in ("count", "line_count")
+    }
 
 
 def validate_specs(specs: dict) -> None:
@@ -2090,6 +2112,14 @@ def main() -> int:
     parser.add_argument(
         "--bin-dir", help="Installed backends to reuse instead of downloading them"
     )
+    parser.add_argument(
+        "--refresh",
+        action="append",
+        default=[],
+        metavar="RECIPE",
+        help="Re-run the examples RECIPE serves, keeping each recorded response "
+        "unless its shape changed",
+    )
     args = parser.parse_args()
 
     binary = find_lemond(args.lemond)
@@ -2098,16 +2128,18 @@ def main() -> int:
     specs = {spec["id"]: spec for spec in route_list}
     validate_specs(specs)
 
-    backend_versions = json.loads(BACKEND_VERSIONS.read_text(encoding="utf-8"))
     server_models = json.loads(SERVER_MODELS.read_text(encoding="utf-8"))
     cache = load_cache()
 
     keys = {}
+    refresh = set()
     for spec in route_list:
         for example in spec["examples"]:
-            keys[(spec["id"], example["name"])] = cache_key(
-                specs, spec["id"], example, backend_versions, server_models
-            )
+            ref = (spec["id"], example["name"])
+            keys[ref] = cache_key(specs, spec["id"], example)
+            recipe = example_recipe(specs, spec["id"], example, server_models)
+            if recipe in args.refresh:
+                refresh.add(ref)
 
     problems = lint_sources()
     for spec in route_list:
@@ -2117,12 +2149,21 @@ def main() -> int:
         problems += [
             f"no recorded example for {route_id} {name!r}" for route_id, name in missing
         ]
-    elif missing:
-        print(f"Recording {len(missing)} example(s)...")
+    to_run = [] if args.check else [r for r in keys if r in missing or r in refresh]
+    if to_run:
+        print(f"Recording {len(to_run)} example(s)...")
         with ExampleRunner(binary, args.bin_dir, specs) as runner:
-            for route_id, name in missing:
+            for route_id, name in to_run:
+                key = keys[(route_id, name)]
                 entry = runner.run(route_id, name)
-                cache[keys[(route_id, name)]] = entry
+                # The docs show a response's shape, so new values alone are churn.
+                if key in cache:
+                    if response_shape(cache[key]["response"]) == response_shape(
+                        entry["response"]
+                    ):
+                        continue
+                    print(f"  {route_id} {name!r} changed shape")
+                cache[key] = entry
                 write_cache(cache)
 
     stale_keys = set(cache) - set(keys.values())
