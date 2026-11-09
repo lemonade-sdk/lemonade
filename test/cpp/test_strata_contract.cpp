@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <mutex>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -44,12 +45,24 @@ void test_slots() {
     check("Strata implements the router's slots interface",
           std::is_base_of<lemon::ISlotsServer, lemon::backends::StrataServer>::value);
     httplib::Server backend;
-    const lemon::json slots = lemon::json::array({
+    lemon::json slots = lemon::json::array({
         {{"id", 0}, {"n_ctx", 262144}, {"is_processing", false}, {"n_prompt_tokens", 64}},
         {{"id", 1}, {"n_ctx", 262144}, {"is_processing", true}, {"n_prompt_tokens", 512}},
     });
+    lemon::json metrics = {{"live", {{"slots", lemon::json::array({
+        {{"slot", 1}, {"state", "decoding"}, {"generated", 37}},
+        {{"slot", 0}, {"state", "idle"}, {"held_tokens", 64}},
+    })}}}};
+    std::mutex telemetry_mutex;
+    int metrics_status = 200;
     backend.Get("/slots", [&](const httplib::Request&, httplib::Response& response) {
+        std::lock_guard<std::mutex> lock(telemetry_mutex);
         response.set_content(slots.dump(), "application/json");
+    });
+    backend.Get("/metrics", [&](const httplib::Request&, httplib::Response& response) {
+        std::lock_guard<std::mutex> lock(telemetry_mutex);
+        response.status = metrics_status;
+        response.set_content(metrics.dump(), "application/json");
     });
     std::atomic<bool> action_query_ok{false};
     std::atomic<bool> action_body_ok{false};
@@ -68,8 +81,66 @@ void test_slots() {
     backend.wait_until_ready();
     {
         FixtureStrataServer server(port);
-        check("Slot telemetry preserves upstream context, token counts and processing states",
-              server.get_slots() == slots);
+        auto expected = slots;
+        expected[0]["state"] = "idle";
+        expected[1]["state"] = "decoding";
+        expected[1]["n_decoded"] = 37;
+        check("Parallel counters match slot IDs without changing upstream KV token counts",
+              server.get_slots() == expected);
+        {
+            std::lock_guard<std::mutex> lock(telemetry_mutex);
+            slots = lemon::json::array({slots[0]});
+            metrics = {{"live", {{"state", "reading"}, {"generated", 0},
+                                 {"prompt_read", 8192}, {"prefill_tok_s_mean", 568.2}}}};
+        }
+        const auto prefill = server.get_slots();
+        check("Solo prefill exposes the engine rate and a zero decoded counter",
+              prefill[0]["is_processing"] == true && prefill[0]["n_decoded"] == 0 &&
+              prefill[0]["timings"]["prompt_per_second"] == 568.2);
+        check("Cached prefixes are not counted as newly processed prompt tokens",
+              !prefill[0].contains("n_prompt_tokens_processed") && prefill[0]["n_prompt_tokens"] == 64);
+        {
+            std::lock_guard<std::mutex> lock(telemetry_mutex);
+            metrics = {{"live", {{"state", "generating"}, {"generated", 73},
+                                 {"prefill_tok_s_mean", 568.2}}}};
+        }
+        const auto decoding = server.get_slots();
+        check("Solo decoding exposes generated tokens without stale prefill rates",
+              decoding[0]["is_processing"] == true && decoding[0]["n_decoded"] == 73 &&
+              !decoding[0].contains("timings"));
+        {
+            std::lock_guard<std::mutex> lock(telemetry_mutex);
+            metrics = {{"live", {{"state", "idle"}, {"generated", nullptr},
+                                 {"prefill_tok_s_mean", nullptr}}}};
+        }
+        const auto idle = server.get_slots();
+        check("Idle slots retain KV counts without fabricated throughput",
+              idle[0]["is_processing"] == false && idle[0]["n_prompt_tokens"] == 64 &&
+              !idle[0].contains("n_decoded") && !idle[0].contains("timings"));
+        {
+            std::lock_guard<std::mutex> lock(telemetry_mutex);
+            metrics_status = 503;
+            metrics = {{"error", {{"message", "metrics unavailable"}}}};
+        }
+        check("Metrics failures remain visible errors", server.get_slots().contains("error"));
+        {
+            std::lock_guard<std::mutex> lock(telemetry_mutex);
+            metrics_status = 200;
+            metrics = {{"live", nullptr}};
+        }
+        check("Malformed live telemetry is rejected", server.get_slots().contains("error"));
+        {
+            std::lock_guard<std::mutex> lock(telemetry_mutex);
+            metrics = {{"live", {{"slots", lemon::json::array()}}}};
+        }
+        check("Missing per-slot telemetry is not replaced with aggregate counters",
+              server.get_slots().contains("error"));
+        {
+            std::lock_guard<std::mutex> lock(telemetry_mutex);
+            slots = lemon::json::array();
+        }
+        check("An unloaded engine still returns an empty slot list",
+              server.get_slots() == lemon::json::array());
         const auto response = server.slots_action(7, "restore", {{"filename", "session.bin"}});
         check("Slot action query is forwarded", action_query_ok);
         check("Slot action body is forwarded", action_body_ok);

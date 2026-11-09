@@ -3,6 +3,7 @@
 #include "lemon/backend_manager.h"
 #include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "lemon/backends/strata/strata.h"
+#include "lemon/error_types.h"
 #include "lemon/gguf_reader.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -416,7 +417,51 @@ json StrataServer::responses(const json& request) {
 }
 
 json StrataServer::get_slots() {
-    return forward_get_request("/slots");
+    auto slots = forward_get_request("/slots");
+    if (slots.contains("error")) return slots;
+    if (!slots.is_array()) {
+        return ErrorResponse::from_exception(BackendException("strata", "Invalid /slots response"));
+    }
+    if (slots.empty()) return slots;
+
+    const auto metrics = forward_get_request("/metrics");
+    if (metrics.contains("error")) return metrics;
+    const auto live = metrics.find("live");
+    if (live == metrics.end() || !live->is_object()) {
+        return ErrorResponse::from_exception(BackendException("strata", "Invalid /metrics live telemetry"));
+    }
+    const auto parallel = live->find("slots");
+    if (parallel != live->end() && !parallel->is_array()) {
+        return ErrorResponse::from_exception(BackendException("strata", "Invalid /metrics slot telemetry"));
+    }
+    for (auto& slot : slots) {
+        const json* progress = nullptr;
+        if (parallel != live->end()) {
+            const auto row = std::find_if(parallel->begin(), parallel->end(), [&](const json& entry) {
+                return entry.is_object() && entry.value("slot", json()) == slot.at("id");
+            });
+            if (row != parallel->end()) progress = &*row;
+        } else if (slots.size() == 1) {
+            progress = &*live;
+        }
+        if (!progress) {
+            return ErrorResponse::from_exception(BackendException("strata", "Missing /metrics slot telemetry"));
+        }
+        const auto state = progress->at("state").get<std::string>();
+        const bool active = state == "reading" || state == "generating" || state == "decoding";
+        slot["state"] = state;
+        slot["is_processing"] = active;
+        const auto generated = progress->find("generated");
+        if (active && generated != progress->end() && generated->is_number_integer()) {
+            slot["n_decoded"] = *generated;
+        }
+        const auto prefill_rate = progress->find("prefill_tok_s_mean");
+        if (state == "reading" && prefill_rate != progress->end() && prefill_rate->is_number()) {
+            // prompt_read includes the reused prefix, so its deltas are not pure prefill work.
+            slot["timings"]["prompt_per_second"] = *prefill_rate;
+        }
+    }
+    return slots;
 }
 
 json StrataServer::slots_action(int slot_id, const std::string& action, const json& request_body) {
