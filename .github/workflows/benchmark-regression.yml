@@ -128,7 +128,7 @@ jobs:
           RELEASE=$(curl -sf \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/lemonade-sdk/lemonade/releases/latest")
+            "https://api.github.com/repos/lemonade-sdk/lemonade/releases/tags/v2026.44.1")
           VERSION=$(echo "$RELEASE" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
           echo "Latest lemonade: $VERSION"
           ASSET_URL=$(echo "$RELEASE" | python3 -c "import sys,json; assets=json.load(sys.stdin)['assets']; url=next((a['browser_download_url'] for a in assets if 'embeddable' in a['name'] and 'ubuntu' in a['name'] and 'x64' in a['name']),None); print(url or 'NOT_FOUND')")
