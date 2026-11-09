@@ -3,6 +3,7 @@
 #include <LemonadeNexusSDK/Error.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -45,5 +46,17 @@ Result<std::vector<DiscoveredServer>> discover_servers_at(const std::vector<std:
 /// a wildcard, only hostname characters. Both are compared in lower case
 /// without a trailing dot.
 bool discovered_name_in_domain(const std::string& name, const std::string& domain);
+
+/// The parts of a server's SEIP FQDN `<id>.<region>.seip.<domain>`, lower
+/// case: the region and domain name the records discover_servers() reads.
+struct SeipName {
+    std::string id;      ///< the labels before the region, e.g. "sn01"
+    std::string region;  ///< one label, e.g. "us-west"
+    std::string domain;  ///< the network DNS domain, e.g. "lemonade-nexus.io"
+};
+
+/// Split a SEIP FQDN into its parts. nullopt when `fqdn` is not
+/// `<id>.<region>.seip.<domain>` with hostname characters only.
+std::optional<SeipName> parse_seip_fqdn(const std::string& fqdn);
 
 }  // namespace lnsdk

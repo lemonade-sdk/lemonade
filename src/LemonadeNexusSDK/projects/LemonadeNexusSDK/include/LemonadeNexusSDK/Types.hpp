@@ -36,6 +36,15 @@ struct ServerConfig {
     /// If true, fetch /api/servers on first connect to discover additional servers.
     bool     auto_discover{true};
 
+    /// Where the client looks when no known server answers a Tier 1
+    /// refresh: it resolves `<discovery_region>.seip.<discovery_domain>`
+    /// (discover_servers()) and verifies each server it finds before it uses
+    /// one. Both empty: taken from a known server's SEIP FQDN
+    /// `<id>.<region>.seip.<domain>` (the session server after a join), and
+    /// no fallback runs when no such name is known.
+    std::string discovery_domain;
+    std::string discovery_region;
+
     /// If true, keep talking to the configured endpoint (an FQDN) after join
     /// instead of switching the public API to the server's advertised SEIP FQDN.
     /// The pinned host must still be a cert FQDN; pin an address separately if

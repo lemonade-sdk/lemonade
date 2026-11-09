@@ -359,6 +359,15 @@ struct LemonadeNexusClient::Impl {
     std::size_t              current_server{0};
     bool                     has_discovered{false};
 
+    // Fallback discovery, when no known server answers a Tier 1 refresh:
+    // the DNS step, and when it last ran (steady ms, 0 = never). Both
+    // guarded by transport_mtx.
+    LemonadeNexusClient::RegionDiscovery region_discovery{
+        [](const std::string& domain, const std::string& region, uint16_t port) {
+            return lnsdk::discover_servers(domain, region, port);
+        }};
+    int64_t last_fallback_discovery_ms{0};
+
     // Latency-based auto-switching
     std::unique_ptr<LatencyMonitor> latency_monitor;
 
@@ -594,6 +603,14 @@ struct LemonadeNexusClient::Impl {
         }
     }
 
+    /// How long after one fallback discovery the next may run. A long outage
+    /// then costs one DNS sweep a minute, not one per tree call.
+    static constexpr int64_t kFallbackDiscoveryIntervalMs = 60 * 1000;
+
+    static bool same_endpoint(const ServerEndpoint& a, const ServerEndpoint& b) {
+        return a.host == b.host && a.port == b.port;
+    }
+
     // Where a membership walk starts: the current pool, then the configured
     // seeds.
     std::vector<ServerEndpoint> tier1_sources() const {
@@ -602,11 +619,142 @@ struct LemonadeNexusClient::Impl {
         for (const auto& s : server_pool) out.push_back(s.endpoint);
         for (const auto& ep : config.servers) {
             const bool known = std::any_of(out.begin(), out.end(), [&ep](const ServerEndpoint& o) {
-                return o.host == ep.host && o.port == ep.port;
+                return same_endpoint(o, ep);
             });
             if (!known) out.push_back(ep);
         }
         return out;
+    }
+
+    // Add servers the client learned of to the pool, once each. Caller holds
+    // transport_mtx.
+    void add_pool_servers_locked(const std::vector<ServerEndpoint>& endpoints) {
+        for (const auto& ep : endpoints) {
+            const bool known = std::any_of(server_pool.begin(), server_pool.end(),
+                                           [&ep](const ServerState& s) {
+                                               return same_endpoint(s.endpoint, ep);
+                                           });
+            if (known) continue;
+            server_pool.push_back({ep, true, 0, 0});
+            spdlog::info("[LemonadeNexusClient] discovered server {}:{}", ep.host, ep.port);
+        }
+    }
+
+    // Put `ep` first in the pool and make it current; the other servers stay
+    // behind it in their order. Caller holds transport_mtx.
+    void lead_pool_with_locked(const ServerEndpoint& ep) {
+        auto it = std::find_if(server_pool.begin(), server_pool.end(),
+                               [&ep](const ServerState& s) { return same_endpoint(s.endpoint, ep); });
+        if (it == server_pool.end()) {
+            server_pool.insert(server_pool.begin(), {ep, true, 0, 0});
+        } else {
+            std::rotate(server_pool.begin(), it, it + 1);
+        }
+        current_server = 0;
+    }
+
+    // The SEIP region fallback discovery resolves: the configured domain and
+    // region, else the ones a known server's FQDN `<id>.<region>.seip.<domain>`
+    // names. nullopt when neither is known.
+    struct DiscoveryTarget {
+        std::string domain;
+        std::string region;
+        uint16_t    port{9100};
+    };
+    std::optional<DiscoveryTarget> discovery_target() const {
+        std::lock_guard lock(transport_mtx);
+        DiscoveryTarget target;
+        target.domain = config.discovery_domain;
+        target.region = config.discovery_region;
+        if (!server_pool.empty()) target.port = server_pool[current_server].endpoint.port;
+        if (target.domain.empty() || target.region.empty()) {
+            std::vector<std::string> known;
+            for (const auto& s : server_pool) known.push_back(s.endpoint.host);
+            for (const auto& ep : config.servers) known.push_back(ep.host);
+            for (const auto& host : known) {
+                if (const auto name = parse_seip_fqdn(host)) {
+                    target.domain = name->domain;
+                    target.region = name->region;
+                    break;
+                }
+            }
+        }
+        if (target.domain.empty() || target.region.empty()) return std::nullopt;
+        return target;
+    }
+
+    // The region's servers from DNS, for a refresh that found no known server
+    // answering. Candidates only: the endpoint proofs decide. Runs at most
+    // once per kFallbackDiscoveryIntervalMs; empty when it did not run or
+    // found nothing.
+    std::vector<ServerEndpoint> fallback_discovery() {
+        const auto target = discovery_target();
+        if (!target) {
+            spdlog::debug("[LemonadeNexusClient] no known server answered and no discovery "
+                          "domain and region are known: no fallback discovery");
+            return {};
+        }
+        LemonadeNexusClient::RegionDiscovery discovery;
+        {
+            std::lock_guard lock(transport_mtx);
+            const auto now = steady_now_ms();
+            if (last_fallback_discovery_ms != 0 &&
+                now - last_fallback_discovery_ms < kFallbackDiscoveryIntervalMs) {
+                return {};
+            }
+            last_fallback_discovery_ms = now;
+            discovery = region_discovery;
+        }
+        const auto region_name = target->region + ".seip." + target->domain;
+        Result<std::vector<DiscoveredServer>> found;
+        try {
+            found = discovery(target->domain, target->region, target->port);
+        } catch (const std::exception& e) {
+            found.ok = false;
+            found.error = e.what();
+        }
+        if (!found.ok || found.value.empty()) {
+            spdlog::warn("[LemonadeNexusClient] no known server answered; discovery of {} found "
+                         "no server: {}", region_name, found.error);
+            return {};
+        }
+        std::vector<ServerEndpoint> out;
+        std::string names;
+        for (const auto& s : found.value) {
+            if (s.host.empty() || s.port == 0) continue;
+            out.push_back({s.host, s.port, true});
+            names += (names.empty() ? "" : ", ") + s.host + ":" + std::to_string(s.port);
+        }
+        spdlog::info("[LemonadeNexusClient] no known server answered; {} names {} server(s) to "
+                     "verify: {}", region_name, out.size(), names);
+        return out;
+    }
+
+    // Verify the Tier 1 membership from the known servers and, when none
+    // answers, from the region's DNS records as well. A refusal (a forged
+    // chain, a stale epoch, another chain) is final: other servers of the
+    // same region do not change it, so no fallback runs for it.
+    Result<Tier1Membership> refresh_tier1() {
+        auto refreshed = tier1.refresh(tier1_sources());
+        if (refreshed.ok || refreshed.http_status != 0) return refreshed;
+        const auto found = fallback_discovery();
+        if (found.empty()) return refreshed;
+        auto sources = tier1_sources();
+        for (const auto& ep : found) {
+            const bool known = std::any_of(sources.begin(), sources.end(),
+                                           [&ep](const ServerEndpoint& o) {
+                                               return same_endpoint(o, ep);
+                                           });
+            if (!known) sources.push_back(ep);
+        }
+        auto again = tier1.refresh(sources);
+        if (again.ok) {
+            // The region's servers answered: keep them as sources for the
+            // next refresh and for the public API.
+            std::lock_guard lock(transport_mtx);
+            add_pool_servers_locked(found);
+        }
+        return again;
     }
 
     // A verified membership, refreshed when due. Empty on success, otherwise
@@ -616,7 +764,7 @@ struct LemonadeNexusClient::Impl {
             return "no pinned Genesis key: call set_genesis_key() before any tree call";
         }
         if (tier1.needs_refresh(kTier1MaxAgeMs)) {
-            auto refreshed = tier1.refresh(tier1_sources());
+            auto refreshed = refresh_tier1();
             if (!refreshed.ok) return refreshed.error;
         }
         return {};
@@ -687,7 +835,7 @@ struct LemonadeNexusClient::Impl {
         auto reply = tier1.send(attempt, pin, &answered, error, avoid);
         if (!reply && pin.empty() && tier1.needs_refresh(kTier1MaxAgeMs)) {
             // Every verified server refused: the membership may have moved.
-            if (tier1.refresh(tier1_sources()).ok) {
+            if (refresh_tier1().ok) {
                 reply = tier1.send(attempt, pin, &answered, error, avoid);
             }
         }
@@ -1282,6 +1430,7 @@ struct LemonadeNexusClient::Impl {
         auto resp = http_get("/api/servers", status);
         if (!resp || !resp->is_array()) return;
 
+        std::vector<ServerEndpoint> listed;
         for (const auto& srv : *resp) {
             uint16_t port = srv.value("http_port", uint16_t{9100});
 
@@ -1294,24 +1443,10 @@ struct LemonadeNexusClient::Impl {
                               "cert FQDN (endpoint={})", srv.value("endpoint", ""));
                 continue;
             }
-
-            // Check if already in pool
-            std::lock_guard lock(transport_mtx);
-            bool exists = false;
-            for (const auto& s : server_pool) {
-                if (s.endpoint.host == host && s.endpoint.port == port) {
-                    exists = true;
-                    break;
-                }
-            }
-            if (!exists) {
-                ServerState new_srv;
-                new_srv.endpoint = {host, port, true};
-                server_pool.push_back(new_srv);
-                spdlog::info("[LemonadeNexusClient] discovered server {}:{}", host, port);
-            }
+            listed.push_back({host, port, true});
         }
         std::lock_guard lock(transport_mtx);
+        add_pool_servers_locked(listed);
         has_discovered = true;
     }
 
@@ -1460,7 +1595,19 @@ Result<GenesisKeyDiscovery> LemonadeNexusClient::discover_genesis_key(
 }
 
 Result<Tier1Membership> LemonadeNexusClient::refresh_tier1() {
-    return impl_->tier1.refresh(impl_->tier1_sources());
+    return impl_->refresh_tier1();
+}
+
+void LemonadeNexusClient::set_region_discovery(RegionDiscovery discovery) {
+    std::lock_guard lock(impl_->transport_mtx);
+    if (discovery) impl_->region_discovery = std::move(discovery);
+}
+
+std::vector<ServerEndpoint> LemonadeNexusClient::known_servers() const {
+    std::lock_guard lock(impl_->transport_mtx);
+    std::vector<ServerEndpoint> out;
+    for (const auto& s : impl_->server_pool) out.push_back(s.endpoint);
+    return out;
 }
 
 Tier1Membership LemonadeNexusClient::tier1_membership() const {
@@ -3096,15 +3243,21 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
         auto srv_seip_fqdn = resp->value("server_seip_fqdn", std::string{});
         if (!srv_seip_fqdn.empty() && !impl_->config.pin_server) {
             impl_->server_seip_fqdn = srv_seip_fqdn;
-            // Switch public API to use the SEIP hostname (proper cert match)
+            // Switch the public API to the SEIP hostname (proper cert match).
+            // The session server leads the pool; the other known servers
+            // stay behind it as sources for the next Tier 1 refresh, so an
+            // outage of the session server leaves the client servers to ask.
             std::lock_guard transport(impl_->transport_mtx);
-            auto public_port = static_cast<uint16_t>(impl_->server_pool.empty() ? 9100
-                : impl_->server_pool[impl_->current_server].endpoint.port);
-            impl_->server_pool.clear();
-            impl_->server_pool.push_back({{srv_seip_fqdn, public_port, true}, true, 0, 0});
-            impl_->current_server = 0;
-            spdlog::info("[LemonadeNexusClient] switched public API to https://{}:{}",
-                          srv_seip_fqdn, public_port);
+            uint16_t public_port = impl_->server_pool.empty()
+                                       ? uint16_t{9100}
+                                       : impl_->server_pool[impl_->current_server].endpoint.port;
+            for (const auto& s : impl_->tier1.membership().servers) {
+                if (s.node_id == impl_->session_node) public_port = s.port;
+            }
+            impl_->lead_pool_with_locked({srv_seip_fqdn, public_port, true});
+            spdlog::info("[LemonadeNexusClient] switched public API to https://{}:{} ({} other "
+                         "known server(s) kept)",
+                         srv_seip_fqdn, public_port, impl_->server_pool.size() - 1);
         }
 
         // Store private FQDN, and resolve it to the server's in-mesh IP so the
@@ -3688,7 +3841,7 @@ void LemonadeNexusClient::run_session_move(const std::string& reason, uint64_t h
     // The notice is a hint. Only the membership verified from the pinned
     // Genesis key says who serves now, and only it chooses the next server.
     impl_->tier1.mark_stale();
-    const auto refreshed = impl_->tier1.refresh(impl_->tier1_sources());
+    const auto refreshed = impl_->refresh_tier1();
     if (!refreshed.ok) {
         spdlog::warn("[LemonadeNexusClient] session not moved ({}): the Tier 1 membership "
                      "could not be verified: {}", reason, refreshed.error);

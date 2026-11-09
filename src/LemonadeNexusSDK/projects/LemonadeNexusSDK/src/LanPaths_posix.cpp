@@ -17,9 +17,14 @@
 #if defined(__linux__)
 #include <cstdio>
 #elif defined(__APPLE__)
+#include <TargetConditionals.h>
+// The media ioctl and its header exist in the macOS SDK only; iOS reports
+// no link speed through this path.
+#if TARGET_OS_OSX
 #include <net/if_media.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#endif
 #endif
 
 namespace lnsdk {
@@ -42,7 +47,7 @@ uint32_t interface_link_speed(const char* name) {
     std::fclose(f);
     if (read != 1 || value < 0 || value > 0x7fffffff) return 0;
     return static_cast<uint32_t>(value);
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) && TARGET_OS_OSX
     // The active media word carries the Ethernet subtype. Wi-Fi reports
     // IFM_IEEE80211 with no rate here, so it maps to 0.
     const int s = socket(AF_INET, SOCK_DGRAM, 0);

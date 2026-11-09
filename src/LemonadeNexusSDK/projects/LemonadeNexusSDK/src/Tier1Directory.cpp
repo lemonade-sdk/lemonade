@@ -517,15 +517,16 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
             sweep();
         }
     }
-    const auto tried_detail = [&source_notes] {
+    const auto notes_detail = [](const char* label, const std::vector<std::string>& notes) {
         std::string detail;
-        for (std::size_t i = 0; i < source_notes.size() && i < 8; ++i) {
-            detail += i == 0 ? "; tried: " : "; ";
-            detail += source_notes[i];
+        for (std::size_t i = 0; i < notes.size() && i < 8; ++i) {
+            detail += i == 0 ? label : "; ";
+            detail += notes[i];
         }
-        if (source_notes.size() > 8) detail += "; more";
+        if (notes.size() > 8) detail += "; more";
         return detail;
     };
+    const auto tried_detail = [&] { return notes_detail("; tried: ", source_notes); };
     const auto& authority = state_->walker->authority();
     if (!authority) {
         return chain_error.empty()
@@ -615,10 +616,13 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
         std::optional<HttpReply> reply;
     };
     std::vector<Tier1Server> verified;
+    // What each probed candidate answered, for the failure message.
+    std::vector<std::string> probe_notes;
     int rewalks = 0;
     for (bool again = true; again;) {
         again = false;
         verified.clear();
+        probe_notes.clear();
         std::vector<Probe> probes;
         for (std::size_t i = 0; i < candidates.size() && probes.size() < kMaxProbes; ++i) {
             const auto& listed = candidates[i].listed_node;
@@ -646,20 +650,38 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
         for (const auto& probe : probes) {
             const auto& candidate = candidates[probe.candidate].endpoint;
             const auto& reply = probe.reply;
-            if (!reply || reply->status != 200) continue;
+            const auto note = [&](const std::string& outcome) {
+                probe_notes.push_back(candidate.host + ":" + std::to_string(candidate.port) +
+                                      " " + outcome);
+            };
+            if (!reply) {
+                note("unreachable");
+                continue;
+            }
+            if (reply->status != 200) {
+                note("HTTP " + std::to_string(reply->status));
+                continue;
+            }
             const auto doc = json::parse(reply->body, nullptr, false);
-            if (doc.is_discarded() || !doc.is_object()) continue;
+            if (doc.is_discarded() || !doc.is_object()) {
+                note("malformed proof");
+                continue;
+            }
             const auto node = fixed_b64<32>(doc, "node_id");
             const auto signature = fixed_b64<64>(doc, "signature");
             if (!node || !signature || !doc.contains("epoch") ||
                 !doc["epoch"].is_number_unsigned() || !doc.contains("host") ||
                 !doc["host"].is_string() || !doc.contains("port") ||
                 !doc["port"].is_number_unsigned()) {
+                note("malformed proof");
                 continue;
             }
             const auto port = doc["port"].get<uint64_t>();
             const auto host = doc["host"].get<std::string>();
-            if (port > 0xFFFF || host.size() > sec::kTier1EndpointMaxHostBytes) continue;
+            if (port > 0xFFFF || host.size() > sec::kTier1EndpointMaxHostBytes) {
+                note("malformed proof");
+                continue;
+            }
             sec::Tier1EndpointProof proof;
             proof.node.bytes = *node;
             proof.epoch = sec::EpochId{doc["epoch"].get<uint64_t>()};
@@ -673,6 +695,7 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
                     Tier1Server{node_b64(proof.node), candidate.host, candidate.port});
                 continue;
             }
+            note("proof " + std::string(sec::endpoint_proof_check_name(check)));
             if (check == sec::EndpointProofCheck::NewerEpoch && rewalks < kMaxRewalks) {
                 // The verified membership is behind this member. Walk further
                 // before trusting anyone, then probe every candidate again.
@@ -690,7 +713,11 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
         }
     }
     if (verified.empty()) {
-        return fail("no verified Tier 1 server is reachable", 0);
+        // The sources and every probed candidate are named so an outage
+        // report shows which servers were asked and what they answered.
+        return fail("no verified Tier 1 server is reachable" + tried_detail() +
+                        notes_detail("; probed: ", probe_notes),
+                    0);
     }
 
     Tier1Membership membership;

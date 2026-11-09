@@ -350,10 +350,21 @@ inline constexpr uint64_t kStorageBlockClockSkewMs = 60'000;
 // design Part C pattern). Receivers treat duplicates as benign.
 inline constexpr uint64_t kStorageResendMs = 5000;
 
-// Unlock budgets at each holder (B7): one pending request per requester, a
-// per-requester limit per epoch, and a cap on all pending requests. A
+// Unlock budgets at each holder (B7): one pending request per requester, two
+// per-requester limits per epoch, and a cap on all pending requests. A
 // pending request expires after kStorageUnlockPendingMs.
+//
+// kStorageUnlocksPerRequesterPerEpoch counts partials the holder served: it
+// bounds what one requester can extract per epoch. A challenge whose
+// attestation fails or expires serves nothing and spends none of it, so a
+// server whose first answers fail after a restart is not locked out until the
+// epoch changes. kStorageUnlockAttemptsPerRequesterPerEpoch counts challenges
+// the holder issued, served or not: it bounds the evidence verifications one
+// requester can force and the request digests it can add to the replay set.
+// At the requester's retry cadence (5 s to 60 s backoff) it lasts about one
+// target epoch.
 inline constexpr uint32_t kStorageUnlocksPerRequesterPerEpoch = 8;
+inline constexpr uint32_t kStorageUnlockAttemptsPerRequesterPerEpoch = 64;
 inline constexpr std::size_t kStorageMaxPendingUnlocks = 64;
 inline constexpr uint64_t kStorageUnlockPendingMs = 30'000;
 // Request digests a holder remembers per epoch to refuse replays.

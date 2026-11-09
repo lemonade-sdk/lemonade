@@ -128,6 +128,22 @@ bool discovered_name_in_domain(const std::string& name, const std::string& domai
     return hostname_chars(host);
 }
 
+std::optional<SeipName> parse_seip_fqdn(const std::string& fqdn) {
+    const auto host = canonical(fqdn);
+    if (!hostname_chars(host)) return std::nullopt;
+    const auto marker = host.find(".seip.");
+    if (marker == std::string::npos) return std::nullopt;
+    SeipName name;
+    name.domain = host.substr(marker + 6);
+    const auto left = host.substr(0, marker);  // "<id>.<region>"
+    const auto dot = left.rfind('.');
+    if (dot == std::string::npos) return std::nullopt;
+    name.id = left.substr(0, dot);
+    name.region = left.substr(dot + 1);
+    if (name.id.empty() || name.region.empty() || name.domain.empty()) return std::nullopt;
+    return name;
+}
+
 Result<std::vector<DiscoveredServer>> discover_servers_at(const std::vector<std::string>& addresses,
                                                           const std::string& domain,
                                                           uint16_t port) {

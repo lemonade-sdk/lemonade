@@ -5,6 +5,7 @@
 #include <LemonadeNexusSDK/Identity.hpp>
 #include <LemonadeNexusSDK/LatencyMonitor.hpp>
 #include <LemonadeNexusSDK/RoutingTypes.hpp>
+#include <LemonadeNexusSDK/ServerDiscovery.hpp>
 #include <LemonadeNexusSDK/ServiceIngress.hpp>
 #include <LemonadeNexusSDK/Tier1Directory.hpp>
 #include <LemonadeNexusSDK/Types.hpp>
@@ -99,9 +100,29 @@ public:
 
     /// Verify the Tier 1 membership now, from the current server pool. Tree
     /// calls also refresh it on their own when it is older than five minutes
-    /// or a server refused a tree route. Errors: no pinned key, a chain that
-    /// does not verify, a stale epoch, or no verified server reachable.
+    /// or a server refused a tree route. When no known server answers, the
+    /// SDK resolves the region's SEIP records (ServerConfig::discovery_domain
+    /// and discovery_region, or the session server's SEIP FQDN) and verifies
+    /// the servers they name, at most once a minute; the records only supply
+    /// candidates. Errors: no pinned key, a chain that does not verify, a
+    /// stale epoch, or no verified server reachable (the error names every
+    /// server asked).
     [[nodiscard]] Result<Tier1Membership> refresh_tier1();
+
+    /// The DNS step of that fallback: lnsdk::discover_servers by default.
+    /// Called with the discovery domain and region and the port of the
+    /// current server. Its answer supplies candidate endpoints only; each is
+    /// verified like any other server. A stand-in network in a test replaces
+    /// it. Thread-safe.
+    using RegionDiscovery = std::function<Result<std::vector<DiscoveredServer>>(
+        const std::string& domain, const std::string& region, uint16_t port)>;
+    void set_region_discovery(RegionDiscovery discovery);
+
+    /// The servers the client knows, in pool order: the configured seeds, the
+    /// servers /api/servers listed, and the servers fallback discovery found
+    /// and verified. After a join the session server is first. Candidates
+    /// for the public API only; tree traffic goes to verified Tier 1 servers.
+    [[nodiscard]] std::vector<ServerEndpoint> known_servers() const;
 
     /// The last verified membership (empty when none is verified).
     [[nodiscard]] Tier1Membership tier1_membership() const;
