@@ -189,7 +189,7 @@ static void test_concurrent_saves_lose_nothing() {
         std::vector<std::thread> writers;
         writers.reserve(kWriters);
         for (int w = 0; w < kWriters; ++w) {
-            writers.emplace_back([&mgr, w] {
+            writers.emplace_back([&mgr, w, kPerWriter] {
                 std::string err;
                 for (int i = 0; i < kPerWriter; ++i) {
                     mgr.set_alias("w" + std::to_string(w) + "-" + std::to_string(i),
