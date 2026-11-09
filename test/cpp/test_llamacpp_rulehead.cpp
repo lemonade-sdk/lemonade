@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -85,6 +87,13 @@ int main() {
            "ids keep BOS first");
     expect(tokens.spans[0] == std::pair<size_t, size_t>{0, 0}, "BOS gets an empty span");
     expect(tokens.spans[5] == std::pair<size_t, size_t>{13, 18}, "the label token keeps its space");
+    {
+        json bare = json::array({1});
+        for (const auto& token : without) bare.push_back(token["id"]);
+        const RouterTokens from_ids = router_tokens(bare, without, input.text.size());
+        expect(from_ids.ids == tokens.ids && from_ids.spans == tokens.spans,
+               "ids without pieces place BOS the same way");
+    }
 
     const RouterTokenGroups groups = group_router_tokens(input, tokens.spans, labels);
     expect(groups.labels == std::vector<std::vector<size_t>>{{5}, {8}, {11}},
@@ -185,6 +194,19 @@ int main() {
     expect(implied_rule_head_checkpoint("file:///models/router-f16.gguf", false) ==
                "file:///models/rulehead.bin",
            "a file:// head is the file beside the GGUF");
+    {
+        // An untagged path is local when it exists, as ArtifactSourceResolver decides.
+        const std::filesystem::path dir =
+            std::filesystem::temp_directory_path() / "lemon_test_llamacpp_rulehead";
+        std::filesystem::create_directories(dir);
+        std::ofstream(dir / "router-f16.gguf") << "GGUF";
+        const std::string base = dir.generic_u8string();
+        expect(implied_rule_head_checkpoint(base + "/router-f16.gguf", false) ==
+                   base + "/rulehead.bin",
+               "an untagged local path's head is the file beside the GGUF");
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+    }
     expect(implied_rule_head_checkpoint("user.my-router/router-f16.gguf", true) ==
                "user.my-router/rulehead.bin",
            "a local upload's head is the file beside the GGUF");

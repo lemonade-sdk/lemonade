@@ -19,10 +19,13 @@ namespace llamacpp {
 
 constexpr const char* RULE_HEAD_FILE = "rulehead.bin";
 
-// A local checkpoint is a file path (also `file://`), so its head is the file
-// beside it; a remote one is `[scheme://]repo:file`, so its head is
-// RULE_HEAD_FILE in the same repository and keeps the scheme's host.
-std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, bool local);
+// Decided as ArtifactSourceResolver does: a local origin, `file://`, or an
+// untagged path that exists on disk.
+bool checkpoint_is_local(const std::string& checkpoint, bool local_origin);
+
+// A local checkpoint is a file path, so its head is the file beside it; a remote
+// one is `[scheme://]repo:file`, so its head is RULE_HEAD_FILE in the same repository.
+std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, bool local_origin);
 
 std::string missing_rule_head_message(const std::string& model_name, const std::string& checkpoint);
 
@@ -48,6 +51,7 @@ struct RouterTokens {
 
 // BOS's piece is "<|startoftext|>", text that is not in the input, so it is
 // found by tokenizing with and without special tokens and given an empty span.
+// `with_special` may hold bare ids; `without_special` must carry pieces.
 RouterTokens router_tokens(const nlohmann::json& with_special,
                            const nlohmann::json& without_special, size_t text_bytes);
 

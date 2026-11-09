@@ -261,8 +261,10 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
         const bool exists = std::any_of(listing.files.begin(), listing.files.end(),
             [&](const RegistryFile& file) { return !file.directory && file.path == ref.variant; });
         if (!exists) {
-            throw std::runtime_error("Additional checkpoint file not found on " +
-                                     source_display + ": " + ref.repo_id + ":" + ref.variant);
+            throw MissingCheckpointError("Additional checkpoint file not found on " +
+                                             source_display + ": " + ref.repo_id + ":" +
+                                             ref.variant,
+                                         ref.checkpoint_type);
         }
     }
 

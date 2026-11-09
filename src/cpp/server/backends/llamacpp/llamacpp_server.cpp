@@ -14,6 +14,7 @@
 #include "lemon/gguf_reader.h"
 #include "lemon/gguf_shard_utils.h"
 #include "lemon/model_manager.h"
+#include "lemon/models/model_errors.h"
 #include "lemon/models/registry_types.h"
 #include <algorithm>
 #include <cctype>
@@ -814,31 +815,32 @@ json LlamaCppServer::classify_with_rule_head(const json& request) {
                           : 0;
 
     const llamacpp::RouterInput input = llamacpp::build_router_input(labels, text.get<std::string>());
-    auto tokenized = [this, &input](bool add_special) {
-        return tokenize(json{{"content", input.text},
-                             {"add_special", add_special},
-                             {"with_pieces", true}});
-    };
-    const json with_special = tokenized(true);
+    // Only the ids first: an input over the limit is refused before the second,
+    // larger response that carries every piece.
+    const json with_special = tokenize(json{{"content", input.text}, {"add_special", true}});
     if (with_special.contains("error")) return with_special;
-    const json without_special = tokenized(false);
+    const size_t n_tokens =
+        with_special.contains("tokens") && with_special["tokens"].is_array()
+            ? with_special["tokens"].size()
+            : 0;
+    if (encoder_max_input_tokens_ > 0 && n_tokens > static_cast<size_t>(encoder_max_input_tokens_)) {
+        return json{{"error", {
+            {"message", "the labels and the text are " + std::to_string(n_tokens) +
+                            " tokens, longer than this model accepts (" +
+                            std::to_string(encoder_max_input_tokens_) + " tokens)"},
+            {"type", "invalid_request_error"},
+            {"code", "context_length_exceeded"},
+            {"status_code", 400},
+        }}};
+    }
+    const json without_special = tokenize(
+        json{{"content", input.text}, {"add_special", false}, {"with_pieces", true}});
     if (without_special.contains("error")) return without_special;
 
     try {
         const llamacpp::RouterTokens tokens = llamacpp::router_tokens(
             with_special.value("tokens", json()), without_special.value("tokens", json()),
             input.text.size());
-        if (encoder_max_input_tokens_ > 0 &&
-            tokens.ids.size() > static_cast<size_t>(encoder_max_input_tokens_)) {
-            return json{{"error", {
-                {"message", "the labels and the text are " + std::to_string(tokens.ids.size()) +
-                                " tokens, longer than this model accepts (" +
-                                std::to_string(encoder_max_input_tokens_) + " tokens)"},
-                {"type", "invalid_request_error"},
-                {"code", "context_length_exceeded"},
-                {"status_code", 400},
-            }}};
-        }
         const llamacpp::RouterTokenGroups groups =
             llamacpp::group_router_tokens(input, tokens.spans, labels);
 
@@ -1073,6 +1075,20 @@ bool is_ggml_hip_plugin_available() {
     return false;
 }
 
+bool local_rule_head_missing(const ModelInfo& info) {
+    if (info.checkpoint("rulehead").empty() ||
+        !llamacpp::checkpoint_is_local(info.checkpoint(), is_local_origin(info.source))) {
+        return false;
+    }
+    auto on_disk = [&info](const std::string& type) {
+        std::string path = info.resolved_path(type);
+        if (path.empty()) path = info.checkpoint(type);
+        if (path.rfind("file://", 0) == 0) path = path.substr(7);
+        std::error_code ec;
+        return fs::exists(path_from_utf8(path), ec);
+    };
+    return on_disk("main") && !on_disk("rulehead");
+}
 
 // llamacpp model-management behavior: GGUF metadata + capability labels.
 class LlamaCppOps : public BackendOps {
@@ -1091,15 +1107,16 @@ public:
                         const BackendOpsContext& ctx) const override {
         try {
             BackendOps::download_model(info, do_not_upgrade, std::move(progress), ctx);
-        } catch (const std::runtime_error& e) {
-            const std::string rule_head = info.checkpoint("rulehead");
-            const std::string file = rule_head.substr(rule_head.find_last_of(":/\\") + 1);
-            const std::string message = e.what();
-            if (file.empty() || message.find(file) == std::string::npos ||
-                message.find("not found") == std::string::npos) {
-                throw;
-            }
-            throw std::runtime_error(llamacpp::missing_rule_head_message(info.model_name, rule_head));
+        } catch (const MissingCheckpointError& e) {
+            if (e.checkpoint_type != "rulehead") throw;
+            throw std::runtime_error(
+                llamacpp::missing_rule_head_message(info.model_name, info.checkpoint("rulehead")));
+        } catch (const std::exception&) {
+            // A local model is never fetched, so a head missing beside it surfaces as
+            // whatever the fetch tried instead; name the file that is actually absent.
+            if (!local_rule_head_missing(info)) throw;
+            throw std::runtime_error(
+                llamacpp::missing_rule_head_message(info.model_name, info.checkpoint("rulehead")));
         }
     }
 

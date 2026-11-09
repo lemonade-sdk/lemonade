@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <stdexcept>
 
 namespace lemon {
@@ -47,9 +48,16 @@ std::vector<double> pooled_projection(const nlohmann::json& rows, const std::vec
 
 }  // namespace
 
-std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, bool local) {
+bool checkpoint_is_local(const std::string& checkpoint, bool local_origin) {
+    if (local_origin || checkpoint.rfind("file://", 0) == 0) return true;
+    std::error_code ec;
+    return checkpoint.find("://") == std::string::npos &&
+           std::filesystem::exists(std::filesystem::u8path(checkpoint), ec);
+}
+
+std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, bool local_origin) {
     const size_t scheme = main_checkpoint.find("://");
-    if (!local && main_checkpoint.rfind("file://", 0) != 0) {
+    if (!checkpoint_is_local(main_checkpoint, local_origin)) {
         const size_t repo = scheme == std::string::npos ? 0 : scheme + 3;
         return main_checkpoint.substr(0, main_checkpoint.find(':', repo)) + ":" + RULE_HEAD_FILE;
     }
@@ -115,10 +123,11 @@ RouterTokens router_tokens(const nlohmann::json& with_special,
     auto ids_of = [](const nlohmann::json& tokens) {
         std::vector<int64_t> ids;
         for (const auto& token : tokens) {
-            if (!token.is_object() || !token.contains("id") || !token["id"].is_number_integer()) {
+            const nlohmann::json& id = token.is_object() && token.contains("id") ? token["id"] : token;
+            if (!id.is_number_integer()) {
                 throw std::runtime_error("llama-server /tokenize returned a token without an id");
             }
-            ids.push_back(token["id"].get<int64_t>());
+            ids.push_back(id.get<int64_t>());
         }
         return ids;
     };

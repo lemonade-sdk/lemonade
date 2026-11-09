@@ -8,6 +8,7 @@
 #include <lemon/models/store_snapshot.h>
 #include <lemon/models/artifact_layout.h>
 #include <lemon/models/fetchable_repository.h>
+#include <lemon/models/model_errors.h>
 #include <lemon/registry_files.h>
 #include <lemon/utils/path_utils.h>
 
@@ -24,6 +25,7 @@
 #include <vector>
 
 namespace fs = std::filesystem;
+using lemon::MissingCheckpointError;
 using lemon::ModelInfo;
 using lemon::ModelManager;
 using lemon::ModelManagerConfig;
@@ -394,11 +396,12 @@ void test_a_missing_aux_checkpoint_is_refused_in_words() {
     try {
         mm.download_model("user.Pull-Refuse", def);
         mm.download_model("user.Pull-Refuse", nlohmann::json::object());
-    } catch (const std::exception& e) {
+    } catch (const MissingCheckpointError& e) {
         threw = true;
         check(std::string(e.what()).find("Additional checkpoint file not found") !=
                   std::string::npos,
               "the refusal names the missing aux checkpoint");
+        check(e.checkpoint_type == "side", "the refusal carries the missing checkpoint's role");
     }
     check(threw, "a missing aux variant fails the pull");
     check(std::none_of(fx.trace.urls.begin(), fx.trace.urls.end(),
