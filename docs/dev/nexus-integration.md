@@ -129,6 +129,13 @@ advertised server FQDN. The RP ID is the network's, independent of the
 hostname used to reach a server; `lemond` reads it from `/api/health` for the
 passkey challenge when it is not configured.
 
+The SDK's own log lines go to the server log: `NexusManager` installs
+`ln_set_log_callback` once per process, before the first SDK client exists,
+and each line becomes one `lemond` log entry with the tag `Nexus SDK` at the
+matching level. The SDK keeps its level, so its debug lines arrive only when
+`LN_DEBUG` is set in the environment. On Windows this puts the lines in
+`%TEMP%\lemonade-server.log` instead of the tray process's lost stdout.
+
 Account metadata and the enabled preference live in `nexus/` under the server
 configuration directory; the identity lives there only for a system service
 (see [Identity storage](#identity-storage)). Until the user names the device,

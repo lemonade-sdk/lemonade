@@ -2428,6 +2428,36 @@ struct NexusManager::Session {
     }
 };
 
+namespace {
+// Receives the SDK's log lines (ln_set_log_callback) on SDK threads while the SDK holds
+// locks: copy the text, hand it to the server log, return. No ln_* call, no exception
+// out. The SDK keeps its own level (info, or debug with LN_DEBUG), so debug lines arrive
+// only when that variable is set.
+void sdk_log_line(int level, const char*, const char* message, void*) noexcept {
+    try {
+        const std::string text = message ? message : "";
+        switch (level) {
+        case 0: LOG(TRACE, "Nexus SDK") << text << std::endl; break;
+        case 1: LOG(DEBUG, "Nexus SDK") << text << std::endl; break;
+        case 2: LOG(INFO, "Nexus SDK") << text << std::endl; break;
+        case 3: LOG(WARNING, "Nexus SDK") << text << std::endl; break;
+        default: LOG(ERROR, "Nexus SDK") << text << std::endl; break;
+        }
+    } catch (...) {
+    }
+}
+// Routes the SDK's log to the server log once per process, before the first ln_create:
+// LemonadeServer.exe has no console, so lines left on stdout are lost there.
+void route_sdk_log() {
+    static const bool routed = [] {
+        if (ln_set_log_callback(&sdk_log_line, nullptr) == LN_OK) return true;
+        LOG(WARNING, "Nexus") << "Cannot route the Nexus SDK log to the server log; it stays on stdout" << std::endl;
+        return false;
+    }();
+    (void)routed;
+}
+}
+
 NexusManager::NexusManager(const std::string& config_dir,
                            const std::function<void(httplib::Server&)>& install_policy,
                            const std::function<void(httplib::Server&)>& install_api,
@@ -2439,6 +2469,7 @@ NexusManager::NexusManager(const std::string& config_dir,
     : data_root_(utils::path_to_utf8(utils::path_from_utf8(config_dir) / "nexus")), catalog_(std::move(service_catalog)),
       route_permissions_(std::move(route_permissions)),
       role_(process_role ? *process_role : nexus_access::current_process_role()), selection_port_(mesh_port) {
+    route_sdk_log();
     if (!catalog_.is_object()) {
         LOG(INFO, "Nexus") << "Route policy is unavailable: no route catalog" << std::endl;
     } else if (!nexus_access::route_policy_available()) {
