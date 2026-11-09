@@ -72,7 +72,7 @@ import type { DownloadListItem } from '../features/downloadManager/downloadStore
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel, virtualLoadedCollection } from '../features/collections/collectionModels';
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
 import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';
-import { nexusHostRequest, nexusInferenceServers, selectNexusInferenceServer, useNexusNetwork } from '../features/nexus/nexus';
+import { NEXUS_CONNECTION_LABELS, nexusHostRequest, nexusInferenceServers, nexusServerUnavailable, selectNexusInferenceServer, useNexusNetwork } from '../features/nexus/nexus';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import { selectDictationModel, updateDraftWithDictation } from '../features/audio/dictationModels';
 import {
@@ -1024,6 +1024,11 @@ const ChatView: React.FC<ChatViewProps> = ({
   const nexusNetwork = useNexusNetwork(false);
   const chatHostId = nexusNetwork.selectedServerId || 'local';
   const chatHosts = useMemo(() => nexusInferenceServers(nexusNetwork.status), [nexusNetwork.status]);
+  // Hosts chat cannot move to yet, with the reason their rows show (Offline or Connecting).
+  const unavailableHosts = useMemo(() => new Map(chatHosts.flatMap(device => {
+    const reason = nexusServerUnavailable(nexusNetwork.status, device);
+    return reason ? [[device.node_id, reason] as const] : [];
+  })), [chatHosts, nexusNetwork.status]);
   const [modelPickerExpandedHosts, setModelPickerExpandedHosts] = useState<string[]>([]);
   const [modelPickerHostModels, setModelPickerHostModels] = useState<Record<string, HostModelList>>({});
   const modelPickerHostsRequested = useRef(new Set<string>());
@@ -3510,13 +3515,14 @@ ${finalText}`
     })();
   }, [modelPickerUnloading, onRefresh]);
 
-  const handleModelPickerSelect = useCallback(async (option: ModelPickerOption) => {
+  // Resolves true once chat uses the model; false when it could not be selected or loaded.
+  const handleModelPickerSelect = useCallback(async (option: ModelPickerOption): Promise<boolean> => {
     if (option.loaded) {
       setFallbackModelOverride(null);
       onModelSelect(option.name);
       setModelPickerOpen(false);
       setModelPickerQuery('');
-      return;
+      return true;
     }
 
     if (option.deferredUntilSend) {
@@ -3530,14 +3536,14 @@ ${finalText}`
       setModelPickerError(null);
       setModelPickerOpen(false);
       setModelPickerQuery('');
-      return;
+      return true;
     }
 
-    if (connectionStatus !== 'connected' || modelPickerLoading) return;
+    if (connectionStatus !== 'connected' || modelPickerLoading) return false;
     const { downloadStore } = await getDownloadStoreModule();
     if (activeDownloadForModel(downloadStore.snapshot(), option.name)) {
       setModelPickerError(`${option.name} is still downloading. Wait for the download to finish before loading it.`);
-      return;
+      return false;
     }
     setModelPickerError(null);
     setModelPickerLoading(option.name);
@@ -3550,11 +3556,13 @@ ${finalText}`
       onModelSelect(option.name);
       setModelPickerOpen(false);
       setModelPickerQuery('');
+      return true;
     } catch (err) {
       setFallbackModelOverride(null);
       if (currentModel) onModelSelect(currentModel);
       setModelPickerError(friendlyErrorMessage(err));
       setModelPickerOpen(true);
+      return false;
     } finally {
       setModelPickerLoading(null);
     }
@@ -3595,9 +3603,12 @@ ${finalText}`
   }, [chatHostId, loadHostModels, modelPickerHostIds, modelPickerOpen, modelPickerQuery]);
 
   // A model on another host: chat moves to that host first, through the same switch
-  // Settings → Devices & mesh uses, then the model is chosen as any picker row is.
+  // Settings → Devices & mesh uses, then the model is chosen as any picker row is. When
+  // that model cannot be used there, chat returns to the host it came from, so the host
+  // and the model name shown never disagree.
   const handleHostModelSelect = useCallback(async (hostId: string, model: HostModel) => {
     if (modelPickerSwitching || modelPickerLoading) return;
+    const previousHostId = chatHostId;
     setModelPickerError(null);
     setModelPickerSwitching(hostId);
     try {
@@ -3609,11 +3620,22 @@ ${finalText}`
     } finally {
       setModelPickerSwitching(null);
     }
-    await handleModelPickerSelect({
+    const selected = await handleModelPickerSelect({
       name: model.name, capability: 'chat', recipe: model.recipe, loaded: model.loaded, downloaded: true,
       audioInput: false, info: model.info, detail: model.loaded ? t('Loaded') : '',
     });
-  }, [handleModelPickerSelect, modelPickerLoading, modelPickerSwitching, onRefresh, t]);
+    if (selected || previousHostId === hostId) return;
+    setModelPickerSwitching(previousHostId);
+    try {
+      await selectNexusInferenceServer(previousHostId);
+      await Promise.resolve(onRefresh());
+    } catch (err) {
+      // A failed switch back replaces the load error: it is the problem the user has now.
+      setModelPickerError(friendlyErrorMessage(err));
+    } finally {
+      setModelPickerSwitching(null);
+    }
+  }, [chatHostId, handleModelPickerSelect, modelPickerLoading, modelPickerSwitching, onRefresh, t]);
 
   // ── Option select from assistant messages ───────────────────
 
@@ -4101,13 +4123,14 @@ ${finalText}`
                       if (option) { handleModelPickerSelect(option); return; }
                       const match = /^host:([^:]+):(.*)$/.exec(rowId);
                       const model = match && modelPickerHostModels[match[1]]?.models?.find(item => item.name === match[2]);
-                      if (match && model) void handleHostModelSelect(match[1], model);
+                      if (match && model && !unavailableHosts.has(match[1])) void handleHostModelSelect(match[1], model);
                     }}
                   >
                     {modelPickerHostIds.map(hostId => {
                       const device = hostId === 'local' ? undefined : chatHosts.find(item => item.node_id === hostId);
                       const hostTitle = hostId === 'local' ? t('This device') : device?.device_name || t('Unnamed device');
                       const serving = hostId === chatHostId;
+                      const unavailable = unavailableHosts.get(hostId);
                       const query = modelPickerQuery.trim().toLowerCase();
                       const hostList = modelPickerHostModels[hostId];
                       const hostRows = serving ? [] : (hostList?.models || []).filter(model => !query || `${model.name} ${model.recipe || ''}`.toLowerCase().includes(query));
@@ -4118,6 +4141,7 @@ ${finalText}`
                             <Icon name="chevron-right" size={14} />
                             <span className="composer__model-host-name">{hostTitle}</span>
                             {serving && <span className="composer__model-host-badge">{t('Chat runs here')}</span>}
+                            {unavailable && <span className="composer__model-host-badge">{t(NEXUS_CONNECTION_LABELS[unavailable])}</span>}
                           </button>
                           {expanded && (
                             <ul role="none" className="workspace-list-group__items">
@@ -4188,9 +4212,9 @@ ${finalText}`
                                         capability="chat"
                                         title={model.name}
                                         meta={[model.loaded ? t('Loaded') : t('Downloaded'), model.recipe ? backendCompactLabel(model.recipe) : ''].filter(Boolean)}
-                                        status={modelPickerSwitching === hostId ? 'busy' : model.loaded ? 'live' : undefined}
-                                        statusText={modelPickerSwitching === hostId ? t('Switching…') : undefined}
-                                        disabled={Boolean(modelPickerSwitching)}
+                                        status={modelPickerSwitching === hostId ? 'busy' : model.loaded && !unavailable ? 'live' : undefined}
+                                        statusText={modelPickerSwitching === hostId ? t('Switching…') : unavailable ? t(NEXUS_CONNECTION_LABELS[unavailable]) : undefined}
+                                        disabled={Boolean(modelPickerSwitching) || Boolean(unavailable)}
                                         tabIndex={-1}
                                         ariaLabel={`${model.name}, ${hostTitle}`}
                                         onClick={() => { void handleHostModelSelect(hostId, model); }}

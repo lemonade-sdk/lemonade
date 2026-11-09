@@ -65,6 +65,20 @@ global.fetch = async (url, init = {}) => {
   assert.equal(nexus.usesNexusDeviceKey({ registered: false, unlock: 'passkey', identity_source: 'user' }), true,
     'an unregistered user identity can still initialize with its device key');
   assert.equal(nexus.usesNexusDeviceKey({ registered: true, unlock: 'device_key', identity_source: 'user' }), true);
+  assert.equal(nexus.usesNexusDeviceKey({ registered: false, unlock: 'passkey', identity_source: 'system' }), true,
+    'a packaged server with no registered passkey sets itself up with its device key');
+  assert.equal(nexus.usesNexusDeviceKey({ registered: true, unlock: 'device_key', identity_source: 'system' }), true);
+  assert.equal(nexus.usesNexusDeviceKey({ registered: false, unlock: 'passkey' }), false, 'an unknown identity source keeps the passkey path');
+  // A retryable key/unlock failure reads as two sentences whatever punctuation lemond used.
+  for (const [reason, expected] of [['Set the Genesis key explicitly', 'Set the Genesis key explicitly. The network could not be reached. Try again shortly.'],
+    ['No network server found for mesh.example.', 'No network server found for mesh.example. The network could not be reached. Try again shortly.']]) {
+    const keyRequest = async path => {
+      if (path === 'status') return { available: true, enabled: true, locked: true, mesh_up: false, status: 'locked', registered: false, unlock: 'passkey', identity_source: 'system', members: [] };
+      if (path === 'key/unlock') throw new nexus.NexusRequestError(reason, 503, true);
+      return {};
+    };
+    await assert.rejects(nexus.prepareNexus('Server', false, keyRequest), { message: expected });
+  }
   await api.loadConnectionSettings();
   api.baseUrl = local;
   api.setSessionApiKey('test-local-key');
@@ -195,6 +209,10 @@ global.fetch = async (url, init = {}) => {
   const servers = [device({ node_id: 'gpu', is_inference: true, can_connect: true, is_online: true, connection_type: 'p2p' }), device({ node_id: 'cpu', is_inference: true, can_connect: true, is_online: true }),
     device({ node_id: 'denied', is_inference: true, can_connect: false, is_online: true }), device({ node_id: 'phone', is_inference: false, is_online: true }), device({ node_id: 'self', is_inference: true })];
   assert.deepEqual(nexus.nexusInferenceServers({ ...up, members: servers }).map(d => d.node_id), ['gpu', 'cpu'], 'chat runs only on inference servers this device may connect to');
+  assert.equal(nexus.nexusServerUnavailable({ ...up, members: servers }, servers[0]), undefined, 'a server with a path can serve chat');
+  assert.equal(nexus.nexusServerUnavailable({ ...up, members: servers }, servers[1]), 'connecting', 'an online server without a path yet cannot');
+  assert.equal(nexus.nexusServerUnavailable(up, device({ is_online: false, connection_type: 'p2p' })), 'offline');
+  assert.equal(nexus.nexusServerUnavailable(up, device({ is_inference: true })), 'offline', 'a server with no reported state counts as offline');
   assert.deepEqual(nexus.nexusMeshSummary({ ...up, members: servers }), { state: 'connected', label: '1 server online' });
   assert.deepEqual(nexus.nexusMeshSummary({ ...up, members: servers.map(d => d.node_id === 'gpu' ? { ...d, connection_type: 'relay' } : d.node_id === 'cpu' ? { ...d, connection_type: 'p2p' } : d) }), { state: 'connected', label: '{count} servers online', count: 2 });
   assert.deepEqual(nexus.nexusMeshSummary({ ...up, members: servers.slice(1) }), { state: 'connected', label: 'Connecting…' });

@@ -2,7 +2,7 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNexusAccount } from '../features/nexus/NexusAccountContext';
 import {
-  NEXUS_CONNECTION_LABELS, isLoopbackUrl, nexusDeviceConnection, nexusInferenceServers, selectNexusInferenceServer, useNexusNetwork, type NexusConnection,
+  NEXUS_CONNECTION_LABELS, isLoopbackUrl, nexusDeviceConnection, nexusInferenceServers, nexusServerUnavailable, selectNexusInferenceServer, useNexusNetwork, type NexusConnection,
 } from '../features/nexus/nexus';
 import { useI18n } from '../i18n';
 import { Icon } from './Icon';
@@ -180,8 +180,12 @@ function ChatRunsOn() {
   return <div className="nexus-section nexus-chat-hosts">
     <p className="nexus-mesh__label">{t('Chat runs on')}</p>
     <ChatHostRow selected={selected === 'local'} title={t('This device')} subtitle={t('Models on this computer')} disabled={disabled} onChoose={() => void choose('local')} />
-    {servers.map(device => <ChatHostRow key={device.node_id} selected={selected === device.node_id} title={device.device_name || t('Unnamed device')}
-      subtitle={device.tunnel_ip.split('/')[0]} connection={nexusDeviceConnection(status, device)} disabled={disabled} onChoose={() => void choose(device.node_id)} />)}
+    {servers.map(device => {
+      // A server without a path cannot serve chat yet; its pill says why (Offline or Connecting).
+      const unavailable = nexusServerUnavailable(status, device);
+      return <ChatHostRow key={device.node_id} selected={selected === device.node_id} title={device.device_name || t('Unnamed device')}
+        subtitle={device.tunnel_ip.split('/')[0]} connection={unavailable ?? nexusDeviceConnection(status, device)} disabled={disabled || Boolean(unavailable)} onChoose={() => void choose(device.node_id)} />;
+    })}
     {error && <p className="nexus-error" role="alert">{error}</p>}
   </div>;
 }

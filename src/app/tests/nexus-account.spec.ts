@@ -159,12 +159,33 @@ test('the account dropdown opens Enable Mesh and restores focus when cancelled',
   await expect(trigger).toBeFocused();
 });
 
-test('browser Enable Mesh explains the desktop requirement', async ({ page }) => {
-  await setupNexusAccount(page, { desktop: false });
+test('browser Enable Mesh explains the desktop requirement for a registered passkey', async ({ page }) => {
+  const fixture = await setupNexusAccount(page, { desktop: false, joined: false });
+  fixture.state.identity_source = 'system';
+  fixture.state.unlock = 'passkey';
   await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
   await expect(dialog).toContainText('Open the Lemonade desktop app on this computer');
   await expect(dialog.getByRole('button', { name: 'Enable Mesh', exact: true })).toHaveCount(0);
+  expect(fixture.calls.some(call => call.method === 'POST')).toBe(false);
+});
+
+// A packaged Linux server runs lemond with a system identity and has no desktop app. Until
+// its first key/unlock it reports an unregistered passkey, and the browser sets it up with
+// the device key as it does a user identity.
+test('a browser sets up a packaged server with its system identity key', async ({ page }) => {
+  const fixture = await setupNexusAccount(page, { desktop: false, joined: false, registered: false });
+  fixture.state.identity_source = 'system';
+  fixture.state.unlock = 'passkey';
+  await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
+  await expect(dialog).not.toContainText('desktop app');
+  await expect(dialog.getByRole('radio', { name: 'Create account' })).toBeChecked();
+  await expect(dialog.getByRole('radio', { name: 'Join by invitation' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  expect(fixture.calls.filter(call => call.path.endsWith('/key/unlock')).map(call => call.body)).toEqual([{ defer_join: false }]);
+  expect(fixture.calls.some(call => call.path.includes('/passkey/'))).toBe(false);
 });
 
 test('a browser enables a device-key device without the desktop app', async ({ page }) => {
@@ -223,6 +244,54 @@ test('a device waiting for its key from the tray shows no passkey form', async (
   delete fixture.state.needs_user_key;
   await dialog.getByRole('button', { name: 'Check again', exact: true }).click();
   await expect(dialog.getByRole('textbox', { name: 'Device name', exact: true })).toHaveValue('My laptop');
+});
+
+test('a user identity whose keystore is unavailable shows the server\'s reason', async ({ page }) => {
+  const fixture = await setupNexusAccount(page, { needsUserKey: true, joined: false });
+  fixture.state.identity_source = 'user';
+  fixture.state.error = 'no usable OS keystore in this session';
+  await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
+  await expect(dialog.getByRole('alert')).toHaveText('no usable OS keystore in this session');
+  await expect(dialog).not.toContainText('Lemonade tray');
+  await expect(dialog.getByRole('button', { name: 'Enable Mesh', exact: true })).toHaveCount(0);
+  expect(fixture.calls.some(call => call.path.endsWith('/enable') || call.path.includes('/passkey/'))).toBe(false);
+});
+
+test('a degraded server shows a reconnecting state instead of its error', async ({ page }) => {
+  const fixture = await setupNexusAccount(page, { deviceKey: true });
+  fixture.state.status = 'degraded';
+  fixture.state.error = 'No network server found for mesh.example.';
+  fixture.state.error_retryable = true;
+  await page.reload();
+  await resumedNexusMesh(page);
+  const panel = page.locator('.nexus-mesh');
+  await expect(panel.getByRole('status').filter({ hasText: 'temporarily unavailable' })).toHaveText('The network is temporarily unavailable. Reconnecting…');
+  await expect(panel).not.toContainText('No network server found');
+  delete fixture.state.error_retryable;
+  // The next status poll (every 5 s) carries the refusal.
+  await expect(panel.getByRole('alert')).toContainText('No network server found for mesh.example.', { timeout: 15000 });
+});
+
+test('Chat runs on offers only servers this device has a path to', async ({ page }) => {
+  const fixture = await setupNexusAccount(page, { deviceKey: true });
+  const server = { ...fixture.state.members[1], is_inference: true, can_connect: true };
+  fixture.state.members.push({ ...server, node_id: 'gpu', device_name: 'GPU box', connection_type: 'p2p' },
+    { ...server, node_id: 'cpu', device_name: 'Office PC', connection_type: 'unknown' },
+    { ...server, node_id: 'away', device_name: 'Travel laptop', is_online: false });
+  await page.reload();
+  await resumedNexusMesh(page);
+  const choice = (name: string) => page.locator('.nexus-mesh .nexus-mesh-row--choice').filter({ hasText: name });
+  await expect(choice('GPU box')).toBeEnabled();
+  await expect(choice('Office PC')).toBeDisabled();
+  await expect(choice('Office PC').locator('.nexus-pill--connection')).toHaveText('Connecting');
+  await expect(choice('Travel laptop')).toBeDisabled();
+  await expect(choice('Travel laptop').locator('.nexus-pill--connection')).toHaveText('Offline');
+  await page.getByRole('button', { name: 'User: My laptop', exact: true }).click();
+  const menu = page.getByRole('dialog', { name: 'Lemonade Account', exact: true });
+  await expect(menu.locator('.nexus-chat-host').filter({ hasText: 'GPU box' })).toBeEnabled();
+  await expect(menu.locator('.nexus-chat-host').filter({ hasText: 'Travel laptop' })).toBeDisabled();
+  await expect(menu.locator('.nexus-chat-host').filter({ hasText: 'Office PC' }).locator('.nexus-pill--connection')).toHaveText('Connecting');
 });
 
 const passkeyCalls = (fixture: { calls: { path: string }[] }) => fixture.calls.filter(call => call.path.includes('/passkey/'));

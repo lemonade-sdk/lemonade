@@ -5,7 +5,8 @@ import { useI18n } from '../i18n';
 import { useNexusAccount, type NexusDevice as AccountDevice } from '../features/nexus/NexusAccountContext';
 import {
   NEXUS_CONNECTION_LABELS, dismissNexusNotice, nexusDeviceConnection, nexusDeviceTags, nexusInferenceServers, nexusMeshPortUrl, nexusMeshSummary,
-  nexusRequest, refreshNexus, relayEndpoint, selectNexusInferenceServer, useNexusNetwork, type NexusConnection, type NexusDevice, type NexusMeshState, type NexusStatus,
+  nexusRequest, nexusServerUnavailable, refreshNexus, relayEndpoint, selectNexusInferenceServer, useNexusNetwork,
+  type NexusConnection, type NexusDevice, type NexusMeshState, type NexusStatus,
 } from '../features/nexus/nexus';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
@@ -226,14 +227,21 @@ export function NexusMeshPanel() {
       <WorkspaceActionButton size="small" appearance="danger" disabled={busy} onClick={() => void forget()}>{t('Forget this network')}</WorkspaceActionButton>
       {error && <p className="nexus-error" role="alert">{error}</p>}
     </div>}
-    {status?.error && !network.error && !status.needs_rejoin && <p className="nexus-error" role="alert">{status.error}</p>}
+    {status?.error && !network.error && !status.needs_rejoin && (status.error_retryable
+      ? <p className="nexus-hint" role="status">{t('The network is temporarily unavailable. Reconnecting…')}</p>
+      : <p className="nexus-error" role="alert">{status.error}</p>)}
     {network.notice && <p className="nexus-tree-notice" role="status">{network.notice} <button type="button" className="nexus-text-button" onClick={dismissNexusNotice}>{t('Dismiss')}</button></p>}
     {connected && status ? <>
       <div className="nexus-mesh__section">
         <p className="nexus-mesh__label">{t('Chat runs on')}</p>
         <ServerChoice selected={selected === 'local'} title={t('This device')} subtitle={t('Models on this computer')} disabled={busy} onChoose={() => void choose('local')} onInfo={() => setInfo('local')} />
-        {servers.map(device => <ServerChoice key={device.node_id} selected={selected === device.node_id} title={device.device_name || t('Unnamed device')}
-          subtitle={device.tunnel_ip.split('/')[0]} connection={nexusDeviceConnection(status, device)} disabled={busy} onChoose={() => void choose(device.node_id)} onInfo={() => setInfo(device.node_id)} />)}
+        {servers.map(device => {
+          // A server without a path cannot serve chat yet; its pill says why (Offline or Connecting).
+          const unavailable = nexusServerUnavailable(status, device);
+          return <ServerChoice key={device.node_id} selected={selected === device.node_id} title={device.device_name || t('Unnamed device')}
+            subtitle={device.tunnel_ip.split('/')[0]} connection={unavailable ?? nexusDeviceConnection(status, device)} disabled={busy || Boolean(unavailable)}
+            onChoose={() => void choose(device.node_id)} onInfo={() => setInfo(device.node_id)} />;
+        })}
         {info && <ServerInfoDialog status={status} nodeId={info} onClose={() => setInfo(undefined)} />}
         {!servers.length && <p className="nexus-mesh__empty">{t('No other Lemonade servers in this mesh yet. Invite a computer running Lemonade.')}</p>}
         {selected !== 'local' && <form className="nexus-mesh__key" onSubmit={event => { event.preventDefault(); void choose(selected, key); }}>

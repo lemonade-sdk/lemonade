@@ -66,6 +66,7 @@ const ZH_CN: Record<string, string> = {
   "One account for your devices.": "一个账户，连接你的设备。",
   "Close Enable Mesh": "关闭启用 Mesh",
   "Waiting for your device key from the Lemonade tray.": "正在等待 Lemonade 托盘发送你的设备密钥。",
+  "The server cannot open this device’s key yet. It tries again by itself.": "服务器暂时无法打开此设备的密钥，将自动重试。",
   "Checking account access…": "正在检查账户访问…",
   "This computer": "此电脑",
   "This server does not include Nexus account support.": "此服务器不支持 Nexus 账户。",

@@ -106,6 +106,9 @@ export interface NexusStatus {
   peer_count?: number;
   members: NexusDevice[];
   error?: string;
+  // True while `error` is an outage, not a refusal: the federation could not be reached, so
+  // `status` is `degraded`, the device stays unlocked and joined, and lemond retries by itself.
+  error_retryable?: boolean;
   event_sequence?: number;
   remote_management?: boolean;
   identity_source?: 'system' | 'user' | 'handoff';
@@ -155,6 +158,13 @@ export function nexusInferenceServers(status: NexusStatus | null | undefined): N
   const seen = new Set<string>();
   return status.members.filter(device => device.node_id !== status.node_id && device.is_inference && device.can_connect !== false && seen.size < seen.add(device.node_id).size);
 }
+// Why chat cannot move to a server right now: no path to it yet (`connecting`) or none at
+// all (`offline`). Undefined when a P2P or relay path exists. A listed server the mesh has
+// not reported a state for counts as offline.
+export function nexusServerUnavailable(status: NexusStatus | null | undefined, device: NexusDevice): 'connecting' | 'offline' | undefined {
+  const connection = nexusDeviceConnection(status, device);
+  return connection === 'p2p' || connection === 'relay' ? undefined : connection ?? 'offline';
+}
 export type NexusMeshState = 'off' | 'locked' | 'connecting' | 'connected' | 'offline';
 // The mesh as one line: how many servers are reachable, else what the mesh is doing.
 // `label` is a translation key; `count` fills its {count}.
@@ -185,10 +195,14 @@ export function nexusConnectionLabel(status: NexusStatus | null | undefined, nod
 }
 // A device unlocks with its device key or with a passkey, never both. lemond reports
 // `unlock: device_key` once the key has unlocked the device; a `user` or `handoff`
-// identity source means the key is the only option even before the first unlock.
+// identity source means the key is the only option even before the first unlock. A
+// `system` identity (a packaged server) reports `unlock: passkey` until its first
+// key/unlock, which lemond accepts as long as no passkey is registered; only a registered
+// passkey keeps that identity on the passkey path.
 export function usesNexusDeviceKey(status: NexusStatus): boolean {
   if (status.registered && status.unlock === 'passkey') return false;
-  return status.unlock === 'device_key' || status.identity_source === 'user' || status.identity_source === 'handoff';
+  return status.unlock === 'device_key' || status.identity_source === 'user' || status.identity_source === 'handoff'
+    || (status.identity_source === 'system' && !status.registered);
 }
 export class NexusRequestError extends Error {
   constructor(message: string, readonly status: number, readonly retryable: boolean) { super(message); }
@@ -489,7 +503,10 @@ export async function prepareNexus(deviceName: string, joining: boolean, request
     if (!status.locked && (status.mesh_up || joining)) return;
     try { await request('key/unlock', { defer_join: joining }); }
     catch (error) {
-      if (error instanceof NexusRequestError && error.retryable) throw new Error(`${error.message} The network could not be reached. Try again shortly.`);
+      if (error instanceof NexusRequestError && error.retryable) {
+        const reason = error.message.trim();
+        throw new Error(`${reason}${/[.!?]$/.test(reason) ? '' : '.'} The network could not be reached. Try again shortly.`);
+      }
       throw error;
     }
     return;
