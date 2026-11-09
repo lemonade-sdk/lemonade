@@ -67,14 +67,28 @@ runs:
         DEB_DEPENDS=$(dpkg-deb -f "$DEB_FILE" Depends 2>/dev/null || true)
         if [ -n "$DEB_DEPENDS" ] && command -v apt-get >/dev/null 2>&1; then
             echo "Installing .deb runtime dependencies: $DEB_DEPENDS"
-            if [ "$(id -u)" -eq 0 ]; then
-                apt-get update
-                apt-get satisfy -y "$DEB_DEPENDS"
-            elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-                sudo apt-get update
-                sudo apt-get satisfy -y "$DEB_DEPENDS"
-            else
+            SUDO=""
+            if [ "$(id -u)" -ne 0 ]; then
+                if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+                    SUDO="sudo"
+                else
+                    SUDO="none"
+                fi
+            fi
+            if [ "$SUDO" = "none" ]; then
                 echo "No root/passwordless sudo available; assuming runtime dependencies are already installed."
+            else
+                $SUDO apt-get update
+                if ! $SUDO apt-get satisfy -y "$DEB_DEPENDS"; then
+                    # On Ubuntu some runtime deps (e.g. libcpp-httplib0.26 on
+                    # 24.04) exist only in the lemonade PPA, so a runner
+                    # provisioned without it fails here on every job.
+                    if ( . /etc/os-release 2>/dev/null && [ "${ID:-}" = "ubuntu" ] ) \
+                        && ! grep -rqs "lemonade-team" /etc/apt/sources.list /etc/apt/sources.list.d/; then
+                        echo "::error title=Runner is missing the lemonade PPA::This runner's apt sources do not include ppa:lemonade-team/bleeding-edge, which provides some of this .deb's runtime dependencies on Ubuntu. Run: sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge && sudo apt-get update"
+                    fi
+                    exit 1
+                fi
             fi
         fi
 
