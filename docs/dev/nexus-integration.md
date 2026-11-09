@@ -421,7 +421,10 @@ The SDK sends tree, session and private-API calls only to Tier 1 servers that
 it verifies from the network's Genesis public key. On first connect without a
 key, `lemond` calls `ln_discover_genesis_key`: the SDK asks at least three
 hosts in the network's DNS domain over verified HTTPS and accepts the key only
-when they all agree and it matches the reported network id. `lemond` stores the
+when they all agree and it matches the reported network id. `lemond` names
+the discovery domain and region to the SDK (`ln_set_discovery_target`) when
+it creates the client, so the SDK can resolve `<region>.seip.<domain>` for
+more candidates when it knows fewer than three hosts. `lemond` stores the
 key in `account.json` and pins it on every later start; discovery never
 replaces a pinned key. This is trust on first use: it rests on verified-HTTPS
 domain ownership and agreement of several hosts.

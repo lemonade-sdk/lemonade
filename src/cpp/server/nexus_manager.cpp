@@ -1291,6 +1291,12 @@ struct NexusManager::Session {
         client.reset(ln_create_tls(host.c_str(), static_cast<uint16_t>(public_port)));
         if (!client) throw NexusError(500, "Cannot create Nexus client");
         publish_client();
+        // The region's SEIP records give the SDK more candidate servers for Genesis key
+        // discovery and Tier 1 refresh when it knows fewer than three hosts.
+        if (const auto code = ln_set_discovery_target(client.get(), domain.c_str(), region.c_str()); code != LN_OK) {
+            LOG(WARNING, "Nexus") << "The SDK refused the discovery target " << region << ".seip." << domain
+                                  << " (SDK error " << code << "); discovery uses the known servers only" << std::endl;
+        }
         // The SDK moves the session when its Tier 1 server leaves; the journal keeps
         // the record. The callback owns the text and runs on an SDK thread.
         ln_set_session_moved_callback(client.get(), [](char* event_json, void*) {
