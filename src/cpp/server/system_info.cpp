@@ -1578,27 +1578,24 @@ json SystemInfo::build_recipes_info(const json& devices) {
         } else {
             std::string installed_version = get_recipe_version(def.recipe, def.backend);
             std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
-            // A container backend whose *_bin names a tag or "latest" follows
-            // that tag: any install of it runs, and a newer digest for it is
-            // offered as an update.
-            std::string container_tag;
-            std::string container_update;
-            const std::string installed_pin = installed_version;
+            backends::ContainerStatus container;
+            std::string container_error;
             if (container_backend) {
                 try {
-                    container_tag = BackendUtils::get_container_bin_tag(def.recipe, def.backend);
-                    if (auto* bm = BackendManager::global()) {
-                        expected_version = bm->resolve_container_pin(def.recipe, def.backend);
+                    const auto selection = BackendUtils::get_container_selection(def.recipe, def.backend);
+                    container = backends::container_status(selection, installed_version, "");
+                    auto* bm = BackendManager::global();
+                    if (selection.latest && !container.update_required && bm) {
+                        container = backends::container_status(
+                            selection, installed_version,
+                            bm->get_or_resolve_latest_container_pin(def.recipe, def.backend));
                     }
                 } catch (const std::exception& e) {
                     LOG(WARNING, "SystemInfo") << e.what() << std::endl;
-                }
-                const auto expected_pin = backends::parse_container_pin(expected_version);
-                if (!container_tag.empty() && expected_pin && expected_version != installed_pin) {
-                    container_update = backends::short_container_pin(expected_version);
+                    container.update_required = true;
+                    container_error = e.what();
                 }
                 installed_version = backends::short_container_pin(installed_version);
-                expected_version = backends::short_container_pin(expected_version);
             } else {
                 // The user's *_bin pin overrides what the state machine considers
                 // "expected" — otherwise an explicit-tag pin (e.g. b8664) would
@@ -1650,9 +1647,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 needs_update = has_expected && (!version_known || !version_at_least_expected);
             } else
 #endif
-            if (!container_tag.empty()) {
-                const auto installed = backends::parse_container_pin(installed_pin);
-                needs_update = !installed || installed->tag != container_tag;
+            if (container_backend) {
+                needs_update = container.update_required;
             } else
             if (latest_pin) {
                 // For *_bin = "latest", the installed version is allowed to be
@@ -1667,9 +1663,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
             }
 
             if (needs_update) {
+                // Installing cannot fix a *_bin value lemonade cannot read.
                 backend["state"] = "update_required";
-                backend["message"] = "Backend update is required before use.";
-                backend["action"] = get_install_command(def.recipe, def.backend);
+                backend["message"] = container_error.empty() ? "Backend update is required before use."
+                                                             : container_error;
+                backend["action"] = container_error.empty() ? get_install_command(def.recipe, def.backend)
+                                                            : "";
             } else {
                 // Soft "update_available" signal for *_bin = "latest" backends
                 // when GitHub has a newer release than what's installed. The
@@ -1681,9 +1680,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
                         latest_tag = bm->get_or_resolve_latest_tag(def.recipe, def.backend);
                     }
                 }
-                if (!container_update.empty()) {
+                if (!container.update_available.empty()) {
                     backend["state"] = "update_available";
-                    backend["message"] = "Newer image available: " + container_update;
+                    backend["message"] = "Newer image available: " +
+                                         backends::short_container_pin(container.update_available);
                     backend["action"] = get_install_command(def.recipe, def.backend);
                 } else if (!latest_tag.empty()
                     && version_compare(installed_version, latest_tag) < 0) {

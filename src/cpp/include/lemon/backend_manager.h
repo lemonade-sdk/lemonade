@@ -70,12 +70,13 @@ public:
     std::string get_or_resolve_latest_tag(const std::string& recipe,
                                           const std::string& backend);
 
-    // The "<tag>@<digest>" pin a container backend runs: its backend_versions.json
-    // pin, unless its <backend>_bin names another pin, a tag, or "latest". A tag
-    // is looked up in its registry once per process, like "latest" releases
-    // above; when that lookup is skipped (offline) or fails, an installed image
-    // of the same tag stands in. Throws when neither answers.
+    // The pin to install, per BackendUtils::get_container_selection(). A tag is
+    // looked up once per process; offline or on failure, an installed image of
+    // the same tag stands in. Throws when neither answers.
     std::string resolve_container_pin(const std::string& recipe, const std::string& backend);
+    // "" when the registry cannot be asked or does not answer.
+    std::string get_or_resolve_latest_container_pin(const std::string& recipe,
+                                                    const std::string& backend);
     // Replaces how registry lookups reach the network.
     void set_registry_request(utils::RegistryRequest request) { registry_request_ = std::move(request); }
 
@@ -109,6 +110,9 @@ private:
         container_lookup_failures_;
     std::mutex container_digest_cache_mutex_;
     utils::RegistryRequest registry_request_;
+    // The digest `tag` names in `image`'s registry, from the caches above when
+    // they have it. Throws when offline, fetching is off, or the lookup fails.
+    std::string lookup_container_digest(const std::string& image, const std::string& tag);
 
     // Get version for a recipe/backend from the cached config
     std::string get_version_from_config(const std::string& recipe, const std::string& backend);

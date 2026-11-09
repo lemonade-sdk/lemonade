@@ -661,24 +661,58 @@ std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
     }
 }
 
+std::string BackendManager::lookup_container_digest(const std::string& image,
+                                                    const std::string& tag) {
+    const std::string key = image + ":" + tag;
+    {
+        std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
+        const auto it = container_digest_cache_.find(key);
+        if (it != container_digest_cache_.end()) return it->second;
+        const auto failed = container_lookup_failures_.find(key);
+        if (failed != container_lookup_failures_.end() &&
+            std::chrono::steady_clock::now() - failed->second.first < kContainerLookupRetry) {
+            throw std::runtime_error(failed->second.second);
+        }
+    }
+
+    auto* cfg = RuntimeConfig::global();
+    if (cfg && cfg->offline()) {
+        throw std::runtime_error("Cannot look up " + key + ": offline mode");
+    }
+    if (cfg && cfg->no_fetch_executables()) {
+        throw std::runtime_error("Cannot look up " + key + ": no_fetch_executables is true");
+    }
+    try {
+        const std::string digest = utils::resolve_registry_digest(image, tag, registry_request_);
+        {
+            std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
+            container_digest_cache_[key] = digest;
+            container_lookup_failures_.erase(key);
+        }
+        LOG(INFO, "BackendManager") << "Resolved " << key << " -> " << digest << std::endl;
+        return digest;
+    } catch (const std::exception& e) {
+        {
+            std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
+            container_lookup_failures_[key] = {std::chrono::steady_clock::now(), e.what()};
+        }
+        LOG(WARNING, "BackendManager") << e.what() << std::endl;
+        throw;
+    }
+}
+
 std::string BackendManager::resolve_container_pin(const std::string& recipe,
                                                   const std::string& backend) {
     const ContainerPolicy* policy = backends::BackendUtils::get_container_policy(recipe, backend);
     if (!policy) {
         throw std::runtime_error(recipe + ":" + backend + " is not a container backend");
     }
-    const std::string tag = backends::BackendUtils::get_container_bin_tag(recipe, backend);
-    if (tag.empty()) {
-        const std::string value = backends::BackendUtils::get_bin_config_value(recipe, backend);
-        return backends::parse_container_pin(value)
-                   ? value
-                   : backends::BackendUtils::get_backend_version(recipe, backend);
-    }
+    const auto selection = backends::BackendUtils::get_container_selection(recipe, backend);
+    if (!selection.pin.empty()) return selection.pin;
 
-    const std::string key = policy->image + ":" + tag;
     const std::string installed = read_version_file(container_version_file(recipe, backend));
     const auto installed_pin = backends::parse_container_pin(installed);
-    const bool installed_tag = installed_pin && installed_pin->tag == tag;
+    const bool installed_tag = installed_pin && installed_pin->tag == selection.tag;
 
     // Without fetching, the installed image of the tag runs even when a newer
     // digest was looked up earlier: install could not pull that one.
@@ -686,49 +720,27 @@ std::string BackendManager::resolve_container_pin(const std::string& recipe,
     if (cfg && (cfg->offline() || cfg->no_fetch_executables()) && installed_tag) {
         return installed;
     }
-
-    std::string error;
-    {
-        std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
-        const auto it = container_digest_cache_.find(key);
-        if (it != container_digest_cache_.end()) return tag + "@" + it->second;
-        const auto failed = container_lookup_failures_.find(key);
-        if (failed != container_lookup_failures_.end() &&
-            std::chrono::steady_clock::now() - failed->second.first < kContainerLookupRetry) {
-            error = failed->second.second;
-        }
+    try {
+        return selection.tag + "@" + lookup_container_digest(policy->image, selection.tag);
+    } catch (const std::exception& e) {
+        if (!installed_tag) throw;
+        LOG(INFO, "BackendManager") << "Using the installed " << backends::short_container_pin(installed)
+                                    << " (" << e.what() << ")" << std::endl;
+        return installed;
     }
+}
 
-    if (cfg && cfg->offline()) {
-        error = "offline mode";
-    } else if (cfg && cfg->no_fetch_executables()) {
-        error = "no_fetch_executables is true";
-    } else if (error.empty()) {
-        try {
-            const std::string digest = utils::resolve_registry_digest(policy->image, tag, registry_request_);
-            {
-                std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
-                container_digest_cache_[key] = digest;
-                container_lookup_failures_.erase(key);
-            }
-            LOG(INFO, "BackendManager") << "Resolved " << key << " -> " << digest << std::endl;
-            return tag + "@" + digest;
-        } catch (const std::exception& e) {
-            error = e.what();
-            {
-                std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
-                container_lookup_failures_[key] = {std::chrono::steady_clock::now(), error};
-            }
-            LOG(WARNING, "BackendManager") << "Could not look up " << key << ": " << error
-                                           << (installed_tag ? "; using the installed " +
-                                                                   backends::short_container_pin(installed)
-                                                             : std::string())
-                                           << std::endl;
-        }
+std::string BackendManager::get_or_resolve_latest_container_pin(const std::string& recipe,
+                                                                const std::string& backend) {
+    try {
+        const ContainerPolicy* policy = backends::BackendUtils::get_container_policy(recipe, backend);
+        if (!policy) return "";
+        const std::string tag = backends::BackendUtils::get_container_latest_tag(recipe, backend);
+        return tag + "@" + lookup_container_digest(policy->image, tag);
+    } catch (const std::exception& e) {
+        LOG(DEBUG, "BackendManager") << e.what() << std::endl;
+        return "";
     }
-
-    if (installed_tag) return installed;
-    throw std::runtime_error("Cannot look up " + key + ": " + error);
 }
 
 BackendManager::InstallParams BackendManager::get_install_params(const std::string& recipe, const std::string& backend) {
@@ -1156,9 +1168,18 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
         std::string resolved_backend = normalize_backend_name(recipe, backend);
         if (const ContainerPolicy* policy = backends::BackendUtils::get_container_policy(recipe, resolved_backend)) {
             result.release_url = container_registry_url(policy->image);
-            const std::string pin = resolve_container_pin(recipe, resolved_backend);
-            result.version = backends::short_container_pin(pin);
+            // Only install asks the registry what a tag names.
+            const auto selection =
+                backends::BackendUtils::get_container_selection(recipe, resolved_backend);
+            std::string pin = selection.pin;
+            if (pin.empty()) {
+                const std::string installed =
+                    read_version_file(container_version_file(recipe, resolved_backend));
+                const auto installed_pin = backends::parse_container_pin(installed);
+                if (installed_pin && installed_pin->tag == selection.tag) pin = installed;
+            }
             const auto parsed = backends::parse_container_pin(pin);
+            result.version = parsed ? backends::short_container_pin(pin) : selection.tag;
             result.download_filename = parsed ? policy->image + "@" + parsed->digest : "";
             return result;
         }

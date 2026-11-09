@@ -17,6 +17,7 @@
 #include "lemon/utils/path_utils.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -37,6 +38,15 @@ int failures = 0;
 void check(const std::string& what, bool ok) {
     std::printf("%s %s\n", ok ? "PASS" : "FAIL", what.c_str());
     if (!ok) ++failures;
+}
+
+// An empty value unsets the variable as lemonade reads it.
+void set_test_env(const char* name, const char* value) {
+#ifdef _WIN32
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 1);
+#endif
 }
 
 std::string join(const std::vector<std::string>& argv) {
@@ -761,11 +771,13 @@ struct FakeRegistry {
     std::string digest;
     int status = 200;
     mutable int requests = 0;
+    mutable std::vector<std::string> urls;
 
     lemon::utils::RegistryRequest request() const {
-        return [this](const std::string&, const std::string&,
+        return [this](const std::string&, const std::string& url,
                       const std::map<std::string, std::string>&) {
             ++requests;
+            urls.push_back(url);
             lemon::utils::HttpResponse response;
             response.status_code = status;
             if (status == 200) response.headers["docker-content-digest"] = digest;
@@ -780,6 +792,79 @@ void write_installed_pin(const std::string& recipe, const std::string& backend,
         lemon::backends::BackendUtils::get_install_directory(recipe, backend);
     std::filesystem::create_directories(dir);
     std::ofstream(dir / "version.txt") << pin << "\n";
+}
+
+void test_container_status() {
+    using lemon::backends::container_status;
+    using lemon::backends::ContainerSelection;
+    const std::string d1 = "sha256:" + std::string(64, '1');
+    const std::string d2 = "sha256:" + std::string(64, '2');
+    const std::string pinned = "0.19.1@" + d1;
+    const std::string newer = "latest@" + d2;
+
+    const ContainerSelection pin{pinned, "", false};
+    check("a pin runs itself", !container_status(pin, pinned, newer).update_required);
+    check("a pin is not offered \"latest\"", container_status(pin, pinned, newer).update_available.empty());
+    check("a pin needs itself installed", container_status(pin, "0.19.0@" + d2, newer).update_required);
+
+    const ContainerSelection tag{"", "0.19.1", false};
+    check("any image of the selected tag runs", !container_status(tag, "0.19.1@" + d2, "").update_required);
+    check("an image of another tag needs install", container_status(tag, "0.19.0@" + d1, "").update_required);
+    check("a tag is not offered \"latest\"", container_status(tag, pinned, newer).update_available.empty());
+
+    const ContainerSelection latest{"", "latest", true};
+    const std::string installed = "latest@" + d1;
+    check("\"latest\" is offered a newer image of its tag",
+          container_status(latest, installed, newer).update_available == newer);
+    check("\"latest\" is not offered the image it runs",
+          container_status(latest, installed, installed).update_available.empty());
+    check("no update is offered when \"latest\" is unknown",
+          container_status(latest, installed, "").update_available.empty());
+    check("nothing installed needs install, not an update",
+          container_status(latest, "", newer).update_required &&
+              container_status(latest, "", newer).update_available.empty());
+}
+
+void test_container_selection() {
+    namespace fs = std::filesystem;
+    using lemon::backends::BackendUtils;
+    const auto defaults = lemon::utils::JsonUtils::load_from_file(
+        lemon::utils::get_resource_path("resources/defaults.json"));
+    lemon::RuntimeConfig config(defaults);
+    lemon::RuntimeConfig::set_global(&config);
+    const std::string digest = "sha256:" + std::string(64, 'a');
+
+    const auto builtin = BackendUtils::get_container_selection("gufo", "rocm");
+    check("builtin selects the backend_versions.json pin",
+          !builtin.latest && builtin.pin == BackendUtils::get_backend_version("gufo", "rocm") &&
+              builtin.tag.empty());
+    config.set({{"gufo", {{"rocm_bin", "latest"}}}});
+    check("a kyuz0 backend's \"latest\" follows its builtin pin's tag",
+          BackendUtils::get_container_selection("gufo", "rocm").tag == "rocm-10.0-gufo" &&
+              BackendUtils::get_container_selection("gufo", "rocm").latest);
+    config.set({{"halogen", {{"rocm_bin", "latest"}}}});
+    check("halogen's \"latest\" is its latest tag",
+          BackendUtils::get_container_selection("halogen", "rocm").tag == "latest");
+    config.set({{"halogen", {{"rocm_bin", "0.20.0@" + digest}}}});
+    const auto pin = BackendUtils::get_container_selection("halogen", "rocm");
+    check("a pin selects itself", pin.pin == "0.20.0@" + digest && !pin.latest);
+    check("a pin launches its own digest",
+          BackendUtils::get_backend_image("halogen", "rocm") ==
+              "ghcr.io/peonist-ai/halogen-flash-server@" + digest);
+
+    // The environment skips config validation, so its value is named in the error.
+    set_test_env("LEMONADE_ROCMFPX_ROCM_BIN", "/opt/rocmfpx");
+    std::string env_error;
+    try {
+        BackendUtils::get_container_selection("rocmfpx", "rocm");
+    } catch (const std::runtime_error& e) {
+        env_error = e.what();
+    }
+    set_test_env("LEMONADE_ROCMFPX_ROCM_BIN", "");
+    check("an invalid value from the environment names the variable",
+          env_error.rfind("LEMONADE_ROCMFPX_ROCM_BIN is '/opt/rocmfpx'", 0) == 0);
+
+    lemon::RuntimeConfig::set_global(nullptr);
 }
 
 void test_container_pin_resolution() {
@@ -828,13 +913,60 @@ void test_container_pin_resolution() {
 
     {
         config.set({{"halogen", {{"rocm_bin", "0.99.0"}}}});
-        FakeRegistry registry{d2, 404};
+        FakeRegistry registry{d2};
         lemon::BackendManager manager;
         manager.set_registry_request(registry.request());
         const auto enrichment = manager.get_backend_enrichment("halogen", "rocm");
-        check("a tag the registry lacks still leaves the registry page in the enrichment",
-              enrichment.release_url ==
-                  "https://github.com/orgs/peonist-ai/packages/container/package/halogen-flash-server");
+        check("enrichment names an uninstalled tag without asking the registry",
+              registry.requests == 0 && enrichment.version == "0.99.0" &&
+                  enrichment.download_filename.empty() &&
+                  enrichment.release_url ==
+                      "https://github.com/orgs/peonist-ai/packages/container/package/halogen-flash-server");
+    }
+
+    {
+        config.set({{"gufo", {{"rocm_bin", tag + "_20261107T063533"}}}});
+        FakeRegistry registry{d2};
+        lemon::BackendManager manager;
+        manager.set_registry_request(registry.request());
+        check("a pinned tag's \"latest\" is the builtin pin's moving tag",
+              manager.get_or_resolve_latest_container_pin("gufo", "rocm") == tag + "@" + d2 &&
+                  registry.urls.size() == 1 &&
+                  registry.urls[0].size() >= tag.size() + 1 &&
+                  registry.urls[0].compare(registry.urls[0].size() - tag.size() - 1, std::string::npos,
+                                           "/" + tag) == 0);
+        config.set({{"offline", true}});
+        FakeRegistry offline{d2};
+        lemon::BackendManager offline_manager;
+        offline_manager.set_registry_request(offline.request());
+        check("offline, \"latest\" is unknown and the registry is not asked",
+              offline_manager.get_or_resolve_latest_container_pin("gufo", "rocm").empty() &&
+                  offline.requests == 0);
+        config.set({{"offline", false}});
+    }
+
+    {
+        FakeRegistry registry{d2};
+        lemon::BackendManager manager;
+        manager.set_registry_request(registry.request());
+        check("halogen's \"latest\" is its registry's latest tag",
+              manager.get_or_resolve_latest_container_pin("halogen", "rocm") == "latest@" + d2);
+    }
+
+    {
+        config.set({{"gufo", {{"rocm_bin", tag}}}});
+        write_installed_pin("gufo", "rocm", tag + "@" + d1);
+        check("a tag selection launches its installed digest",
+              lemon::backends::BackendUtils::get_backend_image("gufo", "rocm") ==
+                  "docker.io/kyuz0/amd-strix-halo-toolboxes@" + d1);
+        config.set({{"gufo", {{"rocm_bin", tag + "_20261107T063533"}}}});
+        bool other_tag_threw = false;
+        try {
+            lemon::backends::BackendUtils::get_backend_image("gufo", "rocm");
+        } catch (const std::runtime_error& e) {
+            other_tag_threw = std::string(e.what()).find("is not installed") != std::string::npos;
+        }
+        check("a tag selection does not launch an image of another tag", other_tag_threw);
     }
 
     lemon::RuntimeConfig::set_global(nullptr);
@@ -862,6 +994,8 @@ int main() {
     test_ds4_memory_plan();
     test_descriptors_and_pins();
     test_registry_digest();
+    test_container_status();
+    test_container_selection();
     test_container_pin_resolution();
 
     if (failures == 0) {

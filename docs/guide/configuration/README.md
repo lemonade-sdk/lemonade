@@ -417,7 +417,9 @@ Backends that run from a container image (`gufo.rocm_bin`, `halogen.rocm_bin`, `
 | `"rocm-10.0-gufo_20261107T063533"` / `"0.20.0"` / etc. | A tag, as the registry lists it. |
 | `"0.19.1@sha256:<digest>"` | One exact image. |
 
-Lemonade looks a tag (or `"latest"`) up in the registry once per `lemond` process, pulls the image by the digest the registry gives, and records `<tag>@<digest>` in `version.txt`. When the tag later points at a newer image, `lemonade backends` reports `update_available`. Offline, an installed image of the same tag keeps working. Paths are not accepted.
+Lemonade looks a tag (or `"latest"`) up in the registry once per `lemond` process when installing, pulls the image by the digest the registry gives, and records `<tag>@<digest>` in `version.txt`. Offline, an installed image of the same tag keeps working. Paths are not accepted.
+
+With `"latest"`, `lemonade backends` also compares the installed image with the one the tag names now and reports `update_available` when they differ, as for release backends. Other values never contact the registry from `lemonade backends`.
 
 ```bash
 lemonade config set gufo.rocm_bin=latest
