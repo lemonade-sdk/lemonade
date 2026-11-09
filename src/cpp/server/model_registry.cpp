@@ -905,6 +905,10 @@ bool detect_registry_url(const std::string& value,
 }
 
 bool checkpoint_looks_like_repo_id(const std::string& checkpoint) {
+    // A rooted path, such as /models/r.gguf, is a file, never owner/repo.
+    if (!checkpoint.empty() && (checkpoint.front() == '/' || checkpoint.front() == '\\')) {
+        return false;
+    }
     // Registry repo ids never contain ':', so the portion before the first ':'
     // is the repo. An owner/repo id carries a '/'; FLM tags (`gemma3:4b`) do not.
     const size_t colon = checkpoint.find(':');

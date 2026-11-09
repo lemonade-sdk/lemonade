@@ -96,6 +96,22 @@ int main() {
               "registry checkpoint is left untouched");
     }
 
+    // A rooted path is a file, not owner/repo, so it never gets a registry: on
+    // Linux every local path has a '/' and no ':', the shape of a repo id.
+    {
+        json posix = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
+                      {"checkpoint", "/models/router-f16.gguf"}};
+        apply_default_pull_source(posix, "modelscope");
+        json unc = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
+                    {"checkpoint", R"(\\server\models\router-f16.gguf)"}};
+        apply_default_pull_source(unc, "modelscope");
+        check(!posix.contains("source") && !unc.contains("source"),
+              "a rooted local path inherits no registry source");
+        check(!lemon::checkpoint_looks_like_repo_id("/models/router-f16.gguf") &&
+                  lemon::checkpoint_looks_like_repo_id("owner/repo:router-f16.gguf"),
+              "a rooted path is not a repo id; owner/repo still is");
+    }
+
     // An explicit source is never overridden by the default.
     {
         json req = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
