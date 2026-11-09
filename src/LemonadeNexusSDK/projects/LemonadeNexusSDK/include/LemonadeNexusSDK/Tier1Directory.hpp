@@ -15,14 +15,20 @@
 
 namespace lnsdk {
 
-/// One HTTP response, as a transport hands it back.
+/// One HTTP response, as a transport hands it back. A transport that got no
+/// response may return status 0 with `error` set instead of nullopt, so the
+/// reason reaches the failure text.
 struct HttpReply {
     int         status{0};
     std::string body;
+    /// Why no response arrived (DNS, connect, TLS verification, read), when
+    /// `status` is 0: the transport's short text. Empty for a response.
+    std::string error;
 };
 
 /// A GET through the caller's verified-TLS transport, with no session token.
-/// nullopt when no response arrived (connect, TLS, or read failure).
+/// nullopt, or a reply with status 0 and `error` set, when no response
+/// arrived (connect, TLS, or read failure).
 using Tier1DiscoveryGet =
     std::function<std::optional<HttpReply>(const ServerEndpoint& server, const std::string& path)>;
 
@@ -165,7 +171,10 @@ public:
     /// one set with set_genesis_key().
     ///
     /// Errors: http_status 409 when a key is already pinned, 403 when the
-    /// answers are refused, 0 when too few hosts agreed.
+    /// answers are refused, 0 when too few hosts agreed. The "too few" error
+    /// names each host asked and what it answered ("unreachable" with the
+    /// transport's reason, "HTTP <status>", "no claim", "outside domain",
+    /// or "agrees"), at most 8 of them.
     Result<GenesisKeyDiscovery> discover_genesis_key(const std::vector<ServerEndpoint>& hosts);
 
     /// Walk the chain from `sources`, then probe candidate servers: each
@@ -174,7 +183,9 @@ public:
     /// previous one. On failure the previous servers are dropped (fail
     /// closed), the error says why, and http_status is 0 when nothing was
     /// reachable or 403 when the key is missing or what the servers returned
-    /// is refused (a forged chain, a stale epoch).
+    /// is refused (a forged chain, a stale epoch). The error names each
+    /// source and probed candidate with what it answered: "unreachable" with
+    /// the transport's reason when the GET supplied one, or "HTTP <status>".
     Result<Tier1Membership> refresh(const std::vector<ServerEndpoint>& sources);
 
     /// The last verified membership; empty servers when none is verified.

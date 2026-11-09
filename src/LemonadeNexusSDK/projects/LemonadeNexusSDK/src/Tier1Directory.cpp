@@ -108,6 +108,36 @@ struct GenesisClaim {
     std::string domain;      // compare form
 };
 
+/// Characters of a transport reason kept in a note, so a failure message
+/// that lists several servers stays readable.
+constexpr std::size_t kMaxReasonChars = 64;
+
+/// What a GET that brought no usable response is called in a failure
+/// message: "HTTP <status>" for a response, else "unreachable" with the
+/// transport's reason when it supplied one.
+std::string reply_note(const std::optional<HttpReply>& reply) {
+    if (reply && reply->status != 0) return "HTTP " + std::to_string(reply->status);
+    std::string note = "unreachable";
+    if (!reply || reply->error.empty()) return note;
+    std::string why = reply->error.substr(0, kMaxReasonChars);
+    for (auto& c : why) {
+        if (std::iscntrl(static_cast<unsigned char>(c))) c = ' ';
+    }
+    if (reply->error.size() > kMaxReasonChars) why += "...";
+    return note + " (" + why + ")";
+}
+
+/// `label` and the first 8 of `notes`, "; " apart; empty for no notes.
+std::string notes_detail(const std::string& label, const std::vector<std::string>& notes) {
+    std::string detail;
+    for (std::size_t i = 0; i < notes.size() && i < 8; ++i) {
+        detail += i == 0 ? label : "; ";
+        detail += notes[i];
+    }
+    if (notes.size() > 8) detail += "; more";
+    return detail;
+}
+
 }  // namespace
 
 struct Tier1Directory::State {
@@ -162,7 +192,9 @@ struct Tier1Directory::State {
     /// Walks pages from `server` until it has nothing newer. io: network.
     /// `behind` is set when the server reports a latest epoch below the one
     /// the walker holds, or reports none at all on "nothing newer": the
-    /// server may serve another chain under the same key.
+    /// server may serve another chain under the same key. `error` carries
+    /// the refusal reason for Refused, and what the server answered for
+    /// Unreachable (reply_note).
     Walk walk_from(const ServerEndpoint& server, std::string& error, bool& behind) {
         bool advanced = false;
         int waits = 0;
@@ -171,7 +203,10 @@ struct Tier1Directory::State {
             const auto reply = get(server, "/api/tier1/authority?have_epoch=" +
                                                std::to_string(have) +
                                                "&max_links=" + std::to_string(kChainPageLinks));
-            if (!reply) return advanced ? Walk::Advanced : Walk::Unreachable;
+            if (!reply || reply->status == 0) {
+                error = reply_note(reply);
+                return advanced ? Walk::Advanced : Walk::Unreachable;
+            }
             // A rate limit is no verdict on the chain: wait for the server's
             // budget to refill and ask for the same page again.
             if (reply->status == 429 && waits < kMaxRateLimitWaits) {
@@ -188,7 +223,10 @@ struct Tier1Directory::State {
                 if (!hinted || doc["latest_epoch"].get<uint64_t>() < have) behind = true;
                 return advanced ? Walk::Advanced : Walk::Done;
             }
-            if (reply->status != 200) return advanced ? Walk::Advanced : Walk::Unreachable;
+            if (reply->status != 200) {
+                error = reply_note(reply);
+                return advanced ? Walk::Advanced : Walk::Unreachable;
+            }
             const auto doc = json::parse(reply->body, nullptr, false);
             if (doc.is_discarded() || !doc.is_object() || !doc.contains("page") ||
                 !doc["page"].is_string()) {
@@ -334,12 +372,23 @@ Result<GenesisKeyDiscovery> Tier1Directory::discover_genesis_key(
         std::optional<GenesisClaim> agreed;
         std::string agreed_from;
         std::vector<std::string> agreeing;
+        // What each host answered, so a "too few" failure shows who was
+        // asked and why each one did not count.
+        std::vector<std::string> asked;
+        const auto note = [&asked](const ServerEndpoint& ep, const std::string& outcome) {
+            asked.push_back(ep.host + ":" + std::to_string(ep.port) + " " + outcome);
+        };
         for (const auto& ep : targets) {
             const auto reply = state_->get(ep, "/api/onboard/info");
-            if (!reply || reply->status != 200) continue;
+            if (!reply || reply->status != 200) {
+                note(ep, reply_note(reply));
+                continue;
+            }
             const auto doc = json::parse(reply->body, nullptr, false);
             if (doc.is_discarded() || !doc.is_object() || !doc.contains("genesis_pubkey")) {
-                continue;  // no claim: a server without a configured key, or an older one
+                // A server without a configured key, or an older one.
+                note(ep, "no claim");
+                continue;
             }
             const auto key = fixed_b64<nexus::crypto::kEd25519PublicKeySize>(doc, "genesis_pubkey");
             if (!key) return fail("malformed Genesis key from " + ep.host, 403);
@@ -361,7 +410,12 @@ Result<GenesisKeyDiscovery> Tier1Directory::discover_genesis_key(
                                 agreed_from + " and " + ep.host,
                             403);
             }
-            if (inside_domain(dns_name(ep.host), claim.domain)) agreeing.push_back(ep.host);
+            if (inside_domain(dns_name(ep.host), claim.domain)) {
+                agreeing.push_back(ep.host);
+                note(ep, "agrees");
+            } else {
+                note(ep, "outside domain " + claim.domain);
+            }
         }
 
         if (agreed && agreed->domain.empty()) {
@@ -374,6 +428,9 @@ Result<GenesisKeyDiscovery> Tier1Directory::discover_genesis_key(
                             std::to_string(kGenesisDiscoveryMinHosts) +
                             " agreeing servers inside the network domain, found " +
                             std::to_string(agreeing.size()) +
+                            notes_detail("; asked " + std::to_string(targets.size()) +
+                                             " host(s): ",
+                                         asked) +
                             "; set the Genesis key explicitly",
                         0);
         }
@@ -483,7 +540,7 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
             if (walk == Walk::Refused) {
                 state = "refused";
             } else if (walk == Walk::Unreachable) {
-                state = "unreachable";
+                state = source_error.empty() ? "unreachable" : source_error;
             } else if (walk == Walk::Advanced) {
                 state = "advanced to epoch " + std::to_string(epoch);
             } else {
@@ -517,15 +574,6 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
             sweep();
         }
     }
-    const auto notes_detail = [](const char* label, const std::vector<std::string>& notes) {
-        std::string detail;
-        for (std::size_t i = 0; i < notes.size() && i < 8; ++i) {
-            detail += i == 0 ? label : "; ";
-            detail += notes[i];
-        }
-        if (notes.size() > 8) detail += "; more";
-        return detail;
-    };
     const auto tried_detail = [&] { return notes_detail("; tried: ", source_notes); };
     const auto& authority = state_->walker->authority();
     if (!authority) {
@@ -654,12 +702,8 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
                 probe_notes.push_back(candidate.host + ":" + std::to_string(candidate.port) +
                                       " " + outcome);
             };
-            if (!reply) {
-                note("unreachable");
-                continue;
-            }
-            if (reply->status != 200) {
-                note("HTTP " + std::to_string(reply->status));
+            if (!reply || reply->status != 200) {
+                note(reply_note(reply));
                 continue;
             }
             const auto doc = json::parse(reply->body, nullptr, false);

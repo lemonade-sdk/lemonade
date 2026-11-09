@@ -88,15 +88,29 @@ public:
     /// pinned key. Asks `hosts` (for example, servers the application found
     /// through DNS discovery), then the configured servers and the servers
     /// they list in /api/servers (when `auto_discover` is set), for
-    /// GET /api/onboard/info over verified HTTPS. On success the key is
-    /// pinned as with set_genesis_key(); store the returned key and pass it
-    /// to set_genesis_key() on later runs. It never replaces a pinned key.
+    /// GET /api/onboard/info over verified HTTPS. When those are fewer than
+    /// kGenesisDiscoveryMinHosts distinct hosts, it also asks the servers the
+    /// region's SEIP records name (the region of set_discovery_target() or
+    /// ServerConfig, else a known server's SEIP FQDN; see refresh_tier1());
+    /// they are candidates only, and the agreement rules still decide. On
+    /// success the key is pinned as with set_genesis_key(), the region's
+    /// servers join the pool, and the application stores the returned key
+    /// for set_genesis_key() on later runs. It never replaces a pinned key.
     /// See Tier1Directory::discover_genesis_key for the agreement rules and
     /// the trust limit (trust on first use). Errors: a key is already pinned,
     /// the servers disagree or send a malformed key, or too few servers
-    /// agree. Blocks on network I/O.
+    /// agree (the error names each host asked and what it answered). Blocks
+    /// on network I/O.
     [[nodiscard]] Result<GenesisKeyDiscovery> discover_genesis_key(
         const std::vector<ServerEndpoint>& hosts = {});
+
+    /// Name the region that fallback discovery and discover_genesis_key()
+    /// resolve (`<region>.seip.<domain>`): ServerConfig::discovery_domain
+    /// and discovery_region for a client created without them. Errors, and
+    /// nothing stored: `domain` is not a hostname or `region` is not one
+    /// hostname label (valid_discovery_target()). Thread-safe.
+    [[nodiscard]] StatusResult set_discovery_target(const std::string& domain,
+                                                    const std::string& region);
 
     /// Verify the Tier 1 membership now, from the current server pool. Tree
     /// calls also refresh it on their own when it is older than five minutes

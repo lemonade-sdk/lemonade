@@ -26,7 +26,7 @@ use smoltcp::wire::{IpCidr, IpEndpoint, Ipv4Address};
 
 use bridge::BridgeTarget;
 use stack::{Command, IngressNotify, Stack};
-pub use stack::MIN_TCP_BUFFER;
+pub use stack::{EGRESS_CONNECT_TIMEOUT, MIN_TCP_BUFFER};
 
 /// Callback invoked with each outbound IP packet the stack emits.
 pub type NsOutputFn = unsafe extern "C" fn(ctx: *mut c_void, pkt: *const u8, len: usize);

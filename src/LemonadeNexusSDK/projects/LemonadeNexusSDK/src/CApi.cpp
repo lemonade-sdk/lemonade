@@ -9,6 +9,7 @@
 #include <LemonadeNexus/Auth/AccountDeletionProof.hpp>
 
 #include <nlohmann/json.hpp>
+#include <spdlog/sinks/base_sink.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -192,6 +193,8 @@ ln_error_t ln_account_avatar_put(ln_client_t* client, const char* record_json, c
 
 // Bump spdlog to debug when LN_DEBUG is set in the environment — surfaces the
 // dataplane's route/send/handshake logs for diagnosing mesh connectivity.
+// spdlog::set_level reaches every registered logger, so a callback logger
+// installed before the first ln_create gets the level too.
 static void ln_apply_debug_log_level() {
     static bool applied = false;
     if (applied) return;
@@ -199,6 +202,57 @@ static void ln_apply_debug_log_level() {
     if (const char* v = std::getenv("LN_DEBUG"); v && *v && std::string(v) != "0") {
         spdlog::set_level(spdlog::level::debug);
         spdlog::debug("[CApi] debug logging enabled (LN_DEBUG)");
+    }
+}
+
+namespace {
+
+/// A spdlog sink that hands each line's text to an ln_log_fn. The line is
+/// not formatted: the host logger adds its own timestamp and level.
+class LnCallbackSink final : public spdlog::sinks::base_sink<std::mutex> {
+public:
+    LnCallbackSink(ln_log_fn fn, void* user) : fn_(fn), user_(user) {}
+
+protected:
+    void sink_it_(const spdlog::details::log_msg& msg) override {
+        const std::string logger(msg.logger_name.data(), msg.logger_name.size());
+        const std::string text(msg.payload.data(), msg.payload.size());
+        fn_(static_cast<int>(msg.level), logger.c_str(), text.c_str(), user_);
+    }
+    void flush_() override {}
+
+private:
+    ln_log_fn fn_;
+    void*     user_;
+};
+
+/// The logger the process started with, kept so a NULL callback can put it
+/// back. Captured on the first ln_set_log_callback call.
+std::shared_ptr<spdlog::logger>& ln_original_logger() {
+    static std::shared_ptr<spdlog::logger> original;
+    return original;
+}
+
+}  // namespace
+
+ln_error_t ln_set_log_callback(ln_log_fn callback, void* user) {
+    try {
+        auto& original = ln_original_logger();
+        const auto current = spdlog::default_logger();
+        if (!original) original = current;
+        if (!callback) {
+            spdlog::set_default_logger(original);
+            return LN_OK;
+        }
+        auto sink = std::make_shared<LnCallbackSink>(callback, user);
+        auto logger = std::make_shared<spdlog::logger>("lemonade-nexus-sdk", std::move(sink));
+        // The level in force (the default, or debug from LN_DEBUG) carries over.
+        logger->set_level(current->level());
+        logger->flush_on(current->flush_level());
+        spdlog::set_default_logger(std::move(logger));
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
     }
 }
 
@@ -2042,6 +2096,15 @@ ln_error_t ln_discover_genesis_key(ln_client_t* client, const char* hosts_json,
                                      {"dns_base_domain", result.value.dns_base_domain},
                                      {"hosts", result.value.hosts}});
         return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_set_discovery_target(ln_client_t* client, const char* domain, const char* region) {
+    if (!client || !domain || !region) return LN_ERR_NULL_ARG;
+    try {
+        return client->client.set_discovery_target(domain, region).ok ? LN_OK : LN_ERR_REJECTED;
     } catch (...) {
         return LN_ERR_INTERNAL;
     }

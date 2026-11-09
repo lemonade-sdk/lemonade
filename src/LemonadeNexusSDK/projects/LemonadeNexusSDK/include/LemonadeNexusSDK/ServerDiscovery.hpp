@@ -35,6 +35,11 @@ Result<std::vector<DiscoveredServer>> discover_servers(const std::string& domain
                                                        const std::string& region,
                                                        uint16_t port = 9100);
 
+/// True when discover_servers() accepts `domain` and `region`: `domain` is
+/// a hostname and `region` one hostname label, both with hostname characters
+/// only. Case and a trailing dot do not matter. No network I/O.
+bool valid_discovery_target(const std::string& domain, const std::string& region);
+
 /// discover_servers() for addresses already known (seed lists and tests):
 /// probes each address of `addresses` in order and keeps the names below
 /// `domain`. Duplicate names are reported once, at their first address.

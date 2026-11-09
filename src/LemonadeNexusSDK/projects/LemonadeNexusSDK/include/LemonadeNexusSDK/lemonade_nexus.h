@@ -65,6 +65,36 @@ void ln_free(char* ptr);
 /* Client lifecycle                                                    */
 /* ------------------------------------------------------------------ */
 
+/** Receives one SDK log line. See ln_set_log_callback. */
+typedef void (*ln_log_fn)(int level, const char* logger, const char* message, void* user);
+
+/** Route the SDK's log lines to the application instead of stdout, for a
+ *  host whose stdout is lost (a Windows service, a mobile app).
+ *
+ *  The SDK logs through one process-wide default logger. This call replaces
+ *  it with one that hands every line to `callback`, and a NULL `callback`
+ *  puts the stdout logger back. The level in force stays as it is: the
+ *  default (info), or debug when LN_DEBUG was set in the environment at the
+ *  first ln_create / ln_create_tls. Process-wide, not per client.
+ *
+ *  Contract for `callback`:
+ *  - It runs on SDK threads, while the SDK holds internal locks. It must
+ *    return quickly, must not throw (no C++ exception may cross it), and must
+ *    not call any ln_* function.
+ *  - `logger` and `message` are NUL-terminated UTF-8, valid only during the
+ *    call; copy them to keep them. `message` is the line's text without a
+ *    timestamp or level prefix. `logger` is "lemonade-nexus-sdk".
+ *  - `level` is spdlog's numeric level: 0 trace, 1 debug, 2 info, 3 warn,
+ *    4 error, 5 critical. Lines below the level in force are not delivered.
+ *  - `callback` and `user` must stay valid until a later ln_set_log_callback
+ *    call returns.
+ *
+ *  Make the call before the first ln_create, or while no SDK thread runs
+ *  (no client exists): the logger swap is not synchronized against a log
+ *  line in progress on another thread. Returns LN_OK, or LN_ERR_INTERNAL
+ *  when the logger could not be installed (nothing changed). */
+ln_error_t ln_set_log_callback(ln_log_fn callback, void* user);
+
 /** Create a client connecting to host:port (plaintext HTTP). */
 ln_client_t* ln_create(const char* host, uint16_t port);
 
@@ -1226,11 +1256,16 @@ ln_error_t ln_tier1_progress(ln_client_t* client, char** out_json);
  *
  *  The client asks each candidate server for GET /api/onboard/info over
  *  verified HTTPS: the servers in hosts_json first, then the configured
- *  server and the servers it lists in /api/servers. At most 16 distinct hosts
- *  are asked. Every server that reports a key must report the same key,
- *  network id, and DNS domain; the network id must derive from the key; and at
- *  least 3 distinct agreeing hosts must sit inside that DNS domain. Anything
- *  else fails closed and pins nothing.
+ *  server and the servers it lists in /api/servers. When those are fewer
+ *  than 3 distinct hosts, it also asks the servers the region's SEIP records
+ *  name (the region of ln_set_discovery_target, else a known server's SEIP
+ *  FQDN); they are candidates only. At most 16 distinct hosts are asked.
+ *  Every server that reports a key must report the same key, network id, and
+ *  DNS domain; the network id must derive from the key; and at least 3
+ *  distinct agreeing hosts must sit inside that DNS domain. Anything else
+ *  fails closed and pins nothing. The "too few" error names each host asked
+ *  and what it answered ("unreachable" with the transport's reason, "HTTP
+ *  <status>", "no claim", "outside domain", or "agrees").
  *
  *  Trust limit: this is trust on first use. It rests on verified-HTTPS
  *  ownership of the network's DNS domain and on agreement of several servers,
@@ -1254,6 +1289,24 @@ ln_error_t ln_tier1_progress(ln_client_t* client, char** out_json);
  *  Blocks on network I/O. Thread-safe. */
 ln_error_t ln_discover_genesis_key(ln_client_t* client, const char* hosts_json,
                                    char** out_json);
+
+/** Name the region the client resolves for more servers: the DNS records
+ *  `<region>.seip.<domain>` that ln_discover_servers reads. ln_tier1_refresh
+ *  (and every tree call that refreshes) resolves them when no known server
+ *  answers, and ln_discover_genesis_key when it knows fewer than 3 distinct
+ *  hosts. Without this call the client takes both from a known server's SEIP
+ *  FQDN `<id>.<region>.seip.<domain>`; a client whose only known server has
+ *  another name, or none, then runs no region lookup. The records supply
+ *  candidates only; the endpoint proofs and the Genesis key agreement decide.
+ *
+ *  @param domain  Network DNS domain, e.g. "lemonade-nexus.io": a hostname.
+ *                 Copied; not retained after the call.
+ *  @param region  SEIP region label, e.g. "us-west": one hostname label.
+ *                 Copied; not retained after the call.
+ *  @return LN_OK; LN_ERR_NULL_ARG for a NULL argument; LN_ERR_REJECTED, and
+ *          nothing stored, when `domain` is not a hostname or `region` is not
+ *          one hostname label. Thread-safe. */
+ln_error_t ln_set_discovery_target(ln_client_t* client, const char* domain, const char* region);
 
 /** First-connect server discovery, the same steps as the client app's DNS
  *  discovery: resolve `<region>.seip.<domain>`, read each address's leaf

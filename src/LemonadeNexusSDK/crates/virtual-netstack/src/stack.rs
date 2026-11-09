@@ -43,6 +43,13 @@ const UDP_HEADER_LEN: usize = 8;
 /// Smallest MTU every IPv4 link must carry (RFC 791). send_udp fragments to
 /// the MTU, so a smaller value leaves no room for a fragment payload.
 pub const MIN_IPV4_MTU: usize = 68;
+/// How long an egress connection waits for the virtual peer's SYN-ACK. The
+/// loopback accept succeeds at once, so without this bound a request to a
+/// peer whose path is not up stalls until the caller's own read timeout;
+/// smoltcp retransmits the SYN without limit. The bound ends with the
+/// handshake: an established connection keeps smoltcp's default of no
+/// timeout.
+pub const EGRESS_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Receiver for datagrams that arrive on a bound virtual UDP port. Called on
 /// the stack thread with (source, destination, payload).
@@ -566,6 +573,9 @@ impl Stack {
                 };
 
                 let mut socket = self.make_tcp_socket();
+                socket.set_timeout(Some(smoltcp::time::Duration::from_micros(
+                    EGRESS_CONNECT_TIMEOUT.as_micros() as u64,
+                )));
                 let local_port = self.alloc_ephemeral();
                 let local = IpEndpoint {
                     addr: IpAddress::Ipv4(src_ip),
@@ -630,7 +640,11 @@ impl Stack {
                 let conn = self.conns.get_mut(&token).unwrap();
                 let socket = self.sockets.get_mut::<tcp::Socket>(conn.tcp);
 
-                if socket.may_send() {
+                if socket.may_send() && !conn.established {
+                    // The handshake is done: the connect bound no longer
+                    // applies, and a quiet established connection must not
+                    // be aborted (see EGRESS_CONNECT_TIMEOUT).
+                    socket.set_timeout(None);
                     conn.established = true;
                 }
 

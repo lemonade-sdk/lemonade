@@ -593,18 +593,19 @@ struct LemonadeNexusClient::Impl {
                 res = pooled->cli.Get(path);
             }
             if (!res) {
-                // The directory reports a source only as "unreachable"; the
-                // transport reason (DNS, connect, TLS verification) lives here.
-                spdlog::warn("[LemonadeNexusClient] GET {}{} failed: {}", url, path,
-                             httplib::to_string(res.error()));
+                // The transport reason (DNS, connect, TLS verification) goes
+                // back with the reply, so the directory's failure text names
+                // it next to the server; the full URL is logged here.
+                const auto why = httplib::to_string(res.error());
+                spdlog::warn("[LemonadeNexusClient] GET {}{} failed: {}", url, path, why);
                 drop_pooled_client(url);
-                return std::nullopt;
+                return HttpReply{0, {}, why};
             }
             return HttpReply{res->status, res->body};
         } catch (const std::exception& e) {
             spdlog::warn("[LemonadeNexusClient] GET {}{} exception: {}", url, path, e.what());
             drop_pooled_client(url);
-            return std::nullopt;
+            return HttpReply{0, {}, e.what()};
         }
     }
 
@@ -688,39 +689,26 @@ struct LemonadeNexusClient::Impl {
         return target;
     }
 
-    // The region's servers from DNS, for a refresh that found no known server
-    // answering. Candidates only: the endpoint proofs decide. Runs at most
-    // once per kFallbackDiscoveryIntervalMs; empty when it did not run or
-    // found nothing.
-    std::vector<ServerEndpoint> fallback_discovery() {
-        const auto target = discovery_target();
-        if (!target) {
-            spdlog::debug("[LemonadeNexusClient] no known server answered and no discovery "
-                          "domain and region are known: no fallback discovery");
-            return {};
-        }
+    // The servers the region's SEIP records name. Candidates only: the
+    // endpoint proofs, or the Genesis key agreement, decide. `why` opens the
+    // log lines with the reason for the lookup. Empty when it found nothing.
+    std::vector<ServerEndpoint> region_servers(const DiscoveryTarget& target, const char* why) {
         LemonadeNexusClient::RegionDiscovery discovery;
         {
             std::lock_guard lock(transport_mtx);
-            const auto now = steady_now_ms();
-            if (last_fallback_discovery_ms != 0 &&
-                now - last_fallback_discovery_ms < kFallbackDiscoveryIntervalMs) {
-                return {};
-            }
-            last_fallback_discovery_ms = now;
             discovery = region_discovery;
         }
-        const auto region_name = target->region + ".seip." + target->domain;
+        const auto region_name = target.region + ".seip." + target.domain;
         Result<std::vector<DiscoveredServer>> found;
         try {
-            found = discovery(target->domain, target->region, target->port);
+            found = discovery(target.domain, target.region, target.port);
         } catch (const std::exception& e) {
             found.ok = false;
             found.error = e.what();
         }
         if (!found.ok || found.value.empty()) {
-            spdlog::warn("[LemonadeNexusClient] no known server answered; discovery of {} found "
-                         "no server: {}", region_name, found.error);
+            spdlog::warn("[LemonadeNexusClient] {}; discovery of {} found no server: {}", why,
+                         region_name, found.error);
             return {};
         }
         std::vector<ServerEndpoint> out;
@@ -730,9 +718,33 @@ struct LemonadeNexusClient::Impl {
             out.push_back({s.host, s.port, true});
             names += (names.empty() ? "" : ", ") + s.host + ":" + std::to_string(s.port);
         }
-        spdlog::info("[LemonadeNexusClient] no known server answered; {} names {} server(s) to "
-                     "verify: {}", region_name, out.size(), names);
+        spdlog::info("[LemonadeNexusClient] {}; {} names {} server(s) to verify: {}", why,
+                     region_name, out.size(), names);
         return out;
+    }
+
+    // The region's servers from DNS, for a refresh that found no known server
+    // answering. Runs at most once per kFallbackDiscoveryIntervalMs; empty
+    // when it did not run or found nothing.
+    std::vector<ServerEndpoint> fallback_discovery() {
+        const auto target = discovery_target();
+        if (!target) {
+            spdlog::warn("[LemonadeNexusClient] no known server answered and no discovery "
+                         "domain and region are known: no fallback discovery (set "
+                         "ServerConfig::discovery_domain and discovery_region, or call "
+                         "set_discovery_target)");
+            return {};
+        }
+        {
+            std::lock_guard lock(transport_mtx);
+            const auto now = steady_now_ms();
+            if (last_fallback_discovery_ms != 0 &&
+                now - last_fallback_discovery_ms < kFallbackDiscoveryIntervalMs) {
+                return {};
+            }
+            last_fallback_discovery_ms = now;
+        }
+        return region_servers(*target, "no known server answered");
     }
 
     // Verify the Tier 1 membership from the known servers and, when none
@@ -1596,7 +1608,60 @@ Result<GenesisKeyDiscovery> LemonadeNexusClient::discover_genesis_key(
     auto candidates = hosts;
     const auto pool = impl_->tier1_sources();
     candidates.insert(candidates.end(), pool.begin(), pool.end());
-    return impl_->tier1.discover_genesis_key(candidates);
+
+    // Agreement needs kGenesisDiscoveryMinHosts distinct hosts. A client
+    // that knows fewer (one seed, or a seed whose /api/servers did not
+    // answer) asks the region's SEIP records for the rest; they only add
+    // candidates, and the domain and agreement rules still decide.
+    std::set<std::string> distinct;
+    for (const auto& ep : candidates) {
+        std::string name = ep.host;
+        std::transform(name.begin(), name.end(), name.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (!name.empty() && name.back() == '.') name.pop_back();
+        if (!name.empty()) distinct.insert(name);
+    }
+    std::vector<ServerEndpoint> region;
+    if (distinct.size() < kGenesisDiscoveryMinHosts) {
+        if (const auto target = impl_->discovery_target()) {
+            region = impl_->region_servers(*target, "Genesis key discovery knows fewer than 3 "
+                                                    "hosts");
+            for (const auto& ep : region) {
+                const bool known = std::any_of(
+                    candidates.begin(), candidates.end(),
+                    [&ep](const ServerEndpoint& o) { return Impl::same_endpoint(o, ep); });
+                if (!known) candidates.push_back(ep);
+            }
+        } else {
+            spdlog::warn("[LemonadeNexusClient] Genesis key discovery knows {} host(s), fewer "
+                         "than the {} it needs, and no discovery domain and region: no region "
+                         "lookup (set ServerConfig::discovery_domain and discovery_region, or "
+                         "call set_discovery_target)",
+                         distinct.size(), kGenesisDiscoveryMinHosts);
+        }
+    }
+    auto found = impl_->tier1.discover_genesis_key(candidates);
+    if (found.ok && !region.empty()) {
+        // The region's servers answered: keep them as sources for the Tier 1
+        // refresh that follows and for the public API.
+        std::lock_guard lock(impl_->transport_mtx);
+        impl_->add_pool_servers_locked(region);
+    }
+    return found;
+}
+
+StatusResult LemonadeNexusClient::set_discovery_target(const std::string& domain,
+                                                       const std::string& region) {
+    StatusResult result;
+    if (!valid_discovery_target(domain, region)) {
+        result.error = "the network domain and region must be hostname labels";
+        return result;
+    }
+    std::lock_guard lock(impl_->transport_mtx);
+    impl_->config.discovery_domain = domain;
+    impl_->config.discovery_region = region;
+    result.ok = true;
+    return result;
 }
 
 Result<Tier1Membership> LemonadeNexusClient::refresh_tier1() {

@@ -179,12 +179,18 @@ Result<std::vector<DiscoveredServer>> discover_servers_at(const std::vector<std:
     return result;
 }
 
+bool valid_discovery_target(const std::string& domain, const std::string& region) {
+    const auto zone = canonical(domain);
+    const auto area = canonical(region);
+    return hostname_chars(zone) && hostname_chars(area) && area.find('.') == std::string::npos;
+}
+
 Result<std::vector<DiscoveredServer>> discover_servers(const std::string& domain,
                                                        const std::string& region,
                                                        uint16_t port) {
     const auto zone = canonical(domain);
     const auto area = canonical(region);
-    if (!hostname_chars(zone) || !hostname_chars(area) || area.find('.') != std::string::npos) {
+    if (!valid_discovery_target(zone, area)) {
         return fail<std::vector<DiscoveredServer>>(
             "the network domain and region must be hostname labels");
     }
