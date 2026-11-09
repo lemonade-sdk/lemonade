@@ -899,17 +899,16 @@ jobs:
             exit $validationExitCode
           }
 
-      - name: Record the API examples these pins invalidate
-        # The update PR carries examples recorded with the new backend, so the API
-        # reference keeps showing what lemond returns. When this fails, the PR's API
-        # docs check reports the stale examples instead.
+      - name: Re-record the API examples the new backend serves
+        # An example changes only when the new backend changes its response's shape,
+        # so the update PR carries no churn from new values.
         if: matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         continue-on-error: true
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
           Copy-Item build\resources\backend_versions.json src\cpp\resources\backend_versions.json -Force
-          & .\.venv\Scripts\python.exe docs\tools\gen_api_boilerplate.py --lemond build\Release\lemond.exe
+          & .\.venv\Scripts\python.exe docs\tools\gen_api_boilerplate.py --lemond build\Release\lemond.exe --refresh llamacpp
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload recorded API examples
@@ -1364,6 +1363,12 @@ jobs:
           LLAMACPP_LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
         run: |
           BRANCH="auto/llamacpp-update-${LLAMACPP_RELEASE}-${LLAMACPP_LEMONADE_RELEASE}-${LLAMACPP_ROCM_RELEASE}"
+          # A run dispatched from a branch opens its PR against that branch, which
+          # tests workflow changes without colliding with main's update PR.
+          BASE="$GITHUB_REF_NAME"
+          if [ "$BASE" != main ]; then
+            BRANCH="${BRANCH}-for-${BASE//\//-}"
+          fi
 
           # Check if a PR already exists for this update
           EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
@@ -1390,7 +1395,7 @@ jobs:
           gh pr create \
             --title "Update llama.cpp to ${LLAMACPP_RELEASE}" \
             --body-file pr_body.md \
-            --base main \
+            --base "$BASE" \
             --head "$BRANCH"
 
   gpu-offload-gate:
