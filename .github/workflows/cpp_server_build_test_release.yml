@@ -351,12 +351,26 @@ jobs:
           retention-days: 7
 
   build-lemonade-deb:
-    name: Build Lemonade .deb Package
+    name: Build Lemonade .deb Package (Ubuntu ${{ matrix.release }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The 24.04 package keeps the lemonade-deb artifact name that the
+          # .deb test jobs download; the newer release only adds a package.
+          - release: '24.04'
+            codename: noble
+            artifact: lemonade-deb
+          - release: '26.04'
+            codename: resolute
+            artifact: lemonade-deb-26.04
     outputs:
+      # Both legs compute the same version string (the Ubuntu release is a
+      # suffix of the Debian version, not part of this output).
       version: ${{ steps.get_version.outputs.version }}
     container:
-      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu${{ matrix.release }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -398,8 +412,8 @@ jobs:
         id: get_version
         uses: ./.github/actions/prepare-debian-build
         with:
-          release: '24.04'
-          codename: 'noble'
+          release: ${{ matrix.release }}
+          codename: ${{ matrix.codename }}
 
       - name: Build Debian package
         id: build_deb
@@ -411,7 +425,7 @@ jobs:
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
         with:
-          name: lemonade-deb
+          name: ${{ matrix.artifact }}
           path: ${{ steps.build_deb.outputs.output-dir }}/*.deb
           retention-days: 7
 
