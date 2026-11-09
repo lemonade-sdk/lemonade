@@ -28,6 +28,8 @@ assert.equal(getCacheTokenCount({ cache_tokens: 13, n_prompt_tokens: 99 }), 13);
 assert.equal(getCacheTokenCount({ cache_tokens: [1, 2, 3], n_prompt_tokens: 99 }), 3);
 assert.equal(getCacheTokenCount({ n_prompt_tokens: 617, n_prompt_tokens_cache: 0 }), 617);
 assert.equal(getCacheTokenCount({ id: 0, n_ctx: 262144 }), 0, 'a fresh slot reports no prompt fields');
+assert.equal(getCacheTokenCount({ id: 0, n_ctx: 262144, is_processing: false, n_prompt_tokens: 2122 }),
+  2122, 'Strata prompt-token telemetry remains visible while idle');
 
 assert.equal(percentDigits(0), '0');
 assert.equal(percentDigits(0.2), '<1');
@@ -104,7 +106,15 @@ assert.equal(selectGenerationTps(0, quietStats, true, false), 65,
 
 // Protect the backend routing contract: FLM must not trigger a /slots request.
 const hookSource = fs.readFileSync(path.resolve(__dirname, '../src/hooks/useMonitorData.ts'), 'utf8');
-assert.match(hookSource, /activeModel && \(activeModel\.recipe === 'llamacpp' \|\| activeModel\.recipe === 'vllm'\)/);
+const slotsGate = hookSource.match(/const supportsSlots = (Boolean\([\s\S]*?\n\s*\));/);
+assert.ok(slotsGate, 'monitor slot capability gate must be present');
+const supportsSlots = new Function('activeModel', `return ${slotsGate[1]};`);
+for (const recipe of ['llamacpp', 'vllm', 'strata']) {
+  assert.equal(supportsSlots({ recipe }), true, `${recipe} must poll slots`);
+}
+for (const model of [undefined, null, { recipe: 'flm' }, { recipe: 'whispercpp' }]) {
+  assert.equal(supportsSlots(model), false, 'unloaded and incompatible backends must not poll slots');
+}
 assert.match(hookSource, /if \(supportsSlots\) \{[\s\S]*?const response = await api\.slots\(\)/);
 assert.match(hookSource, /selectGenerationTps\(aggTps, st, newCompletion, supportsSlots\)/);
 assert.match(hookSource, /slotActive = isSlotProcessing\(s, slotTps\)/);

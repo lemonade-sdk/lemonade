@@ -7,7 +7,7 @@
 namespace lemon {
 namespace backends {
 
-class StrataServer : public WrappedServer {
+class StrataServer : public WrappedServer, public ISlotsServer {
 public:
     StrataServer(const std::string& log_level, ModelManager* model_manager,
                  BackendManager* backend_manager);
@@ -18,6 +18,8 @@ public:
     void unload() override;
     json chat_completion(const json& request) override;
     json responses(const json& request) override;
+    json get_slots() override;
+    json slots_action(int slot_id, const std::string& action, const json& request_body) override;
 
 private:
     std::string runtime_dir_;

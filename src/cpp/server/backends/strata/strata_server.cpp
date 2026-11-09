@@ -415,5 +415,13 @@ json StrataServer::responses(const json& request) {
     return forward_request("/v1/responses", request);
 }
 
+json StrataServer::get_slots() {
+    return forward_get_request("/slots");
+}
+
+json StrataServer::slots_action(int slot_id, const std::string& action, const json& request_body) {
+    return forward_request("/slots/" + std::to_string(slot_id) + "?action=" + action, request_body);
+}
+
 }  // namespace backends
 }  // namespace lemon

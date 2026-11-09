@@ -3,6 +3,7 @@
 #include "lemon/system_info.h"
 #include "lemon/utils/custom_args.h"
 
+#include <atomic>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -10,6 +11,8 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <type_traits>
 
 namespace {
 int failures = 0;
@@ -27,9 +30,60 @@ bool rejects(const std::function<void()>& operation) {
     }
     return false;
 }
+
+class FixtureStrataServer : public lemon::backends::StrataServer {
+public:
+    explicit FixtureStrataServer(int port) : StrataServer("error", nullptr, nullptr) {
+        port_ = port;
+    }
+
+    bool is_backend_alive() const override { return true; }
+};
+
+void test_slots() {
+    check("Strata implements the router's slots interface",
+          std::is_base_of<lemon::ISlotsServer, lemon::backends::StrataServer>::value);
+    httplib::Server backend;
+    const lemon::json slots = lemon::json::array({
+        {{"id", 0}, {"n_ctx", 262144}, {"is_processing", false}, {"n_prompt_tokens", 64}},
+        {{"id", 1}, {"n_ctx", 262144}, {"is_processing", true}, {"n_prompt_tokens", 512}},
+    });
+    backend.Get("/slots", [&](const httplib::Request&, httplib::Response& response) {
+        response.set_content(slots.dump(), "application/json");
+    });
+    std::atomic<bool> action_query_ok{false};
+    std::atomic<bool> action_body_ok{false};
+    backend.Post("/slots/7", [&](const httplib::Request& request, httplib::Response& response) {
+        action_query_ok = request.get_param_value("action") == "restore";
+        action_body_ok = lemon::json::parse(request.body) == lemon::json{{"filename", "session.bin"}};
+        response.status = 501;
+        response.set_content(
+            R"({"error":{"message":"slot save/restore is disabled","type":"invalid_request_error"}})",
+            "application/json");
+    });
+    const int port = backend.bind_to_any_port("127.0.0.1");
+    check("Slot fixture binds loopback", port > 0);
+    if (port <= 0) return;
+    std::thread listener([&] { backend.listen_after_bind(); });
+    backend.wait_until_ready();
+    {
+        FixtureStrataServer server(port);
+        check("Slot telemetry preserves upstream context, token counts and processing states",
+              server.get_slots() == slots);
+        const auto response = server.slots_action(7, "restore", {{"filename", "session.bin"}});
+        check("Slot action query is forwarded", action_query_ok);
+        check("Slot action body is forwarded", action_body_ok);
+        check("Unsupported upstream slot actions remain explicit errors",
+              response.contains("error") &&
+              response.dump().find("slot save/restore is disabled") != std::string::npos);
+    }
+    backend.stop();
+    listener.join();
+}
 }  // namespace
 
 int main() {
+    test_slots();
     namespace strata = lemon::backends::strata;
     check("Windows RDNA4 archive",
           strata::engine_asset("windows-x86_64", "rocm", "gfx1201") ==
