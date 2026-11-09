@@ -158,5 +158,10 @@ assert.match(sources.api, /async testMcpServer\(/);
 assert.doesNotMatch(sources.api, /body: \{ server: \{ \.\.\.server, transport: 'stdio' \} \}/);
 assert.doesNotMatch(sources.api, /\/internal\/mcp/);
 assert.match(sources.mcpRuntime, /return \[LEMONADE_MCP_SERVER\]/);
+assert.match(
+  sources.chat,
+  /const selectionEpoch = modelSelectionEpochRef\.current;\s*try \{\s*const video = await api\.videoGeneration\(/,
+  'the video reload must compare against the epoch from before the job, not after the stop',
+);
 
 console.log('UI regression contract checks passed.');

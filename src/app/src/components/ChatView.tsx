@@ -3010,6 +3010,9 @@ ${finalText}`
         if (!text) throw new Error(t('Video mode needs a text prompt.'));
         const controller = new AbortController();
         videoAbortRef.current.set(convoId, controller);
+        // Taken before the job starts so that a model picked while the clip runs
+        // or while Stop is pending is not overwritten by the reload below.
+        const selectionEpoch = modelSelectionEpochRef.current;
         try {
           const video = await api.videoGeneration(model.name, text, {
             video_frames: videoSettings.frames,
@@ -3045,8 +3048,7 @@ ${finalText}`
           // back so the next prompt stays in video mode instead of falling back
           // to whatever chat model is still loaded, unless the user has moved to
           // another conversation or model since.
-          const epoch = modelSelectionEpochRef.current;
-          const stillHere = () => activeIdRef.current === convoId && modelSelectionEpochRef.current === epoch;
+          const stillHere = () => activeIdRef.current === convoId && modelSelectionEpochRef.current === selectionEpoch;
           try {
             if (stillHere()) {
               await loadModelForChat(model.name, findModelInfoByName(knownModelInfos, model.name) || null);
