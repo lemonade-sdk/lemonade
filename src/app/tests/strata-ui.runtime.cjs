@@ -53,6 +53,7 @@ assert.deepEqual(configuration.sanitizeRecipeOptions({ strata_args: '' }), {});
 assert.deepEqual(configuration.recipeOptionsForCapability(options, 'image'), {});
 
 const specs = sampler.samplerFieldsForRecipe('strata');
+assert.equal(specs.find(spec => spec.flag === '--mtp').backendDefault, '2');
 const args = '--mtp 0 --prefill auto --gpu 1 --expert-vram 8 --expert-slots 256 --cpu-threads 4 '
   + '--hybrid-rows 128 --draft-vocab 1000 --no-graph --no-warmup --batch-mtp';
 const split = sampler.splitSamplerArgs(specs, args);

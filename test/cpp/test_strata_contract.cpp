@@ -108,7 +108,7 @@ int main() {
     check("Engine opens the original shared GGUF",
           config.at("args") == lemon::json::array(
               {"--native", "shared.gguf", "--max-context", "4096",
-               "--prefill", "auto", "--mtp", "1"}));
+               "--prefill", "auto", "--mtp", "2"}));
     check("Correct engine architecture and protocol",
           config.at("arch") == "qwen35moe" && config.at("backend") == "hip");
     check("No exposed upstream listener or desktop launch",
@@ -131,6 +131,11 @@ int main() {
     const auto arg_map = lemon::utils::build_custom_args_map(args);
     check("Parallel slots reach the Python server", tuned.at("parallel") == 4);
     check("Explicit zero disables MTP", arg_map.at("--mtp")[0][0] == "0");
+    check("Explicit MTP depth overrides the upstream default",
+          strata::build_config("m", "m.gguf", "engine", "tokenizer", "cuda", 262144,
+                               "--mtp 1").at("args") ==
+              lemon::json::array({"--native", "m.gguf", "--max-context", "262144",
+                                 "--mtp", "1", "--prefill", "auto"}));
     check("Quoted engine options preserve their values",
           strata::build_config("m", "m.gguf", "engine", "tokenizer", "cuda", 4096,
                                "--mtp \"0\" --prefill 'auto'").at("args") ==

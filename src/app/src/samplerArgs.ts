@@ -74,7 +74,7 @@ export const LLAMACPP_SAMPLER_FIELDS: ArgFieldSpec[] = [
 const SAMPLER_FIELDS_BY_RECIPE: Record<string, ArgFieldSpec[]> = {
   llamacpp: LLAMACPP_SAMPLER_FIELDS,
   strata: [
-    { flag: '--mtp', id: 'mtp', label: 'MTP drafts', kind: 'number', min: 0, max: 7, step: 1, backendDefault: '1' },
+    { flag: '--mtp', id: 'mtp', label: 'MTP drafts', kind: 'number', min: 0, max: 7, step: 1, backendDefault: '2' },
     { flag: '--prefill', id: 'prefill', label: 'Prompt chunk size', kind: 'text', backendDefault: 'auto' },
     { flag: '--gpu', id: 'gpu', label: 'GPU', kind: 'text' },
     { flag: '--expert-vram', id: 'expert-vram', label: 'Expert VRAM (GiB)', kind: 'number', min: 0, step: 0.5 },

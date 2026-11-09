@@ -185,7 +185,7 @@ json build_config(const std::string& model_name, const std::string& gguf,
     auto args = std::vector<std::string>{"--native", gguf, "--max-context", std::to_string(ctx_size)};
     const auto extra = utils::parse_custom_args(utils::append_runtime_arg_defaults(
         utils::map_to_args_string(utils::build_custom_args_map(utils::parse_custom_args(custom_args, true))),
-        {{"--prefill auto", "--prefill", {"--chunk"}}, {"--mtp 1", "--mtp"}}));
+        {{"--prefill auto", "--prefill", {"--chunk"}}, {"--mtp 2", "--mtp"}}));
     args.insert(args.end(), extra.begin(), extra.end());
     const fs::path engine_dir = utils::path_from_utf8(executable).parent_path();
     return {
