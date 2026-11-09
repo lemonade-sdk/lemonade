@@ -7,10 +7,12 @@
 import type { RecipeOptions } from './modelConfiguration';
 import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageConfig';
 import {
+  resumeVideoJob,
   runVideoJob,
   videoFileExtension,
   type VideoJobOptions,
   type VideoJobRecord,
+  type VideoJobTransport,
 } from './features/videoGeneration/videoJob';
 
 function detectDefaultBaseUrl(): string {
@@ -690,6 +692,28 @@ export interface LemonadeServerTarget {
   apiKey: string;
 }
 
+/** Enough to find a video job again on the server that created it. */
+export interface VideoJobRef {
+  id: string;
+  baseUrl: string;
+  model: string;
+}
+
+export type VideoGenerationControl = Pick<VideoJobOptions, 'signal' | 'onStatus'> & {
+  onJob?: (job: VideoJobRef) => void;
+};
+
+export interface VideoGenerationResult {
+  url: string;
+  blob: Blob;
+  filename: string;
+  record: VideoJobRecord;
+}
+
+function videoJobKey(baseUrl: string, id: string): string {
+  return `${baseUrl}\n${id}`;
+}
+
 export type LemonadeContextDefault = number | 'auto';
 
 export type ChatMessageContent = string | null | Array<
@@ -840,6 +864,7 @@ class LemonadeAPI {
   private _sessionApiKey = '';
   private _sessionAdminApiKey = '';
   private _apiKeyPersisted = false;
+  private _videoJobKeys = new Map<string, string>();
   private _hostBaseUrl: string | null = null;
   private _connectionSettingsPromise: Promise<void> | null = null;
   public readonly clientSessionId: string = createSecureClientSessionId();
@@ -1911,17 +1936,9 @@ class LemonadeAPI {
     return { blob, url: URL.createObjectURL(blob), filename: `${model}.glb` };
   }
 
-  async videoGeneration(
-    model: string,
-    prompt: string,
-    opts: Record<string, unknown> = {},
-    control: Pick<VideoJobOptions, 'signal' | 'onStatus'> = {},
-  ): Promise<{ url: string; blob: Blob; filename: string; record: VideoJobRecord }> {
+  private _videoTransport(server: LemonadeServerTarget): VideoJobTransport {
     const videoPath = (id: string) => `/api/v1/videos/${encodeURIComponent(id)}`;
-    // A job lives on the server that created it, so a later change to the
-    // connection settings must not send its polls or cancel elsewhere.
-    const server: LemonadeServerTarget = { baseUrl: this.baseUrl, apiKey: this.apiKey };
-    const { record, blob } = await runVideoJob({
+    return {
       create: body => this._json<VideoJobRecord>('/api/v1/videos', {
         method: 'POST',
         body,
@@ -1937,13 +1954,58 @@ class LemonadeAPI {
       cancel: async (id, signal) => {
         await this._fetch(`${videoPath(id)}/cancel`, { method: 'POST', signal, server });
       },
-    }, { ...opts, model, prompt }, control);
+    };
+  }
+
+  private _videoResult(model: string, record: VideoJobRecord, blob: Blob): VideoGenerationResult {
     return {
       record,
       blob,
       url: URL.createObjectURL(blob),
       filename: `${model}.${videoFileExtension(record)}`,
     };
+  }
+
+  async videoGeneration(
+    model: string,
+    prompt: string,
+    opts: Record<string, unknown> = {},
+    control: VideoGenerationControl = {},
+  ): Promise<VideoGenerationResult> {
+    // A job lives on the server that created it, so a later change to the
+    // connection settings must not send its polls or cancel elsewhere.
+    const server: LemonadeServerTarget = { baseUrl: this.baseUrl, apiKey: this.apiKey };
+    const transport = this._videoTransport(server);
+    let jobKey = '';
+    const { record, blob } = await runVideoJob({
+      ...transport,
+      create: async body => {
+        const created = await transport.create(body);
+        jobKey = videoJobKey(server.baseUrl, created.id);
+        this._videoJobKeys.set(jobKey, server.apiKey);
+        control.onJob?.({ id: created.id, baseUrl: server.baseUrl, model });
+        return created;
+      },
+    }, { ...opts, model, prompt }, control);
+    this._videoJobKeys.delete(jobKey);
+    return this._videoResult(model, record, blob);
+  }
+
+  async resumeVideoGeneration(
+    job: VideoJobRef,
+    control: VideoGenerationControl = {},
+  ): Promise<VideoGenerationResult> {
+    // Keys stay in memory only. After a restart the current key is sent only
+    // to the server it belongs to, never to the one the job was created on.
+    const jobKey = videoJobKey(job.baseUrl, job.id);
+    const apiKey = this._videoJobKeys.get(jobKey) ?? (job.baseUrl === this.baseUrl ? this.apiKey : '');
+    const { record, blob } = await resumeVideoJob(
+      this._videoTransport({ baseUrl: job.baseUrl, apiKey }),
+      { id: job.id, status: 'running' },
+      control,
+    );
+    this._videoJobKeys.delete(jobKey);
+    return this._videoResult(job.model, record, blob);
   }
 
   async imageUpscale(model: string, imageUrl: string, upscaleFactor?: number): Promise<string> {

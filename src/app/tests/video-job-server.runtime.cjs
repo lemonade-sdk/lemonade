@@ -53,6 +53,27 @@ function json(body) {
     assert.equal(request.auth, 'Bearer key-a');
   }
 
+  // A resumed job without a remembered key goes back to its own server, and
+  // the key for the server now in the settings is not sent there.
+  api.baseUrl = 'http://server-b:13305';
+  api.apiKey = 'key-b';
+  requests.length = 0;
+  global.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), auth: init.headers?.Authorization });
+    if (String(url).endsWith('/content')) return new Response(new Blob(['clip']), { status: 200 });
+    return json({ id: 'job-2', status: 'completed', output_format: 'webm' });
+  };
+  const resumed = await api.resumeVideoGeneration(
+    { id: 'job-2', baseUrl: 'http://server-a:13305', model: 'Wan' },
+    {},
+  );
+  assert.equal(resumed.blob.size, 4);
+  assert.ok(requests.length >= 2);
+  for (const request of requests) {
+    assert.ok(request.url.startsWith('http://server-a:13305/'), `${request.url} went to the wrong server`);
+    assert.equal(request.auth, undefined);
+  }
+
   console.log('Video job server affinity checks passed.');
 })().catch(err => {
   console.error(err);

@@ -54,19 +54,25 @@ export class VideoJobStopUnconfirmedError extends Error {
 
 /** The clip finished on the server but could not be downloaded. */
 export class VideoJobDownloadError extends Error {
+  readonly gone: boolean;
+
   constructor(readonly jobId: string, cause: unknown) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     super(`Video job ${jobId} finished but its clip could not be downloaded: ${reason}`);
     this.name = 'VideoJobDownloadError';
+    this.gone = isGone(cause);
   }
 }
 
 /** Status polls failed in a way that retrying will not fix, such as a 401. */
 export class VideoJobPollError extends Error {
+  readonly gone: boolean;
+
   constructor(readonly jobId: string, cause: unknown) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     super(`Lost track of video job ${jobId}: ${reason}. It may still be running on the server.`);
     this.name = 'VideoJobPollError';
+    this.gone = isGone(cause);
   }
 }
 
@@ -76,6 +82,16 @@ export function isVideoJobCanceled(err: unknown): err is VideoJobCanceledError {
 
 export function isVideoJobStopUnconfirmed(err: unknown): err is VideoJobStopUnconfirmedError {
   return err instanceof VideoJobStopUnconfirmedError;
+}
+
+/**
+ * The id of a job the client lost track of while the server may still hold
+ * it, so it can be resumed; null once the server no longer knows the job.
+ */
+export function recoverableVideoJobId(err: unknown): string | null {
+  if (err instanceof VideoJobStopUnconfirmedError) return err.jobId;
+  if ((err instanceof VideoJobPollError || err instanceof VideoJobDownloadError) && !err.gone) return err.jobId;
+  return null;
 }
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled']);
@@ -135,6 +151,20 @@ export async function runVideoJob(
   body: Record<string, unknown>,
   options: VideoJobOptions = {},
 ): Promise<VideoJobResult> {
+  if (options.signal?.aborted) throw new VideoJobCanceledError();
+  return resumeVideoJob(transport, await transport.create(body), options);
+}
+
+/**
+ * Follows a job that already exists on the server: polls it, cancels it on
+ * abort, and downloads the clip once it is done. A job the client lost track
+ * of is picked up again here with its last known record.
+ */
+export async function resumeVideoJob(
+  transport: VideoJobTransport,
+  initial: VideoJobRecord,
+  options: VideoJobOptions = {},
+): Promise<VideoJobResult> {
   const {
     signal,
     onStatus,
@@ -146,9 +176,8 @@ export async function runVideoJob(
     requestTimeoutMs = 15000,
     sleep = abortableSleep,
   } = options;
-  if (signal?.aborted) throw new VideoJobCanceledError();
 
-  let record = await transport.create(body);
+  let record = initial;
   const id = record.id;
 
   // The clip already exists, so Stop no longer applies: the download ignores

@@ -86,7 +86,13 @@ import {
   GLOBAL_MODEL_SETTINGS_EVENT,
   loadGlobalModelSettings,
 } from '../features/modelSettings/globalModelSettings';
-import { isVideoJobCanceled, isVideoJobStopUnconfirmed } from '../features/videoGeneration/videoJob';
+import type { VideoGenerationControl, VideoGenerationResult, VideoJobRef } from '../api';
+import {
+  isVideoJobCanceled,
+  isVideoJobStopUnconfirmed,
+  recoverableVideoJobId,
+  VideoJobDownloadError,
+} from '../features/videoGeneration/videoJob';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -102,6 +108,7 @@ interface Message {
   model3dName?: string;
   videoUrl?: string; // transient generated clip object URL
   videoName?: string;
+  videoJob?: VideoJobRef; // a clip the chat lost track of; cleared once it is resumed
   thinking?: string;
   stats?: ChatCompletionStats;
   toolCalls?: ToolCallEntry[];
@@ -2811,6 +2818,77 @@ ${finalText}`
     };
   }, [onDictationEnd, stopRecording]);
 
+  // A new clip and a resumed one share Stop, the status line, the result and
+  // the handling of a job the chat loses track of.
+  const followVideoJob = useCallback(async (
+    convoId: string,
+    model: ModelSnapshot,
+    start: (control: VideoGenerationControl) => Promise<VideoGenerationResult>,
+    knownJob?: VideoJobRef,
+  ) => {
+    const controller = new AbortController();
+    videoAbortRef.current.set(convoId, controller);
+    // Taken before the job starts so that a model picked while the clip runs
+    // or while Stop is pending is not overwritten by the reload below.
+    const selectionEpoch = modelSelectionEpochRef.current;
+    let job = knownJob;
+    try {
+      const video = await start({
+        signal: controller.signal,
+        onStatus: record => setVideoJobStatus(prev => ({ ...prev, [convoId]: record.status })),
+        onJob: created => { job = created; },
+      });
+      const seconds = Number(video.record.duration);
+      appendAssistantMessage(convoId, {
+        content: Number.isFinite(seconds) && seconds > 0
+          ? t('Generated a {seconds} s video from your prompt.', { seconds: seconds.toFixed(1) })
+          : t('Generated a video from your prompt.'),
+        videoUrl: trackGeneratedMediaUrl(video.url),
+        videoName: video.filename,
+        model,
+      });
+    } catch (err) {
+      if (recoverableVideoJobId(err) && job) {
+        // Reloading now could race a backend that is still generating, so the
+        // job is kept on the message for the user to resume instead.
+        appendAssistantMessage(convoId, {
+          content: isVideoJobStopUnconfirmed(err)
+            ? t('The server did not confirm that the video stopped. It may still be generating; try again in a moment.')
+            : err instanceof VideoJobDownloadError
+              ? t('The video finished but could not be downloaded.')
+              : t('Lost contact with the video job. It may still be running on the server.'),
+          videoJob: job,
+          model,
+        });
+        return;
+      }
+      if (!isVideoJobCanceled(err)) throw err;
+      // Stopping a clip stops its backend, which unloads the model. Bring it
+      // back so the next prompt stays in video mode instead of falling back
+      // to whatever chat model is still loaded, unless the user has moved to
+      // another conversation or model since.
+      const stillHere = () => activeIdRef.current === convoId && modelSelectionEpochRef.current === selectionEpoch;
+      try {
+        if (stillHere()) {
+          await loadModelForChat(model.name, findModelInfoByName(knownModelInfos, model.name) || null);
+          await Promise.resolve(onRefresh());
+          if (stillHere()) onModelSelect(model.name, { navigate: false });
+        }
+      } catch {
+        // The stop itself succeeded; a failed reload only leaves the model unloaded.
+      }
+      appendAssistantMessage(convoId, { content: t('Video generation stopped.'), model });
+    } finally {
+      if (videoAbortRef.current.get(convoId) === controller) videoAbortRef.current.delete(convoId);
+      setVideoJobStatus(prev => {
+        if (!(convoId in prev)) return prev;
+        const next = { ...prev };
+        delete next[convoId];
+        return next;
+      });
+    }
+  }, [appendAssistantMessage, knownModelInfos, loadModelForChat, onModelSelect, onRefresh, trackGeneratedMediaUrl]);
+
   const runCapabilityRequest = useCallback(async (
     convoId: string,
     model: ModelSnapshot,
@@ -3008,66 +3086,14 @@ ${finalText}`
         });
       } else if (model.capability === 'video') {
         if (!text) throw new Error(t('Video mode needs a text prompt.'));
-        const controller = new AbortController();
-        videoAbortRef.current.set(convoId, controller);
-        // Taken before the job starts so that a model picked while the clip runs
-        // or while Stop is pending is not overwritten by the reload below.
-        const selectionEpoch = modelSelectionEpochRef.current;
-        try {
-          const video = await api.videoGeneration(model.name, text, {
-            video_frames: videoSettings.frames,
-            width: videoSettings.width,
-            height: videoSettings.height,
-            steps: videoSettings.steps,
-            // -1 asks the server for a random seed; leaving it out gives a fixed one.
-            seed: videoSettings.seed === '' ? -1 : videoSettings.seed,
-          }, {
-            signal: controller.signal,
-            onStatus: record => setVideoJobStatus(prev => ({ ...prev, [convoId]: record.status })),
-          });
-          const seconds = Number(video.record.duration);
-          appendAssistantMessage(convoId, {
-            content: Number.isFinite(seconds) && seconds > 0
-              ? t('Generated a {seconds} s video from your prompt.', { seconds: seconds.toFixed(1) })
-              : t('Generated a video from your prompt.'),
-            videoUrl: trackGeneratedMediaUrl(video.url),
-            videoName: video.filename,
-            model,
-          });
-        } catch (err) {
-          if (isVideoJobStopUnconfirmed(err)) {
-            // Reloading now could race a backend that is still generating.
-            appendAssistantMessage(convoId, {
-              content: t('The server did not confirm that the video stopped. It may still be generating; try again in a moment.'),
-              model,
-            });
-            return;
-          }
-          if (!isVideoJobCanceled(err)) throw err;
-          // Stopping a clip stops its backend, which unloads the model. Bring it
-          // back so the next prompt stays in video mode instead of falling back
-          // to whatever chat model is still loaded, unless the user has moved to
-          // another conversation or model since.
-          const stillHere = () => activeIdRef.current === convoId && modelSelectionEpochRef.current === selectionEpoch;
-          try {
-            if (stillHere()) {
-              await loadModelForChat(model.name, findModelInfoByName(knownModelInfos, model.name) || null);
-              await Promise.resolve(onRefresh());
-              if (stillHere()) onModelSelect(model.name, { navigate: false });
-            }
-          } catch {
-            // The stop itself succeeded; a failed reload only leaves the model unloaded.
-          }
-          appendAssistantMessage(convoId, { content: t('Video generation stopped.'), model });
-        } finally {
-          if (videoAbortRef.current.get(convoId) === controller) videoAbortRef.current.delete(convoId);
-          setVideoJobStatus(prev => {
-            if (!(convoId in prev)) return prev;
-            const next = { ...prev };
-            delete next[convoId];
-            return next;
-          });
-        }
+        await followVideoJob(convoId, model, control => api.videoGeneration(model.name, text, {
+          video_frames: videoSettings.frames,
+          width: videoSettings.width,
+          height: videoSettings.height,
+          steps: videoSettings.steps,
+          // -1 asks the server for a random seed; leaving it out gives a fixed one.
+          seed: videoSettings.seed === '' ? -1 : videoSettings.seed,
+        }, control));
       } else if (model.capability === 'audio') {
         const file = audioFiles[0];
         if (!file) throw new Error(t('Audio mode needs an audio file to transcribe.'));
@@ -3096,11 +3122,38 @@ ${finalText}`
       });
     }
   }, [
-    appendAssistantMessage, audioGenerationSettings, imageMode, imageSettings, videoSettings,
+    appendAssistantMessage, audioGenerationSettings, followVideoJob, imageMode, imageSettings, videoSettings,
     isOpenMossTts, knownModelInfos, loadedModels, model3dSettings, onRefresh,
-    loadModelForChat, onModelSelect, openMossCloneModel, openMossSettings, openMossVoiceDesignModel,
+    loadModelForChat, openMossCloneModel, openMossSettings, openMossVoiceDesignModel,
     speakWithPinnedTts, trackGeneratedMediaUrl,
   ]);
+
+  const handleResumeVideoJob = useCallback(async (convoId: string, job: VideoJobRef, model: ModelSnapshot) => {
+    if (videoAbortRef.current.has(convoId)) return;
+    updateConversation(convoId, c => ({
+      ...c,
+      messages: c.messages.map(m => (m.videoJob?.id === job.id ? { ...m, videoJob: undefined } : m)),
+    }));
+    setCapabilityBusyConvoIds(prev => new Set(prev).add(convoId));
+    try {
+      const api = await getApiClient();
+      await followVideoJob(convoId, model, control => api.resumeVideoGeneration(job, control), job);
+      onRefresh();
+    } catch (err) {
+      appendAssistantMessage(convoId, {
+        content: friendlyChatError(friendlyErrorMessage(err)),
+        model,
+        isError: true,
+      });
+    } finally {
+      setCapabilityBusyConvoIds(prev => {
+        if (!prev.has(convoId)) return prev;
+        const next = new Set(prev);
+        next.delete(convoId);
+        return next;
+      });
+    }
+  }, [appendAssistantMessage, followVideoJob, onRefresh, updateConversation]);
 
   const startAssistantResponse = useCallback(async (
     convoId: string,
@@ -4131,6 +4184,9 @@ ${index}`;
                   onRetry={msg.role === 'assistant' ? () => handleRetryAssistant(i) : undefined}
                   onSpeak={canReadAssistantMessages && msg.role === 'assistant' && !msg.isError && msg.content ? () => handleSpeakAssistantMessage(msg.content) : undefined}
                   onEditUser={msg.role === 'user' ? (text) => handleEditUserMessage(i, text) : undefined}
+                  onResumeVideo={msg.videoJob && msg.model && activeId && !isBusy
+                    ? () => { void handleResumeVideoJob(activeId, msg.videoJob!, msg.model!); }
+                    : undefined}
                 />
               ))}
 
@@ -5512,7 +5568,7 @@ const CopyButton: React.FC<{ text: string; disabled?: boolean }> = ({ text, disa
   );
 };
 
-const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; defaultThinkingOpen?: boolean; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, defaultThinkingOpen = false, onOptionSelect, onRetry, onSpeak, onEditUser }) => {
+const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; defaultThinkingOpen?: boolean; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void; onResumeVideo?: () => void }> = ({ message, activeModel, userLabel, defaultThinkingOpen = false, onOptionSelect, onRetry, onSpeak, onEditUser, onResumeVideo }) => {
   const { t } = useI18n();
   const [thinkingOpen, setThinkingOpen] = useState(defaultThinkingOpen);
   const [isEditing, setIsEditing] = useState(false);
@@ -5676,6 +5732,11 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
           {onSpeak && (
             <button type="button" className="message__action" onClick={onSpeak}>
               <Icon name="tts" size={13} /> {t('Read aloud')}
+            </button>
+          )}
+          {onResumeVideo && (
+            <button type="button" className="message__action" onClick={onResumeVideo}>
+              <Icon name="play" size={13} /> {t('Resume video')}
             </button>
           )}
           {onRetry && (

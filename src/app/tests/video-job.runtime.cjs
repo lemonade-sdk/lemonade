@@ -12,7 +12,14 @@ const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
 assert.deepEqual((compiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error), []);
 const mod = { exports: {} };
 Function('exports', 'module', compiled.outputText)(mod.exports, mod);
-const { runVideoJob, isVideoJobCanceled, isVideoJobStopUnconfirmed, videoFileExtension } = mod.exports;
+const {
+  runVideoJob,
+  resumeVideoJob,
+  recoverableVideoJobId,
+  isVideoJobCanceled,
+  isVideoJobStopUnconfirmed,
+  videoFileExtension,
+} = mod.exports;
 
 function httpError(status) {
   return Object.assign(new Error(`HTTP ${status}`), { status });
@@ -362,6 +369,56 @@ const noSleep = async () => {};
       runVideoJob(server.transport, {}, { sleep: noSleep, maxDownloadAttempts: 2 }),
       err => err.name === 'VideoJobDownloadError' && err.jobId === 'job-1',
     );
+  }
+
+  {
+    // A lost job is picked up again by id: no new job, and the clip is downloaded.
+    const server = fakeServer(['running', 'completed'], { output_format: 'webm' });
+    const result = await resumeVideoJob(server.transport, { id: 'job-1', status: 'running' }, { sleep: noSleep });
+    assert.deepEqual(server.calls.create, []);
+    assert.equal(result.blob.size, 4);
+  }
+
+  {
+    // Stop still reaches /cancel on a resumed job.
+    const server = fakeServer(['running', 'canceled']);
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      resumeVideoJob(server.transport, { id: 'job-1', status: 'running' }, { signal: controller.signal, sleep: noSleep }),
+      isVideoJobCanceled,
+    );
+    assert.deepEqual(server.calls.cancel, ['job-1']);
+  }
+
+  {
+    // Only a job the server may still hold can be resumed.
+    const lostPoll = fakeServer(['running']);
+    lostPoll.transport.get = async () => { throw httpError(401); };
+    const pollError = await runVideoJob(lostPoll.transport, {}, { sleep: noSleep }).catch(err => err);
+    assert.equal(recoverableVideoJobId(pollError), 'job-1');
+
+    const gonePoll = fakeServer(['running']);
+    gonePoll.transport.get = async () => { throw httpError(404); };
+    const goneError = await runVideoJob(gonePoll.transport, {}, { sleep: noSleep }).catch(err => err);
+    assert.equal(goneError.name, 'VideoJobPollError');
+    assert.equal(recoverableVideoJobId(goneError), null);
+
+    const goneClip = fakeServer(['completed']);
+    goneClip.transport.content = async () => { throw httpError(404); };
+    const clipError = await runVideoJob(goneClip.transport, {}, { sleep: noSleep }).catch(err => err);
+    assert.equal(clipError.name, 'VideoJobDownloadError');
+    assert.equal(recoverableVideoJobId(clipError), null);
+
+    const stuck = fakeServer(['running']);
+    stuck.transport.cancel = async () => { throw httpError(403); };
+    const controller = new AbortController();
+    controller.abort();
+    const stopError = await resumeVideoJob(stuck.transport, { id: 'job-1', status: 'running' }, {
+      signal: controller.signal, sleep: noSleep,
+    }).catch(err => err);
+    assert.equal(recoverableVideoJobId(stopError), 'job-1');
+    assert.equal(recoverableVideoJobId(new Error('other')), null);
   }
 
   assert.equal(videoFileExtension({ id: 'x', status: 'completed', output_format: 'webp' }), 'webp');
