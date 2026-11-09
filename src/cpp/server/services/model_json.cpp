@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "lemon/model_manager.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/models/registry_types.h"
 #include "lemon/router.h"
 
@@ -78,6 +79,10 @@ json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int 
         {"components", public_components},
         {"recipe_options", info.recipe_options.to_json()},
     };
+
+    if (const auto supported = backends::ops_for(info.recipe)->model_backends(info)) {
+        model_json["supported_backends"] = *supported;
+    }
 
     json checkpoint_status = json::array();
     for (const auto& status : model_manager_->checkpoint_status(info)) {

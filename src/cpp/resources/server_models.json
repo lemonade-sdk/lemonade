@@ -969,8 +969,27 @@
     "Qwen3.6-35B-A3B-Strata": {
         "checkpoint": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
         "recipe": "strata",
-        "labels": ["chat", "reasoning", "tool-calling", "mtp"],
-        "size": 22.9
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "mtp"
+        ],
+        "size": 22.9,
+        "min_resident_gb": 32,
+        "strata": {
+            "family": "qwen36",
+            "model": "UD-Q4_K_XL",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm"
+            ],
+            "revisions": {
+                "main": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d"
+            }
+        }
     },
     "Qwen3.5-35B-A3B-HRX": {
         "checkpoint": "unsloth/Qwen3.5-35B-A3B-MTP-GGUF:Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
@@ -3266,5 +3285,818 @@
             "tool-calling"
         ],
         "size": 92.7
+    },
+    "Qwen3.8-Flash-Next-Q2_0-Strata": {
+        "checkpoints": {
+            "main": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf",
+            "shard_2": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0/Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00002-of-00002.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 66.4,
+        "min_resident_gb": 48,
+        "strata": {
+            "family": "qwen",
+            "model": "Q2_0",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
+                "shard_2": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-IQ2_XS-Strata": {
+        "checkpoints": {
+            "main": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ2_XS/Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00001-of-00002.gguf",
+            "shard_2": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ2_XS/Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00002-of-00002.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 68.0,
+        "min_resident_gb": 48,
+        "strata": {
+            "family": "qwen",
+            "model": "IQ2_XS",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl"
+            ],
+            "revisions": {
+                "main": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
+                "shard_2": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-IQ3_XXS-Strata": {
+        "checkpoints": {
+            "main": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+            "shard_2": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 75.8,
+        "min_resident_gb": 60,
+        "strata": {
+            "family": "qwen",
+            "model": "IQ3_XXS",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
+                "shard_2": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-IQ3_S-Strata": {
+        "checkpoints": {
+            "main": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+            "shard_2": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 83.6,
+        "min_resident_gb": 62,
+        "strata": {
+            "family": "qwen",
+            "model": "IQ3_S",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
+                "shard_2": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
+            }
+        }
+    },
+    "Swift-1.5-IQ2_XS-Strata": {
+        "checkpoints": {
+            "main": "ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00001-of-00002.gguf",
+            "shard_2": "ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00002-of-00002.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 68.0,
+        "min_resident_gb": 48,
+        "strata": {
+            "family": "swift",
+            "model": "IQ2_XS",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl"
+            ],
+            "revisions": {
+                "main": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d",
+                "shard_2": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d"
+            }
+        }
+    },
+    "Swift-1.5-IQ3_XXS-Strata": {
+        "checkpoints": {
+            "main": "ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+            "shard_2": "ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 75.8,
+        "min_resident_gb": 60,
+        "strata": {
+            "family": "swift",
+            "model": "IQ3_XXS",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl"
+            ],
+            "revisions": {
+                "main": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d",
+                "shard_2": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d"
+            }
+        }
+    },
+    "Swift-1.5-IQ3_S-Strata": {
+        "checkpoints": {
+            "main": "ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+            "shard_2": "ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 83.6,
+        "min_resident_gb": 62,
+        "strata": {
+            "family": "swift",
+            "model": "IQ3_S",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl"
+            ],
+            "revisions": {
+                "main": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d",
+                "shard_2": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Coder-IQ1_M-Strata": {
+        "checkpoints": {
+            "main": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF:IQ1_M/Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00001-of-00002.gguf",
+            "shard_2": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF:IQ1_M/Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00002-of-00002.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 58.4,
+        "min_resident_gb": 32,
+        "strata": {
+            "family": "coder",
+            "model": "IQ1_M",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl"
+            ],
+            "revisions": {
+                "main": "5348543e0147355ac9cbcb031184a3546350988e",
+                "shard_2": "5348543e0147355ac9cbcb031184a3546350988e"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Unsloth-UD-IQ4_XS-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf",
+            "shard_2": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00003.gguf",
+            "shard_3": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00003-of-00003.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 93.7,
+        "min_resident_gb": 48,
+        "strata": {
+            "family": "unsloth",
+            "model": "UD-IQ4_XS",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl"
+            ],
+            "revisions": {
+                "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_3": "38bb39ee97821de2c9009abb7e93950eec396e66"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Unsloth-UD-Q4_K_XL-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf",
+            "shard_2": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00002-of-00004.gguf",
+            "shard_3": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00003-of-00004.gguf",
+            "shard_4": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00004-of-00004.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 111.3,
+        "min_resident_gb": 48,
+        "strata": {
+            "family": "unsloth",
+            "model": "UD-Q4_K_XL",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_3": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_4": "38bb39ee97821de2c9009abb7e93950eec396e66"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Unsloth-UD-Q5_K_XL-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q5_K_XL/Qwen3.8-Flash-Next-UD-Q5_K_XL-00001-of-00006.gguf",
+            "shard_2": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q5_K_XL/Qwen3.8-Flash-Next-UD-Q5_K_XL-00002-of-00006.gguf",
+            "shard_3": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q5_K_XL/Qwen3.8-Flash-Next-UD-Q5_K_XL-00003-of-00006.gguf",
+            "shard_4": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q5_K_XL/Qwen3.8-Flash-Next-UD-Q5_K_XL-00004-of-00006.gguf",
+            "shard_5": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q5_K_XL/Qwen3.8-Flash-Next-UD-Q5_K_XL-00005-of-00006.gguf",
+            "shard_6": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q5_K_XL/Qwen3.8-Flash-Next-UD-Q5_K_XL-00006-of-00006.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 158.3,
+        "min_resident_gb": 108,
+        "strata": {
+            "family": "unsloth",
+            "model": "UD-Q5_K_XL",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_3": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_4": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_5": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_6": "38bb39ee97821de2c9009abb7e93950eec396e66"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Unsloth-UD-Q6_K_XL-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q6_K_XL/Qwen3.8-Flash-Next-UD-Q6_K_XL-00001-of-00006.gguf",
+            "shard_2": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q6_K_XL/Qwen3.8-Flash-Next-UD-Q6_K_XL-00002-of-00006.gguf",
+            "shard_3": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q6_K_XL/Qwen3.8-Flash-Next-UD-Q6_K_XL-00003-of-00006.gguf",
+            "shard_4": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q6_K_XL/Qwen3.8-Flash-Next-UD-Q6_K_XL-00004-of-00006.gguf",
+            "shard_5": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q6_K_XL/Qwen3.8-Flash-Next-UD-Q6_K_XL-00005-of-00006.gguf",
+            "shard_6": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q6_K_XL/Qwen3.8-Flash-Next-UD-Q6_K_XL-00006-of-00006.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 169.2,
+        "min_resident_gb": 118,
+        "strata": {
+            "family": "unsloth",
+            "model": "UD-Q6_K_XL",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_3": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_4": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_5": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_6": "38bb39ee97821de2c9009abb7e93950eec396e66"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Unsloth-Q8_0-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-Flash-Next-GGUF:Q8_0/Qwen3.8-Flash-Next-Q8_0-00001-of-00006.gguf",
+            "shard_2": "unsloth/Qwen3.8-Flash-Next-GGUF:Q8_0/Qwen3.8-Flash-Next-Q8_0-00002-of-00006.gguf",
+            "shard_3": "unsloth/Qwen3.8-Flash-Next-GGUF:Q8_0/Qwen3.8-Flash-Next-Q8_0-00003-of-00006.gguf",
+            "shard_4": "unsloth/Qwen3.8-Flash-Next-GGUF:Q8_0/Qwen3.8-Flash-Next-Q8_0-00004-of-00006.gguf",
+            "shard_5": "unsloth/Qwen3.8-Flash-Next-GGUF:Q8_0/Qwen3.8-Flash-Next-Q8_0-00005-of-00006.gguf",
+            "shard_6": "unsloth/Qwen3.8-Flash-Next-GGUF:Q8_0/Qwen3.8-Flash-Next-Q8_0-00006-of-00006.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 188.2,
+        "min_resident_gb": 136,
+        "strata": {
+            "family": "unsloth",
+            "model": "Q8_0",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl"
+            ],
+            "revisions": {
+                "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_3": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_4": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_5": "38bb39ee97821de2c9009abb7e93950eec396e66",
+                "shard_6": "38bb39ee97821de2c9009abb7e93950eec396e66"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Unsloth-UD-IQ1_M-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ1_M/Qwen3.8-Flash-Next-UD-IQ1_M-00001-of-00003.gguf",
+            "shard_2": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ1_M/Qwen3.8-Flash-Next-UD-IQ1_M-00002-of-00003.gguf",
+            "shard_3": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ1_M/Qwen3.8-Flash-Next-UD-IQ1_M-00003-of-00003.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 68.0,
+        "min_resident_gb": 48,
+        "strata": {
+            "family": "unsloth",
+            "model": "UD-IQ1_M",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_3": "d96201194f103c906994f283f504209dc8d2a10c"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Unsloth-UD-Q2_0-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q2_0/Qwen3.8-Flash-Next-UD-Q2_0-00001-of-00003.gguf",
+            "shard_2": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q2_0/Qwen3.8-Flash-Next-UD-Q2_0-00002-of-00003.gguf",
+            "shard_3": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q2_0/Qwen3.8-Flash-Next-UD-Q2_0-00003-of-00003.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 70.5,
+        "min_resident_gb": 48,
+        "strata": {
+            "family": "unsloth",
+            "model": "UD-Q2_0",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_3": "d96201194f103c906994f283f504209dc8d2a10c"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Unsloth-UD-IQ2_XS-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ2_XS/Qwen3.8-Flash-Next-UD-IQ2_XS-00001-of-00003.gguf",
+            "shard_2": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ2_XS/Qwen3.8-Flash-Next-UD-IQ2_XS-00002-of-00003.gguf",
+            "shard_3": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ2_XS/Qwen3.8-Flash-Next-UD-IQ2_XS-00003-of-00003.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 75.8,
+        "min_resident_gb": 48,
+        "strata": {
+            "family": "unsloth",
+            "model": "UD-IQ2_XS",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_3": "d96201194f103c906994f283f504209dc8d2a10c"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Unsloth-UD-Q2_K_XL-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00001-of-00004.gguf",
+            "shard_2": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00002-of-00004.gguf",
+            "shard_3": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00003-of-00004.gguf",
+            "shard_4": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00004-of-00004.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 79.6,
+        "min_resident_gb": 48,
+        "strata": {
+            "family": "unsloth",
+            "model": "UD-Q2_K_XL",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_3": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_4": "d96201194f103c906994f283f504209dc8d2a10c"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Unsloth-UD-IQ3_XXS-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00001-of-00004.gguf",
+            "shard_2": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00002-of-00004.gguf",
+            "shard_3": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00003-of-00004.gguf",
+            "shard_4": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ3_XXS/Qwen3.8-Flash-Next-UD-IQ3_XXS-00004-of-00004.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 83.6,
+        "min_resident_gb": 48,
+        "strata": {
+            "family": "unsloth",
+            "model": "UD-IQ3_XXS",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_3": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_4": "d96201194f103c906994f283f504209dc8d2a10c"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Unsloth-UD-Q3_K_XL-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00004.gguf",
+            "shard_2": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00002-of-00004.gguf",
+            "shard_3": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00003-of-00004.gguf",
+            "shard_4": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00004-of-00004.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 89.5,
+        "min_resident_gb": 48,
+        "strata": {
+            "family": "unsloth",
+            "model": "UD-Q3_K_XL",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_3": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_4": "d96201194f103c906994f283f504209dc8d2a10c"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Unsloth-UD-IQ4_XS-v31-Strata": {
+        "checkpoints": {
+            "main": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00004.gguf",
+            "shard_2": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00002-of-00004.gguf",
+            "shard_3": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00003-of-00004.gguf",
+            "shard_4": "unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00004-of-00004.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 93.7,
+        "min_resident_gb": 48,
+        "strata": {
+            "family": "unsloth",
+            "model": "UD-IQ4_XS-v31",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_3": "d96201194f103c906994f283f504209dc8d2a10c",
+                "shard_4": "d96201194f103c906994f283f504209dc8d2a10c"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Gyro-S-Strata": {
+        "checkpoints": {
+            "main": "agentionai/Qwen3.8-Flash-Next-Gyro-GGUF:Qwen3.8-Flash-Next-Gyro-S-TQ1_0.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 58.5,
+        "min_resident_gb": 27.6,
+        "strata": {
+            "family": "gyro",
+            "model": "Gyro-S",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "1ada08422e404aca51ab9df665f089f34c419c6b"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-Gyro-M-Strata": {
+        "checkpoints": {
+            "main": "agentionai/Qwen3.8-Flash-Next-Gyro-GGUF:Qwen3.8-Flash-Next-Gyro-M-TQ2_0.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 92.0,
+        "min_resident_gb": 35.0,
+        "strata": {
+            "family": "gyro",
+            "model": "Gyro-M",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm",
+                "sycl",
+                "metal"
+            ],
+            "revisions": {
+                "main": "1ada08422e404aca51ab9df665f089f34c419c6b"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-NVFP4-Strata": {
+        "checkpoints": {
+            "main": "Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata:pack",
+            "dense": "Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata:qwen-nvfp4-gptq-dense.gguf",
+            "ple": "Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata:ple-fp8.gguf",
+            "embd": "Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata:token-embd-bf16.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 128.0,
+        "min_resident_gb": 80,
+        "strata": {
+            "family": "nvfp4",
+            "model": "NVFP4",
+            "format": "ready",
+            "backends": [
+                "cuda"
+            ],
+            "revisions": {
+                "main": "640a1db97446ddd5e89d2b70ecd0297987192c93",
+                "dense": "640a1db97446ddd5e89d2b70ecd0297987192c93",
+                "ple": "640a1db97446ddd5e89d2b70ecd0297987192c93",
+                "embd": "640a1db97446ddd5e89d2b70ecd0297987192c93"
+            }
+        }
+    },
+    "Qwen3.8-Flash-Next-NVFP4-NVIDIA-Strata": {
+        "checkpoints": {
+            "main": "Maximilian228/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Strata:pack",
+            "dense": "Maximilian228/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Strata:qwen-nvidia-nvfp4-dense.gguf",
+            "ple": "Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata:ple-fp8.gguf",
+            "embd": "Maximilian228/Qwen3.8-Flash-Next-NVFP4-GPTQ-Strata:token-embd-bf16.gguf"
+        },
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 128.0,
+        "min_resident_gb": 80,
+        "strata": {
+            "family": "nvfp4",
+            "model": "NVFP4-NVIDIA",
+            "format": "ready",
+            "backends": [
+                "cuda"
+            ],
+            "revisions": {
+                "main": "cca8f7fee5ce0af932097340a75e06df25c4e57d",
+                "dense": "cca8f7fee5ce0af932097340a75e06df25c4e57d",
+                "ple": "640a1db97446ddd5e89d2b70ecd0297987192c93",
+                "embd": "640a1db97446ddd5e89d2b70ecd0297987192c93"
+            }
+        }
+    },
+    "Qwen3.6-35B-A3B-UD-Q6_K_XL-Strata": {
+        "checkpoint": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-Q6_K_XL.gguf",
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "mtp"
+        ],
+        "size": 32.6,
+        "min_resident_gb": 44,
+        "strata": {
+            "family": "qwen36",
+            "model": "UD-Q6_K_XL",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm"
+            ],
+            "revisions": {
+                "main": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d"
+            }
+        }
+    },
+    "Qwen3.6-35B-A3B-Q8_0-Strata": {
+        "checkpoint": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-Q8_0.gguf",
+        "recipe": "strata",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "mtp"
+        ],
+        "size": 37.8,
+        "min_resident_gb": 52,
+        "strata": {
+            "family": "qwen36",
+            "model": "Q8_0",
+            "format": "gguf",
+            "backends": [
+                "cuda",
+                "rocm"
+            ],
+            "revisions": {
+                "main": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d"
+            }
+        }
     }
 }

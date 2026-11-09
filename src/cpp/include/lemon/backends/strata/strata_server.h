@@ -28,6 +28,7 @@ std::string engine_asset(const std::string& platform, const std::string& backend
                          const std::string& arch);
 std::vector<BackendAsset> additional_assets(const std::string& backend);
 bool supported_checkpoint(const std::string& checkpoint);
+json checkpoint_selection(const std::string& checkpoint);
 json build_config(const std::string& model_name, const std::string& gguf,
                   const std::string& executable, const std::string& tokenizer,
                   const std::string& backend, int ctx_size,

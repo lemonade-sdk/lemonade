@@ -10,12 +10,16 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/recipe_arg_resolver.h"
+#include "lemon/utils/safe_fs.h"
 
 #include <lemon/utils/aixlog.hpp>
 
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <fstream>
+#include <functional>
+#include <mutex>
 #include <random>
 #include <regex>
 #include <stdexcept>
@@ -31,8 +35,12 @@ std::string platform() {
     return "windows-x86_64";
 #elif defined(__linux__) && defined(__x86_64__)
     return "linux-x86_64";
+#elif defined(__linux__) && defined(__aarch64__)
+    return "linux-aarch64";
+#elif defined(__APPLE__) && defined(__aarch64__)
+    return "macos-arm64";
 #else
-    throw std::runtime_error("Strata Qwen3.6 supports Windows/Linux x86-64 only");
+    throw std::runtime_error("Unsupported Strata platform");
 #endif
 }
 
@@ -67,12 +75,15 @@ public:
     }
 
     void populate_metadata(ModelInfo& info, const BackendOpsContext& ctx) const override {
-        llamacpp::ops()->populate_metadata(info, ctx);
+        const auto selection = strata::checkpoint_selection(info.checkpoint());
+        if (selection.value("format", "") != "ready") {
+            llamacpp::ops()->populate_metadata(info, ctx);
+        }
     }
 
     std::string resolve_checkpoint_path(const ModelInfo& info,
                                         const CheckpointResolveContext& ctx) const override {
-        return llamacpp::ops()->resolve_checkpoint_path(info, ctx);
+        return BackendOps::resolve_checkpoint_path(info, ctx);
     }
 
     std::string find_imported_checkpoint(const std::string& dir) const override {
@@ -80,10 +91,13 @@ public:
     }
 
     std::string validate_registration_checkpoint(const std::string& checkpoint) const override {
-        const auto error = llamacpp::ops()->validate_registration_checkpoint(checkpoint);
-        if (!error.empty()) return error;
+        const auto selection = strata::checkpoint_selection(checkpoint);
+        if (checkpoint.find("-00001-of-") != std::string::npos ||
+            selection.value("format", "") == "ready") {
+            return "Use the Strata catalog entry for this model to include all required checkpoints";
+        }
         return strata::supported_checkpoint(checkpoint) ? "" :
-            "Strata supports Qwen3.6-35B-A3B UD-Q4_K_XL, UD-Q6_K_XL and Q8_0 GGUFs only";
+            "Strata requires a GGUF or ready-made pack from its supported model catalog";
     }
 
     std::string validate_checkpoint_file(const std::string& path) const override {
@@ -91,16 +105,41 @@ public:
     }
 
     std::string validate_load(const ModelInfo& info) const override {
-        if (!strata::supported_checkpoint(info.checkpoint())) {
+        const auto selection = strata::checkpoint_selection(info.checkpoint());
+        if (selection.empty()) {
             return "Unsupported Strata checkpoint: " + info.checkpoint();
         }
+        if (model_backends(info)->empty()) return "No compatible Strata backend for this model on this machine";
         return "";
     }
 
+    std::optional<std::vector<std::string>> model_backends(const ModelInfo& info) const override {
+        const auto selection = strata::checkpoint_selection(info.checkpoint());
+        std::vector<std::string> result;
+        if (selection.empty()) return result;
+        const auto allowed = selection.at("backends").get<std::vector<std::string>>();
+        for (const auto& backend : SystemInfo::get_supported_backends("strata").backends) {
+            if (std::find(allowed.begin(), allowed.end(), backend) == allowed.end()) continue;
+            result.push_back(backend);
+        }
+        return result;
+    }
+
+    std::optional<double> streaming_memory_pool_gb(
+        const ModelInfo&, double system_ram_gb, double) const override {
+        return system_ram_gb;
+    }
+
+    std::string checkpoint_revision(const ModelInfo& info, const std::string& type) const override {
+        const auto selection = strata::checkpoint_selection(info.checkpoint());
+        return selection.contains("revisions") ? selection.at("revisions").value(type, "") : "";
+    }
+
     InstallCheck check_install(const std::string& backend, bool binary_found) const override {
-        const fs::path control = fs::path(BackendUtils::get_install_directory("strata", backend)) / "control";
-        const bool complete = binary_found && strata::additional_assets(backend).front().is_complete(
-            utils::path_to_utf8(control.parent_path()));
+        const auto root = BackendUtils::get_install_directory("strata", backend);
+        const auto assets = strata::additional_assets(backend);
+        const bool complete = binary_found && std::all_of(assets.begin(), assets.end(),
+            [&](const BackendAsset& asset) { return asset.is_complete(root); });
         return {complete, complete ? "" : "Strata engine or bundled Python server is missing"};
     }
 };
@@ -111,12 +150,17 @@ namespace strata {
 
 std::string engine_asset(const std::string& target, const std::string& backend,
                          const std::string& arch) {
-    if (target != "windows-x86_64" && target != "linux-x86_64") {
-        throw std::invalid_argument("Unsupported Strata Qwen3.6 platform: " + target);
-    }
     std::string variant;
-    if (backend == "cuda") {
+    if (target == "macos-arm64" && backend == "metal") {
+        variant = "metal";
+    } else if (target == "linux-aarch64" && backend == "cuda") {
         variant = "cuda-cuda13";
+    } else if (target != "windows-x86_64" && target != "linux-x86_64") {
+        throw std::invalid_argument("Unsupported Strata platform/backend: " + target + "/" + backend);
+    } else if (backend == "cuda") {
+        variant = "cuda-cuda13";
+    } else if (backend == "sycl" && target == "linux-x86_64") {
+        variant = "sycl";
     } else if (backend == "rocm") {
         if (arch == "gfx1200" || arch == "gfx1201") variant = "hip-rx9070";
         else if (arch == "gfx1100" || arch == "gfx1101" || arch == "gfx1102") {
@@ -134,22 +178,33 @@ std::string engine_asset(const std::string& target, const std::string& backend,
 
 std::vector<BackendAsset> additional_assets(const std::string&) {
     const auto target = platform();
-    return {{"strata-control-*-" + target +
+    std::vector<BackendAsset> assets{{"strata-control-*-" + target +
              (target == "windows-x86_64" ? ".zip" : ".tar.gz"), "control",
-             {python_binary(), "serve/server.py", "tools/strata_tokenizer.py"}}};
+             {python_binary(), "serve/server.py", "setup.py", "tools/strata_tokenizer.py",
+              "tools/iq_pack.py"}}};
+    return assets;
+}
+
+json checkpoint_selection(const std::string& checkpoint) {
+    static const json catalog = utils::JsonUtils::load_from_file(
+        utils::get_resource_path("resources/server_models.json"));
+    const auto basename = [](const std::string& value) {
+        return value.substr(value.find_last_of(":/\\") + 1);
+    };
+    for (const auto& row : catalog) {
+        if (row.value("recipe", "") != "strata" || !row.contains("strata")) continue;
+        const std::string main = row.contains("checkpoint") ? row.at("checkpoint").get<std::string>() :
+            row.at("checkpoints").at("main").get<std::string>();
+        if (checkpoint == main ||
+            (row.at("strata").at("format") == "gguf" && basename(checkpoint) == basename(main))) {
+            return row.at("strata");
+        }
+    }
+    return json::object();
 }
 
 bool supported_checkpoint(const std::string& checkpoint) {
-    for (const std::string quant : {"UD-Q4_K_XL", "UD-Q6_K_XL", "Q8_0"}) {
-        const std::string filename = "Qwen3.6-35B-A3B-" + quant + ".gguf";
-        if (checkpoint == filename ||
-            (checkpoint.size() > filename.size() &&
-             checkpoint.compare(checkpoint.size() - filename.size(), filename.size(), filename) == 0 &&
-             std::string(":/\\").find(checkpoint[checkpoint.size() - filename.size() - 1]) != std::string::npos)) {
-            return true;
-        }
-    }
-    return false;
+    return !checkpoint_selection(checkpoint).empty();
 }
 
 json build_config(const std::string& model_name, const std::string& gguf,
@@ -248,20 +303,22 @@ void StrataServer::load(const std::string& model_name, const ModelInfo& model_in
                         const RecipeOptions& options, bool /*do_not_upgrade*/) {
     const auto error = strata::ops()->validate_load(model_info);
     if (!error.empty()) throw std::invalid_argument(error);
-    GgufMetadata metadata;
     const std::string gguf = model_info.resolved_path();
-    read_gguf_metadata(metadata, gguf);
-    if (metadata.architecture != "qwen35moe") {
-        throw std::invalid_argument("Strata requires a Qwen3.6 qwen35moe GGUF");
+    const auto selection = strata::checkpoint_selection(model_info.checkpoint());
+    if (selection.at("family") == "qwen36") {
+        GgufMetadata metadata;
+        read_gguf_metadata(metadata, gguf);
+        if (metadata.architecture != "qwen35moe") {
+            throw std::invalid_argument("Strata requires a Qwen3.6 qwen35moe GGUF");
+        }
     }
-
+    const auto supported = *strata::ops()->model_backends(model_info);
     std::string backend = options.get_option("strata_backend");
     if (backend.empty() || backend == "auto") {
-        const auto supported = SystemInfo::get_supported_backends("strata");
-        if (supported.backends.empty()) {
-            throw std::runtime_error("No supported Strata GPU: " + supported.not_supported_error);
-        }
-        backend = supported.backends.front();
+        backend = supported.front();
+    }
+    if (std::find(supported.begin(), supported.end(), backend) == supported.end()) {
+        throw std::invalid_argument("Strata " + backend + " does not support this model on this machine");
     }
     RuntimeConfig::validate_backend_choice("strata", backend);
     backend_manager_->install_backend("strata", backend);
@@ -281,20 +338,54 @@ void StrataServer::load(const std::string& model_name, const ModelInfo& model_in
         throw std::runtime_error("Cannot create Strata runtime directory");
     }
     runtime_dir_ = utils::path_to_utf8(runtime);
-    const int result = utils::ProcessManager::run_process_with_output(
-        python, {"-E", "-s", utils::path_to_utf8(control / "tools" / "strata_tokenizer.py"),
-                 "--gguf", gguf, "--out", runtime_dir_},
-        [](const std::string& line) { LOG(INFO, "Strata") << line << std::endl; return true; },
-        control.string(), 120);
-    if (result != 0) throw std::runtime_error("Strata tokenizer extraction failed: " + std::to_string(result));
-
     const fs::path config_path = utils::path_from_utf8(runtime_dir_) / "config.json";
     const int ctx_size = options.get_option("ctx_size");
-    utils::JsonUtils::save_to_file(
-        strata::build_config(model_name, gguf, executable,
-                             utils::path_to_utf8(utils::path_from_utf8(runtime_dir_) / "tokenizer"),
-                             backend, ctx_size, options.get_option("strata_args"),
-                             options.get_option("strata_parallel")), config_path.string());
+    const std::string custom_args = options.get_option("strata_args");
+    const int parallel = options.get_option("strata_parallel");
+    if (ctx_size < 256 || parallel < 1 || parallel > 8) {
+        throw std::invalid_argument("Strata requires context >= 256 and parallel slots between 1 and 8");
+    }
+    const auto args_error = utils::validate_custom_args(custom_args, {
+        "--native", "--model", "--pack", "--max-context", "--ctx", "--serve", "--batch", "--slots",
+        "--tokens", "--force", "--emb", "--vision", "--bench-pp", "--bench-tg",
+        "--max-new", "--n", "--greedy", "--dump-full-logits", "--help", "-h",
+    });
+    if (!args_error.empty()) throw std::invalid_argument(args_error);
+    if (selection.at("family") == "qwen36") {
+        strata::build_config(model_name, gguf, executable, "", backend, ctx_size, custom_args, parallel);
+    }
+    std::ifstream version_file(utils::path_from_utf8(
+        BackendUtils::get_installed_version_file(*strata::spec(), backend)));
+    std::string version;
+    if (!std::getline(version_file, version) || !utils::is_safe_path_component(version)) {
+        throw std::runtime_error("Cannot read the installed Strata version");
+    }
+    const fs::path cache = utils::path_from_utf8(utils::get_cache_dir()) / "strata" / backend / version /
+        std::to_string(std::hash<std::string>{}(gguf + (fs::is_regular_file(utils::path_from_utf8(gguf))
+            ? std::to_string(fs::file_size(utils::path_from_utf8(gguf))) +
+              std::to_string(fs::last_write_time(utils::path_from_utf8(gguf)).time_since_epoch().count())
+            : "")));
+    const fs::path request_path = runtime / "prepare.json";
+    utils::JsonUtils::save_to_file({
+        {"selection", selection}, {"paths", model_info.resolved_paths},
+        {"output", runtime_dir_}, {"cache", utils::path_to_utf8(cache)},
+        {"mtp_cache", utils::path_to_utf8(
+            utils::path_from_utf8(utils::get_cache_dir()) / "strata" / "mtp" / version)},
+        {"offline", RuntimeConfig::global() && RuntimeConfig::global()->offline()},
+        {"backend", backend}, {"context", ctx_size}, {"parallel", parallel},
+        {"executable", executable}, {"name", model_name},
+        {"args", utils::parse_custom_args(custom_args)}, {"config", utils::path_to_utf8(config_path)},
+    }, utils::path_to_utf8(request_path));
+    {
+        static std::mutex preparation_mutex;
+        std::lock_guard<std::mutex> lock(preparation_mutex);
+        const int result = utils::ProcessManager::run_process_with_output(
+            python, {"-E", "-s", utils::get_resource_path("resources/strata_models.py"),
+                     "--control", utils::path_to_utf8(control), "--request", utils::path_to_utf8(request_path)},
+            [](const std::string& line) { LOG(INFO, "Strata") << line << std::endl; return true; },
+            control.string(), 3600);
+        if (result != 0) throw std::runtime_error("Strata model preparation failed: " + std::to_string(result));
+    }
     ServerCommand command;
     command.program = python;
     command.port = choose_port();

@@ -387,6 +387,7 @@ function backendOptionsForKey(key: keyof RecipeOptions, current: string | undefi
   const recipe = activeRecipeForModel(model);
   const fromServer = Object.entries(backendMapForRecipe(info, recipe) || {})
     .filter(([backend, backendInfo]) => backendIsSelectable(recipe, backend, backendInfo) && backendMatchesDetectedHardware(backend, info))
+    .filter(([backend]) => !model.supported_backends || model.supported_backends.includes(backend))
     .map(([backend]) => backend);
   const normalizedCurrent = optionalDisplayValue(current);
   const base = fromServer.length ? ['auto', ...fromServer] : [normalizedCurrent || 'auto'];
@@ -1886,7 +1887,7 @@ const ModelConfigurationTab: React.FC<{
           fieldId={fieldId}
           label={label}
           value={draftValue}
-          specs={samplerFieldsForRecipe(activeRecipeForModel(model))}
+          specs={samplerFieldsForRecipe(activeRecipeForModel(model), optionalDisplayValue(model.checkpoint))}
           fallbackArgs={optionalDisplayValue(serverDefaultRecipeOptions[key])}
           exampleArgs={key === 'strata_args' ? '--pool-workers 4' : undefined}
           onChange={next => setRecipeDraft(prev => ({ ...prev, [draftKey]: next }))}

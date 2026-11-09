@@ -88,7 +88,24 @@ const SAMPLER_FIELDS_BY_RECIPE: Record<string, ArgFieldSpec[]> = {
   ],
 };
 
-export function samplerFieldsForRecipe(recipe: string): ArgFieldSpec[] {
+const STRATA_FLASH_FIELDS: ArgFieldSpec[] = [
+  { flag: '--mtp', id: 'mtp', label: 'MTP draft pack (auto/off/path)', kind: 'text', backendDefault: 'auto' },
+  { flag: '--prefill', id: 'prefill', label: 'Prompt chunk size', kind: 'text', backendDefault: 'auto' },
+  { flag: '--spec', id: 'spec', label: 'Speculative tokens (0 disables MTP)', kind: 'number', min: 0, step: 1, backendDefault: '4' },
+  { flag: '--spec-min-p', id: 'spec-min-p', label: 'Draft confidence', kind: 'number', min: 0, max: 1, step: 0.05, backendDefault: '0.5' },
+  { flag: '--kv', id: 'kv', label: 'KV cache precision', kind: 'text' },
+  { flag: '--kv-resident', id: 'kv-resident', label: 'GPU KV tokens (0 disables streaming)', kind: 'number', min: 0, step: 1024 },
+  { flag: '--expert-cache', id: 'expert-cache', label: 'Expert cache', kind: 'text', backendDefault: 'auto' },
+  { flag: '--vram-reserve-mib', id: 'vram-reserve-mib', label: 'VRAM reserve (MiB)', kind: 'number', min: 0, step: 256 },
+  { flag: '--gpu', id: 'gpu', label: 'GPU', kind: 'text' },
+  { flag: '--cpu-threads', id: 'cpu-threads', label: 'CPU threads', kind: 'number', min: 0, step: 1 },
+  { flag: '--mmap-experts', id: 'mmap-experts', label: 'Memory-map experts', kind: 'boolean' },
+];
+
+export function samplerFieldsForRecipe(recipe: string, checkpoint = ''): ArgFieldSpec[] {
+  if (recipe === 'strata' && checkpoint && !checkpoint.includes('Qwen3.6-35B-A3B')) {
+    return STRATA_FLASH_FIELDS;
+  }
   return SAMPLER_FIELDS_BY_RECIPE[recipe] || [];
 }
 

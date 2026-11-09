@@ -66,6 +66,18 @@ assert.equal(sampler.composeSamplerArgs(specs, { '--mtp': '0', '--no-graph': '' 
 const malformed = sampler.splitSamplerArgs(specs, '--no-graph false --no-warmup --no-warmup');
 assert.equal(malformed.rest, '--no-graph false --no-warmup --no-warmup');
 assert.ok(malformed.claimedByRest.has('--no-graph'));
+const flashSpecs = sampler.samplerFieldsForRecipe('strata', 'repo:Qwen3.8-Flash-Next-Gyro-S-TQ1_0.gguf');
+assert.equal(flashSpecs.find(spec => spec.flag === '--mtp').kind, 'text');
+assert.equal(flashSpecs.find(spec => spec.flag === '--mtp').backendDefault, 'auto');
+assert.equal(flashSpecs.find(spec => spec.flag === '--spec').backendDefault, '4');
+assert.equal(sampler.composeSamplerArgs(flashSpecs, { '--mtp': 'off', '--kv-resident': '0' }, ''),
+  '--mtp off --kv-resident 0');
+assert.ok(flashSpecs.some(spec => spec.flag === '--expert-cache'));
+assert.ok(flashSpecs.some(spec => spec.flag === '--kv'));
+assert.ok(flashSpecs.some(spec => spec.flag === '--spec'));
+assert.ok(isStrataGguf('Qwen3.8-Flash-Next-Gyro-S-TQ1_0.gguf'));
+assert.ok(isStrataGguf('Qwen3.8-Flash-Next-Gyro-M-TQ2_0.gguf'));
+assert.ok(!isStrataGguf('DeepSeek-V4.1-Flash-UD-Q8_K_XL.gguf'));
 
 for (const quant of ['UD-Q4_K_XL', 'UD-Q6_K_XL', 'Q8_0']) {
   assert.ok(isStrataGguf(`Qwen3.6-35B-A3B-${quant}.gguf`));

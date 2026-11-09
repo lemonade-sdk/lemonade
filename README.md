@@ -147,7 +147,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
   </thead>
   <tbody>
     <tr>
-      <td rowspan="18"><strong>Text generation</strong></td>
+      <td rowspan="21"><strong>Text generation</strong></td>
       <td rowspan="8"><code>llamacpp</code></td>
       <td><code>system</code></td>
       <td><code>x86_64</code>/ARM64 CPU, GPU</td>
@@ -195,15 +195,30 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Linux</td>
     </tr>
     <tr>
-      <td rowspan="2"><code>strata</code></td>
+      <td rowspan="5"><code>strata</code></td>
       <td><code>cuda</code>†</td>
-      <td>NVIDIA RTX 20/30/40/50</td>
+      <td>NVIDIA Turing and newer</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
       <td><code>rocm</code>†</td>
-      <td>AMD RX 7600/7700/7800/7900, RX 9060/9070, AI PRO R9700, Strix Halo</td>
+      <td>AMD RX 7000/9000, AI PRO R9700, Strix Halo</td>
       <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>sycl</code>†</td>
+      <td>Intel Arc A/B</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td><code>cuda</code>†</td>
+      <td>NVIDIA GB10</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td><code>metal</code>†</td>
+      <td>Apple Silicon</td>
+      <td>macOS</td>
     </tr>
     <tr>
       <td rowspan="1"><code>flm</code></td>

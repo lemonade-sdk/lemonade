@@ -92,5 +92,5 @@ export async function detectHuggingFaceBackend(
 }
 
 export function isStrataGguf(file: string): boolean {
-  return /^Qwen3\.6-35B-A3B-(?:UD-Q[46]_K_XL|Q8_0)\.gguf$/.test(file.split('/').pop() || '');
+  return /^(?:Qwen3\.6-35B-A3B-(?:UD-Q[46]_K_XL|Q8_0)|Qwen3\.8-Flash-Next-Gyro-(?:S-TQ1_0|M-TQ2_0))\.gguf$/.test(file.split('/').pop() || '');
 }

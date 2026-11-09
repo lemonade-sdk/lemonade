@@ -28,17 +28,32 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
 #if (defined(__linux__) || defined(_WIN32)) && (defined(__x86_64__) || defined(_M_X64))
         {"cuda", BackendTier::Experimental, BackendFormat::Python, {"linux", "windows"},
-         {{"nvidia_gpu", {"sm_75", "sm_86", "sm_89", "sm_120"}}}, "NVIDIA RTX 20/30/40/50"},
+         {{"nvidia_gpu", {"sm_75", "sm_86", "sm_89", "sm_120"}}},
+         "NVIDIA Turing and newer"},
         {"rocm", BackendTier::Experimental, BackendFormat::Python, {"linux", "windows"},
          {{"amd_gpu", {"gfx1100", "gfx1101", "gfx1102", "gfx1151", "gfx1200", "gfx1201"}}},
-         "AMD RX 7600/7700/7800/7900, RX 9060/9070, AI PRO R9700, Strix Halo"},
+         "AMD RX 7000/9000, AI PRO R9700, Strix Halo"},
+#endif
+#if defined(__linux__) && defined(__x86_64__)
+        {"sycl", BackendTier::Experimental, BackendFormat::Python, {"linux"},
+         {{"intel_gpu", {"arc"}}}, "Intel Arc A/B"},
+#elif defined(__linux__) && defined(__aarch64__)
+        {"cuda", BackendTier::Experimental, BackendFormat::Python, {"linux"},
+         {{"nvidia_gpu", {"sm_121"}}}, "NVIDIA GB10"},
+#elif defined(__APPLE__) && defined(__aarch64__)
+        {"metal", BackendTier::Experimental, BackendFormat::Python, {"macos"},
+         {{"metal", {}}}, "Apple Silicon"},
 #endif
     },
     /*about*/ {
-        {"cuda", {"Strata's Qwen3.6 GGUF inference engine with its bundled Python HTTP server.",
+        {"cuda", {"Strata's Qwen inference engine with its bundled Python HTTP server.",
                   "Niko1221", "Niko1221", "MIT", "https://github.com/Niko1221/Strata"}},
-        {"rocm", {"Strata's Qwen3.6 GGUF inference engine with its bundled Python HTTP server.",
+        {"rocm", {"Strata's Qwen inference engine with its bundled Python HTTP server.",
                   "Niko1221", "Niko1221", "MIT", "https://github.com/Niko1221/Strata"}},
+        {"sycl", {"Strata's MoE inference engine for Intel Arc.",
+                  "Niko1221", "Niko1221", "MIT", "https://github.com/Niko1221/Strata"}},
+        {"metal", {"Strata's Qwen inference engine for Apple Silicon.",
+                   "Niko1221", "Niko1221", "MIT", "https://github.com/Niko1221/Strata"}},
     },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
@@ -51,8 +66,9 @@ inline const BackendDescriptor descriptor = {
     /*self_manages_downloads*/ false,
     /*takes_args*/ true,
     /*arg_variants*/ {},
-    /*bin_variants*/ {"cuda", "rocm"},
+    /*bin_variants*/ {"cuda", "rocm", "sycl", "metal"},
     /*config_extra*/ {{"parallel", 1}},
+    /*streams_model_from_storage*/ true,
 };
 
 }  // namespace strata

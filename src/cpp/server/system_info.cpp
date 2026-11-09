@@ -1062,6 +1062,25 @@ json SystemInfo::get_device_dict() {
         devices["nvidia_gpu_error"] = std::string("Detection exception: ") + e.what();
     }
 
+#ifdef __linux__
+    devices["intel_gpu"] = json::array();
+    const fs::path drm("/sys/class/drm");
+    std::error_code drm_error;
+    for (const auto& entry : fs::directory_iterator(drm, drm_error)) {
+        const auto name = entry.path().filename().string();
+        if (!std::regex_match(name, std::regex("card[0-9]+"))) continue;
+        std::ifstream vendor_file(entry.path() / "device" / "vendor");
+        std::ifstream device_file(entry.path() / "device" / "device");
+        unsigned vendor = 0, device = 0;
+        if (!(vendor_file >> std::hex >> vendor) || !(device_file >> std::hex >> device) || vendor != 0x8086) continue;
+        // Intel integrated GPUs share the vendor id but are not supported by Strata's SYCL engine.
+        if ((device >= 0x5690 && device <= 0x56c1) || (device >= 0xe200 && device <= 0xe2ff)) {
+            devices["intel_gpu"].push_back({{"name", "Intel Arc"}, {"family", "arc"}, {"available", true}});
+        }
+    }
+    if (drm_error) devices["intel_gpu_error"] = drm_error.message();
+#endif
+
     // Get NPU info - with fault tolerance
     // Use CPU processor name as the NPU device name (e.g., "AMD Ryzen AI 9 HX 375")
     try {
@@ -1215,6 +1234,15 @@ json SystemInfo::build_recipes_info(const json& devices) {
                         true
                     });
                 }
+            }
+        }
+    }
+
+    if (devices.contains("intel_gpu") && devices["intel_gpu"].is_array()) {
+        for (const auto& gpu : devices["intel_gpu"]) {
+            if (gpu.value("available", false)) {
+                detected_devices.push_back({"intel_gpu", gpu.value("name", ""),
+                                            gpu.value("family", ""), true});
             }
         }
     }

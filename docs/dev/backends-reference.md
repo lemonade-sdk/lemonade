@@ -23,7 +23,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `rocmfpx` | ROCm FPX | no | yes | rocm |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
-| `strata` | Strata | yes | yes | cuda, rocm |
+| `strata` | Strata | yes | yes | cuda, metal, rocm, sycl |
 | `thenoise` | TheNoise | yes | no | cuda, rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, cuda12, rocm, vulkan |
@@ -73,6 +73,9 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `sd-cpp` | cpu | core | native | linux, windows | cpu (x86_64) |
 | `strata` | cuda | experimental | python | linux, windows | nvidia_gpu (sm_120, sm_75, sm_86, sm_89) |
 | `strata` | rocm | experimental | python | linux, windows | amd_gpu (gfx1100, gfx1101, gfx1102, gfx1151, gfx1200, gfx1201) |
+| `strata` | sycl | experimental | python | linux | intel_gpu (arc) |
+| `strata` | cuda | experimental | python | linux | nvidia_gpu (sm_121) |
+| `strata` | metal | experimental | python | macos | metal |
 | `thenoise` | rocm | core | python | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `thenoise` | cuda | experimental | python | linux | nvidia_gpu |
 | `thinksound` | cuda | experimental | native | linux, windows | nvidia_gpu |
@@ -278,7 +281,7 @@ Lemonade launches `llama-server` with `--parallel 1` and leaves the upstream `--
 
 ### Strata (`strata`)
 
-Experimental; maintained by Julian Xhokaxhiu. Runs the native engine with its bundled Python HTTP server. Supports text-only Qwen3.6 GGUFs (UD-Q4_K_XL, UD-Q6_K_XL, Q8_0), sharing weights with llama.cpp. Engine and Control archives are installed together from the release pinned in `backend_versions.json`; no system Python is required. CUDA requires driver 580+; context must fit available VRAM.
+Experimental; maintained by Julian Xhokaxhiu. Supports Qwen3.6, Flash-Next, Swift, Coder, Gyro and ready-made NVFP4 packs. Uses shared weights, upstream preparation tools and bundled Python. Flash models share a ~5.2 GB MTP draft, prepared on first load (`--mtp off` disables it), and use upstream's RAM-guarded KV streaming. Engine and Control follow `backend_versions.json`.
 
 ### Backend auto-selection
 

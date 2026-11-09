@@ -86,6 +86,7 @@ std::vector<ArtifactRef> ArtifactSourceResolver::refs_for(const ModelInfo& info)
     main_ref.checkpoint_type = "main";
     main_ref.repo_id = repo_id_from_checkpoint(info.checkpoint("main"));
     main_ref.variant = variant_from_checkpoint(info.checkpoint("main"));
+    main_ref.revision = ops->checkpoint_revision(info, "main");
     if (main_ref.repo_id.empty()) {
         throw RegistrationError("model checkpoint does not contain a repository id");
     }
@@ -101,6 +102,7 @@ std::vector<ArtifactRef> ArtifactSourceResolver::refs_for(const ModelInfo& info)
         ref.checkpoint_type = type;
         ref.repo_id = repo_id_from_checkpoint(checkpoint);
         ref.variant = variant_from_checkpoint(checkpoint);
+        ref.revision = ops->checkpoint_revision(info, type);
         if (ref.repo_id.empty() || ref.variant.empty()) {
             throw RegistrationError("Additional checkpoints must contain an exact repository variant");
         }

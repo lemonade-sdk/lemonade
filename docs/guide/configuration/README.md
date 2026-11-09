@@ -144,8 +144,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "args": "",
     "backend": "auto",
     "cuda_bin": "builtin",
+    "metal_bin": "builtin",
     "parallel": 1,
-    "rocm_bin": "builtin"
+    "rocm_bin": "builtin",
+    "sycl_bin": "builtin"
   },
   "telemetry": {
     "enabled": false,
