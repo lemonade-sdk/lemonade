@@ -702,6 +702,11 @@ void ModelIngest::pull(const std::string& model_name,
                 ModelInfo original;
                 parse_model_source_fields(original, authored);
                 parse_checkpoints(original, authored);
+                // model_info carries the checkpoints its row implies, so the
+                // authored row must too, or the two never compare equal.
+                original.recipe = model_info.recipe;
+                original.labels = model_info.labels;
+                backends::ops_for(original.recipe)->add_implied_checkpoints(original);
                 if (original.source.empty() && original.registry_source.empty() &&
                     original.checkpoints == model_info.checkpoints &&
                     authored.value("recipe", "") == model_info.recipe) {

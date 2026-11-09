@@ -81,11 +81,17 @@ public:
             "\"recipe\": \"llamacpp\", \"checkpoint\": \"<repo>:<file>-f16.gguf\", "
             "\"labels\": [\"classification\", \"zero-shot\"]}`. Lemonade downloads `rulehead.bin` "
             "from the same repository and refuses the model when the file is missing; a head "
-            "stored elsewhere is named as the `rulehead` checkpoint. llama-server returns one "
-            "vector per token and lemond applies the head. "
-            "The text is never cut: an input longer than the model's batch is refused with "
-            "`context_length_exceeded`. The batch is 4096 tokens by default, or 2048 on the "
-            "`nathanw` and `halobox` backends; `ctx_size` caps it, and `-b` and `-ub` change it.",
+            "stored elsewhere is named as the `rulehead` checkpoint, from the same kind of place "
+            "as the GGUF (both in repositories, or both on disk). A GGUF on disk is registered "
+            "with `\"source\": \"local_path\"` and the file's path as `checkpoint`; its head is "
+            "`rulehead.bin` in the same folder. llama-server returns one vector per token and "
+            "lemond applies the head. "
+            "A long text is cut as ort-server cuts it, so the GGUF and the ONNX export score "
+            "the same tokens: the labels are never cut, and the text keeps a third of what "
+            "they leave of the window from its start and the rest from its end, with "
+            "`\\n...\\n` between them. The response then carries `truncated: true`. The window "
+            "is 2048 tokens, as in the ONNX export's manifest; `ctx_size` 0 means the same, "
+            "another `ctx_size` changes it, and `-b` and `-ub` cap it.",
             "Some upstream models declare only generic `LABEL_<n>` label names; their model card "
             "explains them.",
         };

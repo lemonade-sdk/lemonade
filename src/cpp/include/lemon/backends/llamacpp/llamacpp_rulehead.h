@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -19,16 +20,30 @@ namespace llamacpp {
 
 constexpr const char* RULE_HEAD_FILE = "rulehead.bin";
 
-// Decided as ArtifactSourceResolver does: a local origin, `file://`, or an
-// untagged path that exists on disk.
+// The token window ort-server gives the ONNX export of the same family (its
+// manifest.json max_length), so both backends cut the same text the same way.
+constexpr int RULE_HEAD_ROUTER_CTX_SIZE = 2048;
+
+// llama-server reads ctx_size 0 as the GGUF's window, the base model's 128000,
+// and lemond sizes the batch from ctx_size, so 0 would give a batch of 0.
+int rule_head_ctx_size(int requested);
+
+// A local origin, `file://`, or a rooted path. Decided by shape, not by whether
+// the file exists: a missing file is still a path, never the repository "C" or
+// "/models/r.gguf", and a relative "org/repo" is a repository even when a
+// folder of that name sits in lemond's working directory.
 bool checkpoint_is_local(const std::string& checkpoint, bool local_origin);
 
-// A local checkpoint is a file path, so its head is the file beside it; a remote
-// one is `[scheme://]repo:file`, so its head is RULE_HEAD_FILE in the same repository.
-std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, bool local_origin);
+// A GGUF and its rule head reach lemond the same way, both from disk or both
+// from a registry. Empty when they do, else why not.
+std::string mixed_rule_head_source_error(const std::string& model_name,
+                                         const std::string& main_checkpoint,
+                                         const std::string& rule_head, bool local_origin);
 
-bool local_rule_head_missing(const std::string& main_checkpoint, const std::string& rule_head,
-                             bool local_origin, bool main_on_disk, bool rule_head_on_disk);
+// A local file's head is the file beside it, and a local directory's head is in
+// it; a remote checkpoint is `[scheme://]repo:file`, so its head is RULE_HEAD_FILE
+// in the same repository.
+std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, bool local_origin);
 
 std::string missing_rule_head_message(const std::string& model_name, const std::string& checkpoint);
 
@@ -37,9 +52,26 @@ struct RouterInput {
     std::string text;
     std::vector<std::pair<size_t, size_t>> label_ranges;
     size_t text_start = 0;
+    // The elision marker lemond wrote into a cut text. Its tokens are the
+    // server's text, not the user's, so the text pool leaves them out.
+    size_t marker_start = 0;
+    size_t marker_end = 0;
 };
 
 RouterInput build_router_input(const std::vector<std::string>& labels, const std::string& text);
+
+// Tokenizes without special tokens and returns llama-server's token array with pieces.
+using PieceTokenizer = std::function<nlohmann::json(const std::string&)>;
+
+struct RouterFit {
+    RouterInput input;
+    nlohmann::json tokens;  // input.text from the tokenizer, kept for router_tokens()
+    bool truncated = false;
+};
+
+RouterFit fit_router_input(const std::vector<std::string>& labels, const std::string& text,
+                           size_t window, size_t n_specials, size_t elision_tokens,
+                           const PieceTokenizer& tokenize);
 
 // A piece that is not whole UTF-8 (half an emoji) arrives as an array of byte
 // values. Pieces that do not add up to the input are refused: drifted spans
@@ -85,10 +117,9 @@ RuleHead parse_rule_head(const std::string& bytes, int64_t hidden);
 std::vector<double> score_router_labels(const RuleHead& head, const nlohmann::json& rows,
                                         size_t n_tokens, const RouterTokenGroups& groups);
 
-// `truncated` is always false: unlike ort-server, lemond never cuts the text,
-// and llama-server refuses an input longer than its batch.
 nlohmann::json router_classify_response(const std::vector<std::string>& labels,
-                                        const std::vector<double>& probabilities, int top_k);
+                                        const std::vector<double>& probabilities, int top_k,
+                                        bool truncated);
 
 }  // namespace llamacpp
 }  // namespace backends

@@ -9,6 +9,7 @@
 #include <system_error>
 #include <lemon/auto_context_budget.h>
 #include <lemon/backends/backend_ops.h>
+#include <lemon/backends/llamacpp/llamacpp_rulehead.h>
 #include <lemon/backends/backend_registry.h>
 #include <lemon/gguf_reader.h>
 #include <lemon/gpu_memory_selection.h>
@@ -378,7 +379,7 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     }
 
     if (is_rule_head_router_model(model_info)) {
-        return AUTO_CTX_FALLBACK;
+        return backends::llamacpp::RULE_HEAD_ROUTER_CTX_SIZE;
     }
 
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);

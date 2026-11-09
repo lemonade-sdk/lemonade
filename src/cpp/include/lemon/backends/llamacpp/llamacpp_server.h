@@ -6,8 +6,10 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/llamacpp/llamacpp_rulehead.h"
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace lemon {
 namespace backends {
@@ -76,6 +78,10 @@ private:
     json classify_with_rule_head(const json& request);
 
     std::shared_ptr<const llamacpp::RuleHead> rule_head_;
+    // {special tokens around an empty input, tokens in the elision marker}: fixed
+    // for a loaded model, so counted once by the first rule-head request.
+    std::mutex rule_head_counts_mutex_;
+    std::optional<std::pair<size_t, size_t>> rule_head_counts_;
     bool decision_model_ = false;
     std::string decision_type_;
     int64_t decision_max_head_tokens_ = 0;

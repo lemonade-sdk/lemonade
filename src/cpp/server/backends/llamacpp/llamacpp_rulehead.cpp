@@ -15,6 +15,63 @@ constexpr const char* CATEGORIES_HEADER = "Categories:\n";
 constexpr const char* TEXT_HEADER = "\n\nText:\n";
 constexpr double MAX_LOGIT_SCALE = 30.0;
 
+// ort-server 0.4.0's constants (src/main.cpp), which the fit must keep in step with.
+constexpr const char* ELISION = "\n...\n";
+constexpr size_t TEXT_HEAD_DIVISOR = 3;
+constexpr size_t MIN_TEXT_TOKENS = 8;
+constexpr int MAX_REFIT_ATTEMPTS = 8;
+// ort-server pre-cuts by characters at budget x max(longest vocabulary token, 32).
+// LFM2's longest token is 23 characters, so ort-server uses the floor, 32, too.
+constexpr size_t MAX_TOKEN_CHARS = 32;
+
+bool is_char_boundary(const std::string& s, size_t pos) {
+    return pos >= s.size() || (static_cast<unsigned char>(s[pos]) & 0xC0) != 0x80;
+}
+
+size_t utf8_length(const std::string& s) {
+    size_t n = 0;
+    for (const char c : s) {
+        if ((static_cast<unsigned char>(c) & 0xC0) != 0x80) ++n;
+    }
+    return n;
+}
+
+size_t utf8_byte_at(const std::string& s, size_t chars) {
+    size_t n = 0;
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (is_char_boundary(s, i)) {
+            if (n == chars) return i;
+            ++n;
+        }
+    }
+    return s.size();
+}
+
+std::string utf8_head_tail(const std::string& s, size_t max_chars) {
+    const size_t total = utf8_length(s);
+    if (total <= max_chars) return s;
+    const size_t head = max_chars / TEXT_HEAD_DIVISOR;
+    const size_t tail = max_chars - head;
+    return s.substr(0, utf8_byte_at(s, head)) + s.substr(utf8_byte_at(s, total - tail));
+}
+
+// ort-server's head_chars_for / tail_chars_for, on byte spans: a cut that would
+// land inside a character moves to the side that drops the whole character.
+size_t head_end_for(const std::vector<std::pair<size_t, size_t>>& spans, size_t budget,
+                    const std::string& s) {
+    size_t h = std::min(budget, spans.size());
+    while (h > 0 && h < spans.size() && !is_char_boundary(s, spans[h - 1].second)) --h;
+    return h > 0 ? spans[h - 1].second : 0;
+}
+
+size_t tail_start_for(const std::vector<std::pair<size_t, size_t>>& spans, size_t budget,
+                      const std::string& s) {
+    if (budget == 0 || spans.empty()) return s.size();
+    size_t i = spans.size() - std::min(budget, spans.size());
+    while (i < spans.size() && i > 0 && !is_char_boundary(s, spans[i].first)) ++i;
+    return i < spans.size() ? spans[i].first : s.size();
+}
+
 std::vector<float> take(const std::vector<float>& floats, size_t& offset, size_t count) {
     std::vector<float> out(floats.begin() + offset, floats.begin() + offset + count);
     offset += count;
@@ -50,9 +107,8 @@ std::vector<double> pooled_projection(const nlohmann::json& rows, const std::vec
 
 bool checkpoint_is_local(const std::string& checkpoint, bool local_origin) {
     if (local_origin || checkpoint.rfind("file://", 0) == 0) return true;
-    std::error_code ec;
     return checkpoint.find("://") == std::string::npos &&
-           std::filesystem::exists(std::filesystem::u8path(checkpoint), ec);
+           std::filesystem::u8path(checkpoint).has_root_directory();
 }
 
 std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, bool local_origin) {
@@ -61,19 +117,34 @@ std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, boo
         const size_t repo = scheme == std::string::npos ? 0 : scheme + 3;
         return main_checkpoint.substr(0, main_checkpoint.find(':', repo)) + ":" + RULE_HEAD_FILE;
     }
+    const std::string path =
+        main_checkpoint.rfind("file://", 0) == 0 ? main_checkpoint.substr(7) : main_checkpoint;
+    std::error_code ec;
+    if (std::filesystem::is_directory(std::filesystem::u8path(path), ec)) {
+        const char last = main_checkpoint.back();
+        return main_checkpoint + (last == '/' || last == '\\' ? "" : "/") + RULE_HEAD_FILE;
+    }
     const size_t slash = main_checkpoint.find_last_of("/\\");
     return (slash == std::string::npos ? std::string() : main_checkpoint.substr(0, slash + 1)) +
            RULE_HEAD_FILE;
 }
 
-bool local_rule_head_missing(const std::string& main_checkpoint, const std::string& rule_head,
-                             bool local_origin, bool main_on_disk, bool rule_head_on_disk) {
-    if (rule_head.empty() || !main_on_disk || rule_head_on_disk ||
-        !checkpoint_is_local(main_checkpoint, local_origin)) {
-        return false;
-    }
-    return checkpoint_is_local(rule_head, local_origin) ||
-           rule_head == implied_rule_head_checkpoint(main_checkpoint, local_origin);
+std::string mixed_rule_head_source_error(const std::string& model_name,
+                                         const std::string& main_checkpoint,
+                                         const std::string& rule_head, bool local_origin) {
+    if (rule_head.empty()) return "";
+    const bool main_local = checkpoint_is_local(main_checkpoint, local_origin);
+    if (main_local == checkpoint_is_local(rule_head, local_origin)) return "";
+    return "model '" + model_name + "' has a " + (main_local ? "local" : "remote") +
+           " GGUF but a " + (main_local ? "remote" : "local") + " 'rulehead' checkpoint '" +
+           rule_head + "'. Lemonade reads both from the same place: put rulehead.bin " +
+           (main_local ? "on disk, beside the GGUF or at a path named as the 'rulehead' "
+                         "checkpoint"
+                       : "in a repository, named as `<repo>:rulehead.bin`");
+}
+
+int rule_head_ctx_size(int requested) {
+    return requested > 0 ? requested : RULE_HEAD_ROUTER_CTX_SIZE;
 }
 
 std::string missing_rule_head_message(const std::string& model_name, const std::string& checkpoint) {
@@ -95,6 +166,73 @@ RouterInput build_router_input(const std::vector<std::string>& labels, const std
     input.text_start = input.text.size();
     input.text += text;
     return input;
+}
+
+RouterFit fit_router_input(const std::vector<std::string>& labels, const std::string& text,
+                           size_t window, size_t n_specials, size_t elision_tokens,
+                           const PieceTokenizer& tokenize) {
+    const RouterInput block = build_router_input(labels, "");
+    const size_t label_tokens = token_byte_spans(tokenize(block.text), block.text.size()).size();
+    const size_t min_text = std::max<size_t>(1, std::min(MIN_TEXT_TOKENS, window / 8));
+    const size_t reserve = n_specials + min_text;
+    if (label_tokens + reserve > window) {
+        throw std::invalid_argument(
+            "the label list needs " + std::to_string(label_tokens) +
+            " tokens, and this model's window holds " + std::to_string(window) + " with " +
+            std::to_string(reserve) +
+            " reserved for markers and text. Send fewer or shorter labels.");
+    }
+    const size_t text_budget = window - n_specials - label_tokens;
+
+    RouterFit fit;
+    std::string body = text;
+    size_t mark_from = 0;
+    size_t mark_to = 0;
+    if (utf8_length(body) > text_budget * MAX_TOKEN_CHARS) {
+        body = utf8_head_tail(body, text_budget * MAX_TOKEN_CHARS);
+        fit.truncated = true;
+    }
+
+    const std::vector<std::pair<size_t, size_t>> spans =
+        token_byte_spans(tokenize(body), body.size());
+    if (spans.size() > text_budget) {
+        size_t keep = text_budget;
+        std::string mid;
+        if (text_budget > elision_tokens + 1) {
+            keep = text_budget - elision_tokens;
+            mid = ELISION;
+        }
+        const size_t head = std::max<size_t>(1, keep / TEXT_HEAD_DIVISOR);
+        const size_t tail = keep - head;
+        const size_t head_end = head_end_for(spans, head, body);
+        size_t tail_start = std::max(tail_start_for(spans, tail, body), head_end);
+        if (head_end == 0 && tail_start == body.size()) {
+            mid.clear();
+            tail_start = tail_start_for(spans, text_budget, body);
+        }
+        body = body.substr(0, head_end) + mid + body.substr(tail_start);
+        mark_from = head_end;
+        mark_to = head_end + mid.size();
+        fit.truncated = true;
+    }
+
+    // tokens(block + body) can differ from tokens(block) + tokens(body) where the
+    // two meet, so the text is shortened by characters and tokenized again, as
+    // ort-server does. The caller cuts ids only if this still does not fit.
+    for (int attempt = 0;; ++attempt) {
+        fit.input = build_router_input(labels, body);
+        fit.input.marker_start = fit.input.text_start + mark_from;
+        fit.input.marker_end = fit.input.text_start + mark_to;
+        fit.tokens = tokenize(fit.input.text);
+        const size_t n =
+            token_byte_spans(fit.tokens, fit.input.text.size()).size() + n_specials;
+        if (n <= window || attempt == MAX_REFIT_ATTEMPTS || body.empty()) break;
+        const size_t chars = utf8_length(body);
+        const size_t drop = std::min(chars, std::max<size_t>(1, n - window));
+        body = body.substr(0, utf8_byte_at(body, chars - drop));
+        fit.truncated = true;
+    }
+    return fit;
 }
 
 std::vector<std::pair<size_t, size_t>> token_byte_spans(const nlohmann::json& tokens,
@@ -172,7 +310,8 @@ RouterTokenGroups group_router_tokens(const RouterInput& input,
             const auto [label_start, label_end] = input.label_ranges[r];
             if (start < label_end && end > label_start) groups.labels[r].push_back(i);
         }
-        if (end > input.text_start) groups.text.push_back(i);
+        const bool in_marker = start >= input.marker_start && end <= input.marker_end;
+        if (end > input.text_start && !in_marker) groups.text.push_back(i);
     }
     for (size_t r = 0; r < groups.labels.size(); ++r) {
         if (groups.labels[r].empty()) {
@@ -265,7 +404,8 @@ std::vector<double> score_router_labels(const RuleHead& head, const nlohmann::js
 }
 
 nlohmann::json router_classify_response(const std::vector<std::string>& labels,
-                                        const std::vector<double>& probabilities, int top_k) {
+                                        const std::vector<double>& probabilities, int top_k,
+                                        bool truncated) {
     std::vector<size_t> order(labels.size());
     for (size_t i = 0; i < order.size(); ++i) order[i] = i;
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
@@ -276,7 +416,7 @@ nlohmann::json router_classify_response(const std::vector<std::string>& labels,
     }
     nlohmann::json scores = nlohmann::json::object();
     for (const size_t i : order) scores[labels[i]] = probabilities[i];
-    return nlohmann::json{{"labels", std::move(scores)}, {"truncated", false}};
+    return nlohmann::json{{"labels", std::move(scores)}, {"truncated", truncated}};
 }
 
 }  // namespace llamacpp

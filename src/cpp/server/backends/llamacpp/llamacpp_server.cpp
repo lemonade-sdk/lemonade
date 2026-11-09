@@ -40,7 +40,9 @@
 #include <iostream>
 #include <iterator>
 #include <lemon/utils/aixlog.hpp>
+#include <mutex>
 #include <set>
+#include <tuple>
 #ifdef __APPLE__
 #include <pwd.h>
 #include <unistd.h>
@@ -357,6 +359,10 @@ void LlamaCppServer::load(const std::string& model_name,
                                  << "keeps llama-server's default batch sizes" << std::endl;
     }
     rule_head_.reset();
+    {
+        std::lock_guard<std::mutex> lock(rule_head_counts_mutex_);
+        rule_head_counts_.reset();
+    }
     if (is_rule_head_router_model(model_info)) {
         const std::string rule_head_path = model_info.resolved_path("rulehead");
         if (rule_head_path.empty()) {
@@ -384,6 +390,15 @@ void LlamaCppServer::load(const std::string& model_name,
             LOG(INFO, "LlamaCpp") << "Encoder decision model: using its trained context of " << capped
                                   << " tokens instead of " << ctx_size << std::endl;
             ctx_size = capped;
+        }
+    }
+    if (rule_head_) {
+        const int window = llamacpp::rule_head_ctx_size(ctx_size);
+        if (window != ctx_size) {
+            LOG(INFO, "LlamaCpp") << "Prompt-router encoder: ctx_size " << ctx_size
+                                  << " means its default window of " << window << " tokens"
+                                  << std::endl;
+            ctx_size = window;
         }
     }
 
@@ -814,35 +829,50 @@ json LlamaCppServer::classify_with_rule_head(const json& request) {
                           ? request["top_k"].get<int>()
                           : 0;
 
-    const llamacpp::RouterInput input = llamacpp::build_router_input(labels, text.get<std::string>());
-    // Only the ids first: an input over the limit is refused before the second,
-    // larger response that carries every piece.
-    const json with_special = tokenize(json{{"content", input.text}, {"add_special", true}});
-    if (with_special.contains("error")) return with_special;
-    const size_t n_tokens =
-        with_special.contains("tokens") && with_special["tokens"].is_array()
-            ? with_special["tokens"].size()
-            : 0;
-    if (encoder_max_input_tokens_ > 0 && n_tokens > static_cast<size_t>(encoder_max_input_tokens_)) {
-        return json{{"error", {
-            {"message", "the labels and the text are " + std::to_string(n_tokens) +
-                            " tokens, longer than this model accepts (" +
-                            std::to_string(encoder_max_input_tokens_) + " tokens)"},
-            {"type", "invalid_request_error"},
-            {"code", "context_length_exceeded"},
-            {"status_code", 400},
-        }}};
+    if (encoder_max_input_tokens_ <= 0) {
+        return ErrorResponse::create("the prompt-router encoder has no token window",
+                                     ErrorType::BACKEND_ERROR);
     }
-    const json without_special = tokenize(
-        json{{"content", input.text}, {"add_special", false}, {"with_pieces", true}});
-    if (without_special.contains("error")) return without_special;
+    const size_t window = static_cast<size_t>(encoder_max_input_tokens_);
+
+    // Carries llama-server's own error response out of the tokenizer callback.
+    struct TokenizeFailure {
+        json response;
+    };
+    auto tokens_of = [this](const std::string& content, bool add_special) {
+        json body = {{"content", content}, {"add_special", add_special}};
+        if (!add_special) body["with_pieces"] = true;
+        json response = tokenize(body);
+        if (response.contains("error")) throw TokenizeFailure{std::move(response)};
+        return response.value("tokens", json());
+    };
 
     try {
-        const llamacpp::RouterTokens tokens = llamacpp::router_tokens(
-            with_special.value("tokens", json()), without_special.value("tokens", json()),
-            input.text.size());
+        size_t n_specials = 0;
+        size_t elision_tokens = 0;
+        {
+            std::lock_guard<std::mutex> lock(rule_head_counts_mutex_);
+            if (!rule_head_counts_) {
+                rule_head_counts_.emplace(tokens_of("", true).size(),
+                                          tokens_of("\n...\n", false).size());
+            }
+            std::tie(n_specials, elision_tokens) = *rule_head_counts_;
+        }
+
+        const llamacpp::RouterFit fit = llamacpp::fit_router_input(
+            labels, text.get<std::string>(), window, n_specials, elision_tokens,
+            [&](const std::string& content) { return tokens_of(content, false); });
+        bool truncated = fit.truncated;
+
+        llamacpp::RouterTokens tokens = llamacpp::router_tokens(
+            tokens_of(fit.input.text, true), fit.tokens, fit.input.text.size());
+        if (tokens.ids.size() > window) {
+            tokens.ids.resize(window);
+            tokens.spans.resize(window);
+            truncated = true;
+        }
         const llamacpp::RouterTokenGroups groups =
-            llamacpp::group_router_tokens(input, tokens.spans, labels);
+            llamacpp::group_router_tokens(fit.input, tokens.spans, labels);
 
         json embedded = forward_request("/embedding", json{{"content", tokens.ids}});
         if (embedded.is_object() && embedded.contains("error")) {
@@ -857,7 +887,9 @@ json LlamaCppServer::classify_with_rule_head(const json& request) {
         }
         const std::vector<double> probabilities = llamacpp::score_router_labels(
             *rule_head_, embedded[0]["embedding"], tokens.ids.size(), groups);
-        return llamacpp::router_classify_response(labels, probabilities, top_k);
+        return llamacpp::router_classify_response(labels, probabilities, top_k, truncated);
+    } catch (const TokenizeFailure& failure) {
+        return failure.response;
     } catch (const std::invalid_argument& e) {
         return systemone::invalid_decision_request(e.what());
     } catch (const std::exception& e) {
@@ -1075,19 +1107,6 @@ bool is_ggml_hip_plugin_available() {
     return false;
 }
 
-bool local_rule_head_missing(const ModelInfo& info) {
-    auto on_disk = [&info](const std::string& type) {
-        std::string path = info.resolved_path(type);
-        if (path.empty()) path = info.checkpoint(type);
-        if (path.rfind("file://", 0) == 0) path = path.substr(7);
-        std::error_code ec;
-        return !path.empty() && fs::exists(path_from_utf8(path), ec);
-    };
-    return llamacpp::local_rule_head_missing(info.checkpoint(), info.checkpoint("rulehead"),
-                                             is_local_origin(info.source), on_disk("main"),
-                                             on_disk("rulehead"));
-}
-
 // llamacpp model-management behavior: GGUF metadata + capability labels.
 class LlamaCppOps : public BackendOps {
 public:
@@ -1103,16 +1122,16 @@ public:
 
     void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
                         const BackendOpsContext& ctx) const override {
+        if (const std::string mixed = llamacpp::mixed_rule_head_source_error(
+                info.model_name, info.checkpoint(), info.checkpoint("rulehead"),
+                is_local_origin(info.source));
+            !mixed.empty()) {
+            throw std::runtime_error(mixed);
+        }
         try {
             BackendOps::download_model(info, do_not_upgrade, std::move(progress), ctx);
         } catch (const MissingCheckpointError& e) {
             if (e.checkpoint_type != "rulehead") throw;
-            throw std::runtime_error(
-                llamacpp::missing_rule_head_message(info.model_name, info.checkpoint("rulehead")));
-        } catch (const std::exception&) {
-            // A local model is never fetched, so a head missing beside it surfaces as
-            // whatever the fetch tried instead; name the file that is actually absent.
-            if (!local_rule_head_missing(info)) throw;
             throw std::runtime_error(
                 llamacpp::missing_rule_head_message(info.model_name, info.checkpoint("rulehead")));
         }
@@ -1197,6 +1216,18 @@ public:
             return "model '" + info.model_name + "' has a 'rulehead' checkpoint, which lemond "
                    "applies only to a prompt-router encoder labelled 'classification' and "
                    "'zero-shot', not 'systemone'";
+        }
+        if (is_rule_head_router_model(info)) {
+            if (info.extra<bool>("hf_load", false)) {
+                return "model '" + info.model_name + "' has a 'rulehead' checkpoint and "
+                       "'hf_load', but lemond reads the encoder's width from the GGUF header "
+                       "to apply the head, and with 'hf_load' it has no GGUF of its own. "
+                       "Remove 'hf_load'.";
+            }
+            const std::string mixed = llamacpp::mixed_rule_head_source_error(
+                info.model_name, info.checkpoint(), info.checkpoint("rulehead"),
+                is_local_origin(info.source));
+            if (!mixed.empty()) return mixed;
         }
         if (has_label(info.labels, "zero-shot") && !has_label(info.labels, "systemone") &&
             !is_rule_head_router_model(info)) {

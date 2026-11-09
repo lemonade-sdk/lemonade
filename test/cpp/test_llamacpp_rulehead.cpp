@@ -12,12 +12,16 @@
 #include <vector>
 
 using lemon::backends::llamacpp::build_router_input;
+using lemon::backends::llamacpp::fit_router_input;
 using lemon::backends::llamacpp::group_router_tokens;
+using lemon::backends::llamacpp::checkpoint_is_local;
 using lemon::backends::llamacpp::implied_rule_head_checkpoint;
-using lemon::backends::llamacpp::local_rule_head_missing;
+using lemon::backends::llamacpp::mixed_rule_head_source_error;
+using lemon::backends::llamacpp::rule_head_ctx_size;
 using lemon::backends::llamacpp::parse_rule_head;
 using lemon::backends::llamacpp::router_classify_response;
 using lemon::backends::llamacpp::router_tokens;
+using lemon::backends::llamacpp::RouterFit;
 using lemon::backends::llamacpp::RouterInput;
 using lemon::backends::llamacpp::RouterTokenGroups;
 using lemon::backends::llamacpp::RouterTokens;
@@ -61,6 +65,32 @@ std::string bytes_of(const std::vector<float>& floats) {
 // cosine between its own mean vector and the text's.
 std::vector<float> identity_head(float score_bias, float logit_scale) {
     return {1, 0, 0, 1,  0, 0,  1, 0, 0, 1,  0, 0,  score_bias, logit_scale};
+}
+
+// One token per ASCII character; a multi-byte character splits into two tokens
+// that are not whole UTF-8, as a byte-level BPE splits an emoji.
+json char_tokens(const std::string& s) {
+    json out = json::array();
+    for (size_t i = 0; i < s.size();) {
+        const unsigned char lead = static_cast<unsigned char>(s[i]);
+        const size_t n = lead < 0x80 ? 1 : lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4;
+        if (n == 1) {
+            out.push_back(piece(lead, std::string(1, s[i])));
+        } else {
+            json rest = json::array();
+            for (size_t k = 1; k < n; ++k) rest.push_back(static_cast<unsigned char>(s[i + k]));
+            out.push_back(piece(1000, json::array({lead})));
+            out.push_back(piece(1001, rest));
+        }
+        i += n;
+    }
+    return out;
+}
+
+std::string repeat(const std::string& s, size_t n) {
+    std::string out;
+    for (size_t i = 0; i < n; ++i) out += s;
+    return out;
 }
 
 }  // namespace
@@ -207,25 +237,71 @@ int main() {
         expect(implied_rule_head_checkpoint(base + "/router-f16.gguf", false) ==
                    base + "/rulehead.bin",
                "an untagged local path's head is the file beside the GGUF");
+
+        // Without a Windows drive, so the path has no colon on any OS, as on Linux.
+        const std::string posix = (dir.root_directory() / dir.relative_path()).generic_u8string();
+        expect(implied_rule_head_checkpoint(base, true) == base + "/rulehead.bin" &&
+                   implied_rule_head_checkpoint(posix, true) == posix + "/rulehead.bin",
+               "a directory's head is inside it, not beside it");
+        expect(implied_rule_head_checkpoint(base + "/", true) == base + "/rulehead.bin" &&
+                   implied_rule_head_checkpoint(std::filesystem::path(dir).make_preferred().u8string() + "\\", true) ==
+                       std::filesystem::path(dir).make_preferred().u8string() + "\\rulehead.bin",
+               "a directory with a trailing separator gets no second one");
+        expect(implied_rule_head_checkpoint(posix, false) == posix + "/rulehead.bin",
+               "an untagged directory on disk is local too");
         std::error_code ec;
         std::filesystem::remove_all(dir, ec);
     }
+    // Local by shape, not by existence: a missing file is still a path.
+    expect(implied_rule_head_checkpoint("/models/not-here/router-f16.gguf", false) ==
+               "/models/not-here/rulehead.bin",
+           "a rooted path that does not exist yet keeps its head beside it");
+#ifdef _WIN32
+    expect(implied_rule_head_checkpoint(R"(D:\not-here\router-f16.gguf)", false) ==
+               R"(D:\not-here\rulehead.bin)",
+           "a missing Windows path never becomes the repository \"D\"");
+#endif
     {
-        const std::string main = "user.my-router/router-f16.gguf";
-        const std::string sibling = "user.my-router/rulehead.bin";
-        expect(local_rule_head_missing(main, sibling, true, true, false),
-               "a local GGUF whose sibling head is absent reports the missing head");
-        expect(!local_rule_head_missing(main, sibling, true, true, true),
-               "a head that is on disk is not missing");
-        expect(!local_rule_head_missing(main, sibling, true, false, false),
-               "a GGUF that is absent too keeps the fetch error");
-        expect(!local_rule_head_missing("file:///models/router-f16.gguf",
-                                        "org/router-GGUF:rulehead.bin", false, true, false),
-               "an explicitly remote head keeps its own fetch error");
-        expect(!local_rule_head_missing("org/router-GGUF:router-f16.gguf",
-                                        "org/router-GGUF:rulehead.bin", false, false, false),
-               "a remote model is never reported as a missing local head");
+        const std::filesystem::path cwd = std::filesystem::current_path();
+        const std::filesystem::path scratch =
+            std::filesystem::temp_directory_path() /
+            ("lemon_test_rulehead_cwd_" + std::to_string(std::random_device{}()));
+        std::filesystem::create_directories(scratch / "org" / "router-GGUF");
+        std::filesystem::current_path(scratch);
+        expect(!checkpoint_is_local("org/router-GGUF", false) &&
+                   implied_rule_head_checkpoint("org/router-GGUF:router-f16.gguf", false) ==
+                       "org/router-GGUF:rulehead.bin",
+               "a repository id stays remote when a folder of that name is in the working directory");
+        std::filesystem::current_path(cwd);
+        std::error_code ec;
+        std::filesystem::remove_all(scratch, ec);
     }
+
+    expect(mixed_rule_head_source_error("user.r", "/models/r-f16.gguf", "/models/rulehead.bin",
+                                        false)
+                   .empty() &&
+               mixed_rule_head_source_error("user.r", "org/r-GGUF:r-f16.gguf",
+                                            "other/heads:rulehead.bin", false)
+                   .empty(),
+           "a GGUF and head from the same kind of place are accepted");
+    {
+        const std::string local_gguf = mixed_rule_head_source_error(
+            "user.r", "/models/r-f16.gguf", "org/r-GGUF:rulehead.bin", false);
+        const std::string remote_gguf = mixed_rule_head_source_error(
+            "user.r", "org/r-GGUF:r-f16.gguf", "/models/rulehead.bin", false);
+        expect(local_gguf.find("local GGUF but a remote") != std::string::npos &&
+                   remote_gguf.find("remote GGUF but a local") != std::string::npos,
+               "a local GGUF with a remote head, or the reverse, is refused in words");
+    }
+    expect(mixed_rule_head_source_error("user.r", "user.r/r-f16.gguf", "org/r-GGUF:rulehead.bin",
+                                        true)
+               .empty(),
+           "under a local source every checkpoint is a path, so nothing is mixed");
+
+    expect(rule_head_ctx_size(0) == 2048 && rule_head_ctx_size(-1) == 2048,
+           "ctx_size 0 means the router's own window, not the GGUF's 128000");
+    expect(rule_head_ctx_size(512) == 512 && rule_head_ctx_size(8192) == 8192,
+           "an explicit ctx_size is kept");
     expect(implied_rule_head_checkpoint("user.my-router/router-f16.gguf", true) ==
                "user.my-router/rulehead.bin",
            "a local upload's head is the file beside the GGUF");
@@ -245,10 +321,61 @@ int main() {
     expect(throws<std::runtime_error>([&] { score_router_labels(head, rows, 18, groups); }),
            "a row count that differs from the tokens sent is refused");
 
-    const json top = router_classify_response(labels, probabilities, 2);
+    const json top = router_classify_response(labels, probabilities, 2, false);
     expect(top["labels"].size() == 2 && top["labels"].contains("code") &&
                top["labels"].contains("math") && top["truncated"] == false,
            "top_k keeps the highest labels and reports no cut");
+    expect(router_classify_response(labels, probabilities, 0, true)["truncated"] == true,
+           "a cut is reported");
+
+    // ort-server 0.4.0's budget, with one token per ASCII character: the label
+    // block is 23 tokens, BOS is 1, and the elision marker is 5.
+    {
+        const std::string marker = "\n...\n";
+        const std::string e_acute = "\xC3\xA9";
+        const std::vector<std::string> one = {"a"};
+        const std::string digits = repeat("0123456789", 10);
+
+        const RouterFit fits = fit_router_input(one, "short text", 64, 1, 5, char_tokens);
+        expect(!fits.truncated && fits.input.text == build_router_input(one, "short text").text,
+               "a text that fits is read whole");
+
+        // Budget 64 - 1 - 23 = 40; less the marker, 35: head 35 / 3 = 11, tail 24.
+        const RouterFit cut = fit_router_input(one, digits, 64, 1, 5, char_tokens);
+        const std::string kept = digits.substr(0, 11) + marker + digits.substr(100 - 24);
+        expect(cut.truncated && cut.input.text == build_router_input(one, kept).text,
+               "a long text keeps a third of its budget from the head, the rest from the tail");
+        expect(cut.input.marker_start == cut.input.text_start + 11 &&
+                   cut.input.marker_end == cut.input.text_start + 16,
+               "the marker's place is recorded");
+        const auto spans = token_byte_spans(cut.tokens, cut.input.text.size());
+        const RouterTokenGroups pooled = group_router_tokens(cut.input, spans, one);
+        expect(pooled.text.size() == 35, "the marker is left out of the text pool");
+
+        // Budget 39, keep 34: head 11 and tail 23 tokens, both odd, so each would
+        // end inside a two-token character; the head gives one back, the tail too.
+        const RouterFit chars =
+            fit_router_input(one, repeat(e_acute, 100), 63, 1, 5, char_tokens);
+        expect(chars.input.text ==
+                   build_router_input(one, repeat(e_acute, 5) + marker + repeat(e_acute, 11))
+                       .text,
+               "a cut lands between characters, never inside one");
+
+        // Budget 6 cannot pay for a 5-token marker and keep both ends: head 2, tail 4.
+        const RouterFit tight = fit_router_input(one, digits, 30, 1, 5, char_tokens);
+        expect(tight.truncated &&
+                   tight.input.text == build_router_input(one, "01" + digits.substr(96)).text &&
+                   tight.input.marker_start == tight.input.marker_end,
+               "a budget too small for the marker drops it");
+
+        expect(throws<std::invalid_argument>(
+                   [&] { fit_router_input(one, digits, 26, 1, 5, char_tokens); }),
+               "a label block that leaves no room for text is refused, never cut");
+        expect(throws<std::invalid_argument>([&] {
+                   fit_router_input({repeat("x", 100)}, "short", 64, 1, 5, char_tokens);
+               }),
+               "a label longer than the window is refused");
+    }
 
     if (failures > 0) {
         std::cerr << failures << " test(s) failed" << std::endl;
