@@ -402,7 +402,7 @@ test('disconnect clears account devices and locks the server', async ({ page }) 
   expect(fixture.calls.some(call => /\/(lock|disable)$/.test(call.path))).toBe(true);
 });
 
-test('a saved account selects the device key path but does not restore authentication', async ({ page }) => {
+test('a reload keeps a passkey device signed out and stores no account state', async ({ page }) => {
   const fixture = await setupNexusAccount(page);
   await enableNexusMesh(page);
   const reads = fixture.calls.filter(call => call.path.endsWith('/account')).length;
@@ -414,21 +414,7 @@ test('a saved account selects the device key path but does not restore authentic
   await expect(dialog.getByRole('radio', { name: 'Create account' })).toHaveCount(0);
   await expect(dialog.getByRole('textbox', { name: 'Account name' })).toHaveCount(0);
   expect(fixture.calls.filter(call => call.path.endsWith('/account')).length).toBe(reads);
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('lemonade_nexus_account_labels') || '{}'));
-  expect(saved['http://127.0.0.1:13305']).toEqual({ id: 'group', displayName: 'My laptop' });
-});
-
-test('a label saved by an older app is kept until Mesh is enabled again', async ({ page }) => {
-  await setupNexusAccount(page);
-  await page.evaluate(() => localStorage.setItem('lemonade_nexus_account_labels', JSON.stringify({ 'http://127.0.0.1:13305': { id: 'group', displayName: 'Geramy' } })));
-  await page.reload();
-  await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
-  await expect(dialog.getByRole('radio', { name: 'Use this device’s key' })).toBeChecked();
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('lemonade_nexus_account_labels') || '{}')['http://127.0.0.1:13305'])).toEqual({ id: 'group', displayName: 'Geramy' });
-  await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('lemonade_nexus_account_labels') || '{}')['http://127.0.0.1:13305'])).toEqual({ id: 'group', displayName: 'My laptop' });
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('lemonade_nexus_account')))).toEqual([]);
 });
 
 test('read-only members have no admin badge or invitation action', async ({ page }) => {

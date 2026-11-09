@@ -153,9 +153,8 @@ test('route permissions fit a narrow viewport and support keyboard role selectio
   await page.keyboard.press('Space');
   await expect(panel.getByRole('radio', { name: 'Admin', exact: true })).toBeChecked();
   const categories = panel.getByRole('combobox', { name: 'Service category', exact: true });
-  await categories.focus();
-  await page.keyboard.press('End');
-  await page.keyboard.press('Enter');
+  // A closed native select does not move on End in every Chromium build; pick the option itself.
+  await categories.selectOption('management');
   await expect(categories).toHaveValue('management');
   await panel.getByLabel('Filter routes', { exact: true }).fill('nexus');
   await expect(panel.getByText('/api/v1/nexus/members/{node_id}/role', { exact: true })).toBeVisible();

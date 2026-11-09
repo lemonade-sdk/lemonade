@@ -1,12 +1,13 @@
 import { expect, test } from '@playwright/test';
-import { enableNexusMesh, setupNexusAccount } from './nexusAccountFixture';
+import { resumedNexusMesh, setupNexusAccount } from './nexusAccountFixture';
 
 test('device tiles contain their icon and leave the tree stem outside', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1100 });
   const fixture = await setupNexusAccount(page, { deviceKey: true });
   fixture.branches.group.children = fixture.branches.group.children.filter(child => child.id === 'self');
   fixture.branches.group.children[0].tunnel_ip = fixture.state.members[0].tunnel_ip;
-  await enableNexusMesh(page);
+  await page.reload();
+  await resumedNexusMesh(page);
   await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   const device = page.getByRole('treeitem', { name: 'My laptop', exact: true });
   await device.click();
@@ -53,7 +54,8 @@ test('nested branches stay aligned through collapse, growth, deep nesting and na
   Object.values(fixture.branches).forEach(branch => branch.children.forEach(child => {
     child.tunnel_ip = fixture.state.members.find(device => device.node_id === child.id)?.tunnel_ip || '';
   }));
-  await enableNexusMesh(page);
+  await page.reload();
+  await resumedNexusMesh(page);
   await page.getByRole('radio', { name: 'Advanced', exact: true }).check();
   const row = (name: string) => page.getByRole('treeitem', { name, exact: true });
   for (const name of ['Team', 'Lab', 'Remote office']) {
