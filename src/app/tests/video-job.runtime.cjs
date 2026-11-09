@@ -153,6 +153,27 @@ const noSleep = async () => {};
   }
 
   {
+    // A clip that finishes just before /cancel gets a 404 there, and is still kept.
+    const server = fakeServer(['running'], { output_format: 'webm' });
+    let finished = false;
+    const get = server.transport.get;
+    server.transport.get = async id => (finished ? { id, status: 'completed', output_format: 'webm' } : get(id));
+    server.transport.cancel = async id => {
+      server.calls.cancel.push(id);
+      finished = true;
+      throw httpError(404);
+    };
+    const controller = new AbortController();
+    const result = await runVideoJob(server.transport, {}, {
+      signal: controller.signal,
+      onStatus: record => { if (record.status === 'running') controller.abort(); },
+      sleep: noSleep,
+    });
+    assert.equal(result.record.status, 'completed');
+    assert.equal(server.calls.content, 1);
+  }
+
+  {
     // A failed cancel request is not a confirmed stop either.
     const server = fakeServer(['running']);
     server.transport.cancel = async () => { throw new Error('server gone'); };

@@ -172,13 +172,15 @@ export async function runVideoJob(
 
   // The model must not be reused until the server reports the job ended, so a
   // stop that the server never confirms is reported as unconfirmed, not done.
-  // A clip that finished before the cancel landed is kept, not discarded.
+  // A clip that finished before the cancel landed is kept, not discarded; the
+  // server answers 404 to a cancel for any job that is no longer running, so
+  // that case falls through to the status polls.
   const stop = async (): Promise<VideoJobResult> => {
     onStatus?.({ ...record, status: 'canceling' });
     try {
       await transport.cancel(id, timeoutSignal(requestTimeoutMs));
     } catch (err) {
-      if (isPermanent(err)) throw new VideoJobStopUnconfirmedError(id);
+      if (isPermanent(err) && !isGone(err)) throw new VideoJobStopUnconfirmedError(id);
     }
     for (let i = 0; i < maxCancelPolls; i += 1) {
       await sleep(pollMs);
