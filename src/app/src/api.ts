@@ -681,7 +681,14 @@ export type LemonadeRequestInit = Omit<RequestInit, 'body'> & {
   includeSessionHeaders?: boolean;
   /** Select which Lemonade credential is sent. Internal control routes use admin auth. */
   auth?: 'api' | 'admin' | 'none';
+  /** Send the request to this server instead of the current connection settings. */
+  server?: LemonadeServerTarget;
 };
+
+export interface LemonadeServerTarget {
+  baseUrl: string;
+  apiKey: string;
+}
 
 export type LemonadeContextDefault = number | 'auto';
 
@@ -1147,9 +1154,11 @@ class LemonadeAPI {
     extra?: Record<string, string>,
     includeSessionHeaders?: boolean,
     auth: 'api' | 'admin' | 'none' = 'api',
+    server?: LemonadeServerTarget,
   ): Record<string, string> {
     const h: Record<string, string> = { ...(extra || {}) };
-    const credential = auth === 'admin' ? this.adminApiKey : auth === 'api' ? this.apiKey : '';
+    const apiKey = server ? server.apiKey : this.apiKey;
+    const credential = auth === 'admin' ? this.adminApiKey : auth === 'api' ? apiKey : '';
     if (credential) h['Authorization'] = `Bearer ${credential}`;
 
     if (includeSessionHeaders && this.sessionHeadersEnabled) {
@@ -1162,12 +1171,12 @@ class LemonadeAPI {
 
   private async _fetch(path: string, opts: LemonadeRequestInit = {}): Promise<Response> {
     const endpoint = path.startsWith('/') ? path : `/${path}`;
-    const url = `${this.baseUrl}${endpoint}`;
-    const { includeSessionHeaders, auth = 'api', ...requestOpts } = opts;
+    const { includeSessionHeaders, auth = 'api', server, ...requestOpts } = opts;
+    const url = `${server ? server.baseUrl : this.baseUrl}${endpoint}`;
     const extraHeaders = requestOpts.headers instanceof Headers
       ? Object.fromEntries(requestOpts.headers.entries())
       : (Array.isArray(requestOpts.headers) ? Object.fromEntries(requestOpts.headers) : (requestOpts.headers as Record<string, string> | undefined));
-    const headers = this._headers(extraHeaders, includeSessionHeaders, auth);
+    const headers = this._headers(extraHeaders, includeSessionHeaders, auth, server);
     const method = (requestOpts.method || 'GET').toUpperCase();
 
     let processedOpts: Omit<LemonadeRequestInit, 'includeSessionHeaders' | 'auth'> = { ...requestOpts };
@@ -1189,7 +1198,7 @@ class LemonadeAPI {
       if (includeSessionHeaders && this.sessionHeadersEnabled
           && (method === 'GET' || method === 'HEAD' || method === 'OPTIONS')) {
         try {
-          const fallbackHeaders = this._headers(extraHeaders, false, auth);
+          const fallbackHeaders = this._headers(extraHeaders, false, auth, server);
           if (processedOpts.body && headers['Content-Type'] === 'application/json') {
             fallbackHeaders['Content-Type'] = 'application/json';
           }
@@ -1221,7 +1230,7 @@ class LemonadeAPI {
       const errorBody = await resp.clone().text().catch(() => '');
       if (/x[-_]client[-_]session[-_]id|client[-_]session[-_]id/i.test(errorBody)) {
         try {
-          const fallbackHeaders = this._headers(extraHeaders, false, auth);
+          const fallbackHeaders = this._headers(extraHeaders, false, auth, server);
           if (processedOpts.body && headers['Content-Type'] === 'application/json') {
             fallbackHeaders['Content-Type'] = 'application/json';
           }
@@ -1909,19 +1918,24 @@ class LemonadeAPI {
     control: Pick<VideoJobOptions, 'signal' | 'onStatus'> = {},
   ): Promise<{ url: string; blob: Blob; filename: string; record: VideoJobRecord }> {
     const videoPath = (id: string) => `/api/v1/videos/${encodeURIComponent(id)}`;
+    // A job lives on the server that created it, so a later change to the
+    // connection settings must not send its polls or cancel elsewhere.
+    const server: LemonadeServerTarget = { baseUrl: this.baseUrl, apiKey: this.apiKey };
     const { record, blob } = await runVideoJob({
       create: body => this._json<VideoJobRecord>('/api/v1/videos', {
         method: 'POST',
         body,
         includeSessionHeaders: true,
+        server,
       }),
       get: (id, signal) => this._json<VideoJobRecord>(videoPath(id), {
         cache: 'no-store',
         signal,
-      } as LemonadeRequestInit),
-      content: async (id, signal) => (await this._fetch(`${videoPath(id)}/content`, { signal })).blob(),
+        server,
+      }),
+      content: async (id, signal) => (await this._fetch(`${videoPath(id)}/content`, { signal, server })).blob(),
       cancel: async (id, signal) => {
-        await this._fetch(`${videoPath(id)}/cancel`, { method: 'POST', signal });
+        await this._fetch(`${videoPath(id)}/cancel`, { method: 'POST', signal, server });
       },
     }, { ...opts, model, prompt }, control);
     return {
