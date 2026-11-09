@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -13,6 +14,7 @@
 using lemon::backends::llamacpp::build_router_input;
 using lemon::backends::llamacpp::group_router_tokens;
 using lemon::backends::llamacpp::implied_rule_head_checkpoint;
+using lemon::backends::llamacpp::local_rule_head_missing;
 using lemon::backends::llamacpp::parse_rule_head;
 using lemon::backends::llamacpp::router_classify_response;
 using lemon::backends::llamacpp::router_tokens;
@@ -197,7 +199,8 @@ int main() {
     {
         // An untagged path is local when it exists, as ArtifactSourceResolver decides.
         const std::filesystem::path dir =
-            std::filesystem::temp_directory_path() / "lemon_test_llamacpp_rulehead";
+            std::filesystem::temp_directory_path() /
+            ("lemon_test_llamacpp_rulehead_" + std::to_string(std::random_device{}()));
         std::filesystem::create_directories(dir);
         std::ofstream(dir / "router-f16.gguf") << "GGUF";
         const std::string base = dir.generic_u8string();
@@ -206,6 +209,22 @@ int main() {
                "an untagged local path's head is the file beside the GGUF");
         std::error_code ec;
         std::filesystem::remove_all(dir, ec);
+    }
+    {
+        const std::string main = "user.my-router/router-f16.gguf";
+        const std::string sibling = "user.my-router/rulehead.bin";
+        expect(local_rule_head_missing(main, sibling, true, true, false),
+               "a local GGUF whose sibling head is absent reports the missing head");
+        expect(!local_rule_head_missing(main, sibling, true, true, true),
+               "a head that is on disk is not missing");
+        expect(!local_rule_head_missing(main, sibling, true, false, false),
+               "a GGUF that is absent too keeps the fetch error");
+        expect(!local_rule_head_missing("file:///models/router-f16.gguf",
+                                        "org/router-GGUF:rulehead.bin", false, true, false),
+               "an explicitly remote head keeps its own fetch error");
+        expect(!local_rule_head_missing("org/router-GGUF:router-f16.gguf",
+                                        "org/router-GGUF:rulehead.bin", false, false, false),
+               "a remote model is never reported as a missing local head");
     }
     expect(implied_rule_head_checkpoint("user.my-router/router-f16.gguf", true) ==
                "user.my-router/rulehead.bin",

@@ -27,6 +27,9 @@ bool checkpoint_is_local(const std::string& checkpoint, bool local_origin);
 // one is `[scheme://]repo:file`, so its head is RULE_HEAD_FILE in the same repository.
 std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, bool local_origin);
 
+bool local_rule_head_missing(const std::string& main_checkpoint, const std::string& rule_head,
+                             bool local_origin, bool main_on_disk, bool rule_head_on_disk);
+
 std::string missing_rule_head_message(const std::string& model_name, const std::string& checkpoint);
 
 // Ranges are in bytes, because llama-server's token pieces are bytes.

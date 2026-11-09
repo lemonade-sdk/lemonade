@@ -386,6 +386,38 @@ void test_a_second_pull_reselects_but_refetches_nothing() {
           "the pin stays where it was");
 }
 
+void test_a_local_gguf_router_registers_with_its_sibling_head() {
+    Fixture fx = make_fixture();
+    const fs::path dir = fx.stage / "local-router";
+    fs::create_directories(dir);
+    stage(dir / "router-f16.gguf", "GGUF");
+    // Without a Windows drive, so the path has no colon on any OS, as on Linux.
+    const std::string base = (dir.root_directory() / dir.relative_path()).generic_u8string();
+    const std::string gguf = base + "/router-f16.gguf";
+    ModelManager mm = fx.make_manager();
+
+    bool registered = true;
+    try {
+        mm.register_model("user.Local-Router",
+                          {{"recipe", "llamacpp"},
+                           {"source", "local_path"},
+                           {"checkpoint", gguf},
+                           {"labels", {"classification", "zero-shot"}}});
+        mm.register_model("user.Untagged-Router",
+                          {{"recipe", "llamacpp"},
+                           {"checkpoint", gguf},
+                           {"labels", {"classification", "zero-shot"}}});
+    } catch (const std::exception& e) {
+        registered = false;
+        std::cerr << "  registration refused: " << e.what() << std::endl;
+    }
+    check(registered, "a GGUF path on disk needs no :variant to register");
+    if (!registered) return;
+    check(mm.get_model_info("user.Local-Router").checkpoint("rulehead") ==
+              base + "/rulehead.bin",
+          "a local router's head is the file beside its GGUF");
+}
+
 void test_a_missing_aux_checkpoint_is_refused_in_words() {
     Fixture fx = make_fixture();
     nlohmann::json def = definition();
@@ -488,6 +520,7 @@ int main() {
     test_a_suggested_pull_uses_the_default_source();
     test_a_second_pull_reselects_but_refetches_nothing();
     test_a_missing_aux_checkpoint_is_refused_in_words();
+    test_a_local_gguf_router_registers_with_its_sibling_head();
     test_a_malformed_aux_checkpoint_never_reaches_the_wire();
     test_a_cancelled_pull_stops_before_the_first_byte();
     test_search_is_a_source_answer();

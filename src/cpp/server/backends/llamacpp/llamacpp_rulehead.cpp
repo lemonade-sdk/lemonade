@@ -66,6 +66,16 @@ std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, boo
            RULE_HEAD_FILE;
 }
 
+bool local_rule_head_missing(const std::string& main_checkpoint, const std::string& rule_head,
+                             bool local_origin, bool main_on_disk, bool rule_head_on_disk) {
+    if (rule_head.empty() || !main_on_disk || rule_head_on_disk ||
+        !checkpoint_is_local(main_checkpoint, local_origin)) {
+        return false;
+    }
+    return checkpoint_is_local(rule_head, local_origin) ||
+           rule_head == implied_rule_head_checkpoint(main_checkpoint, local_origin);
+}
+
 std::string missing_rule_head_message(const std::string& model_name, const std::string& checkpoint) {
     return "model '" + model_name + "' is labelled 'zero-shot', but its rule head file '" +
            checkpoint + "' is missing. A llama.cpp prompt-router GGUF holds only the encoder; "

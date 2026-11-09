@@ -1076,18 +1076,16 @@ bool is_ggml_hip_plugin_available() {
 }
 
 bool local_rule_head_missing(const ModelInfo& info) {
-    if (info.checkpoint("rulehead").empty() ||
-        !llamacpp::checkpoint_is_local(info.checkpoint(), is_local_origin(info.source))) {
-        return false;
-    }
     auto on_disk = [&info](const std::string& type) {
         std::string path = info.resolved_path(type);
         if (path.empty()) path = info.checkpoint(type);
         if (path.rfind("file://", 0) == 0) path = path.substr(7);
         std::error_code ec;
-        return fs::exists(path_from_utf8(path), ec);
+        return !path.empty() && fs::exists(path_from_utf8(path), ec);
     };
-    return on_disk("main") && !on_disk("rulehead");
+    return llamacpp::local_rule_head_missing(info.checkpoint(), info.checkpoint("rulehead"),
+                                             is_local_origin(info.source), on_disk("main"),
+                                             on_disk("rulehead"));
 }
 
 // llamacpp model-management behavior: GGUF metadata + capability labels.
@@ -1179,6 +1177,7 @@ public:
     }
 
     std::string validate_registration_checkpoint(const std::string& checkpoint) const override {
+        if (llamacpp::checkpoint_is_local(checkpoint, false)) return "";
         // A GGUF checkpoint must name its quant via CHECKPOINT:VARIANT.
         std::string lower = checkpoint;
         std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
