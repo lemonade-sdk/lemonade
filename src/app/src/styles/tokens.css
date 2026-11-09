@@ -276,6 +276,7 @@
   --provider-modelscope-fg:   #4888FF;
 
   --backend-llamacpp:          #A98700;
+  --backend-strata:            #089BB1;
   --backend-vllm:              #308BFC;
   --backend-flm:               #1E9D6E;
   --backend-ryzenai:           #E96103;

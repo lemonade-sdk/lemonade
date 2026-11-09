@@ -19,6 +19,11 @@ inline const BackendDescriptor descriptor = {
     /*options*/ {
         {"strata_backend", "--strata", "", "BACKEND",
          "Strata backend to use", "Strata Options"},
+        {"strata_parallel", "--strata-parallel", 1, "SIZE",
+         "Concurrent Strata slots (1-8); each slot allocates its own context", "Strata Options"},
+        {"strata_args", "--strata-args", "", "ARGS",
+         "Additional Strata engine arguments; model, context and serving mode are managed by Lemonade",
+         "Strata Options"},
     },
     /*support*/ {
 #if (defined(__linux__) || defined(_WIN32)) && (defined(__x86_64__) || defined(_M_X64))
@@ -44,9 +49,10 @@ inline const BackendDescriptor descriptor = {
     /*rocm_requires_cwsr_fix*/ false,
     /*version_policy*/ VersionPolicy::Exact,
     /*self_manages_downloads*/ false,
-    /*takes_args*/ false,
+    /*takes_args*/ true,
     /*arg_variants*/ {},
     /*bin_variants*/ {"cuda", "rocm"},
+    /*config_extra*/ {{"parallel", 1}},
 };
 
 }  // namespace strata

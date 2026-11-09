@@ -9,6 +9,7 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/utils/recipe_arg_resolver.h"
 
 #include <lemon/utils/aixlog.hpp>
 
@@ -153,13 +154,43 @@ bool supported_checkpoint(const std::string& checkpoint) {
 
 json build_config(const std::string& model_name, const std::string& gguf,
                   const std::string& executable, const std::string& tokenizer,
-                  const std::string& backend, int ctx_size) {
-    if (ctx_size <= 0) throw std::invalid_argument("Strata context size must be positive");
+                  const std::string& backend, int ctx_size,
+                  const std::string& custom_args, int parallel) {
+    if (ctx_size < 256) throw std::invalid_argument("Strata context size must be at least 256");
+    if (parallel < 1 || parallel > 8) {
+        throw std::invalid_argument("Strata parallel slots must be between 1 and 8");
+    }
+    const auto error = utils::validate_custom_args(custom_args, {
+        "--native", "--model", "--max-context", "--ctx", "--serve", "--batch", "--slots",
+        "--tokens", "--force", "--emb", "--vision", "--bench-pp", "--bench-tg",
+        "--max-new", "--n", "--greedy",
+        "--dump-full-logits", "--help", "-h",
+    });
+    if (!error.empty()) throw std::invalid_argument(error);
+    const auto custom_map = utils::build_custom_args_map(utils::parse_custom_args(custom_args));
+    for (const auto& [flag, occurrences] : custom_map) {
+        if (flag != "--mtp" && flag != "--prefill" && flag != "--chunk") continue;
+        const int maximum = flag == "--mtp" ? 7 : 4096;
+        for (const auto& values : occurrences) {
+            if (values.size() == 1 && flag != "--mtp" && values[0] == "auto") continue;
+            if (values.size() != 1 || values[0].empty() ||
+                values[0].find_first_not_of("0123456789") != std::string::npos ||
+                values[0].size() > 4 || std::stoi(values[0]) > maximum) {
+                throw std::invalid_argument("Strata " + flag + " must be between 0 and " +
+                                            std::to_string(maximum) +
+                                            (flag == "--mtp" ? "" : " (or auto)"));
+            }
+        }
+    }
+    auto args = std::vector<std::string>{"--native", gguf, "--max-context", std::to_string(ctx_size)};
+    const auto extra = utils::parse_custom_args(utils::append_runtime_arg_defaults(
+        utils::map_to_args_string(utils::build_custom_args_map(utils::parse_custom_args(custom_args, true))),
+        {{"--prefill auto", "--prefill", {"--chunk"}}, {"--mtp 1", "--mtp"}}));
+    args.insert(args.end(), extra.begin(), extra.end());
     const fs::path engine_dir = utils::path_from_utf8(executable).parent_path();
     return {
         {"exe", executable},
-        {"args", {"--native", gguf, "--max-context", std::to_string(ctx_size),
-                  "--prefill", "auto", "--mtp", "1"}},
+        {"args", args},
         {"cwd", utils::path_to_utf8(engine_dir)},
         {"tokenizer", tokenizer},
         {"model_name", model_name},
@@ -169,7 +200,7 @@ json build_config(const std::string& model_name, const std::string& gguf,
                       utils::path_to_utf8(engine_dir / "rocm" / "bin")}},
         {"host", "127.0.0.1"},
         {"open_browser", false},
-        {"parallel", 1},
+        {"parallel", parallel},
     };
 }
 
@@ -261,7 +292,8 @@ void StrataServer::load(const std::string& model_name, const ModelInfo& model_in
     utils::JsonUtils::save_to_file(
         strata::build_config(model_name, gguf, executable,
                              utils::path_to_utf8(utils::path_from_utf8(runtime_dir_) / "tokenizer"),
-                             backend, ctx_size), config_path.string());
+                             backend, ctx_size, options.get_option("strata_args"),
+                             options.get_option("strata_parallel")), config_path.string());
     ServerCommand command;
     command.program = python;
     command.port = choose_port();

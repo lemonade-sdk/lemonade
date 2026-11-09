@@ -101,10 +101,10 @@ assert.match(manager, /\}, \[searchQuery, providerEnabled\.modelscope\]\);/,
   'ModelScope search must only depend on query/provider state');
 assert.ok(manager.includes('REMOTE_SEARCH_CACHE'), 'search results must be cached');
 assert.ok(manager.includes('REMOTE_VARIANT_CACHE'), 'variant/capability metadata must be cached');
-assert.match(manager, /remoteVariantCheckpoint\(modelId, variantName, recipe\)/,
+assert.match(manager, /remoteVariantCheckpoint\(modelId, variantName, recipe, vdata\)/,
   'remote pulls must keep the selected GGUF variant in the registration checkpoint');
 assert.match(manager, /String\(recipe \|\| ''\)\.toLowerCase\(\) !== 'llamacpp' \|\| !variantName/,
-  'only llama.cpp registrations should receive a variant suffix');
+  'existing llama.cpp registrations must retain their variant suffix');
 assert.match(manager, /const fallbackBase = safeOwner \? `\$\{defaultName\}-\$\{safeOwner\}` : defaultName/,
   'colliding remote model names must fall back to the repository owner');
 assert.match(manager, /existingCandidate && !matchesCheckpoint\(existingCandidate\)/,
@@ -177,7 +177,7 @@ assert.match(styles, /\.hf-detail__gguf-list \{[\s\S]*?display: flex;[\s\S]*?fle
   'remote variants must remain one vertical list at every detail-pane width');
 assert.match(detailPanelSource, /role="radiogroup"[\s\S]*?onClick=\{\(\) => setSelectedVariantName\(v\.name\)\}/,
   'variant rows must select a quantization instead of starting a download');
-assert.match(detailPanelSource, /appearance="primary"[\s\S]*?onClick=\{\(\) => onHfPull\?\.\(hfModel\.id, selectedVariant\.name, hfVariants\.recipe\)\}/,
+assert.match(detailPanelSource, /appearance="primary"[\s\S]*?onClick=\{\(\) => onHfPull\?\.\(hfModel\.id, selectedVariant\.name, recipe\)\}/,
   'the selected quantization must have one explicit primary download action');
 assert.ok(detailPanelSource.indexOf('hf-detail__gguf-primary-action') < detailPanelSource.indexOf('role="radiogroup"'),
   'the primary download action must stay above the variant list so long lists cannot hide it');

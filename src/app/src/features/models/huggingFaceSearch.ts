@@ -90,3 +90,7 @@ export async function detectHuggingFaceBackend(
   if (!response.ok) throw new Error(`Failed to inspect Hugging Face repository (${response.status})`);
   return detectHuggingFaceBackendFromMetadata(modelId, await response.json());
 }
+
+export function isStrataGguf(file: string): boolean {
+  return /^Qwen3\.6-35B-A3B-(?:UD-Q[46]_K_XL|Q8_0)\.gguf$/.test(file.split('/').pop() || '');
+}

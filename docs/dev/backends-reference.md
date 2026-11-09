@@ -190,6 +190,8 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 |--------|----------|------|---------|-------------|
 | `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
 | `strata_backend` | `--strata` | BACKEND | "" | Strata backend to use |
+| `strata_parallel` | `--strata-parallel` | SIZE | 1 | Concurrent Strata slots (1-8); each slot allocates its own context |
+| `strata_args` | `--strata-args` | ARGS | "" | Additional Strata engine arguments; model, context and serving mode are managed by Lemonade |
 
 #### `thenoise` — TheNoise
 

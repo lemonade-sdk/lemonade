@@ -394,6 +394,8 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--strata BACKEND` | Strata backend to use | Auto-detected |
+| `--strata-parallel SIZE` | Concurrent Strata slots (1-8); each slot allocates its own context | `1` |
+| `--strata-args ARGS` | Additional Strata engine arguments; model, context and serving mode are managed by Lemonade | `""` |
 
 #### Whisper.cpp (`whispercpp` recipe)
 

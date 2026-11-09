@@ -141,8 +141,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "width": 512
   },
   "strata": {
+    "args": "",
     "backend": "auto",
     "cuda_bin": "builtin",
+    "parallel": 1,
     "rocm_bin": "builtin"
   },
   "telemetry": {
