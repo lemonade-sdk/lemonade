@@ -3444,7 +3444,7 @@ ${index}`;
       if (interrupting && interruptPendingRef.current.get(convoId) === currentStream?.requestId) {
         clearInterruptPending(convoId);
       }
-      clearModelPreparation(convoId);
+      if (startAttemptRef.current.get(convoId) === startAttempt) clearModelPreparation(convoId);
       requestAnimationFrame(() => inputRef.current?.focus());
     }
   };
