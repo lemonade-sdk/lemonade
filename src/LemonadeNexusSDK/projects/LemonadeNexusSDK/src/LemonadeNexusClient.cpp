@@ -78,7 +78,7 @@ constexpr int     kMeshConnectTimeoutSec  = 3;
 // The read timeout must exceed the server's tree-op commit wait: a private
 // tree route (POST /api/tree/node/update, for example) answers only after the
 // op commits through Tier 1 consensus or that wait ends, which is
-// nexus::tree::kTreeOpCommitWaitMs (10 s, TreeConsensus.hpp) plus the
+// nexus::tree::kTreeOpCommitWaitMs (8 s, TreeConsensus.hpp) plus the
 // request's own round trips. A shorter timeout reports NO RESPONSE for an op
 // the server then commits anyway.
 constexpr int     kMeshReadTimeoutSec     = 15;
@@ -593,11 +593,16 @@ struct LemonadeNexusClient::Impl {
                 res = pooled->cli.Get(path);
             }
             if (!res) {
+                // The directory reports a source only as "unreachable"; the
+                // transport reason (DNS, connect, TLS verification) lives here.
+                spdlog::warn("[LemonadeNexusClient] GET {}{} failed: {}", url, path,
+                             httplib::to_string(res.error()));
                 drop_pooled_client(url);
                 return std::nullopt;
             }
             return HttpReply{res->status, res->body};
-        } catch (const std::exception&) {
+        } catch (const std::exception& e) {
+            spdlog::warn("[LemonadeNexusClient] GET {}{} exception: {}", url, path, e.what());
             drop_pooled_client(url);
             return std::nullopt;
         }
