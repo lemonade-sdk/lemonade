@@ -377,10 +377,15 @@ relayed.
   rather than this server's identity.
 - The mesh ingress listener refuses the relay, so a peer cannot relay through
   this device.
-- The target must be another group member that is a Tier 3 inference node,
-  online and with a mesh address. Otherwise the relay returns 400 (this
-  device), 404 (not in the group) or 409 (offline or not an inference node).
-  An unreachable peer returns 502.
+- The target must be another group member that is a Tier 3 inference node
+  that this device may connect to, online and with a mesh address. Otherwise
+  the relay returns 400 (this device), 404 (not in the group) or 409 (not an
+  inference node, no Connect access, or offline). The Connect check uses the
+  SDK's network list; when that list could not be fetched, the online state
+  alone decides.
+- A relayed `GET` waits 30 s for the peer and a `POST` 300 s. An unreachable
+  peer returns 502 with the transport failure in `detail`, and `lemond` logs
+  one warning with the node ID, method and path.
 
 ### Selection port
 
@@ -419,7 +424,11 @@ domain ownership and agreement of several hosts.
 (`tier1_epoch`) after a join and whenever a poll sees it advance, and passes
 it to the SDK at start, so a restart refuses an older membership list. If
 discovery fails, those calls fail and `status` reports
-`genesis_key_set: false`.
+`genesis_key_set: false`. When discovery reaches the servers but fewer than
+three agree inside the network domain, the request answers 502 without
+`retryable`, with the SDK's reason and the guidance to check the network's
+DNS or set `LEMONADE_NEXUS_GENESIS_PUBKEY`; a failure to reach any server
+stays a retryable 503.
 
 Before its first tree call the SDK verifies the network's key history from the
 Genesis key, one authority page at a time (32 handoffs per page from a current

@@ -209,6 +209,11 @@ public:
         disconnect();
         if (worker_.joinable()) worker_.join();
     }
+    // The transport failure text after wait_for_status returned 0, or empty.
+    std::string failure() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return failure_;
+    }
 
 private:
     static constexpr size_t kMaxErrorBody = 64 * 1024;
@@ -723,7 +728,7 @@ json merge_members(const json& group, const json& children, const json& peers,
             {"connection_type", connection_type(id, self, peer)},
             {"latency_ms", latency(peer)},
             {"member", false}, {"group_role", "home"},
-            {"can_connect", self || flag(listed_device, "can_connect")}});
+            {"can_connect", self || flag(listed_device, "can_connect")}, {"can_connect_known", self || network.is_array()}});
     }
     // Devices outside this group's children: members that joined it from their own
     // networks, and the devices of networks this identity joined. Their permissions and
@@ -748,7 +753,7 @@ json merge_members(const json& group, const json& children, const json& peers,
                 {"latency_ms", latency(peer)},
                 {"member", flag(device, "member")}, {"group_role", role.empty() ? "home" : role},
                 {"group_id", text(device, "group_id")},
-                {"can_connect", flag(device, "can_connect")}});
+                {"can_connect", flag(device, "can_connect")}, {"can_connect_known", true}});
         }
     }
     return members;
@@ -1037,6 +1042,12 @@ std::pair<int, std::string> relay_target(const json& members, const std::string&
     const auto target = find_member(members, node_id);
     if (target.is_null()) return {404, "That device is not in your group"};
     if (!target.value("is_inference", false)) return {409, "That device is not an inference server"};
+    // The federation forwards mesh packets only between devices that may connect, so a
+    // refused device would also time out; the clear refusal comes first. Without the
+    // network list the flag is unknown and the online state decides.
+    if (target.value("can_connect_known", false) && !target.value("can_connect", false)) {
+        return {409, "This device is not allowed to connect to that device. Ask an admin to grant it Connect access."};
+    }
     if (!target.value("is_online", false)) return {409, "That device is offline or not reachable from this device"};
     auto address = target.value("tunnel_ip", "");
     if (const auto slash = address.find('/'); slash != std::string::npos) address.resize(slash);
@@ -1044,7 +1055,24 @@ std::pair<int, std::string> relay_target(const json& members, const std::string&
     return {0, address};
 }
 
-void relay_http(uint16_t port, const std::string& path, const httplib::Request& req, httplib::Response& res,
+namespace {
+// The GUI aborts a host GET at 35 s, so a stalled health or models poll must not hold a
+// lemond worker for the client's 300 s default; a POST such as a model load keeps it.
+constexpr long kRelayGetTimeoutSeconds = 30;
+constexpr long kRelayPostTimeoutSeconds = 300;
+
+void relay_unreachable(httplib::Response& res, const std::string& node_id, const std::string& method, const std::string& path,
+                       const std::string& reason) {
+    const auto detail = reason.empty() ? std::string("no answer from the device") : reason;
+    LOG(WARNING, "Nexus") << "Relay to " << node_id << " failed: " << method << " " << path.substr(0, path.find('?'))
+                          << ": " << detail << std::endl;
+    res.set_header("Cache-Control", "no-store");
+    res.status = 502;
+    res.set_content(json{{"error", "Cannot reach that device's server through the mesh"}, {"detail", detail}}.dump(), "application/json");
+}
+}
+
+void relay_http(uint16_t port, const std::string& node_id, const std::string& path, const httplib::Request& req, httplib::Response& res,
                 const std::string& peer_authorization, const std::string& request_body) {
     const auto url = "http://127.0.0.1:" + std::to_string(port) + path;
     std::map<std::string, std::string> headers;
@@ -1053,7 +1081,7 @@ void relay_http(uint16_t port, const std::string& path, const httplib::Request& 
     res.set_header("Cache-Control", "no-store");
     try {
         if (req.method == "GET") {
-            const auto reply = utils::HttpClient::get(url, headers, 0, utils::HttpSecurityPolicy::TrustedLoopback);
+            const auto reply = utils::HttpClient::get(url, headers, kRelayGetTimeoutSeconds, utils::HttpSecurityPolicy::TrustedLoopback);
             res.status = reply.status_code;
             res.set_content(reply.body, "application/json");
             return;
@@ -1074,7 +1102,7 @@ void relay_http(uint16_t port, const std::string& path, const httplib::Request& 
             std::string reply;
             std::string type;
             const auto status = stream->wait_for_status(reply, type);
-            if (status == 0) { reply_error(res, 502, "Cannot reach that device's server through the mesh"); return; }
+            if (status == 0) { relay_unreachable(res, node_id, req.method, path, stream->failure()); return; }
             if (status < 200 || status >= 300) {
                 res.status = status;
                 res.set_content(reply, type.empty() ? "application/json" : type);
@@ -1086,12 +1114,12 @@ void relay_http(uint16_t port, const std::string& path, const httplib::Request& 
                 [stream](bool) { stream->abandon(); });
             return;
         }
-        const auto reply = utils::HttpClient::post(url, body, headers, 300, utils::HttpSecurityPolicy::TrustedLoopback);
+        const auto reply = utils::HttpClient::post(url, body, headers, kRelayPostTimeoutSeconds, utils::HttpSecurityPolicy::TrustedLoopback);
         const auto type = reply.headers.find("content-type");
         res.status = reply.status_code;
         res.set_content(reply.body, type != reply.headers.end() ? type->second : "application/json");
-    } catch (const std::exception&) {
-        reply_error(res, 502, "Cannot reach that device's server through the mesh");
+    } catch (const std::exception& e) {
+        relay_unreachable(res, node_id, req.method, path, e.what());
     }
 }
 
@@ -1108,11 +1136,21 @@ bool federation_unreachable(const std::string& message) {
     }
     return false;
 }
+// Genesis key discovery reached the servers but fewer than the required number agreed
+// inside the network domain. The SDK reports it without an HTTP status, as LN_ERR_CONNECT,
+// yet a retry changes nothing: the network's DNS or an explicit key does.
+bool genesis_discovery_short(const std::string& message) {
+    return message.find("Genesis key discovery needs") != std::string::npos && message.find("agreeing servers") != std::string::npos;
+}
 }
 SdkFailure sdk_failure(int code, const json& reply, int rejected_status) {
     const auto fallback = "Network request failed (SDK error " + std::to_string(code) + ")";
     const auto message = reply.is_object() ? reply.value("error", fallback) : fallback;
     if (message == "rate limited" || message == "too many requests") return {429, "The network is busy. Try again shortly.", true};
+    if (genesis_discovery_short(message)) {
+        return {502, message + ". Check that the network's DNS names its servers and that this device reaches them over HTTPS, "
+                              "or set LEMONADE_NEXUS_GENESIS_PUBKEY to the network's Genesis key.", false};
+    }
     // The SDK answers LN_ERR_CONNECT for no transport, a timeout and a 5xx. Neither that
     // nor an unreachable federation refuses this device.
     if (code == LN_ERR_CONNECT || federation_unreachable(message)) return {503, message, true};
@@ -1764,8 +1802,9 @@ struct NexusManager::Session {
         const auto children = group_children();
         const auto peers = sdk_call([&](auto out) { return ln_mesh_peers(client.get(), out); });
         // Children leave out devices that joined this group from their own networks and
-        // the devices of networks this identity joined; the SDK lists both.
-        json network = json::array();
+        // the devices of networks this identity joined; the SDK lists both. A failed list
+        // stays null: the connect flags are then unknown, not false.
+        json network = nullptr;
         try {
             network = sdk_call([&](auto out) { return ln_list_network_devices(client.get(), out); });
         } catch (const std::exception& e) {
@@ -2497,18 +2536,29 @@ void NexusManager::persist_enabled_locked() {
     if (!utils::atomic_replace_file(temporary, root / "preferences.json", ec)) throw std::runtime_error("Cannot save Nexus preferences: " + ec.message());
 }
 bool NexusManager::enable(std::string& error) {
+    // A new Session discovers the bootstrap server and loads the identity, which is
+    // network I/O, so it is built under session_mutex_ alone (every writer of session_
+    // holds it) and mutex_ is taken only to publish the result.
     std::lock_guard<std::mutex> session_lock(session_mutex_);
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_ptr<Session> failed;
     try {
-        if (stopping_) throw std::runtime_error("Server is shutting down");
-        if (!session_) session_ = std::make_unique<Session>(data_root_, ingress_port_, management_port_, selection_port_, catalog_, role_, client_slot_);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (stopping_) throw std::runtime_error("Server is shutting down");
+        }
+        std::unique_ptr<Session> fresh;
+        if (!session_) fresh = std::make_unique<Session>(data_root_, ingress_port_, management_port_, selection_port_, catalog_, role_, client_slot_);
+        const auto snapshot = (fresh ? fresh : session_)->status();
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (fresh) session_ = std::move(fresh);
         enabled_ = true;
         persist_enabled_locked();
-        update_snapshot_locked(session_->status());
+        update_snapshot_locked(snapshot);
         return true;
     } catch (const std::exception& e) {
+        std::lock_guard<std::mutex> lock(mutex_);
         enabled_ = false;
-        session_.reset();
+        failed = std::move(session_);
         error = e.what();
         snapshot_["error"] = error;
         return false;
@@ -2723,7 +2773,7 @@ void NexusManager::relay(const httplib::Request& req, httplib::Response& res) {
     }
     auto path = req.matches[2].str();
     if (const auto query = req.target.find('?'); query != std::string::npos) path += req.target.substr(query);
-    nexus_access::relay_http(port, path, req, res, req.get_header_value(nexus_access::kPeerAuthorizationHeader), req.body);
+    nexus_access::relay_http(port, req.matches[1].str(), path, req, res, req.get_header_value(nexus_access::kPeerAuthorizationHeader), req.body);
 }
 
 void NexusManager::register_routes(httplib::Server& server, NexusListener listener) {

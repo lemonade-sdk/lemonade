@@ -153,12 +153,20 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
         {{"node_id", "self"}, {"is_inference", true}, {"is_online", true}, {"tunnel_ip", "10.8.0.2/32"}},
         {{"node_id", "gpu"}, {"is_inference", true}, {"is_online", true}, {"tunnel_ip", "10.8.0.3/32"}},
         {{"node_id", "sleeping"}, {"is_inference", true}, {"is_online", false}, {"tunnel_ip", "10.8.0.4/32"}},
-        {{"node_id", "laptop"}, {"is_inference", false}, {"is_online", true}, {"tunnel_ip", "10.8.0.5/32"}}});
+        {{"node_id", "laptop"}, {"is_inference", false}, {"is_online", true}, {"tunnel_ip", "10.8.0.5/32"}},
+        {{"node_id", "private"}, {"is_inference", true}, {"is_online", true}, {"tunnel_ip", "10.8.0.6/32"},
+         {"can_connect", false}, {"can_connect_known", true}},
+        {{"node_id", "unlisted"}, {"is_inference", true}, {"is_online", true}, {"tunnel_ip", "10.8.0.7/32"},
+         {"can_connect", false}, {"can_connect_known", false}}});
     check(access::relay_target(members, "self", "gpu") == std::make_pair(0, std::string("10.8.0.3")), "Relay targets an online inference peer");
     check(access::relay_target(members, "self", "self").first == 400, "Relay refuses this device");
     check(access::relay_target(members, "self", "missing").first == 404, "Relay refuses an unknown device");
     check(access::relay_target(members, "self", "sleeping").first == 409, "Relay refuses an offline device");
     check(access::relay_target(members, "self", "laptop").first == 409, "Relay refuses a Tier 4 client");
+    const auto refused = access::relay_target(members, "self", "private");
+    check(refused.first == 409 && refused.second.find("Connect") != std::string::npos, "Relay refuses a device this device may not connect to");
+    check(access::relay_target(members, "self", "unlisted") == std::make_pair(0, std::string("10.8.0.7")),
+          "An unknown connect flag does not refuse the relay");
 }
 
 void check_invite_completion(const std::function<void(bool, const char*)>& check) {
@@ -250,12 +258,12 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
 
     httplib::Server front;
     const auto relay = [&](const httplib::Request& req, httplib::Response& res) {
-        access::relay_http(static_cast<uint16_t>(peer_port), req.matches[1].str(), req, res, req.get_header_value(access::kPeerAuthorizationHeader), req.body);
+        access::relay_http(static_cast<uint16_t>(peer_port), "gpu", req.matches[1].str(), req, res, req.get_header_value(access::kPeerAuthorizationHeader), req.body);
     };
     front.Get(R"(/relay(/.*))", relay);
     front.Post(R"(/relay(/.*))", relay);
     front.Post(R"(/closed(/.*))", [&](const httplib::Request& req, httplib::Response& res) {
-        access::relay_http(1, req.matches[1].str(), req, res, req.get_header_value(access::kPeerAuthorizationHeader), req.body);
+        access::relay_http(1, "gpu", req.matches[1].str(), req, res, req.get_header_value(access::kPeerAuthorizationHeader), req.body);
     });
     const int front_port = front.bind_to_any_port("127.0.0.1");
     std::thread front_worker([&] { front.listen_after_bind(); });
@@ -291,6 +299,15 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
         "Relay forwards a GET with the peer key");
     auto unreachable = client.Post("/closed/api/v1/chat/completions", keys, "{}", "application/json");
     check(unreachable && unreachable->status == 502, "Relay reports an unreachable peer");
+    const auto unreachable_body = unreachable ? json::parse(unreachable->body, nullptr, false) : json();
+    check(unreachable_body.is_object() && !unreachable_body.value("detail", std::string()).empty() &&
+              unreachable_body.value("error", std::string()) == "Cannot reach that device's server through the mesh",
+          "An unreachable peer's answer names the transport failure in detail");
+    auto unreachable_stream = client.Post("/closed/api/v1/chat/completions", keys, R"({"stream":true})", "application/json");
+    const auto stream_body = unreachable_stream ? json::parse(unreachable_stream->body, nullptr, false) : json();
+    check(unreachable_stream && unreachable_stream->status == 502 && stream_body.is_object() &&
+              !stream_body.value("detail", std::string()).empty(),
+          "An unreachable peer's streamed request names the transport failure in detail");
     front.stop(); front_worker.join();
     peer.stop(); peer_worker.join();
 }
@@ -1020,6 +1037,10 @@ void check_access_rules(const std::function<void(bool, const char*)>& check) {
               merged[4].at("group_id") == "customer-other" && merged[4].at("tier") == 3,
           "A server of a joined network is listed with its group");
     check(access::relay_target(merged, "server", "friend").first == 409, "A client device is never a relay target");
+    check(merged[1].at("can_connect_known") && merged[4].at("can_connect_known"), "A fetched network list makes the connect flags known");
+    const auto unlisted = access::merge_members(group, children, friend_peers, admin_key, "server", json::array(), nullptr);
+    check(!unlisted[1].at("can_connect") && !unlisted[1].at("can_connect_known") && unlisted[0].at("can_connect_known"),
+          "Without the network list a child's connect flag is unknown, not refused");
 
     const auto workstation = access::device_access(members, "workstation", "server");
     check(workstation.at("can_manage") && workstation.at("access_known"), "Admin manages visible device access");
@@ -1341,6 +1362,11 @@ void check_sdk_failures(const std::function<void(bool, const char*)>& check) {
     check(directory.status == 503 && directory.retryable, "An unreachable Tier 1 directory is a retryable 503");
     const auto unverified = access::sdk_failure(LN_ERR_AUTH, json{{"error", "no server returned a verifiable authority chain"}}, 409);
     check(unverified.status == 503 && unverified.retryable, "An auth attempt that reached no server is a retryable 503");
+    const std::string short_discovery = "Genesis key discovery needs 3 agreeing servers inside the network domain, found 1; set the Genesis key explicitly";
+    const auto genesis = access::sdk_failure(LN_ERR_CONNECT, json{{"error", short_discovery}}, 409);
+    check(genesis.status == 502 && !genesis.retryable && genesis.message.rfind(short_discovery, 0) == 0 &&
+              genesis.message.find("LEMONADE_NEXUS_GENESIS_PUBKEY") != std::string::npos,
+          "Too few agreeing servers for Genesis key discovery is a refusal with guidance, not an outage");
     check(access::sdk_failure(LN_ERR_REJECTED, json{{"error", "invalid move"}}, 409).status == 409, "A refused request keeps the caller's status");
     check(access::sdk_failure(LN_ERR_NOT_FOUND, json(), 409).status == 404, "A missing node is 404");
     const auto internal = access::sdk_failure(LN_ERR_INTERNAL, json(), 409);

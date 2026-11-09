@@ -81,11 +81,13 @@ nlohmann::json tree_entry(const nlohmann::json& node, const std::string& self_ke
 /// then the entries of `network` (ln_list_network_devices) that are not children: devices
 /// that joined this group from their own networks and devices of networks this identity
 /// joined with an invite. Every entry carries `member` (joined its group from its own
-/// network), `group_role` ("home" or "member"), and `can_connect` from `network`.
+/// network), `group_role` ("home" or "member"), and `can_connect` from `network`. A
+/// `network` that is not an array means the list could not be fetched: the children then
+/// carry `can_connect_known: false`, and `can_connect` is false rather than known.
 nlohmann::json merge_members(const nlohmann::json& group, const nlohmann::json& children,
     const nlohmann::json& peers, const std::string& self_key, const std::string& self_node_id,
     const nlohmann::json& mesh_peers = nlohmann::json::array(),
-    const nlohmann::json& network = nlohmann::json::array());
+    const nlohmann::json& network = nullptr);
 nlohmann::json device_access(const nlohmann::json& members, const std::string& device_id,
     const std::string& self_node_id);
 /// Route policy families of lemond's routes (RouteSpec::family), in catalog order.
@@ -174,9 +176,11 @@ struct SdkFailure {
 /// SDK's {"error": ...} output and `rejected_status` the status for LN_ERR_REJECTED (the
 /// federation refused the request as invalid for the current state). LN_ERR_CONNECT (no
 /// transport, a timeout or a 5xx) and the SDK's messages for a federation it could not
-/// reach answer 503 and are retryable. Any other LN_ERR_AUTH answers 403: the SDK
-/// reports a federation 401 and 403 alike. `identity_revoked` carries the SDK's flag of
-/// the same name.
+/// reach answer 503 and are retryable. The SDK's refusal of a Genesis key discovery that
+/// found too few agreeing servers (also reported as LN_ERR_CONNECT) answers 502, not
+/// retryable, with the SDK text and the guidance to check DNS or set the key. Any other
+/// LN_ERR_AUTH answers 403: the SDK reports a federation 401 and 403 alike.
+/// `identity_revoked` carries the SDK's flag of the same name.
 SdkFailure sdk_failure(int code, const nlohmann::json& reply, int rejected_status);
 /// Compares two secrets in time that depends only on the length of `expected`.
 bool constant_time_equals(const std::string& candidate, const std::string& expected);
@@ -196,7 +200,10 @@ std::pair<int, std::string> route_access(NexusListener listener, const httplib::
 /// to that peer as Authorization and never forwards the caller's own Authorization.
 extern const char* const kPeerAuthorizationHeader;
 /// Chooses the relay target among merged group members. Returns {0, tunnel address without
-/// prefix length} or an HTTP error status and message.
+/// prefix length} or an HTTP error status and message: 400 for this device, 404 for a
+/// device outside the group, 409 for a Tier 4 client, a device this device may not connect
+/// to (`can_connect` false while `can_connect_known`), an offline device or one without a
+/// mesh address.
 std::pair<int, std::string> relay_target(const nlohmann::json& members, const std::string& self_node_id,
     const std::string& node_id);
 /// The catalog revision: bump it when a route's family changes within one lemond
@@ -248,9 +255,11 @@ bool route_policy_available();
 /// body sets "stream": true is streamed like a backend response: a peer that refuses it
 /// before the first body byte keeps its status and body, and a stream that breaks after
 /// that ends with one `event: error` SSE event. Other replies keep the peer's status and
-/// body. An unreachable peer answers 502.
-void relay_http(uint16_t port, const std::string& path, const httplib::Request& req, httplib::Response& res,
-    const std::string& peer_authorization, const std::string& body);
+/// body. A GET waits 30 s for the peer, a POST 300 s. An unreachable peer answers 502
+/// with the transport failure in `detail`, and one WARNING line names `node_id`, the
+/// method, the path without its query and that failure.
+void relay_http(uint16_t port, const std::string& node_id, const std::string& path, const httplib::Request& req,
+    httplib::Response& res, const std::string& peer_authorization, const std::string& body);
 }
 
 class NexusManager {
