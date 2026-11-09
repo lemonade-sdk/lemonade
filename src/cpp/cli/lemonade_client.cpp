@@ -136,7 +136,7 @@ static void assert_http_ok(const httplib::Result& res) {
         throw std::runtime_error(
             "Could not connect to Lemonade server" + detail + ".\n"
             "Make sure the server is running and try again.");
-    } else if (res->status == 401 && res->body.find("Invalid or missing") != std::string::npos) {
+    } else if (res->status == 401) {
         throw std::runtime_error(
             "Unauthorized (401): the server requires a valid API key.\n"
             "Use --api-key KEY or LEMONADE_API_KEY.");
