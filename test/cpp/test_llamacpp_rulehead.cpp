@@ -16,6 +16,7 @@ using lemon::backends::llamacpp::fit_router_input;
 using lemon::backends::llamacpp::group_router_tokens;
 using lemon::backends::llamacpp::checkpoint_is_local;
 using lemon::backends::llamacpp::implied_rule_head_checkpoint;
+using lemon::backends::llamacpp::local_directory_checkpoint_error;
 using lemon::backends::llamacpp::mixed_rule_head_source_error;
 using lemon::backends::llamacpp::rule_head_ctx_size;
 using lemon::backends::llamacpp::parse_rule_head;
@@ -240,15 +241,18 @@ int main() {
 
         // Without a Windows drive, so the path has no colon on any OS, as on Linux.
         const std::string posix = (dir.root_directory() / dir.relative_path()).generic_u8string();
-        expect(implied_rule_head_checkpoint(base, true) == base + "/rulehead.bin" &&
-                   implied_rule_head_checkpoint(posix, true) == posix + "/rulehead.bin",
-               "a directory's head is inside it, not beside it");
-        expect(implied_rule_head_checkpoint(base + "/", true) == base + "/rulehead.bin" &&
-                   implied_rule_head_checkpoint(std::filesystem::path(dir).make_preferred().u8string() + "\\", true) ==
-                       std::filesystem::path(dir).make_preferred().u8string() + "\\rulehead.bin",
-               "a directory with a trailing separator gets no second one");
-        expect(implied_rule_head_checkpoint(posix, false) == posix + "/rulehead.bin",
-               "an untagged directory on disk is local too");
+        expect(local_directory_checkpoint_error("user.r", base).find("names the folder") !=
+                       std::string::npos &&
+                   !local_directory_checkpoint_error("user.r", posix).empty() &&
+                   !local_directory_checkpoint_error("user.r", base + "/").empty() &&
+                   !local_directory_checkpoint_error("user.r", "file://" + base).empty(),
+               "a folder checkpoint is refused in words, as llama-server loads one file");
+        expect(local_directory_checkpoint_error("user.r", base + "/router-f16.gguf").empty() &&
+                   local_directory_checkpoint_error("user.r", base + "/not-here.gguf").empty() &&
+                   local_directory_checkpoint_error("user.r", "").empty(),
+               "a GGUF file, a missing path, or no path is not a folder");
+        expect(implied_rule_head_checkpoint(base + "/", true) == base + "/rulehead.bin",
+               "a trailing separator gets no second one");
         std::error_code ec;
         std::filesystem::remove_all(dir, ec);
     }

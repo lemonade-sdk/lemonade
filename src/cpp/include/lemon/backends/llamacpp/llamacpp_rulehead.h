@@ -40,10 +40,14 @@ std::string mixed_rule_head_source_error(const std::string& model_name,
                                          const std::string& main_checkpoint,
                                          const std::string& rule_head, bool local_origin);
 
-// A local file's head is the file beside it, and a local directory's head is in
-// it; a remote checkpoint is `[scheme://]repo:file`, so its head is RULE_HEAD_FILE
-// in the same repository.
+// A local file's head is the file beside it; a remote checkpoint is
+// `[scheme://]repo:file`, so its head is RULE_HEAD_FILE in the same repository.
+// Decided by shape alone: a catalog parse must not touch the disk.
 std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, bool local_origin);
+
+// Why a local main checkpoint cannot load, or "" when it is not a folder.
+std::string local_directory_checkpoint_error(const std::string& model_name,
+                                             const std::string& path);
 
 std::string missing_rule_head_message(const std::string& model_name, const std::string& checkpoint);
 

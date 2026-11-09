@@ -91,7 +91,8 @@ public:
             "they leave of the window from its start and the rest from its end, with "
             "`\\n...\\n` between them. The response then carries `truncated: true`. The window "
             "is 2048 tokens, as in the ONNX export's manifest; `ctx_size` 0 means the same, "
-            "another `ctx_size` changes it, and `-b` and `-ub` cap it.",
+            "another `ctx_size` changes it; `-b` and `-ub` cap it, and so does `-np` above 1 "
+            "without `--kv-unified`, which gives each slot its share of `ctx_size`.",
             "Some upstream models declare only generic `LABEL_<n>` label names; their model card "
             "explains them.",
         };

@@ -117,16 +117,21 @@ std::string implied_rule_head_checkpoint(const std::string& main_checkpoint, boo
         const size_t repo = scheme == std::string::npos ? 0 : scheme + 3;
         return main_checkpoint.substr(0, main_checkpoint.find(':', repo)) + ":" + RULE_HEAD_FILE;
     }
-    const std::string path =
-        main_checkpoint.rfind("file://", 0) == 0 ? main_checkpoint.substr(7) : main_checkpoint;
-    std::error_code ec;
-    if (std::filesystem::is_directory(std::filesystem::u8path(path), ec)) {
-        const char last = main_checkpoint.back();
-        return main_checkpoint + (last == '/' || last == '\\' ? "" : "/") + RULE_HEAD_FILE;
-    }
     const size_t slash = main_checkpoint.find_last_of("/\\");
     return (slash == std::string::npos ? std::string() : main_checkpoint.substr(0, slash + 1)) +
            RULE_HEAD_FILE;
+}
+
+std::string local_directory_checkpoint_error(const std::string& model_name,
+                                             const std::string& path) {
+    const std::string bare = path.rfind("file://", 0) == 0 ? path.substr(7) : path;
+    std::error_code ec;
+    if (bare.empty() || !std::filesystem::is_directory(std::filesystem::u8path(bare), ec)) {
+        return "";
+    }
+    return "model '" + model_name + "' names the folder '" + bare + "' as its checkpoint, but "
+           "llama-server loads one .gguf file. Name the file, such as the .gguf in a Hugging "
+           "Face cache's snapshots/<revision>/ folder; its rulehead.bin goes beside it";
 }
 
 std::string mixed_rule_head_source_error(const std::string& model_name,

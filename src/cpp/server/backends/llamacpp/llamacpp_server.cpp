@@ -1228,6 +1228,14 @@ public:
                 info.model_name, info.checkpoint(), info.checkpoint("rulehead"),
                 is_local_origin(info.source));
             if (!mixed.empty()) return mixed;
+            // Else the folder reaches llama-server as -m, and the missing GGUF
+            // header surfaces only as an unknown encoder width.
+            if (llamacpp::checkpoint_is_local(info.checkpoint(), is_local_origin(info.source))) {
+                const std::string folder = llamacpp::local_directory_checkpoint_error(
+                    info.model_name,
+                    info.resolved_path().empty() ? info.checkpoint() : info.resolved_path());
+                if (!folder.empty()) return folder;
+            }
         }
         if (has_label(info.labels, "zero-shot") && !has_label(info.labels, "systemone") &&
             !is_rule_head_router_model(info)) {
