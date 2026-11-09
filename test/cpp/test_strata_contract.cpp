@@ -114,6 +114,11 @@ int main() {
     check("No exposed upstream listener or desktop launch",
           config.at("host") == "127.0.0.1" && config.at("open_browser") == false);
     check("Forwarded model name is accepted", config.at("model_name") == "shared-model");
+    const auto diagnostics = strata::build_config(
+        "m", "m.gguf", "engine", (std::filesystem::path("runtime") / "tokenizer").string(), "rocm", 4096);
+    check("Native diagnostics are captured beside the runtime tokenizer",
+          std::filesystem::path(diagnostics.at("log").get<std::string>()) ==
+              std::filesystem::path("runtime") / "engine.log");
     check("Reject unresolved auto context", rejects([] {
         strata::build_config("m", "m.gguf", "engine", "tokenizer", "cuda", -1);
     }));

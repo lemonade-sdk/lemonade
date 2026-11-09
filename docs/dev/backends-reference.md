@@ -278,7 +278,7 @@ Lemonade launches `llama-server` with `--parallel 1` and leaves the upstream `--
 
 ### Strata (`strata`)
 
-Experimental; maintained by Julian Xhokaxhiu. Runs the native engine with its bundled Python HTTP server. Supports text-only Qwen3.6 GGUFs (UD-Q4_K_XL, UD-Q6_K_XL, Q8_0), sharing weights with llama.cpp. Engine and Control archives are installed together from the release pinned in `backend_versions.json`; no system Python is required. CUDA requires driver 580+.
+Experimental; maintained by Julian Xhokaxhiu. Runs the native engine with its bundled Python HTTP server. Supports text-only Qwen3.6 GGUFs (UD-Q4_K_XL, UD-Q6_K_XL, Q8_0), sharing weights with llama.cpp. Engine and Control archives are installed together from the release pinned in `backend_versions.json`; no system Python is required. CUDA requires driver 580+; context must fit available VRAM.
 
 ### Backend auto-selection
 
