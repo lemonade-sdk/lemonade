@@ -86,6 +86,13 @@ std::vector<InterfaceAddress> list_interface_addresses() {
             itf.up = adapter->OperStatus == IfOperStatusUp;
             itf.loopback = adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK;
             itf.tunnel = !lan_type && !itf.loopback;
+            // TransmitLinkSpeed is bits/s, or 0xFFFFFFFFFFFFFFFF when unknown.
+            const ULONG64 bps = adapter->TransmitLinkSpeed;
+            if (bps != 0 && bps != ~ULONG64{0}) {
+                const ULONG64 mbps = bps / 1'000'000ULL;
+                itf.link_speed_mbps =
+                    mbps > 0xffffffffULL ? 0xffffffffU : static_cast<uint32_t>(mbps);
+            }
             out.push_back(std::move(itf));
         }
     }

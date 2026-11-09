@@ -39,6 +39,11 @@ struct InterfaceAddress {
     /// A point-to-point link or an adapter type that the platform reports as
     /// a tunnel or VPN (for example PPP or a tunnel adapter on Windows).
     bool        tunnel{false};
+    /// Link speed in Mbit/s, or 0 when the platform does not report one (for
+    /// example a Wi-Fi interface, or a build without the platform call). Used
+    /// to order the advertised addresses fastest first and to keep the
+    /// fastest address when two interfaces share one subnet.
+    uint32_t    link_speed_mbps{0};
 };
 
 /// The IPv4 addresses of this host's interfaces, in the order the platform
@@ -67,14 +72,21 @@ struct LocalEndpointRules {
     bool allow_loopback{false};
 };
 
-/// The usable LAN addresses among `interfaces`, in list order, without
+/// The usable LAN addresses among `interfaces`, fastest link first, without
 /// duplicates and at most kMaxLocalEndpoints. An address is usable when its
 /// interface is up, is not a tunnel (InterfaceAddress::tunnel), and has no
 /// virtual_interface_name, and the address is in 10.0.0.0/8, 172.16.0.0/12,
 /// or 192.168.0.0/16, or is the reflexive address in 100.64.0.0/10, and is
 /// outside rules.mesh_ranges. Loopback interfaces and addresses count only
 /// with rules.allow_loopback. Link-local, public, and invalid addresses never
-/// count. Pure.
+/// count.
+///
+/// The result is ordered by InterfaceAddress::link_speed_mbps descending, a
+/// stable order among equal speeds (so a platform that reports no speed keeps
+/// the list order). When two usable interfaces share one subnet, only the
+/// faster one is kept: a host bound to 0.0.0.0 answers a probe from its
+/// default-route interface whatever address the probe went to, so the other
+/// same-subnet address is never a distinct direct path. Pure.
 [[nodiscard]] std::vector<InterfaceAddress> usable_lan_interfaces(
     const std::vector<InterfaceAddress>& interfaces, const LocalEndpointRules& rules);
 

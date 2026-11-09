@@ -8,6 +8,8 @@
 #include <array>
 #include <cctype>
 #include <optional>
+#include <utility>
+#include <vector>
 
 namespace lnsdk {
 
@@ -54,6 +56,17 @@ bool virtual_interface_name(std::string_view name) {
                        [&lower](std::string_view prefix) { return lower.starts_with(prefix); });
 }
 
+namespace {
+
+/// The network address of `ip` under `prefix` (0 to 32), host byte order.
+uint32_t network_of(uint32_t ip, uint8_t prefix) {
+    const int p = std::min<int>(prefix, 32);
+    const uint32_t mask = p == 0 ? 0 : ~uint32_t{0} << (32 - p);
+    return ip & mask;
+}
+
+}  // namespace
+
 std::vector<InterfaceAddress> usable_lan_interfaces(const std::vector<InterfaceAddress>& interfaces,
                                                     const LocalEndpointRules& rules) {
     std::vector<Cidr> mesh;
@@ -62,9 +75,11 @@ std::vector<InterfaceAddress> usable_lan_interfaces(const std::vector<InterfaceA
     }
     const auto reflexive = parse_address(host_of(rules.reflexive));
 
-    std::vector<InterfaceAddress> out;
+    // The usable interfaces, each paired with its parsed address, in list
+    // order. The cap and the subnet dedup come after the speed sort, so the
+    // fastest address of a subnet is the one that survives.
+    std::vector<std::pair<InterfaceAddress, uint32_t>> usable;
     for (const auto& itf : interfaces) {
-        if (out.size() >= kMaxLocalEndpoints) break;
         if (!itf.up || itf.tunnel || virtual_interface_name(itf.name)) continue;
         if (itf.loopback && !rules.allow_loopback) continue;
         const auto ip = parse_address(itf.address);
@@ -73,25 +88,47 @@ std::vector<InterfaceAddress> usable_lan_interfaces(const std::vector<InterfaceA
                         [&](const Cidr& c) { return c.contains(*ip); })) {
             continue;
         }
-        bool usable = false;
+        bool ok = false;
         switch (endpoint_scope(itf.address + ":1")) {
             case AddressScope::Private:
                 // A shared address space address is a carrier's, behind its
                 // NAT, unless STUN saw this very address.
-                usable = !shared_address_space(*ip) || (reflexive && *reflexive == *ip);
+                ok = !shared_address_space(*ip) || (reflexive && *reflexive == *ip);
                 break;
             case AddressScope::Loopback:
-                usable = rules.allow_loopback;
+                ok = rules.allow_loopback;
                 break;
             case AddressScope::Public:
             case AddressScope::Invalid:
                 break;
         }
-        if (!usable) continue;
-        if (std::any_of(out.begin(), out.end(),
-                        [&](const InterfaceAddress& o) { return o.address == itf.address; })) {
+        if (!ok) continue;
+        if (std::any_of(usable.begin(), usable.end(),
+                        [&](const auto& o) { return o.first.address == itf.address; })) {
             continue;
         }
+        usable.emplace_back(itf, *ip);
+    }
+
+    // Fastest link first. A stable sort keeps the platform's list order among
+    // interfaces that report the same speed (0 when the speed is unknown).
+    std::stable_sort(usable.begin(), usable.end(), [](const auto& a, const auto& b) {
+        return a.first.link_speed_mbps > b.first.link_speed_mbps;
+    });
+
+    std::vector<InterfaceAddress> out;
+    std::vector<std::pair<uint32_t, uint8_t>> subnets;  // network, prefix already taken
+    for (const auto& [itf, ip] : usable) {
+        if (out.size() >= kMaxLocalEndpoints) break;
+        const uint32_t net = network_of(ip, itf.prefix_len);
+        // Skip a slower address on a subnet the faster address already covers
+        // (the sort put the faster one first).
+        if (std::any_of(subnets.begin(), subnets.end(), [&](const auto& s) {
+                return s.second == itf.prefix_len && s.first == net;
+            })) {
+            continue;
+        }
+        subnets.emplace_back(net, itf.prefix_len);
         out.push_back(itf);
     }
     return out;
