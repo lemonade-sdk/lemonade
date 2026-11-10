@@ -379,6 +379,23 @@ int main() {
                    fit_router_input({repeat("x", 100)}, "short", 64, 1, 5, char_tokens);
                }),
                "a label longer than the window is refused");
+
+        bool tokenized = false;
+        const auto counting = [&](const std::string& s) {
+            tokenized = true;
+            return char_tokens(s);
+        };
+        std::string message;
+        try {
+            fit_router_input({repeat("x", 66 * 32)}, "short", 64, 1, 5, counting);
+        } catch (const std::invalid_argument& e) {
+            message = e.what();
+        }
+        expect(!tokenized && message.find("far larger") != std::string::npos,
+               "a label block past the window's character bound is refused untokenized");
+        tokenized = false;
+        (void)fit_router_input({repeat("x", 40)}, "short", 128, 1, 5, counting);
+        expect(tokenized, "a label block within the bound still goes to the tokenizer");
     }
 
     if (failures > 0) {

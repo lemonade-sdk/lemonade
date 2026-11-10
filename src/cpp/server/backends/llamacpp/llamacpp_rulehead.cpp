@@ -177,6 +177,15 @@ RouterFit fit_router_input(const std::vector<std::string>& labels, const std::st
                            size_t window, size_t n_specials, size_t elision_tokens,
                            const PieceTokenizer& tokenize) {
     const RouterInput block = build_router_input(labels, "");
+    // As ort-server: a block the window provably cannot hold is refused by one
+    // division, before a label set of any size is sent to the tokenizer.
+    const size_t block_chars = utf8_length(block.text);
+    if (block_chars / MAX_TOKEN_CHARS > window) {
+        throw std::invalid_argument(
+            "the label list is far larger than this model's " + std::to_string(window) +
+            "-token window (" + std::to_string(block_chars) +
+            " characters of labels). Send fewer or shorter labels.");
+    }
     const size_t label_tokens = token_byte_spans(tokenize(block.text), block.text.size()).size();
     const size_t min_text = std::max<size_t>(1, std::min(MIN_TEXT_TOKENS, window / 8));
     const size_t reserve = n_specials + min_text;

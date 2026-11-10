@@ -919,6 +919,21 @@ bool checkpoint_looks_like_repo_id(const std::string& checkpoint) {
 
 namespace {
 
+// `hf://org/repo:file` names its host the way a URL does, but keeps its variant.
+// The download path splits a checkpoint at its first ':', so the scheme must go.
+bool detect_registry_scheme(const std::string& value, RegistryId& out_source,
+                            std::string& out_checkpoint) {
+    for (const auto& descriptor : models::all_registry_descriptors()) {
+        if (descriptor.scheme_prefix.empty()) continue;
+        const std::string prefix = descriptor.scheme_prefix + "://";
+        if (value.rfind(prefix, 0) != 0) continue;
+        out_source = descriptor.id;
+        out_checkpoint = value.substr(prefix.size());
+        return true;
+    }
+    return false;
+}
+
 // Returns the caller's explicitly named remote registry, if any. Non-registry
 // `source` values (local_upload/local_path/…) are ignored so only genuine
 // registry provenance participates in provider-URL conflict checks.
@@ -1004,7 +1019,10 @@ void apply_default_pull_source(json& request_json, const std::string& default_so
     for (std::string* slot : checkpoint_slots) {
         RegistryId detected;
         std::string repo_id;
-        if (!detect_registry_url(*slot, detected, repo_id)) continue;
+        if (!detect_registry_url(*slot, detected, repo_id) &&
+            !detect_registry_scheme(*slot, detected, repo_id)) {
+            continue;
+        }
         *slot = repo_id;
         if (url_source && *url_source != detected) {
             throw std::invalid_argument(

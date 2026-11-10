@@ -1197,6 +1197,14 @@ public:
 
     std::string validate_registration_checkpoint(const std::string& checkpoint) const override {
         if (llamacpp::checkpoint_is_local(checkpoint, false)) return "";
+        // lemond resolves a relative path against its own working folder, which is
+        // not the client's, and a remote client's is on another machine.
+        if (checkpoint.rfind("./", 0) == 0 || checkpoint.rfind("../", 0) == 0 ||
+            checkpoint.rfind(".\\", 0) == 0 || checkpoint.rfind("..\\", 0) == 0) {
+            return "'" + checkpoint + "' is a relative path. lemond reads a GGUF on disk "
+                   "from its own machine and working folder, not the client's, so name "
+                   "the file by its absolute path.";
+        }
         // A GGUF checkpoint must name its quant via CHECKPOINT:VARIANT.
         std::string lower = checkpoint;
         std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);

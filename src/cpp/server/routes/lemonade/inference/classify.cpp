@@ -83,7 +83,7 @@ public:
             "from the same repository and refuses the model when the file is missing; a head "
             "stored elsewhere is named as the `rulehead` checkpoint, from the same kind of place "
             "as the GGUF (both in repositories, or both on disk). A GGUF on disk is registered "
-            "with `\"source\": \"local_path\"` and the file's path as `checkpoint`; its head is "
+            "with `\"source\": \"local_path\"` and the file's absolute path as `checkpoint`; its head is "
             "`rulehead.bin` in the same folder. llama-server returns one vector per token and "
             "lemond applies the head. "
             "A long text is cut as ort-server cuts it, so the GGUF and the ONNX export score "
