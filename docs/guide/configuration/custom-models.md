@@ -39,6 +39,22 @@ lemonade pull https://modelscope.cn/models/Qwen/Qwen3-8B-GGUF
 
 For supported repository layouts, Lemonade lists GGUF quantizations and sharded variants, auto-detects `mmproj-*.gguf` files, infers common labels, and presents the same interactive variant menu for either registry.
 
+Some repositories hold several models side by side, one file each. Lemonade recognizes two kinds and offers each file as a variant:
+
+- **whisper.cpp** repositories whose task is `automatic-speech-recognition`: each root `ggml-*.bin` file becomes a variant named by the file, such as `ggml-tiny.bin`. `lemonade pull` also accepts the name without `ggml-` and `.bin`, such as `tiny`. Encoder and VAD files are skipped. The model uses the `whispercpp` recipe and its default labels, such as `transcription`.
+- **stable-diffusion.cpp** repositories tagged `sd.cpp` or `stable-diffusion.cpp`, and `text-to-image` repositories tagged `stable-diffusion` or `stable-diffusion-xl`: each root `.safetensors`, `.ckpt` or `.gguf` checkpoint becomes a variant named by the file. `lemonade pull` also accepts the name without its extension. Text encoders, VAEs, LoRAs, TAESD, ControlNet and IP-Adapter files are skipped. The model uses the `sd-cpp` recipe and gets the `image` label. FLUX and SD3 repositories need separate text encoders and a VAE, so they are not detected; register those with `--checkpoint main ... --checkpoint vae ...` instead.
+
+```bash
+lemonade pull ggerganov/whisper.cpp:tiny
+lemonade pull Green-Sky/SD-Turbo-GGUF:sd_turbo-f16-q8_0
+```
+
+Each backend decides for itself whether it can load a repository, and more than one can claim the same files. When that happens, `lemonade pull` lists the backends and asks which one to use, then shows that backend's variants. To choose without the prompt, pass its recipe with `--recipe`:
+
+```bash
+lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M --recipe llamacpp
+```
+
 Examples:
 
 ```bash

@@ -190,6 +190,13 @@ lemonade pull unsloth/Qwen3-8B-GGUF
 # Pull a specific Hugging Face variant
 lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
 
+# Pull one model file from a whisper.cpp or stable-diffusion.cpp repo
+lemonade pull ggerganov/whisper.cpp:tiny
+lemonade pull Green-Sky/SD-Turbo-GGUF:sd_turbo-f16-q8_0
+
+# Pick the backend when more than one can load the repository
+lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M --recipe llamacpp
+
 # Register and pull a custom model with an alias
 lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp --alias my-alias
 ```
@@ -200,7 +207,7 @@ lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp --
 | `--source` | Remote registry for checkpoint pulls: <!-- BEGIN GENERATED: cli-pull-source-values -->`huggingface` or `modelscope`<!-- END GENERATED: cli-pull-source-values -->; when omitted, the server's configured `default_model_source` applies. Direct hub URLs are auto-detected | No |
 | `--alias ALIAS` | Add an alias for the model being registered or pulled. | No |
 | `--checkpoint TYPE CHECKPOINT` | Manual registration: add a checkpoint entry. Repeat for multi-component models such as `main` + `mmproj` or `main` + `vae`. | No |
-| `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni`) | No |
+| `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni`). With a registry checkpoint and no `--checkpoint`, it picks the backend instead, when more than one can load the repository. | No |
 | `--label LABEL` | Manual registration: add a label to the new model. Repeatable. Valid: `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
 | `--components MODEL [MODEL ...]` | Omni-model registration: component names to bundle. Use with `--recipe collection.omni`. Components must already be registered (built-in or previously pulled `user.*`); any not-yet-downloaded components are pulled by the same call. | No |
 
