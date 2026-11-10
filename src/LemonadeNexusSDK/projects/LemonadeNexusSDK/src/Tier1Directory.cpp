@@ -38,6 +38,9 @@ constexpr std::size_t kChainPageLinks = nexus::security::constants::kMaxHttpChai
 constexpr int kMaxRateLimitWaits = 30;
 /// Candidate servers one refresh probes.
 constexpr std::size_t kMaxProbes = 32;
+/// Servers listed by the sources that a sweep short of the epoch floor goes
+/// on to ask. Bounds what a hostile or outdated list can make a client do.
+constexpr std::size_t kMaxListedSources = 8;
 /// Chain walks a refresh starts again after a proof names a later epoch.
 constexpr int kMaxRewalks = 2;
 /// Hosts one Genesis key discovery asks.
@@ -528,9 +531,47 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
     std::string chain_error;  // last refusal reason (a hostile or malformed page)
     std::vector<std::string> source_notes;
     std::optional<ServerEndpoint> settled_source;  // a source that may serve another chain
-    const auto sweep = [&] {
+    // The servers a source lists (GET /api/servers), fetched once per source.
+    // A listed node id is only a hint for skipping non-members; the proof
+    // decides. The list itself decides nothing: it says where to ask.
+    struct Listed {
+        ServerEndpoint endpoint;
+        std::optional<sec::NodeId> node;
+    };
+    std::map<std::string, std::vector<Listed>> listings;
+    const auto listed_by = [&](const ServerEndpoint& source) -> const std::vector<Listed>& {
+        const auto key = lower(source.host) + ":" + std::to_string(source.port);
+        if (const auto found = listings.find(key); found != listings.end()) return found->second;
+        auto& out = listings[key];
+        const auto reply = state_->get(source, "/api/servers");
+        if (!reply || reply->status != 200) return out;
+        const auto doc = json::parse(reply->body, nullptr, false);
+        if (doc.is_discarded() || !doc.is_array()) return out;
+        for (const auto& entry : doc) {
+            if (!entry.is_object()) continue;
+            const auto host = string_field(entry, "fqdn");
+            const auto port_it = entry.find("http_port");
+            if (host.empty() || port_it == entry.end() || !port_it->is_number_unsigned() ||
+                port_it->get<uint64_t>() == 0 || port_it->get<uint64_t>() > 0xFFFF) {
+                continue;
+            }
+            const auto port = static_cast<uint16_t>(port_it->get<uint64_t>());
+            const auto pubkey = string_field(entry, "pubkey");
+            std::optional<sec::NodeId> listed;
+            if (!pubkey.empty()) {
+                const auto bytes = decode_b64(pubkey);
+                sec::NodeId node{};
+                if (!bytes || bytes->size() != node.bytes.size()) continue;
+                std::memcpy(node.bytes.data(), bytes->data(), node.bytes.size());
+                listed = node;
+            }
+            out.push_back(Listed{ServerEndpoint{host, port, true}, listed});
+        }
+        return out;
+    };
+    const auto sweep = [&](const std::vector<ServerEndpoint>& from) {
         settled_source.reset();
-        for (const auto& source : sources) {
+        for (const auto& source : from) {
             std::string source_error;
             bool behind = false;
             const auto walk = state_->walk_from(source, source_error, behind);
@@ -555,7 +596,7 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
             if (settled && state_->walker->authority() && epoch >= min_epoch) break;
         }
     };
-    sweep();
+    sweep(sources);
     // A walker that holds a chain hears "nothing new" from a server that
     // serves another chain under the same key, because that server has no
     // page after the epoch the walker names; a server that is simply up to
@@ -571,8 +612,31 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
             known_epoch = std::max(known_epoch, state_->walker->epoch().underlying());
             state_->walker = std::make_unique<sec::AuthorityChainWalker>(*genesis);
             state_->walk_epoch.store(0);
-            sweep();
+            sweep(sources);
         }
+    }
+    // A sweep that stops short of the floor is not over while a source names
+    // servers it did not ask: a replica that fell behind still lists the
+    // members that moved on, and a client that remembers only that replica
+    // would otherwise refuse its copy as the last word. The list says where
+    // to ask and nothing more; every page is verified from the pinned key.
+    // Bounded, so a hostile list costs a few requests.
+    if (!state_->walker->authority() || state_->walker->epoch().underlying() < min_epoch) {
+        std::vector<ServerEndpoint> listed;
+        const auto asked = [&](const ServerEndpoint& endpoint) {
+            const auto same = [&endpoint](const ServerEndpoint& other) {
+                return lower(other.host) == lower(endpoint.host) && other.port == endpoint.port;
+            };
+            return std::any_of(sources.begin(), sources.end(), same) ||
+                   std::any_of(listed.begin(), listed.end(), same);
+        };
+        for (const auto& source : sources) {
+            for (const auto& entry : listed_by(source)) {
+                if (listed.size() >= kMaxListedSources) break;
+                if (!asked(entry.endpoint)) listed.push_back(entry.endpoint);
+            }
+        }
+        if (!listed.empty()) sweep(listed);
     }
     const auto tried_detail = [&] { return notes_detail("; tried: ", source_notes); };
     const auto& authority = state_->walker->authority();
@@ -627,30 +691,9 @@ Result<Tier1Membership> Tier1Directory::refresh_verified(
     };
     for (const auto& source : sources) add_candidate(source, std::nullopt);
     for (const auto& source : sources) {
-        const auto reply = state_->get(source, "/api/servers");
-        if (!reply || reply->status != 200) continue;
-        const auto doc = json::parse(reply->body, nullptr, false);
-        if (doc.is_discarded() || !doc.is_array()) continue;
-        for (const auto& entry : doc) {
-            if (!entry.is_object()) continue;
-            const auto host = string_field(entry, "fqdn");
-            const auto port_it = entry.find("http_port");
-            if (port_it == entry.end() || !port_it->is_number_unsigned() ||
-                port_it->get<uint64_t>() > 0xFFFF) {
-                continue;
-            }
-            const auto port = static_cast<uint16_t>(port_it->get<uint64_t>());
-            const auto pubkey = string_field(entry, "pubkey");
-            std::optional<sec::NodeId> listed;
-            if (!pubkey.empty()) {
-                const auto bytes = decode_b64(pubkey);
-                sec::NodeId node{};
-                if (!bytes || bytes->size() != node.bytes.size()) continue;
-                std::memcpy(node.bytes.data(), bytes->data(), node.bytes.size());
-                listed = node;
-            }
-            add_candidate(ServerEndpoint{host, port, true}, listed);
-        }
+        const auto& listed = listed_by(source);
+        if (listed.empty()) continue;
+        for (const auto& entry : listed) add_candidate(entry.endpoint, entry.node);
         break;
     }
 

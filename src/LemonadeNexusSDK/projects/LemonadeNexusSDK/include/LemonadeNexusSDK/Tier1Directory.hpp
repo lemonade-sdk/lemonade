@@ -179,7 +179,10 @@ public:
 
     /// Walk the chain from `sources`, then probe candidate servers: each
     /// source, and each server those sources list in GET /api/servers whose
-    /// node id is a member. On success the verified membership replaces the
+    /// node id is a member. A walk that stops short of the epoch floor goes
+    /// on through the servers the sources list (at most a few), so one
+    /// remembered source that fell behind the mesh does not end it; the list
+    /// only says where to ask. On success the verified membership replaces the
     /// previous one. On failure the previous servers are dropped (fail
     /// closed), the error says why, and http_status is 0 when nothing was
     /// reachable or 403 when the key is missing or what the servers returned

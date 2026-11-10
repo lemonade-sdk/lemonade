@@ -1640,14 +1640,6 @@ ln_error_t ln_set_device_name(ln_client_t* client, const char* name) {
     return client->client.set_device_name(name ? name : "") ? LN_OK : LN_ERR_REJECTED;
 }
 
-ln_error_t ln_link_token_create(ln_client_t* client, uint32_t ttl_sec, char** out_json) {
-    if (!client || !out_json) return LN_ERR_NULL_ARG;
-    auto result = client->client.create_link_token(ttl_sec);
-    json j = result.ok ? result.value : json{{"error", result.error}};
-    *out_json = strdup_json(j);
-    return result.ok ? LN_OK : LN_ERR_CONNECT;
-}
-
 /// The out_json and return code for a JSON result of the invite, membership,
 /// and move calls.
 static ln_error_t json_call_result(const lnsdk::Result<json>& result, char** out_json) {
@@ -1656,6 +1648,14 @@ static ln_error_t json_call_result(const lnsdk::Result<json>& result, char** out
     *out_json = strdup_json(j);
     if (!*out_json) return LN_ERR_INTERNAL;
     return result.ok ? LN_OK : ln_map_error(result.http_status);
+}
+
+ln_error_t ln_link_token_create(ln_client_t* client, uint32_t ttl_sec, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    // The same mapping as ln_invite_create: a caller the server refuses (no
+    // add_child on the group) gets LN_ERR_AUTH, not "unreachable".
+    return json_call_result(client->client.create_link_token(ttl_sec), out_json);
 }
 
 ln_error_t ln_invite_create(ln_client_t* client, const char* target_node_id,

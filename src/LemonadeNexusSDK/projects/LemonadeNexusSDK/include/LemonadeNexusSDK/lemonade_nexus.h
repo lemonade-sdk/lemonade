@@ -925,7 +925,10 @@ ln_error_t ln_set_inference_node(ln_client_t* client, int inference);
 ln_error_t ln_set_device_name(ln_client_t* client, const char* name);
 
 /** Mint a device link token for adding another device to this account's group.
- *  Same as ln_invite_create(client, NULL, NULL, ttl_sec, out_json).
+ *  Same as ln_invite_create(client, NULL, NULL, ttl_sec, out_json), with
+ *  the same return codes: LN_ERR_AUTH when the server refuses the caller
+ *  (no add_child on the group), LN_ERR_CONNECT when no server answered,
+ *  and the server's reason in out_json's "error".
  *  Requires an established mesh session. Returns {link_token, code,
  *  group_node_id, target_node_id, permissions, expires_at, code_expires_at}
  *  JSON. ln_free(*out_json). */
