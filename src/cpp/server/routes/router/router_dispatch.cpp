@@ -27,17 +27,14 @@ std::optional<ModelInfo> router_collection_info(ServerContext& ctx, const std::s
 }
 
 std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::string& model,
-                                                    bool want_trace, json& body) {
-    if (model.empty()) {
+                                                    bool want_trace, json& body,
+                                                    const std::optional<ModelInfo>& collection) {
+    if (!collection) {
         return std::nullopt;
     }
+    const ModelInfo& info = *collection;
     const std::string requested_model = model;
     try {
-        std::optional<ModelInfo> collection = router_collection_info(ctx, requested_model);
-        if (!collection) {
-            return std::nullopt;
-        }
-        ModelInfo& info = *collection;
         // The policy is parsed once when the models cache is built. A missing one means
         // the collection failed to parse, so the request keeps its model (fail open).
         if (!info.route_policy) {
@@ -83,6 +80,19 @@ std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::str
                                << requested_model << "': " << e.what() << std::endl;
     }
     return std::nullopt;
+}
+
+std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::string& model,
+                                                    bool want_trace, json& body) {
+    std::optional<ModelInfo> collection;
+    try {
+        collection = router_collection_info(ctx, model);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "Router collection dispatch failed for '" << model
+                               << "': " << e.what() << std::endl;
+        return std::nullopt;
+    }
+    return router_dispatch(ctx, model, want_trace, body, collection);
 }
 
 std::set<std::string> active_policy_helper_models(ModelManager& model_manager) {

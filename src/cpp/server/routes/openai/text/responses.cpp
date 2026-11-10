@@ -95,20 +95,10 @@ const RouteArg kPreviousResponseId{
     "candidate has no record of the id: resend the full `input`, or name a concrete model."};
 
 // A response chain lives inside the backend that created it, so it cannot survive a turn
-// routing to a different candidate than the last one. Checked before dispatch and before any
-// load: otherwise a new candidate answers silently without the chain's context.
-bool continues_chain_on_router_collection(ServerContext& ctx, const RouteRequest& req) {
+// routing to a different candidate than the last one.
+bool continues_chain(const RouteRequest& req) {
     const auto id = req.body.find(kPreviousResponseId.name);
-    if (id == req.body.end() || !id->is_string() || id->get<std::string>().empty()) {
-        return false;
-    }
-    try {
-        return router_collection_info(ctx, req.model).has_value();
-    } catch (const std::exception&) {
-        // The registry lookup failed, so this cannot tell it is a collection. The normal
-        // path then reports what is wrong with the model instead of blaming the chain.
-        return false;
-    }
+    return id != req.body.end() && id->is_string() && !id->get<std::string>().empty();
 }
 
 class ResponsesRoute : public ModelRoute {
@@ -178,7 +168,14 @@ protected:
     const RouteArg& model_arg() const override { return model_loading::kModel; }
 
     bool validate(RouteRequest& req, httplib::Response& res) override {
-        if (continues_chain_on_router_collection(ctx_, req)) {
+        // A failed registry lookup cannot tell the model is a collection, so the
+        // normal path reports what is wrong with the model instead.
+        std::optional<ModelInfo> collection;
+        try {
+            collection = router_collection_info(ctx_, req.model);
+        } catch (const std::exception&) {
+        }
+        if (collection && collection->route_policy && continues_chain(req)) {
             LOG(WARNING, "Server") << "Rejected /responses with previous_response_id on router "
                                    << "collection '" << req.model << "'" << std::endl;
             write_openai_error(
@@ -191,8 +188,8 @@ protected:
         }
         // Router policies call backends here, before run() does.
         auto cancel = cancel_on_disconnect(req);
-        req.route_decision = router_dispatch(ctx_, req.model, req.value(openai::text::kRouteTrace, false),
-                                             req.body);
+        req.route_decision = router_dispatch(
+            ctx_, req.model, req.value(openai::text::kRouteTrace, false), req.body, collection);
         return true;
     }
 

@@ -14,10 +14,8 @@ class ModelManager;
 struct ModelInfo;
 struct ServerContext;
 
-// The one place that answers "does this model name a router collection?".
-// Dispatch and the responses-chain guard must agree on that, so neither derives
-// it on its own. Registry exceptions propagate: a failed lookup means something
-// different at each call site.
+// The collection.router model that `model` names, or std::nullopt for any other
+// model. Registry exceptions propagate.
 std::optional<ModelInfo> router_collection_info(ServerContext& ctx, const std::string& model);
 
 struct RouterDispatchResult {
@@ -33,6 +31,12 @@ struct RouterDispatchResult {
 // one failure it rethrows, since falling back would load the collection itself.
 std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::string& model,
                                                     bool want_trace, nlohmann::json& body);
+
+// The same, for a collection already resolved with router_collection_info(), so a
+// check made on it and the routing read one snapshot of the registry.
+std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::string& model,
+                                                    bool want_trace, nlohmann::json& body,
+                                                    const std::optional<ModelInfo>& collection);
 
 // Router::reconcile_routing_helpers() needs the routing helpers that every active
 // collection.router policy keeps resident, so it can reclaim the rest.
