@@ -4,8 +4,8 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const suites = [
-  ['runtime regressions', 'run-runtime-tests.mjs', []],
   ['Playwright', 'run-playwright-tests.mjs', process.argv.slice(2)],
+  ['runtime regressions', 'run-runtime-tests.mjs', []],
 ];
 const failures = [];
 for (const [name, script, args] of suites) {
