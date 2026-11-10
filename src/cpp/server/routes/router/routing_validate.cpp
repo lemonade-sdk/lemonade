@@ -200,6 +200,7 @@ public:
         s.responses = {response};
 
         RouteExample example;
+        example.name = "preview";
         example.format = ResponseFormat::Json;
         example.args = ordered_json::parse(R"({
             "policy": {
@@ -220,7 +221,50 @@ public:
             },
             "prompt": "please write a def to reverse a list"
         })");
-        s.examples = {example};
+        RouteExample body_example;
+        body_example.name = "request body";
+        body_example.description =
+            "A chat `messages` array with an image part, sent with a `tools` array, sets both "
+            "`has_images` and `has_tools` from the body itself, so the rule that needs both "
+            "matches.";
+        body_example.format = ResponseFormat::Json;
+        body_example.args = ordered_json::parse(R"({
+            "policy": {
+                "version": "1",
+                "recipe": "collection.router",
+                "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "routing": {
+                    "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                    "default_model": "Qwen3-8B-GGUF",
+                    "rules": [
+                        {
+                            "id": "vision-and-tools-to-big",
+                            "match": {"all": [{"has_images": true}, {"has_tools": true}]},
+                            "route_to": "vllm.qwen3-32b"
+                        }
+                    ]
+                }
+            },
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What is in this picture?"},
+                        {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAA"}}
+                    ]
+                }
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "lookup_product",
+                        "parameters": {"type": "object", "properties": {}}
+                    }
+                }
+            ]
+        })");
+        s.examples = {example, body_example};
         s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kAmbiguousBody, kInvalidContent,
                     kInvalidPolicy, ModelLoader::kRouterResidencyConflict};
         s.request_format = RequestFormat::Json;
