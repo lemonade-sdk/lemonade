@@ -21,8 +21,8 @@ const RouteError kAmbiguousBody{400, "",
     "More than one of `messages`, `input` and `prompt` is sent, or `has_images` or `has_tools` "
     "is sent with `messages`, `input`, `tools` or an array `prompt`"};
 const RouteError kInvalidContent{400, "",
-    "A `messages` or `input` item's `content` is neither a string nor an array of objects, or "
-    "a text part's `text` is not a string"};
+    "A `messages` or `input` item's `content` is neither a string nor an array of objects, a "
+    "content part's `type` is not a string, or a text part's `text` is not a string"};
 
 const RouteArg kPolicy{"policy", ArgIn::JsonBody, {{"type", "object"}}, true, Support::Available,
                        "A `collection.router` policy document. `model_name` is accepted but is not required "
@@ -65,6 +65,9 @@ std::optional<std::string> content_error(const json& content, const char* field)
     for (const auto& part : content) {
         if (!part.is_object()) {
             return std::string("'") + field + "' content parts must be objects";
+        }
+        if (part.contains("type") && !part["type"].is_string()) {
+            return std::string("'") + field + "' content part 'type' must be a string";
         }
         const std::string type = part.value("type", std::string());
         if ((type == "text" || type == "input_text") &&
