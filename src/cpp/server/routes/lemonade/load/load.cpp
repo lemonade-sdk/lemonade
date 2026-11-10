@@ -9,6 +9,9 @@
 #include "lemon/recipe_options.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/configured/backend_definition.h"
 #include "lemon/server/model_loader.h"
 #include "lemon/server/shared_args.h"
 
@@ -220,6 +223,10 @@ public:
             LOG(INFO, "Server") << std::endl;
 
             // Saving keeps the stored value of a nulled key.
+            if (const auto* spec = backends::spec_for(info.recipe)) {
+                if (spec->definition && spec->definition->origin == backends::DefinitionOrigin::External)
+                    ctx_.router->resolve_effective_options(info, options);
+            }
             if (save_options) {
                 json saved_for_write = options.to_json();
                 if (!transient_saved_option_tombstones.empty()) {

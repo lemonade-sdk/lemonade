@@ -1,0 +1,261 @@
+{
+  "definition": {
+    "schema_version": 2,
+    "id": "gufo",
+    "recipe": "gufo",
+    "merge": {
+      "kind": "container",
+      "metadata": {
+        "display_name": "Gufo",
+        "server_name": "gufo",
+        "binary": "gufo",
+        "support": [
+          {
+            "id": "rocm",
+            "backend": "rocm",
+            "tier": "experimental",
+            "format": "container",
+            "supported_os": [
+              "linux"
+            ],
+            "devices": {
+              "gpu": [
+                "gfx1151"
+              ]
+            },
+            "device_summary": "Strix Halo"
+          }
+        ],
+        "supported_modes": [
+          "chat"
+        ]
+      },
+      "containers": {
+        "rocm": {
+          "repository": "ghcr.io/peonist-ai/gufo",
+          "pin": {
+            "source": "backend_versions",
+            "recipe": "gufo",
+            "backend": "rocm"
+          },
+          "devices": [
+            "/dev/dri",
+            "/dev/kfd"
+          ],
+          "cap_add": [],
+          "policy": "lemonade-isolated-v1",
+          "network": "private_internal",
+          "teardown": "stop_remove_reap",
+          "stop_grace_seconds": 10
+        }
+      },
+      "install": {
+        "strategy": "oci"
+      },
+      "artifacts": {
+        "main": {
+          "role": "main",
+          "strategy": "resolved_path",
+          "missing_error": "GGUF checkpoint is required"
+        }
+      },
+      "launch": {
+        "prepare_order": [
+          "backend",
+          "artifacts",
+          "program",
+          "ports"
+        ],
+        "backend": {
+          "fixed": "rocm"
+        },
+        "execution": {
+          "cases": [
+            {
+              "id": "rocm-container",
+              "backends": [
+                "rocm"
+              ],
+              "kind": "container",
+              "container": "rocm",
+              "program": {
+                "source": "image_command",
+                "name": "gufo"
+              }
+            }
+          ]
+        },
+        "mounts": [
+          {
+            "id": "main",
+            "artifact": "main",
+            "expand": "gguf_shards",
+            "destination": "/mnt/models"
+          }
+        ],
+        "address": {
+          "source": "process_start"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "reject_zero": true,
+            "error": "No HTTP port available"
+          }
+        ],
+        "argv": [
+          {
+            "id": "serve",
+            "args": [
+              "serve",
+              "llm"
+            ]
+          },
+          {
+            "id": "model",
+            "flag": "--model",
+            "value": {
+              "ref": "/artifacts/main"
+            }
+          },
+          {
+            "id": "name",
+            "flag": "--served-model-name",
+            "value": {
+              "ref": "/model/name"
+            }
+          },
+          {
+            "id": "host",
+            "flag": "--host",
+            "value": "0.0.0.0"
+          },
+          {
+            "id": "port",
+            "flag": "--port",
+            "value": {
+              "string": {
+                "ref": "/launch/ports/http"
+              }
+            }
+          }
+        ],
+        "environment": {
+          "preset": "inherit"
+        },
+        "working_directory": "inherit",
+        "output": {
+          "inherit_levels": [
+            "info",
+            "debug",
+            "trace"
+          ],
+          "filter": false
+        },
+        "readiness": {
+          "port": "http",
+          "path": "/ready",
+          "timeout": "global"
+        },
+        "watchdog": {
+          "policy": "standard",
+          "port": "http",
+          "path": "/ready"
+        },
+        "direct_stream_policy": "builtin_container_legacy"
+      },
+      "operations": [
+        {
+          "id": "chat.streaming",
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.max_tokens_alias",
+                "params": {}
+              },
+              {
+                "id": "llamacpp.tool_schema_limits",
+                "params": {}
+              }
+            ]
+          }
+        },
+        {
+          "id": "completion.streaming",
+          "operation": "completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "responses.streaming",
+          "operation": "responses",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/responses",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.tool_schema_limits",
+                "params": {}
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "quotations": [
+    {
+      "revision": "e3d734e056d1caada9efc4a2c8b218c23e0016b2",
+      "path": "src/cpp/server/backends/llamacpp/llamacpp_server.cpp",
+      "text": "void LlamaCppServer::forward_streaming_request(const std::string& endpoint,\n                                               const std::string& request_body,\n                                               httplib::DataSink& sink,\n                                               bool sse,\n                                               long timeout_seconds,\n                                               TelemetryCallback telemetry_callback) {\n    std::string body = request_body;\n    if (endpoint == \"/v1/chat/completions\" || endpoint == \"/v1/responses\") {\n        json request = json::parse(request_body, nullptr, false);\n        if (!request.is_discarded()) {\n            if (endpoint == \"/v1/chat/completions\") {\n                JsonUtils::add_legacy_max_tokens_alias(request);\n            }\n            body = llamacpp::sanitize_tool_schema_limits(std::move(request)).dump();\n        }\n    }\n\n    WrappedServer::forward_streaming_request(\n        endpoint, body, sink, sse, timeout_seconds, telemetry_callback);\n}"
+    },
+    {
+      "revision": "23e953915c96d2b2a039a0b3ffdfae46f97301d5",
+      "path": "src/cpp/server/backends/llamacpp/llamacpp_server.cpp",
+      "text": "void LlamaCppServer::forward_streaming_request(const std::string& endpoint,\n                                               const std::string& request_body,\n                                               httplib::DataSink& sink,\n                                               bool sse,\n                                               long timeout_seconds,\n                                               TelemetryCallback telemetry_callback) {\n    std::string body = request_body;\n    if (endpoint == \"/v1/chat/completions\" || endpoint == \"/v1/responses\") {\n        json request = json::parse(request_body, nullptr, false);\n        if (!request.is_discarded()) {\n            if (endpoint == \"/v1/chat/completions\") {\n                JsonUtils::add_legacy_max_tokens_alias(request);\n            }\n            body = llamacpp::sanitize_tool_schema_limits(std::move(request)).dump();\n        }\n    }\n\n    WrappedServer::forward_streaming_request(\n        endpoint, body, sink, sse, timeout_seconds, telemetry_callback);\n}"
+    },
+    {
+      "revision": "d491c946fed2ab079f7387cf02a0eaabb51afce4",
+      "path": "src/cpp/server/backends/llamacpp/llamacpp_server.cpp",
+      "text": "void LlamaCppServer::forward_streaming_request(const std::string& endpoint,\n                                               const std::string& request_body,\n                                               httplib::DataSink& sink,\n                                               bool sse,\n                                               long timeout_seconds,\n                                               TelemetryCallback telemetry_callback) {\n    std::string body = request_body;\n    if (endpoint == \"/v1/chat/completions\" || endpoint == \"/v1/responses\") {\n        json request = json::parse(request_body, nullptr, false);\n        if (!request.is_discarded()) {\n            if (endpoint == \"/v1/chat/completions\") {\n                JsonUtils::add_legacy_max_tokens_alias(request);\n            }\n            body = llamacpp::sanitize_tool_schema_limits(std::move(request)).dump();\n        }\n    }\n\n    WrappedServer::forward_streaming_request(\n        endpoint, body, sink, sse, timeout_seconds, telemetry_callback);\n}"
+    }
+  ]
+}

@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "id": "trellis",
+  "recipe": "trellis",
+  "kind": "local",
+  "metadata": {
+    "display_name": "TRELLIS.2",
+    "server_name": "trellis-server",
+    "log_category": "trellis-server",
+    "log_level_policy": "passthrough",
+    "binary": "trellis-server",
+    "config_section": "",
+    "default_device": "gpu",
+    "slot_policy": "standard",
+    "selectable_backend": true,
+    "uses_ctx_size": false,
+    "dynamic_models": false,
+    "options": [
+      {
+        "name": "trellis_backend",
+        "cli_flag": "--trellis",
+        "default_value": "",
+        "type_name": "BACKEND",
+        "value_type": "string",
+        "help": "Trellis backend to use",
+        "group": "3D Generation Options",
+        "unset_values": [null, -1, "", "auto"],
+        "ui": {
+          "label": "Backend",
+          "control": "select",
+          "order": 10,
+          "choices": "supported_backends"
+        }
+      },
+      {
+        "name": "trellis_args",
+        "cli_flag": "--trellis-args",
+        "default_value": "",
+        "type_name": "ARGS",
+        "value_type": "string",
+        "help": "Custom arguments to pass to trellis-server",
+        "group": "3D Generation Options",
+        "unset_values": [null, -1, "", "auto"]
+      }
+    ],
+    "support": [
+      {
+        "backend": "cuda",
+        "tier": "experimental",
+        "format": "native",
+        "supported_os": ["linux", "windows"],
+        "devices": {"nvidia_gpu": []},
+        "device_summary": "NVIDIA GPUs",
+        "arch_gates": {}
+      },
+      {
+        "backend": "vulkan",
+        "tier": "experimental",
+        "format": "native",
+        "supported_os": ["linux", "windows"],
+        "devices": {
+          "cpu": ["x86_64"],
+          "amd_gpu": [],
+          "nvidia_gpu": []
+        },
+        "device_summary": "Vulkan-capable GPUs",
+        "arch_gates": {}
+      },
+      {
+        "backend": "rocm",
+        "tier": "experimental",
+        "format": "native",
+        "supported_os": ["linux", "windows"],
+        "devices": {"amd_gpu": ["gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"]},
+        "device_summary": "Supported AMD ROCm iGPU/dGPU families (ROCm via TheRock)",
+        "arch_gates": {}
+      }
+    ],
+    "supported_modes": ["3d"],
+    "required_checkpoints": ["main"],
+    "default_capabilities": [],
+    "web_display_name": "",
+    "rocm_channels": ["stable"],
+    "exposes_prometheus_metrics": false,
+    "rocm_requires_cwsr_fix": false,
+    "version_policy": "exact",
+    "self_manages_downloads": false,
+    "takes_args": true,
+    "arg_variants": [],
+    "bin_variants": ["vulkan", "rocm", "cuda"],
+    "config_extra": {},
+    "streams_model_from_storage": false
+  },
+  "install": {
+    "strategy": "github_release",
+    "install_recipe": "trellis",
+    "pin_recipe": "trellis",
+    "supports_split_archive": false,
+    "asset_backend": "collapse_rocm_prefix",
+    "cases": [
+      {
+        "os": ["windows"],
+        "repo": "pwilkin/trellis.cpp",
+        "filename": {"concat": ["trellis-", {"ref": "/install/asset_backend"}, "-windows-x64.zip"]}
+      },
+      {
+        "os": ["linux", "macos"],
+        "repo": "pwilkin/trellis.cpp",
+        "filename": {"concat": ["trellis-", {"ref": "/install/asset_backend"}, "-linux-x64.tar.gz"]}
+      }
+    ]
+  },
+  "artifacts": {
+    "main": {
+      "role": "main",
+      "strategy": "resolved_path",
+      "cache_resolution": "active_snapshot",
+      "import_resolution": "default",
+      "missing_error": {
+        "concat": ["Model path not found for checkpoint: ", {"ref": "/model/checkpoint"}]
+      }
+    }
+  },
+  "launch": {
+    "prepare_order": ["artifacts", "custom_args", "backend", "program", "ports"],
+    "backend": {
+      "option": "trellis_backend",
+      "fallback": "first_supported",
+      "on_empty": {
+        "operation": "TRELLIS 3D generation",
+        "target": "this system: no supported GPU backend (Vulkan, ROCm, or CUDA) detected"
+      }
+    },
+    "program": {"source": "external_or_managed", "install_policy": "always"},
+    "ports": [{"name": "http", "reject_zero": true, "error": "Failed to find an available port"}],
+    "argv": [
+      {
+        "args": [
+          "--models",
+          {"ref": "/artifacts/main"},
+          "--host",
+          "127.0.0.1",
+          "--port",
+          {"string": {"ref": "/launch/ports/http"}},
+          "--res",
+          "512"
+        ]
+      }
+    ],
+    "custom_args": {
+      "option": "trellis_args",
+      "reserved": ["-m", "--models", "--host", "--port", "--res"],
+      "error_prefix": "Invalid custom trellis-server arguments:\n"
+    },
+    "environment": {"preset": "bundled_accelerator_runtime", "set": []},
+    "working_directory": "inherit",
+    "output": {
+      "inherit_levels": ["debug", "trace"],
+      "filter": true
+    },
+    "readiness": {"port": "http", "path": "/health", "timeout": 600},
+    "watchdog": {"policy": "standard", "port": "http", "path": "/health"}
+  },
+  "operations": [
+    {
+      "operation": "model_3d_generation",
+      "delivery": "buffered",
+      "model_modes": ["*"],
+      "handler": {"id": "trellis.mesh", "params": {}},
+      "request": {"base": "identity"}
+    }
+  ],
+  "hooks": {},
+  "rationale": [
+    {
+      "subject": "/launch/prepare_order",
+      "text": "Custom arguments are validated before backend selection and binary resolution, which can download a backend archive.",
+      "source": "7fb46ce0e:src/cpp/server/backends/trellis/trellis_server.cpp:61",
+      "tests": ["trellis_custom_args_before_lookup"]
+    },
+    {
+      "subject": "/operations/0/handler",
+      "text": "The image arrives as base64 or a data URL; it is sniffed to name the upload, sent as multipart with the optional seed, resolution, bg_removal and uv fields, and the mesh bytes or a JSON error envelope go to the sink.",
+      "source": "7fb46ce0e:src/cpp/server/backends/trellis/trellis_server.cpp:137",
+      "tests": ["trellis_mesh_codec"]
+    }
+  ]
+}

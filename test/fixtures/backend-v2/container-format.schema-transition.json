@@ -1,0 +1,49 @@
+{
+  "base_commit": "39118f9b1a68eba8279f86e10ce4f5d68598954e",
+  "changes": [
+    {
+      "new": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/Expression"
+            },
+            "id": {
+              "$ref": "#/$defs/Identifier"
+            },
+            "require": {
+              "$ref": "#/$defs/Expression"
+            }
+          },
+          "required": [
+            "id",
+            "require",
+            "error"
+          ],
+          "type": "object"
+        },
+        "maxItems": 32,
+        "type": "array"
+      },
+      "op": "add",
+      "path": "/$defs/Launch/properties/checks"
+    },
+    {
+      "new": {
+        "enum": [
+          "artifact_id",
+          "basename_numbered"
+        ]
+      },
+      "op": "add",
+      "path": "/$defs/Mount/properties/layout"
+    }
+  ],
+  "new_schema_id": "sha256:3c2c9298b2b7dfc160e5405e49a688cb67f4514702109c5891d3373b3de1d79c",
+  "new_sha256": "f392d461c8a04a7702b399b96180641ae2e1798dd43c85e0fd4f6fb71c95a481",
+  "old_schema_id": "sha256:896f682718713c76eb6962a5f0d78ac80e190fda9511b2652e8b757cc92dae67",
+  "old_sha256": "0d439f0294a918f18c0bc572a60f34609539e2999f8cd209327da011418efa31",
+  "schema_version": 1,
+  "stage": "container-format-gaps"
+}

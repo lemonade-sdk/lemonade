@@ -1,0 +1,2285 @@
+{
+  "engine": "halobox",
+  "id": "halobox",
+  "recipe": "llamacpp",
+  "backend": "halobox",
+  "stack_revision": "23e953915c96d2b2a039a0b3ffdfae46f97301d5",
+  "active": false,
+  "registry_validated": false,
+  "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
+  "pin": "rocm-10.0-strix-llama@sha256:7d3844524fda1865a2ae60cc73eb232589626ccca245cc3c7bd2afb153bd9bd6",
+  "owner_digest": "sha256:06f16254bd0baba8d978304d82df3b95828a0aa1b71d85d96ca78bc4de338e4e",
+  "authored_lines": 408,
+  "defaults": {
+    "args": "",
+    "backend": "auto",
+    "cpu_args": "",
+    "cpu_bin": "builtin",
+    "cuda_args": "",
+    "cuda_bin": "builtin",
+    "prefer_system": true,
+    "rocm_args": "",
+    "rocm_bin": "builtin",
+    "vulkan_args": "",
+    "vulkan_bin": "builtin"
+  },
+  "models": {
+    "MiniCPM5-1B-GGUF": {
+      "source": "modelscope",
+      "checkpoint": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "hot",
+        "reasoning"
+      ],
+      "size": 0.69
+    },
+    "MiniCPM4.1-8B-GGUF": {
+      "source": "modelscope",
+      "checkpoint": "OpenBMB/MiniCPM4.1-8B-GGUF:MiniCPM4.1-8B-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 4.97
+    },
+    "MiniCPM4-8B-GGUF": {
+      "source": "modelscope",
+      "checkpoint": "OpenBMB/MiniCPM4-8B-GGUF:MiniCPM4-8B-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat"
+      ],
+      "size": 4.97
+    },
+    "MiniCPM3-4B-GGUF": {
+      "source": "modelscope",
+      "checkpoint": "OpenBMB/MiniCPM3-4B-GGUF:minicpm3-4b-q4_k_m.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat"
+      ],
+      "size": 2.47
+    },
+    "MiniCPM-V-4.6-GGUF": {
+      "source": "modelscope",
+      "checkpoint": "OpenBMB/MiniCPM-V-4.6-gguf:MiniCPM-V-4_6-Q4_K_M.gguf",
+      "mmproj": "mmproj-model-f16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "hot",
+        "vision"
+      ],
+      "size": 1.64
+    },
+    "MiniCPM-V-4.6-Thinking-GGUF": {
+      "source": "modelscope",
+      "checkpoint": "OpenBMB/MiniCPM-V-4.6-Thinking-gguf:MiniCPM-V-4_6-Thinking-Q4_K_M.gguf",
+      "mmproj": "mmproj-model-f16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "vision"
+      ],
+      "size": 1.64
+    },
+    "MiniCPM-V-4.5-GGUF": {
+      "source": "modelscope",
+      "checkpoint": "OpenBMB/MiniCPM-V-4_5-gguf:MiniCPM-V-4_5-Q4_K_M.gguf",
+      "mmproj": "mmproj-model-f16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision"
+      ],
+      "size": 6.12
+    },
+    "MiniCPM-V-4-GGUF": {
+      "source": "modelscope",
+      "checkpoint": "OpenBMB/MiniCPM-V-4-gguf:ggml-model-Q4_K_M.gguf",
+      "mmproj": "mmproj-model-f16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision"
+      ],
+      "size": 3.15
+    },
+    "Muse-Glimmer-30B-GGUF": {
+      "checkpoints": {
+        "main": "unsloth/Muse-Glimmer-30B-GGUF:UD-Q4_K_XL",
+        "draft": "unsloth/Muse-Glimmer-30B-GGUF:dflash-kquant.gguf",
+        "mmproj": "unsloth/Muse-Glimmer-30B-GGUF:mmproj-Muse-Glimmer-30B-BF16.gguf"
+      },
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "hot",
+        "tool-calling",
+        "vision",
+        "reasoning",
+        "llamacpp",
+        "dflash"
+      ],
+      "size": 19.9
+    },
+    "MiniCPM-o-4.5-Vision-GGUF": {
+      "source": "modelscope",
+      "checkpoint": "OpenBMB/MiniCPM-o-4_5-gguf:MiniCPM-o-4_5-Q4_K_M.gguf",
+      "mmproj": "vision/MiniCPM-o-4_5-vision-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision"
+      ],
+      "size": 6.12
+    },
+    "MiniCPM-o-2.6-Vision-GGUF": {
+      "source": "modelscope",
+      "checkpoint": "OpenBMB/MiniCPM-o-2_6-gguf:Model-7.6B-Q4_K_M.gguf",
+      "mmproj": "mmproj-model-f16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision"
+      ],
+      "size": 5.73
+    },
+    "Qwen3-0.6B-GGUF": {
+      "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 0.38
+    },
+    "Tiny-Test-Model-GGUF": {
+      "checkpoint": "unsloth/gemma-3-270m-it-GGUF:gemma-3-270m-it-UD-IQ2_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": false,
+      "labels": [
+        "chat"
+      ],
+      "size": 0.18
+    },
+    "Qwen3-1.7B-GGUF": {
+      "checkpoint": "unsloth/Qwen3-1.7B-GGUF:Q4_0",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 1.06
+    },
+    "Qwen3-4B-GGUF": {
+      "checkpoint": "unsloth/Qwen3-4B-GGUF:Q4_0",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 2.38
+    },
+    "Qwen3-8B-GGUF": {
+      "checkpoint": "unsloth/Qwen3-8B-GGUF:Q4_1",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 5.25
+    },
+    "DeepSeek-Qwen3-8B-GGUF": {
+      "checkpoint": "unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF:Q4_1",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 5.25
+    },
+    "Qwen3-14B-GGUF": {
+      "checkpoint": "unsloth/Qwen3-14B-GGUF:Q4_0",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 8.54
+    },
+    "Qwen3-4B-Instruct-2507-GGUF": {
+      "checkpoint": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "tool-calling"
+      ],
+      "size": 2.5
+    },
+    "Qwen3-30B-A3B-GGUF": {
+      "checkpoint": "unsloth/Qwen3-30B-A3B-GGUF:Q4_0",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 17.4
+    },
+    "Qwen3-30B-A3B-Instruct-2507-GGUF": {
+      "checkpoint": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Qwen3-30B-A3B-Instruct-2507-Q4_0.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "tool-calling"
+      ],
+      "size": 17.4
+    },
+    "Qwen3-Coder-30B-A3B-Instruct-GGUF": {
+      "checkpoint": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "coding",
+        "tool-calling",
+        "hot"
+      ],
+      "size": 18.6
+    },
+    "Qwen3-Coder-Next-GGUF": {
+      "checkpoint": "unsloth/Qwen3-Coder-Next-GGUF:Qwen3-Coder-Next-MXFP4_MOE.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "coding",
+        "tool-calling",
+        "hot"
+      ],
+      "size": 48.0
+    },
+    "Nemotron-3-Nano-30B-A3B-GGUF": {
+      "checkpoint": "unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat"
+      ],
+      "size": 22.8
+    },
+    "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF": {
+      "checkpoint": "unsloth/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF:NVIDIA-Nemotron-3.5-Lightning-30B-A3B-UD-Q4_K_XL.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling",
+        "mtp",
+        "hot"
+      ],
+      "size": 25.5
+    },
+    "Gemma-3-4b-it-GGUF": {
+      "checkpoint": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+      "mmproj": "mmproj-model-f16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision"
+      ],
+      "size": 3.34
+    },
+    "Gemma-4-26B-A4B-it-GGUF": {
+      "checkpoint": "unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "hot",
+        "tool-calling",
+        "vision",
+        "llamacpp"
+      ],
+      "size": 18.1
+    },
+    "Gemma-4-31B-it-GGUF": {
+      "checkpoint": "unsloth/gemma-4-31B-it-GGUF:Q4_K_M",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "hot",
+        "tool-calling",
+        "vision",
+        "llamacpp"
+      ],
+      "size": 19.5
+    },
+    "Gemma-4-12B-it-GGUF": {
+      "checkpoint": "unsloth/gemma-4-12b-it-GGUF:Q4_K_M",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "tool-calling",
+        "vision",
+        "llamacpp"
+      ],
+      "size": 7.29
+    },
+    "Gemma-4-26B-A4B-it-MTP-GGUF": {
+      "checkpoints": {
+        "main": "unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M",
+        "draft": "unsloth/gemma-4-26B-A4B-it-GGUF:mtp-gemma-4-26B-A4B-it.gguf",
+        "mmproj": "unsloth/gemma-4-26B-A4B-it-GGUF:mmproj-F16.gguf"
+      },
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "hot",
+        "tool-calling",
+        "vision",
+        "llamacpp",
+        "mtp"
+      ],
+      "size": 18.5
+    },
+    "Gemma-4-31B-it-MTP-GGUF": {
+      "checkpoints": {
+        "main": "unsloth/gemma-4-31B-it-GGUF:Q4_K_M",
+        "draft": "unsloth/gemma-4-31B-it-GGUF:mtp-gemma-4-31B-it.gguf",
+        "mmproj": "unsloth/gemma-4-31B-it-GGUF:mmproj-F16.gguf"
+      },
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "hot",
+        "tool-calling",
+        "vision",
+        "llamacpp",
+        "mtp"
+      ],
+      "size": 20.0
+    },
+    "Gemma-4-12B-it-MTP-GGUF": {
+      "checkpoints": {
+        "main": "unsloth/gemma-4-12b-it-GGUF:Q4_K_M",
+        "draft": "unsloth/gemma-4-12b-it-GGUF:mtp-gemma-4-12b-it.gguf",
+        "mmproj": "unsloth/gemma-4-12b-it-GGUF:mmproj-F16.gguf"
+      },
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "tool-calling",
+        "llamacpp",
+        "vision",
+        "mtp"
+      ],
+      "size": 7.75
+    },
+    "Gemma-4-E4B-it-GGUF": {
+      "checkpoint": "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "tool-calling",
+        "vision",
+        "llamacpp"
+      ],
+      "size": 5.97
+    },
+    "Gemma-4-E2B-it-GGUF": {
+      "checkpoint": "unsloth/gemma-4-E2B-it-GGUF:Q4_K_M",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "tool-calling",
+        "vision",
+        "llamacpp"
+      ],
+      "size": 4.09
+    },
+    "Bonsai-8B-gguf": {
+      "checkpoint": "prism-ml/Bonsai-8B-gguf:Q1_0",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "llamacpp"
+      ],
+      "size": 1.16
+    },
+    "Bonsai-4B-gguf": {
+      "checkpoint": "prism-ml/Bonsai-4B-gguf:Q1_0",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "llamacpp"
+      ],
+      "size": 0.572
+    },
+    "Bonsai-1.7B-gguf": {
+      "checkpoint": "prism-ml/Bonsai-1.7B-gguf:Q1_0",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "llamacpp"
+      ],
+      "size": 0.25
+    },
+    "Phi-4-mini-instruct-GGUF": {
+      "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Phi-4-mini-instruct-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat"
+      ],
+      "size": 2.49
+    },
+    "LFM2-1.2B-GGUF": {
+      "checkpoint": "LiquidAI/LFM2-1.2B-GGUF:LFM2-1.2B-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat"
+      ],
+      "size": 0.731
+    },
+    "LFM2.5-1.2B-Instruct-GGUF": {
+      "checkpoint": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF:LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat"
+      ],
+      "size": 0.731
+    },
+    "LFM2.5-8B-A1B": {
+      "checkpoint": "LiquidAI/LFM2.5-8B-A1B-GGUF:LFM2.5-8B-A1B-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat"
+      ],
+      "size": 5.16
+    },
+    "LFM2.5-24B-A2B-GGUF": {
+      "checkpoint": "unsloth/LFM2.5-24B-A2B-GGUF:LFM2.5-24B-A2B-UD-Q4_K_XL.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling"
+      ],
+      "size": 14.9
+    },
+    "K2-Horizon-0.9B-GGUF": {
+      "checkpoint": "IFM/K2-Horizon-0.9B-GGUF:K2-Horizon-1B-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling",
+        "hot"
+      ],
+      "size": 0.67
+    },
+    "K2-Horizon-3.7B-GGUF": {
+      "checkpoint": "IFM/K2-Horizon-3.7B-GGUF:K2-Horizon-4B-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling"
+      ],
+      "size": 3.16
+    },
+    "K2-Horizon-7B-GGUF": {
+      "checkpoint": "IFM/K2-Horizon-7B-GGUF:K2-Horizon-7B-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling"
+      ],
+      "size": 5.59
+    },
+    "K2-Horizon-32B-GGUF": {
+      "checkpoint": "IFM/K2-Horizon-32B-GGUF:K2-Horizon-32B-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": false,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling"
+      ],
+      "size": 21.08
+    },
+    "K2-Horizon-MoVA-36B-A4B-GGUF": {
+      "checkpoint": "IFM/K2-Horizon-MoVA-36B-A4B-GGUF:K2-Horizon-MoVA-36B-A4B-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": false,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling"
+      ],
+      "size": 22.37
+    },
+    "Flint-GGUF": {
+      "checkpoint": "unsloth/flint-GGUF:flint-UD-Q4_K_XL.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "coding",
+        "reasoning",
+        "tool-calling"
+      ],
+      "size": 25.1
+    },
+    "PromptBridge-0.6b-Alpha-GGUF": {
+      "checkpoint": "mradermacher/PromptBridge-0.6b-Alpha-GGUF:PromptBridge-0.6b-Alpha.Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": false,
+      "labels": [
+        "chat"
+      ],
+      "size": 0.397
+    },
+    "Jan-nano-128k-GGUF": {
+      "checkpoint": "Menlo/Jan-nano-128k-gguf:jan-nano-128k-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat"
+      ],
+      "size": 2.5
+    },
+    "Jan-v1-4B-GGUF": {
+      "checkpoint": "janhq/Jan-v1-4B-GGUF:Jan-v1-4B-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat"
+      ],
+      "size": 2.5
+    },
+    "Llama-3.2-1B-Instruct-GGUF": {
+      "checkpoint": "unsloth/Llama-3.2-1B-Instruct-GGUF:Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat"
+      ],
+      "size": 0.834
+    },
+    "Llama-3.2-3B-Instruct-GGUF": {
+      "checkpoint": "unsloth/Llama-3.2-3B-Instruct-GGUF:Llama-3.2-3B-Instruct-UD-Q4_K_XL.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat"
+      ],
+      "size": 2.06
+    },
+    "SmolLM3-3B-GGUF": {
+      "checkpoint": "unsloth/SmolLM3-3B-128K-GGUF:SmolLM3-3B-128K-UD-Q4_K_XL.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat"
+      ],
+      "size": 1.94
+    },
+    "Ministral-3-3B-Instruct-2512-GGUF": {
+      "checkpoint": "mistralai/Ministral-3-3B-Instruct-2512-GGUF:Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
+      "mmproj": "Ministral-3-3B-Instruct-2512-BF16-mmproj.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision"
+      ],
+      "size": 2.99
+    },
+    "Qwen2.5-VL-7B-Instruct-GGUF": {
+      "checkpoint": "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF:Q4_K_M",
+      "mmproj": "mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision"
+      ],
+      "size": 6.04
+    },
+    "Qwen2.5-VL-3B-Instruct-GGUF": {
+      "checkpoint": "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF:Q4_K_M",
+      "mmproj": "mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision"
+      ],
+      "size": 3.27
+    },
+    "Qwen3-VL-4B-Instruct-GGUF": {
+      "checkpoint": "Qwen/Qwen3-VL-4B-Instruct-GGUF:Q4_K_M",
+      "mmproj": "mmproj-Qwen3VL-4B-Instruct-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision"
+      ],
+      "size": 3.33
+    },
+    "Qwen3-VL-8B-Instruct-GGUF": {
+      "checkpoint": "Qwen/Qwen3-VL-8B-Instruct-GGUF:Q4_K_M",
+      "mmproj": "mmproj-Qwen3VL-8B-Instruct-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision"
+      ],
+      "size": 6.19
+    },
+    "Qwen2.5-Omni-7B-GGUF": {
+      "checkpoint": "ggml-org/Qwen2.5-Omni-7B-GGUF:Q4_K_M",
+      "mmproj": "mmproj-Qwen2.5-Omni-7B-f16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "hf_load": true,
+      "labels": [
+        "chat",
+        "vision",
+        "chat-transcription"
+      ],
+      "size": 7.33
+    },
+    "Qwen2.5-Omni-3B-GGUF": {
+      "checkpoint": "ggml-org/Qwen2.5-Omni-3B-GGUF:Q4_K_M",
+      "mmproj": "mmproj-Qwen2.5-Omni-3B-f16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "hf_load": true,
+      "labels": [
+        "chat",
+        "vision",
+        "chat-transcription"
+      ],
+      "size": 4.73
+    },
+    "Qwen3-Next-80B-A3B-Instruct-GGUF": {
+      "checkpoint": "unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF:Qwen3-Next-80B-A3B-Instruct-UD-Q4_K_XL.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "tool-calling"
+      ],
+      "size": 46.1
+    },
+    "Qwen3.5-0.8B-GGUF": {
+      "checkpoint": "unsloth/Qwen3.5-0.8B-GGUF:Qwen3.5-0.8B-UD-Q4_K_XL.gguf",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision",
+        "tool-calling"
+      ],
+      "size": 0.764
+    },
+    "Qwen3.5-2B-GGUF": {
+      "checkpoint": "unsloth/Qwen3.5-2B-GGUF:Qwen3.5-2B-UD-Q4_K_XL.gguf",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision",
+        "tool-calling"
+      ],
+      "size": 2.01
+    },
+    "Qwen3.5-4B-GGUF": {
+      "checkpoint": "unsloth/Qwen3.5-4B-GGUF:Qwen3.5-4B-UD-Q4_K_XL.gguf",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision",
+        "tool-calling",
+        "hot"
+      ],
+      "size": 3.58
+    },
+    "Qwen3.5-4B-MTP-GGUF": {
+      "checkpoint": "unsloth/Qwen3.5-4B-MTP-GGUF:Qwen3.5-4B-UD-Q4_K_XL.gguf",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision",
+        "tool-calling",
+        "mtp"
+      ],
+      "size": 3.66
+    },
+    "Qwen3.5-9B-GGUF": {
+      "checkpoint": "unsloth/Qwen3.5-9B-GGUF:Qwen3.5-9B-UD-Q4_K_XL.gguf",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision",
+        "tool-calling"
+      ],
+      "size": 6.88
+    },
+    "Qwen3.5-35B-A3B-GGUF": {
+      "checkpoint": "unsloth/Qwen3.5-35B-A3B-GGUF:Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision",
+        "tool-calling"
+      ],
+      "size": 23.1
+    },
+    "Qwen3.5-122B-A10B-GGUF": {
+      "checkpoint": "unsloth/Qwen3.5-122B-A10B-GGUF:UD-Q4_K_XL",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision",
+        "tool-calling"
+      ],
+      "size": 77.9
+    },
+    "Qwen3.5-122B-A10B-MTP-GGUF": {
+      "checkpoint": "unsloth/Qwen3.5-122B-A10B-MTP-GGUF:UD-Q4_K_XL",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision",
+        "tool-calling",
+        "mtp"
+      ],
+      "size": 79.6
+    },
+    "Qwen3.5-27B-GGUF": {
+      "checkpoint": "unsloth/Qwen3.5-27B-GGUF:Qwen3.5-27B-UD-Q4_K_XL.gguf",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision",
+        "tool-calling"
+      ],
+      "size": 18.5
+    },
+    "Qwen3.6-35B-A3B-GGUF": {
+      "checkpoint": "unsloth/Qwen3.6-35B-A3B-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision",
+        "tool-calling",
+        "hot"
+      ],
+      "size": 23.3
+    },
+    "Qwen3.6-35B-A3B-MTP-GGUF": {
+      "checkpoint": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision",
+        "tool-calling",
+        "mtp"
+      ],
+      "size": 23.8
+    },
+    "Qwen3.6-27B-GGUF": {
+      "checkpoint": "unsloth/Qwen3.6-27B-GGUF:Qwen3.6-27B-UD-Q4_K_XL.gguf",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision",
+        "tool-calling"
+      ],
+      "size": 18.5
+    },
+    "Qwen3.6-27B-MTP-GGUF": {
+      "checkpoint": "unsloth/Qwen3.6-27B-MTP-GGUF:Qwen3.6-27B-UD-Q4_K_XL.gguf",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "vision",
+        "tool-calling",
+        "mtp",
+        "hot"
+      ],
+      "size": 18.8
+    },
+    "Qwen3.8-27B-GGUF": {
+      "checkpoint": "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_XL.gguf",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "vision",
+        "tool-calling",
+        "mtp",
+        "hot"
+      ],
+      "size": 18.8
+    },
+    "Llama-4-Scout-17B-16E-Instruct-GGUF": {
+      "checkpoint": "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF:Q4_K_S",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": false,
+      "labels": [
+        "chat",
+        "vision"
+      ],
+      "size": 63.2
+    },
+    "Cogito-v2-llama-109B-MoE-GGUF": {
+      "checkpoint": "unsloth/cogito-v2-preview-llama-109B-MoE-GGUF:Q4_K_M",
+      "mmproj": "mmproj-F16.gguf",
+      "recipe": "llamacpp",
+      "suggested": false,
+      "labels": [
+        "chat",
+        "vision"
+      ],
+      "size": 65.4
+    },
+    "nomic-embed-text-v1-GGUF": {
+      "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "embeddings"
+      ],
+      "size": 0.0781
+    },
+    "nomic-embed-text-v2-moe-GGUF": {
+      "checkpoint": "nomic-ai/nomic-embed-text-v2-moe-GGUF:Q8_0",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "embeddings"
+      ],
+      "size": 0.51
+    },
+    "Qwen3-Embedding-0.6B-GGUF": {
+      "checkpoint": "Qwen/Qwen3-Embedding-0.6B-GGUF:Qwen3-Embedding-0.6B-Q8_0.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "embeddings"
+      ],
+      "size": 0.64
+    },
+    "Qwen3-Embedding-4B-GGUF": {
+      "checkpoint": "Qwen/Qwen3-Embedding-4B-GGUF:Qwen3-Embedding-4B-Q8_0.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "embeddings"
+      ],
+      "size": 4.28
+    },
+    "Qwen3-Embedding-8B-GGUF": {
+      "checkpoint": "Qwen/Qwen3-Embedding-8B-GGUF:Qwen3-Embedding-8B-Q8_0.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "embeddings"
+      ],
+      "size": 8.05
+    },
+    "bge-reranker-v2-m3-GGUF": {
+      "checkpoint": "pqnet/bge-reranker-v2-m3-Q8_0-GGUF",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "reranking"
+      ],
+      "size": 0.636
+    },
+    "jina-reranker-v1-tiny-en-GGUF": {
+      "checkpoint": "mradermacher/jina-reranker-v1-tiny-en-GGUF:Q8_0",
+      "recipe": "llamacpp",
+      "suggested": false,
+      "labels": [
+        "reranking"
+      ],
+      "size": 0.0367
+    },
+    "Devstral-Small-2507-GGUF": {
+      "checkpoint": "mistralai/Devstral-Small-2507_gguf:Q4_K_M",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "coding",
+        "tool-calling"
+      ],
+      "size": 14.3
+    },
+    "Qwen2.5-Coder-32B-Instruct-GGUF": {
+      "checkpoint": "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF:Q4_K_M",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "coding"
+      ],
+      "size": 19.9
+    },
+    "gpt-oss-120b-GGUF": {
+      "checkpoint": "unsloth/gpt-oss-120b-GGUF:Q4_K_M",
+      "recipe": "llamacpp",
+      "suggested": false,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling"
+      ],
+      "size": 62.8
+    },
+    "gpt-oss-20b-GGUF": {
+      "checkpoint": "unsloth/gpt-oss-20b-GGUF:Q4_K_M",
+      "recipe": "llamacpp",
+      "suggested": false,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling"
+      ],
+      "size": 11.6
+    },
+    "gpt-oss-120b-mxfp-GGUF": {
+      "checkpoint": "ggml-org/gpt-oss-120b-GGUF:gpt-oss-120b-MXFP4.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "hot",
+        "reasoning",
+        "tool-calling"
+      ],
+      "size": 63.4
+    },
+    "gpt-oss-20b-mxfp4-GGUF": {
+      "checkpoint": "ggml-org/gpt-oss-20b-GGUF:gpt-oss-20b-MXFP4.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "hot",
+        "reasoning",
+        "tool-calling"
+      ],
+      "size": 12.1
+    },
+    "GLM-4.5-Air-UD-Q4K-XL-GGUF": {
+      "checkpoint": "unsloth/GLM-4.5-Air-GGUF:UD-Q4_K_XL",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 67.7
+    },
+    "GLM-4.7-Flash-GGUF": {
+      "checkpoint": "unsloth/GLM-4.7-Flash-GGUF:GLM-4.7-Flash-UD-Q4_K_XL.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "tool-calling"
+      ],
+      "size": 17.5
+    },
+    "Playable1-GGUF": {
+      "checkpoint": "playable/Playable1-GGUF:Playable1-q4_k_m.gguf",
+      "recipe": "llamacpp",
+      "suggested": false,
+      "labels": [
+        "chat",
+        "coding"
+      ],
+      "size": 4.68
+    },
+    "granite-4.0-h-tiny-GGUF": {
+      "checkpoint": "unsloth/granite-4.0-h-tiny-GGUF:Q4_K_M",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "tool-calling"
+      ],
+      "size": 4.25
+    },
+    "LFM2-8B-A1B-GGUF": {
+      "checkpoint": "LiquidAI/LFM2-8B-A1B-GGUF:Q4_K_M",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat"
+      ],
+      "size": 5.04
+    },
+    "LFM2-24B-A2B-GGUF": {
+      "checkpoint": "LiquidAI/LFM2-24B-A2B-GGUF:Q4_K_M",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat"
+      ],
+      "size": 14.4
+    },
+    "Ornith-1.5-9B-GGUF": {
+      "checkpoint": "ornith-ai/Ornith-1.5-9B-GGUF:Q4_K_M",
+      "mmproj": "mmproj-Ornith-1.5-9B-BF16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "coding",
+        "reasoning",
+        "tool-calling",
+        "vision"
+      ],
+      "size": 6.7
+    },
+    "Ornith-1.5-35B-A3B-GGUF": {
+      "checkpoint": "ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M",
+      "mmproj": "mmproj-Ornith-1.5-35B-BF16.gguf",
+      "recipe": "llamacpp",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "coding",
+        "reasoning",
+        "tool-calling",
+        "vision"
+      ],
+      "size": 22.6
+    }
+  },
+  "metadata": {
+    "display_name": "Llama.cpp GPU",
+    "server_name": "llama-server",
+    "log_category": "LlamaCpp",
+    "log_level_policy": "passthrough",
+    "binary": "llama-server",
+    "config_section": "",
+    "default_device": "gpu",
+    "slot_policy": "standard",
+    "selectable_backend": true,
+    "uses_ctx_size": true,
+    "dynamic_models": false,
+    "options": [
+      {
+        "id": "backend",
+        "name": "llamacpp_backend",
+        "cli_flag": "--llamacpp",
+        "default_value": "",
+        "type_name": "BACKEND",
+        "value_type": "string",
+        "help": "LlamaCpp backend to use",
+        "group": "Llama.cpp Backend Options",
+        "unset_values": [
+          null,
+          -1,
+          "",
+          "auto"
+        ]
+      },
+      {
+        "id": "device",
+        "name": "llamacpp_device",
+        "cli_flag": "--llamacpp-device",
+        "default_value": "",
+        "type_name": "DEVICES",
+        "value_type": "string",
+        "help": "Comma-separated list of accelerator devices to use (e.g. Vulkan0)",
+        "group": "Llama.cpp Backend Options",
+        "unset_values": [
+          null,
+          -1,
+          "",
+          "auto"
+        ]
+      },
+      {
+        "id": "args",
+        "name": "llamacpp_args",
+        "cli_flag": "--llamacpp-args",
+        "default_value": "",
+        "type_name": "ARGS",
+        "value_type": "string",
+        "help": "Custom arguments to pass to llama-server",
+        "group": "Llama.cpp Backend Options",
+        "unset_values": [
+          null,
+          -1,
+          "",
+          "auto"
+        ]
+      }
+    ],
+    "support": [
+      {
+        "id": "halobox",
+        "backend": "halobox",
+        "tier": "guest",
+        "format": "container",
+        "supported_os": [
+          "linux"
+        ],
+        "devices": {
+          "amd_gpu": [
+            "gfx1151"
+          ]
+        },
+        "device_summary": "AMD Strix Halo (Halo Box ROCm fork)"
+      }
+    ],
+    "supported_modes": [
+      "chat",
+      "embeddings",
+      "reranking"
+    ],
+    "required_checkpoints": [
+      "main"
+    ],
+    "default_capabilities": [],
+    "web_display_name": "llama.cpp GPU",
+    "rocm_channels": [],
+    "exposes_prometheus_metrics": true,
+    "rocm_requires_cwsr_fix": true,
+    "version_policy": "exact",
+    "self_manages_downloads": false,
+    "takes_args": true,
+    "arg_variants": [
+      "rocm",
+      "vulkan",
+      "cpu"
+    ],
+    "bin_variants": [
+      "rocm",
+      "vulkan",
+      "cuda",
+      "cpu"
+    ],
+    "config_extra": {
+      "prefer_system": true
+    },
+    "streams_model_from_storage": false
+  },
+  "diagnostics": [
+    {
+      "id": "loading",
+      "phase": "loading",
+      "level": "info",
+      "category": "LlamaCpp",
+      "format": "Loading model: {model:string}",
+      "when": "always"
+    },
+    {
+      "id": "settings",
+      "phase": "loading",
+      "level": "debug",
+      "category": "LlamaCpp",
+      "format": "Per-model settings: {settings:options}",
+      "when": "always"
+    },
+    {
+      "id": "backend",
+      "phase": "backend",
+      "level": "info",
+      "category": "LlamaCpp",
+      "format": "Using LlamaCpp Backend: {backend:string}",
+      "when": "always"
+    },
+    {
+      "id": "gguf",
+      "phase": "artifacts",
+      "level": "debug",
+      "category": "LlamaCpp",
+      "format": "Using GGUF: {main:path}",
+      "when": "main_present"
+    },
+    {
+      "id": "gpu",
+      "phase": "arguments",
+      "level": "debug",
+      "category": "LlamaCpp",
+      "format": "Using backend: {backend:string}\n[LlamaCpp] Use GPU: {gpu:boolean}",
+      "when": "always"
+    },
+    {
+      "id": "mmproj",
+      "phase": "arguments",
+      "level": "debug",
+      "category": "LlamaCpp",
+      "format": "Skipping mmproj argument since GPU mode is not enabled",
+      "when": "mmproj_cpu"
+    },
+    {
+      "id": "embedding",
+      "phase": "arguments",
+      "level": "info",
+      "category": "LlamaCpp",
+      "format": "Model supports embeddings, adding --embeddings flag",
+      "when": "embedding"
+    },
+    {
+      "id": "reranking",
+      "phase": "arguments",
+      "level": "info",
+      "category": "LlamaCpp",
+      "format": "Model supports reranking, adding --reranking flag",
+      "when": "reranking"
+    },
+    {
+      "id": "custom",
+      "phase": "custom_args",
+      "level": "debug",
+      "category": "LlamaCpp",
+      "format": "Adding custom arguments: {custom:string}",
+      "when": "custom_present"
+    },
+    {
+      "id": "starting",
+      "phase": "starting",
+      "level": "info",
+      "category": "LlamaCpp",
+      "format": "Starting llama-server...",
+      "when": "always"
+    },
+    {
+      "id": "loaded",
+      "phase": "success",
+      "level": "debug",
+      "category": "LlamaCpp",
+      "format": "Model loaded on port {loaded_port:integer}",
+      "when": "always"
+    }
+  ],
+  "rewrite_domain": "canonical_path",
+  "c7b_fixture": "c7b.halobox.json",
+  "c7b_fixture_sha256": "214c6ae5e56529dfc7136a066db87f898979e0cf9731b958fa8833542a70b3bc",
+  "production_definition": {
+    "schema_version": 2,
+    "id": "halobox",
+    "recipe": "llamacpp",
+    "merge": {
+      "kind": "container",
+      "metadata": {
+        "display_name": "Llama.cpp GPU",
+        "server_name": "llama-server",
+        "log_category": "LlamaCpp",
+        "log_level_policy": "passthrough",
+        "binary": "llama-server",
+        "config_section": "",
+        "default_device": "gpu",
+        "slot_policy": "standard",
+        "selectable_backend": true,
+        "uses_ctx_size": true,
+        "dynamic_models": false,
+        "options": [
+          {
+            "id": "backend",
+            "name": "llamacpp_backend",
+            "cli_flag": "--llamacpp",
+            "default_value": "",
+            "type_name": "BACKEND",
+            "value_type": "string",
+            "help": "LlamaCpp backend to use",
+            "group": "Llama.cpp Backend Options",
+            "unset_values": [
+              null,
+              -1,
+              "",
+              "auto"
+            ]
+          },
+          {
+            "id": "device",
+            "name": "llamacpp_device",
+            "cli_flag": "--llamacpp-device",
+            "default_value": "",
+            "type_name": "DEVICES",
+            "value_type": "string",
+            "help": "Comma-separated list of accelerator devices to use (e.g. Vulkan0)",
+            "group": "Llama.cpp Backend Options",
+            "unset_values": [
+              null,
+              -1,
+              "",
+              "auto"
+            ]
+          },
+          {
+            "id": "args",
+            "name": "llamacpp_args",
+            "cli_flag": "--llamacpp-args",
+            "default_value": "",
+            "type_name": "ARGS",
+            "value_type": "string",
+            "help": "Custom arguments to pass to llama-server",
+            "group": "Llama.cpp Backend Options",
+            "unset_values": [
+              null,
+              -1,
+              "",
+              "auto"
+            ]
+          }
+        ],
+        "support": [
+          {
+            "id": "halobox",
+            "backend": "halobox",
+            "tier": "guest",
+            "format": "container",
+            "supported_os": [
+              "linux"
+            ],
+            "devices": {
+              "amd_gpu": [
+                "gfx1151"
+              ]
+            },
+            "device_summary": "AMD Strix Halo (Halo Box ROCm fork)"
+          }
+        ],
+        "supported_modes": [
+          "chat",
+          "embeddings",
+          "reranking"
+        ],
+        "required_checkpoints": [
+          "main"
+        ],
+        "default_capabilities": [],
+        "web_display_name": "llama.cpp GPU",
+        "rocm_channels": [],
+        "exposes_prometheus_metrics": true,
+        "rocm_requires_cwsr_fix": true,
+        "version_policy": "exact",
+        "self_manages_downloads": false,
+        "takes_args": true,
+        "arg_variants": [
+          "rocm",
+          "vulkan",
+          "cpu"
+        ],
+        "bin_variants": [
+          "rocm",
+          "vulkan",
+          "cuda",
+          "cpu"
+        ],
+        "config_extra": {
+          "prefer_system": true
+        },
+        "streams_model_from_storage": false
+      },
+      "install": {
+        "strategy": "oci"
+      },
+      "artifacts": {
+        "main": {
+          "role": "main",
+          "strategy": "resolved_path",
+          "hook": {
+            "id": "llamacpp.artifacts.v1",
+            "params": {}
+          },
+          "check": "nonempty",
+          "required_when": {
+            "not": {
+              "ref": "/launch/hook/hf_load"
+            }
+          },
+          "missing_error": {
+            "concat": [
+              "GGUF file not found for checkpoint: ",
+              {
+                "ref": "/model/checkpoint"
+              }
+            ]
+          }
+        },
+        "mmproj": {
+          "role": "mmproj",
+          "strategy": "resolved_path",
+          "check": "nonempty",
+          "required_when": false,
+          "missing_error": "Optional mmproj path is unavailable",
+          "hook": {
+            "id": "llamacpp.artifacts.v1",
+            "params": {}
+          }
+        },
+        "draft": {
+          "role": "draft",
+          "strategy": "resolved_path",
+          "check": "nonempty",
+          "required_when": false,
+          "missing_error": "Optional draft path is unavailable",
+          "hook": {
+            "id": "llamacpp.artifacts.v1",
+            "params": {}
+          }
+        }
+      },
+      "launch": {
+        "prepare_order": [
+          "backend",
+          "install",
+          "hook",
+          "artifacts",
+          "ports",
+          "program"
+        ],
+        "backend": {
+          "fixed": "halobox"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "reject_zero": false,
+            "error": ""
+          }
+        ],
+        "context_floor": {
+          "embedding": 8192
+        },
+        "argv": [
+          {
+            "id": "model-hf",
+            "flag": "-hf",
+            "value": {
+              "ref": "/model/checkpoint"
+            },
+            "when": {
+              "ref": "/launch/hook/hf_load"
+            },
+            "aliases": [
+              "--hf-repo",
+              "-mr",
+              "--hf-file",
+              "-mf"
+            ],
+            "reserve": "when_active"
+          },
+          {
+            "id": "model-local",
+            "flag": "-m",
+            "value": {
+              "ref": "/artifacts/main"
+            },
+            "when": {
+              "not": {
+                "ref": "/launch/hook/hf_load"
+              }
+            },
+            "aliases": [
+              "--model"
+            ],
+            "reserve": "when_active"
+          },
+          {
+            "id": "ctx",
+            "flag": "--ctx-size",
+            "value": {
+              "string": {
+                "ref": "/launch/hook/context_size"
+              }
+            },
+            "aliases": [
+              "-c"
+            ]
+          },
+          {
+            "id": "device",
+            "flag": "--device",
+            "value": {
+              "option": "device",
+              "type": "string"
+            },
+            "when": {
+              "not": {
+                "eq": [
+                  {
+                    "option": "device"
+                  },
+                  ""
+                ]
+              }
+            },
+            "aliases": [
+              "-dev"
+            ],
+            "reserve": "always"
+          },
+          {
+            "id": "port",
+            "flag": "--port",
+            "value": {
+              "string": {
+                "ref": "/launch/ports/http"
+              }
+            }
+          },
+          {
+            "id": "host",
+            "flag": "--host",
+            "value": "0.0.0.0"
+          },
+          {
+            "id": "jinja",
+            "flag": "--jinja",
+            "aliases": [
+              "--no-jinja"
+            ]
+          },
+          {
+            "id": "metrics",
+            "flag": "--metrics"
+          },
+          {
+            "id": "debug",
+            "args": [
+              "-lv",
+              "4"
+            ],
+            "when": {
+              "any": [
+                {
+                  "eq": [
+                    {
+                      "ref": "/launch/log_level"
+                    },
+                    "debug"
+                  ]
+                },
+                {
+                  "eq": [
+                    {
+                      "ref": "/launch/log_level"
+                    },
+                    "trace"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "vision",
+            "flag": "--mmproj",
+            "value": {
+              "ref": "/artifacts/mmproj"
+            },
+            "when": {
+              "ref": "/launch/hook/use_mmproj"
+            },
+            "aliases": [
+              "-mm",
+              "-mmu",
+              "--mmproj-url",
+              "--no-mmproj",
+              "--mmproj-auto",
+              "--no-mmproj-auto"
+            ],
+            "reserve": "always"
+          },
+          {
+            "id": "vision-cpu",
+            "flag": "--no-mmproj-offload",
+            "when": {
+              "ref": "/launch/hook/mmproj_on_cpu"
+            },
+            "reserve": "when_active"
+          },
+          {
+            "id": "draft",
+            "flag": "--model-draft",
+            "value": {
+              "ref": "/artifacts/draft"
+            },
+            "when": {
+              "ref": "/launch/hook/use_draft_checkpoint"
+            },
+            "aliases": [
+              "-md",
+              "--spec-draft-model"
+            ],
+            "reserve": "always"
+          },
+          {
+            "id": "embedding",
+            "flag": "--embeddings",
+            "when": {
+              "ref": "/launch/hook/embedding"
+            },
+            "aliases": [
+              "--embedding"
+            ],
+            "reserve": "always"
+          },
+          {
+            "id": "reranking",
+            "flag": "--reranking",
+            "when": {
+              "ref": "/launch/hook/reranking"
+            },
+            "aliases": [
+              "--rerank"
+            ],
+            "reserve": "always"
+          }
+        ],
+        "custom_args": {
+          "option": "args",
+          "reserved": [],
+          "error_prefix": "Invalid custom llama-server arguments:\n",
+          "defaults": [
+            {
+              "id": "spec-dflash",
+              "args": "--spec-type draft-dflash",
+              "flag": "--spec-type",
+              "when": {
+                "ref": "/runtime/dflash"
+              },
+              "stage": "runtime_options",
+              "respect_merge_args": true
+            },
+            {
+              "id": "spec-mtp",
+              "args": "--spec-type draft-mtp",
+              "flag": "--spec-type",
+              "when": {
+                "ref": "/runtime/mtp"
+              },
+              "stage": "runtime_options",
+              "respect_merge_args": true
+            },
+            {
+              "id": "parallel",
+              "args": "--parallel 1",
+              "flag": "--parallel",
+              "aliases": [
+                "-np"
+              ],
+              "stage": "runtime_options",
+              "respect_merge_args": true
+            }
+          ],
+          "runtime_input": "string_or_empty"
+        },
+        "environment": {
+          "preset": "inherit"
+        },
+        "working_directory": "inherit",
+        "output": {
+          "inherit_levels": [
+            "info",
+            "debug",
+            "trace"
+          ],
+          "filter": true
+        },
+        "readiness": {
+          "port": "http",
+          "path": "/health",
+          "timeout": "global"
+        },
+        "watchdog": {
+          "policy": "standard",
+          "port": "http",
+          "path": "/health"
+        },
+        "direct_stream_policy": "builtin_container_legacy",
+        "checks": [
+          {
+            "id": "no-private-network-download",
+            "require": {
+              "not": {
+                "ref": "/launch/hook/hf_load"
+              }
+            },
+            "error": {
+              "concat": [
+                "Model '",
+                {
+                  "ref": "/model/name"
+                },
+                "' has llama-server download its own weights, which llamacpp:halobox cannot do from its container's private network. Load it on a llamacpp backend that runs on the host."
+              ]
+            }
+          }
+        ],
+        "execution": {
+          "cases": [
+            {
+              "id": "halobox",
+              "backends": [
+                "halobox"
+              ],
+              "kind": "container",
+              "container": "halobox",
+              "program": {
+                "source": "image_command",
+                "name": "llama-server"
+              },
+              "device_validation": {
+                "backend": "rocm"
+              }
+            }
+          ]
+        },
+        "mounts": [
+          {
+            "id": "main",
+            "artifact": "main",
+            "expand": "gguf_shards",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered"
+          },
+          {
+            "id": "mmproj",
+            "artifact": "mmproj",
+            "expand": "gguf_shards",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered",
+            "when": {
+              "ref": "/launch/hook/use_mmproj"
+            }
+          },
+          {
+            "id": "draft",
+            "artifact": "draft",
+            "expand": "gguf_shards",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered",
+            "when": {
+              "ref": "/launch/hook/use_draft_checkpoint"
+            }
+          }
+        ],
+        "address": {
+          "source": "process_start"
+        },
+        "diagnostics": [
+          {
+            "id": "loading",
+            "phase": "loading",
+            "level": "info",
+            "category": "LlamaCpp",
+            "format": "Loading model: {model:string}",
+            "when": "always"
+          },
+          {
+            "id": "settings",
+            "phase": "loading",
+            "level": "debug",
+            "category": "LlamaCpp",
+            "format": "Per-model settings: {settings:options}",
+            "when": "always"
+          },
+          {
+            "id": "backend",
+            "phase": "backend",
+            "level": "info",
+            "category": "LlamaCpp",
+            "format": "Using LlamaCpp Backend: {backend:string}",
+            "when": "always"
+          },
+          {
+            "id": "gguf",
+            "phase": "artifacts",
+            "level": "debug",
+            "category": "LlamaCpp",
+            "format": "Using GGUF: {main:path}",
+            "when": "main_present"
+          },
+          {
+            "id": "gpu",
+            "phase": "arguments",
+            "level": "debug",
+            "category": "LlamaCpp",
+            "format": "Using backend: {backend:string}\n[LlamaCpp] Use GPU: {gpu:boolean}",
+            "when": "always"
+          },
+          {
+            "id": "mmproj",
+            "phase": "arguments",
+            "level": "debug",
+            "category": "LlamaCpp",
+            "format": "Skipping mmproj argument since GPU mode is not enabled",
+            "when": "mmproj_cpu"
+          },
+          {
+            "id": "embedding",
+            "phase": "arguments",
+            "level": "info",
+            "category": "LlamaCpp",
+            "format": "Model supports embeddings, adding --embeddings flag",
+            "when": "embedding"
+          },
+          {
+            "id": "reranking",
+            "phase": "arguments",
+            "level": "info",
+            "category": "LlamaCpp",
+            "format": "Model supports reranking, adding --reranking flag",
+            "when": "reranking"
+          },
+          {
+            "id": "custom",
+            "phase": "custom_args",
+            "level": "debug",
+            "category": "LlamaCpp",
+            "format": "Adding custom arguments: {custom:string}",
+            "when": "custom_present"
+          },
+          {
+            "id": "starting",
+            "phase": "starting",
+            "level": "info",
+            "category": "LlamaCpp",
+            "format": "Starting llama-server...",
+            "when": "always"
+          },
+          {
+            "id": "loaded",
+            "phase": "success",
+            "level": "debug",
+            "category": "LlamaCpp",
+            "format": "Model loaded on port {loaded_port:integer}",
+            "when": "always"
+          }
+        ],
+        "load_log_policy": "none"
+      },
+      "operations": [
+        {
+          "id": "chat.buffered",
+          "operation": "chat_completion",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.max_tokens_alias",
+                "params": {}
+              },
+              {
+                "id": "llamacpp.tool_schema_limits",
+                "params": {}
+              }
+            ]
+          },
+          "response": {
+            "hooks": [
+              {
+                "id": "llamacpp.client_model",
+                "params": {}
+              }
+            ]
+          }
+        },
+        {
+          "id": "completion.buffered",
+          "operation": "completion",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/completions",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.max_tokens_alias",
+                "params": {}
+              }
+            ]
+          },
+          "response": {
+            "hooks": [
+              {
+                "id": "llamacpp.client_model",
+                "params": {}
+              }
+            ]
+          }
+        },
+        {
+          "id": "responses.buffered",
+          "operation": "responses",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/responses",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.tool_schema_limits",
+                "params": {}
+              }
+            ]
+          },
+          "response": {
+            "hooks": [
+              {
+                "id": "llamacpp.client_model",
+                "params": {}
+              }
+            ]
+          }
+        },
+        {
+          "id": "chat.streaming",
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.max_tokens_alias",
+                "params": {}
+              },
+              {
+                "id": "llamacpp.tool_schema_limits",
+                "params": {}
+              }
+            ]
+          }
+        },
+        {
+          "id": "completion.streaming",
+          "operation": "completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "responses.streaming",
+          "operation": "responses",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/responses",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.tool_schema_limits",
+                "params": {}
+              }
+            ]
+          }
+        },
+        {
+          "id": "embedding.buffered",
+          "operation": "embeddings",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/embeddings",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "reranking.buffered",
+          "operation": "reranking",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/rerank",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "slots.buffered",
+          "operation": "slots",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "GET",
+            "path": "/slots",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "slot-action.buffered",
+          "operation": "slot_action",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/slots/{slot_id}?action={action}",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "tokenize.buffered",
+          "operation": "tokenize",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/tokenize",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        }
+      ],
+      "hooks": {
+        "backend": {
+          "id": "llamacpp.backend.v1",
+          "params": {}
+        },
+        "launch": {
+          "id": "llamacpp.prepare.v1",
+          "params": {}
+        },
+        "runtime_options": {
+          "id": "llamacpp.runtime_options.v1",
+          "params": {}
+        }
+      },
+      "rationale": [
+        {
+          "subject": "",
+          "text": "Inactive builtin leaf. The independently fixed dormant execution grant is not installed in active policies. Registry/image, real runtime and packaging qualification and a disclosed activation stage remain required.",
+          "source": "container-conversion C8",
+          "tests": [
+            "ContainerProductionParityTest"
+          ]
+        }
+      ],
+      "containers": {
+        "halobox": {
+          "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
+          "pin": {
+            "source": "backend_versions",
+            "recipe": "llamacpp",
+            "backend": "halobox"
+          },
+          "devices": [
+            "/dev/dri",
+            "/dev/kfd"
+          ],
+          "cap_add": [],
+          "policy": "lemonade-isolated-v1",
+          "network": "private_internal",
+          "teardown": "stop_remove_reap",
+          "stop_grace_seconds": 10
+        }
+      }
+    }
+  },
+  "argv": [
+    "-m",
+    "/mnt/models/main.fake",
+    "--ctx-size",
+    "8192",
+    "--port",
+    "@PORT@",
+    "--host",
+    "0.0.0.0",
+    "--jinja",
+    "--metrics",
+    "--fixture",
+    "7",
+    "--parallel",
+    "1"
+  ],
+  "mounts": [
+    "/mnt/models/main.fake"
+  ],
+  "capability_mask": 3,
+  "blocker": "Source hf_load refusal precedes installation; launch.checks executes after all preparation phases."
+}

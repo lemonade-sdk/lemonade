@@ -1,0 +1,597 @@
+{
+  "definitions": {
+    "ds4": {
+      "diagnostics": {
+        "duplicate": [
+          {
+            "code": "duplicate_key",
+            "definition": "ds4",
+            "message": "Duplicate object key",
+            "pointer": "/id"
+          }
+        ],
+        "external": [
+          {
+            "code": "invalid_value",
+            "definition": "ds4",
+            "message": "External named flags are forbidden",
+            "pointer": "/metadata/options/0/cli_flag"
+          }
+        ],
+        "required": [
+          {
+            "code": "invalid_relationship",
+            "definition": "ds4",
+            "message": "Local definition requires only launch",
+            "pointer": "/launch"
+          }
+        ],
+        "unknown": [
+          {
+            "code": "unknown_key",
+            "definition": "ds4",
+            "message": "Unknown field",
+            "pointer": "/unknown~0~1key"
+          }
+        ],
+        "version": [
+          {
+            "code": "invalid_value",
+            "definition": "ds4",
+            "message": "Incorrect constant",
+            "pointer": "/schema_version"
+          }
+        ]
+      },
+      "digest": "sha256:ad7c11aee74f3173916a525b18539a93d4a84b01bf8638b4421bd8f4ebc243ad",
+      "expressions": "sha256:5125fc0c9cda5e4f1ee7941b2a931eacb70cdb002dfbaede704f9da9c2f15a5b",
+      "programs": "sha256:246a8cc3392a97efd195ddc81a81182caec206b7abf756d156f389bb0ac99b0a",
+      "records": "sha256:ad7c11aee74f3173916a525b18539a93d4a84b01bf8638b4421bd8f4ebc243ad",
+      "source_bytes": "sha256:dd85fbc54c8c747b26685dfe496146fd49af347d9b8876e2976c54176384bd17"
+    },
+    "hrx": {
+      "diagnostics": {
+        "duplicate": [
+          {
+            "code": "duplicate_key",
+            "definition": "hrx",
+            "message": "Duplicate object key",
+            "pointer": "/id"
+          }
+        ],
+        "external": [
+          {
+            "code": "reserved_hook",
+            "definition": "hrx",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/artifacts/main/hook/id"
+          },
+          {
+            "code": "invalid_value",
+            "definition": "hrx",
+            "message": "External named flags are forbidden",
+            "pointer": "/metadata/options/0/cli_flag"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "hrx",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/operations/0/request/hooks/0/id"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "hrx",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/operations/0/request/hooks/1/id"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "hrx",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/operations/0/response/hooks/0/id"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "hrx",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/operations/1/request/hooks/0/id"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "hrx",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/operations/1/response/hooks/0/id"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "hrx",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/operations/2/request/hooks/0/id"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "hrx",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/operations/2/response/hooks/0/id"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "hrx",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/operations/3/request/hooks/0/id"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "hrx",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/operations/3/request/hooks/1/id"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "hrx",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/operations/5/request/hooks/0/id"
+          }
+        ],
+        "required": [
+          {
+            "code": "invalid_relationship",
+            "definition": "hrx",
+            "message": "Local definition requires only launch",
+            "pointer": "/launch"
+          }
+        ],
+        "unknown": [
+          {
+            "code": "unknown_key",
+            "definition": "hrx",
+            "message": "Unknown field",
+            "pointer": "/unknown~0~1key"
+          }
+        ],
+        "version": [
+          {
+            "code": "invalid_value",
+            "definition": "hrx",
+            "message": "Incorrect constant",
+            "pointer": "/schema_version"
+          }
+        ]
+      },
+      "digest": "sha256:77ad88cfc071fdc6cb824b5a60521e25acf613f07c169acc25615d130112737a",
+      "expressions": "sha256:354a34aaabc28f9189a99975464e76c53dfdb79aeda72392dee23de32e9bb89e",
+      "programs": "sha256:96bd08a98e572be4449efbc829eba597d0ad888580c83e0d0487f13ac9488e2e",
+      "records": "sha256:77ad88cfc071fdc6cb824b5a60521e25acf613f07c169acc25615d130112737a",
+      "source_bytes": "sha256:64c3fe332d2581a9c87ba4fffcd535d741f58a1fd570156a84423246b7ae781f"
+    },
+    "kokoro": {
+      "diagnostics": {
+        "duplicate": [
+          {
+            "code": "duplicate_key",
+            "definition": "kokoro",
+            "message": "Duplicate object key",
+            "pointer": "/id"
+          }
+        ],
+        "external": [
+          {
+            "code": "reserved_hook",
+            "definition": "kokoro",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/hooks/launch/id"
+          }
+        ],
+        "required": [
+          {
+            "code": "invalid_relationship",
+            "definition": "kokoro",
+            "message": "Local definition requires only launch",
+            "pointer": "/launch"
+          }
+        ],
+        "unknown": [
+          {
+            "code": "unknown_key",
+            "definition": "kokoro",
+            "message": "Unknown field",
+            "pointer": "/unknown~0~1key"
+          }
+        ],
+        "version": [
+          {
+            "code": "invalid_value",
+            "definition": "kokoro",
+            "message": "Incorrect constant",
+            "pointer": "/schema_version"
+          }
+        ]
+      },
+      "digest": "sha256:b557cb134d365266752db624c80e67f4771fe00883c170f59d2ba37943fc0efb",
+      "expressions": "sha256:155ad6696279da0ebea2d3c7a086a1953b197358a0aef1b91ac528da161c2936",
+      "programs": "sha256:db185b85a46794a9eea13f0e25adcec5675bc003055482538039098e67ce7cca",
+      "records": "sha256:b557cb134d365266752db624c80e67f4771fe00883c170f59d2ba37943fc0efb",
+      "source_bytes": "sha256:cbab01721de1f5bdacffef4e835bd5dd035be3355f341640cd9d2611f7a0bbb3"
+    },
+    "moonshine": {
+      "diagnostics": {
+        "duplicate": [
+          {
+            "code": "duplicate_key",
+            "definition": "moonshine",
+            "message": "Duplicate object key",
+            "pointer": "/id"
+          }
+        ],
+        "external": [
+          {
+            "code": "reserved_hook",
+            "definition": "moonshine",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/hooks/launch/id"
+          },
+          {
+            "code": "invalid_value",
+            "definition": "moonshine",
+            "message": "External named flags are forbidden",
+            "pointer": "/metadata/options/0/cli_flag"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "moonshine",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/operations/0/handler/id"
+          }
+        ],
+        "required": [
+          {
+            "code": "invalid_relationship",
+            "definition": "moonshine",
+            "message": "Local definition requires only launch",
+            "pointer": "/launch"
+          }
+        ],
+        "unknown": [
+          {
+            "code": "unknown_key",
+            "definition": "moonshine",
+            "message": "Unknown field",
+            "pointer": "/unknown~0~1key"
+          }
+        ],
+        "version": [
+          {
+            "code": "invalid_value",
+            "definition": "moonshine",
+            "message": "Incorrect constant",
+            "pointer": "/schema_version"
+          }
+        ]
+      },
+      "digest": "sha256:beacb2219d34dbb1184f33fe525944197ad17be4f0ce8287e60538c493cfd58d",
+      "expressions": "sha256:d3153fba10c163b3ee8554a1a53942ca3936eb598830a1856c6272b5a115327b",
+      "programs": "sha256:92f0682255dfff7240d513bb90fd350bb6b117eb947884a5e74cab6d47581892",
+      "records": "sha256:beacb2219d34dbb1184f33fe525944197ad17be4f0ce8287e60538c493cfd58d",
+      "source_bytes": "sha256:9777cdeb27e63151c74da9bae47003caa1804ba0de8970c523a4c00952b8bb25"
+    },
+    "onnxruntime": {
+      "diagnostics": {
+        "duplicate": [
+          {
+            "code": "duplicate_key",
+            "definition": "onnxruntime",
+            "message": "Duplicate object key",
+            "pointer": "/id"
+          }
+        ],
+        "external": [
+          {
+            "code": "reserved_hook",
+            "definition": "onnxruntime",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/artifacts/main/hook/id"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "onnxruntime",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/hooks/launch/id"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "onnxruntime",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/hooks/start_failure/id"
+          },
+          {
+            "code": "invalid_value",
+            "definition": "onnxruntime",
+            "message": "External named flags are forbidden",
+            "pointer": "/metadata/options/0/cli_flag"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "onnxruntime",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/operations/0/handler/id"
+          }
+        ],
+        "required": [
+          {
+            "code": "invalid_relationship",
+            "definition": "onnxruntime",
+            "message": "Local definition requires only launch",
+            "pointer": "/launch"
+          }
+        ],
+        "unknown": [
+          {
+            "code": "unknown_key",
+            "definition": "onnxruntime",
+            "message": "Unknown field",
+            "pointer": "/unknown~0~1key"
+          }
+        ],
+        "version": [
+          {
+            "code": "invalid_value",
+            "definition": "onnxruntime",
+            "message": "Incorrect constant",
+            "pointer": "/schema_version"
+          }
+        ]
+      },
+      "digest": "sha256:d59b9bf5764d6c0254ed9ccf9ad86661481f90310a7cb114ee751abb0b73d0de",
+      "expressions": "sha256:1150646417654a7d554a78a7f67956b4fb5f5d240ba60c7e1fd7e83b9fbd9752",
+      "programs": "sha256:5391d5fc1007072509c7b9d8abc8d153cf53983d3817121bb278b67d00cb1f0a",
+      "records": "sha256:d59b9bf5764d6c0254ed9ccf9ad86661481f90310a7cb114ee751abb0b73d0de",
+      "source_bytes": "sha256:4c117e1c2c86fc4becf10c84c1ef11cb04ad2cc94e993c25eee33e8c291ecbd6"
+    },
+    "ryzenai": {
+      "diagnostics": {
+        "duplicate": [
+          {
+            "code": "duplicate_key",
+            "definition": "ryzenai",
+            "message": "Duplicate object key",
+            "pointer": "/id"
+          }
+        ],
+        "external": [],
+        "required": [
+          {
+            "code": "invalid_relationship",
+            "definition": "ryzenai",
+            "message": "Local definition requires only launch",
+            "pointer": "/launch"
+          }
+        ],
+        "unknown": [
+          {
+            "code": "unknown_key",
+            "definition": "ryzenai",
+            "message": "Unknown field",
+            "pointer": "/unknown~0~1key"
+          }
+        ],
+        "version": [
+          {
+            "code": "invalid_value",
+            "definition": "ryzenai",
+            "message": "Incorrect constant",
+            "pointer": "/schema_version"
+          }
+        ]
+      },
+      "digest": "sha256:929ac3ffcb39681b9629b0e334669c3d68a284abeb30b5c288f9d32f1b452234",
+      "expressions": "sha256:a1e4def668eaec7483034be5a687b2b86be65c39dedea1b56213a191a088739f",
+      "programs": "sha256:246a8cc3392a97efd195ddc81a81182caec206b7abf756d156f389bb0ac99b0a",
+      "records": "sha256:929ac3ffcb39681b9629b0e334669c3d68a284abeb30b5c288f9d32f1b452234",
+      "source_bytes": "sha256:562afd89be991c9281d679e1f596b39ed417a21150d6d12f9961f0bffca12b6f"
+    },
+    "thinksound": {
+      "diagnostics": {
+        "duplicate": [
+          {
+            "code": "duplicate_key",
+            "definition": "thinksound",
+            "message": "Duplicate object key",
+            "pointer": "/id"
+          }
+        ],
+        "external": [
+          {
+            "code": "invalid_value",
+            "definition": "thinksound",
+            "message": "External named flags are forbidden",
+            "pointer": "/metadata/options/0/cli_flag"
+          }
+        ],
+        "required": [
+          {
+            "code": "invalid_relationship",
+            "definition": "thinksound",
+            "message": "Local definition requires only launch",
+            "pointer": "/launch"
+          }
+        ],
+        "unknown": [
+          {
+            "code": "unknown_key",
+            "definition": "thinksound",
+            "message": "Unknown field",
+            "pointer": "/unknown~0~1key"
+          }
+        ],
+        "version": [
+          {
+            "code": "invalid_value",
+            "definition": "thinksound",
+            "message": "Incorrect constant",
+            "pointer": "/schema_version"
+          }
+        ]
+      },
+      "digest": "sha256:a157cbfac9b8986a89605981f2282ef79d8cdb9635e426f4ae9d6cc5853389d7",
+      "expressions": "sha256:30993c8241a3335284053545b1f51aeff8f8bb7d1968607cb58b46482c9d2712",
+      "programs": "sha256:5e19ebd12123bb61cef32e20b7754c97beb3df4d07f3ce0e35a21f52c834b614",
+      "records": "sha256:a157cbfac9b8986a89605981f2282ef79d8cdb9635e426f4ae9d6cc5853389d7",
+      "source_bytes": "sha256:be23d5316a254c75e457120b9593a9afb2c0eaaf7cec6621a141900e2f820982"
+    },
+    "trellis": {
+      "diagnostics": {
+        "duplicate": [
+          {
+            "code": "duplicate_key",
+            "definition": "trellis",
+            "message": "Duplicate object key",
+            "pointer": "/id"
+          }
+        ],
+        "external": [
+          {
+            "code": "invalid_value",
+            "definition": "trellis",
+            "message": "External named flags are forbidden",
+            "pointer": "/metadata/options/0/cli_flag"
+          },
+          {
+            "code": "invalid_value",
+            "definition": "trellis",
+            "message": "External named flags are forbidden",
+            "pointer": "/metadata/options/1/cli_flag"
+          },
+          {
+            "code": "reserved_hook",
+            "definition": "trellis",
+            "message": "Compiled hooks are reserved for built-in definitions",
+            "pointer": "/operations/0/handler/id"
+          }
+        ],
+        "required": [
+          {
+            "code": "invalid_relationship",
+            "definition": "trellis",
+            "message": "Local definition requires only launch",
+            "pointer": "/launch"
+          }
+        ],
+        "unknown": [
+          {
+            "code": "unknown_key",
+            "definition": "trellis",
+            "message": "Unknown field",
+            "pointer": "/unknown~0~1key"
+          }
+        ],
+        "version": [
+          {
+            "code": "invalid_value",
+            "definition": "trellis",
+            "message": "Incorrect constant",
+            "pointer": "/schema_version"
+          }
+        ]
+      },
+      "digest": "sha256:910db9a576cce235e1e7ed63bf5a628fda7192c082d3255b1d58230172a6a773",
+      "expressions": "sha256:c18f562ebff47f290469d5cb8e5c6dc56d4ce59783f7fb2612ac549ee9073bc0",
+      "programs": "sha256:08317cfe87571f392d393d0cd3518dbbe5b3da46ec396dface2bbebf30ebbf9c",
+      "records": "sha256:910db9a576cce235e1e7ed63bf5a628fda7192c082d3255b1d58230172a6a773",
+      "source_bytes": "sha256:d61c2a60b67e999e05d749e0a7e59364813cd86ec71ebf9dc08fe300cb6da690"
+    }
+  },
+  "features": {
+    "artifact": [
+      "default",
+      "active_snapshot",
+      "sentinel_directory:first_existing",
+      "sentinel_file:first_existing",
+      "check:nonempty",
+      "files_from:variant_directory"
+    ],
+    "definition_schema_version": 1,
+    "expressions": [
+      "literal",
+      "ref",
+      "concat",
+      "string",
+      "coalesce",
+      "present",
+      "eq",
+      "gt",
+      "all",
+      "any",
+      "not",
+      "when",
+      "parent_path",
+      "path_join"
+    ],
+    "hook_origins": [
+      "builtin"
+    ],
+    "hooks": [
+      "artifacts:llamacpp.gguf",
+      "request:llamacpp.max_tokens_alias",
+      "request:llamacpp.tool_schema_limits",
+      "response:llamacpp.client_model",
+      "launch:kokoro.voice_index",
+      "launch:moonshine.model_arch",
+      "operation:moonshine.transcription:transcription",
+      "artifacts:onnxruntime.model_directory",
+      "launch:onnxruntime.servable_directory",
+      "operation:onnxruntime.classify:classification",
+      "start_failure:onnxruntime.startup_error",
+      "sink_operation:trellis.mesh:model_3d_generation"
+    ],
+    "install": [
+      "github_release",
+      "external_only",
+      "machine_arch"
+    ],
+    "launch": [
+      "install_phase",
+      "hook_phase",
+      "custom_args_phase",
+      "platform_requirement",
+      "custom_arg_defaults",
+      "fixed_backend_by_os",
+      "posix_executable_loader_path",
+      "environment_order"
+    ],
+    "operations": [
+      "chat_completion",
+      "completion",
+      "responses",
+      "embeddings",
+      "reranking",
+      "classification",
+      "transcription",
+      "streaming_transcription",
+      "text_to_speech",
+      "audio_generation",
+      "model_3d_generation",
+      "slots",
+      "slot_action",
+      "tokenize"
+    ],
+    "ports": [
+      "standard",
+      "probe",
+      "offset"
+    ],
+    "schema": "sha256:43c4c93ac73f3cc88d9773c2ad55cdadc83f6497987c9ca8b449ceef4efff818",
+    "transports": [
+      "http_json:json.v1",
+      "http_json:json.v1:get",
+      "http_sse:openai_sse.v1",
+      "http_bytes:raw_bytes.v1",
+      "realtime:jsonl.v1:tcp"
+    ],
+    "unsupported_messages": [
+      "chat_completion",
+      "completion",
+      "responses"
+    ]
+  },
+  "source_sha": "410b5b4e9f9c7bdfcd1031ea6911795a8cce09ae"
+}

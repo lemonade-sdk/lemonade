@@ -1,0 +1,7 @@
+[
+  {"name":"forward-external-reference","space":"external","contract":0,"parents":1,"valid":true},
+  {"name":"eight-documents","space":"builtin","contract":1,"parents":7,"valid":true},
+  {"name":"nine-documents","space":"builtin","contract":1,"parents":8,"valid":false,"code":"limit_exceeded"},
+  {"name":"self-cycle","cycle":1,"code":"dependency_cycle"},
+  {"name":"three-node-cycle","cycle":3,"code":"dependency_cycle"}
+]

@@ -1,0 +1,97 @@
+{
+  "schema_version": 2,
+  "id": "gufo",
+  "recipe": "gufo",
+  "merge": {
+    "kind": "container",
+    "metadata": {
+      "display_name": "Gufo",
+      "server_name": "gufo",
+      "log_category": "Gufo",
+      "binary": "gufo",
+      "default_device": "gpu",
+      "slot_policy": "standard",
+      "selectable_backend": false,
+      "uses_ctx_size": true,
+      "dynamic_models": false,
+      "options": [
+        {"id": "args", "name": "gufo_args", "cli_flag": "--gufo-args", "default_value": "", "type_name": "ARGS", "value_type": "string", "help": "Custom arguments to pass to gufo serve llm", "group": "Gufo Options"}
+      ],
+      "support": [
+        {"id": "rocm", "backend": "rocm", "tier": "guest", "format": "container", "supported_os": ["linux"], "devices": {"amd_gpu": ["gfx1151"]}, "device_summary": "AMD Strix Halo"}
+      ],
+      "supported_modes": ["chat"],
+      "required_checkpoints": ["main"],
+      "default_capabilities": [],
+      "web_display_name": "Gufo",
+      "rocm_channels": [],
+      "exposes_prometheus_metrics": true,
+      "rocm_requires_cwsr_fix": true,
+      "version_policy": "exact",
+      "self_manages_downloads": false,
+      "takes_args": true,
+      "arg_variants": [],
+      "bin_variants": [],
+      "config_extra": {},
+      "streams_model_from_storage": false
+    },
+    "containers": {
+      "rocm": {"repository": "docker.io/kyuz0/amd-strix-halo-toolboxes", "pin": {"source": "backend_versions", "recipe": "gufo", "backend": "rocm"}, "devices": ["/dev/dri", "/dev/kfd"], "cap_add": [], "policy": "lemonade-isolated-v1", "network": "private_internal", "teardown": "stop_remove_reap", "stop_grace_seconds": 10}
+    },
+    "install": {
+      "strategy": "oci"
+    },
+    "artifacts": {
+      "main": {"role": "main", "strategy": "resolved_path", "missing_error": {"concat": ["GGUF file not found for checkpoint: ", {"ref": "/model/checkpoint"}]}, "hook": {"id": "llamacpp.artifacts.v1", "params": {}}},
+      "mmproj": {"role": "mmproj", "strategy": "resolved_path", "required_when": false, "missing_error": "Optional model file is missing", "hook": {"id": "llamacpp.artifacts.v1", "params": {}}},
+      "draft": {"role": "draft", "strategy": "resolved_path", "required_when": false, "missing_error": "Optional model file is missing", "hook": {"id": "llamacpp.artifacts.v1", "params": {}}}
+    },
+    "launch": {
+      "prepare_order": ["backend", "artifacts", "program", "ports"],
+      "backend": {"fixed": "rocm"},
+      "execution": {"cases": [{"id": "rocm-container", "backends": ["rocm"], "kind": "container", "container": "rocm", "program": {"source": "image_command", "name": "gufo"}}]},
+      "mounts": [
+        {"id": "main", "artifact": "main", "expand": "gguf_shards", "destination": "/mnt/models", "layout": "basename_numbered"},
+        {"id": "mmproj", "artifact": "mmproj", "expand": "gguf_shards", "destination": "/mnt/models", "layout": "basename_numbered", "when": {"not": {"eq": [{"ref": "/artifacts/mmproj"}, ""]}}},
+        {"id": "draft", "artifact": "draft", "expand": "gguf_shards", "destination": "/mnt/models", "layout": "basename_numbered", "when": {"not": {"eq": [{"ref": "/artifacts/draft"}, ""]}}}
+      ],
+      "address": {"source": "process_start"},
+      "ports": [
+        {"name": "http", "reject_zero": true, "error": "No HTTP port available"}
+      ],
+      "argv": [
+        {"id": "serve", "args": ["serve", "llm"]},
+        {"id": "model", "flag": "--model", "value": {"ref": "/artifacts/main"}},
+        {"id": "name", "flag": "--served-model-name", "value": {"ref": "/model/name"}},
+        {"id": "context", "flag": "--context", "value": {"string": {"ref": "/options/ctx_size"}}},
+        {"id": "host", "flag": "--host", "value": "0.0.0.0"},
+        {"id": "port", "flag": "--port", "value": {"string": {"ref": "/launch/ports/http"}}},
+        {"id": "mmproj", "flag": "--mmproj", "value": {"ref": "/artifacts/mmproj"}, "when": {"not": {"eq": [{"ref": "/artifacts/mmproj"}, ""]}}},
+        {"id": "speculative", "flag": "--speculative", "value": {"ref": "/model/speculative_mode"}, "when": {"not": {"eq": [{"ref": "/artifacts/draft"}, ""]}}},
+        {"id": "dflash2", "flag": "--dflash-model", "value": {"ref": "/artifacts/draft"}, "when": {"all": [{"not": {"eq": [{"ref": "/artifacts/draft"}, ""]}}, {"eq": [{"ref": "/model/speculative_mode"}, "dflash2"]}]}},
+        {"id": "mtp", "flag": "--mtp-model", "value": {"ref": "/artifacts/draft"}, "when": {"all": [{"not": {"eq": [{"ref": "/artifacts/draft"}, ""]}}, {"eq": [{"ref": "/model/speculative_mode"}, "mtp"]}]}},
+        {"id": "dspark", "flag": "--dspark-model", "value": {"ref": "/artifacts/draft"}, "when": {"all": [{"not": {"eq": [{"ref": "/artifacts/draft"}, ""]}}, {"eq": [{"ref": "/model/speculative_mode"}, "dspark"]}]}}
+      ],
+      "environment": {"preset": "inherit"},
+      "working_directory": "inherit",
+      "output": {"inherit_levels": ["info", "debug", "trace"], "filter": true},
+      "readiness": {"port": "http", "path": "/ready", "timeout": "global"},
+      "watchdog": {"policy": "standard", "port": "http", "path": "/ready"},
+      "checks": [
+        {"id": "draft-mode", "require": {"any": [{"eq": [{"ref": "/artifacts/draft"}, ""]}, {"eq": [{"ref": "/model/speculative_mode"}, "dflash2"]}, {"eq": [{"ref": "/model/speculative_mode"}, "mtp"]}, {"eq": [{"ref": "/model/speculative_mode"}, "dspark"]}]}, "error": {"concat": ["gufo: a draft model needs gufo_speculative set to dflash2, mtp or dspark, not '", {"ref": "/model/speculative_mode"}, "'"]}}
+      ],
+      "custom_args": {"option": "args", "reserved": ["-m", "--model", "-c", "--context", "--mmproj", "--served-model-name", "--speculative", "--dflash-model", "--dspark-model", "--mtp-model", "-i", "--host", "-p", "--port", "--api-key"], "error_prefix": "Invalid custom gufo arguments:\n"}
+    },
+    "operations": [
+      {"id": "chat.buffered", "operation": "chat_completion", "delivery": "buffered", "model_modes": ["*"], "transport": {"kind": "http_json", "method": "POST", "path": "/v1/chat/completions", "port": "http", "timeout": "global", "response_codec": "json.v1"}, "request": {"base": "identity"}},
+      {"id": "chat.streaming", "operation": "chat_completion", "delivery": "streaming", "model_modes": ["*"], "transport": {"kind": "http_sse", "method": "POST", "path": "/v1/chat/completions", "port": "http", "timeout": "global", "stream_codec": "openai_sse.v1"}, "request": {"base": "identity"}},
+      {"id": "completion.buffered", "operation": "completion", "delivery": "buffered", "model_modes": ["*"], "transport": {"kind": "http_json", "method": "POST", "path": "/v1/completions", "port": "http", "timeout": "global", "response_codec": "json.v1"}, "request": {"base": "identity"}},
+      {"id": "completion.streaming", "operation": "completion", "delivery": "streaming", "model_modes": ["*"], "transport": {"kind": "http_sse", "method": "POST", "path": "/v1/completions", "port": "http", "timeout": "global", "stream_codec": "openai_sse.v1"}, "request": {"base": "identity"}},
+      {"id": "responses.buffered", "operation": "responses", "delivery": "buffered", "model_modes": ["*"], "transport": {"kind": "http_json", "method": "POST", "path": "/v1/responses", "port": "http", "timeout": "global", "response_codec": "json.v1"}, "request": {"base": "identity"}},
+      {"id": "responses.streaming", "operation": "responses", "delivery": "streaming", "model_modes": ["*"], "transport": {"kind": "http_sse", "method": "POST", "path": "/v1/responses", "port": "http", "timeout": "global", "stream_codec": "openai_sse.v1"}, "request": {"base": "identity"}}
+    ],
+    "rationale": [
+      {"subject": "", "text": "Inactive builtin leaf pending registry, real container/network/device/inference/cancellation and packaging qualification. The fixed execution grant is reviewed separately; no active leaf policy or registration is installed.", "source": "container-conversion C4b", "tests": ["ContainerExecutionTest"]}
+    ]
+  }
+}

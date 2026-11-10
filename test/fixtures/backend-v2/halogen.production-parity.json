@@ -1,0 +1,452 @@
+{
+  "engine": "halogen",
+  "id": "halogen",
+  "recipe": "halogen",
+  "backend": "rocm",
+  "stack_revision": "cbbeeb5270b19e06cfd9c150233655776392bd38",
+  "active": false,
+  "registry_validated": false,
+  "repository": "ghcr.io/peonist-ai/halogen-flash-server",
+  "pin": "latest@sha256:f4ee69cafd334f5fed1173e998550dea00505e0df2bb3cb90b60d7a7aa1332f4",
+  "owner_digest": "sha256:b77ec6ac0140c8a63c7a42fd044dff9d2004b9b75055c904e95b9a62c6c25029",
+  "authored_lines": 146,
+  "defaults": null,
+  "models": {
+    "Qwen3.8-Flash-Next-Halogen": {
+      "checkpoint": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-v2.hgn",
+      "recipe": "halogen",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling",
+        "vision"
+      ],
+      "size": 118.81,
+      "min_resident_gb": 33.0,
+      "halogen_lookup_table": "qwen38-flash-next-ngram.hgn",
+      "halogen_vision_tower": "qwen38-flash-next-vision.hgn"
+    }
+  },
+  "metadata": {
+    "display_name": "Halogen Flash",
+    "server_name": "halogen",
+    "log_category": "Halogen",
+    "binary": "",
+    "default_device": "gpu",
+    "slot_policy": "exclusive_host",
+    "selectable_backend": false,
+    "uses_ctx_size": true,
+    "dynamic_models": false,
+    "options": [],
+    "support": [
+      {
+        "id": "rocm",
+        "backend": "rocm",
+        "tier": "guest",
+        "format": "container",
+        "supported_os": [
+          "linux"
+        ],
+        "devices": {
+          "amd_gpu": [
+            "gfx1151"
+          ]
+        },
+        "device_summary": "AMD Strix Halo"
+      }
+    ],
+    "supported_modes": [
+      "chat"
+    ],
+    "required_checkpoints": [
+      "main"
+    ],
+    "default_capabilities": [],
+    "web_display_name": "Halogen Flash",
+    "rocm_channels": [],
+    "exposes_prometheus_metrics": false,
+    "rocm_requires_cwsr_fix": true,
+    "version_policy": "exact",
+    "self_manages_downloads": false,
+    "takes_args": false,
+    "arg_variants": [],
+    "bin_variants": [],
+    "config_extra": {},
+    "streams_model_from_storage": true
+  },
+  "diagnostics": [
+    {
+      "id": "starting",
+      "phase": "starting",
+      "level": "info",
+      "category": "Halogen",
+      "format": "Starting {model:string} on port {port:integer}",
+      "when": "always"
+    }
+  ],
+  "rewrite_domain": "canonical_path",
+  "c7b_fixture": "c7b.halogen.json",
+  "c7b_fixture_sha256": "57ff4be9c461639797b519b1c2d41de350d9e6020a7df8f65d2f112e36c41d08",
+  "production_definition": {
+    "schema_version": 2,
+    "id": "halogen",
+    "recipe": "halogen",
+    "merge": {
+      "kind": "container",
+      "metadata": {
+        "display_name": "Halogen Flash",
+        "server_name": "halogen",
+        "log_category": "Halogen",
+        "binary": "",
+        "default_device": "gpu",
+        "slot_policy": "exclusive_host",
+        "selectable_backend": false,
+        "uses_ctx_size": true,
+        "dynamic_models": false,
+        "options": [],
+        "support": [
+          {
+            "id": "rocm",
+            "backend": "rocm",
+            "tier": "guest",
+            "format": "container",
+            "supported_os": [
+              "linux"
+            ],
+            "devices": {
+              "amd_gpu": [
+                "gfx1151"
+              ]
+            },
+            "device_summary": "AMD Strix Halo"
+          }
+        ],
+        "supported_modes": [
+          "chat"
+        ],
+        "required_checkpoints": [
+          "main"
+        ],
+        "default_capabilities": [],
+        "web_display_name": "Halogen Flash",
+        "rocm_channels": [],
+        "exposes_prometheus_metrics": false,
+        "rocm_requires_cwsr_fix": true,
+        "version_policy": "exact",
+        "self_manages_downloads": false,
+        "takes_args": false,
+        "arg_variants": [],
+        "bin_variants": [],
+        "config_extra": {},
+        "streams_model_from_storage": true
+      },
+      "containers": {
+        "rocm": {
+          "repository": "ghcr.io/peonist-ai/halogen-flash-server",
+          "pin": {
+            "source": "backend_versions",
+            "recipe": "halogen",
+            "backend": "rocm"
+          },
+          "devices": [
+            "/dev/dri",
+            "/dev/kfd"
+          ],
+          "cap_add": [],
+          "policy": "lemonade-isolated-v1",
+          "network": "private_internal",
+          "teardown": "stop_remove_reap",
+          "stop_grace_seconds": 10
+        }
+      },
+      "install": {
+        "strategy": "oci"
+      },
+      "artifacts": {
+        "main": {
+          "role": "main",
+          "strategy": "resolved_path",
+          "missing_error": "Missing main"
+        },
+        "table": {
+          "role": "halogen_lookup_table",
+          "strategy": "resolved_path",
+          "missing_error": "Missing halogen_lookup_table"
+        },
+        "tokenizer": {
+          "role": "halogen_tokenizer",
+          "strategy": "resolved_path",
+          "missing_error": "Missing halogen_tokenizer"
+        },
+        "vision": {
+          "role": "halogen_vision_tower",
+          "strategy": "resolved_path",
+          "missing_error": "Missing halogen_vision_tower",
+          "required_when": false
+        }
+      },
+      "launch": {
+        "prepare_order": [
+          "backend",
+          "install",
+          "artifacts",
+          "program",
+          "ports"
+        ],
+        "backend": {
+          "fixed": "rocm"
+        },
+        "execution": {
+          "cases": [
+            {
+              "id": "rocm-container",
+              "backends": [
+                "rocm"
+              ],
+              "kind": "container",
+              "container": "rocm",
+              "program": {
+                "source": "image_entrypoint"
+              }
+            }
+          ]
+        },
+        "mounts": [
+          {
+            "id": "main",
+            "artifact": "main",
+            "expand": "file",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered"
+          },
+          {
+            "id": "table",
+            "artifact": "table",
+            "expand": "file",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered"
+          },
+          {
+            "id": "tokenizer",
+            "artifact": "tokenizer",
+            "expand": "directory_files",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered"
+          },
+          {
+            "id": "vision",
+            "artifact": "vision",
+            "expand": "file",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered",
+            "when": {
+              "not": {
+                "eq": [
+                  {
+                    "ref": "/artifacts/vision"
+                  },
+                  ""
+                ]
+              }
+            }
+          }
+        ],
+        "address": {
+          "source": "process_start"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "reject_zero": true,
+            "error": "No HTTP port available"
+          }
+        ],
+        "argv": [],
+        "environment": {
+          "preset": "inherit",
+          "set": [
+            {
+              "name": "HALOGEN_CHECKPOINT",
+              "value": {
+                "ref": "/artifacts/main"
+              }
+            },
+            {
+              "name": "HALOGEN_NGRAM_TABLE",
+              "value": {
+                "ref": "/artifacts/table"
+              }
+            },
+            {
+              "name": "HALOGEN_TOKENIZER",
+              "value": {
+                "ref": "/artifacts/tokenizer"
+              }
+            },
+            {
+              "name": "HALOGEN_VISION_TOWER",
+              "value": {
+                "ref": "/artifacts/vision"
+              },
+              "when": {
+                "not": {
+                  "eq": [
+                    {
+                      "ref": "/artifacts/vision"
+                    },
+                    ""
+                  ]
+                }
+              }
+            },
+            {
+              "name": "HALOGEN_API_PORT",
+              "value": {
+                "string": {
+                  "ref": "/launch/ports/http"
+                }
+              }
+            },
+            {
+              "name": "HALOGEN_CTX",
+              "value": {
+                "string": {
+                  "ref": "/options/ctx_size"
+                }
+              }
+            }
+          ]
+        },
+        "working_directory": "inherit",
+        "output": {
+          "inherit_levels": [
+            "info",
+            "debug",
+            "trace"
+          ],
+          "filter": false
+        },
+        "readiness": {
+          "port": "http",
+          "path": "/health",
+          "timeout": {
+            "source": "global",
+            "floor_seconds": 1800
+          }
+        },
+        "watchdog": {
+          "policy": "standard",
+          "port": "http",
+          "path": "/health"
+        },
+        "direct_stream_policy": "builtin_container_legacy",
+        "diagnostics": [
+          {
+            "id": "starting",
+            "phase": "starting",
+            "level": "info",
+            "category": "Halogen",
+            "format": "Starting {model:string} on port {port:integer}",
+            "when": "always"
+          }
+        ],
+        "load_log_policy": "none"
+      },
+      "operations": [
+        {
+          "id": "chat.buffered",
+          "operation": "chat_completion",
+          "delivery": "buffered",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "chat.streaming",
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "completion.streaming",
+          "operation": "completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "responses.streaming",
+          "operation": "responses",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/responses",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        }
+      ],
+      "model_contract": "halogen_hgn_v1",
+      "rationale": [
+        {
+          "subject": "",
+          "text": "Inactive builtin leaf. The independently fixed dormant execution grant is not installed in active policies. Registry/image, real runtime and packaging qualification and a disclosed activation stage remain required.",
+          "source": "container-conversion C8",
+          "tests": [
+            "ContainerProductionParityTest"
+          ]
+        }
+      ]
+    }
+  },
+  "argv": [],
+  "mounts": [
+    "/mnt/models/main.fake",
+    "/mnt/models/table.hgn",
+    "/mnt/models/tokenizer/tokenizer.json"
+  ],
+  "capability_mask": 0
+}

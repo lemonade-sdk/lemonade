@@ -28,6 +28,7 @@ std::string read_ref_main(const std::filesystem::path& model_cache_path);
 // Records the revision. An empty revision writes nothing.
 void write_ref_main(const std::filesystem::path& model_cache_path,
                     const std::string& revision);
+std::string active_snapshot_or_cache_path(const std::string& model_cache_path);
 
 // Provider-qualified cache directory name for a repository id.
 std::string repo_id_to_cache_dir_name(const std::string& repo_id,

@@ -1,0 +1,43 @@
+{
+  "recipes": {
+    "llamacpp": ["ctxSize", "llamacppBackend", "llamacppArgs", "mergeArgs", "pinned", "saveOptions"],
+    "whispercpp": ["whispercppBackend", "whispercppArgs", "mergeArgs", "pinned", "saveOptions"],
+    "moonshine": ["moonshineArgs", "mergeArgs", "pinned", "saveOptions"],
+    "flm": ["ctxSize", "mergeArgs", "pinned", "saveOptions"],
+    "ryzenai-llm": ["ctxSize", "pinned", "saveOptions"],
+    "sd-cpp": ["sdcppBackend", "steps", "cfgScale", "width", "height", "mergeArgs", "pinned", "saveOptions"],
+    "vllm": ["ctxSize", "vllmBackend", "vllmArgs", "mergeArgs", "pinned", "saveOptions"],
+    "thinksound": ["thinksoundBackend", "pinned", "saveOptions"],
+    "acestep": ["acestepBackend", "pinned", "saveOptions"],
+    "trellis": ["trellisBackend", "pinned", "saveOptions"],
+    "openmoss": ["openmossBackend", "pinned", "saveOptions"]
+  },
+  "definitions": {
+    "ctxSize": {"type": "numeric", "default": 4096, "min": 0, "max": 99999999, "step": 1, "label": "Context Size"},
+    "mergeArgs": {"type": "boolean", "default": true, "label": "Merge arguments"},
+    "llamacppBackend": {"type": "string", "default": "", "label": "Backend", "isBackendOption": true, "backendRecipe": "llamacpp"},
+    "llamacppArgs": {"type": "string", "default": "", "label": "LlamaCpp Arguments"},
+    "vllmBackend": {"type": "string", "default": "", "label": "Backend", "isBackendOption": true, "backendRecipe": "vllm"},
+    "vllmArgs": {"type": "string", "default": "", "label": "vLLM Arguments"},
+    "whispercppBackend": {"type": "string", "default": "", "label": "Backend", "isBackendOption": true, "backendRecipe": "whispercpp"},
+    "whispercppArgs": {"type": "string", "default": "", "label": "WhisperCpp Arguments"},
+    "moonshineArgs": {"type": "string", "default": "", "label": "Moonshine Arguments"},
+    "sdcppBackend": {"type": "string", "default": "", "label": "Backend", "isBackendOption": true, "backendRecipe": "sd-cpp"},
+    "steps": {"type": "numeric", "default": 20, "min": 1, "max": 150, "step": 1, "label": "Steps"},
+    "cfgScale": {"type": "numeric", "default": 7, "min": 0, "max": 30, "step": 0.1, "label": "CFG Scale"},
+    "width": {"type": "numeric", "default": 512, "min": 64, "max": 2048, "step": 64, "label": "Width"},
+    "height": {"type": "numeric", "default": 512, "min": 64, "max": 2048, "step": 64, "label": "Height"},
+    "thinksoundBackend": {"type": "string", "default": "", "label": "Backend", "isBackendOption": true, "backendRecipe": "thinksound"},
+    "acestepBackend": {"type": "string", "default": "", "label": "Backend", "isBackendOption": true, "backendRecipe": "acestep"},
+    "trellisBackend": {"type": "string", "default": "", "label": "Backend", "isBackendOption": true, "backendRecipe": "trellis"},
+    "openmossBackend": {"type": "string", "default": "", "label": "Backend", "isBackendOption": true, "backendRecipe": "openmoss"},
+    "saveOptions": {"type": "boolean", "default": true, "label": "Save Options"},
+    "pinned": {"type": "boolean", "default": false, "label": "Pin Model"}
+  },
+  "aliases": {
+    "ctxSize": "ctx_size", "mergeArgs": "merge_args", "llamacppBackend": "llamacpp_backend", "llamacppArgs": "llamacpp_args",
+    "whispercppBackend": "whispercpp_backend", "whispercppArgs": "whispercpp_args", "moonshineArgs": "moonshine_args", "sdcppBackend": "sd-cpp_backend",
+    "thinksoundBackend": "thinksound_backend", "acestepBackend": "acestep_backend", "trellisBackend": "trellis_backend", "openmossBackend": "openmoss_backend",
+    "cfgScale": "cfg_scale", "vllmBackend": "vllm_backend", "vllmArgs": "vllm_args", "saveOptions": "save_options"
+  }
+}

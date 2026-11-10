@@ -57,6 +57,8 @@ const tests = [
       assertMatches(source, /setIsLoading\(true\)[\s\S]*?serverFetch/, 'Loading state should be set before fetching options.');
       assertMatches(source, /finally \{[\s\S]*?setIsLoading\(false\)/, 'Loading state should be cleared in finally.');
       assertIncludes(source, 'apiToRecipeOptions(recipe, recipeOptions)', 'Model Options should convert API recipe options into frontend option state.');
+      assertIncludes(source, 'if (isLegacyRecipe(recipe))', 'Legacy conversion must be guarded by the explicit presentation adapter.');
+      assertIncludes(source, 'SchemaRecipeOptions', 'External recipe forms must retain the schema component branch.');
     },
   },
   {

@@ -1,0 +1,1299 @@
+{
+  "schema_version": 2,
+  "id": "llamacpp",
+  "recipe": "llamacpp",
+  "merge": {
+    "kind": "local",
+    "metadata": {
+      "display_name": "Llama.cpp GPU",
+      "server_name": "llama-server",
+      "log_category": "LlamaCpp",
+      "log_level_policy": "passthrough",
+      "binary": {
+        "windows": "llama-server.exe",
+        "linux": "llama-server",
+        "macos": "llama-server"
+      },
+      "config_section": "",
+      "default_device": "gpu",
+      "slot_policy": "standard",
+      "selectable_backend": true,
+      "uses_ctx_size": true,
+      "dynamic_models": false,
+      "options": [
+        {
+          "id": "backend",
+          "name": "llamacpp_backend",
+          "cli_flag": "--llamacpp",
+          "default_value": "",
+          "type_name": "BACKEND",
+          "value_type": "string",
+          "help": "LlamaCpp backend to use",
+          "group": "Llama.cpp Backend Options",
+          "unset_values": [
+            null,
+            -1,
+            "",
+            "auto"
+          ]
+        },
+        {
+          "id": "device",
+          "name": "llamacpp_device",
+          "cli_flag": "--llamacpp-device",
+          "default_value": "",
+          "type_name": "DEVICES",
+          "value_type": "string",
+          "help": "Comma-separated list of accelerator devices to use (e.g. Vulkan0)",
+          "group": "Llama.cpp Backend Options",
+          "unset_values": [
+            null,
+            -1,
+            "",
+            "auto"
+          ]
+        },
+        {
+          "id": "args",
+          "name": "llamacpp_args",
+          "cli_flag": "--llamacpp-args",
+          "default_value": "",
+          "type_name": "ARGS",
+          "value_type": "string",
+          "help": "Custom arguments to pass to llama-server",
+          "group": "Llama.cpp Backend Options",
+          "unset_values": [
+            null,
+            -1,
+            "",
+            "auto"
+          ]
+        }
+      ],
+      "support": [
+        {
+          "arch_gates": {},
+          "backend": "system",
+          "device_summary": "x86_64/ARM64 CPU, GPU",
+          "devices": {
+            "cpu": [
+              "x86_64",
+              "arm64"
+            ]
+          },
+          "format": "native",
+          "supported_os": [
+            "linux"
+          ],
+          "tier": "core",
+          "id": "system"
+        },
+        {
+          "arch_gates": {},
+          "backend": "metal",
+          "device_summary": "Apple Silicon GPU",
+          "devices": {
+            "metal": []
+          },
+          "format": "native",
+          "supported_os": [
+            "macos"
+          ],
+          "tier": "core",
+          "id": "metal"
+        },
+        {
+          "arch_gates": {},
+          "backend": "cuda",
+          "device_summary": "NVIDIA GPUs (Turing or newer)**",
+          "devices": {
+            "nvidia_gpu": [
+              "sm_75",
+              "sm_80",
+              "sm_86",
+              "sm_89",
+              "sm_90",
+              "sm_100",
+              "sm_120",
+              "sm_121"
+            ]
+          },
+          "format": "native",
+          "supported_os": [
+            "windows",
+            "linux"
+          ],
+          "tier": "core",
+          "id": "cuda"
+        },
+        {
+          "arch_gates": {},
+          "backend": "vulkan",
+          "device_summary": "x86_64 CPU, AMD iGPU, AMD dGPU; ARM64 CPU/GPU (Linux)",
+          "devices": {
+            "amd_gpu": [],
+            "cpu": [
+              "x86_64",
+              "arm64"
+            ]
+          },
+          "format": "native",
+          "supported_os": [
+            "windows",
+            "linux"
+          ],
+          "tier": "core",
+          "id": "vulkan"
+        },
+        {
+          "arch_gates": {
+            "gfx908": {
+              "channels": [],
+              "os": [
+                "linux"
+              ]
+            },
+            "gfx90a": {
+              "channels": [],
+              "os": [
+                "linux"
+              ]
+            },
+            "gfx942": {
+              "channels": [],
+              "os": [
+                "linux"
+              ]
+            },
+            "gfx950": {
+              "channels": [
+                "stable"
+              ],
+              "os": [
+                "linux"
+              ]
+            }
+          },
+          "backend": "rocm",
+          "device_summary": "AMD GPUs supported by ROCm",
+          "devices": {
+            "amd_gpu": [
+              "gfx103X",
+              "gfx110X",
+              "gfx1150",
+              "gfx1151",
+              "gfx1152",
+              "gfx120X",
+              "gfx908",
+              "gfx90a",
+              "gfx942",
+              "gfx950"
+            ]
+          },
+          "format": "native",
+          "supported_os": [
+            "windows",
+            "linux"
+          ],
+          "tier": "core",
+          "id": "rocm"
+        },
+        {
+          "arch_gates": {},
+          "backend": "cpu",
+          "device_summary": "x86_64 CPU; ARM64 CPU (Linux)",
+          "devices": {
+            "cpu": [
+              "x86_64",
+              "arm64"
+            ]
+          },
+          "format": "native",
+          "supported_os": [
+            "windows",
+            "linux"
+          ],
+          "tier": "core",
+          "id": "cpu"
+        }
+      ],
+      "supported_modes": [
+        "chat",
+        "embeddings",
+        "reranking"
+      ],
+      "required_checkpoints": [
+        "main"
+      ],
+      "default_capabilities": [],
+      "web_display_name": "llama.cpp GPU",
+      "rocm_channels": [
+        "stable",
+        "nightly"
+      ],
+      "exposes_prometheus_metrics": true,
+      "rocm_requires_cwsr_fix": true,
+      "version_policy": "exact",
+      "self_manages_downloads": false,
+      "takes_args": true,
+      "arg_variants": [
+        "rocm",
+        "vulkan",
+        "cpu"
+      ],
+      "bin_variants": [
+        "rocm",
+        "vulkan",
+        "cuda",
+        "cpu"
+      ],
+      "config_extra": {
+        "prefer_system": true
+      },
+      "streams_model_from_storage": false
+    },
+    "install": {
+      "strategy": "github_release",
+      "install_recipe": "llamacpp",
+      "pin_recipe": "llamacpp",
+      "supports_split_archive": false,
+      "asset_backend": "identity",
+      "cases": [
+        {
+          "id": "rocm-stable-windows",
+          "backend": [
+            "rocm-stable"
+          ],
+          "os": [
+            "windows"
+          ],
+          "repo": "lemonade-sdk/llama.cpp",
+          "filename": {
+            "concat": [
+              "llama-",
+              {
+                "ref": "/install/version"
+              },
+              "-bin-win-rocm-",
+              {
+                "ref": "/install/therock_version"
+              },
+              "-x64.zip"
+            ]
+          }
+        },
+        {
+          "id": "rocm-stable-linux",
+          "backend": [
+            "rocm-stable"
+          ],
+          "os": [
+            "linux"
+          ],
+          "repo": "lemonade-sdk/llama.cpp",
+          "filename": {
+            "concat": [
+              "llama-",
+              {
+                "ref": "/install/version"
+              },
+              "-bin-ubuntu-rocm-",
+              {
+                "ref": "/install/therock_version"
+              },
+              "-x64.tar.gz"
+            ]
+          }
+        },
+        {
+          "id": "rocm-nightly-windows",
+          "backend": [
+            "rocm-nightly"
+          ],
+          "os": [
+            "windows"
+          ],
+          "repo": "lemonade-sdk/llamacpp-rocm",
+          "filename": {
+            "concat": [
+              "llama-",
+              {
+                "ref": "/install/version"
+              },
+              "-windows-rocm-",
+              {
+                "ref": "/install/rocm_asset_family"
+              },
+              "-x64.zip"
+            ]
+          }
+        },
+        {
+          "id": "rocm-nightly-linux",
+          "backend": [
+            "rocm-nightly"
+          ],
+          "os": [
+            "linux"
+          ],
+          "repo": "lemonade-sdk/llamacpp-rocm",
+          "filename": {
+            "concat": [
+              "llama-",
+              {
+                "ref": "/install/version"
+              },
+              "-ubuntu-rocm-",
+              {
+                "ref": "/install/rocm_asset_family"
+              },
+              "-x64.zip"
+            ]
+          }
+        },
+        {
+          "id": "cuda-windows",
+          "backend": [
+            "cuda"
+          ],
+          "os": [
+            "windows"
+          ],
+          "repo": "lemonade-sdk/llama.cpp",
+          "filename": {
+            "concat": [
+              "llama-",
+              {
+                "ref": "/install/version"
+              },
+              "-windows-cuda-",
+              {
+                "ref": "/install/cuda_architecture"
+              },
+              "-x64.7z"
+            ]
+          }
+        },
+        {
+          "id": "cuda-linux-x86_64",
+          "backend": [
+            "cuda"
+          ],
+          "os": [
+            "linux"
+          ],
+          "repo": "lemonade-sdk/llama.cpp",
+          "filename": {
+            "concat": [
+              "llama-",
+              {
+                "ref": "/install/version"
+              },
+              "-ubuntu-cuda-",
+              {
+                "ref": "/install/cuda_architecture"
+              },
+              "-x64.tar.xz"
+            ]
+          },
+          "machine_arch": [
+            "x86_64"
+          ]
+        },
+        {
+          "id": "cuda-linux-aarch64",
+          "backend": [
+            "cuda"
+          ],
+          "os": [
+            "linux"
+          ],
+          "repo": "lemonade-sdk/llama.cpp",
+          "filename": {
+            "concat": [
+              "llama-",
+              {
+                "ref": "/install/version"
+              },
+              "-ubuntu-cuda-",
+              {
+                "ref": "/install/cuda_architecture"
+              },
+              "-arm64.tar.xz"
+            ]
+          },
+          "machine_arch": [
+            "aarch64"
+          ]
+        },
+        {
+          "id": "metal-macos",
+          "backend": [
+            "metal"
+          ],
+          "os": [
+            "macos"
+          ],
+          "repo": "ggml-org/llama.cpp",
+          "filename": {
+            "concat": [
+              "llama-",
+              {
+                "ref": "/install/version"
+              },
+              "-bin-macos-arm64.tar.gz"
+            ]
+          }
+        },
+        {
+          "id": "cpu-windows",
+          "backend": [
+            "cpu"
+          ],
+          "os": [
+            "windows"
+          ],
+          "repo": "ggml-org/llama.cpp",
+          "filename": {
+            "concat": [
+              "llama-",
+              {
+                "ref": "/install/version"
+              },
+              "-bin-win-cpu-x64.zip"
+            ]
+          }
+        },
+        {
+          "id": "cpu-linux-x86_64",
+          "backend": [
+            "cpu"
+          ],
+          "os": [
+            "linux"
+          ],
+          "repo": "ggml-org/llama.cpp",
+          "filename": {
+            "concat": [
+              "llama-",
+              {
+                "ref": "/install/version"
+              },
+              "-bin-ubuntu-x64.tar.gz"
+            ]
+          },
+          "machine_arch": [
+            "x86_64"
+          ]
+        },
+        {
+          "id": "cpu-linux-aarch64",
+          "backend": [
+            "cpu"
+          ],
+          "os": [
+            "linux"
+          ],
+          "repo": "ggml-org/llama.cpp",
+          "filename": {
+            "concat": [
+              "llama-",
+              {
+                "ref": "/install/version"
+              },
+              "-bin-ubuntu-arm64.tar.gz"
+            ]
+          },
+          "machine_arch": [
+            "aarch64"
+          ]
+        },
+        {
+          "id": "vulkan-windows",
+          "backend": [
+            "vulkan"
+          ],
+          "os": [
+            "windows"
+          ],
+          "repo": "ggml-org/llama.cpp",
+          "filename": {
+            "concat": [
+              "llama-",
+              {
+                "ref": "/install/version"
+              },
+              "-bin-win-vulkan-x64.zip"
+            ]
+          }
+        },
+        {
+          "id": "vulkan-linux-x86_64",
+          "backend": [
+            "vulkan"
+          ],
+          "os": [
+            "linux"
+          ],
+          "repo": "ggml-org/llama.cpp",
+          "filename": {
+            "concat": [
+              "llama-",
+              {
+                "ref": "/install/version"
+              },
+              "-bin-ubuntu-vulkan-x64.tar.gz"
+            ]
+          },
+          "machine_arch": [
+            "x86_64"
+          ]
+        },
+        {
+          "id": "vulkan-linux-aarch64",
+          "backend": [
+            "vulkan"
+          ],
+          "os": [
+            "linux"
+          ],
+          "repo": "ggml-org/llama.cpp",
+          "filename": {
+            "concat": [
+              "llama-",
+              {
+                "ref": "/install/version"
+              },
+              "-bin-ubuntu-vulkan-arm64.tar.gz"
+            ]
+          },
+          "machine_arch": [
+            "aarch64"
+          ]
+        }
+      ],
+      "repository_result": "full_params",
+      "fact_timing": "before_platform",
+      "repository_facts": [
+        "therock_version",
+        "rocm_asset_family",
+        "cuda_architecture"
+      ],
+      "unmanaged_backends": [
+        "system"
+      ],
+      "backend_fallback": "vulkan",
+      "errors": {
+        "os": {
+          "coalesce": [
+            {
+              "when": [
+                {
+                  "eq": [
+                    {
+                      "ref": "/install/backend"
+                    },
+                    "rocm-stable"
+                  ]
+                },
+                "ROCm stable llamacpp is currently supported on Windows and Linux only"
+              ]
+            },
+            {
+              "when": [
+                {
+                  "eq": [
+                    {
+                      "ref": "/install/backend"
+                    },
+                    "rocm-nightly"
+                  ]
+                },
+                "ROCm nightly llamacpp only supported on Windows and Linux"
+              ]
+            },
+            {
+              "when": [
+                {
+                  "eq": [
+                    {
+                      "ref": "/install/backend"
+                    },
+                    "cuda"
+                  ]
+                },
+                "CUDA llamacpp is currently supported on Windows and Linux only"
+              ]
+            },
+            {
+              "when": [
+                {
+                  "eq": [
+                    {
+                      "ref": "/install/backend"
+                    },
+                    "metal"
+                  ]
+                },
+                "Metal llamacpp only supported on macOS"
+              ]
+            },
+            {
+              "when": [
+                {
+                  "eq": [
+                    {
+                      "ref": "/install/backend"
+                    },
+                    "cpu"
+                  ]
+                },
+                "CPU llamacpp not supported on this platform"
+              ]
+            },
+            {
+              "when": [
+                {
+                  "eq": [
+                    {
+                      "ref": "/install/backend"
+                    },
+                    "vulkan"
+                  ]
+                },
+                "Vulkan llamacpp only supported on Windows and Linux"
+              ]
+            },
+            "Unsupported llama.cpp platform"
+          ]
+        },
+        "machine_arch": "Unsupported llama.cpp machine architecture"
+      }
+    },
+    "artifacts": {
+      "main": {
+        "role": "main",
+        "strategy": "resolved_path",
+        "hook": {
+          "id": "llamacpp.artifacts.v1",
+          "params": {}
+        },
+        "check": "nonempty",
+        "required_when": {
+          "not": {
+            "ref": "/launch/hook/hf_load"
+          }
+        },
+        "missing_error": {
+          "concat": [
+            "GGUF file not found for checkpoint: ",
+            {
+              "ref": "/model/checkpoint"
+            }
+          ]
+        }
+      },
+      "mmproj": {
+        "role": "mmproj",
+        "strategy": "resolved_path",
+        "check": "nonempty",
+        "required_when": false,
+        "missing_error": "Optional mmproj path is unavailable"
+      },
+      "draft": {
+        "role": "draft",
+        "strategy": "resolved_path",
+        "check": "nonempty",
+        "required_when": false,
+        "missing_error": "Optional draft path is unavailable"
+      }
+    },
+    "launch": {
+      "prepare_order": [
+        "backend",
+        "install",
+        "hook",
+        "artifacts",
+        "ports",
+        "program"
+      ],
+      "backend": {
+        "option": "backend",
+        "fallback": "first_supported",
+        "on_empty": {
+          "operation": "llama.cpp inference",
+          "target": "this system"
+        }
+      },
+      "program": {
+        "source": "managed",
+        "install_policy": "always"
+      },
+      "ports": [
+        {
+          "name": "http",
+          "reject_zero": false,
+          "error": ""
+        }
+      ],
+      "context_floor": {
+        "embedding": 8192
+      },
+      "argv": [
+        {
+          "id": "model-hf",
+          "flag": "-hf",
+          "value": {
+            "ref": "/model/checkpoint"
+          },
+          "when": {
+            "ref": "/launch/hook/hf_load"
+          },
+          "aliases": [
+            "--hf-repo",
+            "-mr",
+            "--hf-file",
+            "-mf"
+          ],
+          "reserve": "when_active"
+        },
+        {
+          "id": "model-local",
+          "flag": "-m",
+          "value": {
+            "ref": "/artifacts/main"
+          },
+          "when": {
+            "not": {
+              "ref": "/launch/hook/hf_load"
+            }
+          },
+          "aliases": [
+            "--model"
+          ],
+          "reserve": "when_active"
+        },
+        {
+          "id": "ctx",
+          "flag": "--ctx-size",
+          "value": {
+            "string": {
+              "ref": "/launch/hook/context_size"
+            }
+          },
+          "aliases": [
+            "-c"
+          ]
+        },
+        {
+          "id": "device",
+          "flag": "--device",
+          "value": {
+            "option": "device",
+            "type": "string"
+          },
+          "when": {
+            "not": {
+              "eq": [
+                {
+                  "option": "device"
+                },
+                ""
+              ]
+            }
+          },
+          "aliases": [
+            "-dev"
+          ],
+          "reserve": "always"
+        },
+        {
+          "id": "port",
+          "flag": "--port",
+          "value": {
+            "string": {
+              "ref": "/launch/ports/http"
+            }
+          }
+        },
+        {
+          "id": "jinja",
+          "flag": "--jinja",
+          "aliases": [
+            "--no-jinja"
+          ]
+        },
+        {
+          "id": "metrics",
+          "flag": "--metrics"
+        },
+        {
+          "id": "debug",
+          "args": [
+            "-lv",
+            "4"
+          ],
+          "when": {
+            "any": [
+              {
+                "eq": [
+                  {
+                    "ref": "/launch/log_level"
+                  },
+                  "debug"
+                ]
+              },
+              {
+                "eq": [
+                  {
+                    "ref": "/launch/log_level"
+                  },
+                  "trace"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "vision",
+          "flag": "--mmproj",
+          "value": {
+            "ref": "/artifacts/mmproj"
+          },
+          "when": {
+            "ref": "/launch/hook/use_mmproj"
+          },
+          "aliases": [
+            "-mm",
+            "-mmu",
+            "--mmproj-url",
+            "--no-mmproj",
+            "--mmproj-auto",
+            "--no-mmproj-auto"
+          ],
+          "reserve": "always"
+        },
+        {
+          "id": "vision-cpu",
+          "flag": "--no-mmproj-offload",
+          "when": {
+            "ref": "/launch/hook/mmproj_on_cpu"
+          },
+          "reserve": "when_active"
+        },
+        {
+          "id": "draft",
+          "flag": "--model-draft",
+          "value": {
+            "ref": "/artifacts/draft"
+          },
+          "when": {
+            "ref": "/launch/hook/use_draft_checkpoint"
+          },
+          "aliases": [
+            "-md",
+            "--spec-draft-model"
+          ],
+          "reserve": "always"
+        },
+        {
+          "id": "embedding",
+          "flag": "--embeddings",
+          "when": {
+            "ref": "/launch/hook/embedding"
+          },
+          "aliases": [
+            "--embedding"
+          ],
+          "reserve": "always"
+        },
+        {
+          "id": "reranking",
+          "flag": "--reranking",
+          "when": {
+            "ref": "/launch/hook/reranking"
+          },
+          "aliases": [
+            "--rerank"
+          ],
+          "reserve": "always"
+        }
+      ],
+      "custom_args": {
+        "option": "args",
+        "reserved": [],
+        "error_prefix": "Invalid custom llama-server arguments:\n",
+        "defaults": [
+          {
+            "id": "spec-dflash",
+            "args": "--spec-type draft-dflash",
+            "flag": "--spec-type",
+            "when": {
+              "ref": "/runtime/dflash"
+            },
+            "stage": "runtime_options",
+            "respect_merge_args": true
+          },
+          {
+            "id": "spec-mtp",
+            "args": "--spec-type draft-mtp",
+            "flag": "--spec-type",
+            "when": {
+              "ref": "/runtime/mtp"
+            },
+            "stage": "runtime_options",
+            "respect_merge_args": true
+          },
+          {
+            "id": "parallel",
+            "args": "--parallel 1",
+            "flag": "--parallel",
+            "aliases": [
+              "-np"
+            ],
+            "stage": "runtime_options",
+            "respect_merge_args": true
+          }
+        ],
+        "runtime_input": "string_or_empty"
+      },
+      "environment": {
+        "preset": "hook",
+        "set": []
+      },
+      "working_directory": {
+        "windows": "executable_directory",
+        "linux": "inherit",
+        "macos": "inherit"
+      },
+      "output": {
+        "inherit_levels": [
+          "info",
+          "debug",
+          "trace"
+        ],
+        "filter": true
+      },
+      "readiness": {
+        "port": "http",
+        "path": "/health",
+        "timeout": 600
+      },
+      "watchdog": {
+        "policy": "standard",
+        "port": "http",
+        "path": "/health"
+      },
+      "direct_stream_policy": "llamacpp_legacy"
+    },
+    "operations": [
+      {
+        "id": "chat.buffered",
+        "operation": "chat_completion",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "port": "http",
+          "timeout": "global",
+          "response_codec": "json.v1"
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.max_tokens_alias",
+              "params": {}
+            },
+            {
+              "id": "llamacpp.tool_schema_limits",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": [
+            {
+              "id": "llamacpp.client_model",
+              "params": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "completion.buffered",
+        "operation": "completion",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/completions",
+          "port": "http",
+          "timeout": "global",
+          "response_codec": "json.v1"
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.max_tokens_alias",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": [
+            {
+              "id": "llamacpp.client_model",
+              "params": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "responses.buffered",
+        "operation": "responses",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/responses",
+          "port": "http",
+          "timeout": "global",
+          "response_codec": "json.v1"
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.tool_schema_limits",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": [
+            {
+              "id": "llamacpp.client_model",
+              "params": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "chat.streaming",
+        "operation": "chat_completion",
+        "delivery": "streaming",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_sse",
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "port": "http",
+          "timeout": "global",
+          "stream_codec": "openai_sse.v1"
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.max_tokens_alias",
+              "params": {}
+            },
+            {
+              "id": "llamacpp.tool_schema_limits",
+              "params": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "completion.streaming",
+        "operation": "completion",
+        "delivery": "streaming",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_sse",
+          "method": "POST",
+          "path": "/v1/completions",
+          "port": "http",
+          "timeout": "global",
+          "stream_codec": "openai_sse.v1"
+        },
+        "request": {
+          "base": "identity"
+        }
+      },
+      {
+        "id": "responses.streaming",
+        "operation": "responses",
+        "delivery": "streaming",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_sse",
+          "method": "POST",
+          "path": "/v1/responses",
+          "port": "http",
+          "timeout": "global",
+          "stream_codec": "openai_sse.v1"
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.tool_schema_limits",
+              "params": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "embedding.buffered",
+        "operation": "embeddings",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/embeddings",
+          "port": "http",
+          "timeout": "global",
+          "response_codec": "json.v1"
+        },
+        "request": {
+          "base": "identity"
+        }
+      },
+      {
+        "id": "reranking.buffered",
+        "operation": "reranking",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/rerank",
+          "port": "http",
+          "timeout": "global",
+          "response_codec": "json.v1"
+        },
+        "request": {
+          "base": "identity"
+        }
+      },
+      {
+        "id": "slots.buffered",
+        "operation": "slots",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "GET",
+          "path": "/slots",
+          "port": "http",
+          "timeout": "global",
+          "response_codec": "json.v1"
+        },
+        "request": {
+          "base": "identity"
+        }
+      },
+      {
+        "id": "slot-action.buffered",
+        "operation": "slot_action",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/slots/{slot_id}?action={action}",
+          "port": "http",
+          "timeout": "global",
+          "response_codec": "json.v1"
+        },
+        "request": {
+          "base": "identity"
+        }
+      },
+      {
+        "id": "tokenize.buffered",
+        "operation": "tokenize",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/tokenize",
+          "port": "http",
+          "timeout": "global",
+          "response_codec": "json.v1"
+        },
+        "request": {
+          "base": "identity"
+        }
+      }
+    ],
+    "hooks": {
+      "backend": {
+        "id": "llamacpp.backend.v1",
+        "params": {}
+      },
+      "install_context": {
+        "id": "llamacpp.install_context.v1",
+        "params": {}
+      },
+      "launch": {
+        "id": "llamacpp.prepare.v1",
+        "params": {}
+      },
+      "runtime_options": {
+        "id": "llamacpp.runtime_options.v1",
+        "params": {}
+      },
+      "environment": {
+        "id": "llamacpp.environment.v1",
+        "params": {}
+      },
+      "system": {
+        "id": "llamacpp.system.v1",
+        "params": {}
+      }
+    },
+    "rationale": [
+      {
+        "subject": "",
+        "text": "Staged candidate: frozen install, runtime-options and protocol projections are qualified through the bound v2 runner. Full load, artifact and system-probe parity, the deliberate-diff gate and five CI registrations remain incomplete. The enumerated environment and repository-fact contract widenings are authorized and implemented. This fixture is not production authority or a fully qualified replacement.",
+        "source": "4e design sections 2, 3 and 5",
+        "tests": [
+          "BackendDefinitionDescriptorTest"
+        ]
+      }
+    ]
+  }
+}

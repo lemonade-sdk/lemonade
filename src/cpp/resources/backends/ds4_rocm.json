@@ -1,0 +1,221 @@
+{
+  "schema_version": 2,
+  "id": "ds4_rocm",
+  "recipe": "ds4",
+  "merge": {
+    "kind": "container",
+    "metadata": {
+      "display_name": "DwarfStar4",
+      "server_name": "ds4-server",
+      "log_category": "DS4",
+      "binary": "ds4-server",
+      "default_device": "gpu",
+      "slot_policy": "standard",
+      "selectable_backend": false,
+      "uses_ctx_size": true,
+      "dynamic_models": false,
+      "options": [
+        {
+          "id": "args",
+          "name": "ds4_args",
+          "cli_flag": "--ds4-args",
+          "default_value": "",
+          "type_name": "ARGS",
+          "value_type": "string",
+          "help": "Custom arguments to pass to ds4-server",
+          "group": "DS4 Options"
+        }
+      ],
+      "support": [
+        {
+          "id": "rocm",
+          "backend": "rocm",
+          "tier": "guest",
+          "format": "container",
+          "supported_os": ["linux"],
+          "devices": {"amd_gpu": ["gfx1151"]},
+          "device_summary": "Prebuilt ds4 for AMD Strix Halo"
+        }
+      ],
+      "supported_modes": ["chat"],
+      "required_checkpoints": ["main"],
+      "default_capabilities": [],
+      "web_display_name": "",
+      "rocm_channels": [],
+      "exposes_prometheus_metrics": false,
+      "rocm_requires_cwsr_fix": true,
+      "version_policy": "exact",
+      "self_manages_downloads": false,
+      "takes_args": true,
+      "arg_variants": [],
+      "bin_variants": [],
+      "config_extra": {},
+      "streams_model_from_storage": true
+    },
+    "containers": {
+      "rocm": {
+        "repository": "docker.io/kyuz0/strix-halo-ds4-toolbox",
+        "pin": {"source": "backend_versions", "recipe": "ds4_rocm", "backend": "rocm"},
+        "devices": ["/dev/dri", "/dev/kfd"],
+        "cap_add": ["SYS_PTRACE"],
+        "policy": "lemonade-isolated-v1",
+        "network": "private_internal",
+        "teardown": "stop_remove_reap",
+        "stop_grace_seconds": 10
+      }
+    },
+    "install": {"strategy": "oci"},
+    "artifacts": {
+      "main": {
+        "role": "main",
+        "strategy": "resolved_path",
+        "missing_error": {"concat": ["ds4: no local GGUF found for model '", {"ref": "/model/name"}, "' (checkpoint: ", {"ref": "/model/checkpoint"}, ")"]},
+        "hook": {"id": "llamacpp.artifacts.v1", "params": {}},
+        "absolute_checkpoint_fallback": true,
+        "checkpoint_consumer": "builtin_container_absolute_v1"
+      },
+      "draft": {"role": "draft", "strategy": "resolved_path", "required_when": false, "missing_error": "Missing draft"}
+    },
+    "launch": {
+      "prepare_order": ["backend", "artifacts", "install", "program", "ports"],
+      "backend": {"fixed": "rocm"},
+      "execution": {
+        "cases": [
+          {
+            "id": "rocm-container",
+            "backends": ["rocm"],
+            "kind": "container",
+            "container": "rocm",
+            "program": {"source": "image_command", "name": "ds4-server"},
+            "memory_plan": "ds4_rocm_v1",
+            "memory_phase": "after_ports"
+          }
+        ]
+      },
+      "mounts": [
+        {"id": "main", "artifact": "main", "expand": "file", "destination": "/mnt/models", "layout": "basename_numbered"},
+        {
+          "id": "draft",
+          "artifact": "draft",
+          "expand": "file",
+          "destination": "/mnt/models",
+          "layout": "basename_numbered",
+          "when": {"all": [{"ref": "/memory/resident"}, {"not": {"eq": [{"ref": "/artifacts/draft"}, ""]}}]}
+        }
+      ],
+      "address": {"source": "process_start"},
+      "ports": [{"name": "http", "reject_zero": true, "error": "No HTTP port available"}],
+      "argv": [
+        {"id": "model", "flag": "-m", "value": {"ref": "/artifacts/main"}},
+        {"id": "host", "flag": "--host", "value": "0.0.0.0"},
+        {"id": "port", "flag": "--port", "value": {"string": {"ref": "/launch/ports/http"}}},
+        {"id": "ctx", "flag": "-c", "value": {"string": {"ref": "/options/ctx_size"}}, "when": {"gt": [{"ref": "/options/ctx_size"}, 0]}},
+        {"id": "prefill", "flag": "--prefill-chunk", "value": "2048"},
+        {
+          "id": "draft",
+          "args": ["--dspark", "--mtp-model", {"ref": "/artifacts/draft"}],
+          "when": {"all": [{"ref": "/memory/resident"}, {"not": {"eq": [{"ref": "/artifacts/draft"}, ""]}}]}
+        },
+        {"id": "streaming", "args": ["--ssd-streaming"], "when": {"not": {"ref": "/memory/resident"}}},
+        {
+          "id": "experts",
+          "flag": "--ssd-streaming-cache-experts",
+          "value": {"concat": [{"string": {"ref": "/memory/expert_cache_gb"}}, "GB"]},
+          "when": {"gt": [{"ref": "/memory/expert_cache_gb"}, 0]}
+        }
+      ],
+      "environment": {
+        "preset": "inherit",
+        "set": [
+          {"name": "DS4_ROCM_STREAM_MODEL_CACHE_GB", "value": {"string": {"ref": "/memory/model_cache_gb"}}, "when": {"gt": [{"ref": "/memory/model_cache_gb"}, 0]}},
+          {
+            "name": "DS4_ROCM_STREAM_FREE_RESERVE_GB",
+            "value": {"string": {"ref": "/memory/free_reserve_gb"}},
+            "when": {"all": [{"not": {"ref": "/memory/resident"}}, {"gt": [{"ref": "/memory/free_reserve_gb"}, 0]}]}
+          }
+        ]
+      },
+      "working_directory": "inherit",
+      "output": {"inherit_levels": ["info", "debug"], "filter": true},
+      "readiness": {"port": "http", "path": "/v1/models", "timeout": "global"},
+      "watchdog": {"policy": "standard", "port": "http", "path": "/v1/models"},
+      "direct_stream_policy": "builtin_container_legacy",
+      "custom_args": {
+        "option": "args",
+        "reserved": ["-m", "--model", "--host", "--port", "-c", "--ctx", "--backend", "--cpu", "--metal", "--rocm", "--cuda"],
+        "error_prefix": "Invalid custom ds4-server arguments:\n"
+      },
+      "diagnostics": [
+        {"id": "custom", "phase": "custom_args", "level": "debug", "category": "DS4", "format": "Adding custom arguments: {custom:string}", "when": "custom_present"},
+        {
+          "id": "starting",
+          "phase": "starting",
+          "level": "info",
+          "category": "DS4",
+          "format": "Starting ds4-server ({image:string}) for {main:path} on port {port:integer}",
+          "when": "always"
+        }
+      ],
+      "load_log_policy": "none"
+    },
+    "operations": [
+      {
+        "id": "chat.buffered",
+        "operation": "chat_completion",
+        "delivery": "buffered",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_json", "method": "POST", "path": "/v1/chat/completions", "port": "http", "timeout": "global", "response_codec": "json.v1"},
+        "request": {"base": "identity", "content_transform": "ds4_no_think_v1", "rewrite_domain": "chat_completions_substring"}
+      },
+      {
+        "id": "chat.streaming",
+        "operation": "chat_completion",
+        "delivery": "streaming",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_sse", "method": "POST", "path": "/v1/chat/completions", "port": "http", "timeout": "global", "stream_codec": "openai_sse.v1"},
+        "request": {"base": "identity", "content_transform": "ds4_no_think_v1", "rewrite_domain": "chat_completions_substring"}
+      },
+      {
+        "id": "completion.buffered",
+        "operation": "completion",
+        "delivery": "buffered",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_json", "method": "POST", "path": "/v1/completions", "port": "http", "timeout": "global", "response_codec": "json.v1"},
+        "request": {"base": "identity"}
+      },
+      {
+        "id": "completion.streaming",
+        "operation": "completion",
+        "delivery": "streaming",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_sse", "method": "POST", "path": "/v1/completions", "port": "http", "timeout": "global", "stream_codec": "openai_sse.v1"},
+        "request": {"base": "identity"}
+      },
+      {
+        "id": "responses.buffered",
+        "operation": "responses",
+        "delivery": "buffered",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_json", "method": "POST", "path": "/v1/responses", "port": "http", "timeout": "global", "response_codec": "json.v1"},
+        "request": {"base": "identity"}
+      },
+      {
+        "id": "responses.streaming",
+        "operation": "responses",
+        "delivery": "streaming",
+        "model_modes": ["*"],
+        "transport": {"kind": "http_sse", "method": "POST", "path": "/v1/responses", "port": "http", "timeout": "global", "stream_codec": "openai_sse.v1"},
+        "request": {"base": "identity"}
+      }
+    ],
+    "model_contract": "ds4_rocm_v1",
+    "rationale": [
+      {
+        "subject": "",
+        "text": "Inactive builtin leaf. The independently fixed dormant execution grant is not installed in active policies. Registry/image, real runtime and packaging qualification and a disclosed activation stage remain required.",
+        "source": "container-conversion C8",
+        "tests": ["ContainerProductionParityTest"]
+      }
+    ]
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "schema_version": 2,
+  "id": "test-export",
+  "recipe": "test-export",
+  "merge": {
+    "kind": "local",
+    "metadata": {
+      "display_name": "Synthetic export",
+      "server_name": "fake-engine",
+      "binary": "fake-engine",
+      "supported_modes": [
+        "chat"
+      ],
+      "options": [],
+      "support": []
+    },
+    "install": {
+      "strategy": "none"
+    },
+    "artifacts": {
+      "main": {
+        "role": "main",
+        "strategy": "hook",
+        "hook": {
+          "id": "llamacpp.gguf",
+          "params": {}
+        }
+      }
+    },
+    "launch": {
+      "prepare_order": [
+        "backend",
+        "artifacts",
+        "hook",
+        "program",
+        "ports"
+      ],
+      "backend": {
+        "fixed": "cpu"
+      },
+      "program": {
+        "source": "managed",
+        "install_policy": "always"
+      },
+      "ports": [
+        {
+          "name": "http",
+          "reject_zero": false,
+          "error": ""
+        }
+      ],
+      "argv": [],
+      "environment": {
+        "preset": "inherit"
+      },
+      "working_directory": {
+        "windows": "executable_directory",
+        "linux": "inherit",
+        "macos": "inherit"
+      },
+      "output": {
+        "inherit_levels": [
+          "info",
+          "debug",
+          "trace"
+        ],
+        "filter": true
+      },
+      "readiness": {
+        "port": "http",
+        "path": "/health",
+        "timeout": 600
+      },
+      "watchdog": {
+        "policy": "standard",
+        "port": "http",
+        "path": "/health"
+      }
+    },
+    "operations": [
+      {
+        "id": "chat.buffered",
+        "operation": "chat_completion",
+        "delivery": "buffered",
+        "model_modes": [
+          "chat"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/chat",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.max_tokens_alias",
+              "params": {}
+            },
+            {
+              "id": "llamacpp.tool_schema_limits",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": [
+            {
+              "id": "llamacpp.client_model",
+              "params": {}
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": {
+      "launch": {
+        "id": "kokoro.voice_index",
+        "params": {}
+      }
+    }
+  }
+}

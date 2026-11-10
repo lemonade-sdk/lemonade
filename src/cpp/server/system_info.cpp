@@ -1,9 +1,3 @@
-#include "lemon/system_info.h"
-#include "system_info_utils.h"
-#include "platform/amd_gpu_type.h"
-#include "platform/nvidia_metrics.h"
-#include "lemon/runtime_config.h"
-#include "lemon/version.h"
 #include "lemon/backend_manager.h"
 #include "lemon/utils/container_manager.h"
 #include "lemon/utils/path_utils.h"
@@ -14,23 +8,36 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/configured/container_execution.h"
 #include "lemon/recipe_backend_def.h"
-#include <filesystem>
-#include <fstream>
-#include <sstream>
-#include <cstdio>
-#include <cstdlib>
-#include <iostream>
-#include <regex>
-#include <lemon/utils/aixlog.hpp>
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
+#include "lemon/utils/container_manager.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
+#include "lemon/utils/version_utils.h"
+#include "lemon/version.h"
+#include "platform/amd_gpu_type.h"
+#include "platform/nvidia_metrics.h"
+#include "system_info_utils.h"
 #include <algorithm>
 #include <cctype>
-#include <set>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <lemon/utils/aixlog.hpp>
 #include <map>
 #include <mutex>
 #include <optional>
+#include <regex>
+#include <set>
+#include <sstream>
 #include <vector>
-#include <cmath>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -751,12 +758,15 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         error_message = "Linux kernel missing support";
         return false;
     }
-    if (cwsr_desc && cwsr_desc->container_for(backend)) {
-        const std::string image = BackendUtils::get_installed_backend_image(recipe, backend);
-        if (image.empty()) return false;
-        return utils::ContainerManager::global().has_image(image);
+    if (const auto* spec = try_get_spec_for_recipe(recipe)) {
+        if (const auto policy = backends::configured_container_policy(*spec, backend)) {
+            try {
+                auto* manager = BackendManager::global();
+                if (!manager) throw std::runtime_error("Container installation manager is unavailable");
+                return manager->has_container_image(utils::container_image(policy->repository, manager->container_pin(*policy)));
+            } catch (const std::exception& error) { error_message = error.what(); return false; }
+        }
     }
-
     // Find the managed binary, then let the backend's ops decide installed-ness
     // (llamacpp "system" also needs the HIP plugin; flm can be a PATH package).
     bool binary_found = false;
@@ -781,6 +791,14 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
     // CLI when no file is present).
     auto* spec = try_get_spec_for_recipe(recipe);
     std::string file_version;
+    if (spec) {
+        if (const auto policy = backends::configured_container_policy(*spec, backend)) {
+            auto* manager = BackendManager::global();
+            if (!manager) return "";
+            try { return manager->has_container_image(utils::container_image(policy->repository, manager->container_pin(*policy))) ? manager->container_pin(*policy) : ""; }
+            catch (const std::exception&) { return ""; }
+        }
+    }
     if (spec) {
         std::string version_file = BackendUtils::get_installed_version_file(*spec, backend);
         if (!version_file.empty()) {

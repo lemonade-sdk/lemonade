@@ -1,0 +1,485 @@
+{
+  "schema_version": 1,
+  "fixtures": {
+    "cases.json": "sha256:ed7d3795937283057afbc6ea3b14c335ca3ea7f46e4d0516510a64f5c678898f",
+    "pins.json": "sha256:8404ea4f0a0f2d4ea49be10ec8d551c4ae8022fccf3e89c3824a5ffabffb945d",
+    "linux_x64.json": "sha256:cfd4b491e94fc3558a525fd1fa5757fb6781df7e3fab20ee76a4d051b5fabb5a",
+    "linux_arm64.json": "sha256:eec950e193d0f43795152acd375944180488aa51f71094bff86ee47a86bf89a5",
+    "windows_x64.json": "sha256:4f051964983849ac9d3dfaabe62b6a1764222c7352efede5c92c545e58ec3413",
+    "macos_arm64.json": "sha256:9507dd5ca6123c2a02d2114c8e962ef701e856727747edc718fea42b28990ea7"
+  },
+  "families": [
+    {
+      "id": "bounded-probe",
+      "records": [
+        {
+          "view": "linux_x64",
+          "case": "version-408",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_x64",
+          "case": "version-409",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_x64",
+          "case": "version-410",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_x64",
+          "case": "version-411",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_x64",
+          "case": "version-412",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_x64",
+          "case": "version-413",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_x64",
+          "case": "version-414",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_x64",
+          "case": "version-open-failure",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_x64",
+          "case": "version-line-limit",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_x64",
+          "case": "version-nonzero-status",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_arm64",
+          "case": "version-408",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_arm64",
+          "case": "version-409",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_arm64",
+          "case": "version-410",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_arm64",
+          "case": "version-411",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_arm64",
+          "case": "version-412",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_arm64",
+          "case": "version-413",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_arm64",
+          "case": "version-414",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_arm64",
+          "case": "version-open-failure",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_arm64",
+          "case": "version-line-limit",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "linux_arm64",
+          "case": "version-nonzero-status",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "windows_x64",
+          "case": "version-408",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>NUL"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "windows_x64",
+          "case": "version-409",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>NUL"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "windows_x64",
+          "case": "version-410",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>NUL"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "windows_x64",
+          "case": "version-411",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>NUL"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "windows_x64",
+          "case": "version-412",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>NUL"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "windows_x64",
+          "case": "version-413",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>NUL"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "windows_x64",
+          "case": "version-414",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>NUL"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "windows_x64",
+          "case": "version-open-failure",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>NUL"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "windows_x64",
+          "case": "version-line-limit",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>NUL"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "windows_x64",
+          "case": "version-nonzero-status",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>NUL"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "macos_arm64",
+          "case": "version-408",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "macos_arm64",
+          "case": "version-409",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "macos_arm64",
+          "case": "version-410",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "macos_arm64",
+          "case": "version-411",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "macos_arm64",
+          "case": "version-412",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "macos_arm64",
+          "case": "version-413",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "macos_arm64",
+          "case": "version-414",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "macos_arm64",
+          "case": "version-open-failure",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "macos_arm64",
+          "case": "version-line-limit",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        },
+        {
+          "view": "macos_arm64",
+          "case": "version-nonzero-status",
+          "pointer": "/events",
+          "old": [
+            "probe:llama-server --version 2>/dev/null",
+            "close-version-pipe"
+          ],
+          "new": [
+            "bounded-probe:llama-server argv=[--version] stdout max_bytes=65536 timeout_ms=5000"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+#pragma once
+
+namespace lemon::backends {
+@LEMON_DEFINITION_V2_RESOURCES@}

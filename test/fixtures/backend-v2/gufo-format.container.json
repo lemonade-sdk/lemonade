@@ -1,0 +1,440 @@
+{
+  "schema_version": 2,
+  "id": "gufo",
+  "recipe": "gufo",
+  "merge": {
+    "kind": "container",
+    "metadata": {
+      "display_name": "Gufo",
+      "server_name": "gufo",
+      "binary": "gufo",
+      "support": [
+        {
+          "id": "rocm",
+          "backend": "rocm",
+          "tier": "guest",
+          "format": "container",
+          "supported_os": [
+            "linux"
+          ],
+          "devices": {
+            "amd_gpu": [
+              "gfx1151"
+            ]
+          },
+          "device_summary": "Strix Halo"
+        }
+      ],
+      "supported_modes": [
+        "chat"
+      ],
+      "options": [
+        {
+          "id": "ctx_size",
+          "name": "gufo_context",
+          "default_value": 4096,
+          "value_type": "integer",
+          "help": "Context size"
+        }
+      ]
+    },
+    "containers": {
+      "rocm": {
+        "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
+        "pin": {
+          "source": "backend_versions",
+          "recipe": "gufo",
+          "backend": "rocm"
+        },
+        "devices": [
+          "/dev/dri",
+          "/dev/kfd"
+        ],
+        "cap_add": [],
+        "policy": "lemonade-isolated-v1",
+        "network": "private_internal",
+        "teardown": "stop_remove_reap",
+        "stop_grace_seconds": 10
+      }
+    },
+    "install": {
+      "strategy": "oci"
+    },
+    "artifacts": {
+      "main": {
+        "role": "main",
+        "strategy": "resolved_path",
+        "missing_error": "GGUF checkpoint is required"
+      },
+      "mmproj": {
+        "role": "mmproj",
+        "strategy": "resolved_path",
+        "required_when": false,
+        "missing_error": "Optional model file is missing"
+      },
+      "draft": {
+        "role": "draft",
+        "strategy": "resolved_path",
+        "required_when": false,
+        "missing_error": "Optional model file is missing"
+      }
+    },
+    "launch": {
+      "prepare_order": [
+        "backend",
+        "artifacts",
+        "program",
+        "ports"
+      ],
+      "backend": {
+        "fixed": "rocm"
+      },
+      "execution": {
+        "cases": [
+          {
+            "id": "rocm-container",
+            "backends": [
+              "rocm"
+            ],
+            "kind": "container",
+            "container": "rocm",
+            "program": {
+              "source": "image_command",
+              "name": "gufo"
+            }
+          }
+        ]
+      },
+      "mounts": [
+        {
+          "id": "main",
+          "artifact": "main",
+          "expand": "gguf_shards",
+          "destination": "/mnt/models",
+          "layout": "basename_numbered"
+        },
+        {
+          "id": "mmproj",
+          "artifact": "mmproj",
+          "expand": "gguf_shards",
+          "destination": "/mnt/models",
+          "layout": "basename_numbered",
+          "when": {
+            "not": {
+              "eq": [
+                {
+                  "ref": "/artifacts/mmproj"
+                },
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "id": "draft",
+          "artifact": "draft",
+          "expand": "gguf_shards",
+          "destination": "/mnt/models",
+          "layout": "basename_numbered",
+          "when": {
+            "not": {
+              "eq": [
+                {
+                  "ref": "/artifacts/draft"
+                },
+                ""
+              ]
+            }
+          }
+        }
+      ],
+      "address": {
+        "source": "process_start"
+      },
+      "ports": [
+        {
+          "name": "http",
+          "reject_zero": true,
+          "error": "No HTTP port available"
+        }
+      ],
+      "argv": [
+        {
+          "id": "serve",
+          "args": [
+            "serve",
+            "llm"
+          ]
+        },
+        {
+          "id": "model",
+          "flag": "--model",
+          "value": {
+            "ref": "/artifacts/main"
+          }
+        },
+        {
+          "id": "name",
+          "flag": "--served-model-name",
+          "value": {
+            "ref": "/model/name"
+          }
+        },
+        {
+          "id": "context",
+          "flag": "--context",
+          "value": {
+            "string": {
+              "option": "ctx_size"
+            }
+          }
+        },
+        {
+          "id": "host",
+          "flag": "--host",
+          "value": "0.0.0.0"
+        },
+        {
+          "id": "port",
+          "flag": "--port",
+          "value": {
+            "string": {
+              "ref": "/launch/ports/http"
+            }
+          }
+        },
+        {
+          "id": "mmproj",
+          "flag": "--mmproj",
+          "value": {
+            "ref": "/artifacts/mmproj"
+          },
+          "when": {
+            "not": {
+              "eq": [
+                {
+                  "ref": "/artifacts/mmproj"
+                },
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "id": "speculative",
+          "flag": "--speculative",
+          "value": {
+            "ref": "/model/speculative_mode"
+          },
+          "when": {
+            "not": {
+              "eq": [
+                {
+                  "ref": "/artifacts/draft"
+                },
+                ""
+              ]
+            }
+          }
+        },
+        {
+          "id": "dflash2",
+          "flag": "--dflash-model",
+          "value": {
+            "ref": "/artifacts/draft"
+          },
+          "when": {
+            "all": [
+              {
+                "not": {
+                  "eq": [
+                    {
+                      "ref": "/artifacts/draft"
+                    },
+                    ""
+                  ]
+                }
+              },
+              {
+                "eq": [
+                  {
+                    "ref": "/model/speculative_mode"
+                  },
+                  "dflash2"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "mtp",
+          "flag": "--mtp-model",
+          "value": {
+            "ref": "/artifacts/draft"
+          },
+          "when": {
+            "all": [
+              {
+                "not": {
+                  "eq": [
+                    {
+                      "ref": "/artifacts/draft"
+                    },
+                    ""
+                  ]
+                }
+              },
+              {
+                "eq": [
+                  {
+                    "ref": "/model/speculative_mode"
+                  },
+                  "mtp"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "dspark",
+          "flag": "--dspark-model",
+          "value": {
+            "ref": "/artifacts/draft"
+          },
+          "when": {
+            "all": [
+              {
+                "not": {
+                  "eq": [
+                    {
+                      "ref": "/artifacts/draft"
+                    },
+                    ""
+                  ]
+                }
+              },
+              {
+                "eq": [
+                  {
+                    "ref": "/model/speculative_mode"
+                  },
+                  "dspark"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "environment": {
+        "preset": "inherit"
+      },
+      "working_directory": "inherit",
+      "output": {
+        "inherit_levels": [
+          "info",
+          "debug",
+          "trace"
+        ],
+        "filter": true
+      },
+      "readiness": {
+        "port": "http",
+        "path": "/ready",
+        "timeout": "global"
+      },
+      "watchdog": {
+        "policy": "standard",
+        "port": "http",
+        "path": "/ready"
+      },
+      "checks": [
+        {
+          "id": "draft-mode",
+          "require": {
+            "any": [
+              {
+                "eq": [
+                  {
+                    "ref": "/artifacts/draft"
+                  },
+                  ""
+                ]
+              },
+              {
+                "eq": [
+                  {
+                    "ref": "/model/speculative_mode"
+                  },
+                  "dflash2"
+                ]
+              },
+              {
+                "eq": [
+                  {
+                    "ref": "/model/speculative_mode"
+                  },
+                  "mtp"
+                ]
+              },
+              {
+                "eq": [
+                  {
+                    "ref": "/model/speculative_mode"
+                  },
+                  "dspark"
+                ]
+              }
+            ]
+          },
+          "error": {
+            "concat": [
+              "gufo: a draft model needs gufo_speculative set to dflash2, mtp or dspark, not '",
+              {
+                "ref": "/model/speculative_mode"
+              },
+              "'"
+            ]
+          }
+        }
+      ]
+    },
+    "operations": [
+      {
+        "id": "chat.buffered",
+        "operation": "chat_completion",
+        "delivery": "buffered",
+        "model_modes": [
+          "chat"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "port": "http",
+          "timeout": "global"
+        },
+        "request": {
+          "base": "identity"
+        }
+      },
+      {
+        "id": "chat.streaming",
+        "operation": "chat_completion",
+        "delivery": "streaming",
+        "model_modes": [
+          "chat"
+        ],
+        "transport": {
+          "kind": "http_sse",
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "port": "http",
+          "timeout": "global"
+        },
+        "request": {
+          "base": "identity"
+        }
+      }
+    ]
+  }
+}

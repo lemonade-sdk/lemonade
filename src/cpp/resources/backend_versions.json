@@ -217,5 +217,8 @@
     "vulkan": "v0.3.0",
     "cuda": "v0.3.0"
   },
-  "clear_bin_if_lemonade_below": "9.4.0"
+  "clear_bin_if_lemonade_below": "9.4.0",
+  "ds4_rocm": {
+    "rocm": "rocm-10.0@sha256:31b4e7e3584684768ee060e3dfeb62c1d716219da468090f3483977fdf6dfb47"
+  }
 }

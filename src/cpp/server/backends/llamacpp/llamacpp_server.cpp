@@ -1,48 +1,38 @@
-#include "lemon/backends/llamacpp/llamacpp_server.h"
-#include "lemon/backends/llamacpp/llamacpp.h"
-#include "lemon/backends/llamacpp/llamacpp_gguf.h"
-#include "lemon/backends/llamacpp/llamacpp_request.h"
-#include "lemon/backends/llamacpp/llamacpp_rulehead.h"
-#include "lemon/backends/llamacpp/llamacpp_systemone.h"
-#include "llamacpp_system_utils.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/backends/backend_ops.h"
-#include "lemon/backends/backend_utils.h"
-#include "lemon/backends/systemone_classify.h"
-#include "lemon/classification_labels.h"
-#include "lemon/gguf_capabilities.h"
-#include "lemon/gguf_reader.h"
-#include "lemon/gguf_shard_utils.h"
-#include "lemon/model_manager.h"
-#include "lemon/models/model_errors.h"
-#include "lemon/models/registry_types.h"
+#include <algorithm>
 #include <algorithm>
 #include <cctype>
-#include <filesystem>
-#include <regex>
-#include <system_error>
-#include <utility>
-#include "lemon/auto_tune.h"
-#include "lemon/backend_manager.h"
-#include "lemon/runtime_config.h"
-#include "lemon/utils/custom_args.h"
-#include "lemon/utils/recipe_arg_resolver.h"
-#include "lemon/utils/process_manager.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/utils/path_utils.h"
-#include "lemon/error_types.h"
-#include "lemon/system_info.h"
-#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
+#include <filesystem>
 #include <iostream>
-#include <iterator>
+#include "lemon/auto_tune.h"
+#include "lemon/backend_manager.h"
+#include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/llamacpp/llamacpp.h"
+#include "lemon/backends/llamacpp/llamacpp_gguf.h"
+#include "lemon/backends/llamacpp/llamacpp_request.h"
+#include "lemon/backends/llamacpp/llamacpp_server.h"
+#include "lemon/error_types.h"
+#include "lemon/gguf_capabilities.h"
+#include "lemon/gguf_reader.h"
+#include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
 #include <lemon/utils/aixlog.hpp>
-#include <mutex>
+#include "lemon/utils/custom_args.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
+#include "lemon/utils/recipe_arg_resolver.h"
+#include "legacy_llamacpp_artifact_ops.h"
+#include "llamacpp_system_utils.h"
+#include <regex>
 #include <set>
-#include <tuple>
+#include <system_error>
+#include <utility>
 #ifdef __APPLE__
 #include <pwd.h>
 #include <unistd.h>
@@ -58,6 +48,10 @@
     #include <unistd.h>
 #endif
 
+#include "llamacpp_effects.h"
+
+// Keep production log source locations stable while freezing the wrapper.
+#line 50
 namespace fs = std::filesystem;
 using namespace lemon::utils;
 
@@ -96,9 +90,10 @@ static std::string resolve_llamacpp_backend(const std::string& backend) {
     if (backend == "rocm") {
         // Map "rocm" to the appropriate channel based on config
         std::string channel = "stable";  // default to stable for now
-        if (auto* cfg = RuntimeConfig::global()) {
+        if (auto* cfg = LLAMA_EFFECT(RuntimeConfig::global(), llamacpp::oracle::effects().runtime_config())) {
             channel = cfg->rocm_channel();
         }
+#line 91
         return "rocm-" + channel;
     }
     return backend;
@@ -112,13 +107,6 @@ static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
 }
 
-// The container backends are Vulkan (nathanw) and ROCm (halobox) builds of llama.cpp.
-static std::string device_api(const std::string& backend) {
-    if (backend == "nathanw") return "vulkan";
-    if (backend == "halobox") return "rocm";
-    return backend;
-}
-
 static bool is_dflash_draft_checkpoint(std::string checkpoint) {
     std::transform(checkpoint.begin(), checkpoint.end(), checkpoint.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -130,7 +118,6 @@ static bool is_dflash_draft_checkpoint(std::string checkpoint) {
 }
 
 static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
-                                                 const std::string& backend,
                                                  const std::string& custom_args,
                                                  bool merge_args) {
     if (!merge_args) return custom_args;
@@ -158,13 +145,6 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
     // ctx_size the context a request actually gets.
     defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
 
-    // llama-server's 512-token ubatch costs the Strix Halo forks a fifth or more
-    // of their prefill; nathanw's author measures, and recommends, 2048.
-    if (backend == "nathanw" || backend == "halobox") {
-        defaults.push_back({"-b 2048", "-b", {"--batch-size"}});
-        defaults.push_back({"-ub 2048", "-ub", {"--ubatch-size"}});
-    }
-
     return append_runtime_arg_defaults(custom_args, defaults);
 }
 
@@ -186,7 +166,7 @@ static std::string trim_to_major_minor(const std::string& version) {
 }
 
 static std::string get_therock_version() {
-    auto config = JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
+    auto config = LLAMA_EFFECT(JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json")), llamacpp::oracle::effects().versions());
     if (!config.contains("therock") || !config["therock"].is_object() ||
         !config["therock"].contains("version") || !config["therock"]["version"].is_string()) {
         throw std::runtime_error("backend_versions.json is missing 'therock.version'");
@@ -206,9 +186,9 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
     if (resolved_backend == "rocm-stable") {
         params.repo = "lemonade-sdk/llama.cpp";
         std::string therock_ver = get_therock_version();
-#ifdef _WIN32
+#if LLAMA_WINDOWS
         params.filename = "llama-" + version + "-bin-win-rocm-" + therock_ver + "-x64.zip";
-#elif defined(__linux__)
+#elif LLAMA_LINUX
         params.filename = "llama-" + version + "-bin-ubuntu-rocm-" + therock_ver + "-x64.tar.gz";
 #else
         throw std::runtime_error("ROCm stable llamacpp is currently supported on Windows and Linux only");
@@ -216,34 +196,34 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
     } else if (resolved_backend == "rocm-nightly") {
         params.repo = "lemonade-sdk/llamacpp-rocm";
         std::string target_arch =
-            SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
+            SystemInfo::rocm_asset_family(LLAMA_EFFECT(SystemInfo::get_rocm_arch(), llamacpp::oracle::effects().rocm_arch()));
         if (target_arch.empty()) {
             throw std::runtime_error(
-                SystemInfo::get_unsupported_backend_error("llamacpp", "rocm-nightly")
+                LLAMA_EFFECT(SystemInfo::get_unsupported_backend_error("llamacpp", "rocm-nightly"), llamacpp::oracle::effects().unsupported("rocm-nightly"))
             );
         }
-#ifdef _WIN32
+#if LLAMA_WINDOWS
         params.filename = "llama-" + version + "-windows-rocm-" + target_arch + "-x64.zip";
-#elif defined(__linux__)
+#elif LLAMA_LINUX
         params.filename = "llama-" + version + "-ubuntu-rocm-" + target_arch + "-x64.zip";
 #else
         throw std::runtime_error("ROCm nightly llamacpp only supported on Windows and Linux");
 #endif
     } else if (resolved_backend == "cuda") {
         params.repo = "lemonade-sdk/llama.cpp";
-        std::string target_arch = SystemInfo::get_cuda_arch();
+        std::string target_arch = LLAMA_EFFECT(SystemInfo::get_cuda_arch(), llamacpp::oracle::effects().cuda_arch());
         if (target_arch.empty()) {
             throw std::runtime_error(
-                SystemInfo::get_unsupported_backend_error("llamacpp", "cuda")
+                LLAMA_EFFECT(SystemInfo::get_unsupported_backend_error("llamacpp", "cuda"), llamacpp::oracle::effects().unsupported("cuda"))
             );
         }
         // lemonade-sdk/llama.cpp releases publish per-Compute-Capability binaries
         // and embed the build tag in the asset filename, e.g.
         // llama-b1011-ubuntu-cuda-sm_120-x64.tar.xz.
-#ifdef _WIN32
+#if LLAMA_WINDOWS
         params.filename = "llama-" + version + "-windows-cuda-" + target_arch + "-x64.7z";
-#elif defined(__linux__)
-#if defined(__aarch64__)
+#elif LLAMA_LINUX
+#if LLAMA_ARM64
         params.filename = "llama-" + version + "-ubuntu-cuda-" + target_arch + "-arm64.tar.xz";
 #else
         params.filename = "llama-" + version + "-ubuntu-cuda-" + target_arch + "-x64.tar.xz";
@@ -253,17 +233,17 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #endif
     } else if (resolved_backend == "metal") {
         params.repo = "ggml-org/llama.cpp";
-#ifdef __APPLE__
+#if LLAMA_MACOS
         params.filename = "llama-" + version + "-bin-macos-arm64.tar.gz";
 #else
         throw std::runtime_error("Metal llamacpp only supported on macOS");
 #endif
     } else if (resolved_backend == "cpu") {
         params.repo = "ggml-org/llama.cpp";
-#ifdef _WIN32
+#if LLAMA_WINDOWS
         params.filename = "llama-" + version + "-bin-win-cpu-x64.zip";
-#elif defined(__linux__)
-#if defined(__aarch64__)
+#elif LLAMA_LINUX
+#if LLAMA_ARM64
         params.filename = "llama-" + version + "-bin-ubuntu-arm64.tar.gz";
 #else
         params.filename = "llama-" + version + "-bin-ubuntu-x64.tar.gz";
@@ -273,10 +253,10 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #endif
     } else {  // vulkan
         params.repo = "ggml-org/llama.cpp";
-#ifdef _WIN32
+#if LLAMA_WINDOWS
         params.filename = "llama-" + version + "-bin-win-vulkan-x64.zip";
-#elif defined(__linux__)
-#if defined(__aarch64__)
+#elif LLAMA_LINUX
+#if LLAMA_ARM64
         params.filename = "llama-" + version + "-bin-ubuntu-vulkan-arm64.tar.gz";
 #else
         params.filename = "llama-" + version + "-bin-ubuntu-vulkan-x64.tar.gz";
@@ -291,6 +271,7 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 
 LlamaCppServer::LlamaCppServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("llama-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::LlamaCpp, *this);
 }
 
 void LlamaCppServer::load(const std::string& model_name,
@@ -317,16 +298,8 @@ void LlamaCppServer::load(const std::string& model_name,
     // Update device type based on the actual backend selected.
     device_type_ = use_gpu ? DEVICE_GPU : DEVICE_CPU;
 
-    const ContainerPolicy* container = llamacpp::descriptor.container_for(llamacpp_backend);
-    if (container && model_info.extra<bool>("hf_load", false)) {
-        throw std::runtime_error(
-            "Model '" + model_name + "' has llama-server download its own weights, which llamacpp:" +
-            llamacpp_backend + " cannot do from its container's private network. "
-            "Load it on a llamacpp backend that runs on the host.");
-    }
-
     // Install llama-server if needed (use per-model backend)
-    backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);
+    LLAMA_EFFECT(backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend), llamacpp::oracle::effects().install(llamacpp::spec()->recipe, llamacpp_backend));
 
     // Use pre-resolved GGUF path. Skipped for hf_load models because llama-server
     // sources the weights itself via -hf; those models may not have local files.
@@ -343,64 +316,12 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string mmproj_path = model_info.resolved_path("mmproj");
     std::string draft_path = model_info.resolved_path("draft");
 
-    port_ = choose_port();
+    port_ = LLAMA_EFFECT(choose_port(), llamacpp::oracle::effects().port());
 
-    std::string executable =
-        container ? "" : BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);
+    std::string executable = BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);
 
     bool supports_embeddings = (model_info.type == ModelType::EMBEDDING);
     bool supports_reranking = (model_info.type == ModelType::RERANKING);
-    decision_model_ = has_label(model_info.labels, "systemone");
-    decision_type_ = model_info.gguf.decision_type;
-    decision_max_head_tokens_ = model_info.gguf.decision_max_head_tokens;
-    if (decision_model_ && model_info.gguf.architecture.empty()) {
-        LOG(WARNING, "LlamaCpp") << "Could not read the GGUF header of decision model '"
-                                 << model_info.model_name << "', so if it is an encoder it "
-                                 << "keeps llama-server's default batch sizes" << std::endl;
-    }
-    rule_head_.reset();
-    {
-        std::lock_guard<std::mutex> lock(rule_head_counts_mutex_);
-        rule_head_counts_.reset();
-    }
-    if (is_rule_head_router_model(model_info)) {
-        const std::string rule_head_path = model_info.resolved_path("rulehead");
-        if (rule_head_path.empty()) {
-            throw std::runtime_error(llamacpp::missing_rule_head_message(
-                model_name, model_info.checkpoint("rulehead")));
-        }
-        std::ifstream in(path_from_utf8(rule_head_path), std::ios::binary);
-        const std::string bytes((std::istreambuf_iterator<char>(in)),
-                                std::istreambuf_iterator<char>());
-        if (!in.good() && !in.eof()) {
-            throw std::runtime_error("Could not read the rule head file " + rule_head_path);
-        }
-        rule_head_ = std::make_shared<const llamacpp::RuleHead>(
-            llamacpp::parse_rule_head(bytes, model_info.gguf.embedding_length));
-        LOG(INFO, "LlamaCpp") << "Prompt-router encoder: lemond applies its rule head ("
-                              << rule_head_->proj << "x" << rule_head_->hidden
-                              << ") to llama-server's token vectors" << std::endl;
-    }
-
-    encoder_max_input_tokens_ = 0;
-    const bool encoder_decision_model = is_encoder_decision_model(model_info);
-    if (encoder_decision_model) {
-        const int capped = llamacpp::encoder_decision_ctx_size(ctx_size, model_info.max_context_window);
-        if (capped != ctx_size) {
-            LOG(INFO, "LlamaCpp") << "Encoder decision model: using its trained context of " << capped
-                                  << " tokens instead of " << ctx_size << std::endl;
-            ctx_size = capped;
-        }
-    }
-    if (rule_head_) {
-        const int window = llamacpp::rule_head_ctx_size(ctx_size);
-        if (window != ctx_size) {
-            LOG(INFO, "LlamaCpp") << "Prompt-router encoder: ctx_size " << ctx_size
-                                  << " means its default window of " << window << " tokens"
-                                  << std::endl;
-            ctx_size = window;
-        }
-    }
 
     // For embedding models, use a larger context size to support longer individual
     // strings. Embedding requests can include multiple strings in a batch, and each
@@ -426,15 +347,12 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
 
     if (!llamacpp_device.empty()) {
-        BackendUtils::validate_device_backend_match(device_api(llamacpp_backend), llamacpp_device);
+        BackendUtils::validate_device_backend_match(llamacpp_backend, llamacpp_device);
         push_arg(args, reserved_flags, "--device", llamacpp_device);
     }
     push_reserved(reserved_flags, "--device", std::vector<std::string>{"-dev"});
 
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
-    if (container) {
-        push_arg(args, reserved_flags, "--host", "0.0.0.0");
-    }
     push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
     push_arg(args, reserved_flags, "--metrics");
 
@@ -473,14 +391,11 @@ void LlamaCppServer::load(const std::string& model_name,
     push_reserved(reserved_flags, "--model-draft", std::vector<std::string>{"-md", "--spec-draft-model"});
 
     // Add embeddings support if the model supports it
-    if (supports_embeddings || rule_head_) {
+    if (supports_embeddings) {
         LOG(INFO, "LlamaCpp") << "Model supports embeddings, adding --embeddings flag" << std::endl;
         push_arg(args, reserved_flags, "--embeddings");
     }
     push_reserved(reserved_flags, "--embeddings", std::vector<std::string>{"--embedding"});
-    if (rule_head_) {
-        push_arg(args, reserved_flags, "--pooling", "none");
-    }
 
     // Add reranking support if the model supports it
     if (supports_reranking) {
@@ -488,33 +403,6 @@ void LlamaCppServer::load(const std::string& model_name,
         push_arg(args, reserved_flags, "--reranking");
     }
     push_reserved(reserved_flags, "--reranking", std::vector<std::string>{"--rerank"});
-
-    // An encoder decision model reads its whole input in one physical batch, so
-    // the default -ub 512 rejects any state longer than about 500 tokens.
-    // llama-server switches these models to embedding mode on its own, so no
-    // --embeddings flag is added.
-    if (encoder_decision_model || rule_head_) {
-        const llamacpp::SingleBatchPlan batch =
-            llamacpp::plan_single_batch(ctx_size, parse_custom_args(llamacpp_args));
-        if (batch.add_batch_size) {
-            push_arg(args, reserved_flags, "-b", std::to_string(batch.batch_size),
-                     std::vector<std::string>{"--batch-size"});
-        }
-        if (batch.add_ubatch_size) {
-            push_arg(args, reserved_flags, "-ub", std::to_string(batch.batch_size),
-                     std::vector<std::string>{"--ubatch-size"});
-        }
-        if (batch.max_input_tokens < ctx_size) {
-            LOG(INFO, "LlamaCpp") << "Encoder decision model reads up to "
-                                  << batch.max_input_tokens << " tokens per input (context "
-                                  << ctx_size << "); raise it with -b and -ub in llamacpp_args"
-                                  << std::endl;
-        } else {
-            LOG(INFO, "LlamaCpp") << "Encoder decision model, batch sizes cover the context ("
-                                  << ctx_size << " tokens)" << std::endl;
-        }
-        encoder_max_input_tokens_ = batch.max_input_tokens;
-    }
 
     // Validate and append custom arguments
     if (!llamacpp_args.empty()) {
@@ -532,43 +420,19 @@ void LlamaCppServer::load(const std::string& model_name,
 
     LOG(INFO, "LlamaCpp") << "Starting llama-server..." << std::endl;
 
-    if (container) {
-        ServerCommand command;
-        command.program = llamacpp::descriptor.binary;
-        command.args = std::move(args);
-        for (const std::string& path : {gguf_path, mmproj_path,
-                                        use_draft_checkpoint ? draft_path : std::string()}) {
-            if (!path.empty()) {
-                const auto files = gguf_files(path);
-                command.model_files.insert(command.model_files.end(), files.begin(), files.end());
-            }
-        }
-        command.port = port_;
-
-        const bool inherit_output = (log_level_ == "info") || is_debug();
-        start_server(std::make_unique<ContainerProcess>(
-                         ProcessOutput{inherit_output, true}, llamacpp::descriptor.recipe,
-                         llamacpp_backend, model_name, *container,
-                         BackendUtils::get_backend_image(llamacpp::descriptor.recipe,
-                                                         llamacpp_backend)),
-                     command);
-        LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
-        return;
-    }
-
     // For ROCm on Linux, set LD_LIBRARY_PATH to include the ROCm library directory
     std::vector<std::pair<std::string, std::string>> env_vars;
-#ifndef _WIN32
+#if !LLAMA_WINDOWS
     if (is_llamacpp_rocm_backend(llamacpp_backend)) {
         // Get the directory containing the executable (where ROCm .so files are)
         fs::path exe_dir = fs::path(executable).parent_path();
         std::string lib_path = exe_dir.string();
 
         if (llamacpp_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            std::string rocm_arch = LLAMA_EFFECT(SystemInfo::get_rocm_arch(), llamacpp::oracle::effects().rocm_arch());
             if (!rocm_arch.empty()) {
                 std::string therock_dirs = BackendUtils::join_runtime_dirs(
-                    BackendUtils::get_therock_lib_paths(rocm_arch));
+                    LLAMA_EFFECT(BackendUtils::get_therock_lib_paths(rocm_arch), llamacpp::oracle::effects().runtime_paths(rocm_arch)));
                 if (!therock_dirs.empty()) {
                     lib_path = therock_dirs + ":" + lib_path;
                 }
@@ -576,7 +440,7 @@ void LlamaCppServer::load(const std::string& model_name,
         }
 
         // Preserve existing LD_LIBRARY_PATH if it exists
-        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+        const char* existing_ld_path = LLAMA_EFFECT(std::getenv("LD_LIBRARY_PATH"), llamacpp::oracle::effects().environment("LD_LIBRARY_PATH"));
         if (existing_ld_path && strlen(existing_ld_path) > 0) {
             lib_path = lib_path + ":" + std::string(existing_ld_path);
         }
@@ -590,7 +454,7 @@ void LlamaCppServer::load(const std::string& model_name,
         fs::path exe_dir = fs::path(executable).parent_path();
         std::string lib_path = exe_dir.string();
 
-        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+        const char* existing_ld_path = LLAMA_EFFECT(std::getenv("LD_LIBRARY_PATH"), llamacpp::oracle::effects().environment("LD_LIBRARY_PATH"));
         if (existing_ld_path && strlen(existing_ld_path) > 0) {
             lib_path = lib_path + ":" + std::string(existing_ld_path);
         }
@@ -605,12 +469,12 @@ void LlamaCppServer::load(const std::string& model_name,
         std::string new_path;
 
         if (llamacpp_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            std::string rocm_arch = LLAMA_EFFECT(SystemInfo::get_rocm_arch(), llamacpp::oracle::effects().rocm_arch());
             if (!rocm_arch.empty()) {
                 // Prepend ALL TheRock runtime dirs (not just _rocm_sdk_core/bin) so
                 // HIP + BLAS DLLs resolve; _rocm_sdk_core/bin alone → STATUS_DLL_NOT_FOUND.
                 std::string therock_dirs = BackendUtils::join_runtime_dirs(
-                    BackendUtils::get_therock_lib_paths(rocm_arch));
+                    LLAMA_EFFECT(BackendUtils::get_therock_lib_paths(rocm_arch), llamacpp::oracle::effects().runtime_paths(rocm_arch)));
                 if (!therock_dirs.empty()) {
                     new_path = therock_dirs;
                 }
@@ -618,7 +482,7 @@ void LlamaCppServer::load(const std::string& model_name,
         }
 
         if (!new_path.empty()) {
-            const char* existing_path = std::getenv("PATH");
+            const char* existing_path = LLAMA_EFFECT(std::getenv("PATH"), llamacpp::oracle::effects().environment("PATH"));
             if (existing_path && strlen(existing_path) > 0) {
                 new_path += ";" + std::string(existing_path);
             }
@@ -629,14 +493,14 @@ void LlamaCppServer::load(const std::string& model_name,
         // System32 amdhip64_7.dll shadows the TheRock runtime on PATH. Copying
         // to the exe directory overrides both.
         if (llamacpp_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            std::string rocm_arch = LLAMA_EFFECT(SystemInfo::get_rocm_arch(), llamacpp::oracle::effects().rocm_arch());
             if (!rocm_arch.empty()) {
-                BackendUtils::stage_therock_hip_runtime(
-                    rocm_arch, fs::path(executable).parent_path());
+                LLAMA_EFFECT(BackendUtils::stage_therock_hip_runtime(
+                    rocm_arch, fs::path(executable).parent_path()), llamacpp::oracle::effects().stage(rocm_arch, fs::path(executable).parent_path()));
             }
         }
 
-        std::string arch = lemon::SystemInfo::get_rocm_arch();
+        std::string arch = LLAMA_EFFECT(SystemInfo::get_rocm_arch(), llamacpp::oracle::effects().rocm_arch());
         if ((arch == "gfx1151") || (arch == "gfx1152")){
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
             LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151/gfx1152 (enables loading larger models)" << std::endl;
@@ -648,7 +512,7 @@ void LlamaCppServer::load(const std::string& model_name,
         fs::path exe_dir = fs::absolute(fs::path(executable)).parent_path();
         std::string new_path = path_to_utf8(exe_dir);
 
-        const char* existing_path = std::getenv("PATH");
+        const char* existing_path = LLAMA_EFFECT(std::getenv("PATH"), llamacpp::oracle::effects().environment("PATH"));
         if (existing_path && strlen(existing_path) > 0) {
             new_path += ";" + std::string(existing_path);
         }
@@ -658,7 +522,7 @@ void LlamaCppServer::load(const std::string& model_name,
 #endif
 
     if (is_llamacpp_cuda_backend(llamacpp_backend)) {
-        std::string existing_llama_device = utils::get_environment_variable_utf8("LLAMA_ARG_DEVICE");
+        std::string existing_llama_device = LLAMA_EFFECT(utils::get_environment_variable_utf8("LLAMA_ARG_DEVICE"), llamacpp::oracle::effects().environment_string("LLAMA_ARG_DEVICE"));
         const bool has_llama_device_override = !existing_llama_device.empty();
 
         bool skip_visible_devices = false;
@@ -676,11 +540,11 @@ void LlamaCppServer::load(const std::string& model_name,
         BackendUtils::apply_cuda_env_vars(env_vars, "LlamaCpp", skip_visible_devices);
     }
 
-#ifdef __APPLE__
+#if LLAMA_MACOS
     // Forward GGML_METAL_NO_RESIDENCY to llama-server if set in the parent
     // environment. Metal residency sets crash on paravirtualized GPUs (e.g.
     // GitHub Actions macOS runners with MTLGPUFamilyApple5).
-    const char* no_residency = std::getenv("GGML_METAL_NO_RESIDENCY");
+    const char* no_residency = LLAMA_EFFECT(std::getenv("GGML_METAL_NO_RESIDENCY"), llamacpp::oracle::effects().environment("GGML_METAL_NO_RESIDENCY"));
     if (no_residency) {
         env_vars.push_back({"GGML_METAL_NO_RESIDENCY", no_residency});
         LOG(DEBUG, "LlamaCpp") << "Forwarding GGML_METAL_NO_RESIDENCY=" << no_residency << std::endl;
@@ -699,20 +563,26 @@ void LlamaCppServer::load(const std::string& model_name,
     // Once that PR merges and lemonade's pinned llama.cpp version (in
     // src/cpp/resources/backend_versions.json) includes it, this HOME
     // fallback can be deleted.
-    const char* home = std::getenv("HOME");
+    const char* home = LLAMA_EFFECT(std::getenv("HOME"), llamacpp::oracle::effects().environment("HOME"));
     if (!home || home[0] == '\0') {
+#ifdef LEMONADE_LLAMACPP_ORACLE
+        std::string fallback_home = llamacpp::oracle::effects().home();
+#else
         struct passwd* pw = getpwuid(getuid());
         std::string fallback_home = (pw && pw->pw_dir) ? pw->pw_dir : "/var/root";
+#endif
+#line 564
         env_vars.push_back({"HOME", fallback_home});
         LOG(DEBUG, "LlamaCpp") << "Parent HOME unset; setting child HOME=" << fallback_home << std::endl;
     }
 #endif
+#line 568
 
     // Start process (inherit output if debug logging enabled, filter health check spam)
     // Keep llama-server output visible at info log level.
     std::string process_executable = executable;
     std::string working_dir;
-#ifdef _WIN32
+#if LLAMA_WINDOWS
     // Avoid inheriting a protected launcher cwd while keeping Linux/macOS behavior unchanged.
     fs::path executable_path = fs::absolute(fs::path(executable));
     process_executable = path_to_utf8(executable_path);
@@ -726,273 +596,51 @@ void LlamaCppServer::load(const std::string& model_name,
     command.port = port_;
 
     bool inherit_llama_output = (log_level_ == "info") || is_debug();
-    start_server(
+    LLAMA_EFFECT((start_server(
         std::make_unique<NativeProcess>(ProcessOutput{inherit_llama_output, true}, working_dir),
-        command);
-}
-
-json LlamaCppServer::normalize_response_model(json response, const json& request) const {
-    if (response.is_object() && response.contains("model")) {
-        response["model"] = request.value("model", get_model_name());
-    }
-    return response;
+        command)), llamacpp::oracle::effects().start(command, {inherit_llama_output, true}, working_dir));
 }
 
 json LlamaCppServer::chat_completion(const json& request) {
-    return normalize_response_model(
-        forward_request("/v1/chat/completions",
+    return llamacpp::normalize_response_model(
+        LLAMA_POST("/v1/chat/completions",
                         llamacpp::sanitize_tool_schema_limits(
-                            JsonUtils::with_legacy_max_tokens_alias(request))),
-        request);
+                            llamacpp::with_max_tokens_alias(request))),
+        request, get_model_name());
 }
 
 json LlamaCppServer::completion(const json& request) {
-    return normalize_response_model(
-        forward_request("/v1/completions",
-                        JsonUtils::with_legacy_max_tokens_alias(request)),
-        request);
+    return llamacpp::normalize_response_model(
+        LLAMA_POST("/v1/completions",
+                        llamacpp::with_max_tokens_alias(request)),
+        request, get_model_name());
 }
 
 json LlamaCppServer::embeddings(const json& request) {
-    return forward_request("/v1/embeddings", request);
+    return LLAMA_POST("/v1/embeddings", request);
 }
 
 json LlamaCppServer::reranking(const json& request) {
-    return forward_request("/v1/rerank", request);
-}
-
-json LlamaCppServer::unsupported_decision_request(const std::string& operation) const {
-    return ErrorResponse::from_exception(UnsupportedOperationException(
-        operation, "llama.cpp model '" + get_model_name() +
-                       "', which is not a SystemOne decision model"));
-}
-
-json LlamaCppServer::classify(const json& request) {
-    if (rule_head_) {
-        return classify_with_rule_head(request);
-    }
-    if (!decision_model_) {
-        return unsupported_decision_request("Classification");
-    }
-    const json text = request.contains("text") ? request["text"] : request.value("input", json());
-    if (!text.is_string()) {
-        return systemone::invalid_decision_request("Missing 'input' (or 'text') string in classify request");
-    }
-    if (!request.contains("labels") || request["labels"].is_null()) {
-        return systemone::invalid_decision_request(
-            "this model scores a label list supplied per request; include a \"labels\" "
-            "array in the request body");
-    }
-
-    nlohmann::ordered_json body;
-    try {
-        body = systemone::build_classify_request(text.get<std::string>(), request["labels"]);
-    } catch (const std::invalid_argument& e) {
-        return systemone::invalid_decision_request(e.what());
-    }
-
-    const json response(decide(body));
-    if (response.contains("error")) {
-        return response;
-    }
-    const int top_k = request.contains("top_k") && request["top_k"].is_number_integer()
-                          ? request["top_k"].get<int>()
-                          : 0;
-    try {
-        return systemone::classify_response(response, request["labels"], top_k);
-    } catch (const std::exception& e) {
-        return ErrorResponse::create(e.what(), ErrorType::BACKEND_ERROR);
-    }
-}
-
-json LlamaCppServer::classify_with_rule_head(const json& request) {
-    const json text = request.contains("text") ? request["text"] : request.value("input", json());
-    if (!text.is_string()) {
-        return systemone::invalid_decision_request("Missing 'input' (or 'text') string in classify request");
-    }
-    if (!request.contains("labels") || !request["labels"].is_array() || request["labels"].empty()) {
-        return systemone::invalid_decision_request(
-            "this model scores a label list supplied per request; include a non-empty "
-            "\"labels\" array in the request body");
-    }
-    std::vector<std::string> labels;
-    for (const auto& label : request["labels"]) {
-        if (!label.is_string()) {
-            return systemone::invalid_decision_request("\"labels\" must be an array of strings");
-        }
-        labels.push_back(label.get<std::string>());
-    }
-    if (const std::string reason = validate_label_list(labels); !reason.empty()) {
-        return systemone::invalid_decision_request(reason);
-    }
-    const int top_k = request.contains("top_k") && request["top_k"].is_number_integer()
-                          ? request["top_k"].get<int>()
-                          : 0;
-
-    if (encoder_max_input_tokens_ <= 0) {
-        return ErrorResponse::create("the prompt-router encoder has no token window",
-                                     ErrorType::BACKEND_ERROR);
-    }
-    const size_t window = static_cast<size_t>(encoder_max_input_tokens_);
-
-    // Carries llama-server's own error response out of the tokenizer callback.
-    struct TokenizeFailure {
-        json response;
-    };
-    auto tokens_of = [this](const std::string& content, bool add_special) {
-        json body = {{"content", content}, {"add_special", add_special}};
-        if (!add_special) body["with_pieces"] = true;
-        json response = tokenize(body);
-        if (response.contains("error")) throw TokenizeFailure{std::move(response)};
-        return response.value("tokens", json());
-    };
-
-    try {
-        size_t n_specials = 0;
-        size_t elision_tokens = 0;
-        {
-            std::lock_guard<std::mutex> lock(rule_head_counts_mutex_);
-            if (!rule_head_counts_) {
-                rule_head_counts_.emplace(tokens_of("", true).size(),
-                                          tokens_of("\n...\n", false).size());
-            }
-            std::tie(n_specials, elision_tokens) = *rule_head_counts_;
-        }
-
-        const llamacpp::RouterFit fit = llamacpp::fit_router_input(
-            labels, text.get<std::string>(), window, n_specials, elision_tokens,
-            [&](const std::string& content) { return tokens_of(content, false); });
-        bool truncated = fit.truncated;
-
-        llamacpp::RouterTokens tokens = llamacpp::router_tokens(
-            tokens_of(fit.input.text, true), fit.tokens, fit.input.text.size());
-        if (tokens.ids.size() > window) {
-            tokens.ids.resize(window);
-            tokens.spans.resize(window);
-            truncated = true;
-        }
-        const llamacpp::RouterTokenGroups groups =
-            llamacpp::group_router_tokens(fit.input, tokens.spans, labels);
-
-        json embedded = forward_request("/embedding", json{{"content", tokens.ids}});
-        if (embedded.is_object() && embedded.contains("error")) {
-            return encoder_max_input_tokens_ > 0
-                       ? llamacpp::map_encoder_overflow_error(std::move(embedded),
-                                                              encoder_max_input_tokens_)
-                       : embedded;
-        }
-        if (!embedded.is_array() || embedded.empty() || !embedded[0].is_object() ||
-            !embedded[0].contains("embedding")) {
-            throw std::runtime_error("llama-server /embedding returned no token vectors");
-        }
-        const std::vector<double> probabilities = llamacpp::score_router_labels(
-            *rule_head_, embedded[0]["embedding"], tokens.ids.size(), groups);
-        return llamacpp::router_classify_response(labels, probabilities, top_k, truncated);
-    } catch (const TokenizeFailure& failure) {
-        return failure.response;
-    } catch (const std::invalid_argument& e) {
-        return systemone::invalid_decision_request(e.what());
-    } catch (const std::exception& e) {
-        return ErrorResponse::create(e.what(), ErrorType::BACKEND_ERROR);
-    }
-}
-
-std::optional<json> LlamaCppServer::laya_cut_error(const nlohmann::ordered_json& body) {
-    if (decision_type_ != "laya" || decision_max_head_tokens_ <= 0) {
-        return std::nullopt;
-    }
-    const std::string uncounted =
-        "could not count the tokens of the question, so lemond cannot check that the model "
-        "reads it whole";
-    auto count_tokens = [this, &uncounted](const std::string& content) {
-        const json counted = tokenize(json{{"content", content}});
-        if (!counted.contains("tokens") || !counted["tokens"].is_array()) {
-            throw std::runtime_error(uncounted);
-        }
-        return counted["tokens"].size();
-    };
-    const std::vector<llamacpp::LayaQuestionText> questions = llamacpp::laya_question_texts(body);
-    for (const auto& question : questions) {
-        std::vector<size_t> option_bytes;
-        for (const auto& option : question.options) option_bytes.push_back(1 + option.size());
-        // A byte-level BPE never has more tokens than bytes, so a short question
-        // needs no /tokenize round trip.
-        if (llamacpp::laya_cut(question, option_bytes, question.question.size(),
-                               decision_max_head_tokens_).empty()) {
-            continue;
-        }
-        std::vector<size_t> option_tokens;
-        size_t question_tokens = 0;
-        try {
-            for (const auto& option : question.options) {
-                option_tokens.push_back(count_tokens(" " + option));
-            }
-            question_tokens = count_tokens(question.question);
-        } catch (const std::exception& e) {
-            const std::string reason = e.what();
-            return ErrorResponse::create(reason == uncounted ? reason : uncounted + ": " + reason,
-                                         ErrorType::BACKEND_ERROR);
-        }
-        const std::string cut = llamacpp::laya_cut(question, option_tokens, question_tokens,
-                                                   decision_max_head_tokens_);
-        if (!cut.empty()) {
-            return systemone::invalid_decision_request(
-                questions.size() > 1 ? "question '" + question.id + "': " + cut : cut);
-        }
-    }
-    return std::nullopt;
-}
-
-nlohmann::ordered_json LlamaCppServer::decide(const nlohmann::ordered_json& body) {
-    // ort-server refuses a label it would cut; laya cuts options and the question
-    // silently, so refuse them here.
-    if (const auto error = laya_cut_error(body)) {
-        return nlohmann::ordered_json(*error);
-    }
-    nlohmann::ordered_json response = forward_systemone(body);
-    if (!response.contains("error")) {
-        llamacpp::mark_answers_truncated(response, decision_type_, body);
-    }
-    return response;
-}
-
-nlohmann::ordered_json LlamaCppServer::systemone(const nlohmann::ordered_json& request) {
-    if (!decision_model_) {
-        return unsupported_decision_request("SystemOne");
-    }
-    // As normalize_response_model, without re-sorting the answer.
-    nlohmann::ordered_json response = decide(request);
-    if (response.is_object() && response.contains("model")) {
-        response["model"] = request.value("model", get_model_name());
-    }
-    return response;
-}
-
-nlohmann::ordered_json LlamaCppServer::forward_systemone(const nlohmann::ordered_json& body) {
-    nlohmann::ordered_json response = forward_ordered_request("/v1/systemone", body);
-    if (encoder_max_input_tokens_ > 0 && response.contains("error")) {
-        response = llamacpp::map_encoder_overflow_error(json(response), encoder_max_input_tokens_);
-    }
-    return response;
+    return LLAMA_POST("/v1/rerank", request);
 }
 
 json LlamaCppServer::get_slots() {
-    return forward_get_request("/slots");
+    return LLAMA_GET("/slots");
 }
 
 json LlamaCppServer::slots_action(int slot_id, const std::string& action, const json& request_body) {
-    return forward_request("/slots/" + std::to_string(slot_id) + "?action=" + action, request_body);
+    return LLAMA_POST("/slots/" + std::to_string(slot_id) + "?action=" + action, request_body);
 }
 
 json LlamaCppServer::tokenize(const json& request_body) {
-    return forward_request("/tokenize", request_body);
+    return LLAMA_POST("/tokenize", request_body);
 }
 
 json LlamaCppServer::responses(const json& request) {
-    return normalize_response_model(
-        forward_request("/v1/responses",
+    return llamacpp::normalize_response_model(
+        LLAMA_POST("/v1/responses",
                         llamacpp::sanitize_tool_schema_limits(request)),
-        request);
+        request, get_model_name());
 }
 
 void LlamaCppServer::forward_streaming_request(const std::string& endpoint,
@@ -1006,14 +654,15 @@ void LlamaCppServer::forward_streaming_request(const std::string& endpoint,
         json request = json::parse(request_body, nullptr, false);
         if (!request.is_discarded()) {
             if (endpoint == "/v1/chat/completions") {
-                JsonUtils::add_legacy_max_tokens_alias(request);
+                request = llamacpp::with_max_tokens_alias(std::move(request));
             }
             body = llamacpp::sanitize_tool_schema_limits(std::move(request)).dump();
         }
     }
 
-    WrappedServer::forward_streaming_request(
-        endpoint, body, sink, sse, timeout_seconds, telemetry_callback);
+    LLAMA_EFFECT((WrappedServer::forward_streaming_request(
+        endpoint, body, sink, sse, timeout_seconds, telemetry_callback)),
+        llamacpp::oracle::effects().stream(endpoint, body, sink, sse, timeout_seconds, telemetry_callback));
 }
 
 } // namespace backends
@@ -1030,11 +679,11 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 namespace {
 std::string system_llamacpp_version() {
     std::string output;
-    #ifdef _WIN32
+    #if LLAMA_WINDOWS
     std::string command = "llama-server --version 2>NUL";
-    int rc = lemon::utils::ProcessManager::run_command(command, output);
+    int rc = LLAMA_EFFECT(lemon::utils::ProcessManager::run_command(command, output), oracle::effects().version_command(command, output));
     #else
-    FILE* pipe = popen("llama-server --version 2>/dev/null", "r");
+    FILE* pipe = LLAMA_EFFECT(popen("llama-server --version 2>/dev/null", "r"), oracle::effects().version_pipe("llama-server --version 2>/dev/null"));
     if (!pipe) {
         return "unknown";
     }
@@ -1044,7 +693,7 @@ std::string system_llamacpp_version() {
         output = buffer;
     }
 
-    pclose(pipe);
+    LLAMA_EFFECT(pclose(pipe), oracle::effects().close_version_pipe(pipe));
     #endif
 
     // Parse version from output like "version: 3432 (e2b2a632)" or "llama.cpp version b3432"
@@ -1067,7 +716,7 @@ std::string system_llamacpp_version() {
 
 
 bool is_ggml_hip_plugin_available() {
-#ifdef __linux__
+#if LLAMA_LINUX
     // Allow distros/packagers that install outside the FHS paths below
     // (e.g. NixOS, custom prefixes) to point directly at libggml-hip.so.
     if (detail::ggml_hip_env_override_available()) {
@@ -1078,7 +727,7 @@ bool is_ggml_hip_plugin_available() {
     // the binary (build tree) or in a sibling lib/ directory (installed tree).
     // find_executable_in_path() returns the bare name on POSIX, so walk PATH
     // here to recover the directory the binary actually lives in.
-    if (const char* path_env = std::getenv("PATH"); path_env && *path_env) {
+    if (const char* path_env = LLAMA_EFFECT(std::getenv("PATH"), llamacpp::oracle::effects().environment("PATH")); path_env && *path_env) {
         if (detail::ggml_hip_plugin_near_llama_server(path_env)) {
             return true;
         }
@@ -1098,7 +747,7 @@ bool is_ggml_hip_plugin_available() {
     };
 
     for (const auto& path : possible_paths) {
-        if (fs::exists(path)) {
+        if (LLAMA_EFFECT(fs::exists(path), oracle::effects().exists(path))) {
             return true;
         }
     }
@@ -1107,36 +756,10 @@ bool is_ggml_hip_plugin_available() {
     return false;
 }
 
+
 // llamacpp model-management behavior: GGUF metadata + capability labels.
-class LlamaCppOps : public BackendOps {
+class LlamaCppOps : public LegacyLlamaCppArtifactOps {
 public:
-    void add_implied_checkpoints(ModelInfo& info) const override {
-        const std::string main = info.checkpoint();
-        if (!has_label(info.labels, "zero-shot") || has_label(info.labels, "systemone") ||
-            !info.checkpoint("rulehead").empty() || main.empty()) {
-            return;
-        }
-        info.checkpoints["rulehead"] =
-            llamacpp::implied_rule_head_checkpoint(main, is_local_origin(info.source));
-    }
-
-    void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
-                        const BackendOpsContext& ctx) const override {
-        if (const std::string mixed = llamacpp::mixed_rule_head_source_error(
-                info.model_name, info.checkpoint(), info.checkpoint("rulehead"),
-                is_local_origin(info.source));
-            !mixed.empty()) {
-            throw std::runtime_error(mixed);
-        }
-        try {
-            BackendOps::download_model(info, do_not_upgrade, std::move(progress), ctx);
-        } catch (const MissingCheckpointError& e) {
-            if (e.checkpoint_type != "rulehead") throw;
-            throw std::runtime_error(
-                llamacpp::missing_rule_head_message(info.model_name, info.checkpoint("rulehead")));
-        }
-    }
-
     void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const override {
         const json merge_args_value = options.get_option("merge_args");
         const bool merge_args =
@@ -1144,137 +767,9 @@ public:
         const json custom_args_value = options.get_option("llamacpp_args");
         const std::string custom_args =
             custom_args_value.is_string() ? custom_args_value.get<std::string>() : "";
-        const json backend_value = options.get_option("llamacpp_backend");
-        const std::string backend =
-            backend_value.is_string() ? backend_value.get<std::string>() : "";
         options.set_option(
             "llamacpp_args",
-            resolve_llamacpp_runtime_args(info, backend, custom_args, merge_args));
-    }
-
-    void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
-        const std::string gguf_path = info.resolved_path();
-        if (gguf_path.size() < 5) {
-            return;
-        }
-        std::string ext = gguf_path.substr(gguf_path.size() - 5);
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        if (ext != ".gguf") {
-            return;
-        }
-        std::error_code ec;
-        if (!std::filesystem::exists(lemon::utils::path_from_utf8(gguf_path), ec)) {
-            return;
-        }
-        GgufMetadata meta;
-        if (!read_gguf_metadata(meta, gguf_path)) {
-            return;
-        }
-        info.max_context_window = meta.context_length;
-        info.gguf = std::move(meta);
-        // GGUF vision/tool metadata are LLM capabilities. Don't apply them to
-        // embedding/reranking models, or labels like tool-calling would
-        // reclassify the model away from its endpoint type.
-        if (info.type == ModelType::LLM) {
-            apply_gguf_capability_labels(info.labels, info.gguf.caps);
-        }
-    }
-
-    std::string resolve_checkpoint_path(const ModelInfo& info,
-                                        const CheckpointResolveContext& ctx) const override {
-        // The main checkpoint is a GGUF file (with sharding/variant resolution);
-        // auxiliary checkpoints (mmproj, …) use the shared default.
-        if (ctx.type == "main") {
-            return resolve_gguf_path(ctx.model_cache_path, ctx.variant);
-        }
-        return BackendOps::resolve_checkpoint_path(info, ctx);
-    }
-
-    std::string find_imported_checkpoint(const std::string& import_dir) const override {
-        // The primary artifact is the (non-mmproj) GGUF file.
-        return resolve_gguf_path(import_dir, "");
-    }
-
-    std::string validate_registration_checkpoint(const std::string& checkpoint) const override {
-        if (llamacpp::checkpoint_is_local(checkpoint, false)) return "";
-        // lemond resolves a relative path against its own working folder, which is
-        // not the client's, and a remote client's is on another machine.
-        if (checkpoint.rfind("./", 0) == 0 || checkpoint.rfind("../", 0) == 0 ||
-            checkpoint.rfind(".\\", 0) == 0 || checkpoint.rfind("..\\", 0) == 0) {
-            return "'" + checkpoint + "' is a relative path. lemond reads a GGUF on disk "
-                   "from its own machine and working folder, not the client's, so name "
-                   "the file by its absolute path.";
-        }
-        // A GGUF checkpoint must name its quant via CHECKPOINT:VARIANT.
-        std::string lower = checkpoint;
-        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-        if (lower.find("gguf") != std::string::npos &&
-            checkpoint.find(':') == std::string::npos) {
-            return "You are required to provide a 'variant' in the checkpoint field when "
-                   "registering a GGUF model. The variant is provided as CHECKPOINT:VARIANT. "
-                   "For example: Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:Q4_0 or "
-                   "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:qwen2.5-coder-3b-instruct-q4_0.gguf";
-        }
-        return "";
-    }
-
-    std::string validate_load(const ModelInfo& info) const override {
-        if (is_rule_head_router_model(info) &&
-            (info.type != ModelType::CLASSIFICATION || has_label(info.labels, "systemone"))) {
-            return "model '" + info.model_name + "' has a 'rulehead' checkpoint, which lemond "
-                   "applies only to a prompt-router encoder labelled 'classification' and "
-                   "'zero-shot', not 'systemone'";
-        }
-        if (is_rule_head_router_model(info)) {
-            if (info.extra<bool>("hf_load", false)) {
-                return "model '" + info.model_name + "' has a 'rulehead' checkpoint and "
-                       "'hf_load', but lemond reads the encoder's width from the GGUF header "
-                       "to apply the head, and with 'hf_load' it has no GGUF of its own. "
-                       "Remove 'hf_load'.";
-            }
-            const std::string mixed = llamacpp::mixed_rule_head_source_error(
-                info.model_name, info.checkpoint(), info.checkpoint("rulehead"),
-                is_local_origin(info.source));
-            if (!mixed.empty()) return mixed;
-            // Else the folder reaches llama-server as -m, and the missing GGUF
-            // header surfaces only as an unknown encoder width.
-            if (llamacpp::checkpoint_is_local(info.checkpoint(), is_local_origin(info.source))) {
-                const std::string folder = llamacpp::local_directory_checkpoint_error(
-                    info.model_name,
-                    info.resolved_path().empty() ? info.checkpoint() : info.resolved_path());
-                if (!folder.empty()) return folder;
-            }
-        }
-        if (has_label(info.labels, "zero-shot") && !has_label(info.labels, "systemone") &&
-            !is_rule_head_router_model(info)) {
-            return llamacpp::missing_rule_head_message(info.model_name, llamacpp::RULE_HEAD_FILE);
-        }
-        if (!has_label(info.labels, "systemone")) return "";
-        return llamacpp::decision_model_load_refusal(info.model_name,
-                                                     info.extra<bool>("hf_load", false),
-                                                     info.gguf.architecture,
-                                                     info.gguf.decision_type);
-    }
-
-    std::string validate_checkpoint_file(const std::string& resolved_path) const override {
-        // A .gguf file in the cache must start with the GGUF magic, else it's a
-        // truncated/corrupt download and the model is not really present.
-        std::error_code ec;
-        std::filesystem::path p = lemon::utils::path_from_utf8(resolved_path);
-        if (std::filesystem::is_directory(p, ec)) {
-            return "";
-        }
-        std::string ext = resolved_path.size() >= 5 ? resolved_path.substr(resolved_path.size() - 5) : "";
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        if (ext != ".gguf") {
-            return "";
-        }
-        std::ifstream in(p, std::ios::binary);
-        char magic[4] = {};
-        in.read(magic, sizeof(magic));
-        bool ok = in.gcount() == static_cast<std::streamsize>(sizeof(magic)) &&
-                  magic[0] == 'G' && magic[1] == 'G' && magic[2] == 'U' && magic[3] == 'F';
-        return ok ? "" : "Invalid GGUF cache file";
+            resolve_llamacpp_runtime_args(info, custom_args, merge_args));
     }
 
     std::string resolve_version(const std::string& backend,
@@ -1290,8 +785,8 @@ public:
         // The system llama-server also needs the ggml HIP plugin for ROCm GPU
         // acceleration when an AMD GPU (KFD) is present.
         if (binary_found && backend == "system") {
-#ifdef __linux__
-            if (std::filesystem::exists("/sys/class/kfd") && !is_ggml_hip_plugin_available()) {
+#if LLAMA_LINUX
+            if (LLAMA_EFFECT(std::filesystem::exists("/sys/class/kfd"), oracle::effects().exists("/sys/class/kfd")) && !is_ggml_hip_plugin_available()) {
                 return {false, "HIP plugin libggml-hip.so not installed"};
             }
 #endif
