@@ -83,8 +83,10 @@ runs:
                     # On Ubuntu some runtime deps (e.g. libcpp-httplib0.26 on
                     # 24.04) exist only in the lemonade PPA, so a runner
                     # provisioned without it fails here on every job.
+                    # apt-cache policy lists only enabled sources, so disabled
+                    # entries don't count.
                     if ( . /etc/os-release 2>/dev/null && [ "${ID:-}" = "ubuntu" ] ) \
-                        && ! grep -rqs "lemonade-team" /etc/apt/sources.list /etc/apt/sources.list.d/; then
+                        && ! grep -qs "lemonade-team/bleeding-edge/ubuntu" <<<"$(apt-cache policy 2>/dev/null)"; then
                         echo "::error title=Runner is missing the lemonade PPA::This runner's apt sources do not include ppa:lemonade-team/bleeding-edge, which provides some of this .deb's runtime dependencies on Ubuntu. Run: sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge && sudo apt-get update"
                     fi
                     exit 1
