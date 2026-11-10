@@ -1,0 +1,280 @@
+{
+  "about": "Every Lemonade declaration the adapter backend (src/cpp/server/backends/adapter/) depends on. If a change moves one, tools/adapter_hook_map.py --check names it: adapt the adapter backend (or note a follow-up), then run --update. Engines are out of tree: their adapter specs never need a Lemonade change.",
+  "adapter_spec_version": 1,
+  "lemonade_version": "2026.45.3",
+  "hooks": [
+    {
+      "id": "descriptor-struct",
+      "file": "src/cpp/include/lemon/backends/backend_descriptor.h",
+      "anchor": "^struct BackendDescriptor\\b",
+      "kind": "block",
+      "used_for": "adapter.h fills BackendDescriptor field by field, in order",
+      "fingerprint": "2eea8de349d7cd30"
+    },
+    {
+      "id": "slot-policy",
+      "file": "src/cpp/include/lemon/backends/backend_descriptor.h",
+      "anchor": "^enum class SlotPolicy\\b",
+      "kind": "block",
+      "used_for": "SlotPolicy::Standard: adapter engines count toward slots and are evicted like local models",
+      "fingerprint": "155d2be00711cfe0"
+    },
+    {
+      "id": "server-command",
+      "file": "src/cpp/include/lemon/server_process.h",
+      "anchor": "^struct ServerCommand\\b",
+      "kind": "block",
+      "used_for": "the engine's program, args, env, port and ready probe",
+      "fingerprint": "fe74dfe35ba5eb3f"
+    },
+    {
+      "id": "process-output",
+      "file": "src/cpp/include/lemon/server_process.h",
+      "anchor": "^struct ProcessOutput\\b",
+      "kind": "block",
+      "used_for": "whether the engine's output goes to lemond's log",
+      "fingerprint": "9711295cb0f62393"
+    },
+    {
+      "id": "native-process",
+      "file": "src/cpp/include/lemon/server_process.h",
+      "anchor": "explicit NativeProcess\\(",
+      "kind": "decl",
+      "used_for": "starting the engine as a child process",
+      "fingerprint": "3b8d581dc1465611"
+    },
+    {
+      "id": "wrapped-ctor",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*WrappedServer\\(const std::string& server_name",
+      "kind": "decl",
+      "used_for": "AdapterServer's base constructor",
+      "fingerprint": "1caaf004f194f571"
+    },
+    {
+      "id": "wrapped-load",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*virtual void load\\(",
+      "kind": "decl",
+      "used_for": "AdapterServer::load reads the spec and starts the engine",
+      "fingerprint": "37244a244dcd7fde"
+    },
+    {
+      "id": "wrapped-chat",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*virtual json chat_completion\\(",
+      "kind": "decl",
+      "used_for": "chat requests are proxied to the engine",
+      "fingerprint": "09b96c6d57029e17"
+    },
+    {
+      "id": "wrapped-completion",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*virtual json completion\\(",
+      "kind": "decl",
+      "used_for": "completion requests are proxied to the engine",
+      "fingerprint": "4016ff8932517da2"
+    },
+    {
+      "id": "wrapped-telemetry",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*virtual std::map<std::string, nlohmann::json> get_additional_telemetry\\(",
+      "kind": "decl",
+      "used_for": "the spec's telemetry_path",
+      "fingerprint": "6495b78e0fda39d0"
+    },
+    {
+      "id": "wrapped-telemetry-url",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*virtual std::string get_additional_telemetry_url\\(",
+      "kind": "decl",
+      "used_for": "the spec's telemetry_path",
+      "fingerprint": "f7f456bf16fc1c80"
+    },
+    {
+      "id": "start-server",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*void start_server\\(",
+      "kind": "decl",
+      "used_for": "starts the engine and waits for the spec's ready path",
+      "fingerprint": "5d75baaa25fcaf5c"
+    },
+    {
+      "id": "stop-server",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*void stop_server\\(",
+      "kind": "decl",
+      "used_for": "stops an engine that fails its ready or identity check; unload",
+      "fingerprint": "617fe59cc4de975c"
+    },
+    {
+      "id": "choose-port",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*int choose_port\\(",
+      "kind": "decl",
+      "used_for": "the {port} placeholder",
+      "fingerprint": "fc72c1135c3a895f"
+    },
+    {
+      "id": "forward-request",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*json forward_request\\(",
+      "kind": "decl",
+      "used_for": "proxying OpenAI requests",
+      "fingerprint": "9f19323ec240ec9d"
+    },
+    {
+      "id": "forward-get",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*json forward_get_request\\(",
+      "kind": "decl",
+      "used_for": "the ready field and identity (/v1/models) checks",
+      "fingerprint": "7d6840568264866f"
+    },
+    {
+      "id": "base-url",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*std::string get_base_url\\(",
+      "kind": "decl",
+      "used_for": "telemetry URL",
+      "fingerprint": "cb5c6a04b3891a3b"
+    },
+    {
+      "id": "backend-port",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*int get_backend_port\\(",
+      "kind": "decl",
+      "used_for": "telemetry only while the engine runs",
+      "fingerprint": "365bedd1ffb7431a"
+    },
+    {
+      "id": "ops-resolve",
+      "file": "src/cpp/include/lemon/backends/backend_ops.h",
+      "anchor": "^\\s*virtual std::string resolve_checkpoint_path\\(",
+      "kind": "decl",
+      "used_for": "\"<spec>::<path>\" checkpoints resolve to the path",
+      "fingerprint": "e7d458213ac2eb4f"
+    },
+    {
+      "id": "ops-downloaded",
+      "file": "src/cpp/include/lemon/backends/backend_ops.h",
+      "anchor": "^\\s*virtual bool is_downloaded\\(",
+      "kind": "decl",
+      "used_for": "a model is present when its path and its spec exist",
+      "fingerprint": "07a0174c30027247"
+    },
+    {
+      "id": "ops-download",
+      "file": "src/cpp/include/lemon/backends/backend_ops.h",
+      "anchor": "^\\s*virtual void download_model\\(",
+      "kind": "decl",
+      "used_for": "pull never downloads for adapters; it reports what is missing",
+      "fingerprint": "f1009604066cc393"
+    },
+    {
+      "id": "make-server",
+      "file": "src/cpp/include/lemon/backends/backend_registry.h",
+      "anchor": "make_server\\(const BackendContext& ctx\\)",
+      "kind": "decl",
+      "used_for": "adapter::create",
+      "fingerprint": "acd4ac3abfd99003"
+    },
+    {
+      "id": "make-spec",
+      "file": "src/cpp/include/lemon/backends/backend_utils.h",
+      "anchor": "const BackendSpec\\* make_spec\\(",
+      "kind": "decl",
+      "used_for": "adapter::spec",
+      "fingerprint": "004499e44a66b62f"
+    },
+    {
+      "id": "capability-mask",
+      "file": "src/cpp/include/lemon/server_capabilities.h",
+      "anchor": "constexpr uint32_t capability_mask_of\\(",
+      "kind": "decl",
+      "used_for": "adapter::capabilities",
+      "fingerprint": "b87146ca87ba8df2"
+    },
+    {
+      "id": "recipe-get-option",
+      "file": "src/cpp/include/lemon/recipe_options.h",
+      "anchor": "json get_option\\(",
+      "kind": "decl",
+      "used_for": "adapter_args and adapter_device",
+      "fingerprint": "efaedbf024c9c45e"
+    },
+    {
+      "id": "model-checkpoint",
+      "file": "src/cpp/include/lemon/models/model_info.h",
+      "anchor": "std::string checkpoint\\(const std::string& type",
+      "kind": "decl",
+      "used_for": "the \"<spec>::<path>\" checkpoint",
+      "fingerprint": "c1327586003602b0"
+    },
+    {
+      "id": "config-dir",
+      "file": "src/cpp/include/lemon/utils/path_utils.h",
+      "anchor": "^std::string get_config_dir\\(",
+      "kind": "decl",
+      "used_for": "specs live in <config dir>/adapters",
+      "fingerprint": "136f4c8a7f2a9545"
+    },
+    {
+      "id": "find-in-path",
+      "file": "src/cpp/include/lemon/utils/path_utils.h",
+      "anchor": "^std::string find_executable_in_path\\(",
+      "kind": "decl",
+      "used_for": "a spec's binary may be a name on PATH",
+      "fingerprint": "4a521080546b6488"
+    },
+    {
+      "id": "lru-eviction",
+      "file": "src/cpp/server/router.cpp",
+      "anchor": "^WrappedServer\\* Router::find_lru_server_in_pool\\(",
+      "kind": "block",
+      "used_for": "behaviour: backends that are not Unmetered are eviction candidates",
+      "fingerprint": "c5da5b656c71d378"
+    },
+    {
+      "id": "empty-support",
+      "file": "src/cpp/server/system_info.cpp",
+      "anchor": "^std::string SystemInfo::check_recipe_supported\\(",
+      "kind": "block",
+      "used_for": "behaviour: a descriptor with no support rows is not gated by local hardware",
+      "fingerprint": "86d6af66c64be374"
+    },
+    {
+      "id": "backend-list",
+      "file": "CMakeLists.txt",
+      "anchor": "^set\\(LEMON_BACKENDS",
+      "kind": "paren",
+      "used_for": "the adapter|adapter entry; other entries do not matter",
+      "fingerprint": "ed5da00cd34f966b",
+      "ignore": "^\\s*\"(?!adapter\\|)[^\"]*\"\\s*$"
+    },
+    {
+      "id": "backend-registry-loop",
+      "file": "CMakeLists.txt",
+      "anchor": "^foreach\\(_backend_entry \\$\\{LEMON_BACKENDS\\}\\)",
+      "kind": "decl",
+      "used_for": "the <stem>.h / <stem>_server.h / create, spec, ops, capabilities naming the adapter backend follows",
+      "fingerprint": "5629c327b3ae58c8"
+    },
+    {
+      "id": "wrapped-unload",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*virtual void unload\\(",
+      "kind": "decl",
+      "used_for": "AdapterServer::unload overrides it: stop the engine, then check the GPUs for leftovers",
+      "fingerprint": "43611117627e094d"
+    },
+    {
+      "id": "process-id",
+      "file": "src/cpp/include/lemon/wrapped_server.h",
+      "anchor": "^\\s*int get_process_id\\(",
+      "kind": "decl",
+      "used_for": "the engine's root pid, to collect its process tree before stopping it (verified unload)",
+      "fingerprint": "5e916774acbb0dc9"
+    }
+  ]
+}
