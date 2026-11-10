@@ -189,6 +189,14 @@ std::string format_variant_label(const json& v) {
     return out.str();
 }
 
+// whisper.cpp's ggml-tiny.bin is selectable and named as "tiny". A file such
+// as ".bin" or "ggml-.bin" would leave nothing, so it keeps its full name.
+std::string single_file_label(const std::string& file) {
+    std::string label = file.substr(0, file.find_last_of('.'));
+    if (to_lower(label).rfind("ggml-", 0) == 0) label.erase(0, 5);
+    return label.empty() ? file : label;
+}
+
 }  // namespace
 
 std::string normalize_registry_checkpoint_arg(const std::string& arg,
@@ -307,10 +315,11 @@ int registry_pull_flow(lemonade::LemonadeClient& client,
     std::string recipe = variants_response.value("recipe", std::string("llamacpp"));
     std::string repo_kind = variants_response.value("repo_kind", std::string("gguf"));
 
-    // Non-GGUF repos (currently: ONNX RyzenAI) ship as a single installable
-    // unit — no per-variant menu, no `:variant` checkpoint suffix, no
-    // `-VARIANT` model name tail. (Collections returned earlier above.)
-    if (repo_kind != "gguf") {
+    // ONNX RyzenAI repos ship as a single installable unit — no per-variant
+    // menu, no `:variant` checkpoint suffix, no `-VARIANT` model name tail.
+    // (Collections returned earlier above.) Single-file repos, such as
+    // whisper.cpp or stable-diffusion checkpoints, use the variant menu below.
+    if (repo_kind != "gguf" && repo_kind != "single-file") {
         if (!variant.empty()) {
             std::cerr << "warning: variant '" << variant << "' ignored for "
                       << recipe << " checkpoints" << std::endl;
@@ -369,12 +378,14 @@ int registry_pull_flow(lemonade::LemonadeClient& client,
         return client.pull_model(pull_body, suggested_name, /*upgrade=*/true);
     }
 
-    // Resolve variant by case-insensitive name match.
+    const bool single_file = repo_kind == "single-file";
     int selected_idx = -1;
     if (!variant.empty()) {
         std::string vlow = to_lower(variant);
         for (size_t i = 0; i < variants.size(); ++i) {
-            if (to_lower(variants[i].value("name", "")) == vlow) {
+            const std::string name = variants[i].value("name", "");
+            if (to_lower(name) == vlow ||
+                (single_file && to_lower(single_file_label(name)) == vlow)) {
                 selected_idx = static_cast<int>(i);
                 break;
             }
@@ -385,6 +396,14 @@ int registry_pull_flow(lemonade::LemonadeClient& client,
     bool prompted_for_variant = false;
     if (selected_idx >= 0) {
         variant_name = variants[selected_idx].value("name", "");
+    } else if (!variant.empty() && single_file) {
+        std::cerr << "Error: " << checkpoint << " has no model file '" << variant
+                  << "'. Available:" << std::endl;
+        for (const auto& v : variants) {
+            const std::string name = v.value("name", "");
+            std::cerr << "  " << single_file_label(name) << "  (" << name << ")" << std::endl;
+        }
+        return 1;
     } else if (!variant.empty()) {
         variant_name = variant;
     } else if (assume_yes) {
@@ -404,7 +423,8 @@ int registry_pull_flow(lemonade::LemonadeClient& client,
 
     // Build /v1/pull body.
     std::string suggested_name = variants_response.value("suggested_name", checkpoint);
-    std::string default_model_name = suggested_name + "-" + variant_name;
+    std::string default_model_name =
+        suggested_name + "-" + (single_file ? single_file_label(variant_name) : variant_name);
     std::string model_name = default_model_name;
     if (prompted_for_variant) {
         if (!prompt_model_name(default_model_name, model_name)) return 1;
