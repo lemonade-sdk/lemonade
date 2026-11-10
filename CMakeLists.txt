@@ -2404,6 +2404,7 @@ add_custom_target(embeddable
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/toolDefinitions.json"
+        "$<TARGET_FILE_DIR:lemond>/resources/strata_prepare.py"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
 
     # Create archive

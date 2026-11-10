@@ -1077,7 +1077,19 @@ json SystemInfo::get_device_dict() {
         if (!(vendor_file >> std::hex >> vendor) || !(device_file >> std::hex >> device) || vendor != 0x8086) continue;
         // Intel integrated GPUs share the vendor id but are not supported by Strata's SYCL engine.
         if ((device >= 0x5690 && device <= 0x56c1) || (device >= 0xe200 && device <= 0xe2ff)) {
-            devices["intel_gpu"].push_back({{"name", "Intel Arc"}, {"family", "arc"}, {"available", true}});
+            bool render_accessible = false;
+            std::error_code render_error;
+            for (fs::directory_iterator node(entry.path() / "device" / "drm", render_error), end;
+                 node != end && !render_error; node.increment(render_error)) {
+                const auto render_name = node->path().filename().string();
+                if (render_name.rfind("renderD", 0) != 0) continue;
+                const int fd = open((fs::path("/dev/dri") / render_name).c_str(), O_RDWR | O_CLOEXEC);
+                if (fd < 0) continue;
+                close(fd);
+                render_accessible = true;
+            }
+            devices["intel_gpu"].push_back({{"name", "Intel Arc"}, {"family", "arc"}, {"available", true},
+                                            {"render_node_accessible", render_accessible}});
         }
     }
     if (drm_error) devices["intel_gpu_error"] = drm_error.message();
@@ -1721,6 +1733,35 @@ json SystemInfo::build_recipes_info(const json& devices) {
             backend["message"] = block->message;
             backend["action"] = block->action;
         }
+
+#ifdef __linux__
+        if (supported && def.backend == "sycl") {
+            const auto& gpus = devices.value("intel_gpu", json::array());
+            const bool render_accessible = std::any_of(gpus.begin(), gpus.end(), [](const json& gpu) {
+                return gpu.value("available", false) && gpu.value("render_node_accessible", false);
+            });
+            void* loader = dlopen("libze_loader.so.1", RTLD_NOW | RTLD_LOCAL);
+            const auto ze_init = loader
+                ? reinterpret_cast<uint32_t (*)(uint32_t)>(dlsym(loader, "zeInit")) : nullptr;
+            const auto ze_driver_get = loader
+                ? reinterpret_cast<uint32_t (*)(uint32_t*, void**)>(dlsym(loader, "zeDriverGet")) : nullptr;
+            uint32_t drivers = 0;
+            // ZE_INIT_FLAG_GPU_ONLY excludes CPU-only runtimes from this probe.
+            const bool runtime_available = render_accessible && ze_init && ze_driver_get &&
+                ze_init(1) == 0 && ze_driver_get(&drivers, nullptr) == 0 && drivers > 0;
+            if (loader) dlclose(loader);
+            if (!render_accessible || !runtime_available) {
+                supported = false;
+                backend["state"] = "action_required";
+                backend["message"] = !render_accessible
+                    ? "Grant the Lemonade server account read/write access to the Intel Arc render node "
+                      "in /dev/dri (render/video groups), then restart Lemonade."
+                    : "Install the Intel Level Zero loader and GPU compute runtime "
+                      "(libze1 and libze-intel-gpu1 on Ubuntu), then restart Lemonade.";
+                backend["action"] = "https://github.com/Niko1221/Strata/blob/main/docs/INTEL_ARC.md#what-you-need";
+            }
+        }
+#endif
 
         set_backend_status(def, backend, kCurrentOsUnsupportedPriority);
 

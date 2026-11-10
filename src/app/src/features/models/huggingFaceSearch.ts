@@ -91,6 +91,10 @@ export async function detectHuggingFaceBackend(
   return detectHuggingFaceBackendFromMetadata(modelId, await response.json());
 }
 
-export function isStrataGguf(file: string): boolean {
-  return /^(?:Qwen3\.6-35B-A3B-(?:UD-Q[46]_K_XL|Q8_0)|Qwen3\.8-Flash-Next-Gyro-(?:S-TQ1_0|M-TQ2_0))\.gguf$/.test(file.split('/').pop() || '');
+export function isStrataGguf(file: string, models: ModelInfo[], backends: string[]): boolean {
+  const basename = file.split(/[\\/:]/).pop();
+  return /\.gguf$/i.test(file) && models.some(model => model.recipe === 'strata'
+    && String(model.checkpoint || '').split(/[\\/:]/).pop() === basename
+    && model.supported_backends?.some(backend => backends.includes(backend)));
 }
+import type { ModelInfo } from '../../api';

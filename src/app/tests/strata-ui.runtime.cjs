@@ -46,7 +46,17 @@ const flashSpecs = sampler.samplerFieldsForRecipe('strata', 'repo:Qwen3.8-Flash-
 assert.equal(flashSpecs.find(spec => spec.flag === '--mtp').kind, 'text');
 assert.equal(sampler.composeSamplerArgs(flashSpecs, { '--mtp': 'off', '--kv-resident': '0' }, ''),
   '--mtp off --kv-resident 0');
-assert.ok(isStrataGguf('Qwen3.8-Flash-Next-Gyro-S-TQ1_0.gguf'));
-assert.ok(!isStrataGguf('DeepSeek-V4.1-Flash-UD-Q8_K_XL.gguf'));
+const catalog = Object.entries(JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../src/cpp/resources/server_models.json'), 'utf8')))
+  .filter(([, row]) => row.recipe === 'strata')
+  .map(([id, row]) => ({ id, ...row, checkpoint: row.checkpoint || row.checkpoints.main, supported_backends: row.strata.backends }));
+const qwen = 'Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf';
+const swift = 'Qwen3.8-Flash-Next-Gyro-S-TQ1_0.gguf';
+for (const backend of ['cuda', 'rocm']) assert.ok(isStrataGguf(qwen, catalog, [backend]));
+for (const backend of ['metal', 'sycl']) assert.ok(!isStrataGguf(qwen, catalog, [backend]));
+assert.ok(isStrataGguf(swift, catalog, ['metal']));
+assert.ok(isStrataGguf(`nested/${swift}`, catalog, ['rocm']));
+assert.ok(!isStrataGguf(swift, catalog, []));
+assert.ok(!isStrataGguf(swift, [], ['rocm']));
+assert.ok(!isStrataGguf('DeepSeek-V4.1-Flash-UD-Q8_K_XL.gguf', catalog, ['rocm']));
 
 console.log('Strata UI configuration and engine controls passed.');

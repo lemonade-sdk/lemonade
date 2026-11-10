@@ -816,12 +816,12 @@ const HfOverviewTab: React.FC<{
 }> = ({ hfModel, hfVariants, recipeDraft, onRecipeChange, onHfPull, isPulling, isActive }) => {
   const { t } = useI18n();
   const [selectedVariantName, setSelectedVariantName] = useState('');
+  const strataBackends = Object.entries(backendMapForRecipe(api.systemInfoData, 'strata') || {})
+    .filter(([, backend]) => backend.state !== 'unsupported').map(([backend]) => backend);
   const strataVariants = hfVariants?.recipe === 'llamacpp'
-    ? hfVariants.variants.filter(v => !v.sharded && isStrataGguf(v.primary_file))
+    ? hfVariants.variants.filter(v => !v.sharded && isStrataGguf(v.primary_file, api.allModels, strataBackends))
     : [];
-  const strataAvailable = Object.values(backendMapForRecipe(api.systemInfoData, 'strata') || {})
-    .some(backend => backend.state !== 'unsupported');
-  const canUseStrata = strataAvailable && strataVariants.length > 0;
+  const canUseStrata = strataVariants.length > 0;
   const recipe = recipeDraft === 'strata' && canUseStrata ? 'strata' : hfVariants?.recipe || '';
   const variants = recipe === 'strata' ? strataVariants : hfVariants?.variants || [];
   const selectedVariant = variants.find(v => v.name === selectedVariantName) ?? variants[0];
