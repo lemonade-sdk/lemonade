@@ -2940,12 +2940,16 @@ NPUInfo WindowsSystemInfo::get_npu_device() {
         return npu;
     }
 
-    // The driver's device name differs by generation. Matching is a substring
-    // scan over every device, so a bare "NPU" would also hit "USB Input Device".
-    const char* driver_device_name = npu_arch == "XDNA3"
-        ? "AMD XDNA(TM) NPU"
-        : "NPU Compute Accelerator Device";
-    std::string driver_version = get_driver_version(driver_device_name);
+    // The driver's device name varies ("NPU Compute Accelerator Device" on XDNA2,
+    // "AMD XDNA(TM) NPU" on Medusa). Matching is a substring scan over every
+    // device, so a bare "NPU" would also hit "USB Input Device".
+    std::string driver_version;
+    for (const char* driver_device_name : {"NPU Compute Accelerator Device", "AMD XDNA"}) {
+        driver_version = get_driver_version(driver_device_name);
+        if (!driver_version.empty()) {
+            break;
+        }
+    }
     if (!driver_version.empty()) {
         npu.available = true;
     } else {
