@@ -409,7 +409,16 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
     return client.pull_model(model_data, "", /*upgrade=*/true);
 }
 
+// --recipe alone on a registry checkpoint picks the backend for the
+// discovered repository instead of starting a manual pull.
+static bool recipe_picks_registry_backend(const CliConfig& config) {
+    return !config.recipe.empty() && config.checkpoints.empty() && config.labels.empty() &&
+           config.components.empty() && !lemon::is_omni_collection_recipe(config.recipe) &&
+           config.model.find('/') != std::string::npos;
+}
+
 static bool has_manual_pull_options(const CliConfig& config) {
+    if (recipe_picks_registry_backend(config)) return false;
     return !config.checkpoints.empty() || !config.recipe.empty() ||
            !config.labels.empty() || !config.components.empty();
 }
@@ -463,7 +472,7 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
     int res = 0;
     if (normalized_model.find('/') != std::string::npos) {
         res = lemon_cli::registry_pull_flow(
-            client, normalized_model, false, detected_source);
+            client, normalized_model, false, detected_source, config.recipe);
     } else {
         nlohmann::json model_data;
         model_data["model_name"] = config.model;
@@ -1664,7 +1673,8 @@ int main(int argc, char* argv[]) {
         ->type_name("TYPE CHECKPOINT")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     pull_cmd->add_option("--recipe", config.recipe,
-        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp, collection.omni, collection.router)")
+        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp, collection.omni, collection.router). "
+        "With a registry checkpoint and no --checkpoint, picks the backend when more than one can load it.")
         ->group("Manual Configuration Options")
         ->type_name("RECIPE")
         ->default_val(config.recipe);

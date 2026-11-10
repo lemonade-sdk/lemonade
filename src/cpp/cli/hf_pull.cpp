@@ -119,6 +119,36 @@ bool prompt_variant(const std::vector<std::string>& labels,
     return prompt_variant_menu(labels, names, out, false);
 }
 
+// Show the backends that can load the repository and read a number or a
+// recipe name. Returns false on EOF, empty input or an unknown choice.
+bool prompt_engine(const json& candidates, size_t& out) {
+    std::cout << "More than one backend can load this repository:" << std::endl;
+    for (size_t i = 0; i < candidates.size(); ++i) {
+        const auto& c = candidates[i];
+        const size_t count = c.contains("variants") && c["variants"].is_array()
+            ? c["variants"].size() : 0;
+        std::cout << "  " << (i + 1) << ") " << c.value("recipe", "") << "  ("
+                  << count << (count == 1 ? " variant)" : " variants)") << std::endl;
+    }
+    std::cout << "Enter number or recipe: " << std::flush;
+
+    std::string input;
+    if (!std::getline(std::cin, input)) return false;
+    trim(input);
+    if (input.empty()) {
+        std::cerr << "Error: a backend is required." << std::endl;
+        return false;
+    }
+    for (size_t i = 0; i < candidates.size(); ++i) {
+        if (input == std::to_string(i + 1) || input == candidates[i].value("recipe", "")) {
+            out = i;
+            return true;
+        }
+    }
+    std::cerr << "Error: '" << input << "' is not one of the listed backends." << std::endl;
+    return false;
+}
+
 bool prompt_model_name(const std::string& default_name, std::string& out) {
     std::cout << "Choose a model name." << std::endl;
     std::cout << "Press enter to use the default: " << default_name << std::endl;
@@ -218,7 +248,8 @@ std::string normalize_huggingface_checkpoint_arg(const std::string& arg) {
 int registry_pull_flow(lemonade::LemonadeClient& client,
                        const std::string& model_arg,
                        bool assume_yes,
-                       const std::string& registry_source) {
+                       const std::string& registry_source,
+                       const std::string& recipe_choice) {
     std::string source;
     std::string checkpoint;
     std::string variant;
@@ -303,6 +334,38 @@ int registry_pull_flow(lemonade::LemonadeClient& client,
         std::cout << ")" << std::endl;
 
         return client.pull_model(pull_body, display_name, /*upgrade=*/true);
+    }
+
+    // Each candidate is a backend that can load the repository; the top-level
+    // fields mirror the first one, and a server without candidates sends only
+    // those.
+    json candidates = variants_response.contains("candidates") &&
+                              variants_response["candidates"].is_array() &&
+                              !variants_response["candidates"].empty()
+        ? variants_response["candidates"]
+        : json::array({variants_response});
+    size_t chosen = 0;
+    if (!recipe_choice.empty()) {
+        bool found = false;
+        for (size_t i = 0; i < candidates.size() && !found; ++i) {
+            if (candidates[i].value("recipe", "") == recipe_choice) {
+                chosen = i;
+                found = true;
+            }
+        }
+        if (!found) {
+            std::cerr << "Error: " << checkpoint << " cannot be loaded by '" << recipe_choice
+                      << "'. Backends that can load it:";
+            for (const auto& c : candidates) std::cerr << " " << c.value("recipe", "");
+            std::cerr << std::endl;
+            return 1;
+        }
+    } else if (candidates.size() > 1 && !assume_yes) {
+        if (!prompt_engine(candidates, chosen)) return 1;
+    }
+    for (const char* field :
+         {"recipe", "repo_kind", "suggested_labels", "mmproj_files", "draft_files", "variants"}) {
+        if (candidates[chosen].contains(field)) variants_response[field] = candidates[chosen][field];
     }
 
     if (!variants_response.contains("variants") || !variants_response["variants"].is_array() ||
