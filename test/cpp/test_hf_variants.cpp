@@ -417,6 +417,25 @@ int main() {
                       !analysis.match && analysis.refusal.empty(), analysis.refusal);
     }
 
+    {
+        auto analysis = analyze("ryzenai-llm",
+                                {"genai_config.json", "model.onnx", "model.onnx.data"},
+                                nlohmann::json::object());
+        result.expect("Ryzen AI takes an OGA repository as one default variant",
+                      analysis.match && analysis.match->repo_kind == "onnx-ryzenai" &&
+                          analysis.match->variants.size() == 1 &&
+                          analysis.match->variants[0].name == "default" &&
+                          analysis.match->variants[0].files.size() == 3,
+                      analysis.refusal);
+    }
+    {
+        auto with_gguf = analyze("ryzenai-llm", {"genai_config.json", "model.onnx", "model.gguf"},
+                                 nlohmann::json::object());
+        auto no_config = analyze("ryzenai-llm", {"model.onnx"}, nlohmann::json::object());
+        result.expect("Ryzen AI declines repositories without an OGA layout",
+                      !with_gguf.match && !no_config.match, "");
+    }
+
     printf("\n%d passed, %d failed\n", result.passed, result.failed);
     return result.failed == 0 ? 0 : 1;
 }

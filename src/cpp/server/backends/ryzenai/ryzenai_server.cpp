@@ -7,6 +7,8 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
+#include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <filesystem>
 #include <lemon/utils/aixlog.hpp>
@@ -109,8 +111,42 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 
 
 namespace {
+bool ends_with_ci(const std::string& value, const std::string& suffix) {
+    if (value.size() < suffix.size()) return false;
+    return std::equal(suffix.rbegin(), suffix.rend(), value.rbegin(),
+                      [](char a, char b) { return a == std::tolower(static_cast<unsigned char>(b)); });
+}
+
 class RyzenAiOps : public BackendOps {
 public:
+    // An OGA model ships .onnx files next to its genai_config.json and is
+    // pulled whole, as one "default" variant.
+    RepositoryAnalysis analyze_repository(const RepositoryView& repo) const override {
+        bool has_gguf = false;
+        bool has_onnx = false;
+        bool has_genai_config = false;
+        for (const auto& file : repo.files) {
+            if (ends_with_ci(file, ".gguf")) has_gguf = true;
+            if (ends_with_ci(file, ".onnx")) has_onnx = true;
+            if (ends_with_ci("/" + file, "/genai_config.json")) has_genai_config = true;
+        }
+        if (has_gguf || !has_onnx || !has_genai_config) return {};
+
+        GgufVariant variant;
+        variant.name = "default";
+        variant.primary_file = "genai_config.json";
+        variant.files = repo.files;
+        variant.sharded = repo.files.size() > 1;
+        for (const auto& [file, size] : repo.file_sizes) variant.size_bytes += size;
+
+        RepositoryMatch match;
+        match.repo_kind = "onnx-ryzenai";
+        match.variants.push_back(std::move(variant));
+        RepositoryAnalysis analysis;
+        analysis.match = std::move(match);
+        return analysis;
+    }
+
     std::string resolve_checkpoint_path(const ModelInfo&,
                                         const CheckpointResolveContext& ctx) const override {
         // RyzenAI models are a directory containing genai_config.json.

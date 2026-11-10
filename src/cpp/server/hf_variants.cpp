@@ -435,24 +435,10 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
         return metadata;
     };
 
-    // Detect repo kind: GGUF (existing path) vs ONNX RyzenAI vs unknown.
-    // ONNX RyzenAI repos contain `.onnx` files plus a `genai_config.json`
-    // (the OGA runtime config). They are pulled as a single unit — no
-    // sub-variant selection — and use the `ryzenai-llm` recipe.
     bool has_gguf = false;
-    bool has_onnx = false;
-    bool has_genai_config = false;
-    uint64_t total_repo_size = 0;
     for (const auto& f : repo_files) {
-        std::string lf = to_lower(f);
-        if (ends_with(lf, ".gguf")) has_gguf = true;
-        if (ends_with(lf, ".onnx")) has_onnx = true;
-        if (lf == "genai_config.json" ||
-            (lf.size() > 18 && ends_with(lf, "/genai_config.json"))) {
-            has_genai_config = true;
-        }
+        if (ends_with(to_lower(f), ".gguf")) has_gguf = true;
     }
-    for (const auto& kv : file_sizes) total_repo_size += kv.second;
 
     // Suggested name = component after the last '/'.
     std::string suggested_name = checkpoint;
@@ -461,28 +447,14 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
         if (slash != std::string::npos) suggested_name = checkpoint.substr(slash + 1);
     }
 
-    // ONNX RyzenAI branch: synthesize a 1-element variant set.
-    if (!has_gguf && has_onnx && has_genai_config) {
-        nlohmann::json vj;
-        vj["name"] = "default";
-        vj["primary_file"] = "genai_config.json";
-        vj["files"] = repo_files;
-        vj["sharded"] = repo_files.size() > 1;
-        vj["size_bytes"] = total_repo_size;
-
-        std::vector<std::string> labels;
-        backends::ensure_deployment_label(labels, "ryzenai-llm");
-
-        nlohmann::json out;
+    // ONNX RyzenAI repositories are pulled as a single unit, so they skip
+    // the GGUF variant selection.
+    const auto onnx = backends::ops_for("ryzenai-llm")->analyze_repository(view);
+    if (onnx.match) {
+        nlohmann::json out = match_json("ryzenai-llm", *onnx.match);
         out["checkpoint"] = checkpoint;
         out["source"] = remote_registry_source_name(source);
-        out["recipe"] = "ryzenai-llm";
-        out["repo_kind"] = "onnx-ryzenai";
         out["suggested_name"] = suggested_name;
-        out["suggested_labels"] = labels;
-        out["mmproj_files"] = nlohmann::json::array();
-        out["draft_files"] = nlohmann::json::array();
-        out["variants"] = nlohmann::json::array({vj});
         return out;
     }
 
