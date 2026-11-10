@@ -447,14 +447,25 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
         if (slash != std::string::npos) suggested_name = checkpoint.substr(slash + 1);
     }
 
-    // ONNX RyzenAI repositories are pulled as a single unit, so they skip
-    // the GGUF variant selection.
-    const auto onnx = backends::ops_for("ryzenai-llm")->analyze_repository(view);
-    if (onnx.match) {
-        nlohmann::json out = match_json("ryzenai-llm", *onnx.match);
+    // Every backend is asked, because concurrent engines can load the same
+    // files and each one is offered. Backends answer in registry order, so the
+    // first candidate is the default.
+    nlohmann::json candidates = nlohmann::json::array();
+    std::vector<std::string> refusals;
+    for (const auto& registration : backends::all_registrations()) {
+        auto analysis = registration.ops->analyze_repository(view);
+        if (analysis.match) {
+            candidates.push_back(match_json(registration.descriptor->recipe, *analysis.match));
+        } else if (!analysis.refusal.empty()) {
+            refusals.push_back(std::move(analysis.refusal));
+        }
+    }
+    if (!candidates.empty()) {
+        nlohmann::json out = candidates[0];
         out["checkpoint"] = checkpoint;
         out["source"] = remote_registry_source_name(source);
         out["suggested_name"] = suggested_name;
+        out["candidates"] = std::move(candidates);
         return out;
     }
 
@@ -529,26 +540,25 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
             out["size"] = manifest["size"];
         }
         out["component_count"] = manifest["components"].size();
+        out["candidates"] = nlohmann::json::array({{
+            {"recipe", "collection.omni"},
+            {"repo_kind", "collection"},
+            {"suggested_labels", labels},
+            {"mmproj_files", nlohmann::json::array()},
+            {"draft_files", nlohmann::json::array()},
+            {"variants", nlohmann::json::array()},
+        }});
         return out;
     }
 
-    const auto analysis = backends::ops_for("llamacpp")->analyze_repository(view);
-    if (!analysis.match && !analysis.refusal.empty()) {
-        throw std::invalid_argument(analysis.refusal);
+    if (!refusals.empty()) {
+        throw std::invalid_argument(refusals.front());
     }
-    if (!analysis.match) {
-        throw std::runtime_error(
-            "No supported model files found in repository " + checkpoint +
-            ". Supported repository types: GGUF models (*.gguf), ONNX RyzenAI models, and "
-            "Lemonade Omni collections (a '" + manifest_filename +
-            "' manifest exported by 'lemonade export')");
-    }
-
-    nlohmann::json out = match_json("llamacpp", *analysis.match);
-    out["checkpoint"] = checkpoint;
-    out["source"] = remote_registry_source_name(source);
-    out["suggested_name"] = suggested_name;
-    return out;
+    throw std::runtime_error(
+        "No supported model files found in repository " + checkpoint +
+        ". Supported repository types: GGUF models (*.gguf), ONNX RyzenAI models, and "
+        "Lemonade Omni collections (a '" + manifest_filename +
+        "' manifest exported by 'lemonade export')");
 }
 
 std::string llamacpp_gguf_incompatibility(
