@@ -24,8 +24,15 @@ InstallParams RyzenAIServer::get_install_params(const std::string& /*backend*/, 
     return {"lemonade-sdk/ryzenai-server", "ryzenai-server.zip"};
 }
 
-RyzenAIServer::RyzenAIServer(bool debug, ModelManager* model_manager, BackendManager* backend_manager)
-    : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager, backend_manager) {
+InstallParams RyzenAIServer::get_install_params_medusa(const std::string& /*backend*/, const std::string& /*version*/) {
+    return {"lemonade-sdk/ryzenai-server", "medusa-server.zip"};
+}
+
+RyzenAIServer::RyzenAIServer(bool debug, ModelManager* model_manager, BackendManager* backend_manager,
+                             std::string recipe, const BackendSpec* spec)
+    : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager, backend_manager),
+      recipe_(std::move(recipe)),
+      spec_(spec) {
 }
 
 bool RyzenAIServer::is_available() {
@@ -43,9 +50,9 @@ void RyzenAIServer::load(const std::string& model_name,
     LOG(DEBUG, "RyzenAI") << "Loading model: " << model_name << std::endl;
     int ctx_size = options.get_option("ctx_size");
 
-    backend_manager_->install_backend("ryzenai-llm", "npu");
+    backend_manager_->install_backend(recipe_, "npu");
 
-    std::string ryzenai_server_path = backends::BackendUtils::get_backend_binary_path(*backends::ryzenai::spec(), "npu");
+    std::string ryzenai_server_path = backends::BackendUtils::get_backend_binary_path(*spec_, "npu");
     if (ryzenai_server_path.empty()) {
         throw std::runtime_error("RyzenAI-Server executable not found even after installation attempt");
     }
@@ -53,7 +60,7 @@ void RyzenAIServer::load(const std::string& model_name,
     LOG(DEBUG, "RyzenAI") << "Found ryzenai-server at: " << ryzenai_server_path << std::endl;
 
     const std::string model_path = model_info.resolved_path();
-    if (model_path.empty() || !fs::exists(model_path)) {
+    if (model_path.empty() || !fs::exists(path_from_utf8(model_path))) {
         throw std::runtime_error("Model path does not exist: " + model_path);
     }
 
@@ -81,7 +88,10 @@ void RyzenAIServer::load(const std::string& model_name,
     command.program = ryzenai_server_path;
     command.args = std::move(args);
     command.port = port_;
-    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}), command);
+    // ryzenai-server resolves its runtime files relative to the working directory.
+    const std::string working_dir = path_to_utf8(path_from_utf8(ryzenai_server_path).parent_path());
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}, working_dir),
+                 command);
 }
 
 json RyzenAIServer::chat_completion(const json& request) {
@@ -104,7 +114,7 @@ namespace ryzenai {
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return std::make_unique<::lemon::RyzenAIServer>(ctx.log_level == "debug", ctx.model_manager,
-                                                   ctx.backend_manager);
+                                                   ctx.backend_manager, descriptor.recipe, spec());
 }
 
 

@@ -15,9 +15,11 @@ using backends::InstallParams;
 class RyzenAIServer : public WrappedServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
+    static InstallParams get_install_params_medusa(const std::string& backend, const std::string& version);
 
-
-    RyzenAIServer(bool debug, ModelManager* model_manager, BackendManager* backend_manager);
+    // recipe/spec pick the server build: ryzenai-llm (XDNA2) or ryzenai-llm-medusa (XDNA3).
+    RyzenAIServer(bool debug, ModelManager* model_manager, BackendManager* backend_manager,
+                  std::string recipe, const BackendSpec* spec);
 
     // Installation and availability
     static bool is_available();
@@ -31,6 +33,10 @@ public:
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
     json responses(const json& request) override;
+
+private:
+    std::string recipe_;
+    const BackendSpec* spec_;
 };
 
 } // namespace lemon

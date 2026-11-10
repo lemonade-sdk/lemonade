@@ -6,6 +6,9 @@
       "lemonade-sdk/ryzenai-server": {
         "v1.9.0": {
           "ryzenai-server.zip": "sha256:fbafd130d05fb6b6428e927761c65085d672384dd5968d5230b8ee3df878b5f0"
+        },
+        "medusa-v1.0": {
+          "medusa-server.zip": "sha256:daabb9d48bb1c73caad8beabb98b9e1cea244bc24fb064baff3e5db79553aa47"
         }
       },
       "pwilkin/openmoss": {
@@ -164,6 +167,9 @@
   },
   "ryzenai-llm": {
     "npu": "v1.9.0"
+  },
+  "ryzenai-llm-medusa": {
+    "npu": "medusa-v1.0"
   },
   "flm": {
     "npu": "v1.0.13"
