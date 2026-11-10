@@ -1,6 +1,7 @@
 #include "lemon/backends/strata/strata_server.h"
 
 #include <cstdio>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -32,7 +33,17 @@ int main() {
           strata::ops()->checkpoint_revision(flash, "main").size() == 40 &&
           strata::ops()->checkpoint_revision(flash, "shard_2") ==
               strata::ops()->checkpoint_revision(flash, "main"));
-    strata::validate_options(8192, "--mtp=0 --chunk 512 --no-graph", 4, true);
-    strata::validate_options(262144, "--mtp custom-pack", 1, false);
+    try {
+        strata::validate_options(8192, "--mtp=0 --chunk 512 --no-graph", 4, true);
+        check("GGUF options accept disabled MTP and parallel slots", true);
+    } catch (const std::invalid_argument&) {
+        check("GGUF options accept disabled MTP and parallel slots", false);
+    }
+    try {
+        strata::validate_options(262144, "--mtp custom-pack", 1, false);
+        check("Ready-pack options accept a custom MTP pack", true);
+    } catch (const std::invalid_argument&) {
+        check("Ready-pack options accept a custom MTP pack", false);
+    }
     return failures ? 1 : 0;
 }

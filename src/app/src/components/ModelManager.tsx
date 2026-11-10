@@ -2556,6 +2556,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const filterRemoteResults = useCallback((provider: ModelRegistryProvider, results: HFModelResult[]) => {
     if (!providerEnabled[provider] || searchQuery.trim().length < 2 || primaryFilter !== 'all') return [];
+    const strataAvailable = systemRecipeEntries(systemInfo)?.some(
+      ([recipe, raw]) => recipe === 'strata' && visibleBackendEntries(raw).length > 0);
     return results.filter(result => {
       if (provider !== 'huggingface' && localRegistryRefs.has(result.id.toLowerCase())) return false;
       const key = providerKey(provider, result.id);
@@ -2565,14 +2567,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         && !isCompatibleHuggingFaceRecipe(hfDetectedRecipes[key])) return false;
       const info = remoteResultAsModelInfo(result, variants);
       if (!modelMatchesTasks(info, taskFilters)) return false;
-      const strataMatch = variants?.recipe === 'llamacpp'
+      const strataMatch = strataAvailable && variants?.recipe === 'llamacpp'
         && variants.variants.some(variant => !variant.sharded && isStrataGguf(variant.primary_file))
         && modelMatchesBackends({ ...info, recipe: 'strata' }, backendFilters);
       if (!modelMatchesBackends(info, backendFilters) && !strataMatch) return false;
       if (!modelMatchesTags(info, tagFilters)) return false;
       return true;
     });
-  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, hfDetectedRecipes, taskFilters, backendFilters, tagFilters]);
+  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, hfDetectedRecipes, taskFilters, backendFilters, tagFilters, systemInfo]);
 
   const filteredHfResults = useMemo(
     () => filterRemoteResults('huggingface', hfResults),

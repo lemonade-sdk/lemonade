@@ -494,6 +494,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
 
     // NPU architectures
     {"XDNA2", "AMD XDNA 2"},
+    {"arc", "Intel Arc A/B series"},
 };
 
 // Maps device types to human-readable names (for error messages)
@@ -502,6 +503,7 @@ static const std::map<std::string, std::string> DEVICE_TYPE_NAMES = {
     {"amd_gpu", "AMD GPU"},
     {"amd_npu", "AMD NPU"},
     {"nvidia_gpu", "NVIDIA GPU"},
+    {"intel_gpu", "Intel GPU"},
     {"metal", "MacOS Metal GPU"}
 };
 

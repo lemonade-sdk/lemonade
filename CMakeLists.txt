@@ -2782,7 +2782,7 @@ if(BUILD_TESTING AND EXISTS "${_CONTAINER_MANAGER_TEST_SRC}")
     add_cpp_ci_test(ContainerManagerTest CI ON COMMAND test_container_manager)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_strata_contract.cpp")
     add_executable(test_strata_contract test/cpp/test_strata_contract.cpp)
     target_link_libraries(test_strata_contract PRIVATE lemonade-server-core)
     add_cpp_ci_test(StrataContractTest CI ON COMMAND test_strata_contract)
