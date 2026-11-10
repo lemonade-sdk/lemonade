@@ -113,8 +113,11 @@ public:
         std::vector<std::string> result;
         if (selection.empty()) return result;
         const auto allowed = selection.at("backends").get<std::vector<std::string>>();
+        const auto system_info = SystemInfoCache::get_system_info_with_cache();
         for (const auto& backend : SystemInfo::get_supported_backends("strata").backends) {
             if (std::find(allowed.begin(), allowed.end(), backend) == allowed.end()) continue;
+            if (system_info.at("recipes").at("strata").at("backends").at(backend)
+                    .value("state", "") == "action_required") continue;
             result.push_back(backend);
         }
         return result;
