@@ -1603,11 +1603,20 @@ struct NexusManager::Session {
     void note_legacy_join() {
         if (!account.contains("joined") && (key_unlock() || account.contains("credential_id"))) account["joined"] = true;
     }
-    void unlock_with_key(bool defer_join) {
+    // `replace_passkey`: a local operator without a passkey client (a browser) moves a
+    // device that registered a passkey to its device key. The network keeps the credential
+    // it registered; this device never presents it again. The switch is recorded only after
+    // the key authenticated, so an outage leaves the passkey in place.
+    void unlock_with_key(bool defer_join, bool replace_passkey = false) {
         require_identity();
-        if (account.contains("credential_id")) throw NexusError(409, "This device unlocks with its passkey");
+        const bool passkey = account.contains("credential_id");
+        if (passkey && !replace_passkey) throw NexusError(409, "This device unlocks with its passkey");
         authenticate_identity();
-        if (!key_unlock()) {
+        if (passkey) {
+            account.erase("credential_id");
+            LOG(INFO, "Nexus") << "Device key replaces the registered passkey of " << pubkey << std::endl;
+        }
+        if (passkey || !key_unlock()) {
             account["unlock"] = "device_key";
             persist();
         }
@@ -2172,7 +2181,7 @@ struct NexusManager::Session {
         if (path == "/key/handoff") return begin_handoff();
         if (path == "/key/unlock") {
             if (body.contains("identity_envelope")) open_handoff(body.at("identity_envelope"));
-            unlock_with_key(body.value("defer_join", !has_network()));
+            unlock_with_key(body.value("defer_join", !has_network()), body.value("replace_passkey", false));
             return status();
         }
         if (path == "/unlock") {

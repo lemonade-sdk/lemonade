@@ -486,7 +486,7 @@ export async function unlockNexus(deferJoin = false, request = nexusRequest): Pr
   } });
 }
 export async function prepareNexus(deviceName: string, joining: boolean, request = nexusRequest,
-  beforeUnlock?: (status: NexusStatus) => void) {
+  beforeUnlock?: (status: NexusStatus) => void, desktop = isNexusDesktop()) {
   await request('enable', {});
   let status: NexusStatus | undefined;
   for (let attempt = 0; attempt < 20; attempt++) {
@@ -497,11 +497,14 @@ export async function prepareNexus(deviceName: string, joining: boolean, request
   if (!status || status.status === 'starting') throw new Error('Network is still starting. Try again shortly.');
   beforeUnlock?.(status);
   await request('device', { device_name: deviceName });
-  if (usesNexusDeviceKey(status)) {
+  // Only the desktop app can verify a passkey. A browser unlocks with the device key, and
+  // lemond retires a passkey the device registered earlier (`replace_passkey`).
+  const retirePasskey = !desktop && !usesNexusDeviceKey(status);
+  if (usesNexusDeviceKey(status) || retirePasskey) {
     // An unlocked device without a network still needs the unlock call: it is what
     // creates the network. A join leaves that to the invite code.
     if (!status.locked && (status.mesh_up || joining)) return;
-    try { await request('key/unlock', { defer_join: joining }); }
+    try { await request('key/unlock', { defer_join: joining, ...(retirePasskey ? { replace_passkey: true } : {}) }); }
     catch (error) {
       if (error instanceof NexusRequestError && error.retryable) {
         const reason = error.message.trim();

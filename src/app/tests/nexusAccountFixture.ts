@@ -87,6 +87,8 @@ export async function setupNexusAccount(page: Page, options: {
     if (path.endsWith('/passkey/unlock')) { state.locked = false; if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; } }
     if (path.endsWith('/key/unlock')) {
       if (fixture.unlockUnreachable) return route.fulfill({ status: 503, headers, json: { error: 'No network server found for mesh.example.', retryable: true } });
+      // lemond keeps a registered passkey unless the caller asks for the device key instead.
+      if (state.registered && state.unlock === 'passkey' && body?.replace_passkey !== true) return route.fulfill({ status: 409, headers, json: { error: 'This device unlocks with its passkey' } });
       state.locked = false; state.registered = true; state.unlock = 'device_key';
       if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; state.has_network = true; }
     }

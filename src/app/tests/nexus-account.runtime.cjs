@@ -51,8 +51,8 @@ const request = async (path, body) => {
 };
 const service = createNexusAccountService({
   controller: async () => ({ source: currentSource, local, request }), desktop: () => desktop,
-  prepare: async (deviceName, joining, pinned, guard) => {
-    calls.push({path:'verify-passkey',joining});
+  prepare: async (deviceName, joining, pinned, guard, desktopClient) => {
+    calls.push({path:'verify-passkey',joining,desktop:desktopClient});
     guard(await pinned('status'));
     if (failPasskey) throw new Error('Security key cancelled');
   },
@@ -154,9 +154,14 @@ const input = { action:'create',deviceName:'Workstation',source };
   await assert.rejects(service.deleteAccount(account),/connection changed/);
   assert.equal(calls.length,remoteCalls,'remote setup cannot issue identity or lifecycle requests');
   await assert.rejects(service.refresh(account),/connection changed/,'local sessions cannot mutate the remote server');
-  currentSource = source; local = true; desktop = false;
-  await assert.rejects(service.signIn(input),/desktop app/,'a passkey can only be verified by the desktop app');
-  await assert.rejects(service.invite(account,'My phone'),/desktop app/);
+  // A browser cannot verify a passkey. It still signs a passkey device in: prepare learns
+  // it is not the desktop app and asks lemond for the device key instead.
+  currentSource = source; local = true; desktop = false; unlock = 'passkey';
+  const passkeyBrowser = calls.length;
+  assert.equal((await service.signIn({...input,action:'return',expectedId:'cluster'})).account.id,'cluster','a browser signs a passkey device in through lemond');
+  assert.equal(calls.slice(passkeyBrowser).find(call=>call.path==='verify-passkey').desktop,false,'prepare is told the page cannot verify a passkey');
+  assert.ok(!calls.slice(passkeyBrowser).some(call=>call.path.startsWith('passkey/')),'the browser never touches passkey routes');
+  assert.equal((await service.invite(account,'My phone')).code,'12345678','a browser manages a passkey device');
   unlock = 'device_key';
   const browserCalls = calls.length;
   assert.equal((await service.signIn({...input,action:'return',expectedId:'cluster'})).account.id,'cluster','a device-key device signs in from a browser');

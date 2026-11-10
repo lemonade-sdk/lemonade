@@ -1622,6 +1622,51 @@ int main() {
             std::this_thread::sleep_for(std::chrono::seconds(6));
             auto held = management.Get("/api/v1/nexus/status");
             check(held && held->status == 200 && nlohmann::json::parse(held->body).at("locked") == true, "An explicit lock holds against key unlock");
+            // A device with a registered passkey refuses a plain key unlock. A local operator
+            // without a passkey client (a browser) asks for the device key instead; the
+            // passkey is retired only once the key authenticated, so a network that cannot be
+            // reached keeps it.
+            request("disable", "{}", 200);
+            {
+                std::ifstream saved_input(root / "nexus/account.json");
+                auto saved = nlohmann::json::parse(saved_input, nullptr, false);
+                saved_input.close();
+                if (!saved.is_object()) saved = nlohmann::json::object();
+                saved.erase("unlock");
+                saved["credential_id"] = "c";
+                std::ofstream saved_output(root / "nexus/account.json");
+                saved_output << saved.dump();
+            }
+            auto passkey_device = request("enable", "{}", 200);
+            check(passkey_device.at("registered") == true && passkey_device.at("unlock") == "passkey", "A registered passkey keeps the passkey unlock");
+            auto plain_unlock = request("key/unlock", "{}", 409);
+            check(plain_unlock.value("error", std::string()) == "This device unlocks with its passkey", "A plain key unlock names the passkey");
+            auto replaced = management.Post("/api/v1/nexus/key/unlock", R"({"replace_passkey":true})", "application/json");
+            check(replaced && replaced->status != 409, "A key unlock may replace the registered passkey");
+            {
+                const bool switched = replaced && replaced->status == 200;
+                std::ifstream saved_input(root / "nexus/account.json");
+                auto saved = nlohmann::json::parse(saved_input, nullptr, false);
+                check(saved.is_object() && saved.contains("credential_id") != switched && (!switched || saved.value("unlock", "") == "device_key"),
+                      "The passkey is retired exactly when the device key authenticated");
+                auto reported = management.Get("/api/v1/nexus/status");
+                check(reported && reported->status == 200 && (nlohmann::json::parse(reported->body).at("unlock") == "device_key") == switched,
+                      "Status reports the device key once the switch is recorded");
+            }
+            // Back to the device-key account the checks below expect.
+            request("disable", "{}", 200);
+            {
+                std::ifstream saved_input(root / "nexus/account.json");
+                auto saved = nlohmann::json::parse(saved_input, nullptr, false);
+                saved_input.close();
+                if (!saved.is_object()) saved = nlohmann::json::object();
+                saved.erase("credential_id");
+                saved["unlock"] = "device_key";
+                std::ofstream saved_output(root / "nexus/account.json");
+                saved_output << saved.dump();
+            }
+            check(request("enable", "{}", 200).at("unlock") == "device_key", "The device-key account is back");
+            request("lock", "{}", 200);
             // Without a configured server, enable discovers one by DNS. A domain that cannot
             // resolve fails with the region named, and a remembered server needs no network.
             request("disable", "{}", 200);

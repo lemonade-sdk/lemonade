@@ -461,7 +461,7 @@ Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
 | GET | `status`, `join/status` | Network/device state and local controller URL |
 | GET | `passkey/challenge` | Federation challenge (`register=1` for enrollment) |
 | POST | `passkey/register`, `passkey/unlock` | Register or verify the device's credential |
-| POST | `key/unlock` | Unlock with the device key (`{defer_join?, identity_envelope?}`); local controller only, refused once a passkey is registered. An `identity_envelope` from `ln_identity_handoff_seal` delivers the user's identity first (see [Identity storage](#identity-storage)) |
+| POST | `key/unlock` | Unlock with the device key (`{defer_join?, identity_envelope?, replace_passkey?}`); local controller only. Refused once a passkey is registered unless `replace_passkey` is true, which retires the passkey after the key authenticated (the browser's path). An `identity_envelope` from `ln_identity_handoff_seal` delivers the user's identity first (see [Identity storage](#identity-storage)) |
 | GET | `key/handoff` | Start a single-use identity hand-off and return the SDK's request JSON; local controller only |
 | POST | `device/check` | Advisory check that a device name folds to a free DNS label: `{name, code?}` (`device_name` is accepted in place of `name`); uses this account's group when joined, else the invite code's group. Answers `{label, available, conflicts, suggestion}`. The federation still refuses a collision on join or rename |
 | POST | `enable`, `disable`, `lock`, `device` | Local state and device name |

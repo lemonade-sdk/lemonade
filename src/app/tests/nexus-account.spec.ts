@@ -159,15 +159,23 @@ test('the account dropdown opens Enable Mesh and restores focus when cancelled',
   await expect(trigger).toBeFocused();
 });
 
-test('browser Enable Mesh explains the desktop requirement for a registered passkey', async ({ page }) => {
+// Only the desktop app can verify a passkey. A browser moves a device that registered one
+// to its device key, and says so, instead of sending the user to the desktop app.
+test('browser Enable Mesh moves a registered passkey device to its device key', async ({ page }) => {
   const fixture = await setupNexusAccount(page, { desktop: false, joined: false });
   fixture.state.identity_source = 'system';
   fixture.state.unlock = 'passkey';
   await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
-  await expect(dialog).toContainText('Open the Lemonade desktop app on this computer');
-  await expect(dialog.getByRole('button', { name: 'Enable Mesh', exact: true })).toHaveCount(0);
+  await expect(dialog).toContainText('only the Lemonade desktop app can verify');
+  await expect(dialog).not.toContainText('Open the Lemonade desktop app');
+  await expect(dialog.getByRole('radio', { name: 'Use this device’s key' })).toBeChecked();
   expect(fixture.calls.some(call => call.method === 'POST')).toBe(false);
+  await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  expect(fixture.calls.filter(call => call.path.endsWith('/key/unlock')).map(call => call.body)).toEqual([{ defer_join: false, replace_passkey: true }]);
+  expect(fixture.calls.some(call => call.path.includes('/passkey/'))).toBe(false);
+  expect(fixture.state.unlock).toBe('device_key');
 });
 
 // A packaged Linux server runs lemond with a system identity and has no desktop app. Until

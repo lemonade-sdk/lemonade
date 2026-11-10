@@ -49,7 +49,10 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
   const available = inspection?.status.available && inspection.ready;
   const remote = Boolean(inspection && !inspection.local);
   const waitingForKey = Boolean(available && inspection.status.needs_user_key);
-  const deviceKey = Boolean(available && usesNexusDeviceKey(inspection.status));
+  // A browser cannot verify a passkey: it unlocks with the device key, and a device that
+  // registered a passkey moves to its key (prepareNexus asks lemond to replace it).
+  const deviceKey = Boolean(available && (usesNexusDeviceKey(inspection.status) || !inspection.desktop));
+  const retiresPasskey = Boolean(available && !inspection.desktop && !usesNexusDeviceKey(inspection.status));
   const nameTooLong = new TextEncoder().encode(deviceName.trim()).length > 128;
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -80,7 +83,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
       <div className="nexus-account-dialog__header"><span className="nexus-tree-detail__icon"><Icon name="user-round" size={23} /></span><div><h2 id={`${id}-title`}>{t('Enable Mesh')}</h2><p>{t('One account for your devices.')}</p></div><WorkspaceActionButton iconOnly icon="x" size="small" appearance="quiet" aria-label={t('Close Enable Mesh')} disabled={busy || passkeyActive} onClick={onClose} /></div>
       {checking ? <p role="status">{t('Checking account access…')}</p> : <>
         {remote && inspection && <p className="nexus-server-target"><span>{t('Managing server')}</span><strong>{new URL(inspection.source).origin}</strong></p>}
-        {inspection && !available && <p className="nexus-hint">{!inspection.status.available ? t('This server does not include Nexus account support.') : remote ? t('Set up this server through its local controller or SSH forwarding. After setup, manage it through the authenticated Nexus mesh.') : t('Open the Lemonade desktop app on this computer to verify your passkey.')}</p>}
+        {inspection && !available && <p className="nexus-hint">{!inspection.status.available ? t('This server does not include Nexus account support.') : t('Set up this server through its local controller or SSH forwarding. After setup, manage it through the authenticated Nexus mesh.')}</p>}
         {waitingForKey && (inspection?.status.identity_source === 'user' ? <>
           {/* A `user` identity has no carrier: lemond opens the OS keystore itself and reports why it cannot. */}
           <p role="status">{t('The server cannot open this device’s key yet. It tries again by itself.')}</p>
@@ -88,6 +91,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
         </> : <p role="status">{t('Waiting for your device key from the Lemonade tray.')}</p>)}
         {available && !waitingForKey && <form onSubmit={event => void submit(event)}>
           <p className="nexus-hint">{deviceKey ? t('Nexus uses this device’s key. Other devices see this device under its device name.') : t('Nexus uses a device key and passkey. Other devices see this device under its device name.')}</p>
+          {retiresPasskey && <p className="nexus-hint">{t('This device registered a passkey, which only the Lemonade desktop app can verify. Enable Mesh here moves it to its device key.')}</p>}
           <fieldset className="nexus-sign-in__fields" disabled={busy}>
             <legend className="sr-only">{t('Account access')}</legend>
             <div className="nexus-sign-in__choices">

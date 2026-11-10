@@ -15,8 +15,8 @@ export interface VerifiedNexusAccount {
   canInvite: boolean;
   avatar: NexusAvatarState;
 }
-// `ready`: identity operations can run from here, on the local controller with the desktop
-// app or with a device that unlocks with its device key.
+// `ready`: identity operations can run from here, on the local controller. `desktop` says
+// whether this page can verify a passkey; a browser unlocks with the device key instead.
 export interface NexusAccountInspection { status: NexusStatus; source: string; local: boolean; desktop: boolean; ready: boolean }
 export interface NexusSignInInput {
   action: 'create' | 'join' | 'return';
@@ -103,13 +103,12 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
     if (controller.source !== source) throw new Error('The server connection changed. Close this dialog and enable Mesh again.');
     return controller;
   };
-  // Identity operations need the local controller. Only a passkey needs the desktop app
-  // to verify it; a device that unlocks with its device key has nothing to verify here.
+  // Identity operations need the local controller. The desktop app verifies a passkey;
+  // every other page unlocks with the device key (prepareNexus), so nothing blocks here.
   const requireController = async (source: string) => {
     const controller = await currentController(source);
     if (!controller.local) throw new Error('Set up this server through its local controller or SSH forwarding. After setup, manage it through the authenticated Nexus mesh.');
     const status = await controller.request<NexusStatus>('status');
-    if (!dependencies.desktop() && !usesNexusDeviceKey(status)) throw new Error('Open the Lemonade desktop app on this computer to verify your passkey.');
     return { ...controller, status };
   };
   return {
@@ -121,7 +120,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
     async inspect() {
       const controller = await dependencies.controller();
       const status = await controller.request<NexusStatus>('status');
-      return { status, source: controller.source, local: controller.local, desktop: dependencies.desktop(), ready: controller.local && (dependencies.desktop() || usesNexusDeviceKey(status)) };
+      return { status, source: controller.source, local: controller.local, desktop: dependencies.desktop(), ready: controller.local };
     },
     async resume() {
       const controller = await dependencies.controller();
@@ -145,7 +144,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
         prepared = current;
         if (input.action === 'create' && current.registered && current.has_network !== false) throw new Error('This device already has a registered key. Choose Use this device’s key to continue.');
         if (input.action === 'return' && !current.registered) throw new Error('Create an account or join by invitation before enabling Mesh on this device.');
-      });
+      }, dependencies.desktop());
       if (input.action === 'join') {
         // A device whose mesh is already up accepts the invite as a member. Otherwise the
         // deferred unlock leaves the join to the code: a new identity joins the invite's

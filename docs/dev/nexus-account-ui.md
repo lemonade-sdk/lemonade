@@ -248,9 +248,11 @@ passkey options available on that Windows installation. Linux and macOS use
 USB FIDO2 security keys. User presence and user verification remain required;
 Windows Hello verification stays in the Windows dialog. The passkey dialog is hosted
 by the account provider, so signing in from the header works outside the Nexus
-page. A browser shows desktop guidance for a passkey it cannot verify. A device
-that unlocks with its device key has nothing to verify, so a browser on the
-server or on its local network enables and manages it directly. Remote clients
+page. A browser cannot verify a passkey: it enables the device with its device
+key instead, and `lemond` retires a passkey the device registered earlier
+(`key/unlock {replace_passkey: true}`); the dialog says so. A device that
+unlocks with its device key has nothing to verify, so a browser on the server
+or on its local network enables and manages it directly. Remote clients
 show the local-setup guidance. Advanced management of an already unlocked
 server still follows the existing listener authorization rules.
 
