@@ -19,8 +19,8 @@ const RouteError kSourceMismatch{
 const RouteError kMalformedCheckpoint{400, "", "`checkpoint` does not contain `/`"};
 const RouteError kUnsupportedRepo{
     400, "",
-    "`source` names an unsupported registry, or the Hugging Face GGUF repository is one "
-    "llama.cpp cannot run"};
+    "`source` names an unsupported registry, or no backend can load the repository and one "
+    "says why, as llama.cpp does for a Hugging Face GGUF repository it cannot run"};
 const RouteError kCheckpointNotFound{404, "", "The registry has no such checkpoint"};
 const RouteError kVariantsFailed{
     500, "",
@@ -45,8 +45,10 @@ public:
         s.paths = {"pull/variants"};
         s.summary = "List the installable variants of a model repository";
         s.description =
-            "Inspects a Hugging Face or ModelScope repository and lists the variants it offers "
-            "for installation, such as quantizations and sharded folder groups. The `lemonade pull "
+            "Inspects a Hugging Face or ModelScope repository and lists, for every backend that "
+            "can load it, the variants it offers for installation, such as quantizations, sharded "
+            "folder groups, or the model files of a whisper.cpp or stable-diffusion.cpp "
+            "repository. The `lemonade pull "
             "<owner/repo>` command and the desktop app's model search use it to fill in the "
             "install form. Lemonade reads public registry metadata, and sends the server's "
             "`HF_TOKEN` environment variable, when set, to Hugging Face for gated repositories.";
@@ -56,28 +58,40 @@ public:
         response.format = ResponseFormat::Json;
         response.schema = ordered_json::parse(R"({
             "type": "object",
-            "required": ["checkpoint", "source", "recipe", "repo_kind", "suggested_name", "suggested_labels", "mmproj_files", "draft_files", "variants"],
+            "required": ["checkpoint", "source", "recipe", "repo_kind", "suggested_name", "suggested_labels", "mmproj_files", "draft_files", "variants", "candidates"],
             "properties": {
                 "checkpoint": {"type": "string", "description": "Echoed input (normalized to `owner/repo` when given as a URL)."},
                 "source": {"type": "string", "description": "Registry the variants came from."},
-                "recipe": {"type": "string", "description": "Suggested recipe: `llamacpp` for a GGUF repo, `ryzenai-llm` for an ONNX RyzenAI repo, `collection.omni` for an exported collection."},
-                "repo_kind": {"enum": ["gguf", "onnx-ryzenai", "collection"], "description": "Kind of repository: `gguf`, `onnx-ryzenai` or `collection`."},
+                "recipe": {"type": "string", "description": "Recipe of the first candidate, such as `llamacpp` for a GGUF repo, `ryzenai-llm` for an ONNX RyzenAI repo, `whispercpp` or `sd-cpp` for a single-file repo, or `collection.omni` for an exported collection."},
+                "repo_kind": {"enum": ["gguf", "onnx-ryzenai", "collection", "single-file"], "description": "Kind of repository, as the first candidate reads it: `gguf`, `onnx-ryzenai`, `collection` or `single-file`. A `single-file` repo holds several whisper.cpp or stable-diffusion.cpp models, one file each, and each variant is one of those files."},
                 "suggested_name": {"type": "string", "description": "Repo id stripped of the `owner/` prefix; suitable for use as the `user.<name>` model name."},
                 "suggested_labels": {"type": "array", "items": {"type": "string"},
                                      "description": "Inferred labels: `vision` if any GGUF file name contains `mmproj`, `mtp` or `dflash` if a variant ships a draft model, plus `embeddings` or `reranking` if the repo id contains `embed` or `rerank`, and the recipe's deployment label (e.g. `chat`) when no other label names one."},
                 "mmproj_files": {"type": "array", "items": {"type": "string"},
                                  "description": "Bare filenames of the repo's GGUF files whose name contains `mmproj`; pass the first as `mmproj` to [`POST /v1/pull`](#post-v1pull) for a vision model."},
                 "draft_files": {"type": "array", "items": {"type": "string"}, "description": "Bare names of draft-model GGUF files."},
-                "variants": {"type": "array", "description": "Installable variants, ranked by how often `server_models.json` uses each quantization: `Q4_K_M`, `UD-Q4_K_XL`, `Q8_0` and `Q4_0` first, then the rest in lexicographic order.", "items": {
+                "variants": {"type": "array", "description": "Installable variants, ranked by how often `server_models.json` uses each quantization: `Q4_K_M`, `UD-Q4_K_XL`, `Q8_0` and `Q4_0` first, then the rest in lexicographic order. A `single-file` repo lists whisper.cpp files in registry order, and stable-diffusion checkpoints as `.safetensors` first, then `.ckpt`, then `.gguf`; a file whose name repeats an earlier one with another extension is left out.", "items": {
                     "type": "object",
                     "required": ["name", "primary_file", "files", "sharded", "size_bytes"],
                     "properties": {
-                        "name": {"type": "string", "description": "Variant name, such as `Q4_K_M`."},
+                        "name": {"type": "string", "description": "Variant name, such as `Q4_K_M`. In a `single-file` repo it is the file name, such as `ggml-tiny.bin`."},
                         "primary_file": {"type": "string", "description": "The file to load."},
                         "draft_file": {"type": "string", "description": "The draft model paired with this variant, when the repository ships one."},
                         "files": {"type": "array", "items": {"type": "string"}, "description": "Every file in the variant."},
                         "sharded": {"type": "boolean", "description": "Whether the variant is split across files."},
                         "size_bytes": {"type": "integer", "description": "Total size, from the registry's file listing."}
+                    }
+                }},
+                "candidates": {"type": "array", "description": "Every backend that can load the repository, in registry order. The top-level `recipe`, `repo_kind`, `suggested_labels`, `mmproj_files`, `draft_files` and `variants` repeat the first one. Pass the chosen candidate's `recipe` to [`POST /v1/pull`](#post-v1pull).", "items": {
+                    "type": "object",
+                    "required": ["recipe", "repo_kind", "suggested_labels", "mmproj_files", "draft_files", "variants"],
+                    "properties": {
+                        "recipe": {"type": "string", "description": "Recipe of the backend."},
+                        "repo_kind": {"type": "string", "description": "Kind of repository as this backend reads it."},
+                        "suggested_labels": {"type": "array", "items": {"type": "string"}, "description": "Labels for a model pulled with this backend."},
+                        "mmproj_files": {"type": "array", "items": {"type": "string"}, "description": "Vision projector files this backend loads."},
+                        "draft_files": {"type": "array", "items": {"type": "string"}, "description": "Draft-model files this backend loads."},
+                        "variants": {"type": "array", "items": {"type": "object"}, "description": "Variants this backend can load, with the same fields as the top-level `variants`."}
                     }
                 }},
                 "size": {"type": "number", "description": "Collections only: the collection's total size, from its manifest."},

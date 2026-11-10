@@ -946,7 +946,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `GET /v1/pull/variants`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Inspects a Hugging Face or ModelScope repository and lists the variants it offers for installation, such as quantizations and sharded folder groups. The `lemonade pull <owner/repo>` command and the desktop app's model search use it to fill in the install form. Lemonade reads public registry metadata, and sends the server's `HF_TOKEN` environment variable, when set, to Hugging Face for gated repositories.
+Inspects a Hugging Face or ModelScope repository and lists, for every backend that can load it, the variants it offers for installation, such as quantizations, sharded folder groups, or the model files of a whisper.cpp or stable-diffusion.cpp repository. The `lemonade pull <owner/repo>` command and the desktop app's model search use it to fill in the install form. Lemonade reads public registry metadata, and sends the server's `HF_TOKEN` environment variable, when set, to Hugging Face for gated repositories.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -992,6 +992,25 @@ Requires `LEMONADE_API_KEY` when it is set.
       "size_bytes": 5027784512
     },
     ... 24 more
+  ],
+  "candidates": [
+    {
+      "recipe": "llamacpp",
+      "repo_kind": "gguf",
+      "suggested_labels": ["chat"],
+      "mmproj_files": [],
+      "draft_files": [],
+      "variants": [
+        {
+          "files": ["Qwen3-8B-Q4_K_M.gguf"],
+          "name": "Q4_K_M",
+          "primary_file": "Qwen3-8B-Q4_K_M.gguf",
+          "sharded": false,
+          "size_bytes": 5027784512
+        },
+        ... 24 more
+      ]
+    }
   ]
 }
 ```
@@ -1000,19 +1019,26 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 - `checkpoint` - Echoed input (normalized to `owner/repo` when given as a URL).
 - `source` - Registry the variants came from.
-- `recipe` - Suggested recipe: `llamacpp` for a GGUF repo, `ryzenai-llm` for an ONNX RyzenAI repo, `collection.omni` for an exported collection.
-- `repo_kind` - Kind of repository: `gguf`, `onnx-ryzenai` or `collection`.
+- `recipe` - Recipe of the first candidate, such as `llamacpp` for a GGUF repo, `ryzenai-llm` for an ONNX RyzenAI repo, `whispercpp` or `sd-cpp` for a single-file repo, or `collection.omni` for an exported collection.
+- `repo_kind` - Kind of repository, as the first candidate reads it: `gguf`, `onnx-ryzenai`, `collection` or `single-file`. A `single-file` repo holds several whisper.cpp or stable-diffusion.cpp models, one file each, and each variant is one of those files.
 - `suggested_name` - Repo id stripped of the `owner/` prefix; suitable for use as the `user.<name>` model name.
 - `suggested_labels` - Inferred labels: `vision` if any GGUF file name contains `mmproj`, `mtp` or `dflash` if a variant ships a draft model, plus `embeddings` or `reranking` if the repo id contains `embed` or `rerank`, and the recipe's deployment label (e.g. `chat`) when no other label names one.
 - `mmproj_files` - Bare filenames of the repo's GGUF files whose name contains `mmproj`; pass the first as `mmproj` to [`POST /v1/pull`](#post-v1pull) for a vision model.
 - `draft_files` - Bare names of draft-model GGUF files.
-- `variants` - Installable variants, ranked by how often `server_models.json` uses each quantization: `Q4_K_M`, `UD-Q4_K_XL`, `Q8_0` and `Q4_0` first, then the rest in lexicographic order.
-  - `name` - Variant name, such as `Q4_K_M`.
+- `variants` - Installable variants, ranked by how often `server_models.json` uses each quantization: `Q4_K_M`, `UD-Q4_K_XL`, `Q8_0` and `Q4_0` first, then the rest in lexicographic order. A `single-file` repo lists whisper.cpp files in registry order, and stable-diffusion checkpoints as `.safetensors` first, then `.ckpt`, then `.gguf`; a file whose name repeats an earlier one with another extension is left out.
+  - `name` - Variant name, such as `Q4_K_M`. In a `single-file` repo it is the file name, such as `ggml-tiny.bin`.
   - `primary_file` - The file to load.
   - `draft_file` - The draft model paired with this variant, when the repository ships one.
   - `files` - Every file in the variant.
   - `sharded` - Whether the variant is split across files.
   - `size_bytes` - Total size, from the registry's file listing.
+- `candidates` - Every backend that can load the repository, in registry order. The top-level `recipe`, `repo_kind`, `suggested_labels`, `mmproj_files`, `draft_files` and `variants` repeat the first one. Pass the chosen candidate's `recipe` to [`POST /v1/pull`](#post-v1pull).
+  - `recipe` - Recipe of the backend.
+  - `repo_kind` - Kind of repository as this backend reads it.
+  - `suggested_labels` - Labels for a model pulled with this backend.
+  - `mmproj_files` - Vision projector files this backend loads.
+  - `draft_files` - Draft-model files this backend loads.
+  - `variants` - Variants this backend can load, with the same fields as the top-level `variants`.
 - `size` - Collections only: the collection's total size, from its manifest.
 - `component_count` - Collections only: how many models the collection bundles.
 
@@ -1023,7 +1049,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` |  | `checkpoint` is missing or empty |
 | `400` |  | `checkpoint` is a URL whose registry disagrees with `source` |
 | `400` |  | `checkpoint` does not contain `/` |
-| `400` |  | `source` names an unsupported registry, or the Hugging Face GGUF repository is one llama.cpp cannot run |
+| `400` |  | `source` names an unsupported registry, or no backend can load the repository and one says why, as llama.cpp does for a Hugging Face GGUF repository it cannot run |
 | `400` | `lemond_offline` | `offline` is set to `true` |
 | `404` |  | The registry has no such checkpoint |
 | `500` |  | Another failure occurs, for example a repository with no GGUF, ONNX RyzenAI or collection files, or a network error |

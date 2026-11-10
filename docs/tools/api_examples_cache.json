@@ -2135,6 +2135,244 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
+        "candidates": [
+          {
+            "draft_files": [],
+            "mmproj_files": [],
+            "recipe": "llamacpp",
+            "repo_kind": "gguf",
+            "suggested_labels": [
+              "chat"
+            ],
+            "variants": [
+              {
+                "files": [
+                  "Qwen3-8B-Q4_K_M.gguf"
+                ],
+                "name": "Q4_K_M",
+                "primary_file": "Qwen3-8B-Q4_K_M.gguf",
+                "sharded": false,
+                "size_bytes": 5027784512
+              },
+              {
+                "files": [
+                  "Qwen3-8B-UD-Q4_K_XL.gguf"
+                ],
+                "name": "UD-Q4_K_XL",
+                "primary_file": "Qwen3-8B-UD-Q4_K_XL.gguf",
+                "sharded": false,
+                "size_bytes": 5135722304
+              },
+              {
+                "files": [
+                  "Qwen3-8B-Q8_0.gguf"
+                ],
+                "name": "Q8_0",
+                "primary_file": "Qwen3-8B-Q8_0.gguf",
+                "sharded": false,
+                "size_bytes": 8709519168
+              },
+              {
+                "files": [
+                  "Qwen3-8B-BF16.gguf"
+                ],
+                "name": "BF16",
+                "primary_file": "Qwen3-8B-BF16.gguf",
+                "sharded": false,
+                "size_bytes": 16388044384
+              },
+              {
+                "files": [
+                  "Qwen3-8B-IQ4_NL.gguf"
+                ],
+                "name": "IQ4_NL",
+                "primary_file": "Qwen3-8B-IQ4_NL.gguf",
+                "sharded": false,
+                "size_bytes": 4793624384
+              },
+              {
+                "files": [
+                  "Qwen3-8B-IQ4_XS.gguf"
+                ],
+                "name": "IQ4_XS",
+                "primary_file": "Qwen3-8B-IQ4_XS.gguf",
+                "sharded": false,
+                "size_bytes": 4581287744
+              },
+              {
+                "files": [
+                  "Qwen3-8B-Q2_K.gguf"
+                ],
+                "name": "Q2_K",
+                "primary_file": "Qwen3-8B-Q2_K.gguf",
+                "sharded": false,
+                "size_bytes": 3281733440
+              },
+              {
+                "files": [
+                  "Qwen3-8B-Q2_K_L.gguf"
+                ],
+                "name": "Q2_K_L",
+                "primary_file": "Qwen3-8B-Q2_K_L.gguf",
+                "sharded": false,
+                "size_bytes": 3427592000
+              },
+              {
+                "files": [
+                  "Qwen3-8B-Q3_K_M.gguf"
+                ],
+                "name": "Q3_K_M",
+                "primary_file": "Qwen3-8B-Q3_K_M.gguf",
+                "sharded": false,
+                "size_bytes": 4124161856
+              },
+              {
+                "files": [
+                  "Qwen3-8B-Q3_K_S.gguf"
+                ],
+                "name": "Q3_K_S",
+                "primary_file": "Qwen3-8B-Q3_K_S.gguf",
+                "sharded": false,
+                "size_bytes": 3769612096
+              },
+              {
+                "files": [
+                  "Qwen3-8B-Q4_1.gguf"
+                ],
+                "name": "Q4_1",
+                "primary_file": "Qwen3-8B-Q4_1.gguf",
+                "sharded": false,
+                "size_bytes": 5247756096
+              },
+              {
+                "files": [
+                  "Qwen3-8B-Q4_K_S.gguf"
+                ],
+                "name": "Q4_K_S",
+                "primary_file": "Qwen3-8B-Q4_K_S.gguf",
+                "sharded": false,
+                "size_bytes": 4802012992
+              },
+              {
+                "files": [
+                  "Qwen3-8B-Q5_K_M.gguf"
+                ],
+                "name": "Q5_K_M",
+                "primary_file": "Qwen3-8B-Q5_K_M.gguf",
+                "sharded": false,
+                "size_bytes": 5851113280
+              },
+              {
+                "files": [
+                  "Qwen3-8B-Q5_K_S.gguf"
+                ],
+                "name": "Q5_K_S",
+                "primary_file": "Qwen3-8B-Q5_K_S.gguf",
+                "sharded": false,
+                "size_bytes": 5720762176
+              },
+              {
+                "files": [
+                  "Qwen3-8B-Q6_K.gguf"
+                ],
+                "name": "Q6_K",
+                "primary_file": "Qwen3-8B-Q6_K.gguf",
+                "sharded": false,
+                "size_bytes": 6725900096
+              },
+              {
+                "files": [
+                  "Qwen3-8B-UD-IQ1_M.gguf"
+                ],
+                "name": "UD-IQ1_M",
+                "primary_file": "Qwen3-8B-UD-IQ1_M.gguf",
+                "sharded": false,
+                "size_bytes": 2396489536
+              },
+              {
+                "files": [
+                  "Qwen3-8B-UD-IQ1_S.gguf"
+                ],
+                "name": "UD-IQ1_S",
+                "primary_file": "Qwen3-8B-UD-IQ1_S.gguf",
+                "sharded": false,
+                "size_bytes": 2275379008
+              },
+              {
+                "files": [
+                  "Qwen3-8B-UD-IQ2_M.gguf"
+                ],
+                "name": "UD-IQ2_M",
+                "primary_file": "Qwen3-8B-UD-IQ2_M.gguf",
+                "sharded": false,
+                "size_bytes": 3110897472
+              },
+              {
+                "files": [
+                  "Qwen3-8B-UD-IQ2_XXS.gguf"
+                ],
+                "name": "UD-IQ2_XXS",
+                "primary_file": "Qwen3-8B-UD-IQ2_XXS.gguf",
+                "sharded": false,
+                "size_bytes": 2605221696
+              },
+              {
+                "files": [
+                  "Qwen3-8B-UD-IQ3_XXS.gguf"
+                ],
+                "name": "UD-IQ3_XXS",
+                "primary_file": "Qwen3-8B-UD-IQ3_XXS.gguf",
+                "sharded": false,
+                "size_bytes": 3410265920
+              },
+              {
+                "files": [
+                  "Qwen3-8B-UD-Q2_K_XL.gguf"
+                ],
+                "name": "UD-Q2_K_XL",
+                "primary_file": "Qwen3-8B-UD-Q2_K_XL.gguf",
+                "sharded": false,
+                "size_bytes": 3501975360
+              },
+              {
+                "files": [
+                  "Qwen3-8B-UD-Q3_K_XL.gguf"
+                ],
+                "name": "UD-Q3_K_XL",
+                "primary_file": "Qwen3-8B-UD-Q3_K_XL.gguf",
+                "sharded": false,
+                "size_bytes": 4307052352
+              },
+              {
+                "files": [
+                  "Qwen3-8B-UD-Q5_K_XL.gguf"
+                ],
+                "name": "UD-Q5_K_XL",
+                "primary_file": "Qwen3-8B-UD-Q5_K_XL.gguf",
+                "sharded": false,
+                "size_bytes": 5878081344
+              },
+              {
+                "files": [
+                  "Qwen3-8B-UD-Q6_K_XL.gguf"
+                ],
+                "name": "UD-Q6_K_XL",
+                "primary_file": "Qwen3-8B-UD-Q6_K_XL.gguf",
+                "sharded": false,
+                "size_bytes": 7490549568
+              },
+              {
+                "files": [
+                  "Qwen3-8B-UD-Q8_K_XL.gguf"
+                ],
+                "name": "UD-Q8_K_XL",
+                "primary_file": "Qwen3-8B-UD-Q8_K_XL.gguf",
+                "sharded": false,
+                "size_bytes": 10824038208
+              }
+            ]
+          }
+        ],
         "checkpoint": "unsloth/Qwen3-8B-GGUF",
         "draft_files": [],
         "mmproj_files": [],
