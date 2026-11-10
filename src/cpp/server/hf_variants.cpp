@@ -194,6 +194,21 @@ std::string preferred_draft_companion(
 
 }  // namespace
 
+GgufVariant single_file_variant(const std::string& file,
+                                const std::vector<std::pair<std::string, uint64_t>>& file_sizes) {
+    GgufVariant variant;
+    variant.name = file;
+    variant.primary_file = file;
+    variant.files = {file};
+    for (const auto& [name, size] : file_sizes) {
+        if (name == file) {
+            variant.size_bytes = size;
+            break;
+        }
+    }
+    return variant;
+}
+
 std::string gguf_draft_label(const std::string& path) {
     switch (draft_kind(path)) {
         case DraftKind::Mtp: return "mtp";

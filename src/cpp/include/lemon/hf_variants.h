@@ -51,6 +51,11 @@ GgufVariantSet enumerate_gguf_variants(
     const std::vector<std::string>& repo_files,
     const std::vector<std::pair<std::string, uint64_t>>& file_sizes = {});
 
+// A variant made of one repository file. It is named by that file, so
+// `checkpoint:name` resolves in /pull for every client.
+GgufVariant single_file_variant(const std::string& file,
+                                const std::vector<std::pair<std::string, uint64_t>>& file_sizes);
+
 // "mtp" or "dflash" for a speculative draft companion, "" otherwise.
 std::string gguf_draft_label(const std::string& path);
 

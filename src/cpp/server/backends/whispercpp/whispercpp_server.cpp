@@ -17,7 +17,10 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/error_types.h"
+#include "lemon/hf_variants.h"
 #include "whispercpp_multipart_fields.h"
+#include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <chrono>
 #include <filesystem>
@@ -559,8 +562,49 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 namespace {
+
+std::string lower_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+// Files that share the ggml-*.bin pattern but cannot be loaded as a
+// transcription model: Silero voice-activity models and the encoder half
+// that whisper.cpp's OpenVINO build loads next to a full model.
+bool whispercpp_companion(const std::string& lower_name) {
+    return lower_name.find("silero") != std::string::npos ||
+           lower_name.find("-encoder") != std::string::npos;
+}
+
 class WhisperOps : public BackendOps {
 public:
+    // whisper.cpp publishes each model as ggml-<name>.bin at the repository
+    // root, and the task tells it apart from other ggml repositories.
+    RepositoryAnalysis analyze_repository(const RepositoryView& repo) const override {
+        auto task = repo.metadata.find("pipeline_tag");
+        if (task == repo.metadata.end() || !task->is_string() ||
+            lower_copy(task->get<std::string>()) != "automatic-speech-recognition") {
+            return {};
+        }
+        RepositoryMatch match;
+        match.repo_kind = "single-file";
+        for (const auto& file : repo.files) {
+            if (file.find('/') != std::string::npos) continue;
+            const std::string lower = lower_copy(file);
+            if (lower.rfind("ggml-", 0) != 0 || lower.size() < 9 ||
+                lower.compare(lower.size() - 4, 4, ".bin") != 0) {
+                continue;
+            }
+            if (whispercpp_companion(lower) || lower == "ggml-.bin") continue;
+            match.variants.push_back(single_file_variant(file, repo.file_sizes));
+        }
+        if (match.variants.empty()) return {};
+        RepositoryAnalysis analysis;
+        analysis.match = std::move(match);
+        return analysis;
+    }
+
     // The NPU cache is useful only beside the .bin it was built for, and only the
     // NPU build of the engine asks for it, so it is fetched on first use.
     const lemon::models::ArtifactLayout* checkpoint_layout(

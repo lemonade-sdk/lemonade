@@ -36,13 +36,15 @@ std::string join_names(const lemon::GgufVariantSet& set) {
     return out;
 }
 
-lemon::backends::RepositoryAnalysis analyze(const std::string& recipe,
-                                            const std::vector<std::string>& files,
-                                            const nlohmann::json& metadata) {
+lemon::backends::RepositoryAnalysis analyze(
+    const std::string& recipe, const std::vector<std::string>& files,
+    const nlohmann::json& metadata,
+    const std::vector<std::pair<std::string, uint64_t>>& file_sizes = {}) {
     lemon::backends::RepositoryView view;
     view.checkpoint = "owner/repo";
     view.registry_source = "huggingface";
     view.files = files;
+    view.file_sizes = file_sizes;
     view.metadata = metadata;
     return lemon::backends::ops_for(recipe)->analyze_repository(view);
 }
@@ -434,6 +436,50 @@ int main() {
         auto no_config = analyze("ryzenai-llm", {"model.onnx"}, nlohmann::json::object());
         result.expect("Ryzen AI declines repositories without an OGA layout",
                       !with_gguf.match && !no_config.match, "");
+    }
+
+    {
+        auto analysis = analyze(
+            "whispercpp",
+            {".gitattributes", "README.md", "ggml-base.en-q5_1.bin", "ggml-base.en.bin",
+             "ggml-tiny.bin"},
+            {{"pipeline_tag", "automatic-speech-recognition"}}, {{"ggml-tiny.bin", 77691713}});
+        std::string names;
+        if (analysis.match) {
+            for (const auto& v : analysis.match->variants) names += v.name + " ";
+        }
+        result.expect("whisper.cpp offers one single-file variant per ggml-*.bin",
+                      analysis.match && analysis.match->repo_kind == "single-file" &&
+                          analysis.match->variants.size() == 3 &&
+                          analysis.match->variants[0].name == "ggml-base.en-q5_1.bin" &&
+                          analysis.match->variants[2].primary_file == "ggml-tiny.bin" &&
+                          analysis.match->variants[2].size_bytes == 77691713,
+                      names);
+    }
+    {
+        auto analysis = analyze(
+            "whispercpp", {"pytorch_model.bin", "config.json"},
+            {{"pipeline_tag", "automatic-speech-recognition"}, {"library_name", "transformers"}});
+        result.expect("whisper.cpp declines a transformers speech repository", !analysis.match, "");
+    }
+    {
+        auto analysis = analyze(
+            "whispercpp",
+            {"ggml-base.en.bin", "ggml-base.en-encoder-openvino.bin",
+             "ggml-base.en-encoder-openvino.xml", "ggml-base.en-encoder.mlmodelc.zip",
+             "ggml-silero-v5.1.2.bin", "models/ggml-small.bin"},
+            {{"pipeline_tag", "automatic-speech-recognition"}});
+        result.expect("whisper.cpp encoders, VAD models and nested files are not variants",
+                      analysis.match && analysis.match->variants.size() == 1 &&
+                          analysis.match->variants[0].name == "ggml-base.en.bin",
+                      "");
+    }
+    {
+        auto vad_only = analyze("whispercpp", {"ggml-silero-v6.2.0.bin"},
+                                {{"pipeline_tag", "automatic-speech-recognition"}});
+        auto no_task = analyze("whispercpp", {"ggml-model.bin"}, nlohmann::json::object());
+        result.expect("whisper.cpp declines a VAD-only repository and ggml files without the task",
+                      !vad_only.match && !no_task.match, "");
     }
 
     printf("\n%d passed, %d failed\n", result.passed, result.failed);
