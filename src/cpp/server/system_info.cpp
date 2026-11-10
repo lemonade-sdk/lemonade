@@ -903,6 +903,12 @@ static std::string get_expected_backend_version(const std::string& recipe, const
             }
         }
     }
+    if (resolved_backend == "npu") {
+        std::string override_version = SystemInfo::npu_version_override(recipe);
+        if (!override_version.empty()) {
+            return override_version;
+        }
+    }
     return base_version;
 }
 
@@ -2310,6 +2316,39 @@ std::string SystemInfo::vllm_rocm_version_override(const std::string& asset_fami
     }();
 
     if (auto it = overrides.find(asset_family); it != overrides.end() && it->is_string()) {
+        return it->get<std::string>();
+    }
+    return "";
+}
+
+std::string SystemInfo::get_npu_arch() {
+    try {
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+        if (system_info.contains("devices") && system_info["devices"].contains("amd_npu")) {
+            return system_info["devices"]["amd_npu"].value("family", "");
+        }
+    } catch (...) {
+    }
+    return "";
+}
+
+std::string SystemInfo::npu_version_override(const std::string& recipe) {
+    static const json backend_versions = []() -> json {
+        try {
+            return utils::JsonUtils::load_from_file(
+                utils::get_resource_path("resources/backend_versions.json"));
+        } catch (...) {
+            return json::object();
+        }
+    }();
+
+    const std::string family = get_npu_arch();
+    if (family.empty()) {
+        return "";
+    }
+    const json overrides = backend_versions.value(recipe, json::object())
+                                           .value("npu_arch_overrides", json::object());
+    if (auto it = overrides.find(family); it != overrides.end() && it->is_string()) {
         return it->get<std::string>();
     }
     return "";

@@ -134,6 +134,8 @@ public:
     // Device support detection
     static std::string get_rocm_arch();
     static std::string get_cuda_arch();
+    // NPU family of this host ("XDNA2", "XDNA3"), or empty when there is no NPU.
+    static std::string get_npu_arch();
 
     // Picks the ROCm compute target from an "amd_gpu" device array: a discrete GPU wins
     // over an integrated one on a hybrid host (e.g. Strix Halo APU + MI300X dGPU).
@@ -150,6 +152,10 @@ public:
     // default pin. Beware: vLLM release tags use the raw ISA (gfx942), unlike
     // therock.url_mapping, which maps it to gfx94X-dcgpu.
     static std::string vllm_rocm_version_override(const std::string& asset_family);
+
+    // <recipe>.npu_arch_overrides[get_npu_arch()] from backend_versions.json, or empty
+    // for the default "npu" pin. Lets one recipe pin a different build per NPU family.
+    static std::string npu_version_override(const std::string& recipe);
 
     // When set non-empty on the calling thread, get_rocm_arch() returns this
     // value instead of probing hardware, so backend asset URLs can be resolved

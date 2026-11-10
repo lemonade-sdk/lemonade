@@ -22,6 +22,7 @@ namespace lemon::backends {
         std::string repo;      // GitHub "org/repo"
         std::string filename;  // Release asset filename
         std::string version_override;  // If set, use this as the release tag instead of backend_versions.json value
+        std::string local_archive;     // If set, install from this local archive instead of downloading
     };
 
     struct BackendSpec {
@@ -111,13 +112,15 @@ namespace lemon::backends {
         static bool extract_archive(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name);
 
         /** Download and install the specified version of the backend from github.
-         *  If progress_cb is provided, it receives download progress events instead of console output. */
+         *  If progress_cb is provided, it receives download progress events instead of console output.
+         *  If local_archive is set, it is installed in place of the GitHub download. */
         static void install_from_github(const BackendSpec& spec,
                                         const std::string& expected_version,
                                         const std::string& repo,
                                         const std::string& filename,
                                         const std::string& backend,
-                                        DownloadProgressCallback progress_cb = nullptr);
+                                        DownloadProgressCallback progress_cb = nullptr,
+                                        const std::string& local_archive = "");
 
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);

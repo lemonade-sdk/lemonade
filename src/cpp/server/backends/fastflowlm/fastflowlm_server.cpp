@@ -8,6 +8,7 @@
 #include "lemon/backends/systemone_classify.h"
 #include "lemon/audio_types.h"
 #include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/error_types.h"
 #include "lemon/utils/process_manager.h"
@@ -37,7 +38,18 @@ namespace lemon {
 namespace backends {
 
 static const std::string DRIVER_INSTALL_URL = "https://lemonade-server.ai/driver_install.html";
+static const std::string XDNA3_ARCHIVE_HINT =
+    "FastFlowLM for XDNA3 (Medusa) is not published; point Lemonade at a local build with "
+    "`lemonade config set flm.xdna3_archive=<path to FastFlowLM zip>`";
 
+static bool is_xdna3_host() {
+    return SystemInfo::get_npu_arch() == "XDNA3";
+}
+
+static std::string xdna3_archive() {
+    auto* cfg = RuntimeConfig::global();
+    return cfg ? cfg->backend_string("flm", "xdna3_archive") : "";
+}
 
 InstallParams FastFlowLMServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
@@ -47,6 +59,16 @@ InstallParams FastFlowLMServer::get_install_params(const std::string& backend, c
     }
 
     params.repo = "ROCm/FastFlowLM";
+
+    if (backend == "npu" && is_xdna3_host()) {
+        const std::string archive = xdna3_archive();
+        if (archive.empty()) {
+            throw std::runtime_error(XDNA3_ARCHIVE_HINT);
+        }
+        params.filename = utils::path_to_utf8(utils::path_from_utf8(archive).filename());
+        params.local_archive = archive;
+        return params;
+    }
 
     // Release asset filenames use bare version numbers (no 'v' prefix)
     std::string bare_version = version;
@@ -167,8 +189,10 @@ void FastFlowLMServer::load(const std::string& model_name,
     }
 
     std::string flm_path = get_flm_path();
+    // `flm validate` only recognizes AIE2P (XDNA2) hardware and fails on XDNA3,
+    // even though `flm serve` runs there.
     std::string validate_error;
-    if (!fastflowlm::run_flm_validate(flm_path, validate_error)) {
+    if (!is_xdna3_host() && !fastflowlm::run_flm_validate(flm_path, validate_error)) {
         throw std::runtime_error("FLM NPU validation failed: " + validate_error +
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
@@ -539,6 +563,13 @@ public:
         return {!find_flm_executable().empty(), ""};
     }
 
+    std::optional<UnavailableState> classify_unavailable(
+        const std::string& backend, const std::string&, const std::string&) const override {
+        if (backend == "npu" && is_xdna3_host() && xdna3_archive().empty()) {
+            return UnavailableState{"action_required", XDNA3_ARCHIVE_HINT, ""};
+        }
+        return std::nullopt;
+    }
 };
 }  // namespace
 

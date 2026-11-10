@@ -29,7 +29,10 @@ inline const BackendDescriptor descriptor = {
          "FastFlowLM Options"},
     },
     /*support*/ {
-        {"npu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
+        // XDNA3 (Medusa) has no public FLM build; it installs from flm.xdna3_archive.
+        {"npu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"},
+         {{"amd_npu", {"XDNA2", "XDNA3"}}}, "XDNA2 / XDNA3 NPU",
+         {{"XDNA3", {/*os*/ {"windows"}, /*channels*/ {}}}}},
     },
     /*about*/ {
         {"npu", {"NPU-native runtime for LLMs, speech and embeddings, with kernels built for Ryzen AI NPUs.",
@@ -48,7 +51,7 @@ inline const BackendDescriptor descriptor = {
     /*takes_args*/      true,
     /*arg_variants*/    {},
     /*bin_variants*/    {},
-    /*config_extra*/    {{"prefer_system", false}},
+    /*config_extra*/    {{"prefer_system", false}, {"xdna3_archive", ""}},
     /*streams_model_from_storage*/ false,
     /*containers*/ {},
     // see ISystemOneServer

@@ -164,7 +164,11 @@
     "npu": "medusa-v1.0"
   },
   "flm": {
-    "npu": "v1.0.11"
+    "comment": "'npu' pins the public FastFlowLM release. 'npu_arch_overrides' pins per detected NPU family; XDNA3 (Medusa) builds are not published and install from the archive at flm.xdna3_archive in config.json. Bump the XDNA3 pin when swapping in a new archive so Lemonade reinstalls it.",
+    "npu": "v1.0.11",
+    "npu_arch_overrides": {
+      "XDNA3": "v1.0.12"
+    }
   },
   "kokoro": {
     "cpu": "b21",

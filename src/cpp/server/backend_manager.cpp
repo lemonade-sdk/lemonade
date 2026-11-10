@@ -490,6 +490,12 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
     if (!recipe_config.contains(resolved_backend) || !recipe_config[resolved_backend].is_string()) {
         throw std::runtime_error("backend_versions.json is missing version for: " + recipe + ":" + resolved_backend);
     }
+    if (resolved_backend == "npu") {
+        std::string override_version = SystemInfo::npu_version_override(recipe);
+        if (!override_version.empty()) {
+            return override_version;
+        }
+    }
     return recipe_config[resolved_backend].get<std::string>();
 }
 
@@ -677,7 +683,7 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     std::string release_version = final_params.version_override.empty()
                                       ? resolved_version
                                       : final_params.version_override;
-    return {final_params.repo, final_params.filename, release_version};
+    return {final_params.repo, final_params.filename, release_version, final_params.local_archive};
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
@@ -894,7 +900,8 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     try {
         backends::BackendUtils::install_from_github(
-            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb);
+            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb,
+            params.local_archive);
         // install_from_github only returns after atomically swapping the new
         // backend into place; from here on the working install is the new one.
         backend_committed = true;
@@ -1057,6 +1064,9 @@ std::string BackendManager::get_release_url(const std::string& recipe, const std
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
         auto params = get_install_params(recipe, resolved_backend);
+        if (!params.local_archive.empty()) {
+            return "";
+        }
         return "https://github.com/" + params.repo + "/releases/tag/" + params.version;
     } catch (...) {
         return "";
@@ -1087,7 +1097,9 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
         }
         // All standard recipes (including ryzenai-llm): one get_install_params() call gives us everything
         auto params = get_install_params(recipe, resolved_backend);
-        result.release_url = "https://github.com/" + params.repo + "/releases/tag/" + params.version;
+        if (params.local_archive.empty()) {
+            result.release_url = "https://github.com/" + params.repo + "/releases/tag/" + params.version;
+        }
         result.download_filename = params.filename;
         result.version = params.version;
     } catch (...) {}

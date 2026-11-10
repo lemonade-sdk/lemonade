@@ -542,7 +542,8 @@ namespace lemon::backends {
                                            const std::string& repo,
                                            const std::string& asset_pattern,
                                            const std::string& backend,
-                                           DownloadProgressCallback progress_cb) {
+                                           DownloadProgressCallback progress_cb,
+                                           const std::string& local_archive) {
         std::string install_dir;
         std::string version_file;
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
@@ -675,7 +676,7 @@ namespace lemon::backends {
 
             bool is_split = false;
             std::vector<std::string> part_assets;
-            if (spec.supports_split_archive) {
+            if (spec.supports_split_archive && local_archive.empty()) {
                 const std::string partcount_url = base_download_url + base + ".partcount";
                 auto resp = utils::HttpClient::get(partcount_url);
                 if (resp.status_code == 200) {
@@ -713,7 +714,18 @@ namespace lemon::backends {
                 }
                 // 404 = no manifest = single-file release; fall through.
             }
-            if (!is_split) {
+            if (!local_archive.empty()) {
+                // Stage a copy at zip_path so the extract/verify/swap below is shared;
+                // zip_guard then deletes only the copy, never the user's archive.
+                LOG(INFO, spec.log_name()) << "Installing from local archive: " << local_archive << std::endl;
+                std::error_code copy_ec;
+                fs::copy_file(utils::path_from_utf8(local_archive), fs::path(zip_path),
+                              fs::copy_options::overwrite_existing, copy_ec);
+                if (copy_ec) {
+                    throw std::runtime_error("Failed to read local archive " + local_archive + ": " +
+                                             copy_ec.message());
+                }
+            } else if (!is_split) {
                 std::string url = base_download_url + filename;
                 LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
 
