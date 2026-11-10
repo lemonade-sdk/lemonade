@@ -552,6 +552,19 @@ int main() {
                       !untagged.match && !llm.match, "");
     }
 
+    {
+        auto analysis = analyze(
+            "sd-cpp",
+            {"sd_xl_base_1.0.safetensors", "sd_xl_offset_example-lora_1.0.safetensors",
+             "taesdxl.safetensors", "controlnet-canny-sdxl.safetensors"},
+            {{"pipeline_tag", "text-to-image"},
+             {"tags", {"diffusers", "diffusers:StableDiffusionXLPipeline"}}});
+        result.expect("LoRA, TAESD and ControlNet files are not offered as models",
+                      analysis.match && analysis.match->variants.size() == 1 &&
+                          analysis.match->variants[0].name == "sd_xl_base_1.0.safetensors",
+                      "");
+    }
+
     printf("\n%d passed, %d failed\n", result.passed, result.failed);
     return result.failed == 0 ? 0 : 1;
 }

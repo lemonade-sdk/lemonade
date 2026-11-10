@@ -830,6 +830,16 @@ bool image_model_component(const std::string& file) {
            stem.rfind("vae", 0) == 0 || stem == "ae" || stem.rfind("ae-", 0) == 0;
 }
 
+// Weights that modify a base checkpoint at load time and fail when loaded as
+// the model itself; SDXL base ships its offset LoRA next to the checkpoint.
+bool image_model_adapter(const std::string& file) {
+    const std::string stem = lower_copy(file_stem(file));
+    for (const char* marker : {"lora", "taesd", "controlnet", "ip-adapter", "ip_adapter"}) {
+        if (stem.find(marker) != std::string::npos) return true;
+    }
+    return false;
+}
+
 // FLUX and SD3 need separate text encoders and a VAE, so a pull of one file
 // would register a model that cannot load. Quantized repos often keep the
 // stable-diffusion tag, so the base model and the component files are
@@ -882,7 +892,7 @@ public:
             for (const auto& file : repo.files) {
                 if (file.find('/') != std::string::npos) continue;
                 if (!ends_with(lower_copy(file), extension)) continue;
-                if (image_model_component(file)) continue;
+                if (image_model_component(file) || image_model_adapter(file)) continue;
                 const std::string stem = file_stem(file);
                 const bool taken = std::any_of(
                     match.variants.begin(), match.variants.end(),
