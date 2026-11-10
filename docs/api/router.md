@@ -42,9 +42,12 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `policy` | Yes | A `collection.router` policy document. `model_name` is accepted but is not required for validation. See [Router Policies](../dev/router-policy.md). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `prompt` | No | The prompt text to route. Defaults to `""`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `has_images` | No | Simulate a request carrying image input. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `has_tools` | No | Simulate a request carrying tool definitions. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `prompt` | No | The prompt text to route, either a string or an array of strings. A string is a single-turn preview. An array is read like a completions `prompt`, its strings joined as separate lines, and counts as a request body. Any other type, or an array holding a non-string, returns 400. Defaults to `""`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `messages` | No | A chat completions `messages` array, read the way a routed `chat/completions` request is: the latest user turn is the routing text, and image parts set `has_images`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `input` | No | A Responses API `input`, read the way a routed `responses` request is. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `tools` | No | A `tools` array; a non-empty one sets `has_tools`. Counts as a request body. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `has_images` | No | Simulate a request carrying image input. Defaults to `false`. Cannot be combined with a request body. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `has_tools` | No | Simulate a request carrying tool definitions. Defaults to `false`. Cannot be combined with a request body. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `metadata` | No | String-valued metadata pairs matched by `metadata` conditions. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Validation is structural: every `candidates` entry, `default_model`, rule `route_to` and classifier model must be listed in `components`. Component names are not looked up in the model registry, so a policy can be tested before its candidates are downloaded, and registration's model-type checks, such as whether a `semantic_similarity` model can embed, do not run.
@@ -97,7 +100,11 @@ comes back with `router` replaced by these `classifiers` and `rules`:
 
 Match `decision.matched_rule` against this document: a policy written with only `routing.router` has no rules of its own, only the generated `__route_0`, `__route_1`, etc.
 
-### Example
+Send either the preview fields (a string `prompt`, `has_images`, `has_tools`) or a request body (`messages`, `input`, `tools` or an array `prompt`). A request body is read by the same code that reads a routed request, so signals such as images in earlier turns and the length of the whole conversation come from the body itself.
+
+### Examples
+
+#### Preview
 
 === "PowerShell"
 
@@ -184,6 +191,129 @@ Match `decision.matched_rule` against this document: a policy written with only 
 }
 ```
 
+#### Request body
+
+A chat `messages` array with an image part, sent with a `tools` array, sets both `has_images` and `has_tools` from the body itself, so the rule that needs both matches.
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/routing/validate" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "policy": {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+              "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+              "default_model": "Qwen3-8B-GGUF",
+              "rules": [
+                {
+                  "id": "vision-and-tools-to-big",
+                  "match": {"all": [{"has_images": true}, {"has_tools": true}]},
+                  "route_to": "vllm.qwen3-32b"
+                }
+              ]
+            }
+          },
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {"type": "text", "text": "What is in this picture?"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAA"}}
+              ]
+            }
+          ],
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "lookup_product",
+                "parameters": {"type": "object", "properties": {}}
+              }
+            }
+          ]
+        }'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/routing/validate \
+      -H "Content-Type: application/json" \
+      -d '{
+          "policy": {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+              "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+              "default_model": "Qwen3-8B-GGUF",
+              "rules": [
+                {
+                  "id": "vision-and-tools-to-big",
+                  "match": {"all": [{"has_images": true}, {"has_tools": true}]},
+                  "route_to": "vllm.qwen3-32b"
+                }
+              ]
+            }
+          },
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {"type": "text", "text": "What is in this picture?"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAA"}}
+              ]
+            }
+          ],
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "lookup_product",
+                "parameters": {"type": "object", "properties": {}}
+              }
+            }
+          ]
+        }'
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "decision": {
+    "default_used": false,
+    "matched_rule": "vision-and-tools-to-big",
+    "outputs": {},
+    "route_to": "vllm.qwen3-32b",
+    "trace": [{"condition": "has_images", "result": true}, ... 1 more],
+    "version": "1"
+  },
+  "normalized_policy": {
+    "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+    "recipe": "collection.router",
+    "routing": {
+      "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+      "default_model": "Qwen3-8B-GGUF",
+      "rules": [
+        {
+          "id": "vision-and-tools-to-big",
+          "match": {"all": [{"has_images": true}, ... 1 more]},
+          "route_to": "vllm.qwen3-32b"
+        }
+      ]
+    },
+    "version": "1"
+  }
+}
+```
+
 ### Response format
 
 - `decision` - The routing decision for the prompt, with the per-condition `trace` included. See [Routing](#routing-collectionrouter) for the decision object.
@@ -196,6 +326,8 @@ Match `decision.matched_rule` against this document: a policy written with only 
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | More than one of `messages`, `input` and `prompt` is sent, or `has_images` or `has_tools` is sent with `messages`, `input`, `tools` or an array `prompt` |
+| `400` |  | A `messages` or `input` item's `content` is neither a string nor an array of objects, a content part's `type` is not a string, or a text part's `text` is not a string |
 | `400` |  | `policy` is invalid or internally inconsistent |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 <!-- END GENERATED: router.routing_validate -->
