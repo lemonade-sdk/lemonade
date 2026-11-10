@@ -1,3 +1,4 @@
+#include <lemon/backends/backend_registry.h>
 #include <lemon/hf_variants.h>
 
 #include <cstdio>
@@ -32,6 +33,17 @@ std::string join_names(const lemon::GgufVariantSet& set) {
         out += set.variants[i].name;
     }
     return out;
+}
+
+lemon::backends::RepositoryAnalysis analyze(const std::string& recipe,
+                                            const std::vector<std::string>& files,
+                                            const nlohmann::json& metadata) {
+    lemon::backends::RepositoryView view;
+    view.checkpoint = "owner/repo";
+    view.registry_source = "huggingface";
+    view.files = files;
+    view.metadata = metadata;
+    return lemon::backends::ops_for(recipe)->analyze_repository(view);
 }
 
 }  // namespace
@@ -366,6 +378,13 @@ int main() {
                       set.variants.size() == 1 && set.variants[0].name == "Q8_0" &&
                           set.draft_files.empty(),
                       "got " + join_names(set));
+    }
+
+    {
+        auto analysis = analyze("kokoro", {"model.gguf", "ggml-tiny.bin"}, nlohmann::json::object());
+        result.expect("a backend without the hook declines every repository",
+                      !analysis.match && analysis.refusal.empty(),
+                      analysis.refusal);
     }
 
     printf("\n%d passed, %d failed\n", result.passed, result.failed);

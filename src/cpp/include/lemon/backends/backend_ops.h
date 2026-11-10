@@ -1,8 +1,13 @@
 #pragma once
 
+#include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
+#include <nlohmann/json.hpp>
+#include "lemon/hf_variants.h"            // GgufVariant
 #include "lemon/models/artifact_fetch.h"  // ArtifactFetchService
 #include "lemon/models/download_progress.h"
 #include "lemon/models/model_info.h"
@@ -52,6 +57,46 @@ struct CheckpointResolveContext {
     std::string type;              // checkpoint type ("main", "mmproj", "npu_cache", …)
     std::string checkpoint;        // the raw checkpoint string
     std::string registry_source;   // huggingface/modelscope
+};
+
+// A remote repository as seen before anything is downloaded from it.
+struct RepositoryView {
+    std::string checkpoint;       // owner/name
+    std::string registry_source;  // huggingface/modelscope
+    std::vector<std::string> files;
+    std::vector<std::pair<std::string, uint64_t>> file_sizes;
+    nlohmann::json metadata;  // the registry's listing metadata (task, tags)
+
+    // The registry's expanded metadata, which costs a request, so it is
+    // fetched only when a backend asks for it. Falls back to `metadata`.
+    std::function<nlohmann::json()> fetch_detailed_metadata;
+
+    const nlohmann::json& detailed_metadata() const {
+        if (!detailed_metadata_) {
+            detailed_metadata_ = fetch_detailed_metadata ? fetch_detailed_metadata() : metadata;
+        }
+        return *detailed_metadata_;
+    }
+
+private:
+    mutable std::optional<nlohmann::json> detailed_metadata_;
+};
+
+// What one backend can load from a repository. Each variant is pulled as
+// `checkpoint:name`.
+struct RepositoryMatch {
+    std::string repo_kind;  // "gguf", "onnx-ryzenai", "single-file"
+    std::vector<GgufVariant> variants;
+    std::vector<std::string> labels;
+    std::vector<std::string> mmproj_files;
+    std::vector<std::string> draft_files;
+};
+
+// A backend's answer about a repository: a match, a refusal when it
+// recognizes the files but cannot load them, or neither.
+struct RepositoryAnalysis {
+    std::optional<RepositoryMatch> match;
+    std::string refusal;
 };
 
 // Stateless per-backend behavior for model management that happens WITHOUT a
@@ -124,6 +169,14 @@ public:
     virtual bool acquires_lazily(const std::string& checkpoint_type) const {
         (void)checkpoint_type;
         return false;
+    }
+
+    // Whether this backend can load models from a remote repository, asked
+    // for every backend so that engines able to run the same files are all
+    // offered. Default: not handled.
+    virtual RepositoryAnalysis analyze_repository(const RepositoryView& repo) const {
+        (void)repo;
+        return {};
     }
 
     // Validate a user-supplied checkpoint string when registering a new model.
