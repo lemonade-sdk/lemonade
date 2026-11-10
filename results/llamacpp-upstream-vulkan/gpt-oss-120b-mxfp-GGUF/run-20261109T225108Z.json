@@ -1,0 +1,148 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/vulkan": "b11393"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "ggml-org/gpt-oss-120b-GGUF:gpt-oss-120b-MXFP4.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "gpt-oss-120b-mxfp-GGUF",
+      "results": [
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 4543.090574,
+                "mean": 4537.307902666666,
+                "min": 4530.835779,
+                "p50": 4537.997355,
+                "p95": 4542.5812521
+              },
+              "failed_runs": 0,
+              "input_tokens": 3120,
+              "memory_peak_gb": 62.4,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 753.3762688298087,
+              "tps": {
+                "max": 51.79214449463133,
+                "mean": 50.509336487239835,
+                "min": 49.69411961636139,
+                "p50": 50.04174535072679,
+                "p95": 51.61710458024088
+              },
+              "ttft_ms": {
+                "max": 4151.218,
+                "mean": 4141.377333333334,
+                "min": 4129.09,
+                "p50": 4143.824,
+                "p95": 4150.4785999999995
+              },
+              "vram_peak_gb": 59.55165481567383
+            }
+          ]
+        },
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 39188.309254,
+                "mean": 39173.65390866667,
+                "min": 39150.887928,
+                "p50": 39181.764544,
+                "p95": 39187.654783
+              },
+              "failed_runs": 0,
+              "input_tokens": 23704,
+              "memory_peak_gb": 63.5,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 613.770972555673,
+              "tps": {
+                "max": 40.426392050894705,
+                "mean": 39.77591768545755,
+                "min": 39.44887840609921,
+                "p50": 39.452482599378726,
+                "p95": 40.32900110574311
+              },
+              "ttft_ms": {
+                "max": 38634.056,
+                "mean": 38620.278,
+                "min": 38593.77,
+                "p50": 38633.008,
+                "p95": 38633.951199999996
+              },
+              "vram_peak_gb": 60.63167190551758
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-09T22:57:38Z",
+      "accuracy": {
+        "passed": 44,
+        "total": 45,
+        "score": 0.9778,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "tool-search",
+            "response": "We need to find wireless headphones under $100 that are in stock. Use search_products function.",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [
+            "arith-paren",
+            "py-fizzbuzz"
+          ],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-09T22:57:38Z",
+  "fork_id": "llamacpp-upstream-vulkan",
+  "fork_label": "llama.cpp Vulkan (upstream reference)",
+  "fork_repo": "ggml-org/llama.cpp",
+  "fork_version": "b12233",
+  "rocm_version": null,
+  "fork_backend": "vulkan",
+  "experimental": false,
+  "run_id": "42705879705",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/42705879705",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s03-d06-129462496345"
+}

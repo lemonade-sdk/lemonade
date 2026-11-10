@@ -1,0 +1,186 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM-V-4.6-gguf:MiniCPM-V-4_6-Q4_K_M.gguf",
+        "mmproj": "OpenBMB/MiniCPM-V-4.6-gguf:mmproj-model-f16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM-V-4.6-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 509.757414,
+                "mean": 505.8071526666666,
+                "min": 503.681832,
+                "p50": 503.982212,
+                "p95": 509.17989379999995
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 6.0,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 8315.234305028143,
+              "tps": {
+                "max": 175.05067256311037,
+                "mean": 171.78187592362966,
+                "min": 169.3978352739787,
+                "p50": 170.89711993379987,
+                "p95": 174.6353173001793
+              },
+              "ttft_ms": {
+                "max": 387.387,
+                "mean": 386.0453333333333,
+                "min": 383.751,
+                "p50": 386.998,
+                "p95": 387.3481
+              },
+              "vram_peak_gb": 2.1227760314941406
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 3872.312913,
+                "mean": 3863.4874246666673,
+                "min": 3850.48711,
+                "p50": 3867.662251,
+                "p95": 3871.8478468000003
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 6.4,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 6718.074781564673,
+              "tps": {
+                "max": 141.74661673206904,
+                "mean": 139.79184226020857,
+                "min": 137.61933044574175,
+                "p50": 140.0095796028149,
+                "p95": 141.57291301914364
+              },
+              "ttft_ms": {
+                "max": 3703.689,
+                "mean": 3690.0833333333335,
+                "min": 3674.809,
+                "p50": 3691.752,
+                "p95": 3702.4952999999996
+              },
+              "vram_peak_gb": 2.478351593017578
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-10T00:13:49Z",
+      "accuracy": {
+        "passed": 36,
+        "total": 45,
+        "score": 0.8,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-sisters",
+            "response": "t there's only one sister, Alice. So each brother has Alice as a sister. So the number of sisters each brother has is 1 (since Alice is the only sister).\n\nBut typically, we say each brother has one sister (Alice) and no other sisters.\n\nAnswer: Each of Alice's brothers has one sister, which is Alice.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "der when 10 is divided by 7, which is 3. This means 10 days after Monday is 3 days after Monday. Counting backward, Monday + 1 = Tuesday, Monday + 2 = Wednesday, Monday + 3 = Thursday. Therefore, 10 days after a Monday is a Thursday.\n\nAnswer: The day of the week 10 days after a Monday is a Thursday.",
+            "cut_off": false
+          },
+          {
+            "id": "json-primes",
+            "response": "[\"2\", \"3\", \"5\", \"7\", \"11\"]",
+            "cut_off": false
+          },
+          {
+            "id": "json-extract",
+            "response": "{\n  \"name\": \"Lopez\",\n  \"age\": 34\n}",
+            "cut_off": false
+          },
+          {
+            "id": "turn-list",
+            "response": "Let's start with the shopping list: apples, bread, milk, eggs. We need to remove bread and add cheese at the end. So, the list becomes: apples, milk, eggs, cheese. Now, counting the items, the third item is \"eggs\".\n\nAnswer: The third item on the list after removing bread and adding cheese is eggs.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-uppercase",
+            "response": "Let's analyze the question. THE CAPITAL OF FRANCE IS PARIS.\n\nTHE ANSWER IS PARIS.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "Based on the information provided, my flight leaves at 3pm. However, considering the earlier correction, it actually leaves two hours later than I initially stated.\n\nAnswer: The flight leaves at 3pm, but after correcting, it actually leaves two hours later than said.",
+            "cut_off": false
+          },
+          {
+            "id": "py-palindrome",
+            "response": "```python\ndef is_palindrome(s):\n    cleaned = ''.join(char for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    # Remove spaces and convert to lower case\n    cleaned_a = a.replace(\" \", \"\").lower()\n    cleaned_b = b.replace(\" \", \"\").lower()\n    # Check if the cleaned strings are equal\n    return cleaned_a == cleaned_b\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-10T00:13:49Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20261109",
+  "rocm_version": "10.1.0a20260822",
+  "fork_backend": "rocm-gfx11",
+  "experimental": false,
+  "run_id": "42705879705",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/42705879705",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d04-129462496464"
+}

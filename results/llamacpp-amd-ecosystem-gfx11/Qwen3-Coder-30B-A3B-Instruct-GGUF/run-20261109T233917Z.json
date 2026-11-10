@@ -1,0 +1,160 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 2025.32374,
+                "mean": 2006.444596,
+                "min": 1996.052147,
+                "p50": 1997.957901,
+                "p95": 2022.5871561000001
+              },
+              "failed_runs": 0,
+              "input_tokens": 3208,
+              "memory_peak_gb": 21.6,
+              "name": "context-4k",
+              "output_tokens": 2,
+              "pp_tps": 1637.9494366936594,
+              "tps": {
+                "max": 34.22664886880926,
+                "mean": 32.65700115298532,
+                "min": 30.128649332650415,
+                "p50": 33.6157052574963,
+                "p95": 34.16555450767796
+              },
+              "ttft_ms": {
+                "max": 1963.234,
+                "mean": 1958.5546666666667,
+                "min": 1953.421,
+                "p50": 1959.009,
+                "p95": 1962.8114999999998
+              },
+              "vram_peak_gb": 18.04034423828125
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 33763.989877,
+                "mean": 33725.657828999996,
+                "min": 33697.278829,
+                "p50": 33715.704781,
+                "p95": 33759.161367400004
+              },
+              "failed_runs": 0,
+              "input_tokens": 24788,
+              "memory_peak_gb": 24.2,
+              "name": "context-32k",
+              "output_tokens": 2,
+              "pp_tps": 736.7061345423407,
+              "tps": {
+                "max": 27.81563795165642,
+                "mean": 26.55928993009948,
+                "min": 24.28363283147159,
+                "p50": 27.57859900717044,
+                "p95": 27.791934057207822
+              },
+              "ttft_ms": {
+                "max": 33683.505,
+                "mean": 33647.088333333326,
+                "min": 33617.558,
+                "p50": 33640.202,
+                "p95": 33679.174699999996
+              },
+              "vram_peak_gb": 20.69165802001953
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-10T00:15:18Z",
+      "accuracy": {
+        "passed": 41,
+        "total": 45,
+        "score": 0.9111,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "tool-weather",
+            "response": "[{\"arguments\": \"{\\\"city\\\":\\\"Paris\\\",\\\"unit\\\":\\\"celsius\\\"}\", \"name\": \"get_weather\"}, {\"arguments\": \"{\\\"amount\\\":100,\\\"from_currency\\\":\\\"USD\\\",\\\"to_currency\\\":\\\"EUR\\\"}\", \"name\": \"convert_currency\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-currency",
+            "response": "[{\"arguments\": \"{\\\"amount\\\":50,\\\"from_currency\\\":\\\"USD\\\",\\\"to_currency\\\":\\\"EUR\\\"}\", \"name\": \"convert_currency\"}, {\"arguments\": \"{\\\"city\\\":\\\"Paris\\\",\\\"unit\\\":\\\"celsius\\\"}\", \"name\": \"get_weather\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-event",
+            "response": "[{\"arguments\": \"{\\\"attendees\\\":[\\\"alice\\\", \\\"bob\\\"],\\\"date\\\":\\\"2026-11-05\\\",\\\"title\\\":\\\"Design review\\\"}\", \"name\": \"create_event\"}, {\"arguments\": \"{\\\"attendees\\\":[\\\"alice\\\", \\\"bob\\\"],\\\"date\\\":\\\"2026-11-05\\\",\\\"title\\\":\\\"Design review\\\"}\", \"name\": \"create_event\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-search",
+            "response": "[{\"arguments\": \"{\\\"query\\\":\\\"wireless headphones\\\",\\\"max_price\\\":100,\\\"in_stock\\\":true}\", \"name\": \"search_products\"}, {\"arguments\": \"{\\\"query\\\":\\\"wireless headphones\\\",\\\"max_price\\\":100,\\\"in_stock\\\":true}\", \"name\": \"search_products\"}]",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-10T00:15:18Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20261109",
+  "rocm_version": "10.1.0a20260822",
+  "fork_backend": "rocm-gfx11",
+  "experimental": false,
+  "run_id": "42705879705",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/42705879705",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d04-129462496464"
+}

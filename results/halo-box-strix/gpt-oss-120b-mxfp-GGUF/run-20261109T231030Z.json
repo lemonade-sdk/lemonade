@@ -1,0 +1,147 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "ggml-org/gpt-oss-120b-GGUF:gpt-oss-120b-MXFP4.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "gpt-oss-120b-mxfp-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 5348.416886,
+                "mean": 5034.539689333334,
+                "min": 4488.834457,
+                "p50": 5266.367725,
+                "p95": 5340.2119698999995
+              },
+              "failed_runs": 0,
+              "input_tokens": 3120,
+              "memory_peak_gb": 63.1,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 683.8518165995189,
+              "tps": {
+                "max": 45.761630077433495,
+                "mean": 45.675776393926604,
+                "min": 45.59558634724159,
+                "p50": 45.67011275710471,
+                "p95": 45.75247834540062
+              },
+              "ttft_ms": {
+                "max": 4909.388,
+                "mean": 4597.005666666666,
+                "min": 4051.363,
+                "p50": 4830.266,
+                "p95": 4901.475799999999
+              },
+              "vram_peak_gb": 59.176414489746094
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 36758.100168,
+                "mean": 36239.43181533333,
+                "min": 35918.883678,
+                "p50": 36041.3116,
+                "p95": 36686.4213112
+              },
+              "failed_runs": 0,
+              "input_tokens": 23704,
+              "memory_peak_gb": 64.2,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 664.8013801845865,
+              "tps": {
+                "max": 37.22227772912761,
+                "mean": 37.004663798516226,
+                "min": 36.70327335245767,
+                "p50": 37.08844031396341,
+                "p95": 37.20889398761119
+              },
+              "ttft_ms": {
+                "max": 36186.239,
+                "mean": 35659.708333333336,
+                "min": 35328.864,
+                "p50": 35464.022,
+                "p95": 36114.0173
+              },
+              "vram_peak_gb": 60.188724517822266
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-09T23:16:35Z",
+      "accuracy": {
+        "passed": 44,
+        "total": 45,
+        "score": 0.9778,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "tool-search",
+            "response": "We need to search product catalogue for wireless headphones under $100 in stock. Use function search_products.",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [
+            "py-fizzbuzz"
+          ],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-09T23:16:35Z",
+  "fork_id": "halo-box-strix",
+  "fork_label": "llama.cpp Halo-box",
+  "fork_repo": "halo-box/strix-llama.cpp",
+  "fork_version": "b1048",
+  "rocm_version": "10.1.0a20260910",
+  "fork_backend": "halo-box-strix",
+  "experimental": true,
+  "run_id": "42705879705",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/42705879705",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s03-d06-129462496345"
+}

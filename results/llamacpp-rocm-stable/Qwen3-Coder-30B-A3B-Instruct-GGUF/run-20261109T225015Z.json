@@ -1,0 +1,167 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 2126.538621,
+                "mean": 2123.1791319999998,
+                "min": 2117.534085,
+                "p50": 2125.46469,
+                "p95": 2126.4312279
+              },
+              "failed_runs": 0,
+              "input_tokens": 3208,
+              "memory_peak_gb": 21.9,
+              "name": "context-4k",
+              "output_tokens": 2,
+              "pp_tps": 1536.3005348365143,
+              "tps": {
+                "max": 41.33256179217988,
+                "mean": 41.176585807207346,
+                "min": 40.961782656781224,
+                "p50": 41.23541297266092,
+                "p95": 41.32284691022798
+              },
+              "ttft_ms": {
+                "max": 2093.008,
+                "mean": 2088.1513333333332,
+                "min": 2079.454,
+                "p50": 2091.992,
+                "p95": 2092.9064
+              },
+              "vram_peak_gb": 18.049728393554688
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 36785.05701,
+                "mean": 36776.87371266666,
+                "min": 36760.963715,
+                "p50": 36784.600413,
+                "p95": 36785.011350299996
+              },
+              "failed_runs": 0,
+              "input_tokens": 24788,
+              "memory_peak_gb": 24.2,
+              "name": "context-32k",
+              "output_tokens": 2,
+              "pp_tps": 675.3049654874718,
+              "tps": {
+                "max": 31.632556226868694,
+                "mean": 31.529682172809384,
+                "min": 31.44851877476571,
+                "p50": 31.50797151679375,
+                "p95": 31.6200977558612
+              },
+              "ttft_ms": {
+                "max": 36714.619,
+                "mean": 36706.382333333335,
+                "min": 36690.735,
+                "p50": 36713.793,
+                "p95": 36714.5364
+              },
+              "vram_peak_gb": 20.70111846923828
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-09T23:28:29Z",
+      "accuracy": {
+        "passed": 40,
+        "total": 45,
+        "score": 0.8889,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-day-back",
+            "response": "If today is Wednesday, then 3 days ago would be Monday.\n\nAnswer: Monday",
+            "cut_off": false
+          },
+          {
+            "id": "tool-weather",
+            "response": "[{\"arguments\": \"{\\\"city\\\":\\\"Paris\\\",\\\"unit\\\":\\\"celsius\\\"}\", \"name\": \"get_weather\"}, {\"arguments\": \"{\\\"amount\\\":100,\\\"from_currency\\\":\\\"EUR\\\",\\\"to_currency\\\":\\\"USD\\\"}\", \"name\": \"convert_currency\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-currency",
+            "response": "[{\"arguments\": \"{\\\"amount\\\":50,\\\"from_currency\\\":\\\"USD\\\",\\\"to_currency\\\":\\\"EUR\\\"}\", \"name\": \"convert_currency\"}, {\"arguments\": \"{\\\"city\\\":\\\"Paris\\\",\\\"unit\\\":\\\"celsius\\\"}\", \"name\": \"get_weather\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-event",
+            "response": "[{\"arguments\": \"{\\\"attendees\\\":[\\\"alice\\\", \\\"bob\\\"],\\\"date\\\":\\\"2026-11-05\\\",\\\"title\\\":\\\"Design review\\\"}\", \"name\": \"create_event\"}, {\"arguments\": \"{\\\"attendees\\\":[\\\"alice\\\", \\\"bob\\\"],\\\"date\\\":\\\"2026-11-05\\\",\\\"title\\\":\\\"Design review\\\"}\", \"name\": \"create_event\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-search",
+            "response": "[{\"arguments\": \"{\\\"query\\\":\\\"wireless headphones\\\",\\\"max_price\\\":100,\\\"in_stock\\\":true}\", \"name\": \"search_products\"}, {\"arguments\": \"{\\\"query\\\":\\\"wireless headphones\\\",\\\"max_price\\\":100,\\\"in_stock\\\":true}\", \"name\": \"search_products\"}]",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [
+            "reason-batball"
+          ],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-09T23:28:29Z",
+  "fork_id": "llamacpp-rocm-stable",
+  "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+  "fork_repo": "lemonade-sdk/llama.cpp",
+  "fork_version": "b12223",
+  "rocm_version": "10.1.0",
+  "fork_backend": "rocm-stable",
+  "experimental": false,
+  "run_id": "42705879705",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/42705879705",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d04-129462496464"
+}

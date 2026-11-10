@@ -1,0 +1,207 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp-hrx/hrx": "hrx-b99"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM-V-4.6-gguf:MiniCPM-V-4_6-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM-V-4.6-HRX",
+      "results": [
+        {
+          "backend": "hrx",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp-hrx",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 6694.433116,
+                "mean": 6675.907915666667,
+                "min": 6664.349727,
+                "p50": 6668.940904,
+                "p95": 6691.883894799999
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 5.0,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 2190.0737141278355,
+              "tps": {
+                "max": 3.8635151458486625,
+                "mean": 3.851372465901735,
+                "min": 3.836725830257878,
+                "p50": 3.853876421598665,
+                "p95": 3.8625512734236627
+              },
+              "ttft_ms": {
+                "max": 1469.381,
+                "mean": 1465.7093333333335,
+                "min": 1462.68,
+                "p50": 1465.067,
+                "p95": 1468.9496000000001
+              },
+              "vram_peak_gb": 1.5911712646484375
+            }
+          ]
+        },
+        {
+          "backend": "hrx",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp-hrx",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 10390.138847,
+                "mean": 10364.513253333333,
+                "min": 10338.233114,
+                "p50": 10365.167799,
+                "p95": 10387.6417422
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 6.1,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 5090.208193208717,
+              "tps": {
+                "max": 3.6943269545852693,
+                "mean": 3.6668586040414604,
+                "min": 3.6500459997047114,
+                "p50": 3.656202857834402,
+                "p95": 3.690514544910182
+              },
+              "ttft_ms": {
+                "max": 4881.789,
+                "mean": 4870.1630000000005,
+                "min": 4854.129,
+                "p50": 4874.571,
+                "p95": 4881.0671999999995
+              },
+              "vram_peak_gb": 2.5248260498046875
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-10T01:16:06Z",
+      "accuracy": {
+        "passed": 32,
+        "total": 45,
+        "score": 0.7111,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-widgets",
+            "response": "ets in the same time it takes 5 machines to make 5 widgets, which is 5 minutes.\n\nBut we need to calculate the time it takes for 100 machines to make 100 widgets. Since each machine makes 1 widget in 5 minutes, 100 machines would make 100 widgets in 100 * 5 minutes = 500 minutes.\n\nAnswer: 500 minutes",
+            "cut_off": false
+          },
+          {
+            "id": "reason-sisters",
+            "response": "es themselves (but since they all share the same sister, we consider the sister as part of the group). Therefore, each of Alice's brothers has one sister, which is Alice.\n\nThus, each of Alice's brothers has one sister, which is Alice.\n\nAnswer: Each of Alice's brothers has one sister, which is Alice.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "We know that adding 10 days to a Monday brings us to Friday, because Monday is the 1st, Tuesday the 2nd, ..., and 10 days later is a Friday.\n\nTherefore, the day of the week 10 days after a Monday is a Friday.\n\nAnswer: Friday",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "To convert Fahrenheit to Celsius, we use the formula:  \n\u00b0C = (\u00b0F - 32) \u00d7 5/9  \n\nPlug in 100\u00b0F:  \n\u00b0C = (100 - 32) \u00d7 5/9  \n\u00b0C = 68 \u00d7 5/9  \n\u00b0C = 350/9 \u2248 38.888...  \n\nRounded to the nearest whole number, that\u2019s 39.  \n\nAnswer: 39",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-count-r",
+            "response": " let's go through it:\n1. 'r' appears in \"straw\" \u2192 first 'r'\n2. \"berry\" has two 'r's? Let's check: b-e-r-r-y \u2192 there are two 'r's.\n\nSo, counting: \n- First 'r' in \"straw\"\n- Then two 'r's in \"berry\"\n\nThus, the letter 'r' appears 4 times.\n\nAnswer: The letter 'r' appears 4 times in the word \"strawberry\".",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-abc",
+            "response": "Let's think step by step. The first letter of the English alphabet is \"a\", and it is already in lowercase. We need the first three letters in lowercase. So, we take \"a\", \"b\", and \"c\". Therefore, the first three letters of the English alphabet in lowercase are a, b, c. So, answer is a,b,c.",
+            "cut_off": false
+          },
+          {
+            "id": "json-primes",
+            "response": "[\"2\", \"3\", \"5\", \"7\", \"11\"]",
+            "cut_off": false
+          },
+          {
+            "id": "turn-list",
+            "response": "en adding cheese, it becomes apples, milk, eggs, cheese. So the third item is eggs.\n\nBut wait, if we consider the list after removal and addition, the items are: apples, milk, eggs, cheese. So the third item is eggs.\n\nAnswer: The third item on the list after removing bread and adding cheese is eggs.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-uppercase",
+            "response": "Let's analyze the question. THE CAPITAL OF FRANCE IS PARIS.\n\nTHE ANSWER IS PARIS.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "Based on the information provided, your flight leaves at 3pm. However, considering the earlier correction, it actually leaves two hours later than initially stated.\n\nAnswer: Your flight leaves at 3pm, but it actually leaves two hours later than initially mentioned.",
+            "cut_off": false
+          },
+          {
+            "id": "py-palindrome",
+            "response": "```python\ndef is_palindrome(s):\n    cleaned = ''.join(char for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    # Remove spaces and convert to lower case\n    cleaned_a = a.replace(\" \", \"\").lower()\n    cleaned_b = b.replace(\" \", \"\").lower()\n    # Check if the cleaned strings are equal\n    return cleaned_a == cleaned_b\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": "f it's the last character, don't add the next one\n        if i + 1 < len(s):\n            # Subtract the value of the next Roman numeral if it's smaller\n            if s[i+1] in roman_map and roman_map[s[i]] > roman_map[s[i+1]]:\n                integer -= roman_map[s[i+1]]\n    \n    return integer\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [
+            "reason-batball"
+          ],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-10T01:15:56Z",
+  "fork_id": "llamacpp-hrx",
+  "fork_label": "llama.cpp HRX (ROCm/ggml-staging-automation)",
+  "fork_repo": "ROCm/ggml-staging-automation",
+  "fork_version": "hrx-b131",
+  "rocm_version": null,
+  "fork_backend": "hrx",
+  "experimental": true,
+  "run_id": "42705879705",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/42705879705",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d04-129462496464"
+}

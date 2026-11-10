@@ -1,0 +1,167 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 1931.376437,
+                "mean": 1915.4913943333333,
+                "min": 1904.90568,
+                "p50": 1910.192066,
+                "p95": 1929.2579999
+              },
+              "failed_runs": 0,
+              "input_tokens": 3208,
+              "memory_peak_gb": 21.5,
+              "name": "context-4k",
+              "output_tokens": 2,
+              "pp_tps": 1706.0388095760588,
+              "tps": {
+                "max": 40.196157247367154,
+                "mean": 38.03913165636555,
+                "min": 36.866359447004605,
+                "p50": 37.05487827472487,
+                "p95": 39.882029350102925
+              },
+              "ttft_ms": {
+                "max": 1897.741,
+                "mean": 1880.4620000000002,
+                "min": 1868.608,
+                "p50": 1875.037,
+                "p95": 1895.4706
+              },
+              "vram_peak_gb": 18.057762145996094
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 30316.187553,
+                "mean": 30308.502193333334,
+                "min": 30295.744485,
+                "p50": 30313.574542,
+                "p95": 30315.9262519
+              },
+              "failed_runs": 0,
+              "input_tokens": 24788,
+              "memory_peak_gb": 24.1,
+              "name": "context-32k",
+              "output_tokens": 2,
+              "pp_tps": 820.2046683970434,
+              "tps": {
+                "max": 22.546897546897547,
+                "mean": 20.935585385626805,
+                "min": 20.052939760968957,
+                "p50": 20.206918849013903,
+                "p95": 22.312899677109183
+              },
+              "ttft_ms": {
+                "max": 30228.804,
+                "mean": 30221.726666666666,
+                "min": 30212.338,
+                "p50": 30224.038,
+                "p95": 30228.327400000002
+              },
+              "vram_peak_gb": 20.709396362304688
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-10T01:56:39Z",
+      "accuracy": {
+        "passed": 40,
+        "total": 45,
+        "score": 0.8889,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-sisters",
+            "response": "o are male)\n- Alice has 1 sister (who is female)\n- So there are 4 children total: Alice + 3 brothers + 1 sister\n\nEach of Alice's brothers would see the same siblings from Alice's perspective. Since Alice has 1 sister, each brother would also have 1 sister (the same sister that Alice has).\n\nAnswer: 1",
+            "cut_off": false
+          },
+          {
+            "id": "tool-weather",
+            "response": "[{\"arguments\": \"{\\\"city\\\":\\\"Paris\\\",\\\"unit\\\":\\\"celsius\\\"}\", \"name\": \"get_weather\"}, {\"arguments\": \"{\\\"amount\\\":100,\\\"from_currency\\\":\\\"EUR\\\",\\\"to_currency\\\":\\\"USD\\\"}\", \"name\": \"convert_currency\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-currency",
+            "response": "[{\"arguments\": \"{\\\"amount\\\":50,\\\"from_currency\\\":\\\"USD\\\",\\\"to_currency\\\":\\\"EUR\\\"}\", \"name\": \"convert_currency\"}, {\"arguments\": \"{\\\"city\\\":\\\"Paris\\\",\\\"unit\\\":\\\"celsius\\\"}\", \"name\": \"get_weather\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-event",
+            "response": "[{\"arguments\": \"{\\\"attendees\\\":[\\\"alice\\\", \\\"bob\\\"],\\\"date\\\":\\\"2026-11-05\\\",\\\"title\\\":\\\"Design review\\\"}\", \"name\": \"create_event\"}, {\"arguments\": \"{\\\"attendees\\\":[\\\"alice\\\", \\\"bob\\\"],\\\"date\\\":\\\"2026-11-05\\\",\\\"title\\\":\\\"Design review\\\"}\", \"name\": \"create_event\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-search",
+            "response": "[{\"arguments\": \"{\\\"query\\\":\\\"wireless headphones\\\",\\\"max_price\\\":100,\\\"in_stock\\\":true}\", \"name\": \"search_products\"}, {\"arguments\": \"{\\\"query\\\":\\\"wireless headphones\\\",\\\"max_price\\\":100,\\\"in_stock\\\":true}\", \"name\": \"search_products\"}]",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [
+            "reason-batball"
+          ],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-10T01:56:39Z",
+  "fork_id": "halo-box-strix",
+  "fork_label": "llama.cpp Halo-box",
+  "fork_repo": "halo-box/strix-llama.cpp",
+  "fork_version": "b1048",
+  "rocm_version": "10.1.0a20260910",
+  "fork_backend": "halo-box-strix",
+  "experimental": true,
+  "run_id": "42705879705",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/42705879705",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d04-129462496464"
+}

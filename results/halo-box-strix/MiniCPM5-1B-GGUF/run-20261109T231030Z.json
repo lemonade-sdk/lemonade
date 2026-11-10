@@ -1,0 +1,213 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM5-1B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 481.778757,
+                "mean": 480.4552066666667,
+                "min": 479.67478,
+                "p50": 479.912083,
+                "p95": 481.5920896
+              },
+              "failed_runs": 0,
+              "input_tokens": 3065,
+              "memory_peak_gb": 4.5,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 8451.377769897137,
+              "tps": {
+                "max": 171.6707174932461,
+                "mean": 168.69258752726714,
+                "min": 166.84229012996138,
+                "p50": 167.56475495859388,
+                "p95": 171.26012123978086
+              },
+              "ttft_ms": {
+                "max": 364.37,
+                "mean": 362.66833333333335,
+                "min": 360.891,
+                "p50": 362.744,
+                "p95": 364.2074
+              },
+              "vram_peak_gb": 1.0324478149414062
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 6394.411049,
+                "mean": 6374.993098666666,
+                "min": 6343.166325,
+                "p50": 6387.401922,
+                "p95": 6393.7101363
+              },
+              "failed_runs": 0,
+              "input_tokens": 23649,
+              "memory_peak_gb": 5.0,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 3814.0280168390914,
+              "tps": {
+                "max": 120.0814025507818,
+                "mean": 119.0251854137476,
+                "min": 117.04768769212762,
+                "p50": 119.94646599833338,
+                "p95": 120.06790889553696
+              },
+              "ttft_ms": {
+                "max": 6222.471,
+                "mean": 6200.618333333333,
+                "min": 6168.483,
+                "p50": 6210.901,
+                "p95": 6221.313999999999
+              },
+              "vram_peak_gb": 1.7158737182617188
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-09T23:15:10Z",
+      "accuracy": {
+        "passed": 31,
+        "total": 45,
+        "score": 0.6889,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-widgets",
+            "response": "s for 100 machines to make 100 widgets**\n- Since 1 machine makes 1 widget in 5 minutes, 100 machines would make 100 widgets in 5 minutes.\n\n**Step 4: Verify the answer**\n- 5 machines make 5 widgets in 5 minutes.\n- 100 machines would make 100 widgets in 5 minutes.\n\n**Answer:**\nThe answer is 5 minutes.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-sisters",
+            "response": " and 1 sister.\n\n2. The question asks about how many sisters each of Alice's brothers has.\n\n3. Since Alice has 1 sister, and this sister is shared among all her siblings, each of Alice's brothers has the same number of sisters as Alice.\n\n4. Therefore, each of Alice's brothers has 1 sister.\n\nAnswer: 1",
+            "cut_off": false
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "Answer: Wednesday",
+            "cut_off": false
+          },
+          {
+            "id": "fact-light",
+            "response": "imately 299,792 kilometers per second, but this value can change over time due to experimental measurements and theoretical advancements.\n\nIf you provide the specific speed of light you're referring to, I can help you calculate or explain it.\n\nAnswer: I need more information to answer your question.",
+            "cut_off": false
+          },
+          {
+            "id": "code-powassoc",
+            "response": "pression:\n\n1. `2 ** 3` means 2 raised to the power of 3, which equals 8.\n2. `8 ** 2` means 8 raised to the power of 2, which equals 64.\n\nSo, the code will print `64`.\n\nHere's the step-by-step calculation:\n\n- `2 ** 3` = 2 * 2 * 2 = 8\n- `8 ** 2` = 8 * 8 = 64\n\nTherefore, the output of the code is `64`.",
+            "cut_off": false
+          },
+          {
+            "id": "code-bool",
+            "response": "The code `print(bool(\"\"))` will print `False` because the boolean value of an empty string is `False`.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-miles",
+            "response": "I don't have the ability to calculate distances or perform mathematical operations. I can't convert miles to kilometers or perform any calculations.\n\nI'm sorry, but I can't answer your question.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "Answer: 37",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-backwards",
+            "response": "Answer: anabnu",
+            "cut_off": false
+          },
+          {
+            "id": "json-sum",
+            "response": "```json\n{\"sum\": 2 + 3}\n```",
+            "cut_off": false
+          },
+          {
+            "id": "turn-dog",
+            "response": "I'm sorry, but I don't have information about your dog's name.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-remember",
+            "response": "I don't have access to the number 100 you asked me to add. I can't perform that calculation. I'll need you to provide that number.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "I'm sorry, but I don't have access to your personal information or the specific details of your flight. I can only provide general information about flights and travel. If you have any other questions or need assistance with something else, please let me know!",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "0], intervals[0][1]]\n    for current_start, current_end in intervals[1:]:\n        last_start, last_end = merged[-1]\n        if current_start <= last_end:\n            merged[-1][1] = max(last_end, current_end)\n        else:\n            merged.append([current_start, current_end])\n    return merged\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [
+            "arith-paren",
+            "reason-batball"
+          ],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-09T23:15:10Z",
+  "fork_id": "halo-box-strix",
+  "fork_label": "llama.cpp Halo-box",
+  "fork_repo": "halo-box/strix-llama.cpp",
+  "fork_version": "b1048",
+  "rocm_version": "10.1.0a20260910",
+  "fork_backend": "halo-box-strix",
+  "experimental": true,
+  "run_id": "42705879705",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/42705879705",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s03-d06-129462496345"
+}
