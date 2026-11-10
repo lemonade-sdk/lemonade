@@ -48,6 +48,10 @@ export async function setupNexusAccount(page: Page, options: {
   const fixture = { state, calls, branches, accountRole, accountError: false, accountUnavailable: false, rejectWrites: false, invalidTree: false, unlockUnreachable: false,
     hasOwnNetwork: false, refuseMembership: false, deletePending: false, joinedNetworks: [] as string[],
     access: {} as Record<string, { see: boolean; connect: boolean }>,
+    // Relayed reads of a mesh host: `peerFailures` requests answer 502 first, as a relay
+    // that found no answer; `peerRefused` answers every one as the device's SDK refusing the
+    // route; `peerModels` is that host's model list.
+    peerFailures: 0, peerRefused: false, peerModels: [] as Record<string, unknown>[],
     avatarSaveGate: undefined as Promise<void> | undefined,
     avatar: {state: 'ready', image: null as string | null, revision: 0, can_write: !options.readOnly, pending: false} };
   await page.addInitScript(({ desktop, cancelPasskey, source, key }) => {
@@ -77,6 +81,15 @@ export async function setupNexusAccount(page: Page, options: {
     calls.push({ path, origin: new URL(request.url()).origin, method: request.method(), body, authorization: request.headers().authorization });
     if (options.unauthorized) return route.fulfill({ status: 401, headers, json: { error: 'Unauthorized' } });
     if (options.remote && request.method() === 'POST') return route.fulfill({ status: 403, headers, json: { error: 'Use the local controller for identity, lifecycle and relay operations' } });
+    const relayed = path.match(/\/nexus\/peers\/[^/]+\/(.+)$/);
+    if (relayed) {
+      if (fixture.peerFailures > 0) {
+        fixture.peerFailures -= 1;
+        return route.fulfill({ status: 502, headers, json: { error: "Cannot reach that device's server through the mesh", detail: 'CURL error: Server returned nothing (no headers, no data)' } });
+      }
+      if (fixture.peerRefused) return route.fulfill({ status: 403, headers, json: { error: 'The peer does not hold the permission of this route', code: 'nexus_permission_denied', family: 'inference', required: 'svc:inference' } });
+      return route.fulfill({ headers, json: relayed[1].endsWith('health') ? { status: 'ok', all_models_loaded: [] } : relayed[1].endsWith('models') ? { data: fixture.peerModels } : {} });
+    }
     if (path.endsWith('/events')) return route.fulfill({ status: 204, headers });
     if (path.endsWith('/passkey/challenge')) return route.fulfill({ headers, json: {
       challenge: 'AQIDBA', user_id: 'fixture-identity', rp_id: new URL(page.url()).hostname, credential_id: state.registered ? 'AQIDBA' : '', registration: !state.registered,

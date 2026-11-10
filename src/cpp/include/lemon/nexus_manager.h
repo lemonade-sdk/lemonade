@@ -206,6 +206,10 @@ extern const char* const kPeerAuthorizationHeader;
 /// mesh address.
 std::pair<int, std::string> relay_target(const nlohmann::json& members, const std::string& self_node_id,
     const std::string& node_id);
+/// Whether a relayed read that failed with this HTTP client error (libcurl's text) is
+/// repeated: the connection was refused, reset or closed before an answer. A timeout
+/// or an HTTP answer is final.
+bool relay_retryable(const std::string& reason);
 /// The catalog revision: bump it when a route's family changes within one lemond
 /// version. It must stay below 100.
 extern const unsigned kCatalogRevision;

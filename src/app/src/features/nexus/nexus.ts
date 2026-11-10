@@ -531,22 +531,46 @@ async function homeServer(): Promise<{ endpoint: string; key: string }> {
   const origin = await controller();
   return { endpoint: origin.source, key: origin.key };
 }
+// A failed host request: `status` is the HTTP status, 0 when nothing answered (the request
+// timed out or the server was not reached), and `code` the reason lemond or the device's SDK
+// named, such as `nexus_permission_denied`.
+export class NexusHostError extends Error {
+  constructor(message: string, readonly status: number, readonly code = '') {
+    super(message);
+    this.name = 'NexusHostError';
+  }
+}
+// Whether a later attempt may answer: nothing answered, the relay found no answer from the
+// device (502) or the mesh was busy or not up yet (503, 504). The first request over a fresh
+// mesh path, as after a lemond restart, often fails this way while the connection forms.
+export function nexusHostErrorRetryable(error: unknown): boolean {
+  if (error instanceof NexusHostError) return error.status === 0 || error.status === 502 || error.status === 503 || error.status === 504;
+  return false;
+}
+const PEER_PERMISSION_ERROR = 'That device does not allow this device to use its models. Ask the network administrator for inference access.';
 // A GET on a chat host's own Lemonade API: this device's server for `local`, else the peer
 // through this device's relay route. A saved peer key travels in the header the relay forwards.
 export async function nexusHostRequest<T>(hostId: string, path: string): Promise<T> {
   const server = await homeServer();
   const peerKey = hostId === 'local' ? '' : peerKeys.get(hostId) ?? '';
   const base = hostId === 'local' ? server.endpoint : relayEndpoint(server.endpoint, hostId);
-  const response = await fetch(`${base}/${path}`, {
-    headers: { ...(server.key ? { Authorization: `Bearer ${server.key}` } : {}), ...(peerKey ? { 'X-Lemonade-Peer-Authorization': `Bearer ${peerKey}` } : {}) },
-    cache: 'no-store',
-    signal: AbortSignal.timeout(35000),
-  });
-  if (response.status === 401) throw new Error(hostId === 'local' ? API_KEY_ERROR : 'That server requires an API key. Enter it in Settings > Devices & mesh.');
+  let response: Response;
+  try {
+    response = await fetch(`${base}/${path}`, {
+      headers: { ...(server.key ? { Authorization: `Bearer ${server.key}` } : {}), ...(peerKey ? { 'X-Lemonade-Peer-Authorization': `Bearer ${peerKey}` } : {}) },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(35000),
+    });
+  } catch (error) {
+    throw new NexusHostError(error instanceof Error && error.name === 'TimeoutError' ? 'The device did not answer in time.' : 'Could not reach this device\'s server.', 0);
+  }
+  if (response.status === 401) throw new NexusHostError(hostId === 'local' ? API_KEY_ERROR : 'That server requires an API key. Enter it in Settings > Devices & mesh.', 401);
   const data = await response.json().catch(() => undefined);
   if (!response.ok) {
+    const code = typeof data?.code === 'string' ? data.code : '';
     const message = data?.error?.message ?? data?.error;
-    throw new Error(typeof message === 'string' ? message : `Request failed (${response.status}).`);
+    throw new NexusHostError(code === 'nexus_permission_denied' ? PEER_PERMISSION_ERROR
+      : typeof message === 'string' ? message : `Request failed (${response.status}).`, response.status, code);
   }
   return data as T;
 }

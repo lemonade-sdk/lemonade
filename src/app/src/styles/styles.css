@@ -6137,6 +6137,18 @@ optgroup {
   padding: var(--space-2) var(--space-3);
 }
 
+.composer__model-retry {
+  margin-left: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--weight-medium);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .composer__model-host-head > .app-icon { transition: none; }
 }

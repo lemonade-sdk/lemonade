@@ -16,8 +16,13 @@ import ChatReadinessProgress from './ChatReadinessProgress';
 /** A chat model another mesh host reports; the row stays simple until that host serves chat. */
 type HostModel = { name: string; recipe?: string; loaded: boolean; info: ModelInfo };
 /** Empty while the host's list is on its way. */
-type HostModelList = { models?: HostModel[]; error?: string };
+// `connecting`: the host's first answers failed and another attempt is scheduled.
+type HostModelList = { models?: HostModel[]; error?: string; connecting?: boolean };
 const hostModelRowId = (hostId: string, name: string) => `host:${hostId}:${name}`;
+// Waits between attempts to read a mesh host's models. The first request after a lemond
+// restart or over a freshly formed mesh path often gets no answer; about 22 s covers a
+// device whose connection is still forming when the picker opens.
+const HOST_MODEL_RETRY_MS = [1500, 3000, 6000, 12000];
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
 const LogViewer = lazy(() => import(/* webpackChunkName: "chat-logs" */ './LogViewer'));
@@ -72,7 +77,7 @@ import type { DownloadListItem } from '../features/downloadManager/downloadStore
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel, virtualLoadedCollection } from '../features/collections/collectionModels';
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
 import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';
-import { NEXUS_CONNECTION_LABELS, nexusHostRequest, nexusInferenceServers, nexusServerUnavailable, selectNexusInferenceServer, useNexusNetwork } from '../features/nexus/nexus';
+import { NEXUS_CONNECTION_LABELS, nexusHostErrorRetryable, nexusHostRequest, nexusInferenceServers, nexusServerUnavailable, selectNexusInferenceServer, useNexusNetwork } from '../features/nexus/nexus';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import { selectDictationModel, updateDraftWithDictation } from '../features/audio/dictationModels';
 import {
@@ -1032,6 +1037,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [modelPickerExpandedHosts, setModelPickerExpandedHosts] = useState<string[]>([]);
   const [modelPickerHostModels, setModelPickerHostModels] = useState<Record<string, HostModelList>>({});
   const modelPickerHostsRequested = useRef(new Set<string>());
+  const modelPickerHostTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const [modelPickerSwitching, setModelPickerSwitching] = useState<string | null>(null);
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>([]);
   const downloadAvailabilityKeyRef = useRef(chatBlockingDownloadsKey(downloadItems));
@@ -3572,35 +3578,70 @@ ${finalText}`
     if (modelPickerHostsRequested.current.has(hostId)) return;
     modelPickerHostsRequested.current.add(hostId);
     setModelPickerHostModels(current => ({ ...current, [hostId]: {} }));
-    // The model list says what is downloaded; only the health report says what is loaded.
-    // Both are inference-family routes, so every role sees them. A model already loaded
-    // on that host is then selected as it is, not loaded again.
-    const loadedOnHost = nexusHostRequest<{ all_models_loaded?: { model_name?: string }[] }>(hostId, 'api/v1/health')
-      .then(health => new Set((health?.all_models_loaded || []).map(model => String(model?.model_name || '').toLowerCase()).filter(Boolean)))
-      .catch(() => new Set<string>());
-    Promise.all([nexusHostRequest<ModelsData>(hostId, 'api/v1/models'), loadedOnHost]).then(([data, loadedNames]) => {
-      const models = (Array.isArray(data?.data) ? data.data : []).flatMap((info): HostModel[] => {
-        const name = modelInfoName(info);
-        if (!name || capabilityFromModelInfo(info) !== 'chat' || !modelIsDownloaded(info)) return [];
-        return [{ name, recipe: typeof info.recipe === 'string' ? info.recipe : undefined, loaded: loadedNames.has(name.toLowerCase()), info }];
+    const attempt = (count: number) => {
+      // The model list says what is downloaded; only the health report says what is loaded.
+      // Both are inference-family routes, so every role sees them. A model already loaded
+      // on that host is then selected as it is, not loaded again.
+      const loadedOnHost = nexusHostRequest<{ all_models_loaded?: { model_name?: string }[] }>(hostId, 'api/v1/health')
+        .then(health => new Set((health?.all_models_loaded || []).map(model => String(model?.model_name || '').toLowerCase()).filter(Boolean)))
+        .catch(() => new Set<string>());
+      Promise.all([nexusHostRequest<ModelsData>(hostId, 'api/v1/models'), loadedOnHost]).then(([data, loadedNames]) => {
+        const models = (Array.isArray(data?.data) ? data.data : []).flatMap((info): HostModel[] => {
+          const name = modelInfoName(info);
+          if (!name || capabilityFromModelInfo(info) !== 'chat' || !modelIsDownloaded(info)) return [];
+          return [{ name, recipe: typeof info.recipe === 'string' ? info.recipe : undefined, loaded: loadedNames.has(name.toLowerCase()), info }];
+        });
+        setModelPickerHostModels(current => ({ ...current, [hostId]: { models } }));
+      }).catch(error => {
+        const delay = HOST_MODEL_RETRY_MS[count];
+        if (delay === undefined || !nexusHostErrorRetryable(error)) {
+          setModelPickerHostModels(current => ({ ...current, [hostId]: { error: friendlyErrorMessage(error) } }));
+          return;
+        }
+        setModelPickerHostModels(current => ({ ...current, [hostId]: { connecting: true } }));
+        modelPickerHostTimers.current.set(hostId, setTimeout(() => {
+          modelPickerHostTimers.current.delete(hostId);
+          attempt(count + 1);
+        }, delay));
       });
-      setModelPickerHostModels(current => ({ ...current, [hostId]: { models } }));
-    }).catch(error => {
-      setModelPickerHostModels(current => ({ ...current, [hostId]: { error: friendlyErrorMessage(error) } }));
-    });
+    };
+    attempt(0);
   }, []);
+  // A host is read again from the start: after its attempts ran out, or when its mesh path
+  // came up after the picker opened.
+  const reloadHostModels = useCallback((hostId: string) => {
+    const timer = modelPickerHostTimers.current.get(hostId);
+    if (timer) { clearTimeout(timer); modelPickerHostTimers.current.delete(hostId); }
+    modelPickerHostsRequested.current.delete(hostId);
+    loadHostModels(hostId);
+  }, [loadHostModels]);
 
   const toggleModelPickerHost = useCallback((hostId: string) => {
     setModelPickerExpandedHosts(current => current.includes(hostId) ? current.filter(id => id !== hostId) : [...current, hostId]);
-    if (hostId !== chatHostId) loadHostModels(hostId);
-  }, [chatHostId, loadHostModels]);
+    if (hostId !== chatHostId && !unavailableHosts.has(hostId)) loadHostModels(hostId);
+  }, [chatHostId, loadHostModels, unavailableHosts]);
 
-  // Searching reads every host: a host whose models match opens on its own.
+  // An open picker reads every host it can reach, so each device's models show without a
+  // click. A host without a mesh path yet is read once the path comes up; a host whose
+  // path came back after its attempts ran out is read again.
   const modelPickerHostIds = useMemo(() => ['local', ...chatHosts.map(device => device.node_id)], [chatHosts]);
+  const modelPickerUnavailableBefore = useRef(new Set<string>());
   useEffect(() => {
-    if (!modelPickerOpen || !modelPickerQuery.trim()) return;
-    modelPickerHostIds.forEach(hostId => { if (hostId !== chatHostId) loadHostModels(hostId); });
-  }, [chatHostId, loadHostModels, modelPickerHostIds, modelPickerOpen, modelPickerQuery]);
+    const before = modelPickerUnavailableBefore.current;
+    modelPickerUnavailableBefore.current = new Set(unavailableHosts.keys());
+    if (!modelPickerOpen) return;
+    modelPickerHostIds.forEach(hostId => {
+      if (hostId === chatHostId || unavailableHosts.has(hostId)) return;
+      if (before.has(hostId) && modelPickerHostsRequested.current.has(hostId)) reloadHostModels(hostId);
+      else loadHostModels(hostId);
+    });
+  }, [chatHostId, loadHostModels, modelPickerHostIds, modelPickerOpen, reloadHostModels, unavailableHosts]);
+  // Scheduled attempts end with the picker.
+  useEffect(() => {
+    if (!modelPickerOpen) return undefined;
+    const timers = modelPickerHostTimers.current;
+    return () => { timers.forEach(clearTimeout); timers.clear(); };
+  }, [modelPickerOpen]);
 
   // A model on another host: chat moves to that host first, through the same switch
   // Settings → Devices & mesh uses, then the model is chosen as any picker row is. When
@@ -4062,8 +4103,8 @@ ${finalText}`
                   className="composer__model-button"
                   onClick={() => {
                     if (!modelPickerOpen) {
-                      // Each opening starts from the host serving chat and fresh host lists.
-                      setModelPickerExpandedHosts([chatHostId]);
+                      // Each opening shows every host open, with fresh host lists.
+                      setModelPickerExpandedHosts(modelPickerHostIds);
                       setModelPickerHostModels({});
                       modelPickerHostsRequested.current = new Set();
                     }
@@ -4199,10 +4240,17 @@ ${finalText}`
                         />
                       );
                     })}
-                              </> : !hostList || (!hostList.models && !hostList.error)
+                              </> : unavailable
+                                ? <li className="composer__model-empty">{t(unavailable === 'offline' ? 'This device is offline.' : 'Connecting to this device…')}</li>
+                                : hostList?.connecting
+                                  ? <li className="composer__model-empty">{t('Connecting to this device’s server…')}</li>
+                                : !hostList || (!hostList.models && !hostList.error)
                                 ? <li className="composer__model-empty">{t('Loading models…')}</li>
                                 : hostList.error
-                                  ? <li className="composer__model-error">{hostList.error}</li>
+                                  ? <li className="composer__model-error">
+                                      {hostList.error}
+                                      <button type="button" className="composer__model-retry" onClick={() => reloadHostModels(hostId)}>{t('Try again')}</button>
+                                    </li>
                                   : hostRows.length === 0
                                     ? <li className="composer__model-empty">{t(query ? 'No matching models' : 'No chat models on this device')}</li>
                                     : hostRows.map(model => (

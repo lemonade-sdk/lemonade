@@ -374,7 +374,15 @@ after the first byte ends with one SSE event,
 `event: error` with `data: {"error": {"message", "type", "status_code": 502}}`,
 and no `[DONE]`. Other requests return the peer's status and body. Multipart
 uploads are rebuilt for the peer. Other methods and WebSocket routes are not
-relayed.
+relayed. A `GET` that gets no answer because the connection was refused, reset
+or closed before a reply (the first request over a mesh path that is still
+forming, as right after `lemond` or the device started) is repeated after 1 s,
+2 s and 3 s before the relay answers 502 `Cannot reach that device's server
+through the mesh`; a timeout or an HTTP answer is final, and a `POST` runs once.
+GUI3's chat model picker reads every reachable host when it opens and repeats
+a host read that fails this way for about 22 s, showing "Connecting to this
+device's server…" meanwhile; a host the mesh reports without a path shows
+"Connecting" or "Offline" and is read once its path comes up.
 
 - The local relay does not require `Authorization` and never forwards it.
 - `X-Lemonade-Peer-Authorization: Bearer <peer key>` is sent to the peer as its

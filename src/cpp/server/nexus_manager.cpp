@@ -10,6 +10,8 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -18,6 +20,7 @@
 #include <random>
 #include <set>
 #include <stdexcept>
+#include <thread>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -1061,6 +1064,11 @@ namespace {
 constexpr long kRelayGetTimeoutSeconds = 30;
 constexpr long kRelayPostTimeoutSeconds = 300;
 
+// A read that found no answer repeats after these waits before the client hears "cannot
+// reach". The first request over a fresh mesh path, as right after lemond or the device
+// started, often meets a connection that is still forming.
+constexpr std::array<int, 3> kRelayGetRetryDelaysMs{1000, 2000, 3000};
+
 void relay_unreachable(httplib::Response& res, const std::string& node_id, const std::string& method, const std::string& path,
                        const std::string& reason) {
     const auto detail = reason.empty() ? std::string("no answer from the device") : reason;
@@ -1072,6 +1080,16 @@ void relay_unreachable(httplib::Response& res, const std::string& node_id, const
 }
 }
 
+bool relay_retryable(const std::string& reason) {
+    // libcurl's texts for a connection that was refused, reset or closed before an answer;
+    // a timeout or an HTTP answer is not among them.
+    for (const char* text : {"Server returned nothing", "Couldn't connect", "Connection reset", "Recv failure", "Failure when receiving",
+                             "Empty reply"}) {
+        if (reason.find(text) != std::string::npos) return true;
+    }
+    return false;
+}
+
 void relay_http(uint16_t port, const std::string& node_id, const std::string& path, const httplib::Request& req, httplib::Response& res,
                 const std::string& peer_authorization, const std::string& request_body) {
     const auto url = "http://127.0.0.1:" + std::to_string(port) + path;
@@ -1081,10 +1099,20 @@ void relay_http(uint16_t port, const std::string& node_id, const std::string& pa
     res.set_header("Cache-Control", "no-store");
     try {
         if (req.method == "GET") {
-            const auto reply = utils::HttpClient::get(url, headers, kRelayGetTimeoutSeconds, utils::HttpSecurityPolicy::TrustedLoopback);
-            res.status = reply.status_code;
-            res.set_content(reply.body, "application/json");
-            return;
+            // A read is safe to repeat; a POST (a model load, a chat) runs once.
+            for (size_t attempt = 0;; ++attempt) {
+                try {
+                    const auto reply = utils::HttpClient::get(url, headers, kRelayGetTimeoutSeconds, utils::HttpSecurityPolicy::TrustedLoopback);
+                    res.status = reply.status_code;
+                    res.set_content(reply.body, "application/json");
+                    return;
+                } catch (const std::exception& e) {
+                    if (attempt >= kRelayGetRetryDelaysMs.size() || !relay_retryable(e.what())) throw;
+                    LOG(INFO, "Nexus") << "Relay to " << node_id << " found no answer (" << e.what() << "); trying again in "
+                                       << kRelayGetRetryDelaysMs[attempt] << " ms" << std::endl;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(kRelayGetRetryDelaysMs[attempt]));
+                }
+            }
         }
         auto body = request_body;
         if (req.is_multipart_form_data()) {

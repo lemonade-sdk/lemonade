@@ -167,6 +167,10 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
     check(refused.first == 409 && refused.second.find("Connect") != std::string::npos, "Relay refuses a device this device may not connect to");
     check(access::relay_target(members, "self", "unlisted") == std::make_pair(0, std::string("10.8.0.7")),
           "An unknown connect flag does not refuse the relay");
+    check(access::relay_retryable("CURL error: Server returned nothing (no headers, no data)"), "A relayed read with an empty reply is repeated");
+    check(access::relay_retryable("CURL error: Couldn't connect to server"), "A relayed read the device refused is repeated");
+    check(!access::relay_retryable("CURL error: Timeout was reached"), "A relayed read that timed out is final");
+    check(!access::relay_retryable(""), "A relayed read without a reason is final");
 }
 
 void check_invite_completion(const std::function<void(bool, const char*)>& check) {
