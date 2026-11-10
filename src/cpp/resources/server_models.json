@@ -976,11 +976,8 @@
         "strata": {
             "family": "qwen36",
             "model": "UD-Q4_K_XL",
-            "format": "gguf",
             "backends": ["cuda", "rocm"],
-            "revisions": {
-                "main": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d"
-            }
+            "revision": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d"
         }
     },
     "Qwen3.5-35B-A3B-HRX": {
@@ -3291,12 +3288,8 @@
         "strata": {
             "family": "qwen",
             "model": "Q2_0",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
-                "shard_2": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
-            }
+            "revision": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
         }
     },
     "Qwen3.8-Flash-Next-IQ2_XS-Strata": {
@@ -3312,12 +3305,8 @@
         "strata": {
             "family": "qwen",
             "model": "IQ2_XS",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl"],
-            "revisions": {
-                "main": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
-                "shard_2": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
-            }
+            "revision": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
         }
     },
     "Qwen3.8-Flash-Next-IQ3_XXS-Strata": {
@@ -3333,12 +3322,8 @@
         "strata": {
             "family": "qwen",
             "model": "IQ3_XXS",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
-                "shard_2": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
-            }
+            "revision": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
         }
     },
     "Qwen3.8-Flash-Next-IQ3_S-Strata": {
@@ -3354,12 +3339,8 @@
         "strata": {
             "family": "qwen",
             "model": "IQ3_S",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
-                "shard_2": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
-            }
+            "revision": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
         }
     },
     "Swift-1.5-IQ2_XS-Strata": {
@@ -3375,12 +3356,8 @@
         "strata": {
             "family": "swift",
             "model": "IQ2_XS",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl"],
-            "revisions": {
-                "main": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d",
-                "shard_2": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d"
-            }
+            "revision": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d"
         }
     },
     "Swift-1.5-IQ3_XXS-Strata": {
@@ -3396,12 +3373,8 @@
         "strata": {
             "family": "swift",
             "model": "IQ3_XXS",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl"],
-            "revisions": {
-                "main": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d",
-                "shard_2": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d"
-            }
+            "revision": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d"
         }
     },
     "Swift-1.5-IQ3_S-Strata": {
@@ -3417,12 +3390,8 @@
         "strata": {
             "family": "swift",
             "model": "IQ3_S",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl"],
-            "revisions": {
-                "main": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d",
-                "shard_2": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d"
-            }
+            "revision": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d"
         }
     },
     "Qwen3.8-Flash-Next-Coder-IQ1_M-Strata": {
@@ -3438,12 +3407,8 @@
         "strata": {
             "family": "coder",
             "model": "IQ1_M",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl"],
-            "revisions": {
-                "main": "5348543e0147355ac9cbcb031184a3546350988e",
-                "shard_2": "5348543e0147355ac9cbcb031184a3546350988e"
-            }
+            "revision": "5348543e0147355ac9cbcb031184a3546350988e"
         }
     },
     "Qwen3.8-Flash-Next-Unsloth-UD-IQ4_XS-Strata": {
@@ -3460,13 +3425,8 @@
         "strata": {
             "family": "unsloth",
             "model": "UD-IQ4_XS",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl"],
-            "revisions": {
-                "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_3": "38bb39ee97821de2c9009abb7e93950eec396e66"
-            }
+            "revision": "38bb39ee97821de2c9009abb7e93950eec396e66"
         }
     },
     "Qwen3.8-Flash-Next-Unsloth-UD-Q4_K_XL-Strata": {
@@ -3484,14 +3444,8 @@
         "strata": {
             "family": "unsloth",
             "model": "UD-Q4_K_XL",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_3": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_4": "38bb39ee97821de2c9009abb7e93950eec396e66"
-            }
+            "revision": "38bb39ee97821de2c9009abb7e93950eec396e66"
         }
     },
     "Qwen3.8-Flash-Next-Unsloth-UD-Q5_K_XL-Strata": {
@@ -3511,16 +3465,8 @@
         "strata": {
             "family": "unsloth",
             "model": "UD-Q5_K_XL",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_3": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_4": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_5": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_6": "38bb39ee97821de2c9009abb7e93950eec396e66"
-            }
+            "revision": "38bb39ee97821de2c9009abb7e93950eec396e66"
         }
     },
     "Qwen3.8-Flash-Next-Unsloth-UD-Q6_K_XL-Strata": {
@@ -3540,16 +3486,8 @@
         "strata": {
             "family": "unsloth",
             "model": "UD-Q6_K_XL",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_3": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_4": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_5": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_6": "38bb39ee97821de2c9009abb7e93950eec396e66"
-            }
+            "revision": "38bb39ee97821de2c9009abb7e93950eec396e66"
         }
     },
     "Qwen3.8-Flash-Next-Unsloth-Q8_0-Strata": {
@@ -3569,16 +3507,8 @@
         "strata": {
             "family": "unsloth",
             "model": "Q8_0",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl"],
-            "revisions": {
-                "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_3": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_4": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_5": "38bb39ee97821de2c9009abb7e93950eec396e66",
-                "shard_6": "38bb39ee97821de2c9009abb7e93950eec396e66"
-            }
+            "revision": "38bb39ee97821de2c9009abb7e93950eec396e66"
         }
     },
     "Qwen3.8-Flash-Next-Unsloth-UD-IQ1_M-Strata": {
@@ -3595,13 +3525,8 @@
         "strata": {
             "family": "unsloth",
             "model": "UD-IQ1_M",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_3": "d96201194f103c906994f283f504209dc8d2a10c"
-            }
+            "revision": "d96201194f103c906994f283f504209dc8d2a10c"
         }
     },
     "Qwen3.8-Flash-Next-Unsloth-UD-Q2_0-Strata": {
@@ -3618,13 +3543,8 @@
         "strata": {
             "family": "unsloth",
             "model": "UD-Q2_0",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_3": "d96201194f103c906994f283f504209dc8d2a10c"
-            }
+            "revision": "d96201194f103c906994f283f504209dc8d2a10c"
         }
     },
     "Qwen3.8-Flash-Next-Unsloth-UD-IQ2_XS-Strata": {
@@ -3641,13 +3561,8 @@
         "strata": {
             "family": "unsloth",
             "model": "UD-IQ2_XS",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_3": "d96201194f103c906994f283f504209dc8d2a10c"
-            }
+            "revision": "d96201194f103c906994f283f504209dc8d2a10c"
         }
     },
     "Qwen3.8-Flash-Next-Unsloth-UD-Q2_K_XL-Strata": {
@@ -3665,14 +3580,8 @@
         "strata": {
             "family": "unsloth",
             "model": "UD-Q2_K_XL",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_3": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_4": "d96201194f103c906994f283f504209dc8d2a10c"
-            }
+            "revision": "d96201194f103c906994f283f504209dc8d2a10c"
         }
     },
     "Qwen3.8-Flash-Next-Unsloth-UD-IQ3_XXS-Strata": {
@@ -3690,14 +3599,8 @@
         "strata": {
             "family": "unsloth",
             "model": "UD-IQ3_XXS",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_3": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_4": "d96201194f103c906994f283f504209dc8d2a10c"
-            }
+            "revision": "d96201194f103c906994f283f504209dc8d2a10c"
         }
     },
     "Qwen3.8-Flash-Next-Unsloth-UD-Q3_K_XL-Strata": {
@@ -3715,14 +3618,8 @@
         "strata": {
             "family": "unsloth",
             "model": "UD-Q3_K_XL",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_3": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_4": "d96201194f103c906994f283f504209dc8d2a10c"
-            }
+            "revision": "d96201194f103c906994f283f504209dc8d2a10c"
         }
     },
     "Qwen3.8-Flash-Next-Unsloth-UD-IQ4_XS-v31-Strata": {
@@ -3740,14 +3637,8 @@
         "strata": {
             "family": "unsloth",
             "model": "UD-IQ4_XS-v31",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_3": "d96201194f103c906994f283f504209dc8d2a10c",
-                "shard_4": "d96201194f103c906994f283f504209dc8d2a10c"
-            }
+            "revision": "d96201194f103c906994f283f504209dc8d2a10c"
         }
     },
     "Qwen3.8-Flash-Next-Gyro-S-Strata": {
@@ -3762,11 +3653,8 @@
         "strata": {
             "family": "gyro",
             "model": "Gyro-S",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "1ada08422e404aca51ab9df665f089f34c419c6b"
-            }
+            "revision": "1ada08422e404aca51ab9df665f089f34c419c6b"
         }
     },
     "Qwen3.8-Flash-Next-Gyro-M-Strata": {
@@ -3781,11 +3669,8 @@
         "strata": {
             "family": "gyro",
             "model": "Gyro-M",
-            "format": "gguf",
             "backends": ["cuda", "rocm", "sycl", "metal"],
-            "revisions": {
-                "main": "1ada08422e404aca51ab9df665f089f34c419c6b"
-            }
+            "revision": "1ada08422e404aca51ab9df665f089f34c419c6b"
         }
     },
     "Qwen3.8-Flash-Next-NVFP4-Strata": {
@@ -3848,11 +3733,8 @@
         "strata": {
             "family": "qwen36",
             "model": "UD-Q6_K_XL",
-            "format": "gguf",
             "backends": ["cuda", "rocm"],
-            "revisions": {
-                "main": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d"
-            }
+            "revision": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d"
         }
     },
     "Qwen3.6-35B-A3B-Q8_0-Strata": {
@@ -3865,11 +3747,8 @@
         "strata": {
             "family": "qwen36",
             "model": "Q8_0",
-            "format": "gguf",
             "backends": ["cuda", "rocm"],
-            "revisions": {
-                "main": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d"
-            }
+            "revision": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d"
         }
     }
 }

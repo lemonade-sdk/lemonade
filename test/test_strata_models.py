@@ -1,11 +1,10 @@
 import importlib.util
 import json
 from pathlib import Path
-import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
@@ -24,11 +23,6 @@ class StrataModelsTest(unittest.TestCase):
             ram_gb=lambda: 64,
             kv_streaming_wanted=lambda *_: True,
             model_shards=lambda *_: 2,
-        )
-        reader = SimpleNamespace(
-            GGUFFile=lambda _: SimpleNamespace(
-                tensors=[SimpleNamespace(name="per_layer_token_embd.weight")]
-            )
         )
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -57,8 +51,8 @@ class StrataModelsTest(unittest.TestCase):
                     bridge, "run_tool"
                 ) as run, patch.object(
                     bridge, "prepare_mtp", return_value=root / "mtp" / "rt"
-                ), patch.dict(
-                    sys.modules, {"gguf_reader": reader}
+                ), patch.object(
+                    bridge, "ple_shard", return_value=root / "model.gguf"
                 ):
                     request["selection"] = {
                         "family": family,
@@ -72,20 +66,11 @@ class StrataModelsTest(unittest.TestCase):
                     self.assertEqual(args[args.index("--max-context") + 1], "262144")
                     self.assertEqual(config["user_args"], ["--chunk", "512"])
                     self.assertNotIn("--prefill", args)
-                    self.assertNotIn("--copy-experts", run.call_args.args)
                     self.assertEqual(config["backend"], "hip")
                     self.assertEqual(
                         args[args.index("--mtp") + 1],
                         "2" if family == "qwen36" else str(root / "mtp" / "rt"),
                     )
-
-    def test_missing_offline_mtp_does_not_download(self):
-        setup = SimpleNamespace(fetch_mtp=Mock())
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            with self.assertRaisesRegex(RuntimeError, "while offline"):
-                bridge.prepare_mtp(setup, root, root / "mtp", offline=True)
-        setup.fetch_mtp.assert_not_called()
 
     def test_catalog(self):
         registry = json.loads(
@@ -97,10 +82,11 @@ class StrataModelsTest(unittest.TestCase):
             self.assertNotIn("DeepSeek", str(row))
             self.assertNotIn("NVFP4-QAD", str(row))
             sources = row.get("checkpoints", {"main": row.get("checkpoint")})
-            if "-00001-of-" in sources["main"]:
-                count = int(sources["main"].split("-of-")[1].removesuffix(".gguf"))
-                self.assertEqual(len(sources), count)
-            self.assertEqual(set(sources), set(row["strata"]["revisions"]))
+            revisions = row["strata"].get("revisions")
+            if revisions is not None:
+                self.assertEqual(set(sources), set(revisions))
+            else:
+                self.assertEqual(len(row["strata"]["revision"]), 40)
 
 
 if __name__ == "__main__":

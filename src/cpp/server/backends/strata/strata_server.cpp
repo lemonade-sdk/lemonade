@@ -127,7 +127,8 @@ public:
 
     std::string checkpoint_revision(const ModelInfo& info, const std::string& type) const override {
         const auto selection = strata::checkpoint_selection(info.checkpoint());
-        return selection.contains("revisions") ? selection.at("revisions").value(type, "") : "";
+        return selection.contains("revisions") ? selection.at("revisions").value(type, "") :
+            selection.value("revision", "");
     }
 
     InstallCheck check_install(const std::string& backend, bool binary_found) const override {
@@ -191,7 +192,7 @@ json checkpoint_selection(const std::string& checkpoint) {
         const std::string main = row.contains("checkpoint") ? row.at("checkpoint").get<std::string>() :
             row.at("checkpoints").at("main").get<std::string>();
         if (checkpoint == main ||
-            (row.at("strata").at("format") == "gguf" && basename(checkpoint) == basename(main))) {
+            (row.at("strata").value("format", "gguf") == "gguf" && basename(checkpoint) == basename(main))) {
             return row.at("strata");
         }
     }
