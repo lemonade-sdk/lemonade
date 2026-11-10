@@ -78,15 +78,15 @@ std::optional<std::string> content_error(const json& content, const char* field)
     return std::nullopt;
 }
 
-std::optional<std::string> body_content_error(const json& body) {
-    if (body.contains("messages")) {
-        for (const auto& message : body["messages"]) {
+std::optional<std::string> body_content_error(const RouteRequest& req) {
+    if (req.has(kMessages)) {
+        for (const auto& message : req.arg(kMessages)) {
             if (!message.contains("content")) continue;
             if (auto error = content_error(message["content"], "messages")) return error;
         }
     }
-    if (body.contains("input") && body["input"].is_array()) {
-        for (const auto& item : body["input"]) {
+    if (req.has(kInput) && req.arg(kInput).is_array()) {
+        for (const auto& item : req.arg(kInput)) {
             if (item.is_string()) continue;
             const json content = item.contains("content") ? item["content"] : json::array({item});
             if (auto error = content_error(content, "input")) return error;
@@ -292,7 +292,7 @@ public:
                               "('messages', 'input', 'tools', or an array 'prompt')");
             return;
         }
-        if (auto error = body_content_error(req.body)) {
+        if (auto error = body_content_error(req)) {
             write_plain_error(res, kInvalidContent, *error);
             return;
         }
