@@ -32,6 +32,12 @@ interface BackendInfo {
   can_uninstall?: boolean;
   experimental?: boolean;
   display_name?: string;
+  format?: 'native' | 'python' | 'container';
+  description?: string;
+  author?: string;
+  publisher?: string;
+  license?: string;
+  project_url?: string;
 }
 
 interface RecipeInfo {
@@ -78,6 +84,10 @@ const RECIPE_LABELS: Record<string, string> = {
   thinksound:      'ThinkSound',
   openmoss:        'OpenMOSS TTS',
   trellis:         'TRELLIS.2',
+  halogen:         'Halogen',
+  gufo:            'Gufo',
+  ds4:             'DwarfStar4',
+  thenoise:        'TheNoise',
 };
 
 const ENGINE_LOGO_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/engines/';
@@ -100,6 +110,10 @@ const ENGINE_LOGOS: Record<string, EngineLogo> = {
   acestep:        { file: 'ace_step.png', plate: 'dark' },
   openmoss:       { file: 'openmoss.png' },
   trellis:        { file: 'trellis.png' },
+  halogen:        { file: 'halogen.png', plate: 'dark', showName: true },
+  gufo:           { file: 'gufo.png', showName: true },
+  ds4:            { file: 'dwarfstar.png', showName: true },
+  thenoise:       { file: 'thenoise.png', plate: 'dark' },
 };
 
 /** User-facing labels for backend variants */
@@ -113,6 +127,12 @@ const BACKEND_LABELS: Record<string, string> = {
   npu:      'NPU',
   directml: 'DirectML',
   dml:      'DirectML',
+};
+
+const BACKEND_FORMATS: Record<string, { label: string; icon: IconName; title: string }> = {
+  native:    { label: 'Native',    icon: 'hard-drive', title: 'Runs a native binary directly on this machine' },
+  python:    { label: 'Python',    icon: 'code',       title: 'Runs in a Python environment that Lemonade manages' },
+  container: { label: 'Container', icon: 'box',        title: 'Runs inside a container' },
 };
 
 // Older lemond builds did not expose descriptor.experimental through
@@ -719,6 +739,64 @@ const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
   );
 };
 
+const BACKEND_COLUMN_MIN_WIDTH = 300;
+const BACKEND_COLUMN_MAX_WIDTH = 400;
+
+interface BackendCardColumnsProps {
+  entries: BackendCatalogEntry[];
+  renderCard: (entry: BackendCatalogEntry) => React.ReactNode;
+}
+
+/* Cards keep their natural height and stack in independent columns. Each card
+   goes to the column with the least estimated height, measured in backends
+   (the logo header counts as half of one), so a card never hops columns when
+   its own content changes, e.g. while a download progress bar is showing. */
+const BackendCardColumns: React.FC<BackendCardColumnsProps> = ({ entries, renderCard }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [columnCount, setColumnCount] = useState(1);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const measure = () => {
+      const gap = parseFloat(getComputedStyle(container).columnGap) || 0;
+      const span = container.clientWidth + gap;
+      const most = Math.floor(span / (BACKEND_COLUMN_MIN_WIDTH + gap));
+      const fewest = Math.ceil(span / (BACKEND_COLUMN_MAX_WIDTH + gap));
+      setColumnCount(Math.max(1, Math.min(most, fewest)));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  const columns = useMemo(() => {
+    const result = Array.from({ length: columnCount }, () => ({ weight: 0, entries: [] as BackendCatalogEntry[] }));
+    for (const entry of entries) {
+      const shortest = result.reduce((min, column) => (column.weight < min.weight ? column : min));
+      shortest.entries.push(entry);
+      shortest.weight += entry.variants.length + 0.5;
+    }
+    return result;
+  }, [columnCount, entries]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="backends__columns"
+      style={{ '--backend-columns': columnCount } as React.CSSProperties}
+    >
+      {columns.map((column, index) => (
+        <div className="backends__column" key={index}>
+          {column.entries.map(renderCard)}
+        </div>
+      ))}
+    </div>
+  );
+};
+
 /* ── Component ─────────────────────────────────────────────── */
 
 interface BackendManagerProps {
@@ -1123,7 +1201,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             <>
               <h3 className="sr-only">{engineName}</h3>
               <div
-                className={`backend-card__logo${logo?.plate === 'dark' ? ' backend-card__logo--dark' : ''}${logo && !logo.showName ? ' backend-card__logo--image-only' : ''}`}
+                className={`backend-card__logo${logo?.plate === 'dark' ? ' backend-card__logo--dark' : ''}${logo ? (logo.showName ? ' backend-card__logo--icon' : ' backend-card__logo--image-only') : ''}`}
                 aria-hidden="true"
                 data-backend-logo
               >
@@ -1165,6 +1243,20 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               ? releaseLinkForVersion(targetReleaseUrl, version)
               : targetReleaseUrl;
             const variantLabel = BACKEND_LABELS[backend] || backend;
+            const format = info.format ? BACKEND_FORMATS[info.format] : undefined;
+            const description = cleanString(info.description);
+            const author = cleanString(info.author);
+            const publisher = cleanString(info.publisher);
+            const license = cleanString(info.license);
+            const projectUrl = /^https:\/\//.test(cleanString(info.project_url)) ? cleanString(info.project_url) : '';
+            const provenance = [
+              publisher && publisher !== author ? t('Packaged by {publisher}', { publisher }) : '',
+              license
+                ? t('License: {license}', { license })
+                : author
+                  ? t('License: Not declared')
+                  : '',
+            ].filter(Boolean).join(' · ');
 
             return (
               <div
@@ -1185,6 +1277,30 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                 </div>
 
                 <div className="backend-card__variant-meta">
+                  {format && (
+                    <span
+                      className={`backend-card__format backend-card__format--${info.format}`}
+                      data-backend-format={info.format}
+                      title={t(format.title)}
+                    >
+                      <Icon name={format.icon} size={11} aria-hidden="true" />
+                      {t(format.label)}
+                    </span>
+                  )}
+                  {author && (projectUrl ? (
+                    <a
+                      className="backend-card__author"
+                      href={projectUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={t('Open the {author} project page', { author })}
+                    >
+                      {author}
+                      <Icon name="external-link" size={11} aria-hidden="true" />
+                    </a>
+                  ) : (
+                    <span className="backend-card__author">{author}</span>
+                  ))}
                   {version && (installedReleaseUrl ? (
                     <a
                       className="backend-card__version"
@@ -1219,6 +1335,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                     </span>
                   )}
                 </div>
+
+                {description && <p className="backend-card__description">{description}</p>}
+                {provenance && <p className="backend-card__provenance">{provenance}</p>}
 
                 <div className="backend-card__footer">
                   <div className="backend-card__actions">
@@ -1473,7 +1592,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               title={t(CAPABILITY_LABELS[capability])}
               description={t(CAPABILITY_DESCRIPTIONS[capability])}
             >
-              {visibleEntries.map(renderBackendCard)}
+              <BackendCardColumns entries={visibleEntries} renderCard={renderBackendCard} />
             </WorkspaceCatalogSection>
           );
         })}

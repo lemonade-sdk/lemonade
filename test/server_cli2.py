@@ -191,7 +191,7 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
     else:
         resolved_cli_binary = shutil.which(cli_binary) or cli_binary
 
-    cmd = [resolved_cli_binary] + args
+    cmd = [resolved_cli_binary] + cli_args
     print(f"Running: {' '.join(cmd)}")
 
     result = subprocess.run(
@@ -618,6 +618,29 @@ sys.exit(0)
         """Test backends uninstall."""
         result = self.assertCommandSucceeds(["backends", "uninstall", "llamacpp:cpu"])
         print(f"Backends uninstall exit code: {result.returncode}")
+
+    def test_043_backends_info(self):
+        """Test backends info prints the backend's author, publisher and license."""
+        result = self.assertCommandSucceeds(["backends", "info", "llamacpp:rocm"])
+        output = result.stdout
+        self.assertIn("llamacpp:rocm", output)
+        self.assertRegex(output, r"Author\s+ggml-org")
+        self.assertRegex(output, r"Publisher\s+lemonade-sdk")
+        self.assertRegex(output, r"License\s+MIT")
+
+        response = requests.get(
+            f"http://localhost:{PORT}/api/v1/system-info",
+            headers=_auth_headers(),
+            timeout=10,
+        )
+        self.assertEqual(response.status_code, 200)
+        rocm = response.json()["recipes"]["llamacpp"]["backends"]["rocm"]
+        for key in ("description", "author", "publisher", "license", "project_url"):
+            self.assertTrue(rocm.get(key), f"/system-info is missing {key}")
+
+    def test_044_backends_info_unknown_backend(self):
+        """Test backends info rejects a backend the recipe does not have."""
+        self.assertCommandFails(["backends", "info", "llamacpp:no-such-backend"])
 
     # =============================================================================
     # Cloud Tests

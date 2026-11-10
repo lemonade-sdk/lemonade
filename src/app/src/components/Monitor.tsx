@@ -4,15 +4,17 @@ import { capabilityFromLoaded } from '../modelCapabilities';
 import { backendCompactLabel } from '../modelPresentation';
 import { useMonitorData } from '../hooks/useMonitorData';
 import { monitorMemoryTopology } from '../features/monitor/memoryTopology';
+import { percentDigits } from '../features/monitor/throughput';
 import { evictionRuntimeSettingsFromConfig } from '../features/modelSettings/globalModelSettings';
 import { WorkspaceActionButton, WorkspaceList, WorkspaceListRow, WorkspacePaneHeader } from './WorkspacePanels';
+import { MonitorGpuVitals } from './MonitorGpuVitals';
 import { useI18n } from '../i18n';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
 function pct(value: number | null): string {
   if (value == null || value < 0) return '—';
-  return `${Math.round(value)}%`;
+  return `${percentDigits(value)}%`;
 }
 
 function fmtNum(n: number): string {
@@ -157,7 +159,7 @@ const RingGauge = React.memo<{
       </svg>
       <div className="dash2-gauge__center">
         <span className="dash2-gauge__value">
-          {unavailable ? '—' : (unit === '%' ? `${Math.round(safeVal)}` : safeVal.toFixed(1))}
+          {unavailable ? '—' : (unit === '%' ? percentDigits(safeVal) : safeVal.toFixed(1))}
         </span>
         <span className="dash2-gauge__unit">{unavailable ? '' : unit}</span>
       </div>
@@ -286,6 +288,18 @@ const Monitor: React.FC<MonitorProps> = ({ isActive }) => {
   const evictionThresholdText = evictionThresholdPercent == null
     ? null
     : `Eviction threshold: ${Number(evictionThresholdPercent.toFixed(2))}%`;
+  const gpuDevices = sysStats?.gpus ?? [];
+  const multiGpu = gpuDevices.length >= 2;
+  const [selectedGpuId, setSelectedGpuId] = useState<string | null>(null);
+  const selectedIndex = gpuDevices.findIndex(gpu => gpu.id === selectedGpuId);
+  // A hidden or removed GPU must not become selected again when it reappears.
+  useEffect(() => {
+    if (selectedGpuId && sysStats?.gpus && (selectedIndex < 0 || selectedIndex >= 4)) {
+      setSelectedGpuId(null);
+    }
+  }, [selectedGpuId, selectedIndex, sysStats?.gpus]);
+  const activeGpuIndex = multiGpu && selectedIndex >= 0 && selectedIndex < 4 ? selectedIndex : 0;
+  const activeGpu = multiGpu ? gpuDevices[activeGpuIndex] : null;
 
   /* ── Render ──────────────────────────────────────────────── */
 
@@ -430,7 +444,7 @@ const Monitor: React.FC<MonitorProps> = ({ isActive }) => {
 
         {/* ═══ Two-column: System Vitals | Last Inference ═══ */}
         <div className="dash2-grid-2col">
-          <div className="dash2-card">
+          <div className={multiGpu ? 'dash2-card dash2-card--vitals-multi' : 'dash2-card'}>
             <h2 className="dash2-card__h">{t('System Vitals')}</h2>
             <div className="dash2-gauges">
               <RingGauge label="CPU" value={sysStats?.cpu_percent ?? null}
@@ -452,9 +466,9 @@ const Monitor: React.FC<MonitorProps> = ({ isActive }) => {
                 <RingGauge label="RAM" value={ramUsedGb} max={ramGaugeMax} unit="GB"
                   color="var(--info)" subtitle={ramUsedGb == null ? '—' : `${ramUsedGb.toFixed(1)} GB`} />
               )}
-              {hasGpu && <RingGauge label="GPU" value={sysStats!.gpu_percent!}
+              {!multiGpu && hasGpu && <RingGauge label="GPU" value={sysStats!.gpu_percent!}
                 color="var(--accent)" subtitle={pct(sysStats!.gpu_percent)} />}
-              {!memoryTopology.unified && hasGpu && sysStats!.vram_gb != null && sysStats!.vram_gb >= 0 && (
+              {!multiGpu && !memoryTopology.unified && hasGpu && sysStats!.vram_gb != null && sysStats!.vram_gb >= 0 && (
                 <RingGauge label="VRAM" value={sysStats!.vram_gb!} max={vramGaugeMax} unit="GB"
                   color="var(--warn)" thresholdPercent={memoryTopology.gpuTotalGb != null ? evictionThresholdPercent : null}
                   subtitle={[
@@ -465,13 +479,16 @@ const Monitor: React.FC<MonitorProps> = ({ isActive }) => {
               {hasNpu && <RingGauge label="NPU" value={sysStats!.npu_percent!}
                 color="var(--chart-series-4)" subtitle={pct(sysStats!.npu_percent)} />}
               <RingGauge label={t('KV Cache')} value={overallCacheUtil}
-                color="var(--warn)" subtitle={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} />
+                color="var(--warn)" subtitle={pct(overallCacheUtil)} />
             </div>
+            {multiGpu && <MonitorGpuVitals gpus={gpuDevices} selectedId={activeGpu?.id ?? null} onSelect={setSelectedGpuId} thresholdPercent={evictionThresholdPercent} t={t} />}
             <SmoothChart
               data={sysChartData}
               series={[
                 { key: 'cpu', color: 'var(--chart-series-3)', name: 'CPU %' },
-                ...(hasGpu ? [{ key: 'gpu', color: 'var(--chart-series-1)', name: 'GPU %' }] : []),
+                ...(multiGpu && activeGpu
+                  ? [{ key: `gpu:${activeGpu.id}`, color: 'var(--chart-series-1)', name: `GPU ${activeGpuIndex} %` }]
+                  : hasGpu ? [{ key: 'gpu', color: 'var(--chart-series-1)', name: 'GPU %' }] : []),
               ]}
               height={56}
               unit="%"
