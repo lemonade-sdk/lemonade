@@ -8299,6 +8299,118 @@ class EndpointTests(ServerTestBase):
         self.assertIn("does not declare a model architecture", error)
         print("[OK] Incompatible GGUF checkpoint was rejected before download")
 
+    def _assert_top_level_mirrors_first_candidate(self, data):
+        self.assertTrue(data.get("candidates"), f"No candidates in {data}")
+        first = data["candidates"][0]
+        for field in (
+            "recipe",
+            "repo_kind",
+            "suggested_labels",
+            "mmproj_files",
+            "draft_files",
+            "variants",
+        ):
+            self.assertEqual(data[field], first[field], f"{field} differs")
+        recipes = [c["recipe"] for c in data["candidates"]]
+        self.assertEqual(len(recipes), len(set(recipes)), f"Repeated recipe: {recipes}")
+
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_033_pull_variants_lists_candidates(self):
+        """Every backend that can load a repository is listed as a candidate."""
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": "unsloth/Qwen3-0.6B-GGUF"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()
+        self._assert_top_level_mirrors_first_candidate(data)
+        self.assertIn("llamacpp", [c["recipe"] for c in data["candidates"]])
+        print(f"[OK] Candidates: {[c['recipe'] for c in data['candidates']]}")
+
+    def _get_single_file_variants(self, checkpoint):
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": checkpoint},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 for {checkpoint}, got {response.status_code}: {response.text}",
+        )
+        data = response.json()
+        self.assertEqual(data["repo_kind"], "single-file")
+        self._assert_top_level_mirrors_first_candidate(data)
+        for v in data["variants"]:
+            self.assertEqual(v["name"], v["primary_file"])
+            self.assertEqual(v["files"], [v["primary_file"]])
+            self.assertFalse(v["sharded"])
+        return data
+
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_033_pull_variants_detects_whispercpp_repo(self):
+        """A whisper.cpp repository lists one variant per ggml model file."""
+        data = self._get_single_file_variants("ggerganov/whisper.cpp")
+        self.assertEqual(data["recipe"], "whispercpp")
+        self.assertIn("transcription", data["suggested_labels"])
+        names = {v["name"]: v["primary_file"] for v in data["variants"]}
+        self.assertIn("ggml-tiny.bin", names)
+        self.assertFalse(
+            [n for n in names if "silero" in n or "-encoder" in n],
+            f"Encoder or VAD files were listed as models: {sorted(names)}",
+        )
+        print(f"[OK] whisper.cpp repo detected with {len(names)} variant(s)")
+
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_033_pull_variants_detects_sdcpp_gguf_repo(self):
+        """A stable-diffusion.cpp GGUF repository is not sent to llama.cpp."""
+        data = self._get_single_file_variants("Green-Sky/SD-Turbo-GGUF")
+        self.assertEqual(data["recipe"], "sd-cpp")
+        self.assertIn("image", data["suggested_labels"])
+        names = {v["name"]: v["primary_file"] for v in data["variants"]}
+        self.assertIn("sd_turbo-f16-q8_0.gguf", names)
+        print(f"[OK] stable-diffusion.cpp repo detected: {sorted(names)}")
+
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_033_pull_variants_leaves_out_sdxl_lora(self):
+        """The offset LoRA next to the SDXL base checkpoint is not a model."""
+        data = self._get_single_file_variants(
+            "stabilityai/stable-diffusion-xl-base-1.0"
+        )
+        self.assertEqual(data["recipe"], "sd-cpp")
+        names = [v["name"] for v in data["variants"]]
+        self.assertIn("sd_xl_base_1.0.safetensors", names)
+        self.assertFalse([n for n in names if "lora" in n.lower()], names)
+        print(f"[OK] SDXL base variants: {names}")
+
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_033_pull_variants_skips_multi_component_image_repo(self):
+        """FLUX needs separate text encoders and a VAE, so it is not a single-file repo."""
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": "city96/FLUX.1-schnell-gguf"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("requires a different backend", response.json().get("error", ""))
+        print("[OK] FLUX repo is not offered as a single-file checkpoint")
+
     def test_035_second_lemond_on_busy_port_exits_nonzero(self):
         """A second lemond on an in-use port must refuse to start and exit non-zero.
 
