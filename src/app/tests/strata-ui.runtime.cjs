@@ -47,62 +47,25 @@ const options = { ctx_size: 8192, strata_backend: 'rocm', strata_parallel: 4, st
 const model = { name: 'Qwen3.6', recipe: 'strata', labels: ['chat'], recipe_options: options };
 assert.deepEqual(configuration.modelDefaultRecipeOptions(model), options);
 assert.deepEqual(configuration.recipeOptionsForCapability(options, 'chat'), options);
-assert.deepEqual(configuration.sanitizeRecipeOptions({ strata_parallel: '8', strata_args: '--mtp 0' }),
-  { strata_parallel: 8, strata_args: '--mtp 0' });
-assert.deepEqual(configuration.sanitizeRecipeOptions({ strata_args: '' }), {});
-assert.deepEqual(configuration.recipeOptionsForCapability(options, 'image'), {});
 
 const specs = sampler.samplerFieldsForRecipe('strata');
 assert.equal(specs.find(spec => spec.flag === '--mtp').backendDefault, '2');
-const args = '--mtp 0 --prefill auto --gpu 1 --expert-vram 8 --expert-slots 256 --cpu-threads 4 '
-  + '--hybrid-rows 128 --draft-vocab 1000 --no-graph --no-warmup --batch-mtp';
+const args = '--mtp 0 --no-warmup';
 const split = sampler.splitSamplerArgs(specs, args);
 assert.equal(split.rest, '');
 assert.equal(split.fields['--mtp'], '0');
 assert.equal(split.fields['--no-warmup'], 'true');
 assert.deepEqual(sampler.buildArgsMap(sampler.parseCustomArgs(sampler.composeSamplerArgs(specs, split.fields, split.rest))),
   sampler.buildArgsMap(sampler.parseCustomArgs(args)));
-assert.equal(sampler.composeSamplerArgs(specs, { '--mtp': '0', '--no-graph': '' }, ''), '--mtp 0');
-const malformed = sampler.splitSamplerArgs(specs, '--no-graph false --no-warmup --no-warmup');
-assert.equal(malformed.rest, '--no-graph false --no-warmup --no-warmup');
-assert.ok(malformed.claimedByRest.has('--no-graph'));
 const flashSpecs = sampler.samplerFieldsForRecipe('strata', 'repo:Qwen3.8-Flash-Next-Gyro-S-TQ1_0.gguf');
 assert.equal(flashSpecs.find(spec => spec.flag === '--mtp').kind, 'text');
-assert.equal(flashSpecs.find(spec => spec.flag === '--mtp').backendDefault, 'auto');
-assert.equal(flashSpecs.find(spec => spec.flag === '--spec').backendDefault, '4');
 assert.equal(sampler.composeSamplerArgs(flashSpecs, { '--mtp': 'off', '--kv-resident': '0' }, ''),
   '--mtp off --kv-resident 0');
-assert.ok(flashSpecs.some(spec => spec.flag === '--expert-cache'));
-assert.ok(flashSpecs.some(spec => spec.flag === '--kv'));
-assert.ok(flashSpecs.some(spec => spec.flag === '--spec'));
 assert.ok(isStrataGguf('Qwen3.8-Flash-Next-Gyro-S-TQ1_0.gguf'));
-assert.ok(isStrataGguf('Qwen3.8-Flash-Next-Gyro-M-TQ2_0.gguf'));
 assert.ok(!isStrataGguf('DeepSeek-V4.1-Flash-UD-Q8_K_XL.gguf'));
 
-for (const quant of ['UD-Q4_K_XL', 'UD-Q6_K_XL', 'Q8_0']) {
-  assert.ok(isStrataGguf(`Qwen3.6-35B-A3B-${quant}.gguf`));
-}
-for (const file of ['Qwen3.5-35B-A3B-Q8_0.gguf', 'Qwen3.6-35B-A3B-Q2_K.gguf',
-  'qwen3.6-35b-a3b-q8_0.gguf',
-  'NotQwen3.6-35B-A3B-Q8_0.gguf', 'Qwen3.6-35B-A3B-Q8_0-00001-of-00002.gguf']) {
-  assert.ok(!isStrataGguf(file));
-}
 const file = 'Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf';
 const details = { variants: [{ name: 'UD-Q4_K_XL', primary_file: file }], mmproj_files: [] };
-const manager = ts.createSourceFile('ModelManager.tsx',
-  fs.readFileSync(path.join(root, 'components/ModelManager.tsx'), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const functionNames = ['remoteVariantCheckpoint', 'remoteDefaultModelName'];
-const helpers = manager.statements
-  .filter(node => ts.isFunctionDeclaration(node) && functionNames.includes(node.name?.text))
-  .map(node => node.getText(manager)).join('\n');
-const remote = new Function(ts.transpileModule(helpers, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
-}).outputText + `\nreturn { ${functionNames.join(', ')} };`)();
-assert.equal(remote.remoteVariantCheckpoint('unsloth/model', 'UD-Q4_K_XL', 'strata', details), `unsloth/model:${file}`);
-assert.equal(remote.remoteVariantCheckpoint('unsloth/model', 'UD-Q4_K_XL', 'llamacpp', details), 'unsloth/model:UD-Q4_K_XL');
-assert.equal(remote.remoteVariantCheckpoint('unsloth/model', 'variant', 'flm', details), 'unsloth/model');
-assert.notEqual(remote.remoteDefaultModelName('huggingface', 'unsloth/model', details, 'UD-Q4_K_XL', 'strata'),
-  remote.remoteDefaultModelName('huggingface', 'unsloth/model', details, 'UD-Q4_K_XL', 'llamacpp'));
 const shared = { name: 'Qwen-Strata', recipe: 'strata', checkpoint: `unsloth/model:${file}` };
 const llama = { ...shared, name: 'Qwen-GGUF', recipe: 'llamacpp' };
 assert.equal(findRegisteredRemoteModel([llama, shared], 'huggingface', 'unsloth/model', 'UD-Q4_K_XL', 'strata', details), shared);

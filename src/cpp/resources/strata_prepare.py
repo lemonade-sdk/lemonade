@@ -99,7 +99,6 @@ def prepare(setup, control, request):
         for part in (arg.split("=", 1) if arg.startswith("--") else [arg])
     ]
     source, output = paths["main"], Path(request["output"])
-    output.mkdir(parents=True, exist_ok=True)
     pack = Path(request["cache"])
     pack.mkdir(parents=True, exist_ok=True)
     marker = pack / ".lemonade-ready"
@@ -113,8 +112,6 @@ def prepare(setup, control, request):
             str(Path(request["executable"]).parent / "rocm" / "bin"),
         ],
         "backend": {"rocm": "hip"}.get(backend, backend),
-        "host": "127.0.0.1",
-        "open_browser": False,
         "parallel": request["parallel"],
     }
     if family in setup.OWN_PATH_FAMILIES:

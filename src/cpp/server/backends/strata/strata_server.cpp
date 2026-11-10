@@ -91,7 +91,7 @@ public:
             selection.value("format", "") == "ready") {
             return "Use the Strata catalog entry for this model to include all required checkpoints";
         }
-        return strata::supported_checkpoint(checkpoint) ? "" :
+        return !selection.empty() ? "" :
             "Strata requires a GGUF or ready-made pack from its supported model catalog";
     }
 
@@ -196,10 +196,6 @@ json checkpoint_selection(const std::string& checkpoint) {
         }
     }
     return json::object();
-}
-
-bool supported_checkpoint(const std::string& checkpoint) {
-    return !checkpoint_selection(checkpoint).empty();
 }
 
 void validate_options(int ctx_size, const std::string& custom_args, int parallel, bool embedded_mtp) {
