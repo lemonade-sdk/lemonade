@@ -1,0 +1,206 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/vulkan": "b11393"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM-V-4.6-gguf:MiniCPM-V-4_6-Q4_K_M.gguf",
+        "mmproj": "OpenBMB/MiniCPM-V-4.6-gguf:mmproj-model-f16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM-V-4.6-GGUF",
+      "results": [
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 489.788959,
+                "mean": 488.56162566666666,
+                "min": 486.462351,
+                "p50": 489.433567,
+                "p95": 489.75341979999996
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 4.9,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 8245.52329357743,
+              "tps": {
+                "max": 209.45409648117118,
+                "mean": 208.6347191930724,
+                "min": 207.70702377698825,
+                "p50": 208.74303732105778,
+                "p95": 209.38299056515984
+              },
+              "ttft_ms": {
+                "max": 390.341,
+                "mean": 389.3063333333334,
+                "min": 387.512,
+                "p50": 390.066,
+                "p95": 390.31350000000003
+              },
+              "vram_peak_gb": 2.1270484924316406
+            }
+          ]
+        },
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 4393.738644,
+                "mean": 4384.276871333334,
+                "min": 4366.741087,
+                "p50": 4392.350883,
+                "p95": 4393.5998679
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 5.4,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 5859.00840078545,
+              "tps": {
+                "max": 163.05373907969036,
+                "mean": 160.17663622989514,
+                "min": 157.57042983554624,
+                "p50": 159.90573977444876,
+                "p95": 162.73893914916619
+              },
+              "ttft_ms": {
+                "max": 4240.662,
+                "mean": 4231.133000000001,
+                "min": 4212.39,
+                "p50": 4240.347,
+                "p95": 4240.6305
+              },
+              "vram_peak_gb": 2.5514602661132812
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-10T11:21:01Z",
+      "accuracy": {
+        "passed": 32,
+        "total": 45,
+        "score": 0.7111,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-batball",
+            "response": " cents).\n\nThe total cost is $1.10, which is 110 cents. So, we have the equation:\n\n\\[ b + (b + 10) = 110 \\]\n\nSimplify the equation:\n\n\\[ 2b + 10 = 110 \\]\n\nSubtract 10 from both sides:\n\n\\[ 2b = 100 \\]\n\nDivide both sides by 2:\n\n\\[ b = 50 \\]\n\nSo, the ball costs 50 cents.\n\nAnswer: The ball costs 50 cents.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-sisters",
+            "response": "es themselves (but since they all share the same sister, we consider the sister as part of the group). Therefore, each of Alice's brothers has one sister, which is Alice.\n\nThus, each of Alice's brothers has one sister, which is Alice.\n\nAnswer: Each of Alice's brothers has one sister, which is Alice.",
+            "cut_off": false
+          },
+          {
+            "id": "code-typeof",
+            "response": "Let's analyze the JavaScript code. The expression `typeof null` checks the type of the null object. In JavaScript, `null` is a special object that does not have a type, so `typeof null` returns \"null\". Therefore, the console.log will output \"null\".\n\nAnswer: The code prints \"null\".",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "To convert Fahrenheit to Celsius, we use the formula:  \n\u00b0C = (\u00b0F - 32) \u00d7 5/9  \n\nPlug in 100\u00b0F:  \n\u00b0C = (100 - 32) \u00d7 5/9  \n\u00b0C = 68 \u00d7 5/9  \n\u00b0C = 350/9 \u2248 38.888...  \n\nRounded to the nearest whole number, that's 39.  \n\nAnswer: 39",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-abc",
+            "response": "Let's think step by step. The first letter of the English alphabet is \"a\", and it is already in lowercase. We need the first three letters, so we take \"a\", then the next is \"b\", and the next is \"c\". Therefore, the first three letters in lowercase are \"a,b,c\". So, the answer is a,b,c.",
+            "cut_off": false
+          },
+          {
+            "id": "json-primes",
+            "response": "[\"2\", \"3\", \"5\", \"7\", \"11\"]",
+            "cut_off": false
+          },
+          {
+            "id": "turn-list",
+            "response": "Let's start with the original shopping list: apples, bread, milk, eggs.\n\nFirst, remove bread: apples, milk, eggs.\n\nNow, add cheese to the end: apples, milk, eggs, cheese.\n\nThe third item on the list is milk.\n\nAnswer: The third item on the list after removing bread and adding cheese is milk.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-uppercase",
+            "response": "Let's analyze the question. THE CAPITAL OF FRANCE IS PARIS.\n\nConsidering the query, the capital of France is PARIS.\n\nAnswer: THE CAPITAL OF FRANCE IS PARIS.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "Based on the information provided, your flight leaves at 3pm. However, considering the earlier correction, it actually leaves two hours later than initially stated.\n\nAnswer: Your flight leaves at 3pm, but it actually leaves two hours later than initially mentioned.",
+            "cut_off": false
+          },
+          {
+            "id": "py-palindrome",
+            "response": "```python\ndef is_palindrome(s):\n    cleaned = ''.join(char for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    # Remove spaces and convert to lower case\n    cleaned_a = a.replace(\" \", \"\").lower()\n    cleaned_b = b.replace(\" \", \"\").lower()\n    # Check if the cleaned strings are equal\n    return cleaned_a == cleaned_b\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "rged = []\n    for interval in sorted_intervals:\n        # Check if this interval can be merged with the previous one\n        if merged and merged[-1][0] >= interval[0]:\n            merged[-1][1] = max(merged[-1][1], interval[1])\n        else:\n            merged.append(interval)\n    return merged\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": " += roman_map[s[i]]\n        \n        # If it's the last character, don't add the next one\n        if i + 1 < len(s):\n            # Subtract the value of the next Roman numeral if it's smaller\n            if s[i+1] in roman_map:\n                integer -= roman_map[s[i+1]]\n    \n    return integer\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-10T11:21:01Z",
+  "fork_id": "llamacpp-upstream-vulkan",
+  "fork_label": "llama.cpp Vulkan (upstream reference)",
+  "fork_repo": "ggml-org/llama.cpp",
+  "fork_version": "b12244",
+  "rocm_version": null,
+  "fork_backend": "vulkan",
+  "experimental": false,
+  "run_id": "42778920819",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/42778920819",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d01-129704006471"
+}

@@ -1,0 +1,146 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3.5-4B-GGUF:Qwen3.5-4B-UD-Q4_K_XL.gguf",
+        "mmproj": "unsloth/Qwen3.5-4B-GGUF:mmproj-F16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3.5-4B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 1778.629351,
+                "mean": 1764.224363666667,
+                "min": 1756.531072,
+                "p50": 1757.512668,
+                "p95": 1776.5176827
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 7.8,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 2288.571561450703,
+              "tps": {
+                "max": 54.47169621995098,
+                "mean": 53.97560293459858,
+                "min": 53.415048987222555,
+                "p50": 54.040063596622204,
+                "p95": 54.4285329576181
+              },
+              "ttft_ms": {
+                "max": 1412.915,
+                "mean": 1402.6589999999999,
+                "min": 1397.515,
+                "p50": 1397.547,
+                "p95": 1411.3782
+              },
+              "vram_peak_gb": 4.269069671630859
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 14686.037322,
+                "mean": 14662.649626333334,
+                "min": 14633.365946,
+                "p50": 14668.545611,
+                "p95": 14684.2881509
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 8.7,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 1746.1622541507538,
+              "tps": {
+                "max": 44.60586027096886,
+                "mean": 44.36539678645818,
+                "min": 44.23037975272889,
+                "p50": 44.259950335676784,
+                "p95": 44.571269277439654
+              },
+              "ttft_ms": {
+                "max": 14216.867,
+                "mean": 14196.868333333332,
+                "min": 14175.282,
+                "p50": 14198.456,
+                "p95": 14215.025899999999
+              },
+              "vram_peak_gb": 5.1715087890625
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-10T10:28:03Z",
+      "accuracy": {
+        "passed": 44,
+        "total": 45,
+        "score": 0.9778,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    def normalize(s):\n        return ''.join(ch.lower() for ch in s if ch.isalpha())\n    \n    return normalize(a) == normalize(b)\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-10T10:28:03Z",
+  "fork_id": "halo-box-strix",
+  "fork_label": "llama.cpp Halo-box",
+  "fork_repo": "halo-box/strix-llama.cpp",
+  "fork_version": "b1048",
+  "rocm_version": "10.1.0a20260910",
+  "fork_backend": "halo-box-strix",
+  "experimental": true,
+  "run_id": "42778920819",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/42778920819",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d04-129704006437"
+}

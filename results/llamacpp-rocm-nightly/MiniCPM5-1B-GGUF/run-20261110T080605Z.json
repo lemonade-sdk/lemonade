@@ -1,0 +1,225 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "AMD Radeon Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.95
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM5-1B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 493.884335,
+                "mean": 492.8756163333333,
+                "min": 491.110979,
+                "p50": 493.631535,
+                "p95": 493.85905500000007
+              },
+              "failed_runs": 0,
+              "input_tokens": 3065,
+              "memory_peak_gb": 4.4,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 7887.601666828221,
+              "tps": {
+                "max": 191.84942849064987,
+                "mean": 191.67097739717394,
+                "min": 191.3644283743088,
+                "p50": 191.79907532656316,
+                "p95": 191.8443931742412
+              },
+              "ttft_ms": {
+                "max": 389.366,
+                "mean": 388.587,
+                "min": 387.207,
+                "p50": 389.188,
+                "p95": 389.34819999999996
+              },
+              "vram_peak_gb": 1.1317520141601562
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 5361.796529,
+                "mean": 5333.1648153333335,
+                "min": 5316.731438,
+                "p50": 5320.966479,
+                "p95": 5357.713524000001
+              },
+              "failed_runs": 0,
+              "input_tokens": 23649,
+              "memory_peak_gb": 5.1,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 4577.402990727548,
+              "tps": {
+                "max": 128.80308042735507,
+                "mean": 125.65300917504548,
+                "min": 120.40252465083267,
+                "p50": 127.75342244694872,
+                "p95": 128.69811462931443
+              },
+              "ttft_ms": {
+                "max": 5186.872,
+                "mean": 5166.5070000000005,
+                "min": 5154.884,
+                "p50": 5157.765,
+                "p95": 5183.961300000001
+              },
+              "vram_peak_gb": 1.8160285949707031
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-10T08:14:32Z",
+      "accuracy": {
+        "passed": 28,
+        "total": 45,
+        "score": 0.6222,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-widgets",
+            "response": ":\nWe have 100 machines.\nWe want to make 100 widgets.\n\nUsing the rate of 1 machine taking 1 minute to make 1 widget:\nTime taken = (Number of widgets to be made) / (Rate per machine)\nTime taken = 100 widgets / (1 widget per machine per minute)\nTime taken = 100 minutes\n\nThe final answer is 100 minutes.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-sisters",
+            "response": "thers, each brother has at least one sister (Alice).\n\n4. The information about Alice having 3 brothers and 1 sister does not provide any additional information about the siblings of the brothers.\n\n5. Therefore, we can conclude that each of Alice's brothers has at least one sister (Alice).\n\nAnswer: 1",
+            "cut_off": false
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "Answer: Wednesday",
+            "cut_off": false
+          },
+          {
+            "id": "fact-light",
+            "response": "imately 299,792 kilometers per second, but this value can change over time due to experimental measurements and theoretical advancements.\n\nIf you provide the specific speed of light you're referring to, I can help you calculate or explain it.\n\nAnswer: I need more information to answer your question.",
+            "cut_off": false
+          },
+          {
+            "id": "code-powassoc",
+            "response": "pression:\n\n1. `2 ** 3` means 2 raised to the power of 3, which equals 8.\n2. `8 ** 2` means 8 raised to the power of 2, which equals 64.\n\nSo, the code will print `64`.\n\nHere's the step-by-step calculation:\n\n- `2 ** 3` = 2 * 2 * 2 = 8\n- `8 ** 2` = 8 * 8 = 64\n\nTherefore, the output of the code is `64`.",
+            "cut_off": false
+          },
+          {
+            "id": "code-typeof",
+            "response": "of a variable. In this case, the variable `null` is a primitive value, and its type is `\"object\"`.\n\nThe `console.log` function is used to print output to the console. In this case, the output will be `\"object\"`.\n\nHere is the code:\n\n```javascript\nconsole.log(typeof null);\n```\n\nOutput:\n\n```\nobject\n```",
+            "cut_off": false
+          },
+          {
+            "id": "code-bool",
+            "response": "The code `print(bool(\"\"))` will print `False` because the boolean value of an empty string is `False`.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-miles",
+            "response": "n the prompt.\n\nI cannot answer the question \"How many kilometers are in 5 miles, to one decimal place?\" because I do not have the necessary information to perform the calculation.\n\nI would need the actual distance in miles to calculate the number of kilometers.\n\nAnswer: I cannot answer the question.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "Answer: 37",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-backwards",
+            "response": "Answer: anaburna",
+            "cut_off": false
+          },
+          {
+            "id": "json-sum",
+            "response": "```json\n{\"sum\": 2 + 3}\n```",
+            "cut_off": false
+          },
+          {
+            "id": "turn-dog",
+            "response": "I'm sorry, but I don't have information about your dog's name.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-remember",
+            "response": "I don't have access to the number you asked me to remember, so I can't add 100 to it.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-uppercase",
+            "response": "THE CAPITAL OF FRANCE IS PARIS.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "I'm sorry, but I don't have access to your personal information or the specific details of your flight. I can only provide general information about flights and travel. If you have any other questions or need assistance with something else, please let me know!",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "0], intervals[0][1]]\n    for current_start, current_end in intervals[1:]:\n        last_start, last_end = merged[-1]\n        if current_start <= last_end:\n            merged[-1][1] = max(last_end, current_end)\n        else:\n            merged.append([current_start, current_end])\n    return merged\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": "{'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}\n    total = 0\n    for i in range(len(s)):\n        current_val = roman_map[s[i]]\n        if i > 0 and current_val < roman_map[s[i-1]]:\n            total -= current_val\n        else:\n            total += current_val\n    return total\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-10T08:13:47Z",
+  "fork_id": "llamacpp-rocm-nightly",
+  "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+  "fork_repo": "lemonade-sdk/llamacpp-rocm",
+  "fork_version": "b1372",
+  "rocm_version": "10.3.0a20261109",
+  "fork_backend": "rocm-nightly",
+  "experimental": false,
+  "run_id": "42778920819",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/42778920819",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d06-129704006471"
+}
