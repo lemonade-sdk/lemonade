@@ -256,64 +256,29 @@ int main() {
           !strata::supported_checkpoint("repo/model:Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf"));
     check("Reject suffix matching another filename",
           !strata::supported_checkpoint("NotQwen3.6-35B-A3B-Q8_0.gguf"));
-    const auto config = strata::build_config("shared-model", "shared.gguf", "engine",
-                                             "tokenizer", "rocm", 4096);
-    check("Engine opens the original shared GGUF",
-          config.at("args") == lemon::json::array(
-              {"--native", "shared.gguf", "--max-context", "4096",
-               "--prefill", "auto", "--mtp", "2"}));
-    check("Correct engine architecture and protocol",
-          config.at("arch") == "qwen35moe" && config.at("backend") == "hip");
-    check("No exposed upstream listener or desktop launch",
-          config.at("host") == "127.0.0.1" && config.at("open_browser") == false);
-    check("Forwarded model name is accepted", config.at("model_name") == "shared-model");
-    const auto diagnostics = strata::build_config(
-        "m", "m.gguf", "engine", (std::filesystem::path("runtime") / "tokenizer").string(), "rocm", 4096);
-    check("Native diagnostics are captured beside the runtime tokenizer",
-          std::filesystem::path(diagnostics.at("log").get<std::string>()) ==
-              std::filesystem::path("runtime") / "engine.log");
-    check("Reject unresolved auto context", rejects([] {
-        strata::build_config("m", "m.gguf", "engine", "tokenizer", "cuda", -1);
-    }));
-    const auto tuned = strata::build_config("shared-model", "shared.gguf", "engine", "tokenizer",
-                                            "cuda", 8192,
-                                            "--mtp=0 --chunk 512 --no-graph --batch-mtp --gpu 1 "
-                                            "--expert-vram 8 --expert-slots 256 --cpu-threads 4 "
-                                            "--hybrid-rows 128 --draft-vocab 1000 --no-warmup", 4);
-    const auto args = tuned.at("args").get<std::vector<std::string>>();
-    const auto arg_map = lemon::utils::build_custom_args_map(args);
-    check("Parallel slots reach the Python server", tuned.at("parallel") == 4);
-    check("Explicit zero disables MTP", arg_map.at("--mtp")[0][0] == "0");
-    check("Explicit MTP depth overrides the upstream default",
-          strata::build_config("m", "m.gguf", "engine", "tokenizer", "cuda", 262144,
-                               "--mtp 1").at("args") ==
-              lemon::json::array({"--native", "m.gguf", "--max-context", "262144",
-                                 "--mtp", "1", "--prefill", "auto"}));
-    check("Quoted engine options preserve their values",
-          strata::build_config("m", "m.gguf", "engine", "tokenizer", "cuda", 4096,
-                               "--mtp \"0\" --prefill 'auto'").at("args") ==
-              lemon::json::array({"--native", "m.gguf", "--max-context", "4096",
-                                 "--mtp", "0", "--prefill", "auto"}));
-    check("Prefill alias suppresses the auto default",
-          !arg_map.count("--prefill") && arg_map.at("--chunk")[0][0] == "512");
-    check("Engine tuning and toggles are forwarded",
-          arg_map.at("--expert-vram")[0][0] == "8" && arg_map.at("--no-warmup")[0].empty());
+    strata::validate_options(8192, "--mtp=0 --chunk 512 --no-graph --batch-mtp --gpu 1 "
+                                    "--expert-vram 8 --expert-slots 256 --cpu-threads 4 "
+                                    "--hybrid-rows 128 --draft-vocab 1000 --no-warmup", 4, true);
+    strata::validate_options(4096, "--mtp \"0\" --prefill 'auto'", 1, true);
+    strata::validate_options(262144, "--mtp custom-pack", 1, false);
     for (const std::string invalid : {
              "--model other.gguf", "--native=other.gguf", "--ctx 256", "--max-context=512",
-             "--serve", "--batch 8", "--slots=2", "--vision", "--tokens 1",
+             "--pack other", "--serve", "--batch 8", "--slots=2", "--vision", "--tokens 1",
              "--mtp 8", "--mtp nope", "--mtp -1", "--mtp", "--prefill 4097", "--chunk -1"}) {
         check("Reject managed modes and invalid native tuning", rejects([&] {
-            strata::build_config("m", "m.gguf", "engine", "tokenizer", "cuda", 4096, invalid);
+            strata::validate_options(4096, invalid, 1, true);
         }));
     }
     for (const int parallel : {0, 9}) {
         check("Reject invalid parallel slot counts", rejects([&] {
-            strata::build_config("m", "m.gguf", "engine", "tokenizer", "cuda", 4096, "", parallel);
+            strata::validate_options(4096, "", parallel, true);
         }));
     }
-    check("Reject contexts below the engine minimum", rejects([] {
-        strata::build_config("m", "m.gguf", "engine", "tokenizer", "cuda", 128);
-    }));
+    for (const int context : {-1, 128}) {
+        check("Reject contexts below the engine minimum", rejects([&] {
+            strata::validate_options(context, "", 1, true);
+        }));
+    }
     lemon::ModelInfo unsupported;
     unsupported.checkpoints["main"] = "repo/model:other.gguf";
     check("Model admission rejects unsupported GGUFs",

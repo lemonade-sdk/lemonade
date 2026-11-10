@@ -7,10 +7,10 @@
 #include "lemon/gguf_reader.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/custom_args.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
-#include "lemon/utils/recipe_arg_resolver.h"
 #include "lemon/utils/safe_fs.h"
 
 #include <lemon/utils/aixlog.hpp>
@@ -19,7 +19,6 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
-#include <functional>
 #include <mutex>
 #include <random>
 #include <regex>
@@ -80,11 +79,6 @@ public:
         if (selection.value("format", "") != "ready") {
             llamacpp::ops()->populate_metadata(info, ctx);
         }
-    }
-
-    std::string resolve_checkpoint_path(const ModelInfo& info,
-                                        const CheckpointResolveContext& ctx) const override {
-        return BackendOps::resolve_checkpoint_path(info, ctx);
     }
 
     std::string find_imported_checkpoint(const std::string& dir) const override {
@@ -208,21 +202,19 @@ bool supported_checkpoint(const std::string& checkpoint) {
     return !checkpoint_selection(checkpoint).empty();
 }
 
-json build_config(const std::string& model_name, const std::string& gguf,
-                  const std::string& executable, const std::string& tokenizer,
-                  const std::string& backend, int ctx_size,
-                  const std::string& custom_args, int parallel) {
+void validate_options(int ctx_size, const std::string& custom_args, int parallel, bool embedded_mtp) {
     if (ctx_size < 256) throw std::invalid_argument("Strata context size must be at least 256");
     if (parallel < 1 || parallel > 8) {
         throw std::invalid_argument("Strata parallel slots must be between 1 and 8");
     }
     const auto error = utils::validate_custom_args(custom_args, {
-        "--native", "--model", "--max-context", "--ctx", "--serve", "--batch", "--slots",
+        "--native", "--model", "--pack", "--max-context", "--ctx", "--serve", "--batch", "--slots",
         "--tokens", "--force", "--emb", "--vision", "--bench-pp", "--bench-tg",
         "--max-new", "--n", "--greedy",
         "--dump-full-logits", "--help", "-h",
     });
     if (!error.empty()) throw std::invalid_argument(error);
+    if (!embedded_mtp) return;
     const auto custom_map = utils::build_custom_args_map(utils::parse_custom_args(custom_args));
     for (const auto& [flag, occurrences] : custom_map) {
         if (flag != "--mtp" && flag != "--prefill" && flag != "--chunk") continue;
@@ -238,27 +230,6 @@ json build_config(const std::string& model_name, const std::string& gguf,
             }
         }
     }
-    auto args = std::vector<std::string>{"--native", gguf, "--max-context", std::to_string(ctx_size)};
-    const auto extra = utils::parse_custom_args(utils::append_runtime_arg_defaults(
-        utils::map_to_args_string(utils::build_custom_args_map(utils::parse_custom_args(custom_args, true))),
-        {{"--prefill auto", "--prefill", {"--chunk"}}, {"--mtp 2", "--mtp"}}));
-    args.insert(args.end(), extra.begin(), extra.end());
-    const fs::path engine_dir = utils::path_from_utf8(executable).parent_path();
-    return {
-        {"exe", executable},
-        {"args", args},
-        {"cwd", utils::path_to_utf8(engine_dir)},
-        {"tokenizer", tokenizer},
-        {"log", utils::path_to_utf8(utils::path_from_utf8(tokenizer).parent_path() / "engine.log")},
-        {"model_name", model_name},
-        {"arch", "qwen35moe"},
-        {"backend", backend == "rocm" ? "hip" : "cuda"},
-        {"lib_dirs", {utils::path_to_utf8(engine_dir),
-                      utils::path_to_utf8(engine_dir / "rocm" / "bin")}},
-        {"host", "127.0.0.1"},
-        {"open_browser", false},
-        {"parallel", parallel},
-    };
 }
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
@@ -343,18 +314,7 @@ void StrataServer::load(const std::string& model_name, const ModelInfo& model_in
     const int ctx_size = options.get_option("ctx_size");
     const std::string custom_args = options.get_option("strata_args");
     const int parallel = options.get_option("strata_parallel");
-    if (ctx_size < 256 || parallel < 1 || parallel > 8) {
-        throw std::invalid_argument("Strata requires context >= 256 and parallel slots between 1 and 8");
-    }
-    const auto args_error = utils::validate_custom_args(custom_args, {
-        "--native", "--model", "--pack", "--max-context", "--ctx", "--serve", "--batch", "--slots",
-        "--tokens", "--force", "--emb", "--vision", "--bench-pp", "--bench-tg",
-        "--max-new", "--n", "--greedy", "--dump-full-logits", "--help", "-h",
-    });
-    if (!args_error.empty()) throw std::invalid_argument(args_error);
-    if (selection.at("family") == "qwen36") {
-        strata::build_config(model_name, gguf, executable, "", backend, ctx_size, custom_args, parallel);
-    }
+    strata::validate_options(ctx_size, custom_args, parallel, selection.at("family") == "qwen36");
     std::ifstream version_file(utils::path_from_utf8(
         BackendUtils::get_installed_version_file(*strata::spec(), backend)));
     std::string version;

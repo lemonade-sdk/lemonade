@@ -46,7 +46,7 @@ class StrataModelsTest(unittest.TestCase):
             )
         )
         self.request = {
-            "selection": {"family": "qwen36", "model": "Q8_0", "backends": ["rocm"]},
+            "selection": {"family": "qwen", "model": "Q2_0", "backends": ["rocm"]},
             "backend": "rocm",
             "context": 262144,
             "parallel": 1,
@@ -75,6 +75,7 @@ class StrataModelsTest(unittest.TestCase):
         return json.loads(Path(self.request["config"]).read_text()), run
 
     def test_qwen36_preserves_context_and_default_mtp(self):
+        self.request["selection"].update(family="qwen36", model="Q8_0")
         config, run = self.prepare()
         self.assertEqual(config["arch"], "qwen35moe")
         self.assertEqual(config["backend"], "hip")
@@ -91,21 +92,42 @@ class StrataModelsTest(unittest.TestCase):
                 "2",
             ],
         )
+        self.assertEqual(config["host"], "127.0.0.1")
+        self.assertFalse(config["open_browser"])
+        self.assertEqual(config["model_name"], "model")
+        self.assertEqual(config["log"], str(self.root / "runtime" / "engine.log"))
+        self.assertEqual(config["parallel"], 1)
         self.assertEqual(run.call_args.args[1], "tools/strata_tokenizer.py")
 
     def test_explicit_mtp_and_chunk_override_defaults(self):
+        self.request["selection"].update(family="qwen36", model="Q8_0")
         self.request["args"] = ["--mtp=1", "--chunk", "512"]
         config, _ = self.prepare()
-        self.assertNotIn("--mtp", config["args"])
         self.assertNotIn("--prefill", config["args"])
-        self.assertEqual(config["args"][-3:], ["--mtp=1", "--chunk", "512"])
+        self.assertEqual(config["user_args"], ["--mtp", "1", "--chunk", "512"])
+
+    def test_engine_controls_and_multivalue_arguments_are_preserved(self):
+        self.request["selection"].update(family="qwen36", model="Q8_0")
+        self.request["parallel"] = 4
+        self.request["args"] = [
+            "--mtp=0",
+            "--expert-vram",
+            "8",
+            "--no-warmup",
+            "--control-vector",
+            "vector with spaces.gguf",
+            "--control-vector-layer-range",
+            "4",
+            "44",
+        ]
+        config, _ = self.prepare()
+        self.assertEqual(config["parallel"], 4)
+        self.assertEqual(
+            config["user_args"],
+            ["--mtp", "0", *self.request["args"][1:]],
+        )
 
     def test_flash_prepares_without_copying_experts(self):
-        self.request["selection"] = {
-            "family": "qwen",
-            "model": "Q2_0",
-            "backends": ["rocm"],
-        }
         config, run = self.prepare()
         self.assertEqual(run.call_args.args[1], "tools/iq_pack.py")
         self.assertNotIn("--copy-experts", run.call_args.args)
@@ -120,11 +142,6 @@ class StrataModelsTest(unittest.TestCase):
         )
 
     def test_disabling_speculation_skips_mtp_download_and_configuration(self):
-        self.request["selection"] = {
-            "family": "qwen",
-            "model": "Q2_0",
-            "backends": ["rocm"],
-        }
         for args in (["--spec", "0"], ["--spec=0"]):
             with self.subTest(args=args):
                 self.request["args"] = args
@@ -133,11 +150,6 @@ class StrataModelsTest(unittest.TestCase):
                 self.assertNotIn("--mtp", config["args"])
 
     def test_custom_mtp_pack_skips_default_download(self):
-        self.request["selection"] = {
-            "family": "qwen",
-            "model": "Q2_0",
-            "backends": ["rocm"],
-        }
         self.request["args"] = ["--mtp", "custom-pack"]
         config, _ = self.prepare()
         self.mtp_preparation.assert_not_called()
@@ -145,11 +157,6 @@ class StrataModelsTest(unittest.TestCase):
         self.assertEqual(config["args"][-2:], ["--mtp", "custom-pack"])
 
     def test_long_context_uses_upstream_ram_guard_for_kv_streaming(self):
-        self.request["selection"] = {
-            "family": "qwen",
-            "model": "Q2_0",
-            "backends": ["rocm"],
-        }
         for enabled in (False, True):
             with self.subTest(enabled=enabled):
                 self.setup.kv_streaming_wanted.return_value = enabled
@@ -165,11 +172,6 @@ class StrataModelsTest(unittest.TestCase):
                     )
 
     def test_kv_streaming_honors_precision_and_residency_overrides(self):
-        self.request["selection"] = {
-            "family": "qwen",
-            "model": "Q2_0",
-            "backends": ["rocm"],
-        }
         self.setup.kv_streaming_wanted.return_value = True
         self.request["args"] = ["--kv", "fp16", "--kv-resident", "0"]
         config, _ = self.prepare()
@@ -178,21 +180,16 @@ class StrataModelsTest(unittest.TestCase):
         )
         self.assertEqual(config["args"].count("--kv"), 1)
         self.assertEqual(config["args"].count("--kv-resident"), 1)
-        self.assertEqual(config["args"][-4:], ["--kv", "fp16", "--kv-resident", "0"])
+        self.assertEqual(config["user_args"], ["--kv", "fp16", "--kv-resident", "0"])
 
     def test_explicit_mtp_off_preserves_other_speculation_settings(self):
-        self.request["selection"] = {
-            "family": "qwen",
-            "model": "Q2_0",
-            "backends": ["rocm"],
-        }
         for args in (["--mtp", "off"], ["--mtp=off"]):
             with self.subTest(args=args):
                 self.request["args"] = [*args, "--spec", "4"]
                 config, _ = self.prepare()
                 self.mtp_preparation.assert_not_called()
                 self.assertNotIn("--mtp", config["args"])
-                self.assertEqual(config["args"][-2:], ["--spec", "4"])
+                self.assertEqual(config["user_args"], ["--spec", "4"])
 
     def test_mtp_preparation_is_shared_and_reused(self):
         cache = Path(self.request["mtp_cache"])
@@ -246,11 +243,7 @@ class StrataModelsTest(unittest.TestCase):
         self.assertFalse((cache / ".lemonade-ready").exists())
 
     def test_unsloth_uses_upstream_compatibility_argument(self):
-        self.request["selection"] = {
-            "family": "unsloth",
-            "model": "UD-IQ1_M",
-            "backends": ["rocm"],
-        }
+        self.request["selection"].update(family="unsloth", model="UD-IQ1_M")
         config, run = self.prepare()
         self.assertIn("--compat-bf16", run.call_args.args)
         self.assertEqual(
@@ -258,11 +251,6 @@ class StrataModelsTest(unittest.TestCase):
         )
 
     def test_ple_selection_reads_headers_instead_of_assuming_the_last_shard(self):
-        self.request["selection"] = {
-            "family": "qwen",
-            "model": "Q2_0",
-            "backends": ["rocm"],
-        }
         for role in ("main", "shard_2"):
             with self.subTest(role=role):
                 self.ple = Path(self.request["paths"][role])
@@ -274,11 +262,6 @@ class StrataModelsTest(unittest.TestCase):
 
     def test_many_shards_use_upstream_native_shard_discovery(self):
         self.setup.model_shards = lambda _definition, _model: 4
-        self.request["selection"] = {
-            "family": "qwen",
-            "model": "Q2_0",
-            "backends": ["rocm"],
-        }
         self.request["paths"].update(
             shard_3=str(self.root / "model-3.gguf"),
             shard_4=str(self.root / "model-4.gguf"),
@@ -289,17 +272,13 @@ class StrataModelsTest(unittest.TestCase):
         self.reader.assert_any_call(self.ple)
 
     def test_missing_ple_tensor_reports_a_preparation_error(self):
-        self.request["selection"] = {
-            "family": "qwen",
-            "model": "Q2_0",
-            "backends": ["rocm"],
-        }
         self.ple = self.root / "missing.gguf"
         with self.assertRaisesRegex(ValueError, "No per_layer_token_embd.weight"):
             self.prepare()
         self.assertFalse(Path(self.request["config"]).exists())
 
     def test_failed_preparation_is_retried(self):
+        self.request["selection"].update(family="qwen36", model="Q8_0")
         with patch.object(
             bridge, "run_tool", side_effect=subprocess.CalledProcessError(1, "pack")
         ):
@@ -309,11 +288,9 @@ class StrataModelsTest(unittest.TestCase):
 
     def test_ready_pack_reuses_shared_auxiliary_files(self):
         self.request.update(backend="cuda")
-        self.request["selection"] = {
-            "family": "nvfp4",
-            "model": "NVFP4",
-            "backends": ["cuda"],
-        }
+        self.request["selection"].update(
+            family="nvfp4", model="NVFP4", backends=["cuda"]
+        )
         self.request["paths"].update(
             dense=str(self.root / "dense.gguf"),
             ple="shared/ple.gguf",
@@ -335,11 +312,7 @@ class StrataModelsTest(unittest.TestCase):
 
     def test_metal_uses_upstream_repacker_and_streaming_defaults(self):
         self.request.update(backend="metal")
-        self.request["selection"] = {
-            "family": "qwen",
-            "model": "Q2_0",
-            "backends": ["metal"],
-        }
+        self.request["selection"]["backends"] = ["metal"]
         config, run = self.prepare()
         self.assertEqual(run.call_args_list[0].args[1], "metal/tools/metal_repack.py")
         self.assertEqual(run.call_args_list[1].args[1], "tools/iq_pack.py")
@@ -351,11 +324,7 @@ class StrataModelsTest(unittest.TestCase):
 
     def test_intel_uses_the_driver_specific_upstream_policy(self):
         self.request.update(backend="sycl")
-        self.request["selection"] = {
-            "family": "qwen",
-            "model": "Q2_0",
-            "backends": ["sycl"],
-        }
+        self.request["selection"]["backends"] = ["sycl"]
         for driver, expected in (("i915", "--ple-io"), ("xe", "--stream-experts")):
             with self.subTest(driver=driver):
                 with patch.dict(

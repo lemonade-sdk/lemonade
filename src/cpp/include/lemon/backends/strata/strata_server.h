@@ -31,10 +31,7 @@ std::string engine_asset(const std::string& platform, const std::string& backend
 std::vector<BackendAsset> additional_assets(const std::string& backend);
 bool supported_checkpoint(const std::string& checkpoint);
 json checkpoint_selection(const std::string& checkpoint);
-json build_config(const std::string& model_name, const std::string& gguf,
-                  const std::string& executable, const std::string& tokenizer,
-                  const std::string& backend, int ctx_size,
-                  const std::string& custom_args = "", int parallel = 1);
+void validate_options(int ctx_size, const std::string& custom_args, int parallel, bool embedded_mtp);
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
 const BackendOps* ops();

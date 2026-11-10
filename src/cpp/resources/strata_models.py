@@ -199,6 +199,17 @@ def prepare_mtp(setup, control, cache, offline=False):
     return runtime
 
 
+def catalog_json(value, level=1):
+    if not isinstance(value, dict):
+        return json.dumps(value)
+    pad = "    " * level
+    fields = [
+        f"{pad}    {json.dumps(key)}: {catalog_json(item, level + 1)}"
+        for key, item in value.items()
+    ]
+    return "{\n" + ",\n".join(fields) + f"\n{pad}}}"
+
+
 def update_catalog(text, rows):
     decoder = json.JSONDecoder()
     position = text.index("{") + 1
@@ -220,11 +231,14 @@ def update_catalog(text, rows):
                 (
                     start,
                     position,
-                    json.dumps(remaining.pop(name), indent=4).replace("\n", "\n    "),
+                    catalog_json(remaining.pop(name)),
                 )
             )
     if remaining:
-        additions = json.dumps(remaining, indent=4)[1:-1].strip("\n")
+        additions = ",\n".join(
+            f"    {json.dumps(name)}: {catalog_json(row)}"
+            for name, row in remaining.items()
+        )
         replacements.append((position, position, ",\n" + additions + "\n"))
         start, end, value = replacements[-1]
         while start > 0 and text[start - 1].isspace():
@@ -244,7 +258,11 @@ def prepare(setup, control, request):
     if backend not in selection["backends"]:
         raise ValueError(f"{family}/{model} does not support {backend}")
     paths = {key: Path(value) for key, value in request["paths"].items()}
-    extra = request["args"]
+    extra = [
+        part
+        for arg in request["args"]
+        for part in (arg.split("=", 1) if arg.startswith("--") else [arg])
+    ]
     source, output = paths["main"], Path(request["output"])
     output.mkdir(parents=True, exist_ok=True)
     pack = Path(request["cache"])
@@ -285,7 +303,7 @@ def prepare(setup, control, request):
             "2",
         ]
     else:
-        definition, detail = setup.FAMILIES[family], setup.MODELS[model]
+        definition = setup.FAMILIES[family]
         shards = [source]
         if not definition.get("ready"):
             shards += [
@@ -294,23 +312,22 @@ def prepare(setup, control, request):
             ]
             ple = ple_shard(control, shards)
         if definition.get("ready"):
-            roles = paths
             pack = source
             args = [
                 "--pack",
                 str(pack),
                 "--native",
-                str(roles["dense"]),
+                str(paths["dense"]),
                 "--native-dense-gguf",
-                str(roles["dense"]),
+                str(paths["dense"]),
                 "--ple-gguf",
-                str(roles["ple"]),
+                str(paths["ple"]),
                 "--embd-gguf",
-                str(roles["embd"]),
+                str(paths["embd"]),
             ]
-        elif backend == "metal":
-            native = pack / "model-metal.gguf"
-            if not native.is_file():
+        else:
+            native = pack / "model-metal.gguf" if backend == "metal" else source
+            if backend == "metal" and not native.is_file():
                 run_tool(
                     control,
                     "metal/tools/metal_repack.py",
@@ -335,50 +352,29 @@ def prepare(setup, control, request):
                     *definition.get("pack_args", []),
                 )
                 marker.touch()
-            args = [
-                "--pack",
-                str(pack),
-                "--native",
-                str(native),
-                "--ple-gguf",
-                str(ple),
-                "--mmap-experts",
-            ]
-            cfg["env"] = {"STRATA_METAL_STREAM": "1"}
-        else:
-            if (
-                not marker.is_file()
-                or not (pack / "tokenizer" / "vocab.json").is_file()
-            ):
-                os.environ["STRATA_GGUF_PY"] = str(setup.get_llama_cpp() / "gguf-py")
-                run_tool(
-                    control,
-                    "tools/iq_pack.py",
-                    "--gguf",
-                    source,
-                    "--out",
-                    pack,
-                    *definition.get("pack_args", []),
-                )
-                marker.touch()
-            args = ["--pack", str(pack), "--native", str(source)]
-            if len(shards) <= 2:
+            args = ["--pack", str(pack), "--native", str(native)]
+            if backend == "metal":
+                args += ["--native-dense-gguf", str(native)]
+            if len(shards) <= 2 or backend == "metal":
                 args += ["--ple-gguf", str(ple)]
         cfg["tokenizer"] = str(pack / "tokenizer")
         args += [
             "--expert-profile",
             str(control / "data" / definition.get("profile", "expert-profile.bin")),
             "--expert-cache",
-            "auto",
+            "64" if backend == "metal" else "auto",
             "--prefill",
             "auto",
             "--spec",
-            "4",
-            "--spec-min-p",
-            "0.5",
+            "2" if backend == "metal" else "4",
             "--max-context",
             str(context),
         ]
+        if backend == "metal":
+            args += ["--suffix-draft", "0", "--mmap-experts"]
+            cfg["env"] = {"STRATA_METAL_STREAM": "1"}
+        else:
+            args += ["--spec-min-p", "0.5"]
         if backend != "metal":
             parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
             parser.add_argument("--kv", default="int8" if context > 8192 else "fp16")
@@ -395,30 +391,6 @@ def prepare(setup, control, request):
                 else ["--stream-experts"]
             )
             args += ["--vram-reserve-mib", "1024" if context <= 32768 else "2048"]
-        if backend == "metal":
-            args = [
-                "--pack",
-                str(pack),
-                "--native",
-                str(native),
-                "--native-dense-gguf",
-                str(native),
-                "--ple-gguf",
-                args[args.index("--ple-gguf") + 1],
-                "--expert-profile",
-                str(control / "data" / definition.get("profile", "expert-profile.bin")),
-                "--expert-cache",
-                "64",
-                "--prefill",
-                "auto",
-                "--spec",
-                "2",
-                "--suffix-draft",
-                "0",
-                "--max-context",
-                str(context),
-                "--mmap-experts",
-            ]
         parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
         parser.add_argument("--mtp", default="auto")
         draft, extra = parser.parse_known_args(extra)
@@ -440,18 +412,10 @@ def prepare(setup, control, request):
                         )
                     ),
                 ]
-    flags = {arg.split("=", 1)[0] for arg in extra}
-    filtered = []
-    index = 0
-    while index < len(args):
-        flag = args[index]
-        end = index + 1
-        if end < len(args) and not args[end].startswith("--"):
-            end += 1
-        if flag not in flags and not (flag == "--prefill" and "--chunk" in flags):
-            filtered.extend(args[index:end])
-        index = end
-    cfg["args"] = filtered + extra
+    if "--chunk" in extra:
+        index = args.index("--prefill")
+        del args[index : index + 2]
+    cfg.update(args=args, user_args=extra)
     Path(request["config"]).write_text(
         json.dumps(cfg, indent=2) + "\n", encoding="utf-8"
     )

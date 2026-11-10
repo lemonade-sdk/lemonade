@@ -970,22 +970,14 @@
         "checkpoint": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling",
-            "mtp"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling", "mtp"],
         "size": 22.9,
         "min_resident_gb": 32,
         "strata": {
             "family": "qwen36",
             "model": "UD-Q4_K_XL",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm"
-            ],
+            "backends": ["cuda", "rocm"],
             "revisions": {
                 "main": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d"
             }
@@ -3293,23 +3285,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 66.4,
         "min_resident_gb": 48,
         "strata": {
             "family": "qwen",
             "model": "Q2_0",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
                 "shard_2": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
@@ -3323,22 +3306,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 68.0,
         "min_resident_gb": 48,
         "strata": {
             "family": "qwen",
             "model": "IQ2_XS",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl"
-            ],
+            "backends": ["cuda", "rocm", "sycl"],
             "revisions": {
                 "main": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
                 "shard_2": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
@@ -3352,23 +3327,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 75.8,
         "min_resident_gb": 60,
         "strata": {
             "family": "qwen",
             "model": "IQ3_XXS",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
                 "shard_2": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
@@ -3382,23 +3348,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 83.6,
         "min_resident_gb": 62,
         "strata": {
             "family": "qwen",
             "model": "IQ3_S",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
                 "shard_2": "ed59f92082b1e93c0e96d60a8b11aab089b52f09"
@@ -3412,22 +3369,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 68.0,
         "min_resident_gb": 48,
         "strata": {
             "family": "swift",
             "model": "IQ2_XS",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl"
-            ],
+            "backends": ["cuda", "rocm", "sycl"],
             "revisions": {
                 "main": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d",
                 "shard_2": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d"
@@ -3441,22 +3390,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 75.8,
         "min_resident_gb": 60,
         "strata": {
             "family": "swift",
             "model": "IQ3_XXS",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl"
-            ],
+            "backends": ["cuda", "rocm", "sycl"],
             "revisions": {
                 "main": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d",
                 "shard_2": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d"
@@ -3470,22 +3411,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 83.6,
         "min_resident_gb": 62,
         "strata": {
             "family": "swift",
             "model": "IQ3_S",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl"
-            ],
+            "backends": ["cuda", "rocm", "sycl"],
             "revisions": {
                 "main": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d",
                 "shard_2": "99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d"
@@ -3499,22 +3432,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 58.4,
         "min_resident_gb": 32,
         "strata": {
             "family": "coder",
             "model": "IQ1_M",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl"
-            ],
+            "backends": ["cuda", "rocm", "sycl"],
             "revisions": {
                 "main": "5348543e0147355ac9cbcb031184a3546350988e",
                 "shard_2": "5348543e0147355ac9cbcb031184a3546350988e"
@@ -3529,22 +3454,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 93.7,
         "min_resident_gb": 48,
         "strata": {
             "family": "unsloth",
             "model": "UD-IQ4_XS",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl"
-            ],
+            "backends": ["cuda", "rocm", "sycl"],
             "revisions": {
                 "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
                 "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
@@ -3561,23 +3478,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 111.3,
         "min_resident_gb": 48,
         "strata": {
             "family": "unsloth",
             "model": "UD-Q4_K_XL",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
                 "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
@@ -3597,23 +3505,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 158.3,
         "min_resident_gb": 108,
         "strata": {
             "family": "unsloth",
             "model": "UD-Q5_K_XL",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
                 "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
@@ -3635,23 +3534,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 169.2,
         "min_resident_gb": 118,
         "strata": {
             "family": "unsloth",
             "model": "UD-Q6_K_XL",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
                 "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
@@ -3673,22 +3563,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 188.2,
         "min_resident_gb": 136,
         "strata": {
             "family": "unsloth",
             "model": "Q8_0",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl"
-            ],
+            "backends": ["cuda", "rocm", "sycl"],
             "revisions": {
                 "main": "38bb39ee97821de2c9009abb7e93950eec396e66",
                 "shard_2": "38bb39ee97821de2c9009abb7e93950eec396e66",
@@ -3707,23 +3589,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 68.0,
         "min_resident_gb": 48,
         "strata": {
             "family": "unsloth",
             "model": "UD-IQ1_M",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "d96201194f103c906994f283f504209dc8d2a10c",
                 "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
@@ -3739,23 +3612,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 70.5,
         "min_resident_gb": 48,
         "strata": {
             "family": "unsloth",
             "model": "UD-Q2_0",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "d96201194f103c906994f283f504209dc8d2a10c",
                 "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
@@ -3771,23 +3635,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 75.8,
         "min_resident_gb": 48,
         "strata": {
             "family": "unsloth",
             "model": "UD-IQ2_XS",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "d96201194f103c906994f283f504209dc8d2a10c",
                 "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
@@ -3804,23 +3659,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 79.6,
         "min_resident_gb": 48,
         "strata": {
             "family": "unsloth",
             "model": "UD-Q2_K_XL",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "d96201194f103c906994f283f504209dc8d2a10c",
                 "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
@@ -3838,23 +3684,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 83.6,
         "min_resident_gb": 48,
         "strata": {
             "family": "unsloth",
             "model": "UD-IQ3_XXS",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "d96201194f103c906994f283f504209dc8d2a10c",
                 "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
@@ -3872,23 +3709,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 89.5,
         "min_resident_gb": 48,
         "strata": {
             "family": "unsloth",
             "model": "UD-Q3_K_XL",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "d96201194f103c906994f283f504209dc8d2a10c",
                 "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
@@ -3906,23 +3734,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 93.7,
         "min_resident_gb": 48,
         "strata": {
             "family": "unsloth",
             "model": "UD-IQ4_XS-v31",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "d96201194f103c906994f283f504209dc8d2a10c",
                 "shard_2": "d96201194f103c906994f283f504209dc8d2a10c",
@@ -3937,23 +3756,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 58.5,
         "min_resident_gb": 27.6,
         "strata": {
             "family": "gyro",
             "model": "Gyro-S",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "1ada08422e404aca51ab9df665f089f34c419c6b"
             }
@@ -3965,23 +3775,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 92.0,
         "min_resident_gb": 35.0,
         "strata": {
             "family": "gyro",
             "model": "Gyro-M",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm",
-                "sycl",
-                "metal"
-            ],
+            "backends": ["cuda", "rocm", "sycl", "metal"],
             "revisions": {
                 "main": "1ada08422e404aca51ab9df665f089f34c419c6b"
             }
@@ -3996,20 +3797,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 128.0,
         "min_resident_gb": 80,
         "strata": {
             "family": "nvfp4",
             "model": "NVFP4",
             "format": "ready",
-            "backends": [
-                "cuda"
-            ],
+            "backends": ["cuda"],
             "revisions": {
                 "main": "640a1db97446ddd5e89d2b70ecd0297987192c93",
                 "dense": "640a1db97446ddd5e89d2b70ecd0297987192c93",
@@ -4027,20 +3822,14 @@
         },
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling"],
         "size": 128.0,
         "min_resident_gb": 80,
         "strata": {
             "family": "nvfp4",
             "model": "NVFP4-NVIDIA",
             "format": "ready",
-            "backends": [
-                "cuda"
-            ],
+            "backends": ["cuda"],
             "revisions": {
                 "main": "cca8f7fee5ce0af932097340a75e06df25c4e57d",
                 "dense": "cca8f7fee5ce0af932097340a75e06df25c4e57d",
@@ -4053,22 +3842,14 @@
         "checkpoint": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-Q6_K_XL.gguf",
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling",
-            "mtp"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling", "mtp"],
         "size": 32.6,
         "min_resident_gb": 44,
         "strata": {
             "family": "qwen36",
             "model": "UD-Q6_K_XL",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm"
-            ],
+            "backends": ["cuda", "rocm"],
             "revisions": {
                 "main": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d"
             }
@@ -4078,22 +3859,14 @@
         "checkpoint": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-Q8_0.gguf",
         "recipe": "strata",
         "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning",
-            "tool-calling",
-            "mtp"
-        ],
+        "labels": ["chat", "reasoning", "tool-calling", "mtp"],
         "size": 37.8,
         "min_resident_gb": 52,
         "strata": {
             "family": "qwen36",
             "model": "Q8_0",
             "format": "gguf",
-            "backends": [
-                "cuda",
-                "rocm"
-            ],
+            "backends": ["cuda", "rocm"],
             "revisions": {
                 "main": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d"
             }
