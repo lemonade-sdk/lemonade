@@ -127,11 +127,14 @@ struct EgressListener {
 struct Conn {
     tcp: SocketHandle,
     bridge: Bridge,
-    // Staging in each direction holds at most `tcp_buffer` bytes. Bytes
-    // beyond that stay in the smoltcp receive buffer, which closes the
-    // window, or in the bridge socket, which the next pump reads again.
-    to_bridge: Vec<u8>,   // decrypted-side bytes waiting to flush to the bridge
-    to_tcp: Vec<u8>,      // bridge-side bytes waiting to flush into smoltcp
+    // Bytes move straight between the bridge socket and the smoltcp socket
+    // buffers, with no staging in between: what the bridge can't take yet
+    // stays in the smoltcp receive buffer (which closes the window), and
+    // what smoltcp can't take yet stays in the bridge socket.
+    // The bridge is edge-triggered: these are cleared when a call would
+    // block and set again by its readiness event.
+    bridge_readable: bool,
+    bridge_writable: bool,
     established: bool,     // virtual socket reached Established at least once
     bridge_eof: bool,     // bridge read returned 0
     fin_to_bridge: bool,  // we already half-closed the bridge write side
@@ -538,8 +541,8 @@ impl Stack {
                         Conn {
                             tcp: handle,
                             bridge,
-                            to_bridge: Vec::new(),
-                            to_tcp: Vec::new(),
+                            bridge_readable: true,
+                            bridge_writable: true,
                             established: false,
                             bridge_eof: false,
                             fin_to_bridge: false,
@@ -604,8 +607,8 @@ impl Stack {
                     Conn {
                         tcp: handle,
                         bridge,
-                        to_bridge: Vec::new(),
-                        to_tcp: Vec::new(),
+                        bridge_readable: true,
+                        bridge_writable: true,
                         established: false,
                         bridge_eof: false,
                         fin_to_bridge: false,
@@ -637,8 +640,6 @@ impl Stack {
         let mut progressed = false;
         let mut finished: Vec<Token> = Vec::new();
         let tokens: Vec<Token> = self.conns.keys().copied().collect();
-        let mut buf = [0u8; 16384];
-        let staging_limit = self.tcp_buffer;
 
         for token in tokens {
             let mut remove = false;
@@ -654,26 +655,26 @@ impl Stack {
                     conn.established = true;
                 }
 
-                // smoltcp -> bridge
-                while socket.can_recv() && conn.to_bridge.len() < staging_limit {
-                    match socket.recv_slice(&mut buf) {
-                        Ok(0) => break,
-                        Ok(n) => {
-                            conn.to_bridge.extend_from_slice(&buf[..n]);
-                            progressed = true;
-                        }
+                // smoltcp -> bridge, written from the receive buffer in place.
+                while conn.bridge_writable && socket.can_recv() {
+                    let bridge = &mut conn.bridge;
+                    match socket.recv(|data| match bridge.write(data) {
+                        Ok(n) => (n, Ok(n)),
+                        Err(e) => (0, Err(e)),
+                    }) {
+                        Ok(Ok(0)) => break,
+                        Ok(Ok(_)) => progressed = true,
+                        // Would block, or not connected yet: wait for the
+                        // bridge's next writable event.
+                        Ok(Err(_)) => conn.bridge_writable = false,
                         Err(_) => break,
                     }
-                }
-                if flush(&mut conn.bridge, &mut conn.to_bridge) {
-                    progressed = true;
                 }
                 // Virtual peer half-closed and we've drained: FIN the bridge.
                 // Only meaningful once established — !may_recv() is also true in
                 // the pre-established SynReceived/SynSent states.
                 if conn.established
                     && !conn.fin_to_bridge
-                    && conn.to_bridge.is_empty()
                     && !socket.may_recv()
                     && socket.recv_queue() == 0
                 {
@@ -681,43 +682,32 @@ impl Stack {
                     conn.fin_to_bridge = true;
                 }
 
-                // bridge -> smoltcp. The bridge is edge-triggered, so a read
-                // that stops at the limit leaves no event behind; the next
-                // pump reads again once send_slice made room.
-                if !conn.bridge_eof {
-                    while conn.to_tcp.len() < staging_limit {
-                        match conn.bridge.read(&mut buf) {
-                            Ok(0) => {
-                                conn.bridge_eof = true;
-                                break;
-                            }
-                            Ok(n) => {
-                                conn.to_tcp.extend_from_slice(&buf[..n]);
-                                progressed = true;
-                            }
-                            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                            Err(_) => {
-                                conn.bridge_eof = true;
-                                break;
-                            }
+                // bridge -> smoltcp, read into the send buffer in place. A read
+                // that stops because the send buffer is full leaves the bridge
+                // readable, so the next pump reads again once ACKs make room.
+                while conn.bridge_readable && !conn.bridge_eof && socket.can_send() {
+                    let bridge = &mut conn.bridge;
+                    match socket.send(|space| match bridge.read(space) {
+                        Ok(n) => (n, Ok(n)),
+                        Err(e) => (0, Err(e)),
+                    }) {
+                        Ok(Ok(0)) => conn.bridge_eof = true,
+                        Ok(Ok(_)) => progressed = true,
+                        Ok(Err(ref e)) if e.kind() == io::ErrorKind::WouldBlock => {
+                            conn.bridge_readable = false
                         }
-                    }
-                }
-                if socket.can_send() && !conn.to_tcp.is_empty() {
-                    if let Ok(n) = socket.send_slice(&conn.to_tcp) {
-                        if n > 0 {
-                            conn.to_tcp.drain(..n);
-                            progressed = true;
-                        }
+                        Ok(Err(_)) => conn.bridge_eof = true,
+                        Err(_) => break,
                     }
                 }
                 // Bridge fully drained to the virtual peer: close the virtual side.
-                if conn.established && conn.bridge_eof && conn.to_tcp.is_empty() && socket.may_send() {
+                // Bytes still in the send buffer go out before the FIN.
+                if conn.established && conn.bridge_eof && socket.may_send() {
                     socket.close();
                 }
 
                 let tcp_closed = matches!(socket.state(), tcp::State::Closed);
-                if tcp_closed && conn.to_bridge.is_empty() {
+                if tcp_closed && socket.recv_queue() == 0 {
                     remove = true;
                 }
             }
@@ -794,7 +784,21 @@ impl Stack {
                     log::error!("virtual-netstack: poll error: {e}");
                 }
             }
-            let ready: Vec<Token> = self.events.iter().map(|e| e.token()).collect();
+            let mut ready: Vec<Token> = Vec::with_capacity(self.events.iter().count());
+            for event in self.events.iter() {
+                let token = event.token();
+                if let Some(conn) = self.conns.get_mut(&token) {
+                    // Errors and hang-ups count as both: the next call reports them.
+                    let failed = event.is_error() || event.is_read_closed() || event.is_write_closed();
+                    if event.is_readable() || failed {
+                        conn.bridge_readable = true;
+                    }
+                    if event.is_writable() || failed {
+                        conn.bridge_writable = true;
+                    }
+                }
+                ready.push(token);
+            }
             self.manage_egress(&ready);
         }
 
@@ -807,29 +811,6 @@ impl Stack {
             let _ = eg.listener.deregister(self.poll.registry());
         }
         log::info!("virtual-netstack: stopped");
-    }
-}
-
-/// Flush as much of `pending` to the bridge as possible. Returns true if any
-/// bytes were written.
-fn flush(bridge: &mut Bridge, pending: &mut Vec<u8>) -> bool {
-    let mut wrote = 0;
-    while !pending.is_empty() {
-        match bridge.write(&pending[wrote..]) {
-            Ok(0) => break,
-            Ok(n) => wrote += n,
-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
-            Err(_) => break,
-        }
-        if wrote == pending.len() {
-            break;
-        }
-    }
-    if wrote > 0 {
-        pending.drain(..wrote);
-        true
-    } else {
-        false
     }
 }
 
