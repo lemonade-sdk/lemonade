@@ -321,16 +321,16 @@ static void body_limit_tests(const fs::path& scratch) {
         return;
     }
 
-    const std::string small = R"({"HTTP-Model":{"recipe":"llamacpp","labels":["chat"]}})";
+    const std::string small_body = R"({"HTTP-Model":{"recipe":"llamacpp","labels":["chat"]}})";
     const fs::path cache = scratch / "sized" / "body.json";
 
     HttpCatalogSource exact = serving(document, "/catalog.json", cache);
-    exact.max_body_bytes = small.size();
+    exact.max_body_bytes = small_body.size();
     check("a body at the limit is read", http_catalog_locator("sized", exact)->read(nullptr).has_value());
 
     HttpCatalogSource over = exact;
     over.cache_path = (scratch / "sized" / "over.json").string();
-    over.max_body_bytes = small.size() - 1;
+    over.max_body_bytes = small_body.size() - 1;
     check("a body over the limit yields no document",
           !http_catalog_locator("over", over)->read(nullptr).has_value());
     check("an oversized body is never cached", !fs::exists(scratch / "sized" / "over.json"));
@@ -341,7 +341,7 @@ static void body_limit_tests(const fs::path& scratch) {
     too_small.max_body_bytes = 8;
     const json served = http_catalog_locator("sized", too_small)->read(nullptr).value_or(json());
     check("an oversized answer serves the last good body", served.size() == 1);
-    check("the cached body survives one that will not fit", read_text(cache) == small);
+    check("the cached body survives one that will not fit", read_text(cache) == small_body);
 
     document.stop();
 }

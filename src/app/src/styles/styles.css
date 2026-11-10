@@ -11833,6 +11833,21 @@ optgroup {
   align-items: start;
 }
 
+.backends__columns {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(var(--backend-columns, 1), minmax(0, 400px));
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.backends__column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
 .workspace-card {
   display: flex;
   flex-direction: column;
