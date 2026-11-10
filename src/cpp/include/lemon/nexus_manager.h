@@ -184,6 +184,16 @@ struct SdkFailure {
 SdkFailure sdk_failure(int code, const nlohmann::json& reply, int rejected_status);
 /// Compares two secrets in time that depends only on the length of `expected`.
 bool constant_time_equals(const std::string& candidate, const std::string& expected);
+/// Headless setup. A server whose identity is the system's (a Linux system unit) and that has
+/// neither a passkey nor a first device-key unlock takes `key/unlock` from another machine only
+/// with its setup code, which lemond writes to `setup-code` in its Nexus directory (the service
+/// user and root can read it). Loopback callers, through SSH or on the server, need no code.
+/// True for such a server's `status`.
+bool setup_code_pending(const nlohmann::json& status);
+/// A new setup code: 12 characters from an alphabet without look-alikes, as XXXX-XXXX-XXXX.
+std::string new_setup_code();
+/// Upper case without spaces or dashes, so a code typed or pasted in any form compares.
+std::string normalize_setup_code(const std::string& code);
 /// True when `authorization` is "Bearer <key>" for `api_key` or a nonempty `admin_key`.
 bool bearer_matches(const std::string& authorization, const std::string& api_key, const std::string& admin_key);
 /// Operations an authenticated mesh administrator may call.
@@ -297,6 +307,12 @@ private:
     void relay(const httplib::Request& req, httplib::Response& res);
     std::pair<int, json> control(const std::string& method, const std::string& path, const json& body,
                                const std::string& caller_key = "");
+    // Headless setup (nexus_access::setup_code_pending), mutex_ held: the code in
+    // <data_root_>/setup-code, created when first needed and removed once used.
+    std::string setup_code_locked();
+    void drop_setup_code_locked();
+    std::string setup_code_file() const;
+    int setup_code_failures_{0};
     std::string data_root_;
     nlohmann::ordered_json catalog_;
     const json route_permissions_;

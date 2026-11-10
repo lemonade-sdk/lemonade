@@ -91,6 +91,19 @@ elseif(WIN32)
     endforeach()
     target_sources(lemonade_nexus_sdk PRIVATE "${_export_file}")
     set_target_properties(lemonade_nexus_sdk PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF)
+else()
+    # The same C API only, as on macOS and Windows. Everything else stays local to the library,
+    # so its own copies of inline code (cpp-httplib's TLS client among them) are never replaced
+    # by the host's: lemond may build the same header with another TLS backend (mbedtls on Arch),
+    # and without this the SDK's OpenSSL client ran lemond's mbedtls code and crashed. Ubuntu's
+    # default -Bsymbolic-functions hid this; Arch's linker defaults do not.
+    set(_export_file "${CMAKE_CURRENT_BINARY_DIR}/sdk-exports.map")
+    set(_globals "")
+    foreach(_symbol IN LISTS _exports)
+        string(APPEND _globals "    ${_symbol};\n")
+    endforeach()
+    file(WRITE "${_export_file}" "{\n  global:\n${_globals}  local:\n    *;\n};\n")
+    target_link_options(lemonade_nexus_sdk PRIVATE "LINKER:--version-script=${_export_file}")
 endif()
 
 if(DEFINED _export_file)
