@@ -203,16 +203,8 @@ def cache_key(specs: dict, route_id: str, example: dict) -> str:
 
 
 def value_shape(value):
-    """Keys, types and SSE event names, without values, array lengths or order."""
+    """Keys and types, without values, array lengths or order."""
     if isinstance(value, str):
-        event = re.match(r"event: (\S+)", value)
-        data = re.search(r"(\{.*\})\s*$", value, re.S)
-        if data:
-            try:
-                parsed = json.loads(data.group(1))
-            except ValueError:
-                return "string"
-            return {"event": event and event.group(1), "data": value_shape(parsed)}
         return "string"
     if isinstance(value, dict):
         return {key: value_shape(item) for key, item in value.items()}
@@ -226,12 +218,44 @@ def value_shape(value):
     return "number" if isinstance(value, (int, float)) else type(value).__name__
 
 
-def response_shape(response: dict) -> dict:
-    return {
+def stream_shape(items: list, response_format: str) -> list:
+    shapes = set()
+    for item in items:
+        event = None
+        payloads = [item]
+        if response_format == "EventStream":
+            event = next(
+                (
+                    line[6:].strip()
+                    for line in item.splitlines()
+                    if line.startswith("event:")
+                ),
+                None,
+            )
+            payloads = event_payloads(item)
+        for payload in payloads:
+            try:
+                data = value_shape(json.loads(payload))
+            except json.JSONDecodeError:
+                data = "[DONE]" if payload == "[DONE]" else "string"
+            shapes.add(json.dumps({"event": event, "data": data}, sort_keys=True))
+    return sorted(shapes)
+
+
+def response_shape(response: dict, response_format: str) -> dict:
+    shape = {
         key: value if key in ("status", "content_type") else value_shape(value)
         for key, value in response.items()
-        if key not in ("count", "line_count")
+        if key not in ("count", "line_count", "head", "tail", "stream_shape")
     }
+    if response_format in ("JsonLines", "EventStream"):
+        shape["stream_shape"] = response.get("stream_shape")
+        if shape["stream_shape"] is None:
+            # Older recordings retain only samples, so unseen shapes require a new baseline.
+            shape["stream_shape"] = stream_shape(
+                response.get("head", []) + response.get("tail", []), response_format
+            )
+    return shape
 
 
 def validate_specs(specs: dict) -> None:
@@ -1209,9 +1233,11 @@ def record(
             for line in redact(raw.decode("utf-8"), cache_dir).splitlines()
             if line.strip()
         ]
+        recorded["stream_shape"] = stream_shape(lines, response_format)
         recorded.update(truncate([elide_json_text(line) for line in lines]))
     elif response_format == "EventStream":
         events = split_events(redact(raw.decode("utf-8"), cache_dir))
+        recorded["stream_shape"] = stream_shape(events, response_format)
         recorded.update(truncate([elide_event(event) for event in events]))
     elif response_format == "Text":
         lines = redact(raw.decode("utf-8"), cache_dir).splitlines()
@@ -2133,6 +2159,7 @@ def main() -> int:
 
     keys = {}
     refresh = set()
+    refresh_counts = collections.Counter()
     for spec in route_list:
         for example in spec["examples"]:
             ref = (spec["id"], example["name"])
@@ -2140,6 +2167,12 @@ def main() -> int:
             recipe = example_recipe(specs, spec["id"], example, server_models)
             if recipe in args.refresh:
                 refresh.add(ref)
+                refresh_counts[recipe] += 1
+
+    for recipe in dict.fromkeys(args.refresh):
+        print(f"Refresh {recipe}: selected {refresh_counts[recipe]} example(s)")
+    if any(not refresh_counts[recipe] for recipe in args.refresh):
+        raise GenerationError("each --refresh recipe must select at least one example")
 
     problems = lint_sources()
     for spec in route_list:
@@ -2158,9 +2191,17 @@ def main() -> int:
                 entry = runner.run(route_id, name)
                 # The docs show a response's shape, so new values alone are churn.
                 if key in cache:
-                    if response_shape(cache[key]["response"]) == response_shape(
-                        entry["response"]
-                    ):
+                    if response_shape(
+                        cache[key]["response"], entry["format"]
+                    ) == response_shape(entry["response"], entry["format"]):
+                        if (
+                            "stream_shape" in entry["response"]
+                            and "stream_shape" not in cache[key]["response"]
+                        ):
+                            cache[key]["response"]["stream_shape"] = entry["response"][
+                                "stream_shape"
+                            ]
+                            write_cache(cache)
                         continue
                     print(f"  {route_id} {name!r} changed shape")
                 cache[key] = entry

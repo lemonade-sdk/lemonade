@@ -903,7 +903,6 @@ jobs:
         # An example changes only when the new backend changes its response's shape,
         # so the update PR carries no churn from new values.
         if: matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-        continue-on-error: true
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
@@ -913,7 +912,6 @@ jobs:
 
       - name: Upload recorded API examples
         if: matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: api-examples
@@ -1173,7 +1171,6 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Download recorded API examples
-        continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           name: api-examples
