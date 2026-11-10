@@ -212,7 +212,7 @@ const CUSTOM_RECIPE_SUGGESTIONS: Record<string, CustomRecipeSuggestion> = {
     note: 'FastFlowLM model id or local FastFlowLM artifact path for supported AMD NPU models.',
   },
   'ryzenai-llm': {
-    checkpoint: 'amd/Llama-3.2-1B-Instruct-onnx-ryzenai-1.7-hybrid',
+    checkpoint: 'amd/Llama-3.2-1B-Instruct_rai_1.9.0_npu',
     note: 'RyzenAI-compatible ONNX/HF checkpoint or local path.',
   },
   'sd-cpp': {
