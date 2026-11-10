@@ -192,6 +192,12 @@ if(WIN32)
     # Unicode support
     target_compile_definitions(LemonadeServer PRIVATE UNICODE _UNICODE)
 
+    # Merged into the linker-generated manifest; the embedded server downloads
+    # model files whose cache paths can exceed MAX_PATH.
+    set_target_properties(LemonadeServer PROPERTIES
+        LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:\"${CMAKE_CURRENT_SOURCE_DIR}/long_path_aware.manifest\""
+    )
+
     set_target_properties(LemonadeServer PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
         RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/Debug"
