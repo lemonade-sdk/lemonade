@@ -20,11 +20,9 @@ import base64
 import os
 import struct
 import time
-import tempfile
 import wave
 
 import requests
-import urllib.request
 from openai import AsyncOpenAI
 
 from utils.server_base import (
@@ -37,7 +35,6 @@ from utils.capabilities import (
     get_test_model,
 )
 from utils.test_models import (
-    TEST_AUDIO_URL,
     PORT,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
@@ -67,37 +64,10 @@ def _get_whispercpp_backend():
 class WhisperTests(ServerTestBase):
     """Tests for Whisper audio transcription."""
 
-    # Class-level cache for the test audio file
-    _test_audio_path = None
+    _test_audio_path = os.path.join(
+        os.path.dirname(__file__), "test_speech_whisper.wav"
+    )
     _german_audio_path = os.path.join(os.path.dirname(__file__), "test_speech_de.wav")
-
-    @classmethod
-    def setUpClass(cls):
-        """Verify server and download test audio file once for all tests."""
-        super().setUpClass()
-
-        # Download test audio file to temp directory
-        cls._test_audio_path = os.path.join(tempfile.gettempdir(), "test_speech.wav")
-
-        if not os.path.exists(cls._test_audio_path):
-            print(f"\n[INFO] Downloading test audio file from {TEST_AUDIO_URL}")
-            try:
-                urllib.request.urlretrieve(TEST_AUDIO_URL, cls._test_audio_path)
-                print(f"[OK] Downloaded to {cls._test_audio_path}")
-            except Exception as e:
-                print(f"[ERROR] Failed to download test audio: {e}")
-                raise
-
-    @classmethod
-    def tearDownClass(cls):
-        """Cleanup test audio file."""
-        if cls._test_audio_path and os.path.exists(cls._test_audio_path):
-            try:
-                os.remove(cls._test_audio_path)
-                print(f"[INFO] Cleaned up test audio file")
-            except Exception:
-                pass  # Ignore cleanup errors
-        super().tearDownClass()
 
     def _load_whisper_model_or_fail(self):
         """Load the configured Whisper model before positive transcription tests."""
