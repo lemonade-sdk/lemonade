@@ -1,5 +1,7 @@
 #include <lemon/utils/aixlog.hpp>
 
+#include <algorithm>
+
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
@@ -22,7 +24,9 @@ const RouteError kNotLlm{
     400, "model_not_applicable", "The request does not stream and `model` is not an LLM"};
 const RouteError kRouterResponseChain{
     400, "router_response_chain_unsupported",
-    "`previous_response_id` is set and `model` is a `collection.router` model"};
+    "The request continues earlier responses through `previous_response_id`, `conversation` or an "
+    "`item_reference` input, and `model` is a `collection.router` model whose policy can pick a "
+    "different candidate than the one holding that state"};
 
 ordered_json response_schema() {
     auto schema = ordered_json::parse(R"({
@@ -89,16 +93,26 @@ const RouteArg kMaxOutputTokens{"max_output_tokens", ArgIn::JsonBody, {{"type", 
                                 "Upper bound on generated tokens."};
 const RouteArg kPreviousResponseId{
     "previous_response_id", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Partial,
-    "The response this one continues. Passed to the backend as is. Rejected with "
-    "`router_response_chain_unsupported` when `model` is a `collection.router` model, because the "
-    "router can pick a different candidate than the one that served the previous turn, and that "
-    "candidate has no record of the id: resend the full `input`, or name a concrete model."};
+    "The response this one continues. Passed to the backend as is."};
 
-// A response chain lives inside the backend that created it, so it cannot survive a turn
-// routing to a different candidate than the last one.
-bool continues_chain(const RouteRequest& req) {
-    const auto id = req.body.find(kPreviousResponseId.name);
-    return id != req.body.end() && id->is_string() && !id->get<std::string>().empty();
+bool non_empty(const json& value) {
+    if (value.is_string()) return !value.get_ref<const std::string&>().empty();
+    if (value.is_object()) return !value.empty();
+    return false;
+}
+
+// Earlier responses live in the backend that created them, so a request that
+// refers to them can only be answered by that backend.
+bool references_backend_state(const json& body) {
+    const auto previous = body.find(kPreviousResponseId.name);
+    if (previous != body.end() && non_empty(*previous)) return true;
+    const auto conversation = body.find("conversation");
+    if (conversation != body.end() && non_empty(*conversation)) return true;
+    const auto input = body.find(kInput.name);
+    if (input == body.end() || !input->is_array()) return false;
+    return std::any_of(input->begin(), input->end(), [](const json& item) {
+        return item.is_object() && item.value("type", std::string()) == "item_reference";
+    });
 }
 
 class ResponsesRoute : public ModelRoute {
@@ -118,6 +132,11 @@ public:
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; "
             "see [Router API](./router.md).",
+            "A request that continues earlier responses, through `previous_response_id`, "
+            "`conversation` or an `item_reference` input, is rejected on a `collection.router` "
+            "model, since the candidate picked for this turn may not be the one holding them. "
+            "Resend the full `input`, or send the request to the `model` the earlier response "
+            "reports.",
         };
         s.args = {
             kInput, model_loading::kModel, kMaxOutputTokens, kPreviousResponseId, generation::kTemperature,
@@ -175,15 +194,15 @@ protected:
             collection = router_collection_info(ctx_, req.model);
         } catch (const std::exception&) {
         }
-        if (collection && collection->route_policy && continues_chain(req)) {
-            LOG(WARNING, "Server") << "Rejected /responses with previous_response_id on router "
-                                   << "collection '" << req.model << "'" << std::endl;
+        if (collection && collection->route_policy && references_backend_state(req.body)) {
+            LOG(INFO, "Server") << "Rejected /responses continuing earlier responses on router "
+                                << "collection '" << req.model << "'" << std::endl;
             write_openai_error(
                 res, kRouterResponseChain,
-                "'previous_response_id' refers to state held by whichever backend served the "
-                "earlier turn, and router collection '" + req.model + "' may select a different "
-                "candidate for this one. Resend the full 'input', or address a concrete model "
-                "instead of the collection.");
+                "This request continues earlier responses, which are held by the backend that "
+                "served them, and router collection '" + req.model + "' may select a different "
+                "candidate for this turn. Resend the full 'input', or send the request to the "
+                "'model' reported by the earlier response.");
             return false;
         }
         // Router policies call backends here, before run() does.
