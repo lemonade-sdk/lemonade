@@ -19,7 +19,7 @@ const { createNexusAccountService } = require('../src/features/nexus/accountSess
   // prepareNexus sends the code with the key unlock, trimmed, and only when one is given.
   const calls = [];
   const request = async (path, body) => { calls.push({ path, body }); return path === 'status' ? headless : {}; };
-  await prepareNexus('rack-server', true, request, undefined, '  ABCD-EFGH-JKMN ');
+  await prepareNexus('rack-server', true, request, undefined, undefined, '  ABCD-EFGH-JKMN ');
   assert.deepEqual(calls.find(c => c.path === 'key/unlock').body, { defer_join: true, setup_code: 'ABCD-EFGH-JKMN' });
   calls.length = 0;
   await prepareNexus('desk', false, request);
