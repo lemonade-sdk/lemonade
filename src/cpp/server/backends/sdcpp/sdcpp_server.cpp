@@ -10,8 +10,11 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/error_types.h"
+#include "lemon/hf_variants.h"
 #include "lemon/system_info.h"
 #include <httplib.h>
+#include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -787,8 +790,117 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return make_server<SDServer>(ctx);
 }
 
+namespace {
+
+std::string lower_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+bool ends_with(const std::string& value, const std::string& suffix) {
+    return value.size() >= suffix.size() &&
+           value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+std::string file_stem(const std::string& file) {
+    const size_t dot = file.find_last_of('.');
+    return dot == std::string::npos ? file : file.substr(0, dot);
+}
+
+std::vector<std::string> lower_tags(const nlohmann::json& metadata) {
+    std::vector<std::string> tags;
+    auto it = metadata.find("tags");
+    if (it == metadata.end() || !it->is_array()) return tags;
+    for (const auto& tag : *it) {
+        if (tag.is_string()) tags.push_back(lower_copy(tag.get<std::string>()));
+    }
+    return tags;
+}
+
+bool has_tag(const std::vector<std::string>& tags, const std::string& wanted) {
+    return std::find(tags.begin(), tags.end(), wanted) != tags.end();
+}
+
+// Text encoders and autoencoders that a multi-file model loads next to its
+// diffusion weights; none of them is a model on its own.
+bool image_model_component(const std::string& file) {
+    const std::string stem = lower_copy(file_stem(file));
+    return stem.rfind("clip_", 0) == 0 || stem.rfind("t5", 0) == 0 ||
+           stem.rfind("vae", 0) == 0 || stem == "ae" || stem.rfind("ae-", 0) == 0;
+}
+
+// FLUX and SD3 need separate text encoders and a VAE, so a pull of one file
+// would register a model that cannot load. Quantized repos often keep the
+// stable-diffusion tag, so the base model and the component files are
+// checked as well.
+bool needs_separate_components(const std::vector<std::string>& tags,
+                               const std::vector<std::string>& files) {
+    if (has_tag(tags, "flux") || has_tag(tags, "diffusers:fluxpipeline") ||
+        has_tag(tags, "diffusers:stablediffusion3pipeline")) {
+        return true;
+    }
+    for (const auto& tag : tags) {
+        if (tag.rfind("base_model:", 0) == 0 &&
+            (tag.find("stable-diffusion-3") != std::string::npos ||
+             tag.find("flux") != std::string::npos)) {
+            return true;
+        }
+    }
+    for (const auto& file : files) {
+        if (file.find('/') != std::string::npos) continue;
+        const std::string stem = lower_copy(file_stem(file));
+        if (stem.rfind("clip_", 0) == 0 || stem.rfind("t5", 0) == 0) return true;
+    }
+    return false;
+}
+
+class SdcppOps : public BackendOps {
+public:
+    // A single-file checkpoint sits at the repository root; the diffusers
+    // layout keeps its parts in subfolders, which stable-diffusion.cpp does
+    // not load. Quantized repos made for stable-diffusion.cpp often set no
+    // task, so their sd.cpp tag is enough.
+    RepositoryAnalysis analyze_repository(const RepositoryView& repo) const override {
+        const std::vector<std::string> tags = lower_tags(repo.metadata);
+        auto task_it = repo.metadata.find("pipeline_tag");
+        const std::string task = task_it != repo.metadata.end() && task_it->is_string()
+            ? lower_copy(task_it->get<std::string>()) : std::string();
+        const bool sdcpp_tagged = has_tag(tags, "sd.cpp") || has_tag(tags, "stable-diffusion.cpp");
+        const bool stable_diffusion = has_tag(tags, "stable-diffusion") ||
+            has_tag(tags, "stable-diffusion-xl") ||
+            has_tag(tags, "diffusers:stablediffusionpipeline") ||
+            has_tag(tags, "diffusers:stablediffusionxlpipeline");
+        if (!sdcpp_tagged && !(task == "text-to-image" && stable_diffusion)) return {};
+        if (needs_separate_components(tags, repo.files)) return {};
+
+        // A checkpoint shipped as both .safetensors and .ckpt is offered once,
+        // as .safetensors, so each name stays unique.
+        RepositoryMatch match;
+        match.repo_kind = "single-file";
+        for (const char* extension : {".safetensors", ".ckpt", ".gguf"}) {
+            for (const auto& file : repo.files) {
+                if (file.find('/') != std::string::npos) continue;
+                if (!ends_with(lower_copy(file), extension)) continue;
+                if (image_model_component(file)) continue;
+                const std::string stem = file_stem(file);
+                const bool taken = std::any_of(
+                    match.variants.begin(), match.variants.end(),
+                    [&](const GgufVariant& v) { return file_stem(v.primary_file) == stem; });
+                if (!taken) match.variants.push_back(single_file_variant(file, repo.file_sizes));
+            }
+        }
+        if (match.variants.empty()) return {};
+        RepositoryAnalysis analysis;
+        analysis.match = std::move(match);
+        return analysis;
+    }
+};
+
+}  // namespace
+
 const BackendSpec* spec() { return make_spec<SDServer>(descriptor); }
-const BackendOps* ops() { return default_backend_ops(); }
+const BackendOps* ops() { return single_ops<SdcppOps>(); }
 }  // namespace sdcpp
 }  // namespace backends
 }  // namespace lemon

@@ -482,6 +482,76 @@ int main() {
                       !vad_only.match && !no_task.match, "");
     }
 
+    {
+        auto analysis = analyze(
+            "sd-cpp",
+            {"sd_xl_turbo_1.0.safetensors", "sd_xl_turbo_1.0_fp16.safetensors",
+             "unet/diffusion_pytorch_model.safetensors", "model_index.json"},
+            {{"pipeline_tag", "text-to-image"},
+             {"tags", {"diffusers", "diffusers:StableDiffusionXLPipeline"}}});
+        result.expect("stable-diffusion.cpp offers root checkpoints, not the diffusers parts",
+                      analysis.match && analysis.match->repo_kind == "single-file" &&
+                          analysis.match->variants.size() == 2 &&
+                          analysis.match->variants[1].name == "sd_xl_turbo_1.0_fp16.safetensors",
+                      "");
+    }
+    {
+        auto analysis = analyze(
+            "sd-cpp",
+            {"v1-5-pruned-emaonly.ckpt", "v1-5-pruned-emaonly.safetensors", "v1-5-pruned.ckpt"},
+            {{"pipeline_tag", "text-to-image"}, {"tags", {"diffusers", "stable-diffusion"}}});
+        result.expect("a checkpoint in both formats is offered once, as .safetensors",
+                      analysis.match && analysis.match->variants.size() == 2 &&
+                          analysis.match->variants[0].primary_file ==
+                              "v1-5-pruned-emaonly.safetensors" &&
+                          analysis.match->variants[1].primary_file == "v1-5-pruned.ckpt",
+                      "");
+    }
+    {
+        auto analysis = analyze("sd-cpp", {"sd_turbo-f16-q8_0.gguf", "sd_turbo-f16.gguf", "README.md"},
+                                {{"tags", {"gguf", "sd.cpp", "stable-diffusion.cpp", "sd2"}}});
+        result.expect("stable-diffusion.cpp takes a GGUF repository tagged for it without a task",
+                      analysis.match && analysis.match->variants.size() == 2 &&
+                          analysis.match->variants[0].name == "sd_turbo-f16-q8_0.gguf",
+                      "");
+    }
+    {
+        auto analysis = analyze(
+            "sd-cpp",
+            {"v1-5-pruned-emaonly.safetensors", "vae-ft-mse-840000.safetensors"},
+            {{"pipeline_tag", "text-to-image"}, {"tags", {"stable-diffusion"}}});
+        result.expect("a VAE next to an SD checkpoint is not offered as a model",
+                      analysis.match && analysis.match->variants.size() == 1 &&
+                          analysis.match->variants[0].name == "v1-5-pruned-emaonly.safetensors",
+                      "");
+    }
+    {
+        auto sd3 = analyze(
+            "sd-cpp", {"sd3.5_medium.safetensors"},
+            {{"pipeline_tag", "text-to-image"},
+             {"tags", {"diffusers", "stable-diffusion", "diffusers:StableDiffusion3Pipeline"}}});
+        auto quantized_sd3 = analyze(
+            "sd-cpp",
+            {"clip_g-Q8_0.gguf", "clip_l-Q8_0.gguf", "sd3.5_medium-Q8_0.gguf", "t5xxl-Q8_0.gguf"},
+            {{"pipeline_tag", "text-to-image"},
+             {"tags", {"stable-diffusion",
+                       "base_model:quantized:stabilityai/stable-diffusion-3.5-medium"}}});
+        auto flux = analyze(
+            "sd-cpp", {"ae.safetensors", "flux1-schnell.safetensors"},
+            {{"pipeline_tag", "text-to-image"},
+             {"tags", {"diffusers", "flux", "diffusers:FluxPipeline", "stable-diffusion"}}});
+        result.expect("FLUX and SD3 repositories, which need separate encoders, are declined",
+                      !sd3.match && !quantized_sd3.match && !flux.match, "");
+    }
+    {
+        auto untagged = analyze("sd-cpp", {"model.safetensors"},
+                                {{"pipeline_tag", "text-to-image"}, {"tags", {"diffusers"}}});
+        auto llm = analyze("sd-cpp", {"Qwen3-0.6B-Q4_K_M.gguf"},
+                           {{"pipeline_tag", "text-generation"}});
+        result.expect("stable-diffusion.cpp declines repositories without stable-diffusion signals",
+                      !untagged.match && !llm.match, "");
+    }
+
     printf("\n%d passed, %d failed\n", result.passed, result.failed);
     return result.failed == 0 ? 0 : 1;
 }
