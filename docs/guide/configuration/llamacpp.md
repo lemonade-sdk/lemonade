@@ -41,6 +41,7 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 - **Source**: Per-architecture builds from [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp)
 - **Binaries**: Compute-capability-specific builds (sm_75, sm_80, sm_86, sm_89, sm_90, sm_100, sm_120)
 - **Runtime**: Bundled CUDA runtime libraries (no system-wide CUDA toolkit installation required)
+- **Driver**: The NVIDIA driver must be installed. The binaries are built with CUDA 12.9. Lemonade checks only for the CUDA 12 driver floor (528.33+ on Windows, 525.60.13+ on Linux), relying on CUDA minor-version compatibility, which has limitations (for example, no PTX JIT on older drivers). A driver at least as new as the CUDA 12.9 toolkit's (576.02+ on Windows, 575.51.03+ on Linux) is recommended. If no NVIDIA driver is detected, the CUDA backend is reported as unsupported. If the driver is older than that, the backend is reported as `action_required` with a link to NVIDIA's driver downloads. Either way, `auto` backend selection falls through to Vulkan.
 - **Notes**: On Windows, .7z extraction requires the bsdtar bundled with Windows 11 22H2+. On Linux, the build is shipped as .tar.xz and extracts with the system `tar`.
 
 ### Metal
@@ -65,6 +66,22 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
   ```
 
   The filename must look like `libggml-hip*.so*` (versioned sonames such as `libggml-hip.so.0` are accepted). This Linux-only variable is used solely to detect plugin availability; it is not forwarded to the GGML loader, so it does not change where llama.cpp actually loads the plugin from.
+
+### nathanw
+- **Platform**: Linux only
+- **Hardware**: AMD Strix Halo (gfx1151)
+- **Use Case**: The Strix Halo Vulkan performance fork of llama.cpp, running ordinary GGUF models
+- **Tier and format**: guest, container
+- **Installation**: `lemonade backends install llamacpp:nathanw` pulls the `vulkan-radv-performance` build of [kyuz0/amd-strix-halo-toolboxes](https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes), pinned by digest. Podman or Docker is required; see [Container Backends](container-backends.md)
+- **Enable**: `lemonade config set llamacpp.backend=nathanw`, or `--llamacpp nathanw` for one load
+
+### halobox
+- **Platform**: Linux only
+- **Hardware**: AMD Strix Halo (gfx1151)
+- **Use Case**: [halo-box/strix-llama.cpp](https://github.com/halo-box/strix-llama.cpp), the Strix Halo community fork of llama.cpp, on ROCm with ordinary GGUF models
+- **Tier and format**: guest, container
+- **Installation**: `lemonade backends install llamacpp:halobox` pulls the ROCm `strix-llama` build of [kyuz0/amd-strix-halo-toolboxes](https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes), pinned by digest. Podman or Docker is required; see [Container Backends](container-backends.md)
+- **Enable**: `lemonade config set llamacpp.backend=halobox`, or `--llamacpp halobox` for one load
 
 ## ROCm Channel Configuration
 

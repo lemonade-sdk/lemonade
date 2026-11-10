@@ -38,6 +38,7 @@ from utils.server_base import (
 )
 from utils.capabilities import (
     skip_if_unsupported,
+    get_extra_body,
     get_test_model,
     get_capabilities,
     supports,
@@ -88,6 +89,8 @@ class LLMTests(ServerTestBase):
             models.append(get_test_model("reranking"))
         if supports("multi_model"):
             models += [MULTI_MODEL_SECONDARY, MULTI_MODEL_TERTIARY]
+        if supports("host_exclusive"):
+            models.append(MULTI_MODEL_SECONDARY)
         return list(dict.fromkeys(models))
 
     @skip_if_unsupported("static_max_context_window")
@@ -143,6 +146,7 @@ class LLMTests(ServerTestBase):
             messages=self.messages,
             max_completion_tokens=10,
             stream=False,
+            extra_body=get_extra_body("chat"),
         )
 
         print(f"Response: {completion.choices[0].message.content}")
@@ -197,6 +201,7 @@ class LLMTests(ServerTestBase):
                     ],
                     "max_tokens": 8,
                     "stream": False,
+                    **get_extra_body("chat"),
                 },
                 headers=headers,
                 timeout=TIMEOUT_MODEL_OPERATION,
@@ -249,6 +254,7 @@ class LLMTests(ServerTestBase):
             messages=self.messages,
             stream=True,
             max_completion_tokens=10,
+            extra_body=get_extra_body("chat"),
         )
 
         complete_response = ""
@@ -282,6 +288,7 @@ class LLMTests(ServerTestBase):
                 messages=self.messages,
                 stream=True,
                 max_completion_tokens=10,
+                extra_body=get_extra_body("chat"),
             )
 
             complete_response = ""
@@ -397,6 +404,7 @@ class LLMTests(ServerTestBase):
             stream=False,
             temperature=0.0,
             max_output_tokens=10,
+            extra_body=get_extra_body("responses"),
         )
 
         print(f"Response: {response.output[0].content[0].text}")
@@ -424,6 +432,7 @@ class LLMTests(ServerTestBase):
             stream=True,
             temperature=0.0,
             max_output_tokens=10,
+            extra_body=get_extra_body("responses"),
         )
 
         complete_response = ""
@@ -440,18 +449,26 @@ class LLMTests(ServerTestBase):
             elif event.type == "response.output_text.delta":
                 complete_response += event.delta
                 print(event.delta, end="")
-            elif event.type == "response.completed":
+            # A response cut off by max_output_tokens ends as incomplete.
+            elif event.type in ("response.completed", "response.incomplete"):
                 self.assertEqual(
-                    event.response.output[0].content[0].text,
+                    event.response.output_text,
                     complete_response,
                     "Complete response should match streamed response",
                 )
+                if event.type == "response.incomplete":
+                    # ds4-server names the reason max_tokens instead of OpenAI's
+                    # max_output_tokens.
+                    self.assertIn(
+                        event.response.incomplete_details.reason,
+                        ("max_output_tokens", "max_tokens"),
+                    )
 
             event_count += 1
             last_event_type = event.type
 
         print()
-        self.assertEqual(last_event_type, "response.completed")
+        self.assertIn(last_event_type, ("response.completed", "response.incomplete"))
         self.assertGreater(len(complete_response), 0)
 
     # =========================================================================
@@ -491,6 +508,7 @@ class LLMTests(ServerTestBase):
             messages=messages,
             stop=["2."],  # Stop before the second item
             max_completion_tokens=50,
+            extra_body=get_extra_body("chat"),
         )
 
         response = completion.choices[0].message.content
@@ -543,7 +561,9 @@ class LLMTests(ServerTestBase):
                 }
             ],
             tools=[SAMPLE_TOOL],
-            max_completion_tokens=50,
+            temperature=0.0,
+            max_completion_tokens=100,
+            extra_body=get_extra_body("chat"),
         )
 
         tool_calls = getattr(completion.choices[0].message, "tool_calls", None)
@@ -567,7 +587,9 @@ class LLMTests(ServerTestBase):
                 }
             ],
             tools=[SAMPLE_TOOL],
-            max_completion_tokens=50,
+            temperature=0.0,
+            max_completion_tokens=100,
+            extra_body=get_extra_body("chat"),
             stream=True,
         )
 
@@ -701,9 +723,10 @@ class LLMTests(ServerTestBase):
 
         error = response.json().get("error")
         self.assertIsInstance(error, dict, response.text)
-        self.assertEqual(error.get("type"), "invalid_request")
+        self.assertEqual(error.get("type"), "invalid_request_error")
+        self.assertEqual(error.get("code"), "missing_argument")
         self.assertIn(
-            "no model specified",
+            "missing required argument 'model'",
             error.get("message", "").lower(),
         )
 
@@ -951,6 +974,32 @@ class LLMTests(ServerTestBase):
         model_names = {m["model_name"] for m in health_data["all_models_loaded"]}
         self.assertIn(model1, model_names)
         self.assertIn(model2, model_names)
+
+    @skip_if_unsupported("host_exclusive")
+    def test_019b_host_exclusive(self):
+        """A host-exclusive model is never loaded beside another local model."""
+        model = self.get_test_model("llm")
+        for first, second in (
+            (model, MULTI_MODEL_SECONDARY),
+            (MULTI_MODEL_SECONDARY, model),
+        ):
+            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+            for name in (first, second):
+                response = requests.post(
+                    f"{self.base_url}/load",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(response.status_code, 200)
+
+            health_response = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(health_response.status_code, 200)
+            loaded = [
+                m["model_name"] for m in health_response.json()["all_models_loaded"]
+            ]
+            self.assertEqual(loaded, [second])
 
     @skip_if_unsupported("multi_model")
     def test_020_multi_model_unload_specific(self):

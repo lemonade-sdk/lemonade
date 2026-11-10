@@ -32,7 +32,7 @@ Preparing a PR? Read the [testing guide](./testing.md) to learn which test suite
 
 ### Adding a Backend
 
-If you are adding a new backend, follow the template in the [adding a backend guide](./adding-a-backend.md).
+If you are adding a new backend, follow the policy and template in the [adding a backend guide](./adding-a-backend.md).
 
 ### Lemonade Omni Models
 

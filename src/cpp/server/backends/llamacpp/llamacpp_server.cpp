@@ -2,12 +2,15 @@
 #include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/llamacpp/llamacpp_gguf.h"
 #include "lemon/backends/llamacpp/llamacpp_request.h"
+#include "lemon/backends/llamacpp/llamacpp_systemone.h"
 #include "llamacpp_system_utils.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/systemone_classify.h"
 #include "lemon/gguf_capabilities.h"
 #include "lemon/gguf_reader.h"
+#include "lemon/gguf_shard_utils.h"
 #include "lemon/model_manager.h"
 #include <algorithm>
 #include <cctype>
@@ -101,6 +104,13 @@ static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
 }
 
+// The container backends are Vulkan (nathanw) and ROCm (halobox) builds of llama.cpp.
+static std::string device_api(const std::string& backend) {
+    if (backend == "nathanw") return "vulkan";
+    if (backend == "halobox") return "rocm";
+    return backend;
+}
+
 static bool is_dflash_draft_checkpoint(std::string checkpoint) {
     std::transform(checkpoint.begin(), checkpoint.end(), checkpoint.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -112,6 +122,7 @@ static bool is_dflash_draft_checkpoint(std::string checkpoint) {
 }
 
 static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
+                                                 const std::string& backend,
                                                  const std::string& custom_args,
                                                  bool merge_args) {
     if (!merge_args) return custom_args;
@@ -138,6 +149,13 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
     // full ctx_size to every slot instead of dividing it. Pinning the count keeps
     // ctx_size the context a request actually gets.
     defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
+
+    // llama-server's 512-token ubatch costs the Strix Halo forks a fifth or more
+    // of their prefill; nathanw's author measures, and recommends, 2048.
+    if (backend == "nathanw" || backend == "halobox") {
+        defaults.push_back({"-b 2048", "-b", {"--batch-size"}});
+        defaults.push_back({"-ub 2048", "-ub", {"--ubatch-size"}});
+    }
 
     return append_runtime_arg_defaults(custom_args, defaults);
 }
@@ -291,6 +309,14 @@ void LlamaCppServer::load(const std::string& model_name,
     // Update device type based on the actual backend selected.
     device_type_ = use_gpu ? DEVICE_GPU : DEVICE_CPU;
 
+    const ContainerPolicy* container = llamacpp::descriptor.container_for(llamacpp_backend);
+    if (container && model_info.extra<bool>("hf_load", false)) {
+        throw std::runtime_error(
+            "Model '" + model_name + "' has llama-server download its own weights, which llamacpp:" +
+            llamacpp_backend + " cannot do from its container's private network. "
+            "Load it on a llamacpp backend that runs on the host.");
+    }
+
     // Install llama-server if needed (use per-model backend)
     backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);
 
@@ -311,10 +337,29 @@ void LlamaCppServer::load(const std::string& model_name,
 
     port_ = choose_port();
 
-    std::string executable = BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);
+    std::string executable =
+        container ? "" : BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);
 
     bool supports_embeddings = (model_info.type == ModelType::EMBEDDING);
     bool supports_reranking = (model_info.type == ModelType::RERANKING);
+    decision_model_ = has_label(model_info.labels, "systemone");
+    decision_type_ = model_info.gguf.decision_type;
+    decision_max_head_tokens_ = model_info.gguf.decision_max_head_tokens;
+    if (decision_model_ && model_info.gguf.architecture.empty()) {
+        LOG(WARNING, "LlamaCpp") << "Could not read the GGUF header of decision model '"
+                                 << model_info.model_name << "', so if it is an encoder it "
+                                 << "keeps llama-server's default batch sizes" << std::endl;
+    }
+    encoder_max_input_tokens_ = 0;
+    const bool encoder_decision_model = is_encoder_decision_model(model_info);
+    if (encoder_decision_model) {
+        const int capped = llamacpp::encoder_decision_ctx_size(ctx_size, model_info.max_context_window);
+        if (capped != ctx_size) {
+            LOG(INFO, "LlamaCpp") << "Encoder decision model: using its trained context of " << capped
+                                  << " tokens instead of " << ctx_size << std::endl;
+            ctx_size = capped;
+        }
+    }
 
     // For embedding models, use a larger context size to support longer individual
     // strings. Embedding requests can include multiple strings in a batch, and each
@@ -340,14 +385,25 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
 
     if (!llamacpp_device.empty()) {
-        BackendUtils::validate_device_backend_match(llamacpp_backend, llamacpp_device);
+        BackendUtils::validate_device_backend_match(device_api(llamacpp_backend), llamacpp_device);
         push_arg(args, reserved_flags, "--device", llamacpp_device);
     }
     push_reserved(reserved_flags, "--device", std::vector<std::string>{"-dev"});
 
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
+    if (container) {
+        push_arg(args, reserved_flags, "--host", "0.0.0.0");
+    }
     push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
     push_arg(args, reserved_flags, "--metrics");
+
+    // To detect silent CPU fallback, raise llama-server verbosity in debug so the
+    // device-selection lines ("llama_prepare_model_devices: using device ...",
+    // "offloaded N/N layers to GPU") are emitted. At the default threshold they are suppressed.
+    if (is_debug()) {
+        args.push_back("-lv");
+        args.push_back("4");
+    }
 
     LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
             << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
@@ -389,6 +445,33 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_reserved(reserved_flags, "--reranking", std::vector<std::string>{"--rerank"});
 
+    // An encoder decision model reads its whole input in one physical batch, so
+    // the default -ub 512 rejects any state longer than about 500 tokens.
+    // llama-server switches these models to embedding mode on its own, so no
+    // --embeddings flag is added.
+    if (encoder_decision_model) {
+        const llamacpp::SingleBatchPlan batch =
+            llamacpp::plan_single_batch(ctx_size, parse_custom_args(llamacpp_args));
+        if (batch.add_batch_size) {
+            push_arg(args, reserved_flags, "-b", std::to_string(batch.batch_size),
+                     std::vector<std::string>{"--batch-size"});
+        }
+        if (batch.add_ubatch_size) {
+            push_arg(args, reserved_flags, "-ub", std::to_string(batch.batch_size),
+                     std::vector<std::string>{"--ubatch-size"});
+        }
+        if (batch.max_input_tokens < ctx_size) {
+            LOG(INFO, "LlamaCpp") << "Encoder decision model reads up to "
+                                  << batch.max_input_tokens << " tokens per input (context "
+                                  << ctx_size << "); raise it with -b and -ub in llamacpp_args"
+                                  << std::endl;
+        } else {
+            LOG(INFO, "LlamaCpp") << "Encoder decision model, batch sizes cover the context ("
+                                  << ctx_size << " tokens)" << std::endl;
+        }
+        encoder_max_input_tokens_ = batch.max_input_tokens;
+    }
+
     // Validate and append custom arguments
     if (!llamacpp_args.empty()) {
         std::string validation_error = validate_custom_args(llamacpp_args, reserved_flags);
@@ -404,6 +487,30 @@ void LlamaCppServer::load(const std::string& model_name,
     }
 
     LOG(INFO, "LlamaCpp") << "Starting llama-server..." << std::endl;
+
+    if (container) {
+        ServerCommand command;
+        command.program = llamacpp::descriptor.binary;
+        command.args = std::move(args);
+        for (const std::string& path : {gguf_path, mmproj_path,
+                                        use_draft_checkpoint ? draft_path : std::string()}) {
+            if (!path.empty()) {
+                const auto files = gguf_files(path);
+                command.model_files.insert(command.model_files.end(), files.begin(), files.end());
+            }
+        }
+        command.port = port_;
+
+        const bool inherit_output = (log_level_ == "info") || is_debug();
+        start_server(std::make_unique<ContainerProcess>(
+                         ProcessOutput{inherit_output, true}, llamacpp::descriptor.recipe,
+                         llamacpp_backend, model_name, *container,
+                         BackendUtils::get_backend_image(llamacpp::descriptor.recipe,
+                                                         llamacpp_backend)),
+                     command);
+        LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
+        return;
+    }
 
     // For ROCm on Linux, set LD_LIBRARY_PATH to include the ROCm library directory
     std::vector<std::pair<std::string, std::string>> env_vars;
@@ -610,6 +717,126 @@ json LlamaCppServer::reranking(const json& request) {
     return forward_request("/v1/rerank", request);
 }
 
+json LlamaCppServer::unsupported_decision_request(const std::string& operation) const {
+    return ErrorResponse::from_exception(UnsupportedOperationException(
+        operation, "llama.cpp model '" + get_model_name() +
+                       "', which is not a SystemOne decision model"));
+}
+
+json LlamaCppServer::classify(const json& request) {
+    if (!decision_model_) {
+        return unsupported_decision_request("Classification");
+    }
+    const json text = request.contains("text") ? request["text"] : request.value("input", json());
+    if (!text.is_string()) {
+        return systemone::invalid_decision_request("Missing 'input' (or 'text') string in classify request");
+    }
+    if (!request.contains("labels") || request["labels"].is_null()) {
+        return systemone::invalid_decision_request(
+            "this model scores a label list supplied per request; include a \"labels\" "
+            "array in the request body");
+    }
+
+    nlohmann::ordered_json body;
+    try {
+        body = systemone::build_classify_request(text.get<std::string>(), request["labels"]);
+    } catch (const std::invalid_argument& e) {
+        return systemone::invalid_decision_request(e.what());
+    }
+
+    const json response(decide(body));
+    if (response.contains("error")) {
+        return response;
+    }
+    const int top_k = request.contains("top_k") && request["top_k"].is_number_integer()
+                          ? request["top_k"].get<int>()
+                          : 0;
+    try {
+        return systemone::classify_response(response, request["labels"], top_k);
+    } catch (const std::exception& e) {
+        return ErrorResponse::create(e.what(), ErrorType::BACKEND_ERROR);
+    }
+}
+
+std::optional<json> LlamaCppServer::laya_cut_error(const nlohmann::ordered_json& body) {
+    if (decision_type_ != "laya" || decision_max_head_tokens_ <= 0) {
+        return std::nullopt;
+    }
+    const std::string uncounted =
+        "could not count the tokens of the question, so lemond cannot check that the model "
+        "reads it whole";
+    auto count_tokens = [this, &uncounted](const std::string& content) {
+        const json counted = tokenize(json{{"content", content}});
+        if (!counted.contains("tokens") || !counted["tokens"].is_array()) {
+            throw std::runtime_error(uncounted);
+        }
+        return counted["tokens"].size();
+    };
+    const std::vector<llamacpp::LayaQuestionText> questions = llamacpp::laya_question_texts(body);
+    for (const auto& question : questions) {
+        std::vector<size_t> option_bytes;
+        for (const auto& option : question.options) option_bytes.push_back(1 + option.size());
+        // A byte-level BPE never has more tokens than bytes, so a short question
+        // needs no /tokenize round trip.
+        if (llamacpp::laya_cut(question, option_bytes, question.question.size(),
+                               decision_max_head_tokens_).empty()) {
+            continue;
+        }
+        std::vector<size_t> option_tokens;
+        size_t question_tokens = 0;
+        try {
+            for (const auto& option : question.options) {
+                option_tokens.push_back(count_tokens(" " + option));
+            }
+            question_tokens = count_tokens(question.question);
+        } catch (const std::exception& e) {
+            const std::string reason = e.what();
+            return ErrorResponse::create(reason == uncounted ? reason : uncounted + ": " + reason,
+                                         ErrorType::BACKEND_ERROR);
+        }
+        const std::string cut = llamacpp::laya_cut(question, option_tokens, question_tokens,
+                                                   decision_max_head_tokens_);
+        if (!cut.empty()) {
+            return systemone::invalid_decision_request(
+                questions.size() > 1 ? "question '" + question.id + "': " + cut : cut);
+        }
+    }
+    return std::nullopt;
+}
+
+nlohmann::ordered_json LlamaCppServer::decide(const nlohmann::ordered_json& body) {
+    // ort-server refuses a label it would cut; laya cuts options and the question
+    // silently, so refuse them here.
+    if (const auto error = laya_cut_error(body)) {
+        return nlohmann::ordered_json(*error);
+    }
+    nlohmann::ordered_json response = forward_systemone(body);
+    if (!response.contains("error")) {
+        llamacpp::mark_answers_truncated(response, decision_type_, body);
+    }
+    return response;
+}
+
+nlohmann::ordered_json LlamaCppServer::systemone(const nlohmann::ordered_json& request) {
+    if (!decision_model_) {
+        return unsupported_decision_request("SystemOne");
+    }
+    // As normalize_response_model, without re-sorting the answer.
+    nlohmann::ordered_json response = decide(request);
+    if (response.is_object() && response.contains("model")) {
+        response["model"] = request.value("model", get_model_name());
+    }
+    return response;
+}
+
+nlohmann::ordered_json LlamaCppServer::forward_systemone(const nlohmann::ordered_json& body) {
+    nlohmann::ordered_json response = forward_ordered_request("/v1/systemone", body);
+    if (encoder_max_input_tokens_ > 0 && response.contains("error")) {
+        response = llamacpp::map_encoder_overflow_error(json(response), encoder_max_input_tokens_);
+    }
+    return response;
+}
+
 json LlamaCppServer::get_slots() {
     return forward_get_request("/slots");
 }
@@ -752,9 +979,12 @@ public:
         const json custom_args_value = options.get_option("llamacpp_args");
         const std::string custom_args =
             custom_args_value.is_string() ? custom_args_value.get<std::string>() : "";
+        const json backend_value = options.get_option("llamacpp_backend");
+        const std::string backend =
+            backend_value.is_string() ? backend_value.get<std::string>() : "";
         options.set_option(
             "llamacpp_args",
-            resolve_llamacpp_runtime_args(info, custom_args, merge_args));
+            resolve_llamacpp_runtime_args(info, backend, custom_args, merge_args));
     }
 
     void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
@@ -812,6 +1042,14 @@ public:
                    "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:qwen2.5-coder-3b-instruct-q4_0.gguf";
         }
         return "";
+    }
+
+    std::string validate_load(const ModelInfo& info) const override {
+        if (!has_label(info.labels, "systemone")) return "";
+        return llamacpp::decision_model_load_refusal(info.model_name,
+                                                     info.extra<bool>("hf_load", false),
+                                                     info.gguf.architecture,
+                                                     info.gguf.decision_type);
     }
 
     std::string validate_checkpoint_file(const std::string& resolved_path) const override {

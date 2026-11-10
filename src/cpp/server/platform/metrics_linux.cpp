@@ -185,6 +185,19 @@ public:
         return std::round(used_gb * 10.0) / 10.0;
     }
 
+    double get_memory_total_gb() override {
+        std::ifstream meminfo("/proc/meminfo");
+        std::string line;
+        long long total_kb = 0;
+        while (std::getline(meminfo, line)) {
+            if (line.find("MemTotal:") == 0) {
+                sscanf(line.c_str(), "MemTotal: %lld kB", &total_kb);
+                break;
+            }
+        }
+        return total_kb / (1024.0 * 1024.0);
+    }
+
     double get_gpu_usage() override {
         return get_system_gpu_metrics().gpu_percent;
     }

@@ -97,9 +97,9 @@ Supported registration flags:
 
 | Flag | Description |
 |------|-------------|
-| `--source SOURCE` | Remote registry for every checkpoint in this model: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. |
+| `--source SOURCE` | Remote registry for every checkpoint in this model: <!-- BEGIN GENERATED: remote-registry-tokens -->`huggingface` or `modelscope`<!-- END GENERATED: remote-registry-tokens -->. When omitted, the server's configured `default_model_source` applies. |
 | `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
-| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `llamacpp-hrx`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thenoise`, `ds4`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
+| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `llamacpp-hrx`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thenoise`, `ds4`, `rocmfpx`, `halogen`, `gufo`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
 | `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `chat`, `coding`, `dflash`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. When no [deployment label](../../api/openai.md#model-labels) is given, the recipe's default is added — `chat` for `llamacpp`, `flm`, `ryzenai-llm` and `vllm`; `transcription` for `whispercpp`; `image` for `sd-cpp`; and so on. |
 | `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
 
@@ -146,7 +146,7 @@ The editor also exposes a **System Prompt** field, pre-filled with the shipped d
 
 ### Pull from the API
 
-The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:
+The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to <!-- BEGIN GENERATED: remote-registry-tokens -->`huggingface` or `modelscope`<!-- END GENERATED: remote-registry-tokens -->; when omitted, the server's configured `default_model_source` applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:
 
 ```bash
 curl -X POST http://localhost:13305/v1/pull \
@@ -190,7 +190,7 @@ curl -X POST http://localhost:13305/v1/pull \
 ## Share a Collection Between Machines
 
 `lemonade export <collection>` (and the desktop app's Export button) writes a *collection file*: the
-collection's [`/v1/models/{model_id}`](../../api/openai.md#get-v1modelsmodel_id) object normalized into
+collection's [`/v1/models/{id}`](../../api/openai.md#get-v1modelsid) object normalized into
 an import-ready [`/v1/pull`](../../api/lemonade.md#post-v1pull) body. The file carries `model_name`,
 `recipe`, `components`, and a `models` array embedding each component's definition, so it is
 self-contained — the importing machine does not need any of the components registered beforehand.
@@ -260,6 +260,23 @@ Lemonade tracks three sources of models. Every model has a **canonical ID** of t
 
 The **bare name** `NAME` is an alias that always resolves to whichever source wins precedence for that name. Precedence is **registered > imported > built-in**.
 
+### Where the model set comes from
+
+Each catalog contributes entries to one build, and a later catalog cannot take a name an
+earlier one claimed.
+
+<!-- BEGIN GENERATED: model-catalogs -->
+| Catalog | Entries come from | Required | Config key |
+| --- | --- | --- | --- |
+| Built-in registry | The model list shipped with the server. | no | — |
+| Registrations | Every model the user pulled or registered. | no | — |
+| Extra models directory | A scan of the extra models directory; GGUF files are identified by their header, not their name. | no | `extra_models_dir` |
+<!-- END GENERATED: model-catalogs -->
+
+Which catalogs depend on what this machine has installed — a backend's own models, or a
+configured cloud provider's listing — is not listed here, because this page is the same on
+every machine.
+
 ### What the API emits
 
 `/v1/models`, `/v1/models/{id}`, `lemonade list`, and the Ollama `/api/tags` endpoint emit each model with an `id` set to either:
@@ -292,7 +309,7 @@ The Tauri desktop app and the web app apply a display transformation on top of t
 
 You can define custom **aliases for model names** in `aliases.json` — alternative high-level names that resolve to any target model name. The target model does not define or need to be aware of being aliased:
 
-1. **Standalone Alias Management**: Model aliases live in a dedicated `aliases.json` file in the Lemonade cache directory (`<cache_dir>/aliases.json`). They are managed via the CLI (`lemonade alias add ALIAS TARGET_MODEL`) or administrative REST API (`POST /internal/aliases`).
+1. **Standalone Alias Management**: Model aliases live in a dedicated `aliases.json` file in the Lemonade cache directory (`<cache_dir>/aliases.json`). They are managed via the CLI (`lemonade alias add ALIAS TARGET_MODEL`) or administrative REST API ([`POST /internal/aliases`](../../api/internal.md#post-internalaliases)).
 2. **Persistence**: `aliases.json` is automatically loaded on server startup and saved on every alias mutation.
 3. **Decoupled Architecture**: Aliases function purely at the symbolic routing layer. They do not pollute model definition files (`user_models.json` or `server_models.json`).
 
@@ -325,7 +342,7 @@ response = client.chat.completions.create(
 )
 ```
 
-If the underlying target model changes, update the alias on the server using `lemonade alias add production-llm new-target` or `POST /internal/aliases`. Client application code requires no updates.
+If the underlying target model changes, update the alias on the server using `lemonade alias add production-llm new-target` or [`POST /internal/aliases`](../../api/internal.md#post-internalaliases). Client application code requires no updates.
 
 #### Alias Resolution & Target Model Independence
 
@@ -363,6 +380,19 @@ lemonade config set extra_models_dir="/home/you/.lmstudio/models"
 | LM Studio | `~/.lmstudio/models`, or `C:\Users\You\.lmstudio\models` |
 | A Hugging Face or ModelScope cache | `~/.cache/huggingface/hub` |
 | Your own folder of GGUFs | anywhere readable, absolute or relative |
+
+> Note: With the Linux `.deb`/`.rpm` packages, `lemond` runs as the `lemonade` system user under a systemd unit with `ProtectHome=yes`, which hides `/home` from the service. A folder under `/home` is then rejected as "not accessible by the Lemonade server (Permission denied)" even when its permissions allow the `lemonade` user. Either keep the models outside `/home` (for example `/srv/models`), or expose just that folder to the service with a drop-in, and make sure the `lemonade` user can read the folder:
+>
+> ```bash
+> sudo mkdir -p /etc/systemd/system/lemond.service.d
+> printf '[Service]\nProtectHome=tmpfs\nBindReadOnlyPaths=/home/you/.lmstudio/models\n' | sudo tee /etc/systemd/system/lemond.service.d/models.conf
+> sudo systemctl daemon-reload && sudo systemctl restart lemond
+> lemonade config set extra_models_dir="/home/you/.lmstudio/models"
+> ```
+>
+> The rejected value was not saved, so run `config set` again after the restart. `ProtectHome=tmpfs` keeps the rest of `/home` hidden.
+>
+> The drop-in exposes only that one folder. If you later point `extra_models_dir` at a path outside it, change `BindReadOnlyPaths` to match, then run `daemon-reload` and restart `lemond` again. `config set` alone is not enough, because systemd sets up the mount when the service starts.
 
 ### Model Naming Scheme
 
@@ -462,7 +492,7 @@ Imported models are yours to manage, so `/v1/delete` on one returns an error nam
 
 ### Access and failure behavior
 
-An `extra_models_dir` that already exists must be a directory the `lemond` process can enumerate; permission and I/O failures reject the config update and leave your current model view in place. A path that has yet to be created is accepted, so a directory watcher can pick it up later. See [`POST /internal/set`](../../embeddable/runtime.md).
+An `extra_models_dir` that already exists must be a directory the `lemond` process can enumerate; permission and I/O failures reject the config update and leave your current model view in place. A path that has yet to be created is accepted, so a directory watcher can pick it up later. See [`POST /internal/set`](../../api/internal.md#post-internalset).
 
 During a scan, unreadable nested directories are skipped. Discovery is best-effort by design, so your registered and built-in catalogs stay intact through a filesystem failure.
 
@@ -507,14 +537,13 @@ This file contains a JSON object where each key is a model name and each value d
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `source` | No | String | Remote registry: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. Persisted and used for variants, downloads, cache paths, links, and update checks. A `source`/`registry_source` that conflicts with a provider URL in the checkpoint is rejected with 400. |
+| `source` | No | String | Remote registry: <!-- BEGIN GENERATED: remote-registry-tokens -->`huggingface` or `modelscope`<!-- END GENERATED: remote-registry-tokens -->. When omitted, the server's configured `default_model_source` applies. Persisted and used for variants, downloads, cache paths, links, and update checks. A `source`/`registry_source` that conflicts with a provider URL in the checkpoint is rejected with 400. |
 | `checkpoint` | Yes* | String | Registry checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
 | `checkpoints` | Yes* | Object | Alternative to `checkpoint` for models with multiple files. See [Multi-file models](#multi-file-models). |
 | `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `collection.omni`. |
 | `components` | Yes** | Array | Components for a collection. Required when `recipe: "collection.omni"`. See [Collections](#collections). |
 | `size` | No | Number | Model size in GB. Informational only — displayed in the UI and used for RAM filtering. |
 | `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same registry repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
-| `image_defaults` | No | Object | Default image generation parameters for `sd-cpp` models. See [Image defaults](#image-defaults). |
 
 \* Either `checkpoint` or `checkpoints` is required, but not both.
 \*\* Required only when `recipe: "collection.omni"`. Collections do not use `checkpoint`/`checkpoints`.
@@ -571,13 +600,10 @@ Components must already be registered (built-in models, or other `user.*` entrie
 
 The equivalent CLI registration is shown in [Pull an Omni Collection](#pull-an-omni-collection).
 
-### Image defaults
+### Image generation options
 
-For image models (including `sd-cpp` and `thenoise`), you can specify default generation parameters.
-The optional `soft_pixel_cap` limits the **inferred output area** of `/images/edits` when
-`size` is omitted; Lemonade preserves the input aspect ratio. If this field is
-missing or zero, the global 4,194,304-pixel (~4 MP) fallback applies.
-Explicitly requested output sizes are not subject to this soft cap:
+An image model (`sd-cpp` or `thenoise`) sets its own generation parameters through
+`recipe_options`:
 
 ```json
 {
@@ -585,7 +611,7 @@ Explicitly requested output sizes are not subject to this soft cap:
         "checkpoint": "org/repo:model.safetensors",
         "recipe": "sd-cpp",
         "size": 5.2,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 20,
             "cfg_scale": 7.0,
             "width": 512,
@@ -595,6 +621,13 @@ Explicitly requested output sizes are not subject to this soft cap:
     }
 }
 ```
+
+`soft_pixel_cap` limits the **inferred output area** of `/images/edits` when `size`
+is omitted; Lemonade preserves the input aspect ratio. Missing or zero falls back to
+4,194,304 pixels (~4 MP). An explicit `size` is not subject to the cap.
+
+An entry written by an older version keeps these keys in an `image_defaults` block.
+It is still read, and `recipe_options` wins any key both name.
 
 ### Model naming
 
@@ -625,7 +658,7 @@ This file configures per-model runtime settings. Each key is a **canonical model
 
 > **Note:** Per-model options can also be configured through the Lemonade desktop app's model settings, or via the `save_options` parameter in the [`/api/v1/load` endpoint](../../api/lemonade.md#post-v1load).
 
-> **Editing options without loading:** [`POST /api/v1/models/{id}/options`](../../api/lemonade.md#post-v1modelsidoptions) writes this file directly, so options can be saved without bringing a model into memory. It merges rather than replaces, and `"ctx_size": -1` saves automatic context sizing even when the server-wide `ctx_size` is an explicit number. [`DELETE`](../../api/lemonade.md#delete-v1modelsidoptions) on the same path resets the model by removing its entry entirely.
+> **Editing options without loading:** [`POST /api/v1/models/{id}/options`](../../api/openai.md#post-v1modelsidoptions) writes this file directly, so options can be saved without bringing a model into memory. It merges rather than replaces, and `"ctx_size": -1` saves automatic context sizing even when the server-wide `ctx_size` is an explicit number. [`DELETE`](../../api/openai.md#delete-v1modelsidoptions) on the same path resets the model by removing its entry entirely.
 
 ## Complete Examples
 

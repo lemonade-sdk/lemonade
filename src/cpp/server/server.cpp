@@ -1,486 +1,78 @@
 #include "lemon/server.h"
-#include "lemon/api_docs.h"
-#include "lemon/audio_types.h"
-#include "lemon/auto_tune.h"
-#include "lemon/error_types.h"
-#include <optional>
-#include "lemon/collection_orchestrator.h"
-#include "lemon/hf_variants.h"
-#include "lemon/model_registry.h"
-#include "lemon/route_decision_response.h"
-#include "lemon/routing_classifier_services.h"
-#include "lemon/routing_policy.h"
-#include "lemon/routing_policy_parser.h"
-#include "lemon/config_file.h"
-#include "lemon/jobs/job_manager.h"
-#include "lemon/mcp_server.h"
-#include "lemon/ollama_api.h"
-#include "lemon/backends/backend_descriptor_registry.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/backends/cloud/cloud_server.h"
-#include "lemon/backends/backend_utils.h"
-#include "lemon/model_types.h"
-#include <cstring>
-#include "lemon/utils/conversation_fingerprint.h"
-#include "lemon/utils/image_sniff.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/utils/model_name_utils.h"
-#include "lemon/utils/path_utils.h"
-#include "lemon/utils/session_utils.h"
-#include "lemon/streaming_proxy.h"
-#include "lemon/logging_config.h"
-#include "lemon/thinking_controls.h"
-#include "lemon/prometheus_metrics.h"
-#include "lemon/runtime_config.h"
-#include "telemetry.h"
-#include "lemon/system_info.h"
-#include "lemon/version.h"
-#include <cctype>
-#include <cstdint>
-#include <cstdlib>
-#include <iostream>
-#include <iomanip>
-#include <sstream>
-#include <fstream>
-#include <limits>
-#include <map>
-#include <memory>
-#include <thread>
-#include <chrono>
-#include <mutex>
-#include <filesystem>
-#include <system_error>
-#include <algorithm>
-#include <cmath>
-#include <set>
-#include <vector>
+
 #include <lemon/utils/aixlog.hpp>
-#include "lemon/utils/network_utils.h"
-#include "lemon/utils/origin_utils.h"
 
-#ifdef _WIN32
-    #include <windows.h>
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-#else
-    #include <arpa/inet.h>   // inet_pton, htons
-    #include <fcntl.h>
-    #include <netdb.h>       // Crucial for getaddrinfo and addrinfo struct
-    #include <netinet/in.h>  // sockaddr_in / sockaddr_in6
-    #include <sys/socket.h>
-    #include <sys/types.h>
-    #include <unistd.h>
-#endif
-
-#ifdef __APPLE__
-    #include <sys/sysctl.h>
-#endif
-
-#ifdef __linux__
-    #include <sys/ioctl.h>
-    #include <fcntl.h>
-    #include <unistd.h>
-    #include <libdrm/drm.h>
-    #include "lemon/amdxdna_accel.h"
-#endif
-
-namespace fs = std::filesystem;
+#include "lemon/backend_manager.h"
+#include "lemon/cloud_provider_registry.h"
+#include "lemon/jobs/job_manager.h"
+#include "lemon/model_manager.h"
+#include "lemon/router.h"
+#include "lemon/runtime_config.h"
+#include "lemon/server/config_effects.h"
+#include "lemon/server/download_manager.h"
+#include "lemon/server/http_listener.h"
+#include "lemon/server/job_ops.h"
+#include "lemon/server/model_json.h"
+#include "lemon/server/model_loader.h"
+#include "lemon/server/request_middleware.h"
+#include "lemon/server/route_registry.h"
+#include "lemon/server/router_dispatch.h"
+#include "lemon/server/web_ui.h"
+#include "lemon/system_metrics_platform.h"
+#include "lemon/utils/http_client.h"
+#include "telemetry.h"
 
 namespace lemon {
 
-namespace {
-
-nlohmann::json gpu_device_details_json(const SystemGpuMetrics& snapshot) {
-    nlohmann::json result;
-    result["primary_gpu_id"] = snapshot.primary_gpu_id.empty()
-        ? nlohmann::json() : nlohmann::json(snapshot.primary_gpu_id);
-    result["gpus"] = nlohmann::json::array();
-    for (const auto& gpu : snapshot.gpus) {
-        nlohmann::json entry;
-        entry["id"] = gpu.id;
-        entry["vendor"] = gpu.vendor;
-        entry["name"] = gpu.name;
-        entry["memory_type"] = gpu.memory_type;
-        entry["gpu_percent"] = gpu.gpu_percent >= 0.0
-            ? nlohmann::json(gpu.gpu_percent) : nlohmann::json();
-        entry["memory_total_gb"] = gpu.memory_total_gb >= 0.0
-            ? nlohmann::json(gpu.memory_total_gb) : nlohmann::json();
-        entry["memory_used_gb"] = gpu.memory_used_gb >= 0.0
-            ? nlohmann::json(gpu.memory_used_gb) : nlohmann::json();
-        result["gpus"].push_back(std::move(entry));
-    }
-    return result;
-}
-
-std::optional<std::pair<int, int>> image_dimensions_from_bytes(const std::string& bytes) {
-    auto at = [&bytes](size_t i) -> std::uint8_t {
-        return static_cast<std::uint8_t>(bytes[i]);
-    };
-    if (bytes.size() >= 24 &&
-        bytes.compare(0, 8, "\x89PNG\r\n\x1a\n", 8) == 0 &&
-        bytes.compare(12, 4, "IHDR", 4) == 0) {
-        auto be32 = [&](size_t i) -> std::uint32_t {
-            return (std::uint32_t(at(i)) << 24) | (std::uint32_t(at(i + 1)) << 16) |
-                   (std::uint32_t(at(i + 2)) << 8) | std::uint32_t(at(i + 3));
-        };
-        const auto width = be32(16);
-        const auto height = be32(20);
-        if (width > 0 && height > 0 &&
-            width <= static_cast<std::uint32_t>(std::numeric_limits<int>::max()) &&
-            height <= static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
-            return std::pair<int, int>{static_cast<int>(width), static_cast<int>(height)};
-        }
-    }
-    if (bytes.size() >= 4 && at(0) == 0xff && at(1) == 0xd8) {
-        size_t pos = 2;
-        while (pos < bytes.size()) {
-            if (at(pos) != 0xff) break;
-            while (pos < bytes.size() && at(pos) == 0xff) ++pos;
-            if (pos >= bytes.size()) break;
-            const auto marker = at(pos++);
-            if (marker == 0xd9 || marker == 0xda) break;
-            if (marker == 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
-            if (bytes.size() - pos < 2) break;
-            const size_t segment_len = (size_t(at(pos)) << 8) | at(pos + 1);
-            if (segment_len < 2 || segment_len > bytes.size() - pos) break;
-            const bool sof = marker >= 0xc0 && marker <= 0xcf &&
-                             marker != 0xc4 && marker != 0xc8 && marker != 0xcc;
-            if (sof && segment_len >= 7) {
-                const int height = (int(at(pos + 3)) << 8) | at(pos + 4);
-                const int width = (int(at(pos + 5)) << 8) | at(pos + 6);
-                if (width > 0 && height > 0) return std::pair<int, int>{width, height};
-            }
-            pos += segment_len;
-        }
-    }
-    return std::nullopt;
-}
-
-// Default soft cap for inferred image-edit dimensions.
-constexpr std::uint64_t kDefaultMaxEditPixels = 2048ULL * 2048ULL;
-
-std::pair<int, int> cap_image_area(int width, int height, std::uint64_t max_pixels) {
-    const auto pixels = static_cast<std::uint64_t>(width) * height;
-    if (pixels <= max_pixels) return {width, height};
-
-    const double scale = std::sqrt(static_cast<double>(max_pixels) / pixels);
-    int scaled_width = std::max(1, static_cast<int>(width * scale));
-    int scaled_height = std::max(1, static_cast<int>(height * scale));
-    // A dimension rounded up to one pixel must not violate the area cap.
-    if (static_cast<std::uint64_t>(scaled_width) * scaled_height > max_pixels) {
-        if (scaled_width > scaled_height) {
-            scaled_width = static_cast<int>(max_pixels / scaled_height);
-        } else {
-            scaled_height = static_cast<int>(max_pixels / scaled_width);
-        }
-    }
-    return {scaled_width, scaled_height};
-}
-
-// Normalize client-provided model names: strip ":latest" suffix (Ollama/Docker convention)
-// Returns true if the model name was modified
-bool normalize_client_model_name(json& request_json) {
-    if (!request_json.contains("model") || !request_json["model"].is_string()) {
-        return false;
-    }
-
-    std::string model_name = request_json["model"].get<std::string>();
-    const std::string latest_suffix = ":latest";
-
-    if (model_name.size() > latest_suffix.size() &&
-        model_name.substr(model_name.size() - latest_suffix.size()) == latest_suffix) {
-        std::string normalized = model_name.substr(0, model_name.size() - latest_suffix.size());
-        request_json["model"] = normalized;
-        return true;
-    }
-
-    return false;
-}
-
-
-bool valid_error_status(int status_code) {
-    return status_code >= 400 && status_code <= 599;
-}
-
-int get_error_status_code(const json& response, int default_status_code = 500) {
-    if (!response.contains("error") || !response["error"].is_object()) {
-        return default_status_code;
-    }
-
-    const auto& error = response["error"];
-    if (error.contains("status_code") && error["status_code"].is_number_integer()) {
-        int status_code = error["status_code"].get<int>();
-        if (valid_error_status(status_code)) {
-            return status_code;
-        }
-    }
-
-    if (error.contains("details") && error["details"].is_object()) {
-        const auto& details = error["details"];
-        if (details.contains("status_code") && details["status_code"].is_number_integer()) {
-            int status_code = details["status_code"].get<int>();
-            if (valid_error_status(status_code)) {
-                return status_code;
-            }
-        }
-    }
-
-    if (error.contains("type") && error["type"].is_string()) {
-        const std::string type = error["type"].get<std::string>();
-
-        if (type == ErrorType::INVALID_REQUEST ||
-            type == "invalid_request_error" ||
-            type == ErrorType::UNSUPPORTED_OPERATION) {
-            return 400;
-        }
-
-        if (type == ErrorType::MODEL_NOT_LOADED) {
-            return 404;
-        }
-    }
-
-    return default_status_code;
-}
-
-void set_error_response(const json& response, httplib::Response& res,
-                        int default_status_code = 500) {
-    res.status = get_error_status_code(response, default_status_code);
-    res.set_content(response.dump(), "application/json");
-}
-
-void set_router_residency_conflict_response(
-    const RouterResidencyConflictException& error,
-    httplib::Response& res) {
-    res.status = 409;
-    const json response = {
-        {"error", {
-            {"message", error.what()},
-            {"type", ErrorType::ROUTER_RESIDENCY_CONFLICT},
-            {"param", "model"},
-            {"code", ErrorType::ROUTER_RESIDENCY_CONFLICT},
-        }},
-    };
-    res.set_content(response.dump(), "application/json");
-}
-
-void attach_route_decision(json& response, httplib::Response& res,
-                           const std::optional<RouterDispatchResult>& dispatch) {
-    if (!dispatch.has_value()) {
-        return;
-    }
-    response["x_lemonade_route"] = route_decision_to_json(dispatch->decision);
-    attach_route_header(res, dispatch->decision);
-}
-
-template <typename StreamFn>
-void set_route_decision_sse_content_provider(
-    httplib::Response& res,
-    const std::optional<RouterDispatchResult>& dispatch,
-    std::string request_body,
-    StreamFn stream_fn) {
-    res.set_header("Cache-Control", "no-cache");
-    res.set_header("Connection", "keep-alive");
-    res.set_header("X-Accel-Buffering", "no");
-    if (dispatch) {
-        attach_route_header(res, dispatch->decision);
-    }
-
-    json route_decision_json = dispatch
-        ? route_decision_to_json(dispatch->decision)
-        : json(nullptr);
-    res.set_chunked_content_provider(
-        "text/event-stream",
-        [request_body = std::move(request_body),
-         route_decision_json = std::move(route_decision_json),
-         stream_fn = std::move(stream_fn)](size_t offset, httplib::DataSink& sink) {
-            if (offset > 0) {
-                return false;
-            }
-
-            stream_with_route_decision(
-                sink,
-                route_decision_json,
-                [&request_body, &stream_fn](httplib::DataSink& route_sink) {
-                    stream_fn(request_body, route_sink);
-                });
-            return false;
-        });
-}
-
-int get_http_status_from_error(const std::string& error_code) {
-    if (error_code == "slots_pinned_error" ||
-        error_code == "router_residency_conflict") {
-        return 409;
-    } else if (error_code == "model_load_error") {
-        return 500;
-    } else {
-        return 404;
-    }
-}
-
-bool is_quiet_polling_path(const std::string& path) {
-    return path == "/api/v0/downloads" || path == "/api/v1/downloads" ||
-           path == "/v0/downloads" || path == "/v1/downloads" ||
-           path == "/api/v0/system-stats" || path == "/api/v1/system-stats" ||
-           path == "/v0/system-stats" || path == "/v1/system-stats" ||
-           path == "/api/v0/stats" || path == "/api/v1/stats" ||
-           path == "/v0/stats" || path == "/v1/stats" ||
-           path == "/internal/models/sync" || path == "/internal/models/sync/status";
-}
-
-std::string join_warnings(const std::vector<std::string>& warnings) {
-    std::ostringstream joined;
-    for (size_t i = 0; i < warnings.size(); ++i) {
-        if (i > 0) {
-            joined << " | ";
-        }
-        joined << warnings[i];
-    }
-    return joined.str();
-}
-
-void attach_warnings(json& response, const std::vector<std::string>& warnings) {
-    if (warnings.empty()) {
-        return;
-    }
-    response["warnings"] = warnings;
-    // Backward-compatible single-string field for older clients.
-    response["warning"] = join_warnings(warnings);
-}
-
-nlohmann::json get_model_storage_stats(const std::string& model_storage_path) {
-    auto make_error_result = [](const fs::path& path, const std::string& error) {
-        return nlohmann::json{
-            {"path", utils::path_to_utf8(path)},
-            {"used_bytes", nullptr},
-            {"total_bytes", nullptr},
-            {"free_bytes", nullptr},
-            {"error", error}
-        };
-    };
-
-    std::error_code ec;
-    fs::path configured_path;
-
-    if (!model_storage_path.empty()) {
-        configured_path = utils::path_from_utf8(model_storage_path);
-    }
-
-    if (configured_path.empty()) {
-        configured_path = fs::current_path(ec);
-        if (ec) {
-            LOG(WARNING, "Server") << "Unable to resolve current path for model storage stats: "
-                                   << ec.message() << std::endl;
-            return make_error_result(
-                fs::path{},
-                "Unable to resolve current path: " + ec.message()
-            );
-        }
-    } else if (configured_path.is_relative()) {
-        configured_path = fs::absolute(configured_path, ec);
-        if (ec) {
-            LOG(WARNING, "Server") << "Unable to resolve model storage path "
-                                   << model_storage_path << ": " << ec.message() << std::endl;
-            return make_error_result(
-                configured_path,
-                "Unable to resolve model storage path: " + ec.message()
-            );
-        }
-    }
-
-    configured_path = configured_path.lexically_normal();
-
-    fs::path probe_path = configured_path;
-    while (!probe_path.empty()) {
-        std::error_code exists_ec;
-        if (fs::exists(probe_path, exists_ec)) {
-            break;
-        }
-
-        if (exists_ec) {
-            LOG(WARNING, "Server") << "Unable to inspect model storage path "
-                                   << utils::path_to_utf8(probe_path) << ": "
-                                   << exists_ec.message() << std::endl;
-            return make_error_result(
-                configured_path,
-                "Unable to inspect model storage path: " + exists_ec.message()
-            );
-        }
-
-        fs::path parent_path = probe_path.parent_path();
-        if (parent_path == probe_path) {
-            break;
-        }
-
-        probe_path = parent_path;
-    }
-
-    auto space_info = fs::space(probe_path, ec);
-    if (ec) {
-        LOG(WARNING, "Server") << "Unable to read model storage stats for "
-                               << utils::path_to_utf8(probe_path) << ": "
-                               << ec.message() << std::endl;
-        return make_error_result(
-            configured_path,
-            "Unable to read model storage stats: " + ec.message()
-        );
-    }
-
-    const uintmax_t total_bytes = space_info.capacity;
-    const uintmax_t free_bytes = std::min(space_info.available, space_info.capacity);
-    const uintmax_t used_bytes = total_bytes - free_bytes;
-
-    return nlohmann::json{
-        {"path", utils::path_to_utf8(configured_path)},
-        {"used_bytes", static_cast<uint64_t>(used_bytes)},
-        {"total_bytes", static_cast<uint64_t>(total_bytes)},
-        {"free_bytes", static_cast<uint64_t>(free_bytes)}
-    };
-}
-
-} // namespace
-
-
-static const json MIME_TYPES = {
-    {"mp3",  "audio/mpeg"},
-    {"opus", "audio/opus"},
-    {"aac",  "audio/aac"},
-    {"flac", "audio/flac"},
-    {"wav",  "audio/wav"},
-    {"pcm",  "audio/l16;rate=24000;endianness=little-endian"}
-};
+// Each route folder's routes.cpp adds its routes in the order httplib should match them.
+void register_openai_text_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_openai_audio_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_openai_images_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_models_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_openai_models_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_load_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_downloads_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_inference_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_backends_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_system_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_jobs_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_llamacpp_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_router_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_internal_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_ollama_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_anthropic_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_mcp_routes(RouteRegistry& registry, ServerContext& ctx);
 
 Server::Server(std::shared_ptr<RuntimeConfig> config,
                const std::string& cache_dir,
                const std::string& config_dir)
-    : config_(config),
-      cache_dir_(cache_dir),
-      config_dir_(config_dir),
-      port_(config->port()), running_(false), udp_beacon_(),
-      metrics_platform_(create_metrics_platform()) {
+    : config_(config), config_dir_(config_dir) {
+    ctx_.server = this;
+    ctx_.config = config_.get();
 
-    // Set global HttpClient timeout
-    utils::HttpClient::set_default_timeout(config->global_timeout());
-
-    // Global download rate limit
-    utils::HttpClient::set_download_rate_limit(config->download_rate_limit_bytes_per_second());
+    config_effects_ = std::make_unique<ConfigEffects>(ctx_);
+    ctx_.config_effects = config_effects_.get();
+    utils::HttpClient::set_default_timeout(config_->global_timeout());
+    utils::HttpClient::set_download_rate_limit(config_->download_rate_limit_bytes_per_second());
 
     cloud_registry_ = std::make_unique<CloudProviderRegistry>();
     // Seed installed providers from config.json. Runtime keys stay empty
     // until either an env var resolves them per-request or a client POSTs
     // /v1/cloud/auth — by design we never persist secrets to disk.
     {
-        json snap = config_->snapshot();
+        nlohmann::json snap = config_->snapshot();
         if (snap.contains("cloud_providers")) {
             cloud_registry_->load_from_config(snap["cloud_providers"]);
         }
     }
 
-    alias_manager_ = std::make_unique<AliasManager>(cache_dir_);
-    model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
-    model_manager_->set_cloud_registry(cloud_registry_.get());
-    model_manager_->set_default_model_source_provider(
-        [this]() { return config_->default_model_source(); });
+    ModelManagerConfig manager_config;
+    manager_config.cache_dir = cache_dir;
+    manager_config.extra_models_dir = config_->extra_models_dir();
+    manager_config.cloud_providers = cloud_registry_.get();
+    manager_config.default_model_source = [this]() { return config_->default_model_source(); };
+    manager_config.model_catalogs = [this]() { return config_->model_catalogs(); };
+    model_manager_ = std::make_unique<ModelManager>(std::move(manager_config));
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
@@ -492,283 +84,87 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
 
     // When a router collection is added, edited, or removed (via the API or an
     // on-disk edit), reclaim any routing helper no remaining policy references.
-    model_manager_->set_models_changed_callback([this](uint64_t generation) {
-        router_->reconcile_routing_helpers(active_policy_helper_models(), generation);
+    model_manager_->on_models_changed([this](uint64_t generation) {
+        router_->reconcile_routing_helpers(model_manager_->active_helper_models(), generation);
     });
 
-    // Seed the router's needed-helper set from policies already present at
-    // startup so a helper loaded before the first policy change still validates
-    // against an authoritative set (see Router::load_model). Reserve the
-    // generation BEFORE snapshotting the policies: the directory watcher may
-    // already be publishing newer snapshots, and evaluating next_notify_generation()
-    // after computing the snapshot (argument evaluation order is unspecified in
-    // C++) could stamp this stale snapshot with a newer generation and clobber
-    // the watcher's authoritative state.
-    const uint64_t seed_generation = model_manager_->next_notify_generation();
-    const std::set<std::string> seed_needed = active_policy_helper_models();
-    router_->reconcile_routing_helpers(seed_needed, seed_generation);
+    // Reconcile once at startup so a helper loaded before the first policy
+    // change still validates against an authoritative set (see
+    // Router::load_model). The helper set and its generation come from one
+    // published snapshot, so they cannot disagree the way two separate reads
+    // could.
+    model_manager_->notify_models_changed();
 
-    model_manager_->set_model_updated_callback([this](const std::string& model_name) {
+    model_manager_->on_model_updated([this](const std::string& model_name) {
         if (router_ && router_->is_model_loaded(model_name)) {
             LOG(INFO, "Server") << "Evicting updated model from memory: " << model_name << std::endl;
             router_->unload_model(model_name);
         }
     });
-    {
-        lemon::jobs::OpProviders providers;
-        struct JobModelState {
-            std::map<std::string, bool> snapshot;
-            std::map<std::string, nlohmann::json> owned;
-        };
-        auto job_states = std::make_shared<std::map<std::string, JobModelState>>();
-        auto current_job = std::make_shared<std::string>();
-        auto state_mutex = std::make_shared<std::mutex>();
-        providers.system_info = [] {
-            return lemon::jobs::json::parse(SystemInfoCache::get_system_info_with_cache().dump());
-        };
-        providers.system_stats = [this] {
-            lemon::jobs::json stats;
-            const double cpu_percent = get_cpu_usage();
-            stats["cpu_percent"] =
-                cpu_percent >= 0 ? lemon::jobs::json(cpu_percent) : lemon::jobs::json();
-            stats["memory_gb"] = metrics_platform_->get_memory_usage_gb();
-            const auto gpu_metrics = metrics_platform_->get_system_gpu_metrics();
-            stats["gpu_percent"] = gpu_metrics.gpu_percent >= 0
-                ? lemon::jobs::json(gpu_metrics.gpu_percent)
-                : lemon::jobs::json();
-            stats["vram_gb"] = gpu_metrics.vram_used_gb >= 0
-                ? lemon::jobs::json(gpu_metrics.vram_used_gb)
-                : lemon::jobs::json();
-            const auto gpu_details = gpu_device_details_json(gpu_metrics);
-            stats["primary_gpu_id"] = lemon::jobs::json::parse(
-                gpu_details["primary_gpu_id"].dump());
-            stats["gpus"] = lemon::jobs::json::parse(gpu_details["gpus"].dump());
-            const double npu_percent = get_npu_utilization();
-            stats["npu_percent"] =
-                npu_percent >= 0 ? lemon::jobs::json(npu_percent) : lemon::jobs::json();
-            return stats;
-        };
-        providers.models_list = [this] {
-            nlohmann::json data = nlohmann::json::array();
-            for (const auto& [model_id, info] : model_manager_->get_supported_models())
-                data.push_back(model_info_to_json(model_id, info));
-            nlohmann::json response = {{"object", "list"}, {"data", data}};
-            return lemon::jobs::json::parse(response.dump());
-        };
-        providers.model_get = [this](const std::string& id) -> lemon::jobs::json {
-            auto models = model_manager_->get_supported_models();
-            auto it = models.find(id);
-            if (it == models.end()) return lemon::jobs::json(nullptr);
-            return lemon::jobs::json::parse(model_info_to_json(id, it->second).dump());
-        };
-        providers.load_op = [this, job_states, current_job, state_mutex](
-                                const lemon::jobs::json& params,
-                                lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
-            if (!params.contains("model") || !params["model"].is_string())
-                throw lemon::jobs::JobError(400, "load requires a 'model' string");
-            const std::string model = params["model"].get<std::string>();
-            if (!model_manager_->model_exists(model))
-                throw lemon::jobs::JobError(404, "unknown model '" + model + "'");
-            if (!model_manager_->is_model_downloaded(model))
-                throw lemon::jobs::JobError(404, "model '" + model + "' is not downloaded");
-            auto info = model_manager_->get_model_info(model);
-            nlohmann::json opt_json = nlohmann::json::parse(params.dump());
-            RecipeOptions options(info.recipe, opt_json);
-            std::optional<bool> pinned = std::nullopt;
-            if (params.contains("pinned") && params["pinned"].is_boolean())
-                pinned = params["pinned"].get<bool>();
-            try {
-                router_->load_model(model, info, options, true, true, pinned,
-                                    LoadPurpose::UserInference, &cancel);
-            } catch (const std::exception& e) {
-                throw lemon::jobs::JobError(500, e.what());
-            }
-            {
-                const std::string canonical = router_->canonical_model_name(model);
-                const int pid = router_->loaded_model_pid(model);
-                std::lock_guard<std::mutex> lk(*state_mutex);
-                if (!current_job->empty()) {
-                    auto it = job_states->find(*current_job);
-                    if (it != job_states->end())
-                        it->second.owned[canonical] = {{"pid", pid}};
-                }
-            }
-            if (cancel.load()) {
-                throw lemon::jobs::JobError(499, "interrupted");
-            }
-            RecipeOptions effective = router_->get_model_recipe_options(model);
-            lemon::jobs::json out;
-            out["loaded"] = true;
-            out["model"] = model;
-            const nlohmann::json backend_json = effective.get_option(info.recipe + "_backend");
-            if (backend_json.is_string()) out["backend"] = backend_json.get<std::string>();
-            const nlohmann::json ctx_json = effective.get_option("ctx_size");
-            if (ctx_json.is_number()) out["ctx_size"] = ctx_json.get<int64_t>();
-            return out;
-        };
-        providers.unload_op = [this, job_states, current_job, state_mutex](
-                                  const lemon::jobs::json& params,
-                                  lemon::jobs::CancelFlag&) -> lemon::jobs::json {
-            std::string model;
-            if (params.contains("model") && params["model"].is_string())
-                model = params["model"].get<std::string>();
-            if (!model.empty()) {
-                if (router_->is_model_loaded(model)) router_->unload_model(model);
-            } else {
-                router_->unload_model("");
-            }
-            {
-                std::lock_guard<std::mutex> lk(*state_mutex);
-                if (!current_job->empty()) {
-                    auto it = job_states->find(*current_job);
-                    if (it != job_states->end()) {
-                        if (model.empty()) it->second.owned.clear();
-                        else it->second.owned.erase(router_->canonical_model_name(model));
-                    }
-                }
-            }
-            return lemon::jobs::json::object();
-        };
-        providers.chat_op = [this](const lemon::jobs::json& params,
-                                   lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
-            nlohmann::json request = nlohmann::json::parse(params.dump());
-            nlohmann::json response = router_->chat_completion(request, &cancel);
-            if (response.contains("error")) {
-                std::string msg = "chat failed";
-                const auto& err = response["error"];
-                if (err.is_object() && err.contains("message") && err["message"].is_string())
-                    msg = err["message"].get<std::string>();
-                else if (err.is_string())
-                    msg = err.get<std::string>();
-                throw lemon::jobs::JobError(424, msg);
-            }
-            return lemon::jobs::json::parse(response.dump());
-        };
-        providers.begin_exclusive = [this, job_states, current_job, state_mutex](
-                                        const std::string& job_id,
-                                        lemon::jobs::CancelFlag* cancel) -> bool {
-            if (!router_->begin_exclusive(cancel)) return false;
-            std::lock_guard<std::mutex> lk(*state_mutex);
-            if (!job_states->count(job_id))
-                (*job_states)[job_id].snapshot = router_->snapshot_loaded_models();
-            *current_job = job_id;
-            return true;
-        };
-        providers.end_exclusive = [this, current_job, state_mutex] {
-            {
-                std::lock_guard<std::mutex> lk(*state_mutex);
-                current_job->clear();
-            }
-            router_->end_exclusive();
-        };
-        providers.reconcile_unload = [this, job_states, state_mutex](
-                                         const std::string& job_id) {
-            std::map<std::string, int> owned_live;
-            std::map<std::string, bool> snapshot;
-            {
-                std::lock_guard<std::mutex> lk(*state_mutex);
-                auto it = job_states->find(job_id);
-                if (it == job_states->end()) return;
-                for (const auto& kv : it->second.owned)
-                    if (kv.second.is_object() && kv.second.contains("pid"))
-                        owned_live[kv.first] = kv.second["pid"].get<int>();
-                snapshot = it->second.snapshot;
-            }
-            if (owned_live.empty()) return;
-            auto captured = router_->unload_job_models(owned_live, snapshot);
-            std::lock_guard<std::mutex> lk(*state_mutex);
-            auto it = job_states->find(job_id);
-            if (it == job_states->end()) return;
-            for (auto& kv : captured) it->second.owned[kv.first] = std::move(kv.second);
-        };
-        providers.restore_exclusive = [this, job_states, state_mutex](
-                                          const std::string& job_id,
-                                          const lemon::jobs::json& manifest,
-                                          lemon::jobs::CancelFlag* cancel) -> bool {
-            std::map<std::string, nlohmann::json> to_restore;
-            std::set<std::string> tracked;
-            {
-                std::lock_guard<std::mutex> lk(*state_mutex);
-                auto it = job_states->find(job_id);
-                if (it != job_states->end()) {
-                    for (const auto& kv : it->second.owned) {
-                        tracked.insert(kv.first);
-                        if (kv.second.is_object() && kv.second.contains("options"))
-                            to_restore[kv.first] = kv.second;
-                    }
-                }
-            }
-            for (auto it = manifest.begin(); it != manifest.end(); ++it) {
-                const std::string canonical = router_->canonical_model_name(it.key());
-                if (tracked.count(canonical) || to_restore.count(canonical)) continue;
-                nlohmann::json params = nlohmann::json::parse(it.value().dump());
-                nlohmann::json entry = {{"options", params}};
-                if (params.contains("pinned") && params["pinned"].is_boolean())
-                    entry["pinned"] = params["pinned"].get<bool>();
-                to_restore[canonical] = std::move(entry);
-            }
-            for (const auto& kv : to_restore) {
-                if (cancel && cancel->load()) return false;
-                if (router_->is_model_loaded(kv.first)) {
-                    std::lock_guard<std::mutex> lk(*state_mutex);
-                    auto it = job_states->find(job_id);
-                    if (it != job_states->end()) it->second.owned.erase(kv.first);
-                    continue;
-                }
-                try {
-                    auto info = model_manager_->get_model_info(kv.first);
-                    RecipeOptions options(info.recipe, kv.second.value("options", nlohmann::json::object()));
-                    std::optional<bool> pinned = std::nullopt;
-                    if (kv.second.contains("pinned") && kv.second["pinned"].is_boolean())
-                        pinned = kv.second["pinned"].get<bool>();
-                    router_->load_model(kv.first, info, options, true, true, pinned,
-                                        LoadPurpose::UserInference, cancel);
-                    const int pid = router_->loaded_model_pid(kv.first);
-                    std::lock_guard<std::mutex> lk(*state_mutex);
-                    auto it = job_states->find(job_id);
-                    if (it != job_states->end()) it->second.owned[kv.first] = {{"pid", pid}};
-                } catch (const std::exception& e) {
-                    if (cancel && cancel->load()) return false;
-                    LOG(WARNING, "Jobs") << "could not restore job model '" << kv.first
-                                         << "' on resume: " << e.what() << std::endl;
-                    std::lock_guard<std::mutex> lk(*state_mutex);
-                    auto it = job_states->find(job_id);
-                    if (it != job_states->end()) it->second.owned.erase(kv.first);
-                }
-            }
-            return true;
-        };
-        providers.discard_exclusive = [job_states, state_mutex](
-                                          const std::string& job_id) {
-            std::lock_guard<std::mutex> lk(*state_mutex);
-            job_states->erase(job_id);
-        };
-        job_manager_ = std::make_unique<lemon::jobs::JobManager>(
-            cache_dir_, config_dir_, lemon::jobs::build_op_registry(std::move(providers)));
-    }
+
+    metrics_platform_ = create_metrics_platform();
+    model_json_ = std::make_unique<ModelJson>(model_manager_.get(), router_.get());
+    model_loader_ = std::make_unique<ModelLoader>(router_.get(), model_manager_.get());
+    downloads_ = std::make_unique<DownloadManager>();
+    backend_manager_->set_download_manager(downloads_.get());
+
+    ctx_.router = router_.get();
+    ctx_.model_manager = model_manager_.get();
+    ctx_.backend_manager = backend_manager_.get();
+    ctx_.cloud_registry = cloud_registry_.get();
+    ctx_.metrics = metrics_platform_.get();
+    ctx_.model_json = model_json_.get();
+    ctx_.model_loader = model_loader_.get();
+    ctx_.downloads = downloads_.get();
+
+    job_manager_ = std::make_unique<lemon::jobs::JobManager>(
+        cache_dir, config_dir, lemon::jobs::build_op_registry(JobOps::build(ctx_)));
+    ctx_.job_manager = job_manager_.get();
 
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
 
-    const char* api_key_env = std::getenv("LEMONADE_API_KEY");
-    api_key_ = api_key_env ? std::string(api_key_env) : "";
+    registry_ = std::make_unique<RouteRegistry>();
+    ctx_.registry = registry_.get();
+    // Pages list routes in registration order. lemonade/models adds the 405 answers for
+    // GET models/register and models/check-updates, which must precede openai/models'
+    // models/{id} pattern.
+    register_openai_text_routes(*registry_, ctx_);
+    register_openai_audio_routes(*registry_, ctx_);
+    register_openai_images_routes(*registry_, ctx_);
+    register_lemonade_models_routes(*registry_, ctx_);
+    register_openai_models_routes(*registry_, ctx_);
+    register_lemonade_load_routes(*registry_, ctx_);
+    register_lemonade_downloads_routes(*registry_, ctx_);
+    register_lemonade_inference_routes(*registry_, ctx_);
+    register_lemonade_backends_routes(*registry_, ctx_);
+    register_lemonade_system_routes(*registry_, ctx_);
+    register_lemonade_jobs_routes(*registry_, ctx_);
+    register_llamacpp_routes(*registry_, ctx_);
+    register_router_routes(*registry_, ctx_);
+    register_internal_routes(*registry_, ctx_);
+    register_ollama_routes(*registry_, ctx_);
+    register_anthropic_routes(*registry_, ctx_);
+    register_mcp_routes(*registry_, ctx_);
 
-    // Read admin API key - if not set, defaults to regular API key value
-    const char* admin_api_key_env = std::getenv("LEMONADE_ADMIN_API_KEY");
-    if (admin_api_key_env) {
-        admin_api_key_ = std::string(admin_api_key_env);
-    } else {
-        admin_api_key_ = api_key_;
-    }
-
-    setup_http_servers();
-
-    // Initialize WebSocket server for realtime API and log streaming
-    websocket_server_ = std::make_unique<WebSocketServer>(
-        router_.get(),
-        config_->host(),
-        config_->websocket_port());
+    middleware_ = std::make_unique<RequestMiddleware>(config_.get(), registry_.get());
+    web_ui_ = std::make_unique<WebUi>(ctx_);
+    listener_ = std::make_unique<HttpListener>(
+        config_.get(), router_.get(),
+        [this](httplib::Server& server) {
+            middleware_->install(server);
+            registry_->apply(server);
+            web_ui_->register_routes(server);
+        },
+        [this]() { stop(); }, middleware_->api_key_set(), middleware_->admin_api_key_set());
+    ctx_.listener = listener_.get();
 
     start_model_cache_warmup();
+}
+
+Server::~Server() {
+    downloads_->cancel_all();
+    model_manager_->cancel_sync();
+    stop();
 }
 
 void Server::start_model_cache_warmup() {
@@ -779,7 +175,7 @@ void Server::start_model_cache_warmup() {
     model_cache_warmup_thread_ = std::thread([this]() {
         try {
             LOG(DEBUG, "Server") << "Warming model list cache..." << std::endl;
-            model_manager_->get_supported_models();
+            model_manager_->snapshot();
             LOG(DEBUG, "Server") << "Model list cache warmup complete" << std::endl;
         } catch (const std::exception& e) {
             LOG(WARNING, "Server") << "Model list cache warmup failed: " << e.what() << std::endl;
@@ -790,7 +186,7 @@ void Server::start_model_cache_warmup() {
         if (config_->auto_check_model_updates()) {
             try {
                 LOG(DEBUG, "Server") << "Checking downloaded models for updates..." << std::endl;
-                auto check_res = model_manager_->check_for_model_updates();
+                auto check_res = model_manager_->check_updates();
                 LOG(DEBUG, "Server") << "Model update check complete" << std::endl;
 
                 for (const auto& [model_name, err] : check_res.failed_models) {
@@ -799,7 +195,6 @@ void Server::start_model_cache_warmup() {
 
                 std::vector<std::string> auto_update_targets;
                 for (const auto& public_name : check_res.updated_models) {
-
                     try {
                         std::string canonical_name = model_manager_->resolve_model_name(public_name);
                         ModelInfo info = model_manager_->get_model_info(canonical_name);
@@ -808,7 +203,6 @@ void Server::start_model_cache_warmup() {
                         }
                     } catch (...) {}
                 }
-
 
                 if (!auto_update_targets.empty()) {
                     LOG(INFO, "Server") << "Auto-updating " << auto_update_targets.size() << " model(s)..." << std::endl;
@@ -828,1087 +222,59 @@ void Server::start_model_cache_warmup() {
     });
 }
 
-// Extract the member-function pointer for httplib::Server's private virtual
-// process_and_close_socket (see upgradable_http_server.h). Explicit
-// instantiation is the one context where C++ permits naming a private member.
-template struct lemon::detail::PrivateMemberInit<
-    lemon::detail::ProcessAndCloseSocketTag,
-    &httplib::Server::process_and_close_socket>;
+void Server::run() {
+    listener_->start();
+}
 
-void Server::setup_http_servers() {
-    http_server_ = std::make_unique<RoutedHttpServer>();
-    http_server_v6_ = std::make_unique<RoutedHttpServer>();
-
-    // Front listeners for the main port: WebSocket upgrades for /realtime and
-    // /logs/stream are adopted by the libwebsockets server; everything else is
-    // processed by the routed servers above. The dedicated websocket_port
-    // listener keeps running unchanged.
-    auto upgrade_handler = [this](socket_t sock) -> bool {
-        if (websocket_server_ && websocket_server_->is_running()) {
-            return websocket_server_->adopt_socket(static_cast<intptr_t>(sock));
+void Server::stop() {
+    std::lock_guard<std::mutex> lock(stop_mutex_);
+    if (listener_->stop()) {
+        LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
+        try {
+            router_->unload_model();
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Error during cleanup: " << e.what() << std::endl;
         }
-        return false;
-    };
-    http_front_ = std::make_unique<UpgradableFrontServer>(http_server_.get(), upgrade_handler);
-    http_front_v6_ = std::make_unique<UpgradableFrontServer>(http_server_v6_.get(), upgrade_handler);
 
-    // Keep cpp-httplib's default socket options here. httplib binds IPv6 with
-    // IPV6_V6ONLY=0, so "::" overlaps the IPv4 wildcard "0.0.0.0" and only the
-    // default SO_REUSEPORT lets the two coexist. Duplicate detection is done by
-    // port_is_available() in run(), not by making these listeners exclusive.
+        LOG(INFO, "Server") << "Shutting down telemetry queue..." << std::endl;
+        lemon::telemetry::shutdown();
 
-    // CRITICAL: Enable multi-threading so the server can handle concurrent requests
-    // Without this, the server is single-threaded and blocks on long operations
-
-    // Size the pool from the host CPU count instead of a fixed 8. cpp-httplib
-    // dedicates one worker thread per in-flight request for the connection's
-    // lifetime, so a small fixed pool lets a handful of slow-loris or long-lived
-    // streaming connections starve the management endpoints (/health, /load).
-    unsigned int hw = std::thread::hardware_concurrency();
-    size_t thread_count = std::clamp<size_t>(static_cast<size_t>(hw) * 4, 32, 256);
-    std::function<httplib::TaskQueue *(void)> task_queue_factory = [thread_count] {
-        LOG(DEBUG, "Server") << "Creating new thread pool with " << thread_count
-                             << " threads" << std::endl;
-        return new httplib::ThreadPool(thread_count);
-    };
-
-    // The fronts own the accept loops (and therefore the task queues)
-    http_front_->new_task_queue = task_queue_factory;
-    http_front_v6_->new_task_queue = task_queue_factory;
-    http_server_->new_task_queue = task_queue_factory;
-    http_server_v6_->new_task_queue = task_queue_factory;
-
-    // Bound how long a single connection can tie up a worker thread. Without a
-    // read timeout a client that opens a socket and never finishes its request
-    // (slow loris) holds its worker indefinitely. Streaming responses drive
-    // their own write cadence, so keep the write timeout generous. The fronts
-    // need the same limits: they own accept and run the WebSocket upgrade peek
-    // before delegating, so a stalled client could otherwise hold a front
-    // worker there.
-    for (httplib::Server* srv : {static_cast<httplib::Server*>(http_front_.get()),
-                                 static_cast<httplib::Server*>(http_front_v6_.get()),
-                                 static_cast<httplib::Server*>(http_server_.get()),
-                                 static_cast<httplib::Server*>(http_server_v6_.get())}) {
-        srv->set_read_timeout(30, 0);
-        srv->set_write_timeout(300, 0);
-        srv->set_keep_alive_max_count(100);
+        LOG(INFO, "Server") << "Cleanup complete" << std::endl;
     }
 
-    setup_routes(*http_server_);
-    setup_routes(*http_server_v6_);
-}
+    model_manager_->cancel_sync();
 
-void Server::stop_http_listeners() {
-    // The routed servers never own the listen socket: clear the injected fd so
-    // their per-connection keep-alive loops exit, then close it once via the
-    // fronts (which are the servers actually listening).
-    if (http_server_) {
-        http_server_->set_listen_socket(INVALID_SOCKET);
-    }
-    if (http_server_v6_) {
-        http_server_v6_->set_listen_socket(INVALID_SOCKET);
-    }
-    if (http_front_) {
-        http_front_->stop();
-    }
-    if (http_front_v6_) {
-        http_front_v6_->stop();
-    }
-}
-
-Server::~Server() {
-    cancel_download_jobs();
-    if (model_manager_) {
-        model_manager_->cancel_sync();
-    }
-    stop();
     if (model_cache_warmup_thread_.joinable()) {
         model_cache_warmup_thread_.join();
     }
 
-    std::lock_guard<std::mutex> lock(background_sync_mutex_);
-    for (auto& entry : background_sync_threads_) {
-        if (entry.thread.joinable()) {
-            entry.thread.join();
-        }
-    }
-    background_sync_threads_.clear();
+    model_manager_->wait_until_sync_idle();
 }
 
-
-
-namespace {
-
-// Parse a W3C Trace Context "traceparent" header per the spec grammar
-// (https://www.w3.org/TR/trace-context/): version "-" trace-id "-" parent-id
-// "-" trace-flags, where version is 2 lowercase hex chars, trace-id is 32,
-// parent-id is 16, and trace-flags is 2. The all-zero trace-id and parent-id
-// are invalid. On success, out_trace_id/out_parent_id receive the lowercase
-// hex ids and the function returns true; otherwise returns false.
-bool parse_traceparent(const std::string& header, std::string& out_trace_id, std::string& out_parent_id) {
-    // A version-00 traceparent is exactly 55 chars. Reject anything shorter and
-    // cap the length so a header packed with dashes can't drive an unbounded
-    // split loop; the upper bound leaves room for higher versions that may
-    // append trailing fields (handled below).
-    if (header.size() < 55 || header.size() > 128) return false;
-
-    auto is_hex = [](const std::string& s) {
-        return !s.empty() && std::all_of(s.begin(), s.end(), [](unsigned char c) {
-            return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
-        });
-    };
-    auto is_all_zero = [](const std::string& s) {
-        return s.find_first_not_of('0') == std::string::npos;
-    };
-
-    // Lowercase a copy so uppercase hex from lenient clients still validates.
-    std::string h = header;
-    std::transform(h.begin(), h.end(), h.begin(), [](unsigned char c) { return std::tolower(c); });
-
-    std::vector<std::string> parts;
-    size_t start = 0;
-    while (true) {
-        size_t dash = h.find('-', start);
-        if (dash == std::string::npos) {
-            parts.push_back(h.substr(start));
-            break;
-        }
-        parts.push_back(h.substr(start, dash - start));
-        start = dash + 1;
-    }
-
-    if (parts.size() < 4) return false;
-    const std::string& version = parts[0];
-    const std::string& trace_id = parts[1];
-    const std::string& parent_id = parts[2];
-    const std::string& flags = parts[3];
-
-    if (version.size() != 2 || !is_hex(version) || version == "ff") return false;
-    // Version 00 carries exactly four fields; per W3C forward-compatibility a
-    // higher version may append trailing fields, which we parse then ignore.
-    if (version == "00" && parts.size() != 4) return false;
-    if (trace_id.size() != 32 || !is_hex(trace_id) || is_all_zero(trace_id)) return false;
-    if (parent_id.size() != 16 || !is_hex(parent_id) || is_all_zero(parent_id)) return false;
-    if (flags.size() != 2 || !is_hex(flags)) return false;
-
-    out_trace_id = trace_id;
-    out_parent_id = parent_id;
-    return true;
+double Server::get_cpu_usage() {
+    return metrics_platform_->get_cpu_usage(cpu_stats_mutex_,
+                                            last_cpu_stats_.total,
+                                            last_cpu_stats_.total_idle);
 }
 
-} // namespace
-
-void Server::log_request(const httplib::Request& req) {
-    if (req.path != "/api/v0/health" && req.path != "/api/v1/health" &&
-        req.path != "/v0/health" && req.path != "/v1/health" &&
-        req.path != "/live" &&
-        req.path != "/metrics" &&
-        !is_quiet_polling_path(req.path)) {
-        LOG(DEBUG, "Server") << req.method << " " << req.path << std::endl;
-    }
+bool Server::should_shutdown() const {
+    return listener_->shutdown_requested();
 }
 
-httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
-    telemetry::g_request_start_time = std::chrono::steady_clock::now();
-    telemetry::g_current_auth_token = "";
-    if (req.has_header("X-Client-Session-Id")) {
-        telemetry::g_current_client_session_id = req.get_header_value("X-Client-Session-Id");
-    } else {
-        telemetry::g_current_client_session_id.clear();
-    }
-
-    // Opt-in W3C Trace Context ingestion: when enabled, adopt a valid incoming
-    // "traceparent" so inference spans join the caller's distributed trace
-    // instead of starting a fresh root. Cleared otherwise so a stale thread-local
-    // never leaks across requests on a reused worker thread.
-    telemetry::g_incoming_trace_id.clear();
-    telemetry::g_incoming_parent_span_id.clear();
-    if (config_->telemetry_trust_incoming_trace_context() && req.has_header("traceparent")) {
-        std::string trace_id;
-        std::string parent_id;
-        if (parse_traceparent(req.get_header_value("traceparent"), trace_id, parent_id)) {
-            telemetry::g_incoming_trace_id = trace_id;
-            telemetry::g_incoming_parent_span_id = parent_id;
-        }
-    }
-
-    telemetry::g_incoming_client_id.clear();
-    telemetry::g_incoming_session_id.clear();
-
-    session::SessionContext telemetry_session = config_
-        ? session::resolve_session_context(
-              req,
-              config_->telemetry_session_headers_id(),
-              config_->telemetry_session_headers_client())
-        : session::resolve_session_context(req, {}, {});
-    if (!telemetry_session.session_id.empty()) {
-        telemetry::g_incoming_client_id = telemetry_session.client_id;
-        telemetry::g_incoming_session_id = telemetry_session.session_id;
-    }
-
-    // Reset every request so a reused worker thread can't leak the prior
-    // caller's session to a cloud provider.
-    session::g_request_session = session::resolve_forwardable_session(req);
-
-    // Check if path requires authentication (API routes and internal endpoints).
-    // /mcp is included here so that LEMONADE_API_KEY enforcement covers the MCP
-    // gateway (Critical Invariant #10). It is the only API route outside the
-    // /api/, /v0/, /v1/ prefixes — see register_routes() in McpServer for why.
-    bool is_api_route = (req.path.rfind("/api/", 0) == 0) ||
-                        (req.path.rfind("/v0/", 0) == 0) ||
-                        (req.path.rfind("/v1/", 0) == 0) ||
-                        (req.path == "/mcp");
-    bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
-    bool is_metrics_route = (req.path == "/metrics");
-
-    // Authentication hierarchy. Two credentials gate two classes of endpoints:
-    // api_key_ gates the regular API endpoints (/api, /v0, /v1); admin_api_key_
-    // gates the internal control endpoints (/internal/*). admin_api_key_ defaults
-    // to api_key_ when LEMONADE_ADMIN_API_KEY is unset.
-    // - admin_api_key_ authenticates against both regular and internal endpoints.
-    // - api_key_ authenticates against the regular endpoints only. It cannot
-    //   reach /internal/* when LEMONADE_ADMIN_API_KEY is set to a distinct value;
-    //   when LEMONADE_ADMIN_API_KEY is unset, admin_api_key_ == api_key_, so the
-    //   regular key also authenticates against /internal/*.
-    // - If api_key_ is empty, the regular endpoints require no authentication.
-    // - If admin_api_key_ is empty (neither key set), /internal/* requires none.
-
-    // Safely extract bearer token, guarding against malformed Authorization headers
-    std::string auth_token;
-    try {
-        if (req.has_header("Authorization")) {
-            auto auth_value = req.get_header_value("Authorization");
-            // httplib::get_bearer_token_auth does substr(7) for "Bearer ", so check length
-            if (auth_value.size() >= 7) {
-                auth_token = httplib::get_bearer_token_auth(req);
-            }
-            // Silently ignore malformed/short Authorization headers
-        }
-    } catch (const std::exception& e) {
-        LOG(DEBUG, "Server") << "Failed to parse Authorization header: " << e.what() << std::endl;
-    }
-
-    telemetry::g_current_auth_token = auth_token;
-
-    if (is_internal_route) {
-        // Internal routes require admin key authentication
-        if (!admin_api_key_.empty() && req.method != "OPTIONS") {
-            if (auth_token != admin_api_key_) {
-                res.status = 401;
-                res.set_content("{\"error\": \"Invalid or missing admin API key\"}", "application/json");
-                return httplib::Server::HandlerResponse::Handled;
-            }
-        }
-    } else if ((is_api_route || is_metrics_route) && req.method != "OPTIONS") {
-        if (!api_key_.empty()) {
-            if ((auth_token != api_key_) && (auth_token != admin_api_key_)) {
-                res.status = 401;
-                res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
-                return httplib::Server::HandlerResponse::Handled;
-            }
-        }
-    }
-
-    return httplib::Server::HandlerResponse::Unhandled;
+void Server::set_shutdown_requested(bool requested) {
+    listener_->set_shutdown_requested(requested);
 }
 
-
-void Server::setup_routes(httplib::Server &web_server) {
-    // Add pre-routing handler to log ALL incoming requests (except health checks)
-    web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
-        this->log_request(req);
-
-        // Unconditionally set Vary: Origin to prevent caching issues, preserving existing values
-        std::string vary = "Origin";
-        if (res.has_header("Vary")) {
-            std::string existing = res.get_header_value("Vary");
-            if (existing.find("Origin") == std::string::npos) {
-                vary = existing + ", Origin";
-            } else {
-                vary = existing;
-            }
-        }
-        res.set_header("Vary", vary);
-
-        if (req.has_header("Origin")) {
-            std::string origin = req.get_header_value("Origin");
-            std::string host = req.get_header_value("Host");
-            std::string scheme = "http";
-
-            std::string allowed_origins = utils::resolve_allowed_origins();
-            std::string bound_host = config_ ? config_->host() : "";
-            if (utils::is_origin_allowed(origin, allowed_origins, host, scheme, bound_host)) {
-                res.set_header("Access-Control-Allow-Origin", origin);
-                if (req.has_header("Access-Control-Request-Private-Network") &&
-                    req.get_header_value("Access-Control-Request-Private-Network") == "true") {
-                    res.set_header("Access-Control-Allow-Private-Network", "true");
-                }
-            } else {
-                LOG(WARNING, "Server") << "Rejected request from unauthorized origin: " << origin
-                                       << ". Configure allowed_origins in config.json or via 'lemonade config set allowed_origins=...' to allow this origin." << std::endl;
-                res.status = 403;
-                res.set_content("{\"error\": \"Origin not allowed\"}", "application/json");
-                return httplib::Server::HandlerResponse::Handled;
-            }
-        }
-
-        return authenticate_request(req, res);
-    });
-
-    web_server.Get("/live", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_live(req, res);
-    });
-
-    // Prometheus scrape endpoint for Lemonade, model, backend, and system metrics.
-    web_server.Get("/metrics", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_metrics(req, res);
-    });
-
-    // Setup CORS for all routes
-    setup_cors(web_server);
-
-    // Helper lambda to register routes for both v0 and v1 (with and without /api prefix for OpenAI compatibility)
-    auto register_get = [this, &web_server](const std::string& endpoint,
-                               std::function<void(const httplib::Request&, httplib::Response&)> handler) {
-        web_server.Get("/api/v0/" + endpoint, handler);
-        web_server.Get("/api/v1/" + endpoint, handler);
-        web_server.Get("/v0/" + endpoint, handler);
-        web_server.Get("/v1/" + endpoint, handler);
-    };
-
-    auto register_post = [this, &web_server](const std::string& endpoint,
-                                std::function<void(const httplib::Request&, httplib::Response&)> handler) {
-        web_server.Post("/api/v0/" + endpoint, handler);
-        web_server.Post("/api/v1/" + endpoint, handler);
-        web_server.Post("/v0/" + endpoint, handler);
-        web_server.Post("/v1/" + endpoint, handler);
-        if (endpoint != "jobs") {
-            web_server.Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
-                res.status = 405;
-                res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
-            });
-            web_server.Get("/api/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
-                res.status = 405;
-                res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
-            });
-            web_server.Get("/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
-                res.status = 405;
-                res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
-            });
-            web_server.Get("/v1/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
-                res.status = 405;
-                res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
-            });
-        }
-    };
-
-    // Health check
-    register_get("health", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_health(req, res);
-    });
-
-    // API reference bundled with the server. The index is fetched first; each entry
-    // carries the URL of the document, so clients never build doc paths themselves.
-    register_get("docs", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_docs(req, res);
-    });
-    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
-        web_server.Get(std::string(prefix) + R"(/docs/(.+))",
-                       [this](const httplib::Request& req, httplib::Response& res) {
-            handle_doc_page(req, res);
-        });
-    }
-
-    // Models endpoints
-    register_get("models", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_models(req, res);
-    });
-
-    // Explicit network action for users who disable startup update checks.
-    register_post("models/check-updates", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_model_update_check(req, res);
-    });
-
-    // Model files endpoint for the Files tab. Register before the generic
-    // /models/(.+) route so '<model-id>/files' is not parsed as the model ID.
-    web_server.Get(R"(/api/v0/models/(.+)/files)", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_model_files(req, res);
-    });
-    web_server.Get(R"(/api/v1/models/(.+)/files)", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_model_files(req, res);
-    });
-    web_server.Get(R"(/v0/models/(.+)/files)", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_model_files(req, res);
-    });
-    web_server.Get(R"(/v1/models/(.+)/files)", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_model_files(req, res);
-    });
-
-    // Per-model recipe options. Same ordering constraint as /files above: must
-    // precede the generic /models/(.+) route.
-    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
-        const std::string route = std::string(prefix) + R"(/models/(.+)/options)";
-        web_server.Get(route, [this](const httplib::Request& req, httplib::Response& res) {
-            handle_model_options_get(req, res);
-        });
-        web_server.Post(route, [this](const httplib::Request& req, httplib::Response& res) {
-            handle_model_options_post(req, res);
-        });
-        web_server.Delete(route, [this](const httplib::Request& req, httplib::Response& res) {
-            handle_model_options_delete(req, res);
-        });
-    }
-
-    // Model by ID (need to register for both versions with regex, with and without /api prefix)
-    web_server.Get(R"(/api/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_model_by_id(req, res);
-    });
-    web_server.Get(R"(/api/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_model_by_id(req, res);
-    });
-    web_server.Get(R"(/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_model_by_id(req, res);
-    });
-    web_server.Get(R"(/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_model_by_id(req, res);
-    });
-
-    // Chat completions (OpenAI compatible)
-    register_post("chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_chat_completions(req, res);
-    });
-
-    // Completions
-    register_post("completions", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_completions(req, res);
-    });
-
-    // Embeddings
-    register_post("embeddings", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_embeddings(req, res);
-    });
-
-    // Reranking.
-    // `/rerank` is the de-facto convention that most clients expect.
-    // `/reranking` (Lemonade's original path) is kept as an alias for backward compatibility.
-    // `/reranker` is added as an additional alias.
-    for (const char* rerank_path : {"rerank", "reranking", "reranker"}) {
-        register_post(rerank_path, [this](const httplib::Request& req, httplib::Response& res) {
-            handle_reranking(req, res);
-        });
-    }
-
-    register_post("classify", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_classify(req, res);
-    });
-
-    // Slots (llama.cpp backend information)
-    register_get("slots", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_slots(req, res);
-    });
-
-    // Slots action endpoints (need to register for both versions with regex, with and without /api prefix)
-    web_server.Post(R"(/api/v0/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_slots_by_id(req, res);
-    });
-    web_server.Post(R"(/api/v1/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_slots_by_id(req, res);
-    });
-    web_server.Post(R"(/v0/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_slots_by_id(req, res);
-    });
-    web_server.Post(R"(/v1/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_slots_by_id(req, res);
-    });
-
-    // Tokenize endpoint (llama.cpp specific)
-    register_post("tokenize", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_tokenize(req, res);
-    });
-
-    // Audio endpoints (OpenAI /v1/audio/* compatible)
-    register_post("audio/transcriptions", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_audio_transcriptions(req, res);
-    });
-
-    // Speech
-    register_post("audio/speech", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_audio_speech(req, res);
-    });
-
-    // Image endpoints (OpenAI /v1/images/* compatible)
-    register_post("images/generations", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_image_generations(req, res);
-    });
-    register_post("images/edits", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_image_edits(req, res);
-    });
-    register_post("images/variations", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_image_variations(req, res);
-    });
-    register_post("images/upscale", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_image_upscale(req, res);
-    });
-    // Generative-audio endpoint: text -> audio clip (music, sound effects)
-    register_post("audio/generations", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_audio_generations(req, res);
-    });
-    register_post("3d/generations", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_3d_generations(req, res);
-    });
-    // Responses endpoint
-    register_post("responses", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_responses(req, res);
-    });
-
-    // Model management endpoints
-    register_post("models/register", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_model_register(req, res);
-    });
-
-    register_post("pull", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_pull(req, res);
-    });
-
-    register_get("registry/search", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_registry_search(req, res);
-    });
-
-    register_get("pull/variants", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_pull_variants(req, res);
-    });
-
-    // Runs a routing policy engine against an ad-hoc policy JSON + prompt
-    // (the Router Builder's Test Prompt tab), without requiring the policy to
-    // be attached to a registered model.
-    register_post("routing/validate", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_routing_validate(req, res);
-    });
-
-    register_get("downloads", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_downloads(req, res);
-    });
-
-    register_post("downloads/control", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_download_control(req, res);
-    });
-
-    register_post("jobs", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_jobs_create(req, res);
-    });
-    register_get("jobs", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_jobs_list(req, res);
-    });
-    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
-        web_server.Post(std::string(prefix) + R"(/jobs/([^/]+)/pause)",
-                        [this](const httplib::Request& req, httplib::Response& res) {
-                            handle_jobs_pause(req, res);
-                        });
-        web_server.Post(std::string(prefix) + R"(/jobs/([^/]+)/interrupt)",
-                        [this](const httplib::Request& req, httplib::Response& res) {
-                            handle_jobs_interrupt(req, res);
-                        });
-        web_server.Post(std::string(prefix) + R"(/jobs/([^/]+)/resume)",
-                        [this](const httplib::Request& req, httplib::Response& res) {
-                            handle_jobs_resume(req, res);
-                        });
-        web_server.Get(std::string(prefix) + R"(/jobs/([^/]+))",
-                       [this](const httplib::Request& req, httplib::Response& res) {
-                           handle_jobs_get(req, res);
-                       });
-        web_server.Delete(std::string(prefix) + R"(/jobs/([^/]+))",
-                          [this](const httplib::Request& req, httplib::Response& res) {
-                              handle_jobs_delete(req, res);
-                          });
-    }
-
-
-    register_post("load", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_load(req, res);
-    });
-
-    register_post("unload", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_unload(req, res);
-    });
-
-    register_post("delete", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_delete(req, res);
-    });
-
-    // Backend management endpoints
-    register_post("install", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_install(req, res);
-    });
-
-    register_post("install/dry-run", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_install_dry_run(req, res);
-    });
-
-    register_post("uninstall", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_uninstall(req, res);
-    });
-
-    // System endpoints
-    register_get("stats", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_stats(req, res);
-    });
-
-    register_get("system-info", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_system_info(req, res);
-    });
-
-    register_get("system-stats", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_system_stats(req, res);
-    });
-
-
-    // NOTE: /api/v1/halt endpoint removed - use SIGTERM signal instead (like Python server)
-    // The stop command now sends termination signal directly to the process
-
-    // Internal shutdown endpoint (not part of public API)
-    web_server.Post("/internal/shutdown", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_shutdown(req, res);
-    });
-
-    web_server.Post("/internal/telemetry/flush", [](const httplib::Request& req, httplib::Response& res) {
-        lemon::telemetry::flush();
-        res.status = 200;
-        res.set_content(nlohmann::json{{"status", "flushed"}}.dump(), "application/json");
-    });
-
-    web_server.Post("/internal/pin", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_pin(req, res);
-    });
-
-    // Unified config endpoints (not part of public API)
-    web_server.Post("/internal/set", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_config_set(req, res);
-    });
-    web_server.Get("/internal/config", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_config_get(req, res);
-    });
-    web_server.Get("/internal/config/defaults", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_config_defaults_get(req, res);
-    });
-    web_server.Post("/internal/cleanup-cache", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_cleanup_cache(req, res);
-    });
-    web_server.Post("/internal/simulate-vram-pressure", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_simulate_vram_pressure(req, res);
-    });
-    web_server.Post("/internal/models/sync", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_models_sync(req, res);
-    });
-    web_server.Get("/internal/models/sync/status", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_models_sync_status(req, res);
-    });
-
-    web_server.Get("/internal/aliases", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_aliases_get(req, res);
-    });
-    web_server.Post("/internal/aliases", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_aliases_add(req, res);
-    });
-    web_server.Delete(R"(/internal/aliases/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_aliases_remove(req, res);
-    });
-
-    // Cloud auth: register quad-prefix POST and a parameterized DELETE.
-    //   POST /v1/cloud/auth        body: {provider, api_key}
-    //   DELETE /v1/cloud/auth/{p}
-    // The runtime key lives in process memory only; env var
-    // LEMONADE_<PROVIDER>_API_KEY takes precedence (POST returns 409 if it
-    // is set). Both endpoints respect LEMONADE_ADMIN_API_KEY when configured
-    // via the standard authentication path applied to /v1/.
-    register_post("cloud/auth", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_cloud_auth_set(req, res);
-    });
-    web_server.Delete(R"(/api/v0/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_cloud_auth_clear(req, res);
-    });
-    web_server.Delete(R"(/api/v1/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_cloud_auth_clear(req, res);
-    });
-    web_server.Delete(R"(/v0/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_cloud_auth_clear(req, res);
-    });
-    web_server.Delete(R"(/v1/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_cloud_auth_clear(req, res);
-    });
-
-    // Register Ollama-compatible API routes
-    auto ollama_api = std::make_shared<OllamaApi>(router_.get(), model_manager_.get());
-    ollama_api->register_routes(web_server);
-
-    // Register MCP gateway (POST /mcp). NOTE: /mcp is an INTENTIONAL EXCEPTION
-    // to the quad-prefix invariant (AGENTS.md #1) — the MCP spec mandates a
-    // single endpoint URL.
-    auto mcp_server = std::make_shared<McpServer>(
-        router_.get(),
-        model_manager_.get(),
-        [this](const std::string& m) { auto_load_model_if_needed(m); });
-    mcp_server->register_routes(web_server);
-
-    // Setup static file serving for web UI
-    setup_static_files(web_server);
+bool Server::is_running() const {
+    return listener_->is_running();
 }
 
-void Server::setup_static_files(httplib::Server &web_server) {
-    // Determine static files directory (relative to executable)
-    std::string static_dir = utils::get_resource_path("resources/static");
+bool Server::startup_failed() const {
+    return listener_->startup_failed();
+}
 
-    // Create a reusable handler for serving index.html with template variable replacement
-    auto serve_index_html = [this, static_dir](const httplib::Request&, httplib::Response& res) {
-        std::string index_path = static_dir + "/index.html";
-        std::ifstream file(index_path);
-
-        if (!file.is_open()) {
-            LOG(ERROR, "Server") << "Could not open index.html at: " << index_path << std::endl;
-            res.status = 404;
-            res.set_content("{\"error\": \"index.html not found\"}", "application/json");
-            return;
-        }
-
-        // Read the entire file
-        std::string html_template((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        file.close();
-
-        // Get filtered models from model manager
-        auto models_map = model_manager_->get_supported_models();
-
-        // Convert map to JSON
-        json filtered_models = json::object();
-        for (const auto& [model_name, info] : models_map) {
-            std::vector<std::string> public_components;
-            public_components.reserve(info.components.size());
-            for (const auto& component : info.components) {
-                public_components.push_back(model_manager_->get_public_model_name(component));
-            }
-            filtered_models[model_name] = {
-                {"model_name", model_name},
-                {"checkpoint", info.checkpoint()},
-                {"recipe", info.recipe},
-                {"labels", info.labels},
-                {"suggested", info.suggested},
-                {"source", info.source.empty()
-                    ? remote_registry_source_name(
-                        parse_remote_registry_source(info.registry_source))
-                    : info.source},
-                {"registry_source", remote_registry_source_name(
-                    parse_remote_registry_source(info.registry_source))},
-                {"components", public_components},
-                {"mmproj", info.mmproj()}
-            };
-
-            // Add size if available
-            if (info.size > 0.0) {
-                filtered_models[model_name]["size"] = info.size;
-            }
-        }
-
-        // Create JavaScript snippets
-        std::string server_models_js = "<script>window.SERVER_MODELS = " + filtered_models.dump() + ";</script>";
-
-        // Get platform name
-        std::string platform_name;
-        #ifdef _WIN32
-            platform_name = "Windows";
-        #elif __APPLE__
-            platform_name = "Darwin";
-        #elif __linux__
-            platform_name = "Linux";
-        #else
-            platform_name = "Unknown";
-        #endif
-        std::string platform_js = "<script>window.PLATFORM = '" + platform_name + "';</script>";
-
-        // Replace template variables
-        size_t pos;
-
-        // Replace {{SERVER_PORT}}
-        while ((pos = html_template.find("{{SERVER_PORT}}")) != std::string::npos) {
-            html_template.replace(pos, 15, std::to_string(port_));
-        }
-
-        // Replace {{SERVER_MODELS_JS}}
-        while ((pos = html_template.find("{{SERVER_MODELS_JS}}")) != std::string::npos) {
-            html_template.replace(pos, 20, server_models_js);
-        }
-
-        // Replace {{PLATFORM_JS}}
-        while ((pos = html_template.find("{{PLATFORM_JS}}")) != std::string::npos) {
-            html_template.replace(pos, 15, platform_js);
-        }
-
-        // Set no-cache headers
-        res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
-        res.set_header("Pragma", "no-cache");
-        res.set_header("Expires", "0");
-        res.set_content(html_template, "text/html");
-    };
-
-    // Serve index.html at /api/v1 for compatibility
-    web_server.Get("/api/v1", serve_index_html);
-
-    // Mount static files directory for status page assets (CSS, JS, images)
-    if (!web_server.set_mount_point("/static", static_dir)) {
-        LOG(WARNING, "Server") << "Could not mount static files from: " << static_dir << std::endl;
-        LOG(WARNING, "Server") << "Status page assets will not be available" << std::endl;
-    }
-
-    // Web app UI endpoint - serve the React web app at root
-    std::string web_app_dir = utils::get_resource_path("resources/web-app");
-
-    // Check if web app directory exists
-    if (fs::exists(web_app_dir) && fs::is_directory(web_app_dir)) {
-        // Create a handler for serving web app index.html for SPA routing
-        auto serve_web_app_html = [web_app_dir](const httplib::Request&, httplib::Response& res) {
-            std::string index_path = web_app_dir + "/index.html";
-            std::ifstream file(index_path);
-
-            if (!file.is_open()) {
-                res.status = 404;
-                res.set_content("{\"error\": \"Web app not found\"}", "application/json");
-                return;
-            }
-
-            std::string html((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-            file.close();
-
-            // Inject mock window.api for web compatibility with the shared Tauri app renderer
-            std::string mock_api = R"(
-<script>
-// Mock window.api for web compatibility (the Tauri shim is skipped in pure-web mode)
-window.api = {
-    isWebApp: true,  // Explicit flag to indicate web mode
-    platform: navigator.platform || 'web',
-    minimizeWindow: () => {},
-    maximizeWindow: () => {},
-    closeWindow: () => {},
-    openExternal: (url) => window.open(url, '_blank'),
-    onMaximizeChange: () => {},
-    updateMinWidth: () => {},
-    zoomIn: () => document.body.style.zoom = (parseFloat(document.body.style.zoom || '1') + 0.1).toString(),
-    zoomOut: () => document.body.style.zoom = (parseFloat(document.body.style.zoom || '1') - 0.1).toString(),
-    getSettings: async () => {
-        const saved = localStorage.getItem('lemonade-settings');
-        if (saved) return JSON.parse(saved);
-        // Return defaults matching DEFAULT_LAYOUT_SETTINGS from appSettings.ts
-        return {
-            layout: {
-                isChatVisible: true,
-                isModelManagerVisible: true,
-                isCenterPanelVisible: true,
-                isLogsVisible: false,
-                modelManagerWidth: 280,
-                chatWidth: 350,
-                logsHeight: 200
-            },
-            theme: 'dark',
-            apiUrl: window.location.origin,
-            apiKey: { value: '' }
-        };
-    },
-    saveSettings: async (settings) => {
-        localStorage.setItem('lemonade-settings', JSON.stringify(settings));
-        return settings;
-    },
-    onSettingsUpdated: () => {},
-    getServerPort: () => parseInt(window.location.port) || 13305,
-    onServerPortUpdated: () => {},
-    getServerAPIKey: async () => {
-        const settings = await window.api.getSettings();
-        return settings.apiKey?.value || '';
-    },
-    restartApp: () => window.location.reload(),
-    writeClipboard: async (text) => {
-        if (navigator.clipboard) {
-            try {
-                await navigator.clipboard.writeText(text);
-                return;
-            } catch {
-                // Ignore clipboard errors and fall back to legacy method
-            }
-        }
-        const ta = document.createElement('textarea');
-        ta.value = String(text);
-        ta.setAttribute('readonly', '');
-        ta.style.position = 'fixed';
-        ta.style.left = '-9999px';
-        document.body.appendChild(ta);
-        try {
-            ta.select();
-            if (!document.execCommand('copy')) {
-                throw new Error('Legacy clipboard copy failed');
-            }
-        } finally {
-            document.body.removeChild(ta);
-        }
-    }
-};
-</script>
-)";
-
-            // Insert mock API before the closing </head> tag
-            size_t head_end_pos = html.find("</head>");
-            if (head_end_pos != std::string::npos) {
-                html.insert(head_end_pos, mock_api);
-            }
-
-            // Set no-cache headers
-            res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
-            res.set_header("Pragma", "no-cache");
-            res.set_header("Expires", "0");
-            res.set_content(html, "text/html");
-        };
-
-        // Serve the web app's index.html at root and for SPA routes
-        web_server.Get("/", serve_web_app_html);
-
-        // Also serve at /web-app for backwards compatibility
-        web_server.Get("/web-app/?", serve_web_app_html);
-
-        // Serve all static assets from the web app directory (JS, CSS, fonts, assets, etc.)
-        // Handle both root-level assets and /web-app/ prefixed paths for backwards compatibility
-        auto serve_web_app_asset = [web_app_dir](const httplib::Request& req, httplib::Response& res, const std::string& file_path) {
-            std::error_code ec;
-            namespace fs = std::filesystem;
-
-            auto base = fs::weakly_canonical(fs::path(web_app_dir), ec);
-            if (ec) {
-                res.status = 500;
-                res.set_content("Internal server error", "text/plain");
-                return;
-            }
-
-            auto candidate = fs::weakly_canonical(base / file_path, ec);
-            if (ec) {
-                // Path doesn't exist or cannot be canonicalized
-                res.status = 404;
-                res.set_content("File not found", "text/plain");
-                return;
-            }
-
-            // Verify the resolved path is confined under the base directory.
-            // Use std::filesystem::relative (not string prefix) so it works
-            // correctly on Windows where path separators differ.
-            auto relative = fs::relative(candidate, base, ec);
-            if (ec || relative.empty() || relative.is_absolute()) {
-                // empty = candidate == base (directory, not a file)
-                // is_absolute = somehow escaped (shouldn't happen after canonicalization)
-                res.status = 403;
-                res.set_content("Forbidden", "text/plain");
-                return;
-            }
-            // Belt-and-suspenders: reject if any path component is ".."
-            // (weakly_canonical should have resolved it, but this catches
-            // edge cases on exotic filesystems). Check components, not
-            // substrings, so legitimate filenames like "my..file.js" are allowed.
-            for (const auto& part : relative) {
-                if (part == "..") {
-                    res.status = 403;
-                    res.set_content("Forbidden", "text/plain");
-                    return;
-                }
-            }
-
-            // Serve the file
-            std::ifstream file(candidate, std::ios::binary);
-            if (!file.is_open()) {
-                res.status = 404;
-                res.set_content("File not found", "text/plain");
-                return;
-            }
-
-            // Read file content
-            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-            file.close();
-
-            // Determine content type based on extension
-            std::string content_type = "application/octet-stream";
-            size_t dot_pos = file_path.rfind('.');
-            if (dot_pos != std::string::npos) {
-                std::string ext = file_path.substr(dot_pos);
-                if (ext == ".js") content_type = "text/javascript";
-                else if (ext == ".css") content_type = "text/css";
-                else if (ext == ".html") content_type = "text/html";
-                else if (ext == ".woff") content_type = "font/woff";
-                else if (ext == ".woff2") content_type = "font/woff2";
-                else if (ext == ".ttf") content_type = "font/ttf";
-                else if (ext == ".svg") content_type = "image/svg+xml";
-                else if (ext == ".png") content_type = "image/png";
-                else if (ext == ".jpg" || ext == ".jpeg") content_type = "image/jpeg";
-                else if (ext == ".json") content_type = "application/json";
-                else if (ext == ".ico") content_type = "image/x-icon";
-            }
-
-            res.set_content(content, content_type);
-        };
-
-        // Serve favicon from web-app directory at root
-        web_server.Get("/favicon.ico", [serve_web_app_asset](const httplib::Request& req, httplib::Response& res) {
-            serve_web_app_asset(req, res, "favicon.ico");
-        });
-
-        // Serve web app assets from root (for files like renderer.bundle.js, fonts, etc.)
-        web_server.Get(R"(/([^/]+\.(js|css|woff|woff2|ttf|svg|png|jpg|jpeg|json|ico)))",
-                      [serve_web_app_asset](const httplib::Request& req, httplib::Response& res) {
-            std::string file_path = req.matches[1].str();
-            serve_web_app_asset(req, res, file_path);
-        });
-
-        // Keep /web-app/ prefix routes for backwards compatibility
-        web_server.Get(R"(/web-app/(.+))", [serve_web_app_asset](const httplib::Request& req, httplib::Response& res) {
-            std::string file_path = req.matches[1].str();
-            serve_web_app_asset(req, res, file_path);
-        });
-        // SPA fallback: serve index.html for any unmatched GET routes that don't start with /api, /v0, /v1, /static, or /live
-        // This enables client-side routing
-        web_server.Get(R"(^(?!/api|/v0|/v1|/static|/live|/status|/internal|/docs(/|$)).*)",
-                      [serve_web_app_html](const httplib::Request& req, httplib::Response& res) {
-            // Only serve index.html if the path doesn't look like a file with extension
-            std::string path = req.path;
-            size_t last_slash = path.rfind('/');
-            std::string last_segment = (last_slash != std::string::npos) ? path.substr(last_slash + 1) : path;
-
-            // If the last segment has an extension and it's not .html, let it 404
-            // (This helps catch missing assets more clearly)
-            size_t dot_pos = last_segment.rfind('.');
-            if (dot_pos != std::string::npos) {
-                std::string ext = last_segment.substr(dot_pos);
-                if (ext != ".html" && ext != ".htm") {
-                    // File with extension not found, return 404
-                    res.status = 404;
-                    return;
-                }
-            }
-
-            // Otherwise, serve the SPA index.html for client-side routing
-            serve_web_app_html(req, res);
-        });
-    } else {
-        // Fallback to static page when web-app is not compiled
-        LOG(INFO, "Server") << "Web app directory not found at: " << web_app_dir << std::endl;
-        LOG(INFO, "Server") << "Falling back to static status page at root" << std::endl;
-
-        // Serve the static status page at root instead
-        web_server.Get("/", serve_index_html);
-
-        // Serve favicon from static directory
-        web_server.Get("/favicon.ico", [static_dir](const httplib::Request& req, httplib::Response& res) {
-            std::ifstream ifs(static_dir + "/favicon.ico", std::ios::binary);
-            if (ifs) {
-                std::string content((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-                res.set_content(content, "image/x-icon");
-                res.status = 200;
-            } else {
-                res.set_content("Favicon not found.", "text/plain");
-                res.status = 404;
-            }
-        });
-    }
-
-    auto docs_not_found = [](const httplib::Request&, httplib::Response& res) {
+void Server::handle_request(const httplib::Request& req, httplib::Response& res) {
+    if (!registry_->dispatch(req, res)) {
         res.status = 404;
         res.set_content("{\"error\": \"Not Found. For API documentation, use /v1/docs.\"}", "application/json");
     };

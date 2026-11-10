@@ -240,9 +240,9 @@ USER_MODEL_NAME = "user.Dummy-Model"
 USER_MODEL_MAIN_CHECKPOINT = (
     "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
 )
-USER_MODEL_TE_CHECKPOINT = (
-    "mradermacher/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct.Q2_K.gguf"
-)
+# Its own repository, so that no other fixture's repository-cleanup assertion sees a claim
+# reaching in from here.
+USER_MODEL_TE_CHECKPOINT = "mradermacher/Tiny-LLM-GGUF:Tiny-LLM.Q2_K.gguf"
 # Using a file not at repo top-level
 USER_MODEL_VAE_CHECKPOINT = "Comfy-Org/z_image:split_files/vae/ae.safetensors"
 

@@ -1,4 +1,5 @@
 #include "lemon_cli/lemonade_client.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/utils/url_utils.h"
 #include <httplib.h>
 #include <iostream>
@@ -125,8 +126,15 @@ static httplib::Client make_client(const std::string& host, int port, const std:
 
 static void assert_http_ok(const httplib::Result& res) {
     if (!res) {
+        const std::string detail = " (" + httplib::to_string(res.error()) + ")";
+        if (res.error() == httplib::Error::Read || res.error() == httplib::Error::Write) {
+            throw std::runtime_error(
+                "Lemonade server closed the connection or stopped responding" + detail + ".\n"
+                "The server may be busy with a change such as loading or removing a model or "
+                "backend. Wait a moment and try again.");
+        }
         throw std::runtime_error(
-            "Could not connect to Lemonade server (" + httplib::to_string(res.error()) + ").\n"
+            "Could not connect to Lemonade server" + detail + ".\n"
             "Make sure the server is running and try again.");
     } else if (res->status == 401) {
         throw std::runtime_error("Forbidden by the server. Did you set the API key?");
@@ -1371,15 +1379,36 @@ int LemonadeClient::list_recipes(bool show_all) const {
                     } else {
                         info_col = "-";
                     }
-                    std::string action_col = backend.action.empty() ? "-" : backend.action;
                     if (show_all || status_str != "unsupported") {
-                        std::cout << std::left << std::setw(20) << recipe_col
-                                << std::setw(12) << backend.name
-                                << std::setw(14) << (backend.tier.empty() ? "-" : backend.tier)
-                                << std::setw(11) << (backend.format.empty() ? "-" : backend.format)
-                                << std::setw(16) << status_str
-                                << std::setw(46) << info_col
-                                << " " << action_col << std::endl;
+                        std::ostringstream lead;
+                        lead << std::left << std::setw(20) << recipe_col
+                             << std::setw(12) << backend.name
+                             << std::setw(14) << (backend.tier.empty() ? "-" : backend.tier)
+                             << std::setw(11) << (backend.format.empty() ? "-" : backend.format)
+                             << std::setw(16) << status_str;
+                        const auto split_lines = [](const std::string& text) {
+                            std::vector<std::string> lines;
+                            std::istringstream stream(text);
+                            for (std::string line; std::getline(stream, line);) {
+                                lines.push_back(line);
+                            }
+                            return lines;
+                        };
+                        // A multi-line message and action print side by side,
+                        // one problem and one step per line.
+                        const auto messages = split_lines(info_col);
+                        const auto actions =
+                            split_lines(backend.action.empty() ? "-" : backend.action);
+                        const std::string pad(lead.str().size(), ' ');
+                        for (size_t i = 0; i < std::max(messages.size(), actions.size()); ++i) {
+                            std::ostringstream line;
+                            line << std::left << (i == 0 ? lead.str() : pad) << std::setw(46)
+                                 << (i < messages.size() ? messages[i] : "") << " "
+                                 << (i < actions.size() ? actions[i] : "");
+                            std::string text = line.str();
+                            text.erase(text.find_last_not_of(' ') + 1);
+                            std::cout << text << std::endl;
+                        }
 
                         first_backend = false;
                     }
@@ -1388,6 +1417,8 @@ int LemonadeClient::list_recipes(bool show_all) const {
         }
 
         std::cout << std::string(173, '-') << std::endl;
+        std::cout << "Use `lemonade backends info RECIPE:BACKEND` to see a backend's description, "
+                     "author and license." << std::endl;
         return 0;
 
     } catch (const HttpError& e) {
@@ -1395,6 +1426,93 @@ int LemonadeClient::list_recipes(bool show_all) const {
         return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error listing recipes: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::show_backend_info(const std::string& recipe, const std::string& backend) const {
+    try {
+        auto system_info = json::parse(make_request("/api/v1/system-info"));
+        json info = system_info.value("recipes", json::object())
+                        .value(recipe, json::object())
+                        .value("backends", json::object())
+                        .value(backend, json::object());
+        const bool on_server = !info.empty();
+
+        // /system-info omits backends that cannot run on the server's OS, such
+        // as the Linux-only container backends on a Windows server, so their
+        // description comes from this CLI's own copy of the descriptors.
+        const lemon::BackendSupport* row = nullptr;
+        if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
+            for (const auto& support : desc->support) {
+                if (support.backend == backend) {
+                    row = &support;
+                    break;
+                }
+            }
+            auto about = desc->about.find(backend);
+            if (about != desc->about.end()) {
+                const auto fill = [&info](const char* key, const std::string& value) {
+                    if (!info.contains(key)) info[key] = value;
+                };
+                fill("description", about->second.description);
+                fill("author", about->second.author);
+                fill("publisher", about->second.publisher);
+                fill("license", about->second.license);
+                fill("project_url", about->second.project_url);
+            }
+        }
+        if (!on_server && !row) {
+            std::cerr << "Error: unknown backend '" << recipe << ":" << backend
+                      << "'. Run `lemonade backends --all` to list them." << std::endl;
+            return 1;
+        }
+        if (!on_server) {
+            info["tier"] = lemon::backend_tier_to_string(row->tier);
+            info["format"] = lemon::backend_format_to_string(row->format);
+            std::string os_list;
+            for (const auto& name : row->supported_os) os_list += (os_list.empty() ? "" : ", ") + name;
+            info["state"] = "not listed by this server (supported OS: " + os_list + ")";
+        }
+
+        std::cout << recipe << ":" << backend << std::endl;
+        const std::string description = info.value("description", "");
+        if (!description.empty()) {
+            std::cout << "  " << description << std::endl;
+        }
+        std::cout << std::endl;
+
+        const auto field = [](const std::string& label, const std::string& value) {
+            std::istringstream lines(value.empty() ? "-" : value);
+            std::string line;
+            bool first = true;
+            while (std::getline(lines, line)) {
+                std::cout << "  " << std::left << std::setw(11) << (first ? label : "")
+                          << line << std::endl;
+                first = false;
+            }
+        };
+        field("Author", info.value("author", ""));
+        field("Publisher", info.value("publisher", ""));
+        const std::string license = info.value("license", "");
+        field("License", license.empty() && info.contains("author") ? "Not declared" : license);
+        field("Project", info.value("project_url", ""));
+        field("Tier", info.value("tier", ""));
+        field("Format", info.value("format", ""));
+        const std::string state = info.value("state", "unsupported");
+        const std::string version = info.value("version", "");
+        field("Status", version.empty() ? state : state + " (" + version + ")");
+        field("Release", info.value("release_url", ""));
+        const std::string action = info.value("action", "");
+        if (!action.empty() && state != "installed") {
+            field("Action", action);
+        }
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error reading backend info: " << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error reading backend info: " << e.what() << std::endl;
         return 1;
     }
 }
