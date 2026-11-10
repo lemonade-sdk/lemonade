@@ -8,6 +8,8 @@
 #include <lemon/models/store_snapshot.h>
 #include <lemon/models/artifact_layout.h>
 #include <lemon/models/fetchable_repository.h>
+#include <lemon/models/model_errors.h>
+#include <lemon/models/registry_types.h>
 #include <lemon/registry_files.h>
 #include <lemon/utils/path_utils.h>
 
@@ -24,6 +26,7 @@
 #include <vector>
 
 namespace fs = std::filesystem;
+using lemon::MissingCheckpointError;
 using lemon::ModelInfo;
 using lemon::ModelManager;
 using lemon::ModelManagerConfig;
@@ -384,6 +387,153 @@ void test_a_second_pull_reselects_but_refetches_nothing() {
           "the pin stays where it was");
 }
 
+void test_a_local_gguf_router_registers_with_its_sibling_head() {
+    Fixture fx = make_fixture();
+    const fs::path dir = fx.stage / "local-router";
+    fs::create_directories(dir);
+    stage(dir / "router-f16.gguf", "GGUF");
+    // Without a Windows drive, so the path has no colon on any OS, as on Linux.
+    const std::string base = (dir.root_directory() / dir.relative_path()).generic_u8string();
+    const std::string gguf = base + "/router-f16.gguf";
+    ModelManager mm = fx.make_manager();
+
+    bool registered = true;
+    try {
+        mm.register_model("user.Local-Router",
+                          {{"recipe", "llamacpp"},
+                           {"source", "local_path"},
+                           {"checkpoint", gguf},
+                           {"labels", {"classification", "zero-shot"}}});
+        mm.register_model("user.Untagged-Router",
+                          {{"recipe", "llamacpp"},
+                           {"checkpoint", gguf},
+                           {"labels", {"classification", "zero-shot"}}});
+    } catch (const std::exception& e) {
+        registered = false;
+        std::cerr << "  registration refused: " << e.what() << std::endl;
+    }
+    check(registered, "a GGUF path on disk needs no :variant to register");
+    if (!registered) return;
+    check(mm.get_model_info("user.Local-Router").checkpoint("rulehead") ==
+              base + "/rulehead.bin",
+          "a local router's head is the file beside its GGUF");
+}
+
+void test_a_pull_of_local_files_never_asks_a_registry() {
+    Fixture fx = make_fixture();
+    const fs::path dir = fx.stage / "local-pulled-router";
+    fs::create_directories(dir);
+    stage(dir / "router-f16.gguf", staged_gguf("router"));
+    stage(dir / "rulehead.bin", "head");
+    const std::string base = (dir.root_directory() / dir.relative_path()).generic_u8string();
+    ModelManager mm = fx.make_manager();
+
+    std::string pulled_error;
+    try {
+        // As POST /v1/pull does before it registers.
+        nlohmann::json body = {{"recipe", "llamacpp"},
+                               {"checkpoint", base + "/router-f16.gguf"},
+                               {"labels", {"classification", "zero-shot"}}};
+        lemon::apply_default_pull_source(body, "huggingface");
+        mm.download_model("user.Pulled-Router", body);
+    } catch (const std::exception& e) {
+        pulled_error = e.what();
+    }
+    check(pulled_error.empty(), "an untagged path on disk pulls: " + pulled_error);
+    check(fx.trace.listings.empty() && fx.trace.urls.empty(),
+          "a pull of files on this machine asks no registry for anything");
+    if (pulled_error.empty()) {
+        const auto info = mm.get_model_info("user.Pulled-Router");
+        check(info.source == "local_path", "an untagged path on disk is recorded as local_path");
+        check(mm.is_model_downloaded("user.Pulled-Router"), "its files count as downloaded");
+    }
+
+    fs::remove(dir / "rulehead.bin");
+    std::string missing_error;
+    try {
+        mm.download_model("user.Pulled-Router", nlohmann::json::object());
+    } catch (const std::exception& e) {
+        missing_error = e.what();
+    }
+    check(missing_error.find("'rulehead'") != std::string::npos &&
+              missing_error.find("rulehead.bin") != std::string::npos,
+          "a missing local head is named, not fetched: " + missing_error);
+    check(fx.trace.listings.empty(), "nor does a pull whose local head is missing");
+}
+
+void test_a_scheme_prefixed_router_downloads_from_its_repository() {
+    Fixture fx = make_fixture();
+    stage(fx.stage / "vendor-router" / "router-f16.gguf", staged_gguf("router"));
+    stage(fx.stage / "vendor-router" / "rulehead.bin", "head");
+    fx.script["vendor/router"] =
+        ScriptedRepo{"snap-router-1", {file("router-f16.gguf"), file("rulehead.bin")}};
+    ModelManager mm = fx.make_manager();
+
+    std::string error;
+    try {
+        // As POST /v1/pull does before it registers.
+        nlohmann::json body = {{"recipe", "llamacpp"},
+                               {"checkpoint", "hf://vendor/router:router-f16.gguf"},
+                               {"labels", {"classification", "zero-shot"}}};
+        lemon::apply_default_pull_source(body, "modelscope");
+        mm.download_model("user.Scheme-Router", body);
+    } catch (const std::exception& e) {
+        error = e.what();
+    }
+    check(error.empty(), "an hf:// router pulls: " + error);
+    check(std::none_of(fx.trace.listings.begin(), fx.trace.listings.end(),
+                       [](const std::string& s) { return s.rfind("hf", 0) == 0; }),
+          "no repository is named after the scheme");
+    std::vector<std::string> got = fx.trace.urls;
+    std::sort(got.begin(), got.end());
+    check(got == std::vector<std::string>{"vendor/router:main:router-f16.gguf",
+                                          "vendor/router:main:rulehead.bin"},
+          "the GGUF and its implied head come from the same repository");
+    if (error.empty()) {
+        const auto info = mm.get_model_info("user.Scheme-Router");
+        check(info.checkpoint() == "vendor/router:router-f16.gguf" &&
+                  info.checkpoint("rulehead") == "vendor/router:rulehead.bin" &&
+                  info.registry_source == "huggingface",
+              "the stored row keeps no scheme and names the scheme's registry");
+    }
+
+    reset_trace(fx);
+    nlohmann::json unnormalized = definition();
+    unnormalized["checkpoints"]["main"] = "hf://vendor/repo:model.gguf";
+    std::string refused;
+    try {
+        mm.download_model("user.Scheme-Raw", unnormalized);
+        mm.download_model("user.Scheme-Raw", nlohmann::json::object());
+    } catch (const std::exception& e) {
+        refused = e.what();
+    }
+    check(refused.find("registry scheme") != std::string::npos,
+          "a row that kept its scheme is refused in words: " + refused);
+    check(std::none_of(fx.trace.listings.begin(), fx.trace.listings.end(),
+                       [](const std::string& s) { return s.rfind("hf@", 0) == 0; }),
+          "and never lists a repository named 'hf'");
+}
+
+void test_a_relative_gguf_path_is_refused_in_words() {
+    Fixture fx = make_fixture();
+    ModelManager mm = fx.make_manager();
+    for (const std::string relative : {"./models/router-f16.gguf", R"(..\models\router-f16.gguf)"}) {
+        std::string error;
+        try {
+            nlohmann::json body = {{"recipe", "llamacpp"},
+                                   {"checkpoint", relative},
+                                   {"labels", {"classification", "zero-shot"}}};
+            lemon::apply_default_pull_source(body, "huggingface");
+            mm.download_model("user.Relative-Router", body);
+        } catch (const std::exception& e) {
+            error = e.what();
+        }
+        check(error.find("absolute path") != std::string::npos,
+              "a relative GGUF path asks for an absolute one: " + error);
+    }
+    check(fx.trace.listings.empty(), "a relative path asks no registry");
+}
+
 void test_a_missing_aux_checkpoint_is_refused_in_words() {
     Fixture fx = make_fixture();
     nlohmann::json def = definition();
@@ -394,11 +544,12 @@ void test_a_missing_aux_checkpoint_is_refused_in_words() {
     try {
         mm.download_model("user.Pull-Refuse", def);
         mm.download_model("user.Pull-Refuse", nlohmann::json::object());
-    } catch (const std::exception& e) {
+    } catch (const MissingCheckpointError& e) {
         threw = true;
         check(std::string(e.what()).find("Additional checkpoint file not found") !=
                   std::string::npos,
               "the refusal names the missing aux checkpoint");
+        check(e.checkpoint_type == "side", "the refusal carries the missing checkpoint's role");
     }
     check(threw, "a missing aux variant fails the pull");
     check(std::none_of(fx.trace.urls.begin(), fx.trace.urls.end(),
@@ -485,6 +636,10 @@ int main() {
     test_a_suggested_pull_uses_the_default_source();
     test_a_second_pull_reselects_but_refetches_nothing();
     test_a_missing_aux_checkpoint_is_refused_in_words();
+    test_a_scheme_prefixed_router_downloads_from_its_repository();
+    test_a_relative_gguf_path_is_refused_in_words();
+    test_a_local_gguf_router_registers_with_its_sibling_head();
+    test_a_pull_of_local_files_never_asks_a_registry();
     test_a_malformed_aux_checkpoint_never_reaches_the_wire();
     test_a_cancelled_pull_stops_before_the_first_byte();
     test_search_is_a_source_answer();
