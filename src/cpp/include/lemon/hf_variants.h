@@ -51,6 +51,9 @@ GgufVariantSet enumerate_gguf_variants(
     const std::vector<std::string>& repo_files,
     const std::vector<std::pair<std::string, uint64_t>>& file_sizes = {});
 
+// "mtp" or "dflash" for a speculative draft companion, "" otherwise.
+std::string gguf_draft_label(const std::string& path);
+
 std::string llamacpp_gguf_incompatibility(
     const nlohmann::json& repository_metadata,
     const std::string& registry_source);

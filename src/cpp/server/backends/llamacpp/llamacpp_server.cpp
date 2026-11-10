@@ -11,6 +11,7 @@
 #include "lemon/gguf_capabilities.h"
 #include "lemon/gguf_reader.h"
 #include "lemon/gguf_shard_utils.h"
+#include "lemon/hf_variants.h"
 #include "lemon/model_manager.h"
 #include <algorithm>
 #include <cctype>
@@ -1023,6 +1024,39 @@ public:
             return resolve_gguf_path(ctx.model_cache_path, ctx.variant);
         }
         return BackendOps::resolve_checkpoint_path(info, ctx);
+    }
+
+    RepositoryAnalysis analyze_repository(const RepositoryView& repo) const override {
+        auto vset = enumerate_gguf_variants(repo.files, repo.file_sizes);
+        if (vset.variants.empty()) return {};
+
+        RepositoryAnalysis analysis;
+        const std::string incompatibility =
+            llamacpp_gguf_incompatibility(repo.detailed_metadata(), repo.registry_source);
+        if (!incompatibility.empty()) {
+            analysis.refusal = "Repository " + repo.checkpoint +
+                               " is not compatible with llama.cpp: " + incompatibility;
+            return analysis;
+        }
+
+        RepositoryMatch match;
+        match.repo_kind = "gguf";
+        if (!vset.mmproj_files.empty()) add_label_once(match.labels, "vision");
+        for (const auto& variant : vset.variants) {
+            if (variant.draft_file.empty()) continue;
+            const std::string draft = gguf_draft_label(variant.draft_file);
+            if (!draft.empty()) add_label_once(match.labels, draft);
+            break;
+        }
+        std::string id_lower = repo.checkpoint;
+        std::transform(id_lower.begin(), id_lower.end(), id_lower.begin(), ::tolower);
+        if (id_lower.find("embed") != std::string::npos) add_label_once(match.labels, "embeddings");
+        if (id_lower.find("rerank") != std::string::npos) add_label_once(match.labels, "reranking");
+        match.variants = std::move(vset.variants);
+        match.mmproj_files = std::move(vset.mmproj_files);
+        match.draft_files = std::move(vset.draft_files);
+        analysis.match = std::move(match);
+        return analysis;
     }
 
     std::string find_imported_checkpoint(const std::string& import_dir) const override {

@@ -11,6 +11,7 @@
 #include <unordered_map>
 
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/llamacpp_architectures_generated.h"
 #include "lemon/model_types.h"
 #include <lemon/models/fetchable_repository.h>
@@ -193,6 +194,15 @@ std::string preferred_draft_companion(
 
 }  // namespace
 
+std::string gguf_draft_label(const std::string& path) {
+    switch (draft_kind(path)) {
+        case DraftKind::Mtp: return "mtp";
+        case DraftKind::Dflash: return "dflash";
+        case DraftKind::None: break;
+    }
+    return {};
+}
+
 std::string gguf_quant_token(const std::string& name) {
     std::string quant;
     return extract_quant(name, quant) ? quant : std::string();
@@ -342,6 +352,38 @@ GgufVariantSet enumerate_gguf_variants(
     return result;
 }
 
+namespace {
+
+nlohmann::json variants_json(const std::vector<GgufVariant>& variants) {
+    nlohmann::json out = nlohmann::json::array();
+    for (const auto& v : variants) {
+        nlohmann::json vj;
+        vj["name"] = v.name;
+        vj["primary_file"] = v.primary_file;
+        if (!v.draft_file.empty()) vj["draft_file"] = v.draft_file;
+        vj["files"] = v.files;
+        vj["sharded"] = v.sharded;
+        vj["size_bytes"] = v.size_bytes;
+        out.push_back(std::move(vj));
+    }
+    return out;
+}
+
+// The preview must carry the labels /pull stamps at registration.
+nlohmann::json match_json(const std::string& recipe, backends::RepositoryMatch match) {
+    backends::ensure_deployment_label(match.labels, recipe);
+    nlohmann::json out;
+    out["recipe"] = recipe;
+    out["repo_kind"] = match.repo_kind;
+    out["suggested_labels"] = match.labels;
+    out["mmproj_files"] = match.mmproj_files;
+    out["draft_files"] = match.draft_files;
+    out["variants"] = variants_json(match.variants);
+    return out;
+}
+
+}  // namespace
+
 nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolver,
                                    const std::string& checkpoint,
                                    const std::string& registry_source,
@@ -373,6 +415,25 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
         repo_files.push_back(file.path);
         if (file.size > 0) file_sizes.emplace_back(file.path, file.size);
     }
+
+    backends::RepositoryView view;
+    view.checkpoint = checkpoint;
+    view.registry_source = remote_registry_source_name(source);
+    view.files = repo_files;
+    view.file_sizes = file_sizes;
+    view.metadata = repository.raw_metadata;
+    view.fetch_detailed_metadata = [&]() {
+        nlohmann::json metadata = repository.raw_metadata;
+        if (source != models::huggingface_descriptor().id) return metadata;
+        const auto expanded =
+            fetch_huggingface_compatibility_metadata(checkpoint, repository.revision.id);
+        if (!expanded) return metadata;
+        for (const char* field : {"gguf", "pipeline_tag"}) {
+            auto value = expanded->find(field);
+            if (value != expanded->end()) metadata[field] = *value;
+        }
+        return metadata;
+    };
 
     // Detect repo kind: GGUF (existing path) vs ONNX RyzenAI vs unknown.
     // ONNX RyzenAI repos contain `.onnx` files plus a `genai_config.json`
@@ -499,8 +560,11 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
         return out;
     }
 
-    auto vset = enumerate_gguf_variants(repo_files, file_sizes);
-    if (vset.variants.empty()) {
+    const auto analysis = backends::ops_for("llamacpp")->analyze_repository(view);
+    if (!analysis.match && !analysis.refusal.empty()) {
+        throw std::invalid_argument(analysis.refusal);
+    }
+    if (!analysis.match) {
         throw std::runtime_error(
             "No supported model files found in repository " + checkpoint +
             ". Supported repository types: GGUF models (*.gguf), ONNX RyzenAI models, and "
@@ -508,72 +572,10 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
             "' manifest exported by 'lemonade export')");
     }
 
-    nlohmann::json compatibility_metadata = repository.raw_metadata;
-    std::optional<nlohmann::json> expanded_metadata;
-    if (source == models::huggingface_descriptor().id) {
-        expanded_metadata = fetch_huggingface_compatibility_metadata(
-            checkpoint, repository.revision.id);
-    }
-    if (expanded_metadata) {
-        for (const char* field : {"gguf", "pipeline_tag"}) {
-            auto value = expanded_metadata->find(field);
-            if (value != expanded_metadata->end()) {
-                compatibility_metadata[field] = *value;
-            }
-        }
-    }
-    const std::string incompatibility = llamacpp_gguf_incompatibility(
-        compatibility_metadata, remote_registry_source_name(source));
-    if (!incompatibility.empty()) {
-        throw std::invalid_argument(
-            "Repository " + checkpoint + " is not compatible with llama.cpp: " +
-            incompatibility);
-    }
-
-    // Suggested labels. These are what the client previews before confirming
-    // the pull, so they run through the same stamper that /pull applies at
-    // registration; otherwise the preview and the registered model disagree.
-    std::vector<std::string> labels;
-    if (!vset.mmproj_files.empty()) add_label_once(labels, "vision");
-    const auto draft_variant = std::find_if(
-        vset.variants.begin(), vset.variants.end(),
-        [](const GgufVariant& variant) { return !variant.draft_file.empty(); });
-    if (draft_variant != vset.variants.end()) {
-        switch (draft_kind(draft_variant->draft_file)) {
-            case DraftKind::Mtp: add_label_once(labels, "mtp"); break;
-            case DraftKind::Dflash: add_label_once(labels, "dflash"); break;
-            case DraftKind::None: break;
-        }
-    }
-    {
-        std::string id_lower = to_lower(checkpoint);
-        if (id_lower.find("embed") != std::string::npos) add_label_once(labels, "embeddings");
-        if (id_lower.find("rerank") != std::string::npos) add_label_once(labels, "reranking");
-    }
-    backends::ensure_deployment_label(labels, "llamacpp");
-
-    nlohmann::json out;
+    nlohmann::json out = match_json("llamacpp", *analysis.match);
     out["checkpoint"] = checkpoint;
     out["source"] = remote_registry_source_name(source);
-    out["recipe"] = "llamacpp";
-    out["repo_kind"] = "gguf";
     out["suggested_name"] = suggested_name;
-    out["suggested_labels"] = labels;
-    out["mmproj_files"] = vset.mmproj_files;
-    out["draft_files"] = vset.draft_files;
-
-    nlohmann::json variants_json = nlohmann::json::array();
-    for (const auto& v : vset.variants) {
-        nlohmann::json vj;
-        vj["name"] = v.name;
-        vj["primary_file"] = v.primary_file;
-        if (!v.draft_file.empty()) vj["draft_file"] = v.draft_file;
-        vj["files"] = v.files;
-        vj["sharded"] = v.sharded;
-        vj["size_bytes"] = v.size_bytes;
-        variants_json.push_back(std::move(vj));
-    }
-    out["variants"] = std::move(variants_json);
     return out;
 }
 

@@ -1,6 +1,7 @@
 #include <lemon/backends/backend_registry.h>
 #include <lemon/hf_variants.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -385,6 +386,35 @@ int main() {
         result.expect("a backend without the hook declines every repository",
                       !analysis.match && analysis.refusal.empty(),
                       analysis.refusal);
+    }
+
+    {
+        auto analysis = analyze("llamacpp",
+                                {"model-Q4_K_M.gguf", "model-Q8_0.gguf", "mmproj-model-f16.gguf"},
+                                {{"pipeline_tag", "image-text-to-text"},
+                                 {"gguf", {{"architecture", "llama"}}}});
+        const bool vision = analysis.match &&
+            std::find(analysis.match->labels.begin(), analysis.match->labels.end(), "vision") !=
+                analysis.match->labels.end();
+        result.expect("llama.cpp offers the GGUF variants of a vision repository",
+                      analysis.match && analysis.match->repo_kind == "gguf" &&
+                          analysis.match->variants.size() == 2 &&
+                          analysis.match->mmproj_files.size() == 1 && vision,
+                      analysis.refusal);
+    }
+    {
+        auto analysis = analyze("llamacpp", {"sd-v1-5-Q8_0.gguf"},
+                                {{"pipeline_tag", "text-to-image"}});
+        result.expect("llama.cpp refuses GGUF files made for another task",
+                      !analysis.match &&
+                          analysis.refusal.find("not compatible with llama.cpp") !=
+                              std::string::npos,
+                      analysis.refusal);
+    }
+    {
+        auto analysis = analyze("llamacpp", {"ggml-tiny.bin"}, nlohmann::json::object());
+        result.expect("llama.cpp declines a repository without GGUF files",
+                      !analysis.match && analysis.refusal.empty(), analysis.refusal);
     }
 
     printf("\n%d passed, %d failed\n", result.passed, result.failed);
