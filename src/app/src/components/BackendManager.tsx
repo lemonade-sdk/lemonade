@@ -739,6 +739,64 @@ const BackendArgsDialog: React.FC<BackendArgsDialogProps> = ({
   );
 };
 
+const BACKEND_COLUMN_MIN_WIDTH = 300;
+const BACKEND_COLUMN_MAX_WIDTH = 400;
+
+interface BackendCardColumnsProps {
+  entries: BackendCatalogEntry[];
+  renderCard: (entry: BackendCatalogEntry) => React.ReactNode;
+}
+
+/* Cards keep their natural height and stack in independent columns. Each card
+   goes to the column with the least estimated height, measured in backends
+   (the logo header counts as half of one), so a card never hops columns when
+   its own content changes, e.g. while a download progress bar is showing. */
+const BackendCardColumns: React.FC<BackendCardColumnsProps> = ({ entries, renderCard }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [columnCount, setColumnCount] = useState(1);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const measure = () => {
+      const gap = parseFloat(getComputedStyle(container).columnGap) || 0;
+      const span = container.clientWidth + gap;
+      const most = Math.floor(span / (BACKEND_COLUMN_MIN_WIDTH + gap));
+      const fewest = Math.ceil(span / (BACKEND_COLUMN_MAX_WIDTH + gap));
+      setColumnCount(Math.max(1, Math.min(most, fewest)));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  const columns = useMemo(() => {
+    const result = Array.from({ length: columnCount }, () => ({ weight: 0, entries: [] as BackendCatalogEntry[] }));
+    for (const entry of entries) {
+      const shortest = result.reduce((min, column) => (column.weight < min.weight ? column : min));
+      shortest.entries.push(entry);
+      shortest.weight += entry.variants.length + 0.5;
+    }
+    return result;
+  }, [columnCount, entries]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="backends__columns"
+      style={{ '--backend-columns': columnCount } as React.CSSProperties}
+    >
+      {columns.map((column, index) => (
+        <div className="backends__column" key={index}>
+          {column.entries.map(renderCard)}
+        </div>
+      ))}
+    </div>
+  );
+};
+
 /* ── Component ─────────────────────────────────────────────── */
 
 interface BackendManagerProps {
@@ -1534,7 +1592,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
               title={t(CAPABILITY_LABELS[capability])}
               description={t(CAPABILITY_DESCRIPTIONS[capability])}
             >
-              {visibleEntries.map(renderBackendCard)}
+              <BackendCardColumns entries={visibleEntries} renderCard={renderBackendCard} />
             </WorkspaceCatalogSection>
           );
         })}

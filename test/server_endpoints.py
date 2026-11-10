@@ -147,9 +147,23 @@ def _running_lemond(config=None, cache_prefix="lemond_test_", extra_env=None):
             try:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
+                _print_log_tail(log_path, "lemond did not exit within 10s of terminate")
                 proc.kill()
-                proc.wait(timeout=10)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    print(f"WARNING: lemond (pid {proc.pid}) not reaped 10s after kill")
         shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+def _print_log_tail(log_path, reason, lines=40):
+    print(f"WARNING: {reason}; last {lines} lines of {log_path}:")
+    try:
+        with open(log_path, encoding="utf-8", errors="replace") as f:
+            for line in f.readlines()[-lines:]:
+                print(f"    {line.rstrip()}")
+    except OSError as e:
+        print(f"    (could not read log: {e})")
 
 
 def _wait_until_healthy(proc, port, headers, timeout_s=60):
