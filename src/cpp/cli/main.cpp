@@ -1797,6 +1797,16 @@ int main(int argc, char* argv[]) {
     // Bench command
     CLI::App* bench_cmd = lemon_cli::register_bench_command(app, config.output_file, config.bench);
 
+    std::function<void(CLI::App*)> add_global_options_footer = [&](CLI::App* parent) {
+        for (CLI::App* command : parent->get_subcommands([](CLI::App*) { return true; })) {
+            const std::string footer = command->get_footer();
+            command->footer((footer.empty() ? "" : footer + "\n\n") +
+                            "Global options (--host, --port, --api-key) are listed in 'lemonade --help'.");
+            add_global_options_footer(command);
+        }
+    };
+    add_global_options_footer(&app);
+
     // Parse arguments
     try {
         app.parse(argc, argv);
