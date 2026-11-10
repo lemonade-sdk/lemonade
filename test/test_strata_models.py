@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
-    "strata_models", ROOT / "src" / "cpp" / "resources" / "strata_models.py"
+    "strata_prepare", ROOT / "src" / "cpp" / "resources" / "strata_prepare.py"
 )
 bridge = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(bridge)
@@ -338,22 +338,6 @@ class StrataModelsTest(unittest.TestCase):
                     config, _ = self.prepare()
                 self.assertIn(expected, config["args"])
                 self.assertIn("--vram-reserve-mib", config["args"])
-
-    def test_checkpoint_retains_hub_subdirectory(self):
-        self.assertEqual(
-            bridge.checkpoint(
-                "https://huggingface.co/owner/repo/resolve/main/Q2_0/", "model.gguf"
-            ),
-            "owner/repo:Q2_0/model.gguf",
-        )
-
-    def test_catalog_update_preserves_unrelated_formatting(self):
-        original = '{\n    "other": {"recipe":"other", "labels": ["chat"]}\n}\n'
-        rows = {"Qwen-Strata": {"recipe": "strata", "size": 1}}
-        updated = bridge.update_catalog(original, rows)
-        self.assertIn('"other": {"recipe":"other", "labels": ["chat"]}', updated)
-        self.assertEqual(json.loads(updated)["Qwen-Strata"], rows["Qwen-Strata"])
-        self.assertEqual(bridge.update_catalog(updated, rows), updated)
 
     def test_committed_catalog_is_qwen_engine_only_and_complete(self):
         registry = json.loads(

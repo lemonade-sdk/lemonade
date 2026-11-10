@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from urllib.parse import urlparse
 
 
 def load_setup(control):
@@ -21,120 +20,6 @@ def load_setup(control):
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
-
-
-def checkpoint(url, filename):
-    parts = urlparse(url).path.strip("/").split("/")
-    if len(parts) < 4 or parts[2] != "resolve":
-        raise ValueError(f"Unsupported Strata model URL: {url}")
-    return "/".join(parts[:2]) + ":" + "/".join([*parts[4:], filename])
-
-
-def revision(url):
-    value = urlparse(url).path.strip("/").split("/")[3]
-    return "" if value == "main" else value
-
-
-def catalog(setup):
-    from strata_control import mac_fit
-
-    rows = {}
-    for family, definition in setup.FAMILIES.items():
-        for model, detail in setup.MODELS.items():
-            if family not in detail.get("families", ("qwen", "swift")) or detail.get(
-                "prepare"
-            ):
-                continue
-            ready = bool(definition.get("ready"))
-            stem = {
-                "qwen": "Qwen3.8-Flash-Next",
-                "swift": "Swift-1.5",
-                "coder": "Qwen3.8-Flash-Next-Coder",
-                "unsloth": "Qwen3.8-Flash-Next-Unsloth",
-                "gyro": "Qwen3.8-Flash-Next",
-                "nvfp4": "Qwen3.8-Flash-Next",
-            }[family]
-            name = f"{stem}-{model}-Strata"
-            sources = (
-                {"main": detail["repo"] + ":pack"}
-                if ready
-                else {
-                    "main": checkpoint(
-                        setup.model_hf(definition, model),
-                        setup.model_file(definition, model, 1),
-                    )
-                }
-            )
-            if ready:
-                for filename, (role, *_rest) in setup.NVFP4_REPOS[detail["repo"]][
-                    "files"
-                ].items():
-                    if role in ("dense", "ple", "embd"):
-                        repo = (
-                            setup.NVFP4_GPTQ_REPO
-                            if role in ("ple", "embd")
-                            else detail["repo"]
-                        )
-                        sources[role] = repo + ":" + filename
-            else:
-                sources.update(
-                    {
-                        f"shard_{i}": checkpoint(
-                            setup.model_hf(definition, model),
-                            setup.model_file(definition, model, i),
-                        )
-                        for i in range(2, setup.model_shards(definition, model) + 1)
-                    }
-                )
-            backends = ["cuda"] if ready else ["cuda", "rocm", "sycl"]
-            if family in mac_fit.APP_FAMILIES and model in mac_fit.app_sizes(family):
-                backends.append("metal")
-            rows[name] = {
-                "checkpoints": sources,
-                "recipe": "strata",
-                "suggested": True,
-                "labels": ["chat", "reasoning", "tool-calling"],
-                "size": detail["download_gb"],
-                "min_resident_gb": detail["ram_gb"],
-                "strata": {
-                    "family": family,
-                    "model": model,
-                    "format": "ready" if ready else "gguf",
-                    "backends": backends,
-                    "revisions": {
-                        key: (
-                            setup.NVFP4_REPOS[sources[key].split(":")[0]]["revision"]
-                            if ready
-                            else revision(setup.model_hf(definition, model))
-                        )
-                        for key in sources
-                    },
-                },
-            }
-    for family, definition in setup.OWN_PATH_FAMILIES.items():
-        for model, detail in definition["models"].items():
-            filename = definition["file"].format(q=model)
-            name = (
-                "Qwen3.6-35B-A3B-Strata"
-                if model == "UD-Q4_K_XL"
-                else f"{definition['title']}-{model}-Strata"
-            )
-            rows[name] = {
-                "checkpoint": checkpoint(definition["hf"], filename),
-                "recipe": "strata",
-                "suggested": True,
-                "labels": ["chat", "reasoning", "tool-calling", "mtp"],
-                "size": round(definition["sha256"][filename][0] / 1e9, 1),
-                "min_resident_gb": detail["ram_gb"],
-                "strata": {
-                    "family": family,
-                    "model": model,
-                    "format": "gguf",
-                    "backends": ["cuda", "rocm"],
-                    "revisions": {"main": revision(definition["hf"])},
-                },
-            }
-    return rows
 
 
 def run_tool(control, name, *args):
@@ -197,56 +82,6 @@ def prepare_mtp(setup, control, cache, offline=False):
             )
         marker.touch()
     return runtime
-
-
-def catalog_json(value, level=1):
-    if not isinstance(value, dict):
-        return json.dumps(value)
-    pad = "    " * level
-    fields = [
-        f"{pad}    {json.dumps(key)}: {catalog_json(item, level + 1)}"
-        for key, item in value.items()
-    ]
-    return "{\n" + ",\n".join(fields) + f"\n{pad}}}"
-
-
-def update_catalog(text, rows):
-    decoder = json.JSONDecoder()
-    position = text.index("{") + 1
-    replacements = []
-    remaining = dict(rows)
-    while True:
-        while text[position].isspace() or text[position] == ",":
-            position += 1
-        if text[position] == "}":
-            break
-        name, position = decoder.raw_decode(text, position)
-        position = text.index(":", position) + 1
-        while text[position].isspace():
-            position += 1
-        start = position
-        _, position = decoder.raw_decode(text, position)
-        if name in remaining:
-            replacements.append(
-                (
-                    start,
-                    position,
-                    catalog_json(remaining.pop(name)),
-                )
-            )
-    if remaining:
-        additions = ",\n".join(
-            f"    {json.dumps(name)}: {catalog_json(row)}"
-            for name, row in remaining.items()
-        )
-        replacements.append((position, position, ",\n" + additions + "\n"))
-        start, end, value = replacements[-1]
-        while start > 0 and text[start - 1].isspace():
-            start -= 1
-        replacements[-1] = (start, end, value)
-    for start, end, value in reversed(replacements):
-        text = text[:start] + value + text[end:]
-    return text
 
 
 def prepare(setup, control, request):
@@ -424,24 +259,14 @@ def prepare(setup, control, request):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--control", type=Path, required=True)
-    parser.add_argument("--catalog", type=Path)
-    parser.add_argument("--request", type=Path)
+    parser.add_argument("--request", type=Path, required=True)
     options = parser.parse_args()
-    setup = load_setup(options.control.resolve())
-    if options.catalog:
-        rows = catalog(setup)
-        text = options.catalog.read_text(encoding="utf-8")
-        options.catalog.write_text(
-            update_catalog(text, rows), encoding="utf-8", newline="\n"
-        )
-    elif options.request:
-        prepare(
-            setup,
-            options.control.resolve(),
-            json.loads(options.request.read_text(encoding="utf-8")),
-        )
-    else:
-        parser.error("--catalog or --request is required")
+    control = options.control.resolve()
+    prepare(
+        load_setup(control),
+        control,
+        json.loads(options.request.read_text(encoding="utf-8")),
+    )
 
 
 if __name__ == "__main__":

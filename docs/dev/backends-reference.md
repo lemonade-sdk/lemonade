@@ -281,7 +281,7 @@ Lemonade launches `llama-server` with `--parallel 1` and leaves the upstream `--
 
 ### Strata (`strata`)
 
-Experimental; maintained by Julian Xhokaxhiu. Supports Qwen3.6, Flash-Next, Swift, Coder, Gyro and ready-made NVFP4 packs. Reuses shared weights and bundled Python preparation/argument helpers. Flash models share a ~5.2 GB MTP draft, prepared on first load (`--mtp off` disables it), and use upstream's RAM-guarded KV streaming. Slot telemetry includes upstream decoding counters and solo prefill rates; KV usage measures context tokens, not memory. Engine and Control follow `backend_versions.json`.
+Experimental; maintained by Julian Xhokaxhiu. Runs supported Qwen models using shared weights and Strata's bundled Python preparation tools/server. Engine and Control follow `backend_versions.json`; models are registered in `server_models.json`. Flash MTP (~5.2 GB on first load, `--mtp off` to disable), KV streaming and slot telemetry use upstream support.
 
 ### Backend auto-selection
 
