@@ -25,6 +25,7 @@
 
 #ifdef _WIN32
 // Windows embeds the server
+#include <lemon/agents/host_protocol.h>
 #include <lemon/cli_parser.h>
 #include <lemon/config_file.h>
 #include <lemon/logging_config.h>
@@ -302,11 +303,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         return 1;
     }
 
-    {
-        const std::string host = runtime_config->host();
-        const std::string loopback =
-            (host.empty() || host == "0.0.0.0" || host == "localhost") ? "127.0.0.1" : host;
-        supervise_agent_host("http://" + loopback + ":" + std::to_string(runtime_config->port()));
+    if (const auto loopback = lemon::agents::protocol::loopback_host(runtime_config->host())) {
+        supervise_agent_host(
+            lemon::agents::protocol::loopback_url(*loopback, runtime_config->port()));
+    } else {
+        LOG(WARNING, "Tray") << "Not running the agent host: it only serves a server on this "
+                             << "machine, and this one listens on " << runtime_config->host()
+                             << std::endl;
     }
 
     // Create and run tray UI.  If initialization fails (e.g. no display
