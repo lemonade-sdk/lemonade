@@ -136,7 +136,13 @@ int main(int argc, char** argv) {
     fs::permissions(ctx.paths.state_dir, fs::perms::owner_all, ec);
 
     // The log is opened only by the lock holder, since opening truncates it.
+    // The previous host's log is kept as .1, so a crash can still be looked at.
     const auto init_log = [&ctx] {
+        fs::path previous = ctx.paths.log_file();
+        previous += ".1";
+        std::error_code rotate_ec;
+        fs::remove(previous, rotate_ec);
+        fs::rename(ctx.paths.log_file(), previous, rotate_ec);
         // AixLog opens the name in the system code page; one it can't hold logs nowhere.
         std::string log_name;
         try {

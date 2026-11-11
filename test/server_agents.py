@@ -378,6 +378,26 @@ class AgentManagerTests(unittest.TestCase):
         with open(log, encoding="utf-8") as f:
             self.assertEqual(f.read()[: len(before)], before)
 
+    def test_015b_a_new_host_keeps_the_previous_hosts_log(self):
+        self.cli(["agents", "list"])
+        log = os.path.join(self.state_dir, "agent-host.log")
+        with open(log, encoding="utf-8") as f:
+            before = f.read()
+        with open(os.path.join(self.state_dir, "host.json"), encoding="utf-8") as f:
+            pid = json.load(f)["pid"]
+        self.stop_host()
+        deadline = time.time() + 10
+        while True:
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                break
+            self.assertLess(time.time(), deadline, "the host didn't exit")
+            time.sleep(0.1)
+        self.cli(["agents", "list"])
+        with open(log + ".1", encoding="utf-8") as f:
+            self.assertTrue(f.read().startswith(before))
+
     def test_016_list_reports_the_shim_dir_on_path_before_install(self):
         bin_dir = os.path.join(self.home, ".local", "bin")
         os.makedirs(bin_dir)
