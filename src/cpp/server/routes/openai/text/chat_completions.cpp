@@ -1,5 +1,6 @@
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/message_content.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
@@ -324,8 +325,8 @@ protected:
                     LOG(DEBUG, "Server") << "Response contains tool_calls: " << message["tool_calls"].dump() << std::endl;
                 } else {
                     LOG(DEBUG, "Server") << "Response message does NOT contain tool_calls" << std::endl;
-                    if (message.contains("content")) {
-                        LOG(DEBUG, "Server") << "Message content: " << message["content"].get<std::string>().substr(0, 200) << std::endl;
+                    if (const auto content = openai::message_content(message)) {
+                        LOG(DEBUG, "Server") << "Message content: " << content->substr(0, 200) << std::endl;
                     }
                 }
             }
