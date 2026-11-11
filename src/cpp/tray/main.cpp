@@ -64,7 +64,9 @@ static void create_child_process_job() {
 }
 
 // Keeps lemonade-agent-host running while the tray runs; the job above ends
-// it with the tray. Gives up after 5 restarts in 10 minutes.
+// it with the tray. After 5 restarts in 10 minutes it waits 10 minutes before
+// trying again, since a lemonade CLI would otherwise start a host the tray
+// doesn't own.
 static void supervise_agent_host(const std::string& lemond_url) {
     const std::filesystem::path exe =
         std::filesystem::path(lemon::utils::get_executable_dir()) / "lemonade-agent-host.exe";
@@ -83,6 +85,7 @@ static void supervise_agent_host(const std::string& lemond_url) {
                     lemon::utils::path_to_utf8(exe), {"--persistent", "--lemond", lemond_url}, "",
                     false, false, {});
                 lemon::utils::ProcessManager::wait_for_exit(handle, -1);
+                lemon::utils::ProcessManager::reap_process(handle);
             } catch (const std::exception& e) {
                 LOG(WARNING, "Tray") << "Can't start the agent host: " << e.what() << std::endl;
             }
@@ -95,8 +98,12 @@ static void supervise_agent_host(const std::string& lemond_url) {
                 restarts.pop_front();
             }
             if (restarts.size() > 5) {
-                LOG(ERROR, "Tray") << "The agent host keeps exiting; not restarting it" << std::endl;
-                return;
+                LOG(ERROR, "Tray") << "The agent host keeps exiting; trying again in 10 minutes"
+                                   << std::endl;
+                std::this_thread::sleep_for(std::chrono::minutes(10));
+                restarts.clear();
+                backoff = std::chrono::seconds(1);
+                continue;
             }
             std::this_thread::sleep_for(backoff);
             backoff = std::min(backoff * 2, std::chrono::seconds(60));
