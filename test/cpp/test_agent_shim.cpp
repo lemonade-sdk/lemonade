@@ -34,7 +34,8 @@ int main() {
     for (unsigned char c : unicode) ascii = ascii && c < 0x80;
     check("cmd shim is ASCII", ascii);
 
-    const std::string plist = render_launch_agent_plist("/Apps/R&D <x>/lemonade-agent-host");
+    const std::string plist =
+        render_launch_agent_plist("/Apps/R&D <x>/lemonade-agent-host", "http://127.0.0.1:8000");
     check("LaunchAgent exports what it sources",
           plist.find("set -a;") != std::string::npos && plist.find("set +a;") != std::string::npos);
     check("LaunchAgent reads lemond.conf, then agent-host.env",
@@ -45,6 +46,18 @@ int main() {
     check("LaunchAgent escapes the command for XML",
           plist.find("R&amp;D &lt;x&gt;") != std::string::npos &&
               plist.find("R&D") == std::string::npos);
+    check("LaunchAgent serves the lemond it was enabled for",
+          plist.find("--persistent --lemond 'http://127.0.0.1:8000'") != std::string::npos);
+
+    const std::string dropin =
+        render_systemd_dropin("/opt/my lemonade/lemonade-agent-host", "http://[::1]:8000");
+    check("systemd drop-in replaces ExecStart",
+          dropin.find("[Service]\nExecStart=\nExecStart=") == 0);
+    check("systemd drop-in serves the lemond it was enabled for",
+          dropin.find("\"/opt/my lemonade/lemonade-agent-host\" --persistent --lemond "
+                      "\"http://[::1]:8000\"") != std::string::npos);
+    check("systemd drop-in escapes specifiers and variables",
+          render_systemd_dropin("/x/100%$HOME", "u").find("\"/x/100%%$$HOME\"") != std::string::npos);
 
     const fs::path shim = dir / "bin" / "pi";
     check("missing shim is absent", shim_state(shim) == ShimState::Absent);

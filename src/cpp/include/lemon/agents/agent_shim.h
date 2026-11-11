@@ -26,8 +26,13 @@ std::string render_cmd_shim(
     const std::vector<std::pair<std::string, std::string>>& env_dirs = {});
 
 // The launchd job `lemonade agents enable` writes on macOS. Like the systemd
-// unit, it reads ~/.config/lemonade/lemond.conf and agent-host.env.
-std::string render_launch_agent_plist(const std::string& host_exe);
+// unit, it reads ~/.config/lemonade/lemond.conf and agent-host.env. The host
+// serves lemond_url, the server the CLI used when enabling it.
+std::string render_launch_agent_plist(const std::string& host_exe, const std::string& lemond_url);
+
+// The drop-in `lemonade agents enable` writes for the systemd user unit, so the
+// host serves lemond_url instead of the default port.
+std::string render_systemd_dropin(const std::string& host_exe, const std::string& lemond_url);
 
 bool is_lemonade_shim(const std::filesystem::path& file);
 ShimState shim_state(const std::filesystem::path& file);

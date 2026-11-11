@@ -7,6 +7,7 @@
 #include <lemon_cli/agent_config_file.h>
 #include <lemon_cli/agent_host_client.h>
 #include <lemon/agents/agent_shim.h>
+#include <lemon/agents/host_protocol.h>
 #include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
 #include <lemon/models/registry_types.h>
@@ -887,9 +888,10 @@ static void print_agents_table(const nlohmann::json& listing) {
     }
 }
 
-static int handle_agents_enable(bool enable) {
+static int handle_agents_enable(bool enable, const std::string& lemond_url) {
 #if defined(_WIN32)
     (void)enable;
+    (void)lemond_url;
     std::cout << "On Windows, lemonade starts the agent host when a command needs it."
               << std::endl;
     return 0;
@@ -911,7 +913,7 @@ static int handle_agents_enable(bool enable) {
         (std::filesystem::path(lemon::utils::get_executable_dir()) / "lemonade-agent-host").string();
     std::filesystem::create_directories(plist.parent_path(), ec);
     std::ofstream out(plist);
-    out << lemon::agents::render_launch_agent_plist(host_exe);
+    out << lemon::agents::render_launch_agent_plist(host_exe, lemond_url);
     out.close();
     lemon::utils::ProcessManager::run_process_with_output(
         "launchctl", {"bootout", domain, plist.string()}, [](const std::string&) { return true; },
@@ -926,9 +928,45 @@ static int handle_agents_enable(bool enable) {
     std::cout << "The agent host now starts at login." << std::endl;
     return 0;
 #else
-    const int rc = lemon::utils::ProcessManager::run_process_with_output(
-        "systemctl", {"--user", enable ? "enable" : "disable", "--now", "lemonade-agent-host.service"},
-        [](const std::string& line) { std::cout << line << std::endl; return true; }, "", 60, false);
+    const std::string config_home = lemon::utils::get_environment_variable_utf8("XDG_CONFIG_HOME");
+    const std::filesystem::path dropin_dir =
+        (config_home.empty()
+             ? lemon::utils::path_from_utf8(lemon::utils::get_environment_variable_utf8("HOME")) /
+                   ".config"
+             : lemon::utils::path_from_utf8(config_home)) /
+        "systemd" / "user" / "lemonade-agent-host.service.d";
+    const std::filesystem::path dropin = dropin_dir / "lemond.conf";
+    auto systemctl = [](const std::vector<std::string>& args) {
+        std::vector<std::string> full = {"--user"};
+        full.insert(full.end(), args.begin(), args.end());
+        return lemon::utils::ProcessManager::run_process_with_output(
+            "systemctl", full, [](const std::string& line) { std::cout << line << std::endl; return true; },
+            "", 60, false);
+    };
+    std::error_code ec;
+    int rc = 0;
+    if (enable) {
+        std::filesystem::create_directories(dropin_dir, ec);
+        std::ofstream out(dropin);
+        out << lemon::agents::render_systemd_dropin(
+            lemon::utils::path_to_utf8(
+                std::filesystem::path(lemon::utils::get_executable_dir()) / "lemonade-agent-host"),
+            lemond_url);
+        out.close();
+        if (!out) {
+            std::cerr << "Error: Can't write " << lemon::utils::path_to_utf8(dropin) << "." << std::endl;
+            return 1;
+        }
+        // restart, since enable --now leaves a host serving another lemond running.
+        rc = systemctl({"daemon-reload"});
+        rc = rc != 0 ? rc : systemctl({"enable", "lemonade-agent-host.service"});
+        rc = rc != 0 ? rc : systemctl({"restart", "lemonade-agent-host.service"});
+    } else {
+        rc = systemctl({"disable", "--now", "lemonade-agent-host.service"});
+        std::filesystem::remove(dropin, ec);
+        std::filesystem::remove(dropin_dir, ec);
+        systemctl({"daemon-reload"});
+    }
     if (rc != 0) {
         std::cerr << "Error: systemctl --user " << (enable ? "enable" : "disable")
                   << " lemonade-agent-host.service failed." << std::endl;
@@ -955,8 +993,17 @@ struct AgentsCommand {
 
 static int handle_agents_command(lemonade::LemonadeClient& client, const CliConfig& config,
                                  const AgentsCommand& agents) {
-    if (agents.enable->count() > 0 || agents.disable->count() > 0) {
-        return handle_agents_enable(agents.enable->count() > 0);
+    if (agents.disable->count() > 0) {
+        return handle_agents_enable(false, "");
+    }
+    if (agents.enable->count() > 0) {
+        const auto loopback = lemon_cli::loopback_target(config.host);
+        if (!loopback || config.is_ssl) {
+            std::cerr << "Error: Agents need a Lemonade server on this machine; " << config.host
+                      << " isn't one." << std::endl;
+            return 1;
+        }
+        return handle_agents_enable(true, lemon::agents::protocol::loopback_url(*loopback, config.port));
     }
     std::string token;
     try {

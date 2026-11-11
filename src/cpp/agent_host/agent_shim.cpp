@@ -98,13 +98,14 @@ std::string render_cmd_shim(const std::string& agent_id, const fs::path& target,
            "exit /b %ERRORLEVEL%\r\n";
 }
 
-std::string render_launch_agent_plist(const std::string& host_exe) {
+std::string render_launch_agent_plist(const std::string& host_exe, const std::string& lemond_url) {
     std::string command = "set -a;";
     for (const char* file : {"lemond.conf", "agent-host.env"}) {
         const std::string path = "\"$HOME/.config/lemonade/" + std::string(file) + "\"";
         command += " [ -f " + path + " ] && . " + path + ";";
     }
-    command += " set +a; exec " + posix_quote(host_exe) + " --persistent";
+    command += " set +a; exec " + posix_quote(host_exe) + " --persistent --lemond " +
+               posix_quote(lemond_url);
     std::string escaped;
     for (char c : command) {
         switch (c) {
@@ -131,6 +132,23 @@ std::string render_launch_agent_plist(const std::string& host_exe) {
            "  <key>RunAtLoad</key><true/>\n"
            "  <key>KeepAlive</key><true/>\n"
            "</dict></plist>\n";
+}
+
+std::string render_systemd_dropin(const std::string& host_exe, const std::string& lemond_url) {
+    // systemd expands % specifiers and $ variables even inside quotes.
+    auto quote = [](const std::string& value) {
+        std::string out = "\"";
+        for (char c : value) {
+            if (c == '"' || c == '\\') {
+                out += '\\';
+            }
+            out += c == '%' ? std::string("%%") : c == '$' ? std::string("$$") : std::string(1, c);
+        }
+        return out + "\"";
+    };
+    return "[Service]\n"
+           "ExecStart=\n"
+           "ExecStart=" + quote(host_exe) + " --persistent --lemond " + quote(lemond_url) + "\n";
 }
 
 bool is_lemonade_shim(const fs::path& file) {
