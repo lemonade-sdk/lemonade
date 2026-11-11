@@ -66,6 +66,7 @@ nav:
       - Fedora: guide/install/fedora.md
       - Debian: guide/install/debian.md
       - Docker: guide/install/docker.md
+      - Flatpak: guide/install/flatpak.md
       - macOS: guide/install/macos.md
     - Local Server Concepts: guide/concepts.md
     - Lemonade App:
