@@ -610,9 +610,16 @@ the change and reports the change as its error. A refresh interrupted this way
 asks the new server instead of reporting a disconnect. A connection change clears
 the cached schema, ETag, server recipe names and `/system-info` snapshot. The
 model list and health snapshot of the previous server stay on screen until the
-refresh that follows the change replaces them. Requests that do not return JSON
-through the client (backend install and model pull streams, WebSocket log and
-realtime streams, file downloads) are not bound to a snapshot.
+refresh that follows the change replaces them. Backend install and model pull
+streams stop at the first chunk read after the change, report the change as
+their error, and neither report completion nor poll the new server's download
+list for the old job. The log and realtime transcription WebSockets are closed
+when the connection changes, drop messages that arrive afterwards, and do not
+fall back to a legacy port of another server. Generated audio, speech and 3D
+files that arrive after the change are discarded before an object URL is made.
+The Inspect span socket keeps its own socket identity check, the MCP panel's
+probe requests and the body-less job and cloud-key mutations are not bound to a
+snapshot.
 
 The catalog is revalidated when the app connects, when the connection changes,
 whenever `/system-info` is refreshed (which includes window focus and backend

@@ -36,6 +36,16 @@ assert.match(client, /private async _json<T = unknown>[\s\S]*?this\.assertCurren
   'JSON answers must be dropped when the connection changed while they were in flight');
 assert.match(client, /if \(!this\.isCurrentConnection\(connection\)\) \{\s*await reader\.cancel\(\)/,
   'a chat stream must stop when the connection changes');
+for (const stream of ['install', 'pull']) {
+  assert.match(client, new RegExp(`_fetch\\('/api/v1/${stream}'[\\s\\S]*?_readForConnection\\(connection, reader\\)`),
+    `the ${stream} stream must stop when the connection changes`);
+}
+assert.match(client, /new WebSocket\(wsUrl\);\s*const current = this\._bindSocketToConnection\(socket, connection\);/,
+  'WebSocket streams must be bound to the connection that opened them');
+assert.doesNotMatch(client, /resp\.blob\(\)[\s\S]{0,200}createObjectURL/,
+  'generated files must go through the connection-bound download helper');
+assert.match(manager, /<ExternalCheckpointFields\s+roles=\{selectedExternalRoles \?\? \[\]\}/,
+  'the add-model panel must render the declared checkpoint roles');
 assert.match(manager, /externalCheckpointRoles\(selectedCustomRecipeName\)/,
   'external recipes must take their checkpoint fields from the schema row');
 const presentation = read('modelPresentation.ts');
@@ -51,7 +61,7 @@ assert.match(manager, /const backendCatalog = useBackendCatalog\(\);/,
 
 const suite = path.resolve(__dirname, '../../../test/app');
 let failed = false;
-for (const file of ['backendCatalog.test.cjs', 'recipeForm.test.cjs', 'schemaRecipeOptions.test.cjs']) {
+for (const file of ['backendCatalog.test.cjs', 'connectionStreams.test.cjs', 'recipeForm.test.cjs', 'schemaRecipeOptions.test.cjs']) {
   const result = spawnSync(process.execPath, [path.join(suite, file)], { stdio: 'inherit' });
   if (result.error || result.status !== 0) failed = true;
 }
