@@ -327,7 +327,7 @@ int main(int argc, char** argv) {
     const auto cancelled_capture = utils::ProcessManager::capture_output(capture_binary, {"--capture-helper", "wait"}, 1024, 1000, [] { return true; });
     check(cancelled_capture.cancelled, "CancelledProbeDoesNotSpawn");
     const auto* temporary = std::getenv("TMPDIR");
-    const auto scratch = std::filesystem::path(temporary ? temporary : ".synagent/scratch/backend-v2-4d1b/temp") / "runtime-consumer-fixture";
+    const auto scratch = std::filesystem::absolute(std::filesystem::path(temporary ? temporary : ".synagent/scratch/backend-v2-4d1b/temp")) / "runtime-consumer-fixture";
     std::filesystem::remove_all(scratch);
     std::filesystem::create_directories(scratch / "snapshots" / "active");
     std::filesystem::create_directories(scratch / "blobs");
