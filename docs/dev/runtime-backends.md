@@ -515,69 +515,94 @@ success; offline validation must be requested explicitly.
 
 ## Shared renderer configuration
 
-The desktop and web renderer obtain external recipes from the selected server's
-`backends/schema` response. Schema, control and definition versions must all be
-1. Unknown controls, incompatible control/type pairs, unsafe numeric values and
-malformed contracts disable external submission with an explanation. A compatible
-recipe with zero execution options has an explicit empty-options message.
-Authentication failure, an unreachable server, a missing schema endpoint and an
-unknown recipe have distinct messages. Legacy forms remain available on servers
-without the schema endpoint, with a compatibility notice.
+The desktop and web app share one renderer under `src/app/src`. Its backend
+catalog client (`features/backends/backendCatalog.ts`) reads the selected
+server's `backends/schema` response, revalidates it with `If-None-Match`, and
+publishes the result through `features/backends/catalogState.ts`. Schema, control
+and definition versions must all be 1; any other version, a malformed contract,
+an unknown control, an incompatible control/type pair or an unsafe numeric value
+disables external submission with an explanation. Authentication failure, an
+unreachable server and a missing schema endpoint are distinct states. On a server
+without the schema endpoint the Configuration tab keeps the options it derives
+from `/system-info` and shows a legacy-options notice.
 
 External recipe rows also export `backend_option`: the exact option-driven launch
 selector name, or null for a fixed backend. This additive v1 field exposes no
 executable, arguments, environment or installation records. Older compatible
 responses may identify a selector with one unambiguous `supported_backends` UI
-hint. Without either identity, the client leaves backend selection to the server;
-it does not guess from an option suffix. Runtime choices and setup messages come
-from that server's `/system-info`, including when the client is another OS.
+hint. The renderer resolves a recipe's backend option in this order: the schema
+selector, the `BACKEND`-typed option in `/system-info`, and only then the
+`<recipe>_backend` convention, which it accepts for a built-in schema row only
+when that row lists the option and unconditionally only when the server has no
+schema at all. For an external row without a selector the backend is left to the
+server. Runtime choices and setup messages come from that server's
+`/system-info`, including when the client is another OS.
 
-The retained eleven-recipe presentation adapter preserves built-in labels, order,
-backend choices, context slider, resets, pin and save controls. Its context
-fallback remains 4096. Missing UI metadata does not disable those fields. Other
-built-in recipes retain their existing presentation. External identities and
-option names are open strings with own-property-safe lookups and no legacy
-camelCase/API alias conversion.
+Built-in recipes keep the Configuration tab's own fields (context size, backend
+and device selectors, backend arguments). Where the schema describes one of those
+options the tab takes its label and help from it, renders an enum as a select and
+applies the declared range to a numeric input. Recipe display names come from the
+schema and `/system-info`; the renderer's own name table is the fallback for a
+recipe the server does not name and for the compact labels. Recipe and option
+names are open strings read with own-property-safe lookups.
 
-External forms support text, textarea, number, checkbox and typed select controls.
-Missing optional UI hints derive controls from the declared type or enum. The
-form shows the schema default, server default excluding saved overrides, effective
-value and saved override separately. Numeric draft text is validated as a whole;
-partial parses, nonfinite values, unsafe integers, fractional integers and range
+External recipes replace those fields with the schema form
+(`components/SchemaModelOptions.tsx`, `components/SchemaRecipeOptions.tsx`). It
+supports text, textarea, number, checkbox and typed select controls; a missing UI
+hint derives the control from the declared type or enum. The form shows the
+schema default, server default excluding saved overrides, effective value and
+saved override separately. Numeric draft text is validated as a whole; partial
+parses, nonfinite values, unsafe integers, fractional integers and range
 violations cannot submit. Enum indices preserve JSON types. False, zero, empty
-strings and minus one remain values unless that exact scalar is an unset sentinel.
-Sentinels resolve before ordinary type/range/enum validation.
+strings and minus one remain values unless that exact scalar is an unset
+sentinel. Sentinels resolve before ordinary type/range/enum validation. A
+compatible recipe with zero execution options has an explicit empty-options
+message.
 
 **Save** posts only edited API option keys to `/models/{id}/options`. Untouched
 fields are omitted. **Use inherited value** previews the server default and sends
-null when explicitly submitted, clearing a saved override on Save. **Load** first
-dry-runs those keys, then uses fresh effective values for installation preflight
-and `/load` with `save_options:false`. Load does not persist edits. Pin is a
-separate load-only control, excluded from Save and dry-run bodies.
+null when explicitly submitted, clearing a saved override on Save. **Validate**
+posts the same keys with `dry_run`, which persists nothing. Loading a model whose
+recipe is external (`features/backends/catalogLoad.ts`) checks the edited keys
+against the schema, dry-runs them, resolves the backend from the fresh effective
+values, installs it when `/system-info` reports it installable, pulls the model
+when it is not downloaded, and then posts `/load` with `save_options:false`. Load
+does not persist edits. Built-in recipes load through `/load` directly and rely
+on the server's own validation and backend installation.
+
+The add-model panel offers every external recipe of the catalog under the
+capabilities its `supported_modes` declare, next to the recipes `/system-info`
+reports.
 
 Catalog state stays in memory and is keyed by effective API URL, opaque
 authentication generation and catalog ID. Raw API keys are absent from those
-identities and error messages. Requests capture a connection generation and
-cannot retry a mutation against another server. Connection changes clear cached
-schemas, ETags, names and availability; obsolete responses are discarded. The
-browser bridge keeps settings and credentials client-local and emits local and
-cross-tab notifications while using the current origin as its server.
+identities and error messages. Catalog, option and catalog-load requests capture
+a connection snapshot and cannot retry a mutation against another server; a
+response that arrives after the URL or key changed is discarded. A connection
+change clears the cached schema, ETag, server recipe names and `/system-info`
+snapshot. The renderer's other requests (health, model list, chat) keep their
+existing per-request handling and are not bound to a snapshot.
 
-Opening/reopening a form, connection/backend updates, focus while open and each
-Save/Load revalidate the catalog. Changed catalogs refresh untouched values and
-revalidate retained dirty edits by exact key. Removed edits stay visible until
-discarded. The submission discovering a changed catalog stops for review before
-mutation. Invalid retained edits must be corrected before another submission.
+The catalog is revalidated when the app connects, when the connection changes,
+whenever `/system-info` is refreshed (which includes window focus and backend
+installs) and on each Save or Validate. A changed catalog refreshes untouched
+values and revalidates retained dirty edits by exact key. Removed edits stay
+visible until discarded. The submission discovering a changed catalog stops for
+review before mutation. Invalid retained edits must be corrected before another
+submission.
 
 Frontend checks use Node/CJS with the existing TypeScript transpiler and
 `react-dom/server`; no browser testing package or runtime dependency is required.
-Run `npm run typecheck` separately from the web bundle: its loader uses
-`transpileOnly`. `test/catalog_ui_exercise.py --output DIRECTORY` uses an installed
-Chrome with GPU disabled, the real served bridge, isolated server data and the
-existing deterministic CPU engine. It records actual browser stages or an
-explicit unverified result when no browser is available. Native Tauri behavior
-and distribution packaging require their own environment-specific qualification;
-see [platform qualification](platform-qualification.md).
+`test/app/backendCatalog.test.cjs`, `recipeForm.test.cjs` and
+`schemaRecipeOptions.test.cjs` cover the client, the form model and the form
+markup, and `npm run test:runtime` in `src/app` runs them through
+`tests/backend-catalog.runtime.cjs`. Run `npm run typecheck` separately from the
+web bundle: its loader uses `transpileOnly`. `test/catalog_ui_exercise.py` drove
+the previous renderer's options dialog through Chrome and has no counterpart for
+this renderer yet: its browser driver was removed, so the script cannot run.
+Native Tauri behavior and distribution packaging require their own
+environment-specific qualification; see
+[platform qualification](platform-qualification.md).
 
 `test/catalog_fourth_exercise.py --freeze FILE --output FILE` adds the external
 definition `test/fixtures/catalog-fourth.json` to an isolated server and drives
