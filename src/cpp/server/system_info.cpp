@@ -476,7 +476,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"gfx942", "AMD Instinct MI300X / MI300A (CDNA3)"},
     {"gfx950", "AMD Instinct MI350X / MI355X (CDNA4)"},
     {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
-    {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
+    {"gfx110X", "Radeon RX 7000 series / 780M/760M/740M (RDNA3)"},
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
     {"gfx1152", "Radeon 840M/860M (Krackan Point)"},
@@ -2027,6 +2027,12 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     if (device_lower.find("840m") != std::string::npos ||
         device_lower.find("860m") != std::string::npos) {
         return "gfx1152";
+    }
+
+    if (device_lower.find("780m") != std::string::npos ||
+        device_lower.find("760m") != std::string::npos ||
+        device_lower.find("740m") != std::string::npos) {
+        return "gfx110X";
     }
 
     if (device_lower.find("r9700") != std::string::npos ||
