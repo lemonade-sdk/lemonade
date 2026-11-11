@@ -760,7 +760,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
 
-A request that continues earlier responses, through `previous_response_id`, `conversation` or an `item_reference` input, is rejected on a `collection.router` model, since the candidate picked for this turn may not be the one holding them. Resend the full `input`, or send the request to the `model` the earlier response reports.
+A request that continues earlier responses, through `previous_response_id`, `conversation` or an `item_reference` input, is rejected on a `collection.router` model, since the candidate picked for this turn may not be the one holding them. Resend the full `input`, or send the request to the candidate named in the earlier response's `x_lemonade_route.route_to`.
 
 ### Examples
 

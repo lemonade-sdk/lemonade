@@ -101,6 +101,19 @@ bool non_empty(const json& value) {
     return false;
 }
 
+// OpenAI lets an item reference omit its type, so a bare {"id": ...} is one too;
+// a message item that carries its own id also has a role or content.
+bool is_item_reference(const json& item) {
+    if (!item.is_object()) return false;
+    const auto type = item.find("type");
+    if (type != item.end() && !type->is_null()) {
+        return type->is_string() && type->get_ref<const std::string&>() == "item_reference";
+    }
+    const auto id = item.find("id");
+    return id != item.end() && non_empty(*id) && !item.contains("role") &&
+           !item.contains("content");
+}
+
 // Earlier responses live in the backend that created them, so a request that
 // refers to them can only be answered by that backend.
 bool references_backend_state(const json& body) {
@@ -110,9 +123,7 @@ bool references_backend_state(const json& body) {
     if (conversation != body.end() && non_empty(*conversation)) return true;
     const auto input = body.find(kInput.name);
     if (input == body.end() || !input->is_array()) return false;
-    return std::any_of(input->begin(), input->end(), [](const json& item) {
-        return item.is_object() && item.value("type", std::string()) == "item_reference";
-    });
+    return std::any_of(input->begin(), input->end(), is_item_reference);
 }
 
 class ResponsesRoute : public ModelRoute {
@@ -135,8 +146,8 @@ public:
             "A request that continues earlier responses, through `previous_response_id`, "
             "`conversation` or an `item_reference` input, is rejected on a `collection.router` "
             "model, since the candidate picked for this turn may not be the one holding them. "
-            "Resend the full `input`, or send the request to the `model` the earlier response "
-            "reports.",
+            "Resend the full `input`, or send the request to the candidate named in the earlier "
+            "response's `x_lemonade_route.route_to`.",
         };
         s.args = {
             kInput, model_loading::kModel, kMaxOutputTokens, kPreviousResponseId, generation::kTemperature,
@@ -202,7 +213,7 @@ protected:
                 "This request continues earlier responses, which are held by the backend that "
                 "served them, and router collection '" + req.model + "' may select a different "
                 "candidate for this turn. Resend the full 'input', or send the request to the "
-                "'model' reported by the earlier response.");
+                "candidate named in the earlier response's 'x_lemonade_route.route_to'.");
             return false;
         }
         // Router policies call backends here, before run() does.

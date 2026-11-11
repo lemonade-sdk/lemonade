@@ -1353,6 +1353,15 @@ class RouterTests(ServerTestBase):
                 "item_reference",
                 {"input": [{"type": "item_reference", "id": "msg_abc123"}]},
             ),
+            ("item_reference without type", {"input": [{"id": "msg_abc123"}]}),
+            (
+                "item_reference with null type",
+                {"input": [{"type": None, "id": "msg_abc123"}]},
+            ),
+            (
+                "item_reference after an item with a non-string type",
+                {"input": [{"type": 123}, {"id": "msg_abc123"}]},
+            ),
         ):
             with self.subTest(name):
                 self._assert_chain_rejected(
