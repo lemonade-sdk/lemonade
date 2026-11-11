@@ -239,7 +239,7 @@ jobs:
         if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         run: |
           cp build/resources/backend_versions.json src/cpp/resources/backend_versions.json
-          .venv/bin/python docs/tools/gen_api_boilerplate.py --lemond build/lemond --refresh vllm
+          .venv/bin/python docs/tools/gen_api_boilerplate.py --lemond build/lemond
 
       - name: Upload recorded API examples
         if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')

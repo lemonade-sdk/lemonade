@@ -576,7 +576,7 @@ Recorded responses live in `docs/tools/api_examples_cache.json`, one entry per e
 - the route `id` and the example's `format`
 - the canonical JSON of its `args` and of every step in its `setup`
 
-A new example or a changed request changes the key and invalidates the entry. A schema change does not, because [Drift Check](#drift-check) validates every entry against the current schemas. Valid entries are never re-run, so examples change only when one of those inputs does. The cache is first warmed on a machine that runs every backend.
+A new example or a changed request changes the key and invalidates the entry. A schema change does not, because [Drift Check](#drift-check) validates every entry against the current schemas. Valid entries are skipped unless their recipe is refreshed with `--refresh <recipe>`. The cache is first warmed on a machine that runs every backend.
 
 A recorded response shows the shape of the route's response. Its values can fall behind what lemond returns today, for example after a model's weights change, and that is fine: Drift Check holds the shape, not the values.
 
