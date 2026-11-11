@@ -206,9 +206,9 @@ int main() {
             WrappedServer* resident = server.get();
             RoutingHelperTestHook::add(MediaResponseTestHook::router(frontend), std::move(server));
             const std::vector<std::pair<std::string, std::string>> invalid = {
-                {R"({"prompt":"rain"})", R"({"error":{"message":"Missing 'model' field in request","type":"invalid_request_error"}})"},
-                {R"({"model":"user.fixture"})", R"({"error":{"message":"Missing 'prompt' field in request","type":"invalid_request_error"}})"},
-                {R"({"model":"user.fixture","prompt":0})", R"({"error":{"message":"'prompt' must be a string","type":"invalid_request_error"}})"},
+                {R"({"prompt":"rain"})", R"({"error":{"code":"missing_argument","message":"Missing required argument 'model'","type":"invalid_request_error"}})"},
+                {R"({"model":"user.fixture"})", R"({"error":{"code":"missing_argument","message":"Missing required argument 'prompt'","type":"invalid_request_error"}})"},
+                {R"({"model":"user.fixture","prompt":0})", R"({"error":{"code":"invalid_argument","message":"Invalid value for 'prompt': expected string","type":"invalid_request_error"}})"},
                 {R"({"model":"user.wrong","prompt":"rain"})", R"({"error":{"code":"model_not_applicable","message":"Model 'user.wrong' is not an audio-generation model","type":"invalid_request_error"}})"},
                 {R"({"model":"user.fixture","prompt":"rain","response_format":"mp3"})", R"fixture({"error":{"message":"response_format 'mp3' is not supported by this model (supported: wav)","type":"invalid_request_error"}})fixture"}
             };

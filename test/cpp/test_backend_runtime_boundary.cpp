@@ -40,7 +40,7 @@ int main() {
         !entry->spec.definition && entry->spec.executable_definition == bound, "V2EntryNeverManufacturesV1Definition");
     check(throws([&] { entry->backend_ops()->resolve_checkpoint_path(model(), {}); }, "unavailable") &&
         !entry->backend_ops()->is_downloaded(model(), {}) &&
-        throws([&] { entry->backend_ops()->download_model(model(), false, {}, {}); }, "requires model manager"),
+        throws([&] { entry->backend_ops()->download_model(model(), false, {}, {}); }, "requires fetch service"),
         "V2ManagementCannotFallBackToAmbientLegacyEffects");
     const auto& base = ex::Inspection::program(bound->compiled());
     for (int mutation = 0; mutation < 8; ++mutation) {
