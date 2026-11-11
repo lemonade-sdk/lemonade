@@ -350,6 +350,52 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    def test_000b_register_keeps_cost_metadata(self):
+        """Cost fields sent at registration are saved and listed on /models.
+        /pull registers through the same path before it downloads."""
+        canonical_name = f"user.CostMetadata-{uuid.uuid4().hex[:8]}"
+        cost = {
+            "cost_tier": "low",
+            "cost_input_per_million": 0.25,
+            "cost_output_per_million": 1.5,
+            "latency_ms_hint": 120,
+        }
+        try:
+            response = requests.post(
+                f"{self.base_url}/models/register",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "llamacpp",
+                    "checkpoint": "example/cost-metadata-test:Q4_K_M",
+                    **cost,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            public_name = response.json()["model_name"]
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200, models_response.text)
+            entry = next(
+                model
+                for model in models_response.json()["data"]
+                if model["id"] == public_name
+            )
+            for key, value in cost.items():
+                self.assertEqual(entry.get(key), value, f"{key} in {entry}")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
     def test_001_live_endpoint(self):
         """Test the /live endpoint for load balancer health checks."""
         response = requests.get(

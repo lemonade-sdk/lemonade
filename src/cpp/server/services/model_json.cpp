@@ -5,6 +5,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/models/registry_types.h"
 #include "lemon/router.h"
+#include "lemon/routing_classifier_services.h"
 
 namespace lemon {
 
@@ -122,12 +123,7 @@ json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int 
         model_json["max_completion_tokens"] = info.max_output_tokens;
     }
 
-    if (info.cost_input_per_million >= 0) {
-        model_json["cost_input_per_million"] = info.cost_input_per_million;
-    }
-    if (info.cost_output_per_million >= 0) {
-        model_json["cost_output_per_million"] = info.cost_output_per_million;
-    }
+    model_json.update(resolve_model_cost_info(info).to_json());
 
     if (!info.system_prompt.empty()) {
         model_json["system_prompt"] = info.system_prompt;
@@ -231,8 +227,10 @@ nlohmann::ordered_json ModelJson::schema() {
             "registry_source": {"type": "string", "description": "Remote registry the checkpoint downloads from: `huggingface` or `modelscope`."},
             "recipe_options": {"type": "object", "description": "The model's own options: those its registry row authors, with what was saved in `recipe_options.json` on top."},
             "cloud_provider": {"type": "string", "description": "Cloud models only: the provider that serves the model."},
-            "cost_input_per_million": {"type": "number", "description": "Cloud models only: USD per million input tokens, when the provider reports it."},
-            "cost_output_per_million": {"type": "number", "description": "Cloud models only: USD per million output tokens, when the provider reports it."},
+            "cost_tier": {"type": "string", "description": "`free`, `low`, `medium` or `high`, when the model's entry sets it."},
+            "cost_input_per_million": {"type": "number", "description": "USD per million input tokens: the provider's price for a cloud model, or the model entry's own."},
+            "cost_output_per_million": {"type": "number", "description": "USD per million output tokens: the provider's price for a cloud model, or the model entry's own."},
+            "latency_ms_hint": {"type": "number", "description": "Expected latency in milliseconds, when the model's entry sets it."},
             "system_prompt": {"type": "string", "description": "Omni collections only: the collection's system prompt override."},
             "version": {"description": "Router collections only: the policy document's version."},
             "routing": {"type": "object", "description": "Router collections only: the routing policy."}
