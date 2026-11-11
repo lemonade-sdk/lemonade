@@ -142,29 +142,33 @@ FilterResult filter_hardware(const std::map<std::string, ModelInfo>& models,
             }
         }
 
-        // Special rule: filter out gpt-oss-20b-FLM on Windows systems with less than 48 GB RAM
+        // Special RAM rules for FLM models on Windows. These only apply on XDNA2:
+        // XDNA3 (Medusa) runs the model in NPU memory (carve-out), not system RAM.
+        // TODO: temporary — revisit once an official XDNA3 FLM build ships with its
+        // own NPU memory requirements, so the right threshold can be used here.
 #ifdef _WIN32
-        if (!filter_out && name == "gpt-oss-20b-FLM" && availability.system_ram_gb > 0.0 &&
-            availability.system_ram_gb < 48.0) {
-            filter_out = true;
-            cause = RejectCause::MemoryFit;
-            std::ostringstream oss;
-            oss << std::fixed << std::setprecision(1);
-            oss << "The gpt-oss-20b-FLM model requires at least 48 GB of RAM. "
-                << "Your system has " << availability.system_ram_gb << " GB.";
-            filter_reason = oss.str();
-        }
+        if (availability.npu_family != "XDNA3") {
+            if (!filter_out && name == "gpt-oss-20b-FLM" && availability.system_ram_gb > 0.0 &&
+                availability.system_ram_gb < 48.0) {
+                filter_out = true;
+                cause = RejectCause::MemoryFit;
+                std::ostringstream oss;
+                oss << std::fixed << std::setprecision(1);
+                oss << "The gpt-oss-20b-FLM model requires at least 48 GB of RAM. "
+                    << "Your system has " << availability.system_ram_gb << " GB.";
+                filter_reason = oss.str();
+            }
 
-        // Special rule: filter out qwen3.6-moe-35b-a3b-FLM on Windows systems with less than 64 GB RAM
-        if (!filter_out && name == "qwen3.6-moe-35b-a3b-FLM" &&
-            availability.system_ram_gb > 0.0 && availability.system_ram_gb < 64.0) {
-            filter_out = true;
-            cause = RejectCause::MemoryFit;
-            std::ostringstream oss;
-            oss << std::fixed << std::setprecision(1);
-            oss << "The qwen3.6-moe-35b-a3b-FLM model requires at least 64 GB of RAM. "
-                << "Your system has " << availability.system_ram_gb << " GB.";
-            filter_reason = oss.str();
+            if (!filter_out && name == "qwen3.6-moe-35b-a3b-FLM" &&
+                availability.system_ram_gb > 0.0 && availability.system_ram_gb < 64.0) {
+                filter_out = true;
+                cause = RejectCause::MemoryFit;
+                std::ostringstream oss;
+                oss << std::fixed << std::setprecision(1);
+                oss << "The qwen3.6-moe-35b-a3b-FLM model requires at least 64 GB of RAM. "
+                    << "Your system has " << availability.system_ram_gb << " GB.";
+                filter_reason = oss.str();
+            }
         }
 #endif
 
