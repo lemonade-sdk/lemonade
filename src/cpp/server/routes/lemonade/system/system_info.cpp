@@ -210,7 +210,7 @@ ordered_json system_info_schema() {
                                     "project_url": {"type": "string", "description": "The upstream project's URL. Metadata may describe the upstream project rather than a custom or system-provided binary."},
                                     "release_url": {"type": "string", "description": "Where the backend's release asset downloads from."},
                                     "download_filename": {"type": "string", "description": "The release asset's filename."},
-                                    "can_uninstall": {"type": "boolean", "description": "Whether the backend can be uninstalled. Lemonade sets it only on a backend that does not run on this operating system, always to `true`, so a missing value also means `true`."}
+                                    "can_uninstall": {"type": "boolean", "description": "Whether Lemonade can uninstall this backend. This field does not indicate whether the backend is installed; clients must also check `state` before showing the uninstall button. See [Backend Uninstall Availability](#backend-uninstall-availability) for the requirements. If `false`, hide the uninstall button. Defaults to `true` when omitted."}
                                 }
                             }
                         }
@@ -282,6 +282,15 @@ public:
             "\n"
             "The same backend can carry different labels on different operating systems. Each entry "
             "in a recipe's `backends` object reports the labels for this system's operating system.",
+            "### Backend Uninstall Availability\n"
+            "\n"
+            "A backend can be uninstalled only when all of the following apply:\n"
+            "\n"
+            "- It is installed: its state is `installed`, `update_required`, or `update_available`.\n"
+            "- It is not system-provided.\n"
+            "- It does not use a path-based/custom binary override.\n"
+            "- For FLM, the executable in use is inside Lemonade's managed FLM install directory, "
+            "including its subdirectories.",
         };
 
         RouteResponse response;
