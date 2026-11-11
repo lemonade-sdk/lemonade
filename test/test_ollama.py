@@ -24,6 +24,7 @@ except ImportError:
 from utils.server_base import (
     ServerTestBase,
     model_recipe_options,
+    pull_model_with_retry,
     run_server_tests,
     unload_all_models,
 )
@@ -86,23 +87,13 @@ class OllamaTests(ServerTestBase):
     def ensure_model_pulled(self):
         """Ensure the test model is downloaded."""
         if not OllamaTests._model_pulled:
-            response = requests.post(
-                f"{self.base_url}/pull",
-                json={"model_name": ENDPOINT_TEST_MODEL, "stream": False},
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(response.status_code, 200)
+            pull_model_with_retry(ENDPOINT_TEST_MODEL)
             OllamaTests._model_pulled = True
 
     def ensure_tool_calling_model_pulled(self):
         """Ensure the tool-calling model is downloaded."""
         if not OllamaTests._tool_calling_model_pulled:
-            response = requests.post(
-                f"{self.base_url}/pull",
-                json={"model_name": TOOL_CALLING_MODEL, "stream": False},
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(response.status_code, 200)
+            pull_model_with_retry(TOOL_CALLING_MODEL)
             OllamaTests._tool_calling_model_pulled = True
 
     # ========================================================================
@@ -679,13 +670,7 @@ class OllamaTests(ServerTestBase):
         """Test /api/chat with image input (vision) using a vision model."""
         if sys.platform == "darwin":
             self.skipTest("Vision model not supported on macOS")
-        # Pull the vision model
-        response = requests.post(
-            f"{self.base_url}/pull",
-            json={"model_name": VISION_MODEL, "stream": False},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200)
+        pull_model_with_retry(VISION_MODEL)
 
         # 10x10 red PNG to avoid backend assertions on tiny images.
         png_b64 = (
@@ -720,13 +705,7 @@ class OllamaTests(ServerTestBase):
             self.skipTest("sd-cpp not supported on macOS")
         if sys.platform == "linux" and platform.machine() == "aarch64":
             self.skipTest("sd-cpp not supported on Linux ARM64")
-        # Pull the SD model first
-        response = requests.post(
-            f"{self.base_url}/pull",
-            json={"model_name": SD_MODEL, "stream": False},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200)
+        pull_model_with_retry(SD_MODEL)
 
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/generate",
@@ -1022,6 +1001,107 @@ class OllamaTests(ServerTestBase):
             self.assertIn(
                 "context", error_payloads[0].get("error", {}).get("message", "")
             )
+
+    # ========================================================================
+    # Requests as the official Ollama clients send them
+    # ========================================================================
+
+    # Ollama's Go client (api.Client, which the `ollama` CLI uses) always sends
+    # both "model" and "name" on show, pull and delete, and leaves the one it
+    # does not use empty. Ollama reads cmp.Or(model, name).
+
+    @staticmethod
+    def _go_show_request(model="", name=""):
+        return {
+            "model": model,
+            "system": "",
+            "template": "",
+            "verbose": False,
+            "options": None,
+            "name": name,
+        }
+
+    def test_029_show_go_client_run_request(self):
+        """`ollama run X` calls /api/show with model set and name empty."""
+        self.ensure_model_pulled()
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/show",
+            json=self._go_show_request(model=ENDPOINT_TEST_MODEL),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("details", response.json())
+
+    def test_030_show_go_client_show_request(self):
+        """`ollama show X` calls /api/show with name set and model empty."""
+        self.ensure_model_pulled()
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/show",
+            json=self._go_show_request(name=ENDPOINT_TEST_MODEL),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("details", response.json())
+
+    def test_031_pull_go_client_request(self):
+        """`ollama pull X` streams /api/pull with name set and model empty."""
+        self.ensure_model_pulled()
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/pull",
+            json={
+                "model": "",
+                "username": "",
+                "password": "",
+                "name": ENDPOINT_TEST_MODEL,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+            stream=True,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        chunks = [json.loads(line) for line in response.iter_lines() if line]
+        self.assertGreater(len(chunks), 0)
+        self.assertEqual(chunks[-1].get("status"), "success", chunks[-1])
+
+    def test_032_chat_think_levels(self):
+        """/api/chat accepts every think value Ollama accepts: a boolean or a level."""
+        self.ensure_model_pulled()
+        for think in (True, False, "low", "medium", "high", "max"):
+            with self.subTest(think=think):
+                response = requests.post(
+                    f"{OLLAMA_BASE_URL}/api/chat",
+                    json={
+                        "model": ENDPOINT_TEST_MODEL,
+                        "messages": [{"role": "user", "content": "Hi"}],
+                        "stream": False,
+                        "think": think,
+                        "options": {"num_predict": 1},
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(response.json()["done"])
+
+    # Runs last, so the model it removes is not needed again.
+
+    def test_099_delete_go_client_request(self):
+        """`ollama rm X` sends /api/delete with name set and model empty."""
+        self.ensure_model_pulled()
+        try:
+            response = requests.delete(
+                f"{OLLAMA_BASE_URL}/api/delete",
+                json={"model": "", "name": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            tags = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=TIMEOUT_DEFAULT)
+            names = [m["name"] for m in tags.json()["models"]]
+            self.assertFalse(
+                any(n.split(":")[0] == ENDPOINT_TEST_MODEL for n in names), names
+            )
+        finally:
+            OllamaTests._model_pulled = False
+            self.ensure_model_pulled()
 
 
 if __name__ == "__main__":

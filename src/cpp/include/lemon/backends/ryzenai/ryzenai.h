@@ -24,12 +24,16 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  false,
     /*options*/ {},
     /*support*/ {
-        {"npu", {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
+        {"npu", BackendTier::Core, BackendFormat::Native, {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
+    },
+    /*about*/ {
+        {"npu", {"AMD's Ryzen AI software stack running ONNX Runtime GenAI LLMs on the NPU.",
+                 "AMD", "lemonade-sdk", "MIT (server) and AMD EULA (Ryzen AI libraries)",
+                 "https://github.com/lemonade-sdk/ryzenai-server"}},
     },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
-    /*experimental*/    false,
     /*web_display_name*/ "Ryzen AI SW NPU",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,

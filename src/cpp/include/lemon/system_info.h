@@ -34,10 +34,12 @@ struct GPUInfo : DeviceInfo {
     // reads it.
     std::string display_name;
     std::string compute_capability;  // NVIDIA only: "MAJOR.MINOR" from nvidia-smi (e.g. "8.6")
+    bool driver_missing = false;  // NVIDIA only: hardware found, but the NVIDIA driver is not bound to it
     double vram_gb = 0.0;
     double vram_used_gb = -1.0;  // -1 when per-device usage is unavailable
     double virtual_gb = 0.0;
     double virtual_used_gb = -1.0;
+    bool unified_memory = false;
 };
 
 struct NPUInfo : DeviceInfo {
@@ -94,10 +96,25 @@ public:
 
     // Get list of supported backends for a recipe (in preference order)
     static SupportedBackendsResult get_supported_backends(const std::string& recipe);
+    // True when `backend` runs on this OS and is installed, including one
+    // installed with `force` on hardware that does not support it.
+    static bool is_backend_installed(const std::string& recipe, const std::string& backend);
 
     // Check if a recipe is supported on the current system
     // Returns empty string if supported, or a reason string if not supported
     static std::string check_recipe_supported(const std::string& recipe);
+
+    // Reruns the setup checks of every container backend in `recipes` (the
+    // /system-info recipes object), marking the ones that fail action_required.
+    // Returns true when a backend cached as action_required now passes, so the
+    // caller rebuilds its cached state.
+    static bool refresh_container_setup(nlohmann::json& recipes);
+
+    // Why the models of `recipe` stay hidden, or "" when they show. A recipe
+    // whose only backends on this host are guest backends keeps its models hidden
+    // until one of those backends is installed.
+    static std::string check_guest_backend_installed(const std::string& recipe,
+                                                     const json& system_info);
 
     // Get all recipes with their backend state info
     // Returns a vector of {recipe_name, backends}
@@ -284,6 +301,14 @@ std::string identify_cuda_arch_from_name(const std::string& device_name);
 
 // Check if kernel has CWSR fix for Strix Halo
 bool needs_gfx1151_cwsr_fix();
+
+// HIP_VISIBLE_DEVICES for the first GPU `recipe:backend` supports, or "" when none
+// is present. A host-wide pick such as get_rocm_arch() prefers a discrete GPU the
+// backend may not support.
+std::string hip_visible_device(const std::string& recipe, const std::string& backend);
+
+// The KFD properties file of the first GPU of `arch`, or "" when none is present.
+std::string kfd_gpu_properties(const std::string& arch);
 
 // FLM status (derived from system-info cache)
 struct FlmStatus {

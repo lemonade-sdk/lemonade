@@ -1,0 +1,203 @@
+name: Lemonade App checks
+
+on:
+  pull_request:
+    paths:
+      - 'src/app/**'
+      - 'src/web-app/**'
+      - 'docs/guide/app/**'
+      - 'docs/guide/README.md'
+      - 'docs/dev/app.md'
+      - 'mkdocs.yml'
+      - 'test/app/**'
+      - '.github/workflows/lemonade-app-checks.yml'
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  app-tests:
+    name: App docs, typecheck, runtime and UI tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate App documentation and links
+        run: python3 test/app/check_app_documentation.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: src/app/package-lock.json
+
+      - name: Install App dependencies
+        working-directory: src/app
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: src/app
+        run: npm run typecheck
+
+      - name: Runtime regression tests
+        working-directory: src/app
+        run: npm run test:runtime
+
+      - name: Install Playwright Chromium
+        working-directory: src/app
+        run: npx playwright install --with-deps chromium
+
+      - name: App Playwright tests (no Lemonade server)
+        working-directory: src/app
+        env:
+          CI: true
+        run: npm run test:playwright -- --reporter=list,html
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-app-playwright
+          path: |
+            src/app/test-results
+            src/app/playwright-report
+          if-no-files-found: ignore
+          retention-days: 14
+
+  app-real-server-smoke:
+    name: App vs C++ CI Lemonade Server
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      LEMONADE_CI_MODE: 'True'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+      - name: Wait for matching C++ CI server package
+        id: server_artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SERVER_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+          SERVER_SOURCE_BRANCH: ${{ github.head_ref }}
+          SERVER_SOURCE_EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # For PRs, github.sha is a merge commit, not the PR head_sha in workflow runs.
+          if [[ -z "$SERVER_SOURCE_SHA" ]]; then
+            echo "::error::Cannot determine the source SHA for the C++ CI package" >&2
+            exit 1
+          fi
+          for attempt in $(seq 1 90); do
+            runs=$(gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/cpp_server_build_test_release.yml/runs" \
+              -f event="$SERVER_SOURCE_EVENT" -f head_sha="$SERVER_SOURCE_SHA" -f per_page=100)
+            run_id=$(jq -r --arg sha "$SERVER_SOURCE_SHA" \
+              --arg event "$SERVER_SOURCE_EVENT" --arg branch "$SERVER_SOURCE_BRANCH" \
+              '[.workflow_runs[] | select(.head_sha == $sha and ($event != "pull_request" or .head_branch == $branch))][0].id // empty' \
+              <<< "$runs")
+            if [[ -n "$run_id" ]]; then
+              found=$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+                -f name=lemonade-deb \
+                --jq '[.artifacts[] | select(.name == "lemonade-deb" and .expired == false)] | length')
+              if (( found > 0 )); then
+                echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+                echo "Reusing lemonade-deb from C++ CI run $run_id ($SERVER_SOURCE_SHA)"
+                exit 0
+              fi
+            fi
+            if (( attempt < 90 )); then
+              echo "Waiting for C++ CI server artifact ($attempt/90, SHA $SERVER_SOURCE_SHA)..."
+              sleep 20
+            fi
+          done
+          echo "::error::No unexpired lemonade-deb was produced by C++ CI for $SERVER_SOURCE_EVENT $SERVER_SOURCE_SHA within 30 minutes" >&2
+          exit 1
+
+      - name: Download C++ CI server package
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-deb
+          run-id: ${{ steps.server_artifact.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Read Debian package version
+        id: deb_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=(lemonade-server_*_amd64.deb)
+          if [[ ${#debs[@]} -ne 1 ]]; then
+            echo "::error::Expected one lemonade-server amd64 .deb, found ${#debs[@]}" >&2
+            exit 1
+          fi
+          version=${debs[0]#lemonade-server_}
+          version=${version%_amd64.deb}
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Enable PPA for runtime dependencies (not the server binary)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge
+
+      - name: Extract CI-built .deb and start server
+        uses: ./.github/actions/install-lemonade-deb
+        with:
+          version: ${{ steps.deb_version.outputs.version }}
+          download-artifact: 'false'
+
+      - name: Verify PR server health
+        run: curl -fsS http://127.0.0.1:13305/api/v1/health
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: src/app/package-lock.json
+      - name: Install App dependencies
+        working-directory: src/app
+        run: npm ci
+      - name: Build App renderer
+        working-directory: src/app
+        run: npm run build
+      - name: Install Playwright Chromium
+        working-directory: src/app
+        run: npx playwright install --with-deps chromium
+      - name: Run real-server App smoke tests
+        working-directory: src/app
+        env:
+          CI: true
+          LEMONADE_TEST_PORT: '13305'
+        run: npm run test:server
+
+      - name: Upload App integration artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-app-real-server-smoke
+          path: |
+            src/app/test-results
+            src/app/test-results-real-server
+            src/app/playwright-report
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Capture server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: lemonade-app-real-server-logs
+      - name: Cleanup server processes
+        if: always()
+        uses: ./.github/actions/cleanup-processes-linux

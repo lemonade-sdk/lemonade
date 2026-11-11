@@ -14,6 +14,15 @@ Release candidates are published for Ubuntu, Windows, Docker, macOS, Fedora, and
 
 Any PR intended for the next release should be merged before the cutoff time. A commit merged after the cutoff belongs to the following release cycle. Maintainers may postpone merging a PR to protect release quality.
 
+## Release Admin Access
+
+Confirm the release admin has the following access before the release cycle starts:
+
+- **SignPath:** an approved account on the Lemonade SignPath project, required to approve Windows MSI signing (see [Approve Windows Signing](#6-approve-windows-signing)).
+- **Release branch push:** permission to push to the protected `release-v*` branches, required to cherry-pick hotfixes and reverts onto the release branch.
+- **Release tag push:** permission to push `v*` tags to `lemonade-sdk/lemonade`, required to run `tools/release.py` (see [Promote a Candidate to Stable](#5-promote-a-candidate-to-stable)).
+- **Discord `#announcements`:** permission to post in the `#announcements` channel on the Lemonade Discord, required to publish the release announcement.
+
 ## Versioning
 
 Lemonade versions have the deterministic format `year.week.number`:
@@ -98,7 +107,9 @@ Use a bulleted list with one item per breaking change. Keep it concise and link 
 
 Tag the exact commit that produced the tested candidate. The tag must be `v<year>.<week>.<number>` and must match that candidate's build version. Pushing the tag is the human gate that starts stable publication; do not create release tags for candidates that should remain only in the candidate/prerelease channels.
 
-Use `tools/release.py` to do this deterministically. It fetches the release branches, selects the newest `release-v*` branch, computes the version from that branch's tip with the same logic as the build (`tools/version.py`), and — after you confirm — creates an annotated tag on that exact commit and pushes it. It refuses to proceed if the computed tag already exists or if the branch advanced between selection and push, which prevents accidentally tagging the wrong `number`.
+Use `tools/release.py` to do this deterministically. **Run it on your local machine**, from a clone of `lemonade-sdk/lemonade` where `origin` points at the upstream repository (not a fork), because it pushes the tag to `origin` with your own git credentials. It is not run by CI. Use `--remote <name>` if your upstream remote has a different name.
+
+The script fetches the release branches, selects the newest `release-v*` branch, computes the version from that branch's tip with the same logic as the build (`tools/version.py`), and — after you confirm — creates an annotated tag on that exact commit and pushes it. It refuses to proceed if the computed tag already exists or if the branch advanced between selection and push, which prevents accidentally tagging the wrong `number`.
 
 ```bash
 # Promote the newest active release branch

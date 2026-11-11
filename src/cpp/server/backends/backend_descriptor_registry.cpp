@@ -38,6 +38,17 @@ const std::vector<std::string>& supported_modes_for(const std::string& recipe) {
     return d != nullptr ? d->supported_modes : kNone;
 }
 
+bool recipe_gates_mode_on(const std::string& recipe, const std::string& label) {
+    const BackendDescriptor* d = descriptor_for(recipe);
+    if (d == nullptr) return false;
+    for (const auto& [mode, capabilities] : d->mode_capability_requirements) {
+        for (const std::string& capability : capabilities) {
+            if (capability == label) return true;
+        }
+    }
+    return false;
+}
+
 const std::string& default_mode_for(const std::string& recipe) {
     static const std::string kChat = "chat";
     const std::vector<std::string>& modes = supported_modes_for(recipe);
@@ -116,6 +127,37 @@ std::string illegal_deployment_labels(const std::vector<std::string>& labels,
             return "a model deploys in exactly one mode, but these labels name "
                    "two: '" + deploys_as + "' and '" + label +
                    "'. Register one model per mode.";
+        }
+    }
+
+    const BackendDescriptor* d = descriptor_for(recipe);
+    if (d != nullptr) {
+        if (deploys_as.empty() && !modes.empty()) {
+            deployment_mode_of(modes.front(), deployed);
+        }
+        for (const auto& [mode, capabilities] : d->mode_capability_requirements) {
+            ModelType gated = ModelType::LLM;
+            if (!deployment_mode_of(mode, gated)) continue;
+            std::string present;
+            for (const std::string& capability : capabilities) {
+                if (has_label(labels, capability)) {
+                    present = capability;
+                    break;
+                }
+            }
+            if (gated == deployed && present.empty()) {
+                const std::string needed =
+                    capabilities.size() == 1 ? "the '" + capabilities.front() + "' label"
+                                             : "one of the labels " + quote_join(capabilities);
+                return "recipe '" + recipe + "' cannot serve '" + mode + "' without " + needed +
+                       ". Add that label, or omit '" + mode + "' to deploy as '" +
+                       default_mode_for(recipe) + "'.";
+            }
+            if (gated != deployed && !present.empty()) {
+                return "the '" + present + "' label needs the '" + mode +
+                       "' label: recipe '" + recipe + "' serves '" + present +
+                       "' models only in that mode. Add '" + mode + "'.";
+            }
         }
     }
     return "";

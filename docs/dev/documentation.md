@@ -82,9 +82,11 @@ Prefer confident statements. Reserve qualifiers for genuine uncertainty.
 2. Status badge immediately after the heading.
 3. One-sentence description.
 4. Parameters table.
-5. Example request (bash curl by default; add Python/JS tabs when usage warrants).
-6. Response format.
-7. Error notes, if non-obvious.
+5. Examples: one subsection per example, each with its request tabs and response.
+6. Response format: Field Descriptions for each response format.
+7. Errors: each error status the route answers with, its code, and when.
+
+`docs/tools/gen_api_boilerplate.py` writes this structure for every HTTP route in `docs/api/` from the route's `RouteSpec`, with real requests and recorded responses. Edit the `RouteSpec`, not the generated region; prose between regions stays hand-written.
 
 **Integration guide**
 1. Brief description of what the integration does (one sentence).
@@ -113,7 +115,7 @@ Add a ToC only if the document has **5 or more H2 sections**. Use a plain markdo
 
 ### Links
 
-Link to documentation in this repository using relative Markdown file paths, including the `.md` extension (for example, `../guide/install/windows.md`). Avoid published website URLs and hardcoded `blob/main` URLs for these links. Relative paths keep the source and destination on the same branch or tag; the website is published separately at release boundaries. Use the same convention in generated documentation. For repository-only files outside `docs/`, use explicit GitHub URLs so links also work on the published website. Pages that exist only on the website, such as the [model browser](https://lemonade-server.ai/models.html) and the [marketplace](https://lemonade-server.ai/marketplace), have no in-repo equivalent, so link to them on the website.
+Link to documentation in this repository using relative Markdown file paths, including the `.md` extension (for example, `../guide/install/windows.md`). Avoid published website URLs and hardcoded `blob/main` URLs for these links. Relative paths keep the source and destination on the same branch or tag; the website is published separately at release boundaries. News posts are the exception, and CI requires changes to `docs/news/` and `docs/assets/news-data.js` to be in a PR of their own. News releases to the website as soon as it merges to main branch, so don't merge a news post about a feature until that feature is in a release. Use the same convention in generated documentation. For repository-only files outside `docs/`, use explicit GitHub URLs so links also work on the published website. Pages that exist only on the website, such as the [model browser](https://lemonade-server.ai/models.html) and the [marketplace](https://lemonade-server.ai/marketplace), have no in-repo equivalent, so link to them on the website.
 
 ### Code blocks
 

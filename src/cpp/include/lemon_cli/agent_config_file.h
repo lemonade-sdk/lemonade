@@ -12,6 +12,7 @@ struct AgentModelEntry {
     std::string id;
     std::string display_name;
     int context_window;
+    std::vector<std::string> labels;
 };
 
 struct AgentConfigProfile {

@@ -4,8 +4,8 @@ name: Triage dashboard
 # (lemonade-sdk/lemonade-triage -> https://lemonade-sdk.github.io/lemonade-triage/)
 # rather than this repo's Pages. This repo's Pages serves the production
 # lemonade-server.ai site from the `website` branch (deploy-from-branch) and is
-# only meant to refresh at release boundaries, so the dashboard must never
-# touch it.
+# only meant to refresh at release boundaries and when news posts merge, so the
+# dashboard must never touch it.
 #
 # Pipeline per run:
 #   1. auto_assign.py  — scores open PRs by diff history, writes reviewer

@@ -1,5 +1,7 @@
 #include "lemon/utils/network_beacon.h"
 
+#include <nlohmann/json.hpp>
+
 #include <cerrno>
 #include <chrono>
 #include <iostream>
@@ -183,15 +185,13 @@ std::vector<NetworkInterfaceInfo> NetworkBeacon::getLocalRFC1918Interfaces() {
 }
 
 std::string NetworkBeacon::buildStandardPayloadPattern(std::string hostname, std::string hostUrl) {
-    std::stringstream ss;
-
-    ss << "{";
-    ss << "\"service\": \"lemonade\", ";
-    ss << "\"hostname\": \"" << hostname << "\", ";
-    ss << "\"url\": \"" << hostUrl << "\"";
-    ss << "}";
-
-    return ss.str();
+    // Built with a JSON library so a hostname with a quote or backslash (or a non-UTF-8 name on Windows)
+    // still gives a beacon every listener can parse. Same keys and order as before.
+    nlohmann::ordered_json payload;
+    payload["service"] = "lemonade";
+    payload["hostname"] = std::move(hostname);
+    payload["url"] = std::move(hostUrl);
+    return payload.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 }
 
 void NetworkBeacon::startBroadcasting(int beaconPort, int serverPort, uint16_t intervalSeconds) {

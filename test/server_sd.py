@@ -257,10 +257,32 @@ class StableDiffusionTests(ServerTestBase):
             f"[OK] Image generation with seed=12345 successful ({len(decoded)} bytes)"
         )
 
-    # Test 7: Models endpoint returns image_defaults for SD-Turbo
-    def test_007_models_endpoint_returns_image_defaults(self):
-        """Test that /models endpoint returns image_defaults for SD-Turbo."""
-        print(f"[INFO] Testing /models endpoint for image_defaults")
+    # Test 7: Models endpoint carries each built-in's generation options
+    def test_007_models_endpoint_returns_generation_options(self):
+        """Test that /models exposes the registry's generation options per model."""
+        expected = {
+            SD_MODEL: {
+                "steps": 4,
+                "cfg_scale": 1.0,
+                "width": 512,
+                "height": 512,
+                "soft_pixel_cap": 525625,
+            },
+            "SDXL-Base-1.0": {
+                "steps": 20,
+                "cfg_scale": 7.5,
+                "width": 1024,
+                "height": 1024,
+            },
+            "Qwen-Image-GGUF": {
+                "steps": 20,
+                "cfg_scale": 2.5,
+                "width": 512,
+                "height": 512,
+                "sampling_method": "euler",
+                "flow_shift": 3.0,
+            },
+        }
 
         response = requests.get(f"{self.base_url}/models?show_all=true", timeout=60)
 
@@ -272,113 +294,25 @@ class StableDiffusionTests(ServerTestBase):
 
         result = response.json()
         models = result.get("data", result) if isinstance(result, dict) else result
+        by_id = {model.get("id"): model for model in models}
 
-        # Find SD-Turbo in the models list
-        sd_turbo = None
-        for model in models:
-            if model.get("id") == SD_MODEL:
-                sd_turbo = model
-                break
+        for model_id, want in expected.items():
+            self.assertIn(model_id, by_id, f"{model_id} not found in /models response")
+            options = by_id[model_id].get("recipe_options", {})
+            for key, value in want.items():
+                self.assertEqual(
+                    options.get(key),
+                    value,
+                    f"{model_id} recipe_options['{key}'] should be {value!r}, "
+                    f"got {options.get(key)!r}",
+                )
+            self.assertNotIn(
+                "image_defaults",
+                by_id[model_id],
+                f"{model_id} should not expose the retired image_defaults key",
+            )
 
-        self.assertIsNotNone(sd_turbo, f"SD-Turbo model not found in /models response")
-
-        # Verify image_defaults exists and has correct values
-        self.assertIn("image_defaults", sd_turbo, "SD-Turbo should have image_defaults")
-        defaults = sd_turbo["image_defaults"]
-
-        self.assertEqual(defaults.get("steps"), 4, "SD-Turbo steps should be 4")
-        self.assertEqual(
-            defaults.get("cfg_scale"), 1.0, "SD-Turbo cfg_scale should be 1.0"
-        )
-        self.assertEqual(defaults.get("width"), 512, "SD-Turbo width should be 512")
-        self.assertEqual(defaults.get("height"), 512, "SD-Turbo height should be 512")
-
-        print(f"[OK] SD-Turbo image_defaults verified: {defaults}")
-
-    # Test 8: Models endpoint returns correct defaults for SDXL-Base-1.0
-    def test_008_models_endpoint_sdxl_defaults(self):
-        """Test that /models endpoint returns correct image_defaults for SDXL-Base-1.0."""
-        print(f"[INFO] Testing /models endpoint for SDXL-Base-1.0 image_defaults")
-
-        response = requests.get(f"{self.base_url}/models?show_all=true", timeout=60)
-
-        self.assertEqual(
-            response.status_code,
-            200,
-            f"Failed to get models: {response.text}",
-        )
-
-        result = response.json()
-        models = result.get("data", result) if isinstance(result, dict) else result
-
-        # Find SDXL-Base-1.0 in the models list
-        sdxl_base = None
-        for model in models:
-            if model.get("id") == "SDXL-Base-1.0":
-                sdxl_base = model
-                break
-
-        self.assertIsNotNone(
-            sdxl_base, "SDXL-Base-1.0 model not found in /models response"
-        )
-
-        # Verify image_defaults exists and has correct values
-        self.assertIn(
-            "image_defaults", sdxl_base, "SDXL-Base-1.0 should have image_defaults"
-        )
-        defaults = sdxl_base["image_defaults"]
-
-        self.assertEqual(defaults.get("steps"), 20, "SDXL-Base-1.0 steps should be 20")
-        self.assertEqual(
-            defaults.get("cfg_scale"), 7.5, "SDXL-Base-1.0 cfg_scale should be 7.5"
-        )
-        self.assertEqual(
-            defaults.get("width"), 1024, "SDXL-Base-1.0 width should be 1024"
-        )
-        self.assertEqual(
-            defaults.get("height"), 1024, "SDXL-Base-1.0 height should be 1024"
-        )
-
-        print(f"[OK] SDXL-Base-1.0 image_defaults verified: {defaults}")
-
-    def test_008b_models_endpoint_qwen_image_defaults(self):
-        """Test that Qwen-Image-GGUF exposes sampling_method and flow_shift in image_defaults."""
-        print("[INFO] Testing /models endpoint for Qwen-Image-GGUF image_defaults")
-
-        response = requests.get(f"{self.base_url}/models?show_all=true", timeout=60)
-        self.assertEqual(response.status_code, 200)
-
-        result = response.json()
-        models = result.get("data", result) if isinstance(result, dict) else result
-
-        qwen_image = None
-        for model in models:
-            if model.get("id") == "Qwen-Image-GGUF":
-                qwen_image = model
-                break
-
-        self.assertIsNotNone(
-            qwen_image, "Qwen-Image-GGUF not found in /models response"
-        )
-        self.assertIn("image_defaults", qwen_image)
-        defaults = qwen_image["image_defaults"]
-
-        self.assertEqual(defaults.get("steps"), 20)
-        self.assertEqual(defaults.get("cfg_scale"), 2.5)
-        self.assertEqual(defaults.get("width"), 512)
-        self.assertEqual(defaults.get("height"), 512)
-        self.assertEqual(
-            defaults.get("sampling_method"),
-            "euler",
-            "Qwen-Image-GGUF should expose sampling_method in image_defaults",
-        )
-        self.assertEqual(
-            defaults.get("flow_shift"),
-            3.0,
-            "Qwen-Image-GGUF should expose flow_shift in image_defaults",
-        )
-
-        print(f"[OK] Qwen-Image-GGUF image_defaults verified: {defaults}")
+        print(f"[OK] Generation options verified for {', '.join(expected)}")
 
     def test_009_image_edit_not_multipart_error(self):
         """Test that non-multipart requests to /images/edits return 400."""

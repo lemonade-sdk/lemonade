@@ -32,6 +32,11 @@ std::string fmt_vram(double val) {
     return fmt_double(val, 1);
 }
 
+static std::string fmt_pp_tps(double val) {
+    if (val <= 0) return "-";
+    return fmt_double(val, 1);
+}
+
 std::string fmt_pct_change(double pct) {
     std::ostringstream oss;
     oss << (pct >= 0 ? "+" : "") << std::fixed << std::setprecision(1) << pct << "%";
@@ -88,6 +93,11 @@ FieldWidths calculate_field_widths(const std::vector<BenchBackendResult>& result
 
                 double max_tps = scenario.tps_max();
                 widths.tps = std::max(widths.tps, calculate_number_width(max_tps, 1));
+
+                double max_pp_tps = scenario.pp_tps_max();
+                if (max_pp_tps > 0) {
+                    widths.pp_tps = std::max(widths.pp_tps, calculate_number_width(max_pp_tps, 1));
+                }
             }
 
             double vram_peak = scenario.vram_peak_gb();
@@ -114,6 +124,7 @@ static void print_scenario_row(const BenchScenarioResult& scenario, bool use_per
                   << std::setw(widths.ttft) << "-"
                   << std::setw(widths.ttft) << "-"
                   << std::setw(widths.ttft) << "-"
+                  << std::setw(widths.pp_tps) << "-"
                   << std::setw(widths.tps) << "-"
                   << std::setw(widths.tps) << "-"
                   << std::setw(widths.tps) << "-"
@@ -124,6 +135,7 @@ static void print_scenario_row(const BenchScenarioResult& scenario, bool use_per
                   << std::setw(widths.ttft) << fmt_double(scenario.ttft_mean_ms())
                   << " " << std::setw(widths.ttft) << fmt_double(ttft_1)
                   << " " << std::setw(widths.ttft) << fmt_double(ttft_2)
+                  << " " << std::setw(widths.pp_tps) << fmt_pp_tps(scenario.pp_tps_mean())
                   << " " << std::setw(widths.tps) << fmt_double(scenario.tps_mean())
                   << " " << std::setw(widths.tps) << fmt_double(tps_1)
                   << " " << std::setw(widths.tps) << fmt_double(tps_2)
@@ -148,6 +160,7 @@ void print_table(const std::vector<BenchBackendResult>& results, const std::stri
                   << std::setw(widths.ttft) << "TTFT"
                   << " " << std::setw(widths.ttft) << (use_percentiles ? "p50" : "min")
                   << " " << std::setw(widths.ttft) << (use_percentiles ? "p95" : "max")
+                  << " " << std::setw(widths.pp_tps) << "PP t/s"
                   << " " << std::setw(widths.tps) << "TPS"
                   << " " << std::setw(widths.tps) << (use_percentiles ? "p50" : "min")
                   << " " << std::setw(widths.tps) << (use_percentiles ? "p95" : "max")
@@ -161,6 +174,7 @@ void print_table(const std::vector<BenchBackendResult>& results, const std::stri
 
     std::cout << std::endl;
     std::cout << "(*Nf = N failed runs excluded from stats)" << std::endl;
+    std::cout << "(PP t/s = prefill throughput, prompt tokens / TTFT; '-' when a workload reports no prefill timing)" << std::endl;
     std::cout << std::endl;
 }
 
@@ -209,6 +223,16 @@ json to_json(const std::vector<BenchBackendResult>& results,
                 ttft_stats["p50"] = scenario.ttft_p50_ms();
                 ttft_stats["p95"] = scenario.ttft_p95_ms();
                 s_json["ttft_ms"] = ttft_stats;
+
+                if (scenario.pp_tps_max() > 0) {
+                    json pp_tps_stats;
+                    pp_tps_stats["mean"] = scenario.pp_tps_mean();
+                    pp_tps_stats["min"] = scenario.pp_tps_min();
+                    pp_tps_stats["max"] = scenario.pp_tps_max();
+                    pp_tps_stats["p50"] = scenario.pp_tps_p50();
+                    pp_tps_stats["p95"] = scenario.pp_tps_p95();
+                    s_json["pp_tps"] = pp_tps_stats;
+                }
 
                 std::vector<double> duration_vals;
                 duration_vals.reserve(scenario.runs.size());

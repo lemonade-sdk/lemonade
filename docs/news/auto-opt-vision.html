@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vision: your auto-optimizing local stack of agents, models, and engines - Lemonade Server</title>
+  <link rel="icon" href="../assets/favicon.ico">
+  <link rel="stylesheet" href="../assets/website-styles.css">
+  <link rel="stylesheet" href="../assets/flowchart.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="../assets/navbar.js"></script>
+  <meta name="description" content="Lemonade's vision for an auto-optimizing local stack: pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.">
+  <meta property="og:title" content="Vision: your auto-optimizing local stack of agents, models, and engines">
+  <meta property="og:description" content="Lemonade's vision for an auto-optimizing local stack: pick an agent, and Lemonade installs and configures the best known model and engine for your system in one click.">
+  <meta property="og:image" content="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png">
+  <meta property="og:type" content="article">
+  <meta property="article:published_time" content="2026-10-14">
+  <meta property="article:author" content="Jeremy Fowers">
+  <style>
+    .bkc {
+      width: 100%;
+      max-width: 760px;
+      margin: 0 auto 5rem;
+      padding: 0 1.5rem;
+      font-family: var(--font-body);
+      color: var(--text-primary);
+      box-sizing: border-box;
+    }
+
+    .bkc-hero { padding: 3.5rem 0 1.5rem; }
+
+    .bkc-title {
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: clamp(2rem, 4.6vw, 3rem);
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+      margin: 0 0 1.1rem;
+    }
+
+    .bkc-byline {
+      margin: 0;
+      font-size: 0.92rem;
+      color: var(--text-muted);
+    }
+
+    .bkc-byline a {
+      color: var(--text-secondary);
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .bkc-byline a:hover { text-decoration: underline; }
+
+    .bkc h2 {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: clamp(1.35rem, 2.4vw, 1.75rem);
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      margin: 3rem 0 0.9rem;
+    }
+
+    .bkc h3 {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 1.2rem;
+      letter-spacing: -0.012em;
+      margin: 2.2rem 0 0.6rem;
+    }
+
+    .bkc h4 {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 1rem;
+      margin: 1.6rem 0 0.4rem;
+    }
+
+    .bkc p,
+    .bkc li {
+      font-size: 1.02rem;
+      line-height: 1.7;
+    }
+
+    .bkc p { margin: 0 0 1rem; }
+
+    .bkc ul,
+    .bkc ol {
+      margin: 0 0 1.1rem;
+      padding-left: 1.4rem;
+    }
+
+    .bkc li + li { margin-top: 0.3rem; }
+
+    .bkc code {
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      background: rgba(45, 47, 47, 0.06);
+      padding: 0.08em 0.34em;
+      border-radius: 0.25rem;
+    }
+
+    .tm-board {
+      overflow: hidden;
+      margin: 1.6rem auto 2.4rem;
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-heavy);
+    }
+
+    .tm-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: 1.4rem 1.5rem 1.5rem;
+      background:
+        radial-gradient(circle at 82% 6%, rgba(252, 216, 70, 0.22), transparent 44%),
+        linear-gradient(160deg, #fffdf4, #f5f3e8);
+    }
+
+    .tm-label {
+      margin-top: 0.15rem;
+      font-family: var(--font-display);
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .tm-row { display: grid; gap: 0.5rem; }
+    .tm-row-engines { grid-template-columns: 1fr auto 1fr; align-items: stretch; }
+    .tm-row-foundation { grid-template-columns: 1fr 1fr; align-items: stretch; }
+
+    .tm-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      min-width: 0;
+      padding: 0.7rem 0.8rem;
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.72);
+      box-shadow: var(--shadow-light);
+      color: var(--text-primary);
+      text-decoration: none;
+      transition: background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .tm-card:hover {
+      background: var(--surface-container-lowest);
+      box-shadow: var(--shadow-medium);
+      transform: translateY(-1px);
+    }
+
+    .tm-head { display: flex; align-items: center; gap: 0.5rem; }
+
+    .tm-icon {
+      display: grid;
+      place-items: center;
+      flex: none;
+      width: 1.85rem;
+      height: 1.85rem;
+      border-radius: var(--radius-sm);
+      background: rgba(252, 216, 70, 0.28);
+      font-size: 1.1rem;
+      color: var(--accent-gold);
+    }
+
+    .tm-name {
+      font-family: var(--font-display);
+      font-size: 0.86rem;
+      font-weight: 800;
+    }
+
+    .tm-desc {
+      font-size: 0.76rem;
+      line-height: 1.4;
+      color: var(--text-secondary);
+    }
+
+    .tm-arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.25rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .tm-arrow .material-symbols-outlined { font-size: 1rem; color: var(--text-primary); }
+
+    .tm-arrow-side { flex-direction: column; gap: 0; padding: 0 0.15rem; }
+
+    .tm-subs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+    }
+
+    .tm-subs a {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      min-width: 0;
+      padding: 0.45rem 0.6rem;
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.72);
+      box-shadow: var(--shadow-light);
+      font-family: var(--font-display);
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      text-decoration: none;
+      transition: background var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .tm-subs a:hover { background: var(--surface-container-lowest); box-shadow: var(--shadow-medium); }
+    .tm-subs .material-symbols-outlined { font-size: 1rem; color: var(--accent-gold); }
+
+    .tm-board.armed .tm-body > * {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    .tm-board.in .tm-body > * {
+      animation: tm-in 0.42s ease forwards;
+      animation-delay: calc(var(--i, 0) * 0.06s + 0.12s);
+    }
+
+    @keyframes tm-in {
+      to { opacity: 1; transform: none; }
+    }
+
+    .bkc h3[id],
+    .bkc h4[id] { scroll-margin-top: 6rem; }
+
+    .bkc-table-wrap {
+      margin: 1.2rem 0 1.6rem;
+      overflow-x: auto;
+      border-radius: var(--radius-xl);
+      background: var(--surface-container-lowest);
+      box-shadow: var(--shadow-ambient);
+    }
+
+    .bkc-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+      line-height: 1.55;
+    }
+
+    .bkc-table th,
+    .bkc-table td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .bkc-table thead th {
+      background: var(--surface-container-low);
+      font-family: var(--font-display);
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .bkc-table tbody th {
+      font-family: var(--font-display);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .bkc-table tbody tr:nth-child(even) { background: rgba(252, 216, 70, 0.07); }
+
+    .bkc-table td { color: var(--text-secondary); }
+
+    .bkc-table code { white-space: nowrap; }
+
+    .bkc-table .loc {
+      display: block;
+      margin-top: 0.3rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .bkc .bkc-note {
+      margin: 1.2rem 0;
+      padding: 0.1rem 0 0.1rem 0.9rem;
+      border-left: 2px solid var(--primary-yellow);
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+    }
+
+    .bkc figure { margin: 1.6rem 0 2.2rem; }
+
+    .bkc figcaption {
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    /* Hero animation */
+
+    .anim-stage {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(4, auto);
+      justify-content: space-between;
+      align-items: center;
+      gap: 1.25rem 1.5rem;
+      padding: 2rem;
+      border-radius: var(--radius-xl);
+      background:
+        radial-gradient(circle at 38% 46%, rgba(252, 216, 70, 0.22), transparent 44%),
+        linear-gradient(160deg, #fffdf4, #f5f3e8);
+      box-shadow: var(--shadow-heavy);
+      overflow: hidden;
+    }
+
+    .anim-wires {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      overflow: visible;
+    }
+
+    .anim-wires .hp-router-wire { stroke: rgba(45, 47, 47, 0.12); }
+    .anim-wires .hp-router-flow-halo { stroke: rgba(252, 216, 70, 0.45); }
+    .anim-wires .hp-router-flow-core { stroke: var(--primary-yellow-darker); }
+
+
+    .anim-col {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .anim-label {
+      margin-bottom: 0.1rem;
+      font-family: var(--font-display);
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .anim-pill {
+      padding: 0.45rem 0.9rem;
+      border-radius: var(--radius-btn);
+      background: var(--surface-container-lowest);
+      box-shadow: var(--shadow-light);
+      font-family: var(--font-display);
+      font-size: 0.86rem;
+      font-weight: 800;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      transition: background var(--transition-slow), color var(--transition-slow), box-shadow var(--transition-slow);
+    }
+
+    .anim-pill.lit {
+      background: var(--primary-yellow);
+      color: var(--on-primary);
+      box-shadow: var(--shadow-yellow);
+    }
+
+    .anim-hub {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      place-content: center;
+      gap: 0.15rem;
+      width: 108px;
+      height: 96px;
+      border-radius: 16px;
+      text-align: center;
+      background: var(--surface-container-lowest);
+    }
+
+    .hub-name {
+      font-family: var(--font-display);
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--text-primary);
+    }
+
+    .hub-sub {
+      font-family: var(--font-display);
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent-gold);
+    }
+
+    .anim-status {
+      position: relative;
+      z-index: 1;
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.55rem;
+      margin-top: 0.25rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      transition: color var(--transition-slow);
+    }
+
+    .status-dot {
+      flex: none;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-light);
+      transition: background var(--transition-slow), box-shadow var(--transition-slow);
+    }
+
+    .anim-stage.live .status-dot {
+      background: var(--tertiary);
+      box-shadow: 0 0 0 4px rgba(60, 101, 49, 0.18);
+    }
+
+    .anim-stage.live .anim-status { color: var(--text-primary); }
+
+    /* Vision flow */
+
+    .flow-track {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.7rem;
+    }
+
+    .flow-step {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      padding: 1.2rem 1.1rem 1.1rem;
+      border-radius: var(--radius-xl);
+      background: var(--surface-container-lowest);
+      box-shadow: var(--shadow-ambient);
+    }
+
+    .flow-step:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      right: -1.15rem;
+      width: 0.6rem;
+      height: 0.6rem;
+      border-top: 2px solid var(--text-primary);
+      border-right: 2px solid var(--text-primary);
+      transform: translateY(-50%) rotate(45deg);
+    }
+
+    .flow-num {
+      display: grid;
+      place-items: center;
+      width: 1.7rem;
+      height: 1.7rem;
+      margin-bottom: 0.65rem;
+      border-radius: 50%;
+      background: var(--primary-yellow);
+      font-family: var(--font-display);
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: var(--on-primary);
+    }
+
+    .bkc .flow-step h4 { margin: 0 0 0.35rem; font-size: 1rem; line-height: 1.3; }
+
+    .bkc .flow-step p {
+      margin: 0 0 0.8rem;
+      font-size: 0.88rem;
+      line-height: 1.5;
+      color: var(--text-secondary);
+    }
+
+    .flow-visual { margin-top: auto; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+
+    .chip {
+      padding: 0.2rem 0.55rem;
+      border: 1px solid var(--outline-variant);
+      border-radius: var(--radius-btn);
+      background: var(--surface-container-low);
+      font-size: 0.75rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .chip.pick {
+      background: var(--primary-yellow);
+      border-color: var(--primary-yellow-darker);
+      color: var(--on-primary);
+    }
+
+    .chip.alt { border-style: dashed; background: transparent; color: var(--text-muted); }
+
+    .flow-visual.stack { flex-direction: column; gap: 0.3rem; }
+
+    .stack-layer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.3rem 0.6rem;
+      border-radius: var(--radius-sm);
+      background: var(--surface-container-low);
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+
+    .stack-layer::after { content: '\2713'; color: var(--tertiary); }
+
+    .flow-rail {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-top: 1.1rem;
+      font-family: var(--font-display);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .rail-line {
+      flex: 1;
+      height: 2px;
+      border-radius: 2px;
+      background: linear-gradient(90deg, var(--primary-yellow-darker), var(--tertiary));
+    }
+
+    .rail-end { color: var(--tertiary); }
+
+    /* Theory zones */
+
+    .theory-grid {
+      display: grid;
+      grid-template-columns: 1fr auto 1.25fr;
+      align-items: stretch;
+      gap: 0.9rem;
+    }
+
+    .zone {
+      display: flex;
+      flex-direction: column;
+      gap: 0.7rem;
+      padding: 1.25rem;
+      border-radius: var(--radius-xl);
+    }
+
+    .zone-subjective { background: rgba(252, 216, 70, 0.16); }
+
+    .zone-objective { background: var(--surface-container-low); }
+
+    .zone-label {
+      font-family: var(--font-display);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .zone-subjective .zone-label { color: var(--accent-gold); }
+
+    .choice {
+      padding: 0.7rem 0.8rem;
+      border-radius: var(--radius);
+      background: var(--surface-container-lowest);
+      box-shadow: var(--shadow-light);
+    }
+
+    .choice-name,
+    .det-name {
+      display: block;
+      font-family: var(--font-display);
+      font-size: 0.98rem;
+      font-weight: 700;
+    }
+
+    .choice-why,
+    .det-why {
+      display: block;
+      font-size: 0.85rem;
+      line-height: 1.45;
+      color: var(--text-secondary);
+    }
+
+    .bkc .zone-note {
+      margin: auto 0 0;
+      padding-top: 0.3rem;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      color: var(--text-muted);
+    }
+
+    .theory-bridge {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      width: 5.5rem;
+      font-size: 0.74rem;
+      font-weight: 600;
+      line-height: 1.35;
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    .theory-bridge svg { width: 44px; height: 14px; color: var(--text-primary); }
+
+    .bkc .det-steps {
+      position: relative;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: det;
+    }
+
+    .bkc .det-steps li {
+      position: relative;
+      margin: 0;
+      padding: 0 0 0.85rem 2.3rem;
+      counter-increment: det;
+    }
+
+    .bkc .det-steps li::before {
+      content: counter(det);
+      position: absolute;
+      left: 0;
+      top: 0.05rem;
+      display: grid;
+      place-items: center;
+      width: 1.55rem;
+      height: 1.55rem;
+      border-radius: var(--radius-sm);
+      background: var(--text-primary);
+      font-family: var(--font-display);
+      font-size: 0.78rem;
+      font-weight: 800;
+      color: var(--bg-white);
+    }
+
+    .bkc .det-steps li:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      left: calc(0.775rem - 1px);
+      top: 1.75rem;
+      bottom: 0.15rem;
+      width: 2px;
+      background: var(--border-medium);
+    }
+
+    @media (max-width: 620px) {
+      .bkc { padding: 0 1.1rem; }
+      .bkc-hero { padding: 2.5rem 0 1rem; }
+
+      .anim-stage {
+        grid-template-columns: 1fr;
+        gap: 1.1rem;
+        padding: 1.25rem;
+      }
+
+      .anim-col { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 0.4rem; }
+      .anim-label { width: 100%; text-align: center; }
+      .anim-pill { font-size: 0.78rem; padding: 0.34rem 0.7rem; }
+      .anim-hub { justify-self: center; width: 100px; height: 84px; }
+      .anim-status { font-size: 0.82rem; text-align: center; }
+
+      .flow-track { grid-template-columns: 1fr; gap: 1.6rem; }
+
+      .tm-body { padding: 1.1rem 1rem 1.2rem; }
+      .tm-row-engines,
+      .tm-row-foundation { grid-template-columns: 1fr; }
+      .tm-arrow-side { flex-direction: row; gap: 0.25rem; padding: 0; }
+      .tm-arrow-side .material-symbols-outlined { transform: rotate(90deg); }
+
+      .bkc-table thead { display: none; }
+      .bkc-table tr,
+      .bkc-table th,
+      .bkc-table td { display: block; }
+      .bkc-table tbody tr { padding: 0.8rem 1rem; }
+      .bkc-table tbody th,
+      .bkc-table td { padding: 0; }
+      .bkc-table td + td,
+      .bkc-table th + td { margin-top: 0.3rem; }
+      .bkc-table .loc { display: inline; margin: 0 0 0 0.5rem; }
+
+      .flow-step:not(:last-child)::after {
+        top: auto;
+        right: auto;
+        bottom: -1.1rem;
+        left: 50%;
+        transform: translateX(-50%) rotate(135deg);
+      }
+
+      .theory-grid { grid-template-columns: 1fr; }
+      .theory-bridge { flex-direction: row; width: auto; }
+      .theory-bridge svg { transform: rotate(90deg); width: 28px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .anim-stage * { transition: none !important; animation: none !important; }
+      .tm-board.armed .tm-body > * { opacity: 1; transform: none; animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="navbar-placeholder"></div>
+
+  <main class="main blog-main">
+    <article class="bkc">
+
+      <header class="bkc-hero">
+        <h1 class="bkc-title">Vision: your auto-optimizing local stack of agents, models, and engines</h1>
+        <p class="bkc-byline"><a href="https://github.com/jeremyfowers">@jeremyfowers</a>, <a href="https://github.com/bitgamma">@bitgamma</a>, <a href="https://github.com/ramkrishna2910">@ramkrishna2910</a>, <a href="https://github.com/iswaryaalex">@iswaryaalex</a>, <a href="https://github.com/sawansri">@sawansri</a>, <a href="https://github.com/sreeram-11">@sreeram-11</a>, <a href="https://github.com/sofiageo">@sofiageo</a>, <a href="https://github.com/meghsat">@meghsat</a>, <a href="https://github.com/superm1">@superm1</a> &middot; October 20, 2026</p>
+      </header>
+
+      <figure class="bkc-anim">
+        <div class="anim-stage" id="anim-stage" aria-hidden="true">
+          <svg class="anim-wires" id="anim-wires"></svg>
+          <div class="anim-col" data-col="agent">
+            <div class="anim-label">Agent</div>
+            <div class="anim-pill" data-key="Hermes">Hermes</div>
+            <div class="anim-pill" data-key="Pi">Pi</div>
+            <div class="anim-pill" data-key="AnythingLLM">AnythingLLM</div>
+            <div class="anim-pill" data-key="DeepSeek Harness">DeepSeek Harness</div>
+          </div>
+          <div class="anim-hub" id="anim-hub">
+            <span class="hub-name">Strix Halo</span>
+            <span class="hub-sub">auto-opt</span>
+          </div>
+          <div class="anim-col" data-col="model">
+            <div class="anim-label">Model</div>
+            <div class="anim-pill" data-key="Qwen3.8-Flash-Next">Qwen3.8-Flash-Next</div>
+            <div class="anim-pill" data-key="Gemma 4">Gemma 4</div>
+            <div class="anim-pill" data-key="Qwen3.6">Qwen3.6</div>
+            <div class="anim-pill" data-key="DeepSeek-V4-Flash">DeepSeek-V4-Flash</div>
+          </div>
+          <div class="anim-col" data-col="engine">
+            <div class="anim-label">Engine</div>
+            <div class="anim-pill" data-key="Halogen">Halogen</div>
+            <div class="anim-pill" data-key="llama.cpp">llama.cpp</div>
+            <div class="anim-pill" data-key="FastFlowLM">FastFlowLM</div>
+            <div class="anim-pill" data-key="DwarfStar4">DwarfStar4</div>
+          </div>
+          <div class="anim-status"><span class="status-dot"></span><span id="anim-status-text">&nbsp;</span></div>
+        </div>
+        <figcaption>Our vision is that Lemonade can automatically produce an optimized end-to-end agentic stack for you.</figcaption>
+      </figure>
+
+      <h2>Introduction</h2>
+      <p>Agentic coding has upended local AI software development in 2026. We're seeing a rapid increase in the number of important engines upstream of Lemonade, as well as the number of important agents and apps downstream of Lemonade. This presents an exciting opportunity for Lemonade to serve as a central hub, similar to an "app store", where a curated selection of agents, engines, and models are distributed, auto-optimized, and "just work" with each other in a single click.</p>
+      <p>This work will improve adoption of local AI in both enthusiast and enterprise use cases by:</p>
+      <ul>
+        <li>Improving purchaser confidence that systems will provide strong return-on-investment, based on upfront availability of data.</li>
+        <li>Lowering evaluation and deployment friction by automating the end-to-end journey for common out-of-box use cases.</li>
+      </ul>
+
+      <h2>Vision</h2>
+      <p>The fragmented ecosystem of engines should be abstracted away from users and developers. They should be automatically presented with an automatically optimized starting point for their use case, which we refer to as <strong>auto-opt</strong>.</p>
+      <p>In practice:</p>
+      <figure class="bkc-flow">
+        <div class="flow-track">
+          <div class="flow-step">
+            <span class="flow-num">1</span>
+            <h4>Select an agent</h4>
+            <p>The user picks from a menu of options.</p>
+            <div class="flow-visual">
+              <span class="chip pick">Hermes</span>
+              <span class="chip">Pi</span>
+              <span class="chip">AnythingLLM</span>
+              <span class="chip">DeepSeek Harness</span>
+              <span class="chip alt">etc.</span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <span class="flow-num">2</span>
+            <h4>Get a recommendation</h4>
+            <p>Lemonade recommends a default model/engine combination known to work well with that agent on that system.</p>
+            <div class="flow-visual">
+              <span class="chip pick">model + engine</span>
+              <span class="chip alt">or your own choice</span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <span class="flow-num">3</span>
+            <h4>Install the stack</h4>
+            <p>The entire stack is automatically installed and configured.</p>
+            <div class="flow-visual stack">
+              <span class="stack-layer">Agent</span>
+              <span class="stack-layer">Model</span>
+              <span class="stack-layer">Engine</span>
+            </div>
+          </div>
+        </div>
+        <div class="flow-rail"><span>1 click</span><span class="rail-line"></span><span class="rail-end">Live in minutes</span></div>
+      </figure>
+
+      <h3>Theory</h3>
+      <p>Auto-Opt is possible because there are two subjective aspects to setting up a local AI agent, and everything else has an objective answer.</p>
+      <figure class="bkc-theory">
+        <div class="theory-grid">
+          <div class="zone zone-subjective">
+            <div class="zone-label">Subjective</div>
+            <div class="choice">
+              <span class="choice-name">Agent</span>
+              <span class="choice-why">Must meet the user's unique use case.</span>
+            </div>
+            <div class="choice">
+              <span class="choice-name">Model</span>
+              <span class="choice-why">The results of every agent for every use case vary with model.</span>
+            </div>
+            <p class="zone-note">We can recommend a default model for each agent/system combination based on benchmark data.</p>
+          </div>
+          <div class="theory-bridge">
+            <svg viewBox="0 0 44 14" aria-hidden="true"><path d="M1 7h38M33 1.5L40 7l-7 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>once selected, everything else is deterministic</span>
+          </div>
+          <div class="zone zone-objective">
+            <div class="zone-label">Objective</div>
+            <ol class="det-steps">
+              <li><span class="det-name">Best engine for the model</span><span class="det-why">Selected based on performance data for that system.</span></li>
+              <li><span class="det-name">Engine setup</span><span class="det-why">Installed and configured to run the model on the target system.</span></li>
+              <li><span class="det-name">Agent setup</span><span class="det-why">Installed and configured to talk to the engine and the user.</span></li>
+            </ol>
+            <p class="zone-note">Future work may take this a step further by auto-optimizing the engine code itself for the specific hardware, model, and use case.</p>
+          </div>
+        </div>
+      </figure>
+
+      <h2>Enabling Technology</h2>
+      <p>What do we need to build to enable the vision of auto-opt?</p>
+
+      <nav class="tm-board" aria-label="Enabling Technology contents">
+        <div class="tm-body">
+          <div class="tm-label">Agents</div>
+          <div class="tm-row">
+            <a class="tm-card" href="#agent-manager">
+              <span class="tm-head"><span class="tm-icon material-symbols-outlined">smart_toy</span><span class="tm-name">Agent Manager</span></span>
+              <span class="tm-desc">Install, configure, and launch agents to work with local AI.</span>
+            </a>
+          </div>
+          <div class="tm-arrow" aria-hidden="true"><span class="material-symbols-outlined">arrow_downward</span>requests</div>
+          <div class="tm-label">Routing</div>
+          <div class="tm-row">
+            <a class="tm-card" href="#smart-router">
+              <span class="tm-head"><span class="tm-icon material-symbols-outlined">alt_route</span><span class="tm-name">Smart Router</span></span>
+              <span class="tm-desc">Local engines, on-prem token servers, and cloud APIs.</span>
+            </a>
+          </div>
+          <div class="tm-arrow" aria-hidden="true"><span class="material-symbols-outlined">arrow_downward</span>routes to</div>
+          <div class="tm-label">Engines</div>
+          <div class="tm-row tm-row-engines">
+            <a class="tm-card" href="#engine-integrations">
+              <span class="tm-head"><span class="tm-icon material-symbols-outlined">memory</span><span class="tm-name">Engine Integrations</span></span>
+              <span class="tm-desc">Core, experimental, and guest tiers.</span>
+            </a>
+            <div class="tm-arrow tm-arrow-side" aria-hidden="true"><span class="material-symbols-outlined">arrow_back</span>ranks</div>
+            <a class="tm-card" href="#engine-database">
+              <span class="tm-head"><span class="tm-icon material-symbols-outlined">leaderboard</span><span class="tm-name">Engine Database</span></span>
+              <span class="tm-desc">Performance and correctness per system.</span>
+            </a>
+          </div>
+          <div class="tm-label">Foundation</div>
+          <div class="tm-row tm-row-foundation">
+            <a class="tm-card tm-card-foundation" href="#maintainability">
+              <span class="tm-head"><span class="tm-icon material-symbols-outlined">foundation</span><span class="tm-name">Maintainability</span></span>
+              <span class="tm-desc">Sustaining high code velocity and high quality as Lemonade grows.</span>
+            </a>
+            <div class="tm-subs">
+              <a href="#container-strategy"><span class="material-symbols-outlined">deployed_code</span>Container Strategy</a>
+              <a href="#api-contract"><span class="material-symbols-outlined">handshake</span>API Contract</a>
+              <a href="#extensibility"><span class="material-symbols-outlined">extension</span>Extensibility</a>
+              <a href="#planned-refactors"><span class="material-symbols-outlined">construction</span>Planned Refactors</a>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <h3 id="engine-database">Engine Database</h3>
+      <p>Deterministically selecting an engine for a target system is possible when we have a comprehensive database of performance for all relevant models/engine combinations on that system.</p>
+      <div class="bkc-table-wrap">
+        <table class="bkc-table">
+          <thead>
+            <tr><th>Dimension</th><th>Coverage</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Performance</th><td>PP, TG, memory, and power. For both the single-user and batched cases.</td></tr>
+            <tr><th scope="row">Relevant models</th><td>The latest releases from Qwen, Meta, Liquid, Google, etc.</td></tr>
+            <tr><th scope="row">Systems</th><td>Strix Halo first. Radeon 9700, Gorgon Halo, and non-AMD systems to follow based on availability.</td></tr>
+            <tr><th scope="row">Engines</th><td>Anything that has demonstrated significant community traction; at the time of this writing it should include DwarfStar4, Halogen, Gufo, and strix-llama.cpp engines.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4 id="correctness">Correctness</h4>
+      <p>We should adopt a way to assess whether an engine correctly implements a model, since performance data for incorrect implementations should be disregarded. Donato's Terminal Bench Mini is a good candidate.</p>
+
+      <h4 id="official-submissions">Official Submissions</h4>
+      <p>A baseline of data will be collected using AMD's DevLab cloud.</p>
+
+      <h4 id="user-submissions">User Submissions</h4>
+      <p>The database should also support user-submitted data, which enables:</p>
+      <ul>
+        <li>More devices than what is available in DevLab.</li>
+        <li>Emergent engines not already on our list.</li>
+        <li>Parameterizations of the engine that are not part of our sweeps.</li>
+      </ul>
+
+      <h3 id="engine-integrations">Engine Integrations</h3>
+      <p>New engines should be integrated into Lemonade as soon as they meet the following criteria:</p>
+      <ul>
+        <li>Significant community traction.</li>
+        <li>Leadership in the performance database.</li>
+        <li>Clear differentiation from other engines. Includes non-performance differentiators such as software license, portability, platform support, etc.</li>
+      </ul>
+      <p>Engines will be classified into the following support tiers:</p>
+      <div class="bkc-table-wrap">
+        <table class="bkc-table">
+          <thead>
+            <tr><th>Tier</th><th>Support</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Core</th><td>Supported by Lemonade's maintainers for production use.</td></tr>
+            <tr><th scope="row">Experimental</th><td>Provided by Lemonade's maintainers, but not supported for production use.</td></tr>
+            <tr><th scope="row">Guest</th><td>Developed and published outside Lemonade's maintainers. Use at your own risk.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="agent-manager">Agent Manager</h3>
+      <p>Assists users with the installation, configuration, and launch of agents to work with local AI. Contains enough metadata about each agent's use case to enable automatic optimization, along with benchmark data, to recommend engines and models.</p>
+      <p>Candidate agents: Pi, AnythingLLM, Hermes, DeepSeek Harness, Claude Code, Codex, GitHub CLI.</p>
+      <p>We will also investigate deep integration of Pi into Lemonade, which could be used for:</p>
+      <ul>
+        <li>Running agent skills, such as agentically optimizing the user's system.</li>
+        <li>Built-in quality benchmarking, by asking Pi to use an agent/model combination to complete a task and grading the result.</li>
+        <li>Serving the agent to downstream applications via an endpoint.</li>
+      </ul>
+      <p class="bkc-note">Note: we are still working to define this capability in more detail. It will have a phased rollout, first enabling easy-to-deploy developer-first agents (e.g., Pi) before moving on to more complex cases. Model recommendations will be performed by humans until benchmark data is available.</p>
+
+      <h3 id="smart-router">Smart Router</h3>
+      <p>The smart router enables the agents to easily take advantage of on-prem token servers (e.g., Instinct Coder, Threadripper Halo, etc.) and cloud APIs when available. Our work will improve the ease of configuration of such resources, such as by integration of Lemonade Nexus.</p>
+
+      <h3 id="maintainability">Maintainability</h3>
+      <p>As Lemonade grows, certain measures are needed to ensure that we can sustain both high code velocity and high quality.</p>
+
+      <h4 id="container-strategy">Container Strategy</h4>
+      <p>Historically Lemonade has preferred to distribute native engines. We're adopting containers as a distribution mechanism for two reasons:</p>
+      <ol>
+        <li>Enabling sandboxed deployment, which keeps users' systems and data safer than running native binaries as the <code>lemonade</code> user.</li>
+        <li>Minimizing the amount of glue logic needed to integrate new engines and agents.</li>
+      </ol>
+      <p>Once containerized backends are available we will also investigate:</p>
+      <ol>
+        <li>Sandboxing native backends using nono.sh.</li>
+        <li>Enabling container-based agents in the agent manager.</li>
+      </ol>
+
+      <h4 id="api-contract">API Contract</h4>
+      <p>The Lemonade Contract is a set of CI tests that assert certain APIs never receive breaking changes. It will solve two maintainability problems:</p>
+      <ol>
+        <li>PR reviewers need certainty that a PR they're approving won't have unintended downstream consequences.</li>
+        <li>Downstream apps need certainty that they can take a dependence on these APIs.</li>
+      </ol>
+
+      <h4 id="extensibility">Extensibility</h4>
+      <p>Users should be able to try new agents, engines, models, and parameterizations without waiting for Lemonade to add in-tree support. This can be accomplished with the following extensibility interfaces:</p>
+      <ul>
+        <li>Already-installed engines that meet a supported interface specification should be able to connect to Lemonade's router.</li>
+        <li>Users should be able to develop and distribute custom model catalogs, including model definitions that come with specialized parameterizations.</li>
+      </ul>
+
+      <h4 id="planned-refactors">Planned Refactors</h4>
+      <p>There are a few major Lemonade code modules that recently hit their maintainability limit: PRs became too difficult to correctly review, so we stopped accepting contributions. The refactors will allow for greatly increased code velocity by adding specs, tests, and other guardrails to allow agents to autonomously write correct code.</p>
+      <div class="bkc-table-wrap">
+        <table class="bkc-table">
+          <thead>
+            <tr><th>Module</th><th>File</th><th>Refactor</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Model Manager</th><td><code>model_manager.cpp</code><span class="loc">~7000 LoC</span></td><td>Refactor into subclasses with crisp interfaces, which will enable future work such as custom user-provided model catalogs.</td></tr>
+            <tr><th scope="row">API server</th><td><code>server.cpp</code><span class="loc">~8000 LoC</span></td><td>Refactor onto an endpoint base class, break into API-specific modules (OpenAI API, Lemonade API, etc.), and auto-generate the API docs. This will make endpoint modifications and additions much easier to review, and enable our API Contract work.</td></tr>
+            <tr><th scope="row">Smart Router</th><td><code>router.cpp</code><span class="loc">~3000 LoC</span></td><td>Needs a clear architecture, to be determined.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </article>
+  </main>
+
+  <div class="footer-placeholder"></div>
+
+  <script src="../assets/footer.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      initializeNavbar('../');
+      initializeFooter('../');
+    });
+
+    (() => {
+      const map = document.querySelector('.tm-board');
+      if (!map || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      [...map.querySelector('.tm-body').children].forEach((el, i) => el.style.setProperty('--i', i));
+      map.classList.add('armed');
+      const io = new IntersectionObserver(([entry]) => {
+        if (!entry.isIntersecting) return;
+        map.classList.add('in');
+        io.disconnect();
+      }, { threshold: 0.2 });
+      io.observe(map);
+    })();
+
+    (() => {
+      const stage = document.getElementById('anim-stage');
+      const svg = document.getElementById('anim-wires');
+      const hub = document.getElementById('anim-hub');
+      const statusText = document.getElementById('anim-status-text');
+      const NS = 'http://www.w3.org/2000/svg';
+      const combos = [
+        { agent: 'Hermes', model: 'Qwen3.8-Flash-Next', engine: 'Halogen' },
+        { agent: 'Pi', model: 'Gemma 4', engine: 'llama.cpp' },
+        { agent: 'AnythingLLM', model: 'Qwen3.6', engine: 'FastFlowLM' },
+        { agent: 'DeepSeek Harness', model: 'DeepSeek-V4-Flash', engine: 'DwarfStar4' },
+      ];
+      const T = { agentHold: 500, travel: 800, hubHold: 1100, modelHold: 450, liveHold: 2600, fade: 600 };
+      T.toHub = T.agentHold;
+      T.atHub = T.toHub + T.travel;
+      T.toModel = T.atHub + T.hubHold;
+      T.atModel = T.toModel + T.travel;
+      T.toEngine = T.atModel + T.modelHold;
+      T.atEngine = T.toEngine + T.travel;
+      T.fadeStart = T.atEngine + T.liveHold;
+      T.cycle = T.fadeStart + T.fade;
+
+      const col = (name) => stage.querySelector(`[data-col="${name}"]`);
+      const pill = (name, key) => col(name).querySelector(`[data-key="${key}"]`);
+      const pills = (name) => [...col(name).querySelectorAll('.anim-pill')];
+      const el = (parent, tag, attrs) => {
+        const node = document.createElementNS(NS, tag);
+        Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+        return parent.appendChild(node);
+      };
+
+      el(svg, 'defs', {}).innerHTML =
+        '<filter id="hpRouterGlow" filterUnits="userSpaceOnUse" x="-40" y="-40" width="2000" height="2000">' +
+          '<feGaussianBlur stdDeviation="8" result="blur"></feGaussianBlur>' +
+          '<feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>' +
+        '</filter>';
+      const baseWires = [...pills('agent'), ...pills('model')].map(() => el(svg, 'path', { class: 'hp-router-wire' }));
+      const legs = [0, 1, 2].map(() => ({
+        halo: el(svg, 'path', { class: 'hp-router-flow-segment hp-router-flow-halo' }),
+        core: el(svg, 'path', { class: 'hp-router-flow-segment hp-router-flow-core' }),
+      }));
+      const route = el(svg, 'path', { fill: 'none', stroke: 'none' });
+
+      const anchors = (a, b) => {
+        const s = stage.getBoundingClientRect();
+        const ra = a.getBoundingClientRect();
+        const rb = b.getBoundingClientRect();
+        if (rb.left >= ra.right - 2) {
+          const p1 = { x: ra.right - s.left, y: ra.top + ra.height / 2 - s.top };
+          const p2 = { x: rb.left - s.left, y: rb.top + rb.height / 2 - s.top };
+          const d = (p2.x - p1.x) / 2;
+          return { p1, p2, wire: `M${p1.x},${p1.y} C${p1.x + d},${p1.y} ${p2.x - d},${p2.y} ${p2.x},${p2.y}` };
+        }
+        const p1 = { x: ra.left + ra.width / 2 - s.left, y: ra.bottom - s.top };
+        const p2 = { x: rb.left + rb.width / 2 - s.left, y: rb.top - s.top };
+        const d = (p2.y - p1.y) / 2;
+        return { p1, p2, wire: `M${p1.x},${p1.y} C${p1.x},${p1.y + d} ${p2.x},${p2.y - d} ${p2.x},${p2.y}` };
+      };
+
+      let current = 0;
+      let geo = null;
+
+      const layout = () => {
+        const agents = pills('agent');
+        agents.forEach((p, i) => baseWires[i].setAttribute('d', anchors(p, hub).wire));
+        pills('model').forEach((p, i) => baseWires[agents.length + i].setAttribute('d', anchors(hub, p).wire));
+
+        const c = combos[current];
+        const m = pill('model', c.model);
+        const hops = [anchors(pill('agent', c.agent), hub), anchors(hub, m), anchors(m, pill('engine', c.engine))];
+        let d = `M${hops[0].p1.x},${hops[0].p1.y}`;
+        route.setAttribute('d', d);
+        const stops = [0];
+        const wires = [];
+        hops.forEach((h, i) => {
+          legs[i].halo.setAttribute('d', h.wire);
+          legs[i].core.setAttribute('d', h.wire);
+          const wireLen = legs[i].core.getTotalLength();
+          [legs[i].halo, legs[i].core].forEach((p) => p.setAttribute('stroke-dasharray', `${wireLen} ${wireLen}`));
+          const wireStart = route.getTotalLength();
+          d += ' ' + h.wire.replace(/^M[^C]*/, '');
+          route.setAttribute('d', d);
+          wires.push({ start: wireStart, len: wireLen, end: route.getTotalLength() });
+          if (hops[i + 1]) {
+            d += ` L${hops[i + 1].p1.x},${hops[i + 1].p1.y}`;
+            route.setAttribute('d', d);
+          }
+          stops.push(route.getTotalLength());
+        });
+        geo = { stops, wires };
+      };
+
+      const clamp01 = (v) => Math.max(0, Math.min(1, v));
+      const ease = (v) => -(Math.cos(Math.PI * v) - 1) / 2;
+      const ramp = (t, at, dur = 350) => ease(clamp01((t - at) / dur));
+
+      const distanceAt = (t) => {
+        const { stops } = geo;
+        const moves = [T.toHub, T.toModel, T.toEngine];
+        for (let i = moves.length - 1; i >= 0; i--) {
+          if (t >= moves[i]) return stops[i] + (stops[i + 1] - stops[i]) * ease(clamp01((t - moves[i]) / T.travel));
+        }
+        return 0;
+      };
+
+      let lastStatus = '';
+      const setStatus = (text) => {
+        if (text === lastStatus) return;
+        lastStatus = text;
+        statusText.textContent = text;
+        statusText.animate([{ opacity: 0, transform: 'translateY(3px)' }, { opacity: 1, transform: 'none' }], { duration: 300, easing: 'ease-out' });
+      };
+
+      const render = (t) => {
+        const c = combos[current];
+        const fade = 1 - ease(clamp01((t - T.fadeStart) / T.fade));
+        const dist = distanceAt(t);
+        const reached = (i) => dist >= geo.wires[i].end - 1;
+
+        legs.forEach((leg, i) => {
+          const w = geo.wires[i];
+          const shown = clamp01((dist - w.start) / w.len);
+          [leg.halo, leg.core].forEach((p) => {
+            p.setAttribute('stroke-dashoffset', w.len * (1 - shown));
+            p.setAttribute('opacity', shown > 0 ? fade : 0);
+          });
+        });
+
+        const lit = fade > 0.5;
+        pill('agent', c.agent).classList.toggle('lit', lit);
+        pill('model', c.model).classList.toggle('lit', lit && reached(1));
+        pill('engine', c.engine).classList.toggle('lit', lit && reached(2));
+        stage.classList.toggle('live', lit && t >= T.atEngine);
+
+        const hubOn = ramp(t, T.toHub + T.travel * 0.4) * fade;
+        const think = t > T.atHub && t < T.toModel ? (1 - Math.cos(Math.PI * 2 * (t - T.atHub) / T.hubHold)) / 2 : 0;
+        const glow = hubOn * (1 + 0.5 * think);
+        hub.style.boxShadow = `0 0 ${24 + 16 * glow}px ${4 + 6 * glow}px rgba(252, 216, 70, ${(0.35 * glow).toFixed(3)})`;
+
+        setStatus(
+          !reached(0) ? `Agent selected: ${c.agent}` :
+          !reached(1) ? 'Finding the best configuration…' :
+          t < T.atEngine ? `Model: ${c.model}` :
+          `${c.model} on ${c.engine}. ${c.agent} is live.`
+        );
+      };
+
+      let raf = 0;
+      let start = 0;
+      const frame = (now) => {
+        if (!start) start = now;
+        let t = now - start;
+        if (t >= T.cycle) {
+          current = (current + 1) % combos.length;
+          start = now;
+          t = 0;
+          layout();
+        }
+        render(t);
+        raf = requestAnimationFrame(frame);
+      };
+      const play = () => { if (!raf) { start = 0; layout(); raf = requestAnimationFrame(frame); } };
+      const stop = () => { cancelAnimationFrame(raf); raf = 0; };
+
+      const init = () => {
+        window.addEventListener('resize', layout);
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          layout();
+          render(T.atEngine + 500);
+          return;
+        }
+        new IntersectionObserver(([entry]) => (entry.isIntersecting ? play() : stop())).observe(stage);
+      };
+
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(init); else init();
+    })();
+  </script>
+</body>
+</html>
