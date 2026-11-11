@@ -27,7 +27,7 @@ void context_budget_contract() {
     model.max_context_window = 131072; model.gguf.block_count = 32; model.gguf.head_count_kv = 256; model.gguf.key_length = 128;
     check(ops.auto_context_kv_budget_gib(model, 50) == std::optional<double>(5), "C7aSourceBudgetIsFiveGiB");
     check(compute_auto_context_size(model, 50, false, true, &ops) == 40960, "C7aEstimatorUsesEarlierBudgetInsteadOfZero");
-    check(compute_auto_context_size(model, 50, false, true, default_backend_ops()) == 0, "C7aGenericCounterexampleStillZero");
+    check(compute_auto_context_size(model, 50, false, true, default_backend_ops()) == AUTO_CTX_FALLBACK, "C7aGenericCounterexampleFallsBack");
     for (const auto& row : fixture.at("budget_cases")) {
         const auto pool = row.at("pool").get<double>();
         services->pool = {pool > 0, 0.0, pool};
