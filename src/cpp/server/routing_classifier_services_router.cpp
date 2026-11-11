@@ -3,6 +3,7 @@
 #include "lemon/router.h"
 
 #include <lemon/models/model_info.h>
+#include <cstdint>
 #include <map>
 #include <mutex>
 #include <utility>
@@ -24,42 +25,38 @@ ClassifierServices make_router_classifier_services(
 }
 
 CostServices make_router_cost_services(Router& router) {
-    // Process-lifetime memo: cost metadata is effectively static per model name
-    // for a running lemond. Avoids a registry/build_cache hit on every routed
-    // request. Not invalidated on mid-process catalog rebuild (prices rarely
-    // change without a restart); revisit if ModelManager gains a generation
-    // counter consumers can subscribe to.
+    // Shared by every routed request. Stamped with the registry generation, so a
+    // price changed through /pull is seen on the next request instead of after
+    // a restart.
     static std::mutex cache_mu;
     static std::map<std::string, CostInfo> cache;
+    static std::uint64_t cache_generation = 0;
 
     CostServices services;
     services.cost_of = [&router](const std::string& candidate) -> CostInfo {
+        const std::uint64_t generation = router.models_generation();
         {
             std::lock_guard<std::mutex> lock(cache_mu);
+            if (generation > cache_generation) {
+                cache.clear();
+                cache_generation = generation;
+            }
             auto it = cache.find(candidate);
-            if (it != cache.end()) {
+            if (cache_generation == generation && it != cache.end()) {
                 return it->second;
             }
         }
 
         CostInfo info;
-        std::optional<ModelInfo> model = router.try_get_model_info(candidate);
-        if (model) {
-            const std::optional<double> typed_input =
-                model->cost_input_per_million >= 0.0
-                    ? std::optional<double>{model->cost_input_per_million}
-                    : std::nullopt;
-            const std::optional<double> typed_output =
-                model->cost_output_per_million >= 0.0
-                    ? std::optional<double>{model->cost_output_per_million}
-                    : std::nullopt;
-            info = resolve_cost_info(typed_input, typed_output, model->extras);
+        if (std::optional<ModelInfo> model = router.try_get_model_info(candidate)) {
+            info = resolve_model_cost_info(*model);
         }
 
         std::lock_guard<std::mutex> lock(cache_mu);
-        auto [it, inserted] = cache.emplace(candidate, info);
-        (void)inserted;
-        return it->second;
+        if (cache_generation == generation) {
+            cache.emplace(candidate, info);
+        }
+        return info;
     };
     return services;
 }
