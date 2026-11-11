@@ -6,6 +6,7 @@
 #include "lemon_cli/agent_launcher.h"
 #include "lemon_cli/pi_launch_prep.h"
 #include "lemon_cli/pi_profile.h"
+#include "lemon/utils/path_utils.h"
 
 #include <nlohmann/json.hpp>
 
@@ -416,6 +417,35 @@ void test_prepare_pi_config(const fs::path& root) {
 #endif
 }
 
+// The default dir is UTF-8 whatever the profile's name, since the host gets it as JSON.
+void test_default_dir_is_utf8(const fs::path& base) {
+    using lemon::utils::get_environment_variable_utf8;
+    using lemon::utils::path_from_utf8;
+    using lemon::utils::path_to_utf8;
+    using lemon::utils::set_environment_variable_utf8;
+#ifdef _WIN32
+    const char* home_var = "USERPROFILE";
+#else
+    const char* home_var = "HOME";
+#endif
+    const std::string saved_pi = get_environment_variable_utf8("PI_CODING_AGENT_DIR");
+    const std::string saved_home = get_environment_variable_utf8(home_var);
+    const std::string home = path_to_utf8(base) + "/Jos\xc3\xa9";
+    lemon::utils::unset_environment_variable_utf8("PI_CODING_AGENT_DIR");
+    set_environment_variable_utf8(home_var, home);
+    const std::string dir = lemon_cli::resolve_pi_agent_dir();
+    check("default dir under a non-ASCII home is UTF-8",
+          dir == path_to_utf8(path_from_utf8(home) / ".pi" / "agent"));
+    for (const auto& [name, value] :
+         {std::pair<std::string, std::string>{"PI_CODING_AGENT_DIR", saved_pi}, {home_var, saved_home}}) {
+        if (value.empty()) {
+            lemon::utils::unset_environment_variable_utf8(name);
+        } else {
+            set_environment_variable_utf8(name, value);
+        }
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -438,6 +468,7 @@ int main() {
     test_mcp_file_kept(agent_dir);
 #endif
     test_prepare_pi_config(agent_dir / "prep");
+    test_default_dir_is_utf8(agent_dir);
 
     std::error_code ec;
     fs::remove_all(agent_dir, ec);

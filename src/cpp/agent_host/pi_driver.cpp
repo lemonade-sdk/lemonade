@@ -44,7 +44,7 @@ std::string home_dir() {
 
 std::string expand_home(const std::string& path) {
     if (path.rfind("~/", 0) == 0) {
-        return (lemon::utils::path_from_utf8(home_dir()) / path.substr(2)).string();
+        return lemon::utils::path_to_utf8(lemon::utils::path_from_utf8(home_dir()) / path.substr(2));
     }
     return path;
 }

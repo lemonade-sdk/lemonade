@@ -1089,12 +1089,27 @@ static std::optional<int> launch_pi_via_host(lemonade::LemonadeClient& client,
             env.emplace_back(name, value.get<std::string>());
         }
     }
+    // The spec is UTF-8; ProcessManager builds a command line in the system code page.
+    auto native = [](const std::string& value) {
+#ifdef _WIN32
+        try {
+            return lemon::utils::path_from_utf8(value).string();
+        } catch (const std::exception&) {
+            return value;
+        }
+#else
+        return value;
+#endif
+    };
+    std::vector<std::string> args;
+    for (const auto& arg : spec.value("args", std::vector<std::string>{})) {
+        args.push_back(native(arg));
+    }
     std::cout << "Launching pi..." << std::endl;
     lemon::utils::ProcessHandle handle;
     try {
         handle = lemon::utils::ProcessManager::start_process(
-            spec.value("binary", ""), spec.value("args", std::vector<std::string>{}),
-            spec.value("cwd", ""), true, false, env);
+            native(spec.value("binary", "")), args, native(spec.value("cwd", "")), true, false, env);
     } catch (const std::exception& e) {
         LOG(ERROR, "AgentLauncher") << "Error: Failed to launch agent process: " << e.what() << std::endl;
         return 1;

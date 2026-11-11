@@ -172,17 +172,18 @@ bool write_shim(const fs::path& file, const std::string& content) {
     std::error_code ec;
     fs::create_directories(file.parent_path(), ec);
     if (ec) {
-        throw std::runtime_error("Can't create " + file.parent_path().string() + ": " +
+        throw std::runtime_error("Can't create " + lemon::utils::path_to_utf8(file.parent_path()) + ": " +
                                  ec.message());
     }
-    const fs::path tmp = file.string() + ".lemonade-tmp";
+    fs::path tmp = file;
+    tmp += ".lemonade-tmp";
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
         out << content;
         out.close();
         if (!out) {
             fs::remove(tmp, ec);
-            throw std::runtime_error("Can't write " + tmp.string());
+            throw std::runtime_error("Can't write " + lemon::utils::path_to_utf8(tmp));
         }
     }
     fs::permissions(tmp,
@@ -193,7 +194,7 @@ bool write_shim(const fs::path& file, const std::string& content) {
     if (ec) {
         std::error_code ignored;
         fs::remove(tmp, ignored);
-        throw std::runtime_error("Can't write " + file.string() + ": " + ec.message());
+        throw std::runtime_error("Can't write " + lemon::utils::path_to_utf8(file) + ": " + ec.message());
     }
     return true;
 }

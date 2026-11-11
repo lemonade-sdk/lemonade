@@ -6,6 +6,7 @@
 #include "lemon/agents/agent_pins.h"
 #include "lemon/agents/host_protocol.h"
 #include "lemon/utils/aixlog.hpp"
+#include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
 
 using json = nlohmann::json;
@@ -122,8 +123,8 @@ json HostRoutes::list() {
             {"host",
              {{"version", LEMON_VERSION_STRING},
               {"platform", host_os() + "-" + host_arch()},
-              {"bin_dir", ctx_.paths.bin_dir.string()},
-              {"data_dir", ctx_.paths.data_root.string()}}}};
+              {"bin_dir", lemon::utils::path_to_utf8(ctx_.paths.bin_dir)},
+              {"data_dir", lemon::utils::path_to_utf8(ctx_.paths.data_root)}}}};
 }
 
 json HostRoutes::install(const std::string& id, const json& body, Responder& responder,
@@ -171,10 +172,10 @@ json HostRoutes::install(const std::string& id, const json& body, Responder& res
     }
     return {{"agent", agent.id},
             {"version", outcome.installed.version},
-            {"binary", outcome.installed.binary.string()},
+            {"binary", lemon::utils::path_to_utf8(outcome.installed.binary)},
             {"downloaded", outcome.downloaded},
             {"shim",
-             {{"path", shim_path(ctx_.paths, agent.binary).string()},
+             {{"path", lemon::utils::path_to_utf8(shim_path(ctx_.paths, agent.binary))},
               {"state", shim_state_name(outcome.shim)}}},
             {"warnings", outcome.warnings}};
 }

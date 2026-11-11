@@ -2,6 +2,7 @@
 #include "agent_test_util.h"
 
 #include "lemon/agents/agent_shim.h"
+#include "lemon/utils/path_utils.h"
 
 using agent_test::check;
 using agent_test::read_file;
@@ -58,6 +59,10 @@ int main() {
     check("foreign file is never overwritten",
           !write_shim(shim, posix) && read_file(shim).find("/usr/local/bin/pi") != std::string::npos);
     check("foreign file is never removed", !remove_shim(shim) && fs::exists(shim));
+    const fs::path cyrillic =
+        dir / lemon::utils::path_from_utf8("\xd0\x98\xd0\xb2\xd0\xb0\xd0\xbd") / "pi";
+    check("writes a shim under a profile name outside the code page",
+          write_shim(cyrillic, posix) && shim_state(cyrillic) == ShimState::Ours);
 
 #ifndef _WIN32
     // PATH=[shim dir, other dir]: the external pi is the absolute path in the other dir.

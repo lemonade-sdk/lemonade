@@ -122,7 +122,7 @@ void remove_quietly(const fs::path& dir, std::vector<std::string>* warnings) {
     std::error_code ec;
     fs::remove_all(dir, ec);
     if (ec && warnings != nullptr) {
-        warnings->push_back("Can't remove " + dir.string() + " yet (" + ec.message() +
+        warnings->push_back("Can't remove " + lemon::utils::path_to_utf8(dir) + " yet (" + ec.message() +
                             "); the next install retries.");
     }
 }
@@ -236,6 +236,18 @@ std::optional<InstalledAgent> shim_target(const AgentDescriptor& agent, const Ag
     return std::nullopt;
 }
 
+// The archive and staging helpers shared with the backends take paths in the
+// system code page, which can't name every Windows profile directory.
+std::string native_path(const fs::path& path) {
+    try {
+        return path.string();
+    } catch (const std::exception&) {
+        throw AgentError(500, "install_failed",
+                         "Can't install to " + lemon::utils::path_to_utf8(path) +
+                             ": it has characters outside the system code page.");
+    }
+}
+
 // Whether a process of this user runs an executable from dir.
 bool runs_from(const fs::path& dir) {
     // The kernel reports executables by their resolved path.
@@ -330,7 +342,7 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     if (force || !manifest_matches(dir, agent, pin)) {
         fs::create_directories(root, ec);
         if (ec) {
-            throw AgentError(500, "install_failed", "Can't create " + root.string() + ": " +
+            throw AgentError(500, "install_failed", "Can't create " + lemon::utils::path_to_utf8(root) + ": " +
                                                         ec.message());
         }
         // download_file keeps its own temp files next to the target, so the
@@ -368,7 +380,8 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
         }
         outcome.downloaded = true;
 
-        const fs::path staging = dir.string() + ".staging";
+        fs::path staging = dir;
+        staging += ".staging";
         fs::remove_all(staging, ec);
         struct StagingGuard {
             fs::path path;
@@ -380,8 +393,8 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
         fs::create_directories(staging, ec);
 
         auto archive = lemon::utils::create_archive_platform();
-        const std::string archive_path = lemon::utils::path_to_utf8(download);
-        const std::string staging_path = lemon::utils::path_to_utf8(staging);
+        const std::string archive_path = native_path(download);
+        const std::string staging_path = native_path(staging);
         const bool is_zip = pin.asset.size() > 4 &&
                             pin.asset.compare(pin.asset.size() - 4, 4, ".zip") == 0;
         const bool extracted = is_zip
@@ -415,8 +428,7 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
         }
 
         try {
-            if (lemon::backends::commit_staged_install(staging_path,
-                                                       lemon::utils::path_to_utf8(dir),
+            if (lemon::backends::commit_staged_install(staging_path, native_path(dir),
                                                        agent.binary)
                     .empty()) {
                 throw AgentError(500, "install_failed", "The staged install has no binary.");
@@ -441,7 +453,7 @@ InstallOutcome install_agent(const AgentDescriptor& agent, const AgentPin& pin,
     const std::string content = rendered_shim(agent, outcome.installed.binary);
     try {
         if (!write_shim(shim, content)) {
-            outcome.warnings.push_back(shim.string() + " isn't Lemonade's, so it was left alone; `" +
+            outcome.warnings.push_back(lemon::utils::path_to_utf8(shim) + " isn't Lemonade's, so it was left alone; `" +
                                        agent.binary + "` there doesn't run the managed " +
                                        agent.name + ".");
         }
@@ -498,7 +510,7 @@ bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
             fs::rename(to, from, back_ec);
             if (back_ec) {
                 stuck += (stuck.empty() ? "" : ", ") + from.filename().string() + " at " +
-                         to.string();
+                         lemon::utils::path_to_utf8(to);
             }
         }
         if (!stuck.empty()) {
@@ -525,7 +537,7 @@ bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
         }
         if (ec && ec != std::errc::no_such_file_or_directory) {
             throw AgentError(500, "uninstall_failed",
-                             "Can't list " + root.string() + ": " + ec.message());
+                             "Can't list " + lemon::utils::path_to_utf8(root) + ": " + ec.message());
         }
         ec.clear();
         const fs::path shim = shim_path(paths, agent.binary);
@@ -533,7 +545,7 @@ bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
         (void)fs::symlink_status(shim, ec);
         if (ec && ec != std::errc::no_such_file_or_directory) {
             throw AgentError(500, "uninstall_failed",
-                             "Can't inspect " + shim.string() + ": " + ec.message());
+                             "Can't inspect " + lemon::utils::path_to_utf8(shim) + ": " + ec.message());
         }
         ec.clear();
         // Half an uninstall would leave pi looking installed, so a launch in
@@ -577,7 +589,7 @@ bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
         if (shim_ec) {
             put_back(moved);
             throw AgentError(500, "uninstall_failed",
-                             "Can't remove " + shim.string() + ": " + shim_ec.message());
+                             "Can't remove " + lemon::utils::path_to_utf8(shim) + ": " + shim_ec.message());
         }
         for (const auto& [from, to] : moved) {
             retired.push_back(to);

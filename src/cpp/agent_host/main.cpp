@@ -47,7 +47,8 @@ std::string new_token() {
 
 // Written to a fresh file that only the user can read, then renamed over the old one.
 bool write_private_file(const fs::path& path, const std::string& content) {
-    const fs::path tmp = path.string() + ".tmp";
+    fs::path tmp = path;
+    tmp += ".tmp";
     std::error_code ec;
     fs::remove(tmp, ec);
 #ifdef _WIN32
@@ -136,8 +137,15 @@ int main(int argc, char** argv) {
 
     // The log is opened only by the lock holder, since opening truncates it.
     const auto init_log = [&ctx] {
-        AixLog::Log::init({std::make_shared<AixLog::SinkFile>(
-            AixLog::Severity::info, lemon::utils::path_to_utf8(ctx.paths.log_file()))});
+        // AixLog opens the name in the system code page; one it can't hold logs nowhere.
+        std::string log_name;
+        try {
+            log_name = ctx.paths.log_file().string();
+        } catch (const std::exception&) {
+            log_name = lemon::utils::path_to_utf8(ctx.paths.log_file());
+        }
+        AixLog::Log::init(
+            {std::make_shared<AixLog::SinkFile>(AixLog::Severity::info, log_name)});
     };
     auto lock = FileLock::try_acquire(ctx.paths.host_lock());
     std::unique_ptr<FileLock> takeover;

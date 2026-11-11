@@ -7,27 +7,31 @@
 #include <regex>
 #include <system_error>
 
+#include "lemon/utils/path_utils.h"
+
 namespace fs = std::filesystem;
 
 namespace lemon_cli {
 
 // Pi stores its config under ~/.pi/agent/ (%USERPROFILE%\.pi\agent\ on Windows)
 // by default, or in $PI_CODING_AGENT_DIR if set. It does not honor XDG_CONFIG_HOME.
+// The result is UTF-8, like every agent_dir below, since the host gets it as JSON.
 std::string resolve_pi_agent_dir() {
-    const char* pi_dir = std::getenv("PI_CODING_AGENT_DIR");
-    if (pi_dir && pi_dir[0] != '\0') {
-        return std::string(pi_dir);
+    using lemon::utils::get_environment_variable_utf8;
+    const std::string pi_dir = get_environment_variable_utf8("PI_CODING_AGENT_DIR");
+    if (!pi_dir.empty()) {
+        return pi_dir;
     }
 
 #ifdef _WIN32
-    const char* home = std::getenv("USERPROFILE");
+    const std::string home = get_environment_variable_utf8("USERPROFILE");
 #else
-    const char* home = std::getenv("HOME");
+    const std::string home = get_environment_variable_utf8("HOME");
 #endif
-    if (!home || home[0] == '\0') {
+    if (home.empty()) {
         return "";
     }
-    return (fs::path(home) / ".pi" / "agent").string();
+    return lemon::utils::path_to_utf8(lemon::utils::path_from_utf8(home) / ".pi" / "agent");
 }
 
 namespace {
@@ -44,7 +48,7 @@ std::string resolve_pi_models_path(const std::string& agent_dir) {
     if (dir.empty()) {
         return "";
     }
-    return (fs::path(dir) / "models.json").string();
+    return (lemon::utils::path_from_utf8(dir) / "models.json").string();
 }
 
 std::string resolve_pi_mcp_path(const std::string& agent_dir) {
@@ -52,7 +56,7 @@ std::string resolve_pi_mcp_path(const std::string& agent_dir) {
     if (dir.empty()) {
         return "";
     }
-    return (fs::path(dir) / "mcp.json").string();
+    return (lemon::utils::path_from_utf8(dir) / "mcp.json").string();
 }
 
 std::string resolve_pi_settings_path(const std::string& agent_dir) {
@@ -60,7 +64,7 @@ std::string resolve_pi_settings_path(const std::string& agent_dir) {
     if (dir.empty()) {
         return "";
     }
-    return (fs::path(dir) / "settings.json").string();
+    return (lemon::utils::path_from_utf8(dir) / "settings.json").string();
 }
 
 bool has_label(const AgentModelEntry& model, const std::string& label) {
