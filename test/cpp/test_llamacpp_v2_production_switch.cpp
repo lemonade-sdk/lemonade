@@ -167,7 +167,7 @@ int main(int argc, char** argv) {
         check(policy.leaves.size() == 2 && policy.leaves[0].key.id == "llamacpp" && policy.leaves[0].key.contract == 1,
             "ExactlyTwoFixedBuiltinPolicies");
         if (policy.leaves.size() != 2) return finish();
-        check(policy.leaves[0].slots.size() == 17 && policy.leaves[0].owners.size() == 11 &&
+        check(policy.leaves[0].slots.size() == 17 && policy.leaves[0].owners.size() == 12 && policy.leaves[1].owners.size() == 11 &&
             policy.digest == v2::export_registry_digest(policy.leaves, installed_hook_abis()), "FixedPolicySeventeenOccurrencesElevenOwners");
         check(installed_builtin_exports().exports().size() == 1 && installed_builtin_exports().digest() ==
             "sha256:d68571eec21471c353dbf19229af776f034c8e7776d65fdbe869aa5698304b96", "BuiltinPolicyDoesNotAuthorizeExport");
@@ -229,7 +229,7 @@ int main(int argc, char** argv) {
         const auto& entry = *llama_row->configured_entry;
         check(llama_row->descriptor == &entry.published_descriptor() && llama_row->spec == &entry.spec &&
             llama_row->ops == entry.backend_ops() && entry.executable_definition == entry.spec.executable_definition &&
-            !entry.definition && entry.bindings.size() == 11, "CanonicalDescriptorSpecOpsFactoryOwnFinalizedExecutable");
+            !entry.definition && entry.bindings.size() == 12, "CanonicalDescriptorSpecOpsFactoryOwnFinalizedExecutable");
         {
             CatalogPublicationGuard guard(catalog_publication());
             for (const auto& read : std::vector<std::function<void()>>{
@@ -246,11 +246,12 @@ int main(int argc, char** argv) {
         const auto buffered = OperationDelivery::Buffered;
         for (const auto& capability : all_backend_capabilities()) {
             if (capability.descriptor->recipe == "llamacpp") {
-                check(capability.capabilities == (CAP_EMBEDDINGS | CAP_RERANKING) &&
+                check(capability.capabilities == (CAP_EMBEDDINGS | CAP_RERANKING | CAP_CLASSIFICATION) &&
                     operation_adapter<IEmbeddingsServer>(*server, op, buffered, ModelType::LLM) &&
                     operation_adapter<IEmbeddingsServer>(*server, op, buffered, ModelType::EMBEDDING) &&
                     operation_adapter<IRerankingServer>(*server, rank, buffered, ModelType::LLM) &&
                     operation_adapter<IRerankingServer>(*server, rank, buffered, ModelType::RERANKING) &&
+                    operation_adapter<IClassificationServer>(*server, BackendOperation::Classification, buffered, ModelType::CLASSIFICATION) &&
                     !operation_adapter<IClassificationServer>(*server, BackendOperation::Classification, buffered, ModelType::LLM),
                     "CapabilityMaskIndependentlyMatchesFinalizedBindingsAndTypedAdapters");
             }

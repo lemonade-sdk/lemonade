@@ -3535,6 +3535,12 @@ if(BUILD_TESTING AND EXISTS "${_BACKEND_CONTRACTS_TEST_SRC}")
     add_cpp_ci_test(BackendContractsTest CI ON COMMAND test_backend_contracts)
 endif()
 
+if(BUILD_TESTING)
+    add_executable(test_llamacpp_decision test/cpp/test_llamacpp_decision.cpp)
+    target_link_libraries(test_llamacpp_decision PRIVATE lemonade-server-core)
+    add_cpp_ci_test(LlamaCppDecisionTest CI ON COMMAND test_llamacpp_decision)
+endif()
+
 
 set(_ARTIFACT_LAYOUT_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_artifact_layout.cpp"
@@ -4799,13 +4805,19 @@ if(BUILD_TESTING)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/container_c9_control.py
             --root "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c9/base-control"
             --dependencies "${CMAKE_CURRENT_BINARY_DIR}/_deps")
+    add_custom_target(upstream-absorption-control-build
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/upstream_absorption_control.py
+            --root "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/absorption/base-control"
+            --dependencies "${CMAKE_CURRENT_BINARY_DIR}/_deps")
+    add_dependencies(upstream-absorption-control-build
+        llamacpp-frozen-control-build container-production-control-build container-c8a-control-build container-c9-control-build)
     add_cpp_ci_test(LlamaCppV2ProductionSwitchTest CI ON
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/container_c9_transition.py
-            --base-build "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c9/base-control/build"
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/upstream_absorption_transition.py
+            --base-build "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/absorption/base-control/build"
             --build "${CMAKE_CURRENT_BINARY_DIR}"
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/c9/transition"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/c9/transition"
-        DEPENDS test_llamacpp_v2_production_switch llamacpp-frozen-control-build container-production-control-build container-c8a-control-build container-c9-control-build)
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/absorption/transition"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/absorption/transition"
+        DEPENDS test_llamacpp_v2_production_switch upstream-absorption-control-build)
 endif()
 
 if(BUILD_TESTING)

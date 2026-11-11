@@ -1129,3 +1129,53 @@ with `container_execution_unavailable`. Existing v1 records, builtin
 sources and builtin execution policies are unchanged. See
 [Container declarations in v2](container-definitions-v2.md) for the complete
 record domains, 59-line worked fixture and exact schema-identity transition.
+
+## Upstream absorption stage
+
+The stage chain through C9 is frozen at `9af81abfc`: `test/upstream_absorption_control.py`
+builds that tree, and `LlamaCppV2ProductionSwitchTest` now runs
+`test/upstream_absorption_transition.py`, which replays the whole C9 chain inside
+it before comparing the live tree. C9's own gate compares protected inputs with
+its base byte for byte, so it cannot run against a tree rebased onto a newer
+upstream; it stays intact as history instead.
+
+`test/fixtures/backend-v2/upstream-absorption.catalog-transition.json` is the
+disclosure for everything that moved between that tree and this one: each
+protected input whose bytes differ (with both hashes), the identity pairs, the
+cpp-ci tests added and removed, and the exact typed records that turn the replayed
+C9 snapshot into the live one. A change outside the manifest fails the gate;
+`--author` rewrites the manifest from the live build and is the only way to
+change it.
+
+The stage carries three upstream features into the declaration, and nothing else
+in it changes:
+
+- `metadata.mode_capability_requirements` and the `classification` mode. llama.cpp
+  serves classification only for a model labelled `systemone` or `zero-shot`.
+- `model_contract: llamacpp_decision_v1`, with a `classification.buffered`
+  operation on `/v1/systemone` and the `pooling`, `batch` and `ubatch` arguments.
+  The contract is closed: the runner adds the rule-head and single-batch launch
+  facts under `/launch/hook`, the artifact consumer adds the implied rule head and
+  the load refusals, and `ConfiguredServer` answers `classify` and `systemone`
+  through `llamacpp::DecisionRuntime`. `llamacpp.prepare.v1` keeps ABI 1/1; a
+  model that is not a decision model gets the same command as before, which the
+  four frozen oracle registrations still check over all 476 cases.
+- `cuda` in `arg_variants`.
+
+HRX removes the classification operation and the three arguments, keeps its eleven
+owners and gets its own owner-graph pin. Compiler revision advances from 5 to 6,
+runner/service policy from 19 to 20, and both fixed policy revisions and the
+export contract revision from 1 to 2. The candidate fixture equals the production
+declaration again; `test/cpp/llamacpp_decision_additions.h` names the added fields
+so every frozen descriptor, cell and argument comparison runs on the declaration
+with exactly those fields removed.
+
+Backend `about` text is not part of a definition. It lives in
+`src/cpp/server/backends/backend_about.json`, keyed by recipe and backend, and
+CMake attaches it to the generated descriptor, so adding or rewording it moves no
+definition digest. An external definition cannot supply it.
+
+`test/backend_v2_external_contract_sync.py write` regenerates
+`test/cpp/llamacpp_external_contract.h` and
+`test/fixtures/backend-v2/external/llamacpp.pins.json` from
+`backend_llamacpp_export.cpp`.
