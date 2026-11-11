@@ -102,7 +102,7 @@ void check_launch(Upstream& upstream) {
         const std::string value = level;
         check(fixture.output.inherit == (value == "debug" || value == "trace") && fixture.output.filter_health_logs, "TRELLIS inherits output at debug only: " + value);
     }
-    for (const auto* backend : {"rocm", "cuda", "rocm-stable", "rocm-nightly"}) {
+    for (const auto* backend : {"rocm", "cuda", "cuda12", "rocm-stable", "rocm-nightly"}) {
         EffectsFixture fixture(upstream.port);
         fixture.external = "/external dir/trellis-server";
         auto server = trellis_server(fixture);
@@ -118,9 +118,9 @@ void check_launch(Upstream& upstream) {
 #endif
         std::vector<std::pair<std::string, std::string>> expected;
         if (std::string(backend) == "rocm") expected = {{key, rocm}};
-        if (std::string(backend) == "cuda") expected = {{key, cuda}, {"CUDA_VISIBLE_DEVICES", "2,0"}, {"__NV_PRIME_RENDER_OFFLOAD", "1"}};
+        if (std::string(backend).rfind("cuda", 0) == 0) expected = {{key, cuda}, {"CUDA_VISIBLE_DEVICES", "2,0"}, {"__NV_PRIME_RENDER_OFFLOAD", "1"}};
         check(fixture.command.env == expected, std::string("TRELLIS loader precedes CUDA additions and keeps the exact rocm condition: ") + backend);
-        check(std::string(backend) != "cuda" || std::find(fixture.events.begin(), fixture.events.end(), "cuda:trellis-server") != fixture.events.end(), "TRELLIS CUDA additions keep their log tag");
+        check(std::string(backend).rfind("cuda", 0) != 0 || std::find(fixture.events.begin(), fixture.events.end(), "cuda:trellis-server") != fixture.events.end(), "TRELLIS CUDA additions keep their log tag");
         check(std::find(fixture.events.begin(), fixture.events.end(), "supported:trellis") == fixture.events.end(), "an explicit backend skips the supported query");
         check(fixture.events[1] == std::string("validate:trellis:") + backend && fixture.events[2] == std::string("external:trellis:") + backend &&
               std::find(fixture.events.begin(), fixture.events.end(), std::string("install:trellis:") + backend) == fixture.events.end(), "TRELLIS validates before resolving an external binary and skips install");
@@ -289,12 +289,13 @@ void check_registration() {
     const auto& d = entry->descriptor;
     const auto& compiled = registered_descriptor("trellis");
     descriptor(d, compiled);
-    check(d.recipe == "trellis" && d.binary == "trellis-server" && d.supported_modes == std::vector<std::string>{"3d"} && d.options.size() == 2 && d.support.size() == 3 && d.config_defaults() == json{{"backend", "auto"}, {"args", ""}, {"vulkan_bin", "builtin"}, {"rocm_bin", "builtin"}, {"cuda_bin", "builtin"}}, "independent TRELLIS descriptor literals");
+    check(d.recipe == "trellis" && d.binary == "trellis-server" && d.supported_modes == std::vector<std::string>{"3d"} && d.options.size() == 2 && d.support.size() == 4 && d.config_defaults() == json{{"backend", "auto"}, {"args", ""}, {"vulkan_bin", "builtin"}, {"rocm_bin", "builtin"}, {"cuda_bin", "builtin"}, {"cuda12_bin", "builtin"}}, "independent TRELLIS descriptor literals");
     check(entry->compatibility == TrustedCompatibility::LegacyNonChatSse && !entry->launch_compatibility.device_on_backend_selection && entry->launch_compatibility.load_log, "TRELLIS carries the legacy SSE and load-log attachments");
     check(trellis::capabilities() == CAP_MODEL_3D, "TRELLIS capability export");
     const auto* spec = trellis::spec();
     const std::vector<std::tuple<std::string, std::string, std::string>> assets = {
         {"vulkan", "windows", "trellis-vulkan-windows-x64.zip"}, {"rocm-stable", "windows", "trellis-rocm-windows-x64.zip"}, {"cuda", "linux", "trellis-cuda-linux-x64.tar.gz"},
+        {"cuda12", "linux", "trellis-cuda12-linux-x64.tar.gz"}, {"cuda12", "windows", "trellis-cuda12-windows-x64.zip"},
         {"rocm", "linux", "trellis-rocm-linux-x64.tar.gz"}, {"rocm-nightly", "macos", "trellis-rocm-linux-x64.tar.gz"}, {"unsupported", "linux", "trellis-unsupported-linux-x64.tar.gz"},
     };
     for (const auto& [backend, os, filename] : assets) for (const auto phase : {InstallPhase::Repository, InstallPhase::Asset}) {

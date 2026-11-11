@@ -128,6 +128,13 @@
     }
   },
   "trellis": {
+    "cuda12": {
+      "description": "Microsoft's TRELLIS.2 image-to-3D pipeline in C++/GGML, built with CUDA 12 for older NVIDIA GPUs.",
+      "author": "Piotr Wilkin (pwilkin)",
+      "publisher": "Piotr Wilkin (pwilkin)",
+      "license": "MIT",
+      "project_url": "https://github.com/pwilkin/trellis.cpp"
+    },
     "cuda": {
       "description": "Microsoft's TRELLIS.2 image-to-3D pipeline in C++/GGML, on NVIDIA GPUs.",
       "author": "Piotr Wilkin (pwilkin)",

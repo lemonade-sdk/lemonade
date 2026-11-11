@@ -54,7 +54,8 @@ std::vector<std::pair<std::string, std::string>> EffectLaunchServices::environme
         result.emplace_back("LD_LIBRARY_PATH", value);
         return result;
     }
-    if (preset == "bundled_accelerator_runtime" && backend != "rocm" && backend != "cuda") return result;
+    const bool cuda = backend.rfind("cuda", 0) == 0;
+    if (preset == "bundled_accelerator_runtime" && backend != "rocm" && !cuda) return result;
     std::string directories;
     if (preset == "bundled_accelerator_runtime" && backend == "rocm") {
         const auto arch = effects_.rocm_arch();
@@ -63,7 +64,7 @@ std::vector<std::pair<std::string, std::string>> EffectLaunchServices::environme
     const bool posix = preset == "executable_loader_path" && posix_executable_loader_path_;
     result.push_back(make_loader_path_override(std::filesystem::path(executable).parent_path().string(),
         directories, posix ? effects_.inherited_posix_loader() : effects_.inherited_loader(), !posix && platform().os == "windows"));
-    if (preset == "bundled_accelerator_runtime" && backend == "cuda") effects_.append_cuda(result, category);
+    if (preset == "bundled_accelerator_runtime" && cuda) effects_.append_cuda(result, category);
     return result;
 }
 long EffectLaunchServices::default_timeout_seconds() const { return utils::HttpClient::get_default_timeout(); }

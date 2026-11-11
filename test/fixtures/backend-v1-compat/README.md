@@ -26,6 +26,11 @@ It was captured by `test_backend_definition_v1_compat --capture` before changing
 any v1 implementation, source, schema or descriptor path. `--capture` is an explicit
 maintenance operation and is never invoked by CTest.
 
+The three TRELLIS source fingerprints (`digest`, `records`, `source_bytes`) were
+recaptured when `trellis.json` gained the upstream `cuda12` support row and binary
+variant; its expression and program fingerprints, and every other definition, are
+unchanged. The upstream absorption transition manifest discloses both files.
+
 Compare the API/CLI capture with:
 
 ```sh

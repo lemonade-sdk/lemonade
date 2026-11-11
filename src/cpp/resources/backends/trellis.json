@@ -45,6 +45,15 @@
     ],
     "support": [
       {
+        "backend": "cuda12",
+        "tier": "experimental",
+        "format": "native",
+        "supported_os": ["linux", "windows"],
+        "devices": {"nvidia_gpu": ["sm_60", "sm_61", "sm_62", "sm_70", "sm_72"]},
+        "device_summary": "NVIDIA Pascal/Volta GPUs (CUDA 12)",
+        "arch_gates": {}
+      },
+      {
         "backend": "cuda",
         "tier": "experimental",
         "format": "native",
@@ -87,7 +96,7 @@
     "self_manages_downloads": false,
     "takes_args": true,
     "arg_variants": [],
-    "bin_variants": ["vulkan", "rocm", "cuda"],
+    "bin_variants": ["vulkan", "rocm", "cuda", "cuda12"],
     "config_extra": {},
     "streams_model_from_storage": false
   },
