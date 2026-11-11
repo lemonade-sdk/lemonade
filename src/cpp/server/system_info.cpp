@@ -10,6 +10,7 @@
 #include "lemon/utils/version_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/utils/safe_fs.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/backend_descriptor_registry.h"
@@ -1343,8 +1344,13 @@ json SystemInfo::build_recipes_info(const json& devices) {
         bool can_uninstall = backend_name != "system"
             && !utils::looks_like_path(
                 BackendUtils::get_bin_config_value(recipe, backend_name));
-        if (recipe == "flm" && !backends::fastflowlm::find_flm_in_path().empty()) {
-            can_uninstall = false;
+        if (recipe == "flm" && can_uninstall) {
+            const std::string flm_path = backends::fastflowlm::find_flm_in_path();
+            if (!flm_path.empty()) {
+                const fs::path install_dir = utils::path_from_utf8(
+                    BackendUtils::get_install_directory(recipe, backend_name));
+                can_uninstall = utils::path_inside(utils::path_from_utf8(flm_path), install_dir);
+            }
         }
         backend_status["can_uninstall"] = can_uninstall;
         if (const auto* desc = backends::descriptor_for(recipe)) {

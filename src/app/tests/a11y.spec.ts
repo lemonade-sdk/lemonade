@@ -779,6 +779,7 @@ test.describe('Accessibility — Backend Manager (#2343 #2344 #2351)', () => {
       await expect(row).toBeVisible();
       await expect(row.locator('.cell__badge')).toHaveText(label);
       await expect(row.locator('button.cell__swap--danger')).toHaveCount(0);
+      await expect(row.getByRole('button', { name: /^Uninstall / })).toHaveCount(0);
       if (state !== 'installed') {
         await expect(row.getByRole('button', { name: /^Update / })).toBeVisible();
       }

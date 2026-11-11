@@ -343,10 +343,28 @@ int run() {
     check(can_uninstall(fallback, "flm", "npu"), "Missing system FLM keeps managed uninstall");
     check(fs::equivalent(flm_path, managed_flm), "Missing system FLM resolves to managed binary");
 
+    path_env.set(managed_flm.parent_path());
+    const json managed_in_path = build_recipes(config, &flm_path);
+    check(can_uninstall(managed_in_path, "flm", "npu"), "Managed FLM on PATH can be uninstalled");
+    check(fs::equivalent(flm_path, managed_flm), "PATH resolves to managed FLM binary");
+
+    const fs::path nested_flm = managed_flm.parent_path() / "release" / binary_name;
+    write_binary(nested_flm);
+    path_env.set(nested_flm.parent_path());
+    const json nested_in_path = build_recipes(config, &flm_path);
+    check(can_uninstall(nested_in_path, "flm", "npu"), "Nested managed FLM on PATH can be uninstalled");
+    check(fs::equivalent(flm_path, nested_flm), "PATH resolves to nested managed FLM binary");
+
+    const fs::path sibling_flm = managed_flm.parent_path().string() + "-external";
+    write_binary(sibling_flm / binary_name);
+    path_env.set(sibling_flm);
+    check(!can_uninstall(build_recipes(config), "flm", "npu"), "Sibling FLM directory is external");
+
     path_env.set(system_path);
     const json system = build_recipes(config, &flm_path);
     check(!can_uninstall(system, "flm", "npu"), "System FLM cannot be uninstalled");
     check(flm_path == lemon::utils::find_executable_in_path(binary_name), "FLM resolves to system binary");
+    check(fs::equivalent(flm_path, system_path / binary_name), "PATH returns the discovered FLM path");
     config["flm"]["prefer_system"] = false;
     check(can_uninstall(build_recipes(config), "flm", "npu"), "Disabled system FLM keeps managed uninstall");
 

@@ -1076,8 +1076,6 @@ bool is_ggml_hip_plugin_available() {
 
     // A self-built llama.cpp resolved from PATH ships libggml-hip.so next to
     // the binary (build tree) or in a sibling lib/ directory (installed tree).
-    // find_executable_in_path() returns the bare name on POSIX, so walk PATH
-    // here to recover the directory the binary actually lives in.
     if (const char* path_env = std::getenv("PATH"); path_env && *path_env) {
         if (detail::ggml_hip_plugin_near_llama_server(path_env)) {
             return true;
