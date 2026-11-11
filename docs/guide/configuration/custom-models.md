@@ -544,10 +544,10 @@ This file contains a JSON object where each key is a model name and each value d
 | `components` | Yes** | Array | Components for a collection. Required when `recipe: "collection.omni"`. See [Collections](#collections). |
 | `size` | No | Number | Model size in GB. Informational only — displayed in the UI and used for RAM filtering. |
 | `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same registry repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
-| `cost_tier` | No | String | Coarse price band for cost-aware routing: `free`, `low`, `medium` or `high`. Any other value is ignored when a routing decision is resolved. See [Cost metadata](#cost-metadata). |
-| `cost_input_per_million` | No | Number | Price per million input tokens. Negative values are ignored. |
-| `cost_output_per_million` | No | Number | Price per million output tokens. Negative values are ignored. |
-| `latency_ms_hint` | No | Number | Expected time-to-first-token in milliseconds, for policies that weigh latency. Negative values are ignored. |
+| `cost_tier` | No | String | Price band: `free`, `low`, `medium` or `high`. See [Cost metadata](#cost-metadata). |
+| `cost_input_per_million` | No | Number | Price in USD per million input tokens. |
+| `cost_output_per_million` | No | Number | Price in USD per million output tokens. |
+| `latency_ms_hint` | No | Number | Your estimate of the model's latency, in milliseconds. |
 
 \* Either `checkpoint` or `checkpoints` is required, but not both.
 \*\* Required only when `recipe: "collection.omni"`. Collections do not use `checkpoint`/`checkpoints`.
@@ -635,13 +635,11 @@ It is still read, and `recipe_options` wins any key both name.
 
 ### Cost metadata
 
-A `collection.router` policy can route on price — see the `cost` classifier and
-the `cost_select` routing mode in the [API reference](../../api/openai.md). Those
-read four optional fields off each candidate model:
+Four optional fields describe what a model costs to run:
 
 ```json
 {
-  "user.Qwen3-8B-GGUF": {
+  "Qwen3-8B-GGUF": {
     "checkpoint": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
     "recipe": "llamacpp",
     "cost_tier": "free",
@@ -652,14 +650,21 @@ read four optional fields off each candidate model:
 }
 ```
 
-Local models are usually free to run, so the useful case is mixing local and
-cloud candidates in one policy: give the local models `cost_tier: "free"` and
-let the cloud provider's discovered prices stand, so a cost-aware rule can
-prefer local until a request genuinely needs the stronger remote model.
+They are reported, not acted on. `GET /v1/models` lists them on the model, and
+when a `collection.router` policy picks the model, the routing decision carries
+them as `outputs.estimated_cost` (see [Router API](../../api/router.md)). The
+figures are yours, not a bill: Lemonade does not meter tokens or measure
+latency, and routing does not choose a candidate by price.
 
-Cloud models get their prices from provider discovery and need none of this.
-Values that cannot be used — an unrecognized `cost_tier`, a negative price — are
-ignored when the decision is resolved rather than rejected at registration.
+Cloud models get their prices from the provider and need none of this. When a
+cloud model's entry also sets a price, the provider's price wins.
+
+A value Lemonade cannot use, such as a `cost_tier` outside the four bands or a
+price that is negative or not a number, is saved as given, logged as a warning
+when the model is registered, and left out of what is reported.
+
+Registering a model again replaces its whole entry, so a registration that
+leaves these fields out removes them.
 
 ### Model naming
 

@@ -136,7 +136,7 @@ caveat as the per-million fields on `/v1/models`.
 |-------|--------|
 | `cost_input_per_million` / `cost_output_per_million` | Typed `ModelInfo` fields when `>= 0` (cloud auto-discovery already populates these); otherwise the same keys in `ModelInfo::extras` for hand-authored entries |
 | `cost_tier` | `extras` only (`"free"` \| `"low"` \| `"medium"` \| `"high"`) |
-| `latency_ms_hint` | `extras` only (local/compute proxy) |
+| `latency_ms_hint` | `extras` only (the author's estimate, in milliseconds) |
 
 No `server_models.json` schema change is required: unrecognized keys already land
 in `extras`. Authors can add e.g. `"cost_tier": "free"` or
