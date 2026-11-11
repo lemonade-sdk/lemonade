@@ -904,7 +904,7 @@ static int handle_agents_enable(bool enable, const std::string& lemond_url) {
     if (!enable) {
         lemon::utils::ProcessManager::run_process_with_output(
             "launchctl", {"bootout", domain, plist.string()}, [](const std::string&) { return true; },
-            "", 30, false);
+            "", 30, true);
         std::filesystem::remove(plist, ec);
         std::cout << "The agent host no longer starts at login." << std::endl;
         return 0;
@@ -917,7 +917,7 @@ static int handle_agents_enable(bool enable, const std::string& lemond_url) {
     out.close();
     lemon::utils::ProcessManager::run_process_with_output(
         "launchctl", {"bootout", domain, plist.string()}, [](const std::string&) { return true; },
-        "", 30, false);
+        "", 30, true);
     const int rc = lemon::utils::ProcessManager::run_process_with_output(
         "launchctl", {"bootstrap", domain, plist.string()},
         [](const std::string& line) { std::cerr << line << std::endl; return true; }, "", 30, false);
