@@ -361,10 +361,11 @@
 
     <!-- Stop server before upgrade.  taskkill /t kills the entire process tree
          (LemonadeServer.exe + child processes like llama-server).  The Job Object
-         in LemonadeServer.exe also guarantees children die when the parent exits. -->
+         in LemonadeServer.exe also guarantees children die when the parent exits.
+         An agent host the CLI started is outside that tree, so it's stopped by name. -->
     <CustomAction Id="StopServerCmd"
                   Directory="SystemFolder"
-                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; exit /b 0"'
+                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; taskkill /f /im lemonade-agent-host.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
@@ -372,7 +373,7 @@
     <!-- Alias for machine-wide — same action -->
     <CustomAction Id="StopServerCmdMachine"
                   Directory="SystemFolder"
-                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; exit /b 0"'
+                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; taskkill /f /im lemonade-agent-host.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
@@ -414,7 +415,7 @@
     <!-- Stop server during uninstall — taskkill /t kills process tree. -->
     <CustomAction Id="StopServerOnUninstall"
                   Directory="SystemFolder"
-                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; exit /b 0"'
+                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; taskkill /f /im lemonade-agent-host.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
