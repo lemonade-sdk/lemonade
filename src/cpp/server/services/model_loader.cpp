@@ -26,7 +26,7 @@ json ModelLoader::load_options(const json& ctx_size) {
 }
 
 void ModelLoader::ensure_loaded(const std::string& requested_model, const json& load_options,
-                                LoadPurpose load_purpose) {
+                                LoadPurpose load_purpose, std::atomic<bool>* cancel) {
     // A live process follows its current use without a reload: routing work
     // promotes it to RoutingHelper, while direct inference demotes it into the
     // counted Standard pool. Destination-pool admission remains authoritative.
@@ -68,7 +68,9 @@ void ModelLoader::ensure_loaded(const std::string& requested_model, const json& 
                                    parse_remote_registry_source(info.registry_source))
                             << "..." << std::endl;
         LOG(INFO, "Server") << "This may take several minutes for large models." << std::endl;
-        model_manager_->download_registered_model(info, true);
+        utils::CancelToken download_cancel;
+        download_cancel.flag = cancel;
+        model_manager_->download_registered_model(info, true, nullptr, download_cancel);
         LOG(INFO, "Server") << "Model download complete: " << requested_model << std::endl;
 
         // resolved_path is computed from the filesystem, so refresh it now that the
@@ -80,7 +82,7 @@ void ModelLoader::ensure_loaded(const std::string& requested_model, const json& 
                         RecipeOptions(info.recipe, load_options), true,
                         /*allow_reload_on_option_change=*/false,
                         /*pinned=*/std::nullopt,
-                        load_purpose);
+                        load_purpose, cancel);
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 
