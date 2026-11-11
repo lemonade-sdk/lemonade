@@ -8,23 +8,6 @@
 
 namespace lemon::backends {
 
-inline bool hgn_suffix(const std::string& value, const std::string& suffix) {
-    return value.size() >= suffix.size() && value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
-
-std::optional<std::vector<std::string>> DefinitionRunner::select_checkpoint_files(
-    const std::string& variant, const std::vector<std::string>& files) const {
-    if (!halogen_contract() || !hgn_suffix(variant, ".hgn")) return std::nullopt;
-    std::vector<std::string> selected;
-    for (const auto& file : files) {
-        if (file == variant || hgn_suffix(file, "-ngram.hgn") || hgn_suffix(file, "-vision.hgn") ||
-            file.rfind("tokenizer/", 0) == 0) selected.push_back(file);
-    }
-    if (std::find(selected.begin(), selected.end(), variant) == selected.end())
-        throw std::runtime_error("Halogen checkpoint not found in repository: " + variant);
-    return selected;
-}
-
 inline std::optional<utils::SetupFailure> halogen_kfd_failure(const std::string& properties) {
     if (properties.size() > 65536) throw std::runtime_error("Container GPU properties exceed limit");
     std::map<std::string, unsigned long long> values;

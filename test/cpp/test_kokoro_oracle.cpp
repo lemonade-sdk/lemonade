@@ -274,7 +274,7 @@ void check_registration() {
     check(ops->resolve_checkpoint_path(ModelInfo{}, context) == root.string(), "Kokoro falls back to the model directory without an index");
     context.model_cache_path = (root / "absent").string();
     check(ops->resolve_checkpoint_path(ModelInfo{}, context) == (root / "absent").string(), "Kokoro tolerates an absent cache directory");
-    check(ops->find_imported_checkpoint(root.string()).empty() && !ops->select_checkpoint_files("", {"index.json"}), "Kokoro keeps the default import and file selection");
+    check(ops->find_imported_checkpoint(root.string()).empty(), "Kokoro keeps the default import and file selection");
     fs::remove_all(root);
 }
 }

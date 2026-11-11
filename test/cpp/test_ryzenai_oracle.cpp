@@ -99,7 +99,6 @@ int main() {
         CheckpointResolveContext context; context.model_cache_path = path;
         const BackendOps* ops = ryzenai::ops();
         check(ops->resolve_checkpoint_path(ryzen_model(), context) == cache_expected && ops->find_imported_checkpoint(path) == import_expected, "independent cache/import sentinel expectations");
-        check(!ops->select_checkpoint_files("any", {"model.onnx"}), "sentinel retains inherited file selection");
     };
     const auto utf8 = [](const auto& path) { return utils::path_to_utf8(path); };
     verify(utf8(root / "absent"), utf8(root / "absent"), "");
@@ -157,7 +156,7 @@ int main() {
         auto ts = thinksound->factory(BackendContext{"error"}); auto ds = ds4->factory(BackendContext{"error"}); auto ryzen = entry->factory(BackendContext{"error"});
         check(thinksound->spec.recipe == "thinksound" && thinksound->spec.binary == "ts-server" && ds4->spec.recipe == "ds4" && ds4->spec.binary == "ds4-server" && entry->spec.recipe == "ryzenai-server", "three independent factory/spec owners");
         check(ts->supports_operation(BackendOperation::AudioGeneration, OperationDelivery::Buffered, ModelType::AUDIO_GENERATION) && !ds->supports_operation(BackendOperation::AudioGeneration, OperationDelivery::Buffered, ModelType::AUDIO_GENERATION) && ryzen->supports_operation(BackendOperation::Responses, OperationDelivery::Streaming, ModelType::MESH), "three independent operation sets and mode masks");
-        check(thinksound->ops->select_checkpoint_files("", {"dit-bf16.gguf", "other"}) == std::optional<std::vector<std::string>>{{"dit-bf16.gguf"}} && !ds4->ops->select_checkpoint_files("", {"other"}) && entry->ops->find_imported_checkpoint("/absent") == "", "three independent artifact policies");
+        check(entry->ops->find_imported_checkpoint("/absent") == "", "three independent artifact policies");
         check(!thinksound->launch_compatibility.device_on_backend_selection && !thinksound->launch_compatibility.posix_executable_loader_path && !entry->launch_compatibility.device_on_backend_selection, "DS4 attachment never leaks into other entries");
     }
     const std::vector<std::tuple<std::shared_ptr<const ConfiguredBackendEntry>, std::string, std::string, std::string, std::string>> installations = {

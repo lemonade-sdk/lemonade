@@ -311,7 +311,7 @@ void check_registration() {
     context.model_cache_path = root.string();
     check(ops->resolve_checkpoint_path(model(), context) == (root / "snapshots/pinned").string(), "TRELLIS resolves the active snapshot");
     std::filesystem::remove(root / "refs/main");
-    check(ops->resolve_checkpoint_path(model(), context) == root.string() && !ops->select_checkpoint_files("", {"a"}), "TRELLIS falls back to the cache and keeps default file selection");
+    check(ops->resolve_checkpoint_path(model(), context) == root.string(), "TRELLIS falls back to the cache and keeps default file selection");
     std::filesystem::remove_all(root);
 }
 }

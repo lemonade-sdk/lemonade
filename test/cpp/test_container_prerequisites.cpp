@@ -103,10 +103,6 @@ template<class Call> void rejects(Call call, const std::string& label, const std
 void halogen_facts(const Json& fixture, const std::shared_ptr<const ConfiguredBackendEntry>& backend, const fs::path& scratch) {
     const auto& ops = *backend->v2_ops;
     const auto& selection = fixture.at("selection");
-    check(ops.select_checkpoint_files(selection.at("variant"), selection.at("files")) ==
-        std::optional<std::vector<std::string>>(selection.at("expected").get<std::vector<std::string>>()), "HgnBundleExactSourceSelection");
-    rejects([&] { ops.select_checkpoint_files("missing.hgn", selection.at("files")); }, "HgnMissingMainRejected", "Halogen checkpoint not found in repository: missing.hgn");
-    check(!ops.select_checkpoint_files("model.HGN", selection.at("files")) && !ops.select_checkpoint_files("model.gguf", {}), "HgnOtherFormatsUseDefaultSelector");
     ModelInfo model; model.recipe = "gufo"; model.type = ModelType::LLM; model.device = DEVICE_CPU;
     ops.populate_metadata(model, {});
     check(model.max_context_window == 262144, "HalogenNativeContextMetadata");

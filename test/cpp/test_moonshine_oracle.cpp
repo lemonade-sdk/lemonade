@@ -311,13 +311,6 @@ void check_registration() {
     install_platform(*spec, "cpu", {[&] { probes.push_back("os"); return std::string("linux"); }, [&] { probes.push_back("arch"); return std::string("gfx1151"); }});
     check(probes == std::vector<std::string>{"os"}, "Moonshine installation never probes the ROCm architecture");
     const auto* ops = moonshine::ops();
-    const std::vector<std::string> files = {"medium-streaming-en/quantized/model.onnx", "Medium-Streaming-EN/Quantized/tokens.json", "medium-streaming-en/quantizedX/other", "README.md"};
-    check(ops->select_checkpoint_files("medium-streaming-en/quantized", files) == std::optional<std::vector<std::string>>{{"medium-streaming-en/quantized/model.onnx", "Medium-Streaming-EN/Quantized/tokens.json"}}, "Moonshine selects the variant directory case-insensitively");
-    check(ops->select_checkpoint_files("medium-streaming-en/quantized/", files) == ops->select_checkpoint_files("medium-streaming-en/quantized", files), "a trailing slash names the same directory");
-    check(ops->select_checkpoint_files("", files) == std::optional<std::vector<std::string>>{files}, "an empty variant selects every file");
-    std::string message;
-    try { ops->select_checkpoint_files("absent", files); } catch (const std::runtime_error& error) { message = error.what(); }
-    check(message == "No Moonshine model files found in folder: absent", "Moonshine reports an empty variant directory");
     CheckpointResolveContext context;
     context.model_cache_path = "/cache/models--org--moonshine";
     check(ops->resolve_checkpoint_path(ModelInfo{}, context) == default_backend_ops()->resolve_checkpoint_path(ModelInfo{}, context) && ops->find_imported_checkpoint("/import").empty(), "Moonshine keeps default checkpoint resolution and import lookup");

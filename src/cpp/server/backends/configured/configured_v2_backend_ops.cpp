@@ -177,11 +177,8 @@ bool ConfiguredV2BackendOps::is_downloaded(const ModelInfo& model, const Backend
     return BackendOps::is_downloaded(model, context);
 }
 void ConfiguredV2BackendOps::download_model(const ModelInfo& model, bool do_not_upgrade, DownloadProgressCallback progress, const BackendOpsContext& context) const {
-    if (!context.model_manager) throw std::invalid_argument("V2 registry download requires model manager");
+    if (!context.fetch) throw std::invalid_argument("V2 registry download requires fetch service");
     BackendOps::download_model(model, do_not_upgrade, std::move(progress), context);
-}
-std::optional<std::vector<std::string>> ConfiguredV2BackendOps::select_checkpoint_files(const std::string& variant, const std::vector<std::string>& files) const {
-    return runner_->select_checkpoint_files(variant, files);
 }
 void ConfiguredV2BackendOps::populate_metadata(ModelInfo& info, const BackendOpsContext&) const { runner_->populate_metadata(info); }
 std::string ConfiguredV2BackendOps::validate_registration_checkpoint(const std::string& checkpoint) const { return runner_->validate_registration(checkpoint); }

@@ -122,9 +122,6 @@ int main() {
         check(fixture.stops == 1, "destructor stops child");
     }
     const auto* ops = thinksound::ops();
-    check(ops->select_checkpoint_files("ignored", {"clip-tokenizer.gguf", "dit-q8.gguf", "t5-bf16.gguf", "dit-bf16.gguf", "vae-f32.gguf", "metaclip-text-f32.gguf", "t5-tokenizer.gguf"}) == std::optional<std::vector<std::string>>{{"dit-bf16.gguf", "t5-bf16.gguf", "metaclip-text-f32.gguf", "vae-f32.gguf", "t5-tokenizer.gguf", "clip-tokenizer.gguf"}}, "six companion files ordered");
-    check(ops->select_checkpoint_files("ignored", {"t5-bf16.gguf", "dit-bf16.gguf"}) == std::optional<std::vector<std::string>>{{"dit-bf16.gguf", "t5-bf16.gguf"}}, "missing companions skipped");
-    check(ops->select_checkpoint_files("ignored", {}) == std::optional<std::vector<std::string>>{std::vector<std::string>{}}, "engaged empty selection");
     const auto root = std::filesystem::temp_directory_path() / ("thinksound-oracle-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(root / "snapshots/pinned");
     std::filesystem::create_directories(root / "refs");

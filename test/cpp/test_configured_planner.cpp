@@ -91,12 +91,12 @@ int main() {
         check(params.repo == "other/repo" && params.filename == "asset-pin" && params.version_override == "fixed-release" && params.sha256 == std::string(64, 'a'), "other repository phase isolation");
         context.phase = InstallPhase::Asset; params = other->spec.install_params_fn(context);
         check(params.filename == "asset-resolved" && other->spec.recipe == "other-install" && other->spec.pin_recipe == "other-pin" && other->spec.binary == "other-bin", "other asset/spec identity isolation");
-        check(other->ops->select_checkpoint_files("any", {"first", "second", "dit-bf16.gguf"}) == std::optional<std::vector<std::string>>{{"second", "first"}} && other->definition->operations[0].path == "/other-generate", "other file/operation isolation");
+        check(other->definition->operations[0].path == "/other-generate", "other file/operation isolation");
         context.definition = thinksound->definition;
         bool rejected = false;
         try { other->spec.install_params_fn(context); } catch (const std::invalid_argument&) { rejected = true; }
         check(rejected, "cross-definition ownership rejected");
-        check(thinksound->ops->select_checkpoint_files("any", {"dit-bf16.gguf", "second"}) == std::optional<std::vector<std::string>>{{"dit-bf16.gguf"}} && thinksound->definition->operations[0].path == "/generate", "ThinkSound stays isolated after alternating calls");
+        check(thinksound->definition->operations[0].path == "/generate", "ThinkSound stays isolated after alternating calls");
     }
     const auto root = std::filesystem::temp_directory_path() / ("configured-snapshot-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(root / "refs"); std::filesystem::create_directories(root / "snapshots/pinned");

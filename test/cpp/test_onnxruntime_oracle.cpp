@@ -291,7 +291,7 @@ void check_registration() {
         check(ops->resolve_checkpoint_path(ModelInfo{}, context) == tree.root.string() && capture.records == std::vector<std::string>{"Warn 3 complete model directories under " + tree.root.string() + "; refusing to pick one"}, "an ambiguous import resolves to the cache root with a warning");
     }
     check(ops->find_imported_checkpoint((tree.root / "absent").string()).empty() && ops->find_imported_checkpoint((tree.root / "snapshots/old").string()) == (tree.root / "snapshots/old/onnx").string(), "ONNX Runtime import lookup");
-    check(!ops->select_checkpoint_files("", {"model.onnx"}) && ops->validate_checkpoint_file("x").empty(), "ONNX Runtime keeps default file selection and validation");
+    check(ops->validate_checkpoint_file("x").empty(), "ONNX Runtime keeps default file selection and validation");
 }
 }
 

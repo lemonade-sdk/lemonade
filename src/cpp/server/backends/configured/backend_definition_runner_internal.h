@@ -57,7 +57,6 @@ public:
     bool ds4_contract() const { return program_.model_contract == execution::ModelContract::Ds4RocmV1; }
     std::optional<BuiltinLoadLog> builtin_load_log() const;
     bool halogen_contract() const { return program_.model_contract == execution::ModelContract::HalogenHgnV1; }
-    std::optional<std::vector<std::string>> select_checkpoint_files(const std::string& variant, const std::vector<std::string>& files) const;
     std::string validate_registration(const std::string& checkpoint) const;
     std::string validate_file(const std::string& path) const;
     std::string resolve_artifact(const CheckpointResolveContext& context) const;
