@@ -20,6 +20,11 @@ inline std::vector<std::string> parse_custom_args(const std::string& custom_args
     char quote_char = '\0';
 
     for (char c : custom_args_str) {
+        // Newlines are stored so the UI can show one flag per line; the argv a
+        // backend is launched with must see them as separators, not inside a token.
+        if (c == '\n' || c == '\r') {
+            c = ' ';
+        }
         if (!in_quotes && (c == '"' || c == '\'')) {
             in_quotes = true;
             quote_char = c;
