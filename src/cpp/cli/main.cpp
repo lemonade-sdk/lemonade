@@ -879,10 +879,14 @@ static void print_agents_table(const nlohmann::json& listing) {
             const auto on_path = lemon::agents::path_matches(
                 lemon::utils::path_from_utf8(shim_path).filename().string(),
                 lemon::utils::get_environment_variable_utf8("PATH"));
-            if (on_path.empty() || on_path.front() != lemon::utils::path_from_utf8(shim_path)) {
-                std::cout << "\nNote: " << dir << " isn't first on your PATH for `"
-                          << agent.value("id", "") << "`; add it to run the managed "
+            if (on_path.empty()) {
+                std::cout << "\nNote: " << dir << " isn't on your PATH; add it to run the managed "
                           << agent.value("name", "agent") << " directly." << std::endl;
+            } else if (on_path.front() != lemon::utils::path_from_utf8(shim_path)) {
+                std::cout << "\nNote: " << lemon::utils::path_to_utf8(on_path.front())
+                          << " comes before " << dir << " on your PATH; put " << dir
+                          << " first to run the managed " << agent.value("name", "agent")
+                          << " directly." << std::endl;
             }
         }
     }

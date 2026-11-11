@@ -433,6 +433,15 @@ class AgentManagerTests(unittest.TestCase):
         again = self.install()
         self.assertIn("Already installed", again.stdout)
 
+    def test_021_list_says_why_the_managed_pi_isnt_the_one_on_path(self):
+        self.install()
+        result = self.cli(["agents", "list"])
+        self.assertIn("isn't on your PATH", result.stdout)
+        external = self.write_external_pi(self.stub_bin)
+        bin_dir = os.path.join(self.home, ".local", "bin")
+        result = self.cli(["agents", "list"], env=self.env(extra_path=bin_dir))
+        self.assertIn(external + " comes before " + bin_dir, result.stdout)
+
     def test_022_concurrent_installs_one_is_busy(self):
         self.cli(["agents", "list"])
         self.release_server.delay = 2
