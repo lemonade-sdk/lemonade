@@ -538,13 +538,22 @@ schema at all. For an external row without a selector the backend is left to the
 server. Runtime choices and setup messages come from that server's
 `/system-info`, including when the client is another OS.
 
-Built-in recipes keep the Configuration tab's own fields (context size, backend
-and device selectors, backend arguments). Where the schema describes one of those
-options the tab takes its label and help from it, renders an enum as a select and
-applies the declared range to a numeric input. Recipe display names come from the
-schema and `/system-info`; the renderer's own name table is the fallback for a
-recipe the server does not name and for the compact labels. Recipe and option
-names are open strings read with own-property-safe lookups.
+Built-in recipes keep the Configuration tab's own widgets (context size, backend
+and device selectors, backend arguments), and the schema row drives them: it
+supplies label and help, an enum renders as a select, a declared range bounds a
+numeric input, and an option the row describes with UI metadata takes its type
+from the row. The draft is validated against the row (`builtinOptions.ts`) with
+the rules `/models/{id}/options` applies, so an option of the wrong kind or a
+fractional value for a whole-number option is listed under the form and **Save**
+stays disabled. An option whose schema default is null is left to the server,
+because the row cannot state its type.
+
+Recipe display names, full and compact, come from the schema and `/system-info`
+in every view (Models, Chat, Backends, Monitor) and follow catalog updates. The
+renderer's own name tables only label a recipe the connected server does not
+name, which is the case on a server without the schema endpoint before
+`/system-info` has answered. Recipe and option names are open strings read with
+own-property-safe lookups.
 
 External recipes replace those fields with the schema form
 (`components/SchemaModelOptions.tsx`, `components/SchemaRecipeOptions.tsx`). It
@@ -567,21 +576,42 @@ recipe is external (`features/backends/catalogLoad.ts`) checks the edited keys
 against the schema, dry-runs them, resolves the backend from the fresh effective
 values, installs it when `/system-info` reports it installable, pulls the model
 when it is not downloaded, and then posts `/load` with `save_options:false`. Load
-does not persist edits. Built-in recipes load through `/load` directly and rely
-on the server's own validation and backend installation.
+does not persist edits.
+
+A built-in recipe takes the same steps before `/load` (`prepareBuiltinLoad`):
+the options being loaded are dry-run, the backend is resolved from the effective
+values and installed when installable, and a model that is not downloaded is
+pulled. The dry run is advisory there, because `/load` and `/models/{id}/options`
+do not validate alike: `/load` ignores keys it does not know, accepts `pinned`
+and `save_options`, and does not refuse a fractional value for a whole-number
+option, all of which the options route rejects. The preflight therefore sends
+only the keys the schema row lists, and when the dry run is refused or
+unavailable the load goes ahead and the server validates it. The only cases that
+stop a built-in load in the client are a backend that `/system-info` reports as
+unsupported, a failed install or pull, and a connection change.
 
 The add-model panel offers every external recipe of the catalog under the
 capabilities its `supported_modes` declare, next to the recipes `/system-info`
-reports.
+reports. For an external recipe the panel asks for the main checkpoint plus one
+field per role in the row's `required_checkpoints`, and refuses to save while a
+declared role is empty; the built-in projector and image-encoder fields are not
+shown. The v1 schema row does not export `required_checkpoints` yet, so until the
+server adds it an external recipe gets the main checkpoint field only.
 
 Catalog state stays in memory and is keyed by effective API URL, opaque
 authentication generation and catalog ID. Raw API keys are absent from those
-identities and error messages. Catalog, option and catalog-load requests capture
-a connection snapshot and cannot retry a mutation against another server; a
-response that arrives after the URL or key changed is discarded. A connection
-change clears the cached schema, ETag, server recipe names and `/system-info`
-snapshot. The renderer's other requests (health, model list, chat) keep their
-existing per-request handling and are not bound to a snapshot.
+identities and error messages. Every JSON request of the API client (health,
+model list, options, load, unload, statistics) captures a connection snapshot and
+its answer is discarded when the URL or key changed while it was in flight; the
+catalog, option and load flows additionally refuse to send a later step to
+another server. A streaming chat completion stops at the first chunk read after
+the change and reports the change as its error. A refresh interrupted this way
+asks the new server instead of reporting a disconnect. A connection change clears
+the cached schema, ETag, server recipe names and `/system-info` snapshot. The
+model list and health snapshot of the previous server stay on screen until the
+refresh that follows the change replaces them. Requests that do not return JSON
+through the client (backend install and model pull streams, WebSocket log and
+realtime streams, file downloads) are not bound to a snapshot.
 
 The catalog is revalidated when the app connects, when the connection changes,
 whenever `/system-info` is refreshed (which includes window focus and backend
@@ -597,9 +627,17 @@ Frontend checks use Node/CJS with the existing TypeScript transpiler and
 `schemaRecipeOptions.test.cjs` cover the client, the form model and the form
 markup, and `npm run test:runtime` in `src/app` runs them through
 `tests/backend-catalog.runtime.cjs`. Run `npm run typecheck` separately from the
-web bundle: its loader uses `transpileOnly`. `test/catalog_ui_exercise.py` drove
-the previous renderer's options dialog through Chrome and has no counterpart for
-this renderer yet: its browser driver was removed, so the script cannot run.
+web bundle: its loader uses `transpileOnly`.
+
+`node test/app/catalogLiveExercise.cjs --lemond build/lemond --work EMPTY_DIRECTORY`
+replaces the Chrome-driven `test/catalog_ui_exercise.py`, which was removed with
+the renderer it drove. It places `test/fixtures/catalog-fourth.json` in an
+isolated server's `backends.d`, starts that server on a free port with the
+deterministic CPU engine `test/fake_catalog_engine.py`, and drives the renderer's
+own modules against it: catalog client, names, add-model choices, schema form
+markup, client and server validation, dry run, save, the catalog load flow, a
+chat request and reset. It does not open a browser, so layout, focus handling and
+the wiring of the React components to these modules are not exercised by it.
 Native Tauri behavior and distribution packaging require their own
 environment-specific qualification; see
 [platform qualification](platform-qualification.md).
