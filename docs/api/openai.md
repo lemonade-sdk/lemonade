@@ -749,7 +749,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `input` | Yes | The input, as a string or an array of input items. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_output_tokens` | No | Upper bound on generated tokens. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `previous_response_id` | No | The response this one continues. Passed to the backend as is. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `previous_response_id` | No | The response this one continues. llama.cpp rejects it. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `temperature` | No | Sampling temperature. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `repeat_penalty` | No | From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage repetition. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

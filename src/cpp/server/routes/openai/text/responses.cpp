@@ -93,7 +93,7 @@ const RouteArg kMaxOutputTokens{"max_output_tokens", ArgIn::JsonBody, {{"type", 
                                 "Upper bound on generated tokens."};
 const RouteArg kPreviousResponseId{
     "previous_response_id", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Partial,
-    "The response this one continues. Passed to the backend as is."};
+    "The response this one continues. llama.cpp rejects it."};
 
 bool non_empty(const json& value) {
     if (value.is_string()) return !value.get_ref<const std::string&>().empty();

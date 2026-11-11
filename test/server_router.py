@@ -1242,57 +1242,61 @@ class RouterTests(ServerTestBase):
         finally:
             self._delete_collection(collection)
 
+    def _post_responses(self, body, timeout=TIMEOUT_DEFAULT):
+        return requests.post(f"{self.base_url}/responses", json=body, timeout=timeout)
+
+    def _assert_chain_rejected(self, resp):
+        self.assertEqual(
+            resp.status_code, 400, f"status {resp.status_code}: {resp.text}"
+        )
+        self.assertTrue(
+            resp.headers.get("Content-Type", "").startswith("application/json"),
+            f"expected a JSON error, got {resp.headers.get('Content-Type')}",
+        )
+        error = resp.json().get("error", {})
+        self.assertEqual(error.get("code"), "router_response_chain_unsupported")
+        return error
+
     def test_640_responses_rejects_previous_response_id(self):
-        """A response chain cannot cross routing candidates (#2957).
+        """A response chain cannot cross routing candidates.
 
         Rejected before dispatch and before any model load, so this asserts on
         the error shape only -- no inference runs.
         """
-        resp = requests.post(
-            f"{self.base_url}/responses",
-            json={
+        resp = self._post_responses(
+            {
                 "model": COLLECTION_NAME,
                 "input": "continue where we left off",
                 "previous_response_id": "resp_abc123",
                 "max_output_tokens": 8,
-            },
-            timeout=TIMEOUT_DEFAULT,
+            }
         )
-        self.assertEqual(
-            resp.status_code, 400, f"status {resp.status_code}: {resp.text}"
-        )
-        error = resp.json().get("error", {})
-        self.assertEqual(error.get("code"), "router_response_chain_unsupported")
+        error = self._assert_chain_rejected(resp)
         self.assertIn(COLLECTION_NAME, error.get("message", ""))
         print("[OK] previous_response_id on a router collection -> 400")
 
     def test_641_responses_allows_previous_response_id_on_plain_model(self):
-        """Negative control: the guard is scoped to router collections, so a
-        concrete model still reaches the backend. Whatever the backend makes of
-        an unknown chain id, it must not be our routing rejection."""
-        resp = requests.post(
-            f"{self.base_url}/responses",
-            json={
-                "model": DEFAULT_MODEL,
+        """The guard is scoped to router collections: on a concrete model the
+        request goes through it and fails on the missing model instead."""
+        resp = self._post_responses(
+            {
+                "model": "user.No-Such-Model-For-Chain-Test",
                 "input": "say hi",
                 "previous_response_id": "resp_abc123",
                 "max_output_tokens": 8,
-            },
-            timeout=600,
+            }
         )
-        body = resp.text
-        self.assertNotIn("router_response_chain_unsupported", body)
-        print(
-            f"[OK] plain model with previous_response_id not rejected by the "
-            f"router guard (status {resp.status_code})"
+        self.assertEqual(
+            resp.status_code, 404, f"status {resp.status_code}: {resp.text}"
         )
+        self.assertEqual(resp.json().get("error", {}).get("code"), "model_not_found")
+        print("[OK] concrete model with previous_response_id passes the guard")
 
     def test_642_responses_ignores_empty_previous_response_id(self):
         """An empty string is not a chain reference, so it must not trip the
         guard -- clients that always send the field shouldn't be locked out."""
-        resp = requests.post(
-            f"{self.base_url}/responses",
-            json={
+        resp = self._post_responses(
+            {
                 "model": COLLECTION_NAME,
                 "input": "say hi",
                 "previous_response_id": "",
@@ -1300,10 +1304,61 @@ class RouterTests(ServerTestBase):
             },
             timeout=600,
         )
-        self.assertNotIn("router_response_chain_unsupported", resp.text)
+        code = None
+        if resp.status_code >= 400:
+            code = resp.json().get("error", {}).get("code")
+        self.assertNotEqual(
+            code, "router_response_chain_unsupported", f"status {resp.status_code}"
+        )
         print(
             f"[OK] empty previous_response_id not rejected (status {resp.status_code})"
         )
+
+    def test_643_responses_rejects_chain_before_streaming(self):
+        """A streaming request gets the same JSON 400 before any SSE is sent."""
+        resp = self._post_responses(
+            {
+                "model": COLLECTION_NAME,
+                "input": "continue",
+                "previous_response_id": "resp_abc123",
+                "stream": True,
+            }
+        )
+        self._assert_chain_rejected(resp)
+        print("[OK] streaming request with previous_response_id -> 400 before SSE")
+
+    def test_644_responses_rejects_chain_on_collection_alias(self):
+        """The collection named without its user. prefix is guarded too."""
+        alias = COLLECTION_NAME.removeprefix("user.")
+        resp = self._post_responses(
+            {
+                "model": alias,
+                "input": "continue",
+                "previous_response_id": "resp_abc123",
+            }
+        )
+        self._assert_chain_rejected(resp)
+        print(f"[OK] previous_response_id on '{alias}' -> 400")
+
+    def test_645_responses_rejects_other_backend_state_references(self):
+        """conversation and item_reference inputs point at backend-held state
+        the same way previous_response_id does."""
+        for name, extra in (
+            ("conversation", {"conversation": "conv_abc123", "input": "continue"}),
+            (
+                "conversation object",
+                {"conversation": {"id": "conv_abc123"}, "input": "continue"},
+            ),
+            (
+                "item_reference",
+                {"input": [{"type": "item_reference", "id": "msg_abc123"}]},
+            ),
+        ):
+            with self.subTest(name):
+                self._assert_chain_rejected(
+                    self._post_responses({"model": COLLECTION_NAME, **extra})
+                )
+        print("[OK] conversation and item_reference on a router collection -> 400")
 
 
 if __name__ == "__main__":
