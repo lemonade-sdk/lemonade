@@ -1,55 +1,73 @@
-const vm = require('node:vm');
-const { assert, fixture, load, stub, test, run, bridge, tick, fs, path, renderer } = require('./helpers/catalogHarness.cjs');
-const callbacks = bridge();
-const { serverConfig, ServerConfig } = load('utils/serverConfig.ts');
-const { BackendCatalogClient } = load('utils/backendCatalog.ts');
-const { parseBackendSchema, backendSelector, own } = load('recipes/backendSchema.ts');
+const { assert, fixture, load, test, run, bridge, tick, app, path } = require('./helpers/catalogHarness.cjs');
+const { api, connection: connect } = bridge();
+const { BackendCatalogClient, backendCatalogClient, refreshBackendCatalog } = load('features/backends/backendCatalog.ts');
+const { parseBackendSchema, backendSelector, own } = load('features/backends/backendSchema.ts');
+const state = load('features/backends/catalogState.ts');
+const { recipeBackendOptionName } = load('features/backends/recipeMetadata.ts');
+const { catalogBackend, ensureCatalogModelReady, loadThroughCatalog } = load('features/backends/catalogLoad.ts');
+const { catalogRecipeCapabilities, externalRecipeChoices } = load('features/backends/catalogRecipeOptions.ts');
 let client;
 const calls = [];
 let reply = () => new Response(JSON.stringify(fixture('catalog-fourth')), { headers: { ETag: 'fourth-etag' } });
-global.fetch = async (url, options) => { calls.push({ url, options }); return reply(url, options); };
+global.fetch = async (url, options = {}) => { calls.push({ url, options }); return reply(url, options); };
 const reset = () => { client = new BackendCatalogClient(); calls.length = 0; };
-test('explicit URL initializes optional connection listener without port callback', async () => {
-  await serverConfig.waitForInit();
-  assert.equal(typeof callbacks.connection, 'function');
-  assert.equal(serverConfig.getSnapshot().apiUrl, 'http://one.test/proxy/api/v1');
-  assert.equal(serverConfig.getSnapshot().authenticationGeneration, 0);
+const header = (call, name) => new Headers(call.options.headers).get(name);
+const body = options => JSON.parse(options.body);
+
+test('snapshots preserve proxy prefixes and stay stable between changes', () => {
+  const snapshot = api.connectionSnapshot();
+  assert.equal(snapshot.apiUrl, 'http://one.test/proxy/api/v1');
+  assert.deepEqual(api.connectionSnapshot(), snapshot);
+  api.assertCurrentConnection(snapshot);
 });
-test('snapshots expose opaque auth generations and preserve proxy prefixes', () => {
-  const before = serverConfig.getSnapshot();
-  callbacks.connection('http://one.test/proxy/', 'private-second-key');
-  const after = serverConfig.getSnapshot();
+test('snapshots expose opaque auth generations and never the key', () => {
+  const before = api.connectionSnapshot();
+  let notified = 0;
+  const unsubscribe = api.onConnectionChange(() => { notified++; });
+  connect('http://one.test/proxy/', 'private-second-key');
+  const after = api.connectionSnapshot();
+  unsubscribe();
   assert.equal(after.apiUrl, before.apiUrl);
   assert(after.authenticationGeneration > before.authenticationGeneration);
+  assert(after.generation > before.generation);
+  assert.equal(notified, 1);
   assert(!JSON.stringify(after).includes('private-'));
   assert(Object.isFrozen(after));
+  assert.throws(() => api.assertCurrentConnection(before), /connection changed/);
+});
+test('an unchanged connection keeps its generation', () => {
+  const before = api.connectionSnapshot();
+  connect('http://one.test/proxy', 'private-second-key');
+  assert.deepEqual(api.connectionSnapshot(), before);
 });
 test('catalog refresh deduplicates and then revalidates with ETag', async () => {
   reset();
   const pending = client.refresh(); assert.equal(pending, client.refresh());
   assert.equal((await pending).status, 'ready'); assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'http://one.test/proxy/api/v1/backends/schema');
+  assert.equal(header(calls[0], 'Authorization'), 'Bearer private-second-key');
   reply = () => new Response(null, { status: 304 });
   const cached = await client.refresh();
   assert.equal(cached.status, 'ready');
-  assert.equal(calls[1].options.headers.get('If-None-Match'), 'fourth-etag');
+  assert.equal(header(calls[1], 'If-None-Match'), 'fourth-etag');
   assert.equal(cached.catalog.catalog_id, 'sha256:fourth-fixture');
 });
 test('same catalog hash on a different URL cannot reuse metadata or ETag', async () => {
-  callbacks.connection('http://two.test/reverse/path', 'private-second-key');
+  connect('http://two.test/reverse/path', 'private-second-key');
   reply = () => new Response(JSON.stringify(fixture('catalog-fourth')));
-  const state = await client.refresh();
+  const result = await client.refresh();
   const request = calls.at(-1);
-  assert.equal(state.status, 'ready');
+  assert.equal(result.status, 'ready');
   assert.equal(request.url, 'http://two.test/reverse/path/api/v1/backends/schema');
-  assert.equal(request.options.headers.get('If-None-Match'), null);
+  assert.equal(header(request, 'If-None-Match'), null);
 });
 test('empty/nonempty auth transitions invalidate a same-URL cache', async () => {
   for (const key of ['', 'private-third-key', '']) {
-    const previous = serverConfig.getSnapshot();
-    callbacks.connection('http://two.test/reverse/path', key);
+    const previous = api.connectionSnapshot();
+    connect('http://two.test/reverse/path', key);
     await client.refresh();
-    assert(serverConfig.getSnapshot().authenticationGeneration > previous.authenticationGeneration);
-    assert.equal(calls.at(-1).options.headers.get('If-None-Match'), null);
+    assert(api.connectionSnapshot().authenticationGeneration > previous.authenticationGeneration);
+    assert.equal(header(calls.at(-1), 'If-None-Match'), null);
   }
 });
 test('304 without a cached body refetches unconditionally', async () => {
@@ -57,14 +75,14 @@ test('304 without a cached body refetches unconditionally', async () => {
   reply = () => ++request === 1 ? new Response(null, { status: 304 }) : new Response(JSON.stringify(fixture('catalog-fourth')));
   assert.equal((await client.refresh()).status, 'ready');
   assert.equal(calls.length, 2);
-  assert(calls.every(call => call.options.headers.get('If-None-Match') === null));
+  assert(calls.every(call => header(call, 'If-None-Match') === null));
 });
 test('same URL restart with new catalog hash returns new metadata', async () => {
   const changed = fixture('catalog-fourth'); changed.catalog_id = 'restarted'; changed.recipes[0].options[0].maximum = 4;
   reply = () => new Response(JSON.stringify(changed), { headers: { ETag: 'new' } });
-  const state = await client.refresh();
-  assert.equal(state.catalog.catalog_id, 'restarted');
-  assert.equal(state.catalog.recipes[0].options[0].maximum, 4);
+  const result = await client.refresh();
+  assert.equal(result.catalog.catalog_id, 'restarted');
+  assert.equal(result.catalog.recipes[0].options[0].maximum, 4);
 });
 for (const [status, expected] of [[401, 'authentication'], [403, 'authentication'], [404, 'missing'], [503, 'unreachable']]) test('HTTP failure has distinct state ' + status, async () => {
   reply = () => new Response('{}', { status });
@@ -73,7 +91,7 @@ for (const [status, expected] of [[401, 'authentication'], [403, 'authentication
   assert(!('catalog' in result));
   reply = () => new Response(JSON.stringify(fixture('catalog-fourth')));
   assert.equal((await client.refresh()).status, 'ready');
-  assert.equal(calls.at(-1).options.headers.get('If-None-Match'), null);
+  assert.equal(header(calls.at(-1), 'If-None-Match'), null);
 });
 test('network and incompatible contracts are explicit and clear usable data', async () => {
   reply = () => { throw new Error('private-key-not-an-error-message'); };
@@ -89,19 +107,28 @@ test('late schema responses from an obsolete generation are rejected', async () 
   reset(); let release;
   reply = () => new Promise(resolve => { release = resolve; });
   const pending = client.refresh();
-  await tick(); callbacks.connection('http://three.test', 'new-private-key');
+  await tick(); connect('http://three.test', 'new-private-key');
   release(new Response(JSON.stringify(fixture('catalog-fourth'))));
   await assert.rejects(pending, /connection changed/);
   reply = () => new Response(JSON.stringify(fixture('controls')));
   assert.equal((await client.refresh()).catalog.recipes[0].recipe, 'constructor');
-  assert.equal(calls.at(-1).options.headers.get('If-None-Match'), null);
+  assert.equal(header(calls.at(-1), 'If-None-Match'), null);
 });
 test('bound mutation cannot retry or retarget after connection change', async () => {
-  const snapshot = serverConfig.getSnapshot();
-  callbacks.connection('http://four.test', 'new-private-key');
+  const snapshot = api.connectionSnapshot();
+  connect('http://four.test', 'new-private-key');
   const before = calls.length;
-  await assert.rejects(serverConfig.fetchForConnection(snapshot, '/load', { method: 'POST' }), /connection changed/);
+  await assert.rejects(api.fetchForConnection(snapshot, '/load', { method: 'POST' }), /connection changed/);
   assert.equal(calls.length, before);
+});
+test('a connection change drops cached system info and late responses', async () => {
+  let release;
+  reply = () => new Promise(resolve => { release = resolve; });
+  const pending = api.systemInfo();
+  await tick(); connect('http://four-b.test', 'new-private-key');
+  release(new Response(JSON.stringify({ recipes: { stale: {} } })));
+  await pending;
+  assert.equal(api.systemInfoData, null);
 });
 test('selector identity is independent of suffix/UI and supports compatible older hints', () => {
   const recipe = parseBackendSchema(fixture('controls')).recipes[0];
@@ -110,38 +137,85 @@ test('selector identity is independent of suffix/UI and supports compatible olde
   delete recipe.options[0].ui; assert.equal(backendSelector(recipe), null);
   assert.equal(own({}, 'constructor'), undefined);
 });
-test('recipe-name snapshots replace old connection names and handle prototype identifiers', async () => {
-  const names = load('utils/recipeNames.ts');
-  const React = require(path.resolve(renderer, '../../node_modules/react'));
-  const { renderToStaticMarkup } = require(path.resolve(renderer, '../../node_modules/react-dom/server'));
-  const View = () => React.createElement('span', null, JSON.stringify(names.useRecipeDisplayNames()));
-  names.replaceRecipeDisplayNames('catalog', JSON.parse('{"constructor":{"display_name":"Remote constructor"},"old":{"display_name":"Old name"}}'), serverConfig.getSnapshot());
-  assert(renderToStaticMarkup(React.createElement(View)).includes('Remote constructor'));
-  callbacks.connection('http://five.test', 'same-private-key');
-  const html = renderToStaticMarkup(React.createElement(View));
-  assert(!html.includes('Old name')); assert(!html.includes('Remote constructor')); assert(html.includes('Lemonade Router'));
+test('backend option resolves from the schema, never from a recipe-name guess once a schema exists', () => {
+  const info = { recipes: {
+    constructor: { selectable_backend: true, options: [] },
+    builtin: { selectable_backend: true, options: [{ name: 'engine', type_name: 'BACKEND' }] },
+    plain: { selectable_backend: true, options: [] },
+  } };
+  state.setCatalogState({ status: 'missing', connection: api.connectionSnapshot(), message: 'none' });
+  assert.equal(recipeBackendOptionName(info, 'plain'), 'plain_backend');
+  assert.equal(recipeBackendOptionName(info, 'builtin'), 'engine');
+  assert.equal(recipeBackendOptionName({ recipes: {} }, 'constructor'), null);
+  const catalog = parseBackendSchema(fixture('controls'));
+  catalog.recipes.push({ recipe: 'plain', source: 'builtin', display_name: 'Plain', options: [], support: [] });
+  catalog.recipes.push({ recipe: 'none', source: 'external', display_name: 'None', backend_option: null, options: [], support: [] });
+  state.setCatalogState({ status: 'ready', connection: api.connectionSnapshot(), catalog });
+  assert.equal(recipeBackendOptionName(info, 'constructor'), 'constructor');
+  assert.equal(recipeBackendOptionName(info, 'plain'), null);
+  assert.equal(recipeBackendOptionName(info, 'builtin'), 'engine');
+  assert.equal(recipeBackendOptionName({ recipes: { none: { selectable_backend: true } } }, 'none'), null);
 });
-test('injected browser bridge notifies local and cross-tab settings while staying on origin', async () => {
-  const server = fs.readFileSync(path.resolve(renderer, '../../../cpp/server/server.cpp'), 'utf8');
-  const script = server.slice(server.indexOf('const settingsListeners'), server.indexOf('</script>', server.indexOf('const settingsListeners')));
-  const storage = new Map(); const win = new EventTarget(); win.location = { origin: 'http://served.test' };
-  const context = { window: win, navigator: { platform: 'client-only' }, localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) }, Set, parseInt };
-  vm.runInNewContext(script, context);
-  let settingsEvents = 0; const connections = [];
-  win.api.onSettingsUpdated(() => settingsEvents++);
-  const unsubscribe = win.api.onConnectionSettingsUpdated((url, key) => connections.push([url, key]));
-  await win.api.saveSettings({ apiUrl: 'http://ignored-client-url', apiKey: { value: 'private-browser-key' } });
-  assert.equal(settingsEvents, 1); assert.deepEqual(connections[0], ['http://served.test', 'private-browser-key']);
-  storage.set('lemonade-settings', JSON.stringify({ apiKey: { value: '' } }));
-  const event = new Event('storage'); event.key = 'lemonade-settings'; win.dispatchEvent(event); await tick();
-  assert.deepEqual(connections[1], ['http://served.test', '']);
-  unsubscribe(); await win.api.saveSettings({}); assert.equal(connections.length, 2);
+test('server display names replace tables, vanish with the catalog and survive prototype identifiers', () => {
+  const { backendLabel, backendCompactLabel } = load('modelPresentation.ts');
+  assert.equal(backendLabel('constructor'), 'Unlisted controls');
+  assert.equal(backendCompactLabel('constructor'), 'Unlisted controls');
+  state.setSystemRecipeNames({ recipes: { llamacpp: { display_name: 'Llama.cpp from server' }, toString: {} } });
+  assert.equal(backendLabel('llamacpp'), 'Llama.cpp from server');
+  assert.equal(backendCompactLabel('llamacpp'), 'llama.cpp');
+  assert.equal(backendLabel('toString'), 'toString');
+  state.clearServerRecipeNames();
+  state.setCatalogState({ status: 'loading', connection: api.connectionSnapshot() });
+  assert.equal(backendLabel('constructor'), 'constructor');
+  assert.equal(backendLabel('llamacpp'), 'llama.cpp');
+  assert.equal(state.serverRecipeDisplayName('__proto__'), undefined);
 });
-stub('utils/downloadTracker.ts', { downloadTracker: new Proxy({}, { get: () => () => {} }) });
-const { catalogBackend, ensureModelReady } = load('utils/backendInstaller.ts');
+test('external recipes join the add-model choices with their declared modes', () => {
+  const catalog = parseBackendSchema(fixture('controls'));
+  catalog.recipes[0].supported_modes = ['transcription', 'chat'];
+  catalog.recipes.push({ recipe: 'shipped', source: 'builtin', display_name: 'Shipped', supported_modes: ['image'], options: [], support: [] });
+  state.setCatalogState({ status: 'ready', connection: api.connectionSnapshot(), catalog });
+  assert.deepEqual(externalRecipeChoices().map(choice => [choice.recipe, choice.label, choice.capabilities]),
+    [['constructor', 'Unlisted controls', ['audio', 'chat', 'omni']]]);
+  assert.deepEqual(catalogRecipeCapabilities('shipped'), ['image']);
+  assert.equal(catalogRecipeCapabilities('toString'), undefined);
+});
+test('published catalog state follows refreshes and the legacy notice state', async () => {
+  backendCatalogClient.clear();
+  reply = () => new Response('{}', { status: 404 });
+  assert.equal((await refreshBackendCatalog()).status, 'missing');
+  assert.equal(state.catalogState().status, 'missing');
+  assert.match(state.LEGACY_OPTIONS_NOTICE, /no backend schema endpoint/);
+  reply = () => new Response(JSON.stringify(fixture('catalog-fourth')), { headers: { ETag: 'e' } });
+  const version = state.catalogVersion();
+  await refreshBackendCatalog();
+  assert.equal(state.catalogRecipe('catalog-fourth').display_name, fixture('catalog-fourth').recipes[0].display_name);
+  assert(state.catalogVersion() > version);
+  reply = () => new Response(null, { status: 304 });
+  const settled = state.catalogVersion();
+  await refreshBackendCatalog();
+  assert.equal(state.catalogVersion(), settled);
+});
+test('dry-run saves send dry_run, skip the models-changed notification and are connection-bound', async () => {
+  let changed = 0;
+  const unsubscribe = api.onModelsChanged(() => { changed++; });
+  const answer = { recipe: 'catalog-fourth', model_name: 'm', saved: {}, defaults: {}, effective: { catalog_fourth_batch: 4 } };
+  reply = () => new Response(JSON.stringify(answer));
+  await api.saveModelOptions('m', { catalog_fourth_batch: 4 }, { dryRun: true });
+  assert.deepEqual(body(calls.at(-1).options), { catalog_fourth_batch: 4, dry_run: true });
+  assert.equal(changed, 0);
+  await api.validateModelOptions('m', {});
+  assert.deepEqual(body(calls.at(-1).options), { dry_run: true });
+  await api.saveModelOptions('m', { catalog_fourth_batch: 4 });
+  assert.deepEqual(body(calls.at(-1).options), { catalog_fourth_batch: 4 });
+  assert.equal(changed, 1);
+  reply = () => { connect('http://four-c.test', 'new-private-key'); return new Response(JSON.stringify(answer)); };
+  await assert.rejects(api.saveModelOptions('m', {}, { dryRun: true }), /connection changed/);
+  unsubscribe();
+});
 test('selector reset uses fresh server defaults instead of a stale saved backend', () => {
   const recipe = parseBackendSchema(fixture('controls')).recipes[0];
-  const context = { recipe, effective: { constructor: '' }, connection: serverConfig.getSnapshot() };
+  const context = { recipe, effective: { constructor: '' }, connection: api.connectionSnapshot() };
   assert.equal(catalogBackend(context, { constructor: { default_backend: 'cpu' } }), 'cpu');
   context.effective.constructor = 'server-gpu'; assert.equal(catalogBackend(context, {}), 'server-gpu');
   delete recipe.backend_option; delete recipe.options[0].ui;
@@ -149,100 +223,139 @@ test('selector reset uses fresh server defaults instead of a stale saved backend
 });
 test('catalog load validates before any side effect and sends exact typed API names', async () => {
   const recipe = parseBackendSchema(fixture('catalog-fourth')).recipes[0];
-  const context = { recipe, effective: { catalog_fourth_batch: 4 }, connection: serverConfig.getSnapshot() };
-  const models = { m: { recipe: 'catalog-fourth', downloaded: true } };
-  const posts = [];
+  const context = { recipe, effective: { catalog_fourth_batch: 4 }, connection: api.connectionSnapshot() };
+  const model = { id: 'm', recipe: 'catalog-fourth', downloaded: true };
+  const posts = []; calls.length = 0;
   reply = (url, options) => {
-    if (options.method === 'POST') { posts.push([url, JSON.parse(options.body)]); return new Response('{}'); }
+    if (options.method === 'POST') { posts.push([url, body(options)]); return new Response('{}'); }
     return new Response(JSON.stringify(url.endsWith('/system-info') ? { recipes: {} } : { recipe: 'catalog-fourth', downloaded: true }));
   };
-  await assert.rejects(ensureModelReady('m', models, { catalog: context, loadBody: { catalog_fourth_batch: 9 } }), /Invalid option/);
-  assert.equal(posts.length, 0);
-  await ensureModelReady('m', models, { catalog: context, loadBody: { catalog_fourth_batch: 4, pinned: true } });
+  await assert.rejects(ensureCatalogModelReady('m', model, { catalog_fourth_batch: 9 }, context), /Invalid option/);
+  await assert.rejects(ensureCatalogModelReady('m', model, { unknown: 1 }, context), /Invalid option/);
+  assert.equal(calls.length, 0);
+  await ensureCatalogModelReady('m', model, { catalog_fourth_batch: 4, pinned: true }, context);
   assert.deepEqual(posts, [[context.connection.apiUrl + '/load', { catalog_fourth_batch: 4, pinned: true, model_name: 'm', save_options: false }]]);
 });
 test('a switch during preflight prevents every subsequent install/pull/load mutation', async () => {
   const recipe = parseBackendSchema(fixture('catalog-fourth')).recipes[0];
-  const connection = serverConfig.getSnapshot(); let posts = 0;
+  const connection = api.connectionSnapshot(); let posts = 0;
   reply = (url, options) => {
     if (options.method === 'POST') posts++;
-    callbacks.connection('http://six.test', 'private-six-key');
+    connect('http://six.test', 'private-six-key');
     return new Response(JSON.stringify({ recipes: {} }));
   };
-  await assert.rejects(ensureModelReady('m', { m: { recipe: 'catalog-fourth' } }, { catalog: { recipe, connection, effective: {} }, loadBody: { catalog_fourth_batch: 4 } }), /connection changed/);
+  await assert.rejects(ensureCatalogModelReady('m', { id: 'm', recipe: 'catalog-fourth' }, { catalog_fourth_batch: 4 }, { recipe, connection, effective: {} }), /connection changed/);
   assert.equal(posts, 0);
 });
 test('arbitrary selector installs the selected server backend and stops for setup actions', async () => {
   const recipe = parseBackendSchema(fixture('controls')).recipes[0];
-  const connection = serverConfig.getSnapshot();
+  const connection = api.connectionSnapshot();
   const posts = [];
   reply = (url, options) => {
     if (options.method === 'POST') {
-      posts.push([url, JSON.parse(options.body)]);
+      posts.push([url, body(options)]);
       return new Response(JSON.stringify({ action: 'https://example.test/setup' }));
     }
     return new Response(JSON.stringify({ recipes: { constructor: { default_backend: 'cpu', backends: {
       'server-gpu': { state: 'installable', message: 'Server setup', action: '' },
     } } } }));
   };
-  await assert.rejects(ensureModelReady('m', { m: { recipe: 'constructor', downloaded: true } }, {
-    catalog: { connection, recipe, effective: { constructor: 'server-gpu' } }, loadBody: { constructor: 'server-gpu' },
-  }), /Complete the server backend setup/);
+  await assert.rejects(ensureCatalogModelReady('m', { id: 'm', recipe: 'constructor', downloaded: true }, { constructor: 'server-gpu' },
+    { connection, recipe, effective: { constructor: 'server-gpu' } }), /Complete the server backend setup/);
   assert.deepEqual(posts, [[connection.apiUrl + '/install', { recipe: 'constructor', backend: 'server-gpu', stream: true, subscribe: false }]]);
+});
+test('an unsupported selected backend stops the load with the server message', async () => {
+  const recipe = parseBackendSchema(fixture('controls')).recipes[0];
+  const connection = api.connectionSnapshot();
+  let posts = 0;
+  reply = (url, options) => {
+    if (options.method === 'POST') posts++;
+    return new Response(JSON.stringify({ recipes: { constructor: { default_backend: 'cpu', backends: {
+      cpu: { state: 'unsupported', message: 'Needs another machine' },
+    } } } }));
+  };
+  await assert.rejects(ensureCatalogModelReady('m', { id: 'm', recipe: 'constructor' }, {},
+    { connection, recipe, effective: {} }), /Needs another machine/);
+  assert.equal(posts, 0);
 });
 test('switch after install dispatch prevents any subsequent load or pull', async () => {
   const recipe = parseBackendSchema(fixture('controls')).recipes[0];
-  const connection = serverConfig.getSnapshot();
+  const connection = api.connectionSnapshot();
   const posts = [];
   reply = (url, options) => {
     if (options.method === 'POST') {
       posts.push(url);
-      callbacks.connection('http://seven.test', 'private-seven-key');
+      connect('http://seven.test', 'private-seven-key');
       return new Response(JSON.stringify({ action: 'https://example.test/setup' }));
     }
     return new Response(JSON.stringify({ recipes: { constructor: { default_backend: 'cpu', backends: {
       cpu: { state: 'installable', message: '', action: '' },
     } } } }));
   };
-  await assert.rejects(ensureModelReady('m', { m: { recipe: 'constructor' } }, {
-    catalog: { connection, recipe, effective: { constructor: 'cpu' } }, loadBody: { constructor: 'cpu' },
-  }), /connection changed/);
+  await assert.rejects(ensureCatalogModelReady('m', { id: 'm', recipe: 'constructor' }, { constructor: 'cpu' },
+    { connection, recipe, effective: { constructor: 'cpu' } }), /connection changed/);
   assert.deepEqual(posts, [connection.apiUrl + '/install']);
 });
-
-test('ordinary external load and chat preflight also use the catalog and transient options', async () => {
-  const { backendCatalogClient } = load('utils/backendCatalog.ts');
+test('a missing model is pulled before the load and both stay on the bound server', async () => {
+  const recipe = parseBackendSchema(fixture('catalog-fourth')).recipes[0];
+  const connection = api.connectionSnapshot();
+  const posts = [];
+  reply = (url, options) => {
+    if (options.method === 'POST') { posts.push(url); return new Response(JSON.stringify({ status: 'completed', complete: true })); }
+    if (url.endsWith('/downloads')) return new Response('[]');
+    return new Response(JSON.stringify(url.endsWith('/system-info') ? { recipes: {} } : { recipe: 'catalog-fourth', downloaded: false }));
+  };
+  await ensureCatalogModelReady('m', { id: 'm', recipe: 'catalog-fourth' }, {}, { connection, recipe, effective: {} });
+  assert.deepEqual(posts, [connection.apiUrl + '/pull', connection.apiUrl + '/load']);
+});
+test('ordinary external loads validate with a dry run and send transient options', async () => {
   backendCatalogClient.clear();
   const posts = [];
-  const connection = serverConfig.getSnapshot();
+  const connection = api.connectionSnapshot();
   reply = (url, options) => {
     if (url.endsWith('/backends/schema')) return new Response(JSON.stringify(fixture('catalog-fourth')));
     if (url.endsWith('/options')) {
-      const body = JSON.parse(options.body); posts.push([url, body]);
+      posts.push([url, body(options)]);
       return new Response(JSON.stringify({ recipe: 'catalog-fourth', model_name: 'm',
         saved: {}, defaults: { catalog_fourth_batch: 2 }, effective: { catalog_fourth_batch: 2 } }));
     }
     if (url.endsWith('/system-info')) return new Response('{"recipes":{}}');
-    if (options.method === 'POST') { posts.push([url, JSON.parse(options.body)]); return new Response('{}'); }
+    if (options.method === 'POST') { posts.push([url, body(options)]); return new Response('{}'); }
     return new Response('{"recipe":"catalog-fourth","downloaded":true}');
   };
-  await ensureModelReady('m', { m: { recipe: 'catalog-fourth', downloaded: true } });
+  const model = { id: 'm', recipe: 'catalog-fourth', downloaded: true };
+  assert.equal(await loadThroughCatalog('m', model), true);
   assert.deepEqual(posts, [
     [connection.apiUrl + '/models/m/options', { dry_run: true }],
     [connection.apiUrl + '/load', { model_name: 'm', save_options: false }],
   ]);
+  posts.length = 0;
+  assert.equal(await loadThroughCatalog('m', model, { catalog_fourth_batch: 4, pinned: true }, { ctx_size: 4096, save_options: false }), true);
+  assert.deepEqual(posts, [
+    [connection.apiUrl + '/models/m/options', { catalog_fourth_batch: 4, dry_run: true }],
+    [connection.apiUrl + '/load', { catalog_fourth_batch: 4, pinned: true, model_name: 'm', save_options: false }],
+  ]);
+  posts.length = 0;
+  await api.loadModel('m', { catalog_fourth_batch: 3 }, model);
+  assert.deepEqual(posts.map(([url]) => url), [connection.apiUrl + '/models/m/options', connection.apiUrl + '/load']);
 });
-
-test('external chat preserves an already-loaded transient override', async () => {
-  load('utils/backendCatalog.ts').backendCatalogClient.clear();
+test('a rejected dry run stops an external load before any mutation', async () => {
   const posts = [];
   reply = (url, options) => {
-    if (url.endsWith('/backends/schema')) return new Response(JSON.stringify(fixture('catalog-fourth')));
-    if (options.method === 'POST') posts.push(url);
-    return new Response(JSON.stringify({ all_models_loaded: [{ model_name: 'm' }] }));
+    if (url.endsWith('/backends/schema')) return new Response(null, { status: 304 });
+    if (options.method === 'POST') { posts.push(url); return new Response('{}', { status: 400 }); }
+    return new Response('{}');
   };
-  await ensureModelReady('m', { m: { recipe: 'catalog-fourth', downloaded: true } });
-  assert.deepEqual(posts, []);
+  await assert.rejects(loadThroughCatalog('m', { id: 'm', recipe: 'catalog-fourth' }, { catalog_fourth_batch: 99 }), /rejected model options/);
+  assert.equal(posts.length, 1);
+});
+test('built-in and unknown recipes stay on the regular load path', async () => {
+  const wire = fixture('catalog-fourth'); wire.recipes[0].source = 'builtin'; wire.catalog_id = 'builtin-only';
+  backendCatalogClient.clear();
+  reply = () => new Response(JSON.stringify(wire));
+  assert.equal(await loadThroughCatalog('m', { id: 'm', recipe: 'catalog-fourth' }), false);
+  assert.equal(await loadThroughCatalog('m', { id: 'm', recipe: 'toString' }), false);
+  assert.equal(await loadThroughCatalog('m', null), false);
 });
 
 run();

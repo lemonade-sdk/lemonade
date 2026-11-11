@@ -1,19 +1,21 @@
-const { assert, fixture, load, test, run, app, bridge, path, fs, renderer } = require('./helpers/catalogHarness.cjs');
+const { assert, fixture, load, test, run, app, bridge, path } = require('./helpers/catalogHarness.cjs');
 bridge();
 const React = require(path.join(app, 'node_modules/react'));
 const { renderToStaticMarkup } = require(path.join(app, 'node_modules/react-dom/server'));
-const { parseBackendSchema, controlFor } = load('recipes/backendSchema.ts');
-const f = load('recipes/recipeForm.ts');
+const { parseBackendSchema, controlFor } = load('features/backends/backendSchema.ts');
+const f = load('features/backends/recipeForm.ts');
 const { SchemaRecipeOptions } = load('components/SchemaRecipeOptions.tsx');
+const { I18nProvider } = load('i18n.tsx');
 const make = (name = 'controls') => {
   const recipe = parseBackendSchema(fixture(name)).recipes[0];
   const values = Object.fromEntries(recipe.options.map(option => [option.name, option.default_value]));
   return f.createForm(recipe, { recipe: recipe.recipe, model_name: 'user.Test', saved: {}, effective: values, defaults: values }, 'one', 0);
 };
-const render = (form, props = {}) => renderToStaticMarkup(React.createElement(SchemaRecipeOptions, { form, backends: ['cpu'], onChange: () => {}, ...props }));
+const render = (form, props = {}) => renderToStaticMarkup(React.createElement(I18nProvider, null,
+  React.createElement(SchemaRecipeOptions, { form, backends: ['cpu'], onChange: () => {}, ...props })));
 test('fourth option renders literal label, numeric value/default/bounds/inherit', () => {
   const html = render(make('catalog-fourth'));
-  for (const text of ['Batch size', 'type="number"', 'value="2"', 'min="1"', 'max="8"', 'Schema default: 2', 'server default: 2', 'inherited', 'Use inherited value']) assert(html.includes(text), text);
+  for (const text of ['Batch size', 'type="number"', 'value="2"', 'min="1"', 'max="8"', 'Schema default: 2', 'Server default: 2', 'inherited', 'Use inherited value']) assert(html.includes(text), text);
 });
 test('all five native controls and no request-control fields', () => {
   const html = render(make());
@@ -84,20 +86,5 @@ test('duplicate recipe/option and malformed enum cannot hide controls', () => {
   assert.throws(() => parseBackendSchema(wire), /Malformed/);
   wire.recipes[0].options.pop(); wire.recipes[0].options[0].enum = [{}];
   assert.throws(() => parseBackendSchema(wire), /Malformed/);
-});
-test('legacy context slider helpers retain numeric and auto semantics', () => {
-  const filename = path.join(renderer, 'ModelOptionsModal.tsx');
-  const ts = require(path.join(app, 'node_modules/typescript'));
-  const Module = require('node:module');
-  const compiled = new Module(filename, module);
-  compiled.filename = filename; compiled.paths = Module._nodeModulePaths(path.dirname(filename));
-  const source = fs.readFileSync(filename, 'utf8') + '\nexport {getContextSliderMarks, contextSizeToSliderValue, sliderValueToContextSize};';
-  compiled._compile(ts.transpileModule(source, { fileName: filename, compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true, target: ts.ScriptTarget.ES2020 } }).outputText, filename);
-  const helpers = compiled.exports;
-  assert.deepEqual(helpers.getContextSliderMarks(10000), [2048, 4096, 8192, 10000]);
-  assert.deepEqual(helpers.getContextSliderMarks(1024), []);
-  assert.equal(helpers.contextSizeToSliderValue(4096, 8192), 12);
-  assert.equal(helpers.contextSizeToSliderValue(0, 8192), 13);
-  assert.equal(helpers.sliderValueToContextSize(13, 8192), 8192);
 });
 run();

@@ -1,9 +1,7 @@
 const { assert, fixture, load, test, run, bridge } = require('./helpers/catalogHarness.cjs');
 bridge();
-const schema = load('recipes/backendSchema.ts');
-const f = load('recipes/recipeForm.ts');
-const legacy = load('recipes/recipeOptionsConfig.ts');
-const literal = fixture('legacy');
+const schema = load('features/backends/backendSchema.ts');
+const f = load('features/backends/recipeForm.ts');
 const backends = ['cpu', 'server-gpu'];
 function formFrom(name = 'controls') {
   const recipe = schema.parseBackendSchema(fixture(name)).recipes[0];
@@ -13,41 +11,18 @@ function formFrom(name = 'controls') {
 }
 const option = (form, name) => form.recipe.options.find(item => item.name === name);
 const payload = form => JSON.parse(JSON.stringify(f.mutationPayload(form, backends)));
-for (const [recipe, keys] of Object.entries(literal.recipes)) test('legacy list/defaults/reset: ' + recipe, () => {
-  assert(legacy.isLegacyRecipe(recipe));
-  assert.deepEqual(legacy.getOptionsForRecipe(recipe), keys);
-  const defaults = legacy.createDefaultOptions(recipe);
-  const expected = Object.fromEntries(keys.map(key => [key, { value: literal.definitions[key].default, useDefault: true }]));
-  assert.deepEqual(defaults, { recipe, ...expected });
-  const reset = Object.fromEntries(keys.map(key => [literal.aliases[key] ?? key, literal.definitions[key].default]));
-  assert.deepEqual(legacy.recipeOptionsToApi(defaults), reset);
-  assert.deepEqual(legacy.apiToRecipeOptions(recipe, {}), defaults);
-  assert.deepEqual(keys.map(key => legacy.getOptionDefinition(key).label), keys.map(key => literal.definitions[key].label));
-});
-for (const [name, definition] of Object.entries(literal.definitions)) test('legacy definition independent snapshot: ' + name, () => {
-  const { description, ...actual } = legacy.getOptionDefinition(name);
-  assert.deepEqual(actual, definition);
-});
-for (const [name, apiName] of Object.entries(literal.aliases)) test('legacy exact alias round trip: ' + name, () => {
-  assert.equal(legacy.toApiOptionName(name), apiName);
-  assert.equal(legacy.toFrontendOptionName(apiName), name);
-});
-test('untrusted identifiers do not select inherited legacy properties', () => {
-  for (const name of ['constructor', '__proto__', 'toString']) {
-    assert.equal(legacy.isLegacyRecipe(name), false);
-    assert.deepEqual(legacy.getOptionsForRecipe(name), []);
-    assert.equal(legacy.getOptionDefinition(name), undefined);
-    assert.equal(legacy.toApiOptionName(name), name);
-  }
-});
-test('built-in presentation remains independent of absent UI metadata and configured arms', () => {
-  for (const recipe of ['thinksound', 'ryzenai-llm', 'llamacpp']) assert(legacy.isLegacyRecipe(recipe));
-  assert.equal(legacy.isLegacyRecipe('ds4'), false);
+test('built-in rows parse without UI metadata and never gain an incompatibility', () => {
   const row = { ...fixture('catalog-fourth').recipes[0], recipe: 'ds4', source: 'builtin', options: [] };
   const wire = fixture('catalog-fourth'); wire.recipes = [row];
-  assert.equal(schema.parseBackendSchema(wire).recipes[0].source, 'builtin');
-  assert.equal(legacy.createDefaultOptions('llamacpp').ctxSize.value, 4096);
-  assert.equal(legacy.apiToRecipeOptions('llamacpp', { ctx_size: -1 }).ctxSize.value, -1);
+  const parsed = schema.parseBackendSchema(wire).recipes[0];
+  assert.equal(parsed.source, 'builtin');
+  assert.equal(parsed.incompatibility, undefined);
+});
+test('draft payload mirrors the mutation without validating', () => {
+  const form = formFrom();
+  const edited = f.editNumeric(form, option(form, 'integer'), '9');
+  assert.throws(() => payload(edited), /validation/);
+  assert.deepEqual(JSON.parse(JSON.stringify(f.draftPayload(edited))), { integer: 9 });
 });
 test('untouched effective values produce an empty mutation', () => assert.deepEqual(payload(formFrom()), {}));
 for (const [name, value] of [['boolean', false], ['integer', 0], ['integer', -1], ['text', ''], ['fraction', 0.25]]) {
