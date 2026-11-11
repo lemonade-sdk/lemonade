@@ -13,6 +13,7 @@ import { copyTextToClipboard } from '../clipboard';
 import {
   recipeBackendOptionName,
   recipeConfigurableOptionNames,
+  recipeOptionChoices,
   recipeOptionHint,
   recipeOptionIsArgs,
   recipeOptionIsBackend,
@@ -20,7 +21,12 @@ import {
   recipeOptionIsDevice,
   recipeOptionIsNumeric,
   recipeOptionLabel,
+  recipeOptionRange,
 } from '../features/backends/recipeMetadata';
+import { own } from '../features/backends/backendSchema';
+import { LEGACY_OPTIONS_NOTICE, catalogRecipe, serverRecipeDisplayName } from '../features/backends/catalogState';
+import { useBackendCatalog } from '../hooks/useBackendCatalog';
+import { SchemaModelOptions } from './SchemaModelOptions';
 import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo, isOnDemandModelInfo } from '../modelCapabilities';
 import {
   modelBaseTuningForModel,
@@ -111,6 +117,8 @@ function fmtDownloads(n: number): string {
 
 function recipeDisplayLabel(recipe: string): string {
   const n = String(recipe || '').toLowerCase();
+  const fromServer = serverRecipeDisplayName(n);
+  if (fromServer) return fromServer;
   switch (n) {
     case 'llamacpp': return 'llama.cpp';
     case 'vllm': return 'vLLM';
@@ -325,6 +333,10 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
   flm_args: 'Raw backend args for this model only.',
 };
 
+// Option names come from the server, so a lookup must not reach Object.prototype.
+Object.setPrototypeOf(TUNING_FIELD_LABELS, null);
+Object.setPrototypeOf(TUNING_FIELD_HINTS, null);
+
 function formatContextSize(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return 'auto';
   if (value >= 1024 && value % 1024 === 0) return `${Math.round(value / 1024)}K`;
@@ -357,7 +369,7 @@ function systemRecipes(info: SystemInfoLike): Record<string, any> | null {
 }
 
 function backendMapForRecipe(info: SystemInfoLike, recipe: string): Record<string, any> | null {
-  const recipeInfo = systemRecipes(info)?.[recipe];
+  const recipeInfo = own(systemRecipes(info) ?? undefined, recipe);
   const backends = recipeInfo?.backends;
   return backends && typeof backends === 'object' && !Array.isArray(backends) ? backends as Record<string, any> : null;
 }
@@ -374,7 +386,7 @@ function backendIsSelectable(recipe: string, backend: string, info: unknown): bo
 }
 
 function recipeDefaultBackend(info: SystemInfoLike, recipe: string): string {
-  return optionalDisplayValue(systemRecipes(info)?.[recipe]?.default_backend);
+  return optionalDisplayValue(own(systemRecipes(info) ?? undefined, recipe)?.default_backend);
 }
 
 function backendOptionsForKey(key: keyof RecipeOptions, current: string | undefined, model: ModelInfo, info: SystemInfoLike): string[] {
@@ -1445,6 +1457,8 @@ const ModelConfigurationTab: React.FC<{
   currentNameRef.current = name;
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [systemInfoSettled, setSystemInfoSettled] = useState(() => api.systemInfoData !== null);
+  const catalog = useBackendCatalog();
+  const [schemaFormDirty, setSchemaFormDirty] = useState(false);
 
   useEffect(() => {
     if (!isActive) return;
@@ -1464,7 +1478,9 @@ const ModelConfigurationTab: React.FC<{
   );
   const supportsContextSize = modelSupportsContextSize(model);
   const activeRecipe = activeRecipeForModel(model);
-  const recipeKeys = useMemo(() => tuningKeysForModel(model, systemInfo), [model, systemInfo]);
+  const recipeKeys = useMemo(() => tuningKeysForModel(model, systemInfo), [model, systemInfo, catalog]);
+  const schemaRecipe = catalog.status === 'ready' ? catalogRecipe(activeRecipe) : undefined;
+  const schemaOwned = schemaRecipe?.source === 'external';
   // A selector labels its own resolved value, and voice keeps a custom entry
   // outside the recipe's option list, so both are seeded from the saved layer.
   const offersResolvedValue = useCallback((key: keyof RecipeOptions) => key === 'voice'
@@ -1545,8 +1561,8 @@ const ModelConfigurationTab: React.FC<{
     || !draftFieldsEqual(recipeKeys, recipeDraft, savedLoadSettings.recipe);
 
   useEffect(() => {
-    onDirtyChange?.(hasLoadSettingChanges);
-  }, [hasLoadSettingChanges, onDirtyChange]);
+    onDirtyChange?.(schemaOwned ? schemaFormDirty : hasLoadSettingChanges);
+  }, [hasLoadSettingChanges, onDirtyChange, schemaFormDirty, schemaOwned]);
 
   useEffect(() => {
     if (hasLoadSettingChanges && notice === 'Saved for future loads') setNotice(null);
@@ -1720,7 +1736,7 @@ const ModelConfigurationTab: React.FC<{
   // it, which an effect would still be one draft behind. Until the fetch lands
   // there is nothing on screen to apply, and an empty draft would read as a
   // tombstone for every option, so the button falls back to the saved ones.
-  if (loadOptionsRef) loadOptionsRef.current = serverOptionsLoaded ? buildLoadOptions : null;
+  if (loadOptionsRef && !schemaOwned) loadOptionsRef.current = serverOptionsLoaded ? buildLoadOptions : null;
   useEffect(() => () => {
     if (loadOptionsRef) loadOptionsRef.current = null;
   }, [loadOptionsRef]);
@@ -1862,6 +1878,27 @@ const ModelConfigurationTab: React.FC<{
       );
     }
 
+    const schemaChoices = recipeOptionChoices(activeRecipe, String(key));
+    if (schemaChoices.length > 0) {
+      const options = draftValue && !schemaChoices.includes(draftValue) ? [draftValue, ...schemaChoices] : schemaChoices;
+      return (
+        <div key={String(key)} className="detail-tuning__field detail-configuration__field">
+          <span id={`${fieldId}-label`}>{label}</span>
+          <select
+            id={fieldId}
+            className="select detail-configuration__select"
+            value={draftValue}
+            aria-labelledby={`${fieldId}-label`}
+            onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
+          >
+            <option value="">{optionalDisplayValue(baseValue) ? `Model default (${optionalDisplayValue(baseValue)})` : 'Model default'}</option>
+            {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+          </select>
+          {hint && <small>{hint}</small>}
+        </div>
+      );
+    }
+
     if (recipeOptionIsBoolean(systemInfo, activeRecipe, String(key))) {
       return (
         <div key={String(key)} className="detail-tuning__field detail-configuration__field">
@@ -1883,6 +1920,7 @@ const ModelConfigurationTab: React.FC<{
     }
 
     if (recipeOptionIsNumeric(systemInfo, activeRecipe, String(key))) {
+      const range = recipeOptionRange(activeRecipe, String(key));
       const stepNumericInput = (direction: -1 | 1) => {
         const input = document.getElementById(fieldId);
         if (!(input instanceof HTMLInputElement)) return;
@@ -1899,6 +1937,8 @@ const ModelConfigurationTab: React.FC<{
               id={fieldId}
               className="input detail-configuration__number-input"
               type="number"
+              min={range.minimum}
+              max={range.maximum}
               value={draftValue}
               placeholder={optionalDisplayValue(baseValue) || ''}
               aria-labelledby={`${fieldId}-label`}
@@ -1934,17 +1974,49 @@ const ModelConfigurationTab: React.FC<{
     );
   };
 
+  const sectionHead = (
+    <div className="detail-configuration__section-head">
+      <div>
+        <h3 className="detail-configuration__section-heading">{t('Load settings')}</h3>
+        <p className="detail-configuration__section-copy">
+          {t('Settings used when this model loads or reloads.')}
+        </p>
+      </div>
+    </div>
+  );
+
+  if (schemaRecipe && schemaOwned && catalog.status === 'ready') {
+    return (
+      <div className="detail-tab-content detail-configuration">
+        <section className="detail-configuration__section" aria-label={t('Load settings')}>
+          {sectionHead}
+          <SchemaModelOptions
+            modelName={name}
+            recipe={schemaRecipe}
+            catalogId={catalog.catalog.catalog_id}
+            connection={catalog.connection}
+            systemInfo={systemInfo}
+            loadedModel={loadedModel}
+            isLoadingThis={isLoadingThis}
+            onReloadModel={onReloadModel}
+            onDirtyChange={setSchemaFormDirty}
+            loadOptionsRef={loadOptionsRef}
+          />
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="detail-tab-content detail-configuration">
       <section className="detail-configuration__section" aria-label={t('Load settings')}>
-        <div className="detail-configuration__section-head">
-          <div>
-            <h3 className="detail-configuration__section-heading">{t('Load settings')}</h3>
-            <p className="detail-configuration__section-copy">
-              {t('Settings used when this model loads or reloads.')}
-            </p>
-          </div>
-        </div>
+        {sectionHead}
+        {catalog.status === 'missing' && (
+          <p className="schema-recipe-options__notice" role="note">{t(LEGACY_OPTIONS_NOTICE)}</p>
+        )}
+        {(catalog.status === 'incompatible' || catalog.status === 'authentication') && (
+          <p className="schema-recipe-options__error" role="alert">{catalog.message}</p>
+        )}
 
         <div className="detail-configuration__load-controls">
           {supportsContextSize && (

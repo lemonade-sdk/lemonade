@@ -16058,3 +16058,38 @@ button.workspace-metadata-chip:hover {
   .loaded-overview__selection-pill { min-width: 66px; height: 30px; font-size: var(--text-xs); padding-inline: var(--space-2); }
   .loaded-overview__unload { width: 48px; }
 }
+
+.schema-recipe-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.schema-recipe-options__notice,
+.schema-recipe-options__support {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.schema-recipe-options__error {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--danger);
+  line-height: 1.4;
+}
+
+.schema-recipe-options__group {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.schema-recipe-options__line {
+  display: block;
+}
+
+.schema-recipe-options__inherit {
+  align-self: flex-start;
+}
