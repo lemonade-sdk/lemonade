@@ -66,9 +66,6 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "prefer_system": false
   },
   "global_timeout": 600,
-  "gufo": {
-    "args": ""
-  },
   "host": "localhost",
   "hrx": {
     "args": "",
@@ -118,9 +115,6 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "port": 13305,
   "rocm_channel": "stable",
   "rocm_install_method": "auto",
-  "rocmfpx": {
-    "args": ""
-  },
   "ryzenai": {
     "server_bin": "builtin"
   },
