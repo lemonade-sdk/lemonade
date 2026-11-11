@@ -6,6 +6,7 @@
 #include <lemon/routing_policy.h>
 #include <lemon/routing_policy_parser.h>
 #include <lemon/canonical_id.h>
+#include <lemon/cost_metadata.h>
 #include <lemon/models/model_errors.h>
 #include <lemon/models/model_info.h>
 #include <lemon/models/registry_types.h>
@@ -1013,17 +1014,16 @@ void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade,
 }
 
 
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{
-    "checkpoints", "checkpoint", "recipe", "mmproj", "size",
-    "components", "recipe_options",
-    "routing", "system_prompt", "version", "source", "registry_source",
-    "auto_update",
-    // Cost and latency hints reach the router through ModelInfo::extras rather
-    // than a typed field, so they are deliberately absent from parse_extras'
-    // known-key set and must be listed here to survive registration.
-    "cost_tier", "cost_input_per_million", "cost_output_per_million",
-    "latency_ms_hint"
-};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = [] {
+    std::vector<std::string> props{
+        "checkpoints", "checkpoint", "recipe", "mmproj", "size",
+        "components", "recipe_options",
+        "routing", "system_prompt", "version", "source", "registry_source",
+        "auto_update"
+    };
+    props.insert(props.end(), kCostMetadataKeys.begin(), kCostMetadataKeys.end());
+    return props;
+}();
 
 static bool user_entry_is_router_collection(const json& user_models,
                                             const std::string& key) {
@@ -1069,6 +1069,17 @@ void ModelIngest::register_user_model(const std::string& model_name,
     std::set<std::string> labels = normalized_definition_labels(model_data, &illegal);
     if (!illegal.empty()) {
         throw InvalidModelDefinitionError(describe_illegal_labels(model_name, illegal));
+    }
+
+    // Unusable values are saved as given and only dropped when read, which
+    // would otherwise go unnoticed.
+    for (const std::string& key : unusable_cost_metadata(model_entry)) {
+        LOG(WARNING, "ModelManager") << "Model '" << model_name << "': " << key << " = "
+                                     << model_entry[key].dump()
+                                     << " is ignored by routing (expected "
+                                     << (key == kCostTierKey ? "free, low, medium or high"
+                                                             : "a non-negative number")
+                                     << ")" << std::endl;
     }
 
     model_entry["labels"] = labels;

@@ -11,6 +11,7 @@
 
 namespace lemon {
 
+struct ModelInfo;
 class Router;
 
 using EnsureClassifierModelLoaded = std::function<void(const std::string& model)>;
@@ -47,6 +48,10 @@ ClassifierServices make_classifier_services_from_router_calls(
 CostInfo resolve_cost_info(std::optional<double> cost_input_per_million,
                            std::optional<double> cost_output_per_million,
                            const std::map<std::string, json>& extras);
+
+// resolve_cost_info() for a registry entry: its typed prices when known (>= 0),
+// otherwise the extras.
+CostInfo resolve_model_cost_info(const ModelInfo& info);
 
 CostServices make_router_cost_services(Router& router);
 
