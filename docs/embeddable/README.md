@@ -34,10 +34,12 @@ Each archive has the following contents:
 
 - `lemond.exe` / `lemond` executable: your own private Lemonade instance.
 - `lemonade.exe` / `lemonade` CLI: useful for configuring and testing `lemond` before you ship. Feel free to exclude this from your shipped app.
+- `lemonade-agent-host.exe` / `lemonade-agent-host`: installs and configures coding agents for `lemonade agents` and `lemonade launch pi` (see [Agents](../guide/agents.md)). Feel free to exclude it, along with the CLI, if your app doesn't use agents.
 - `resources/`
     - `server_models.json`: customizable list of models that `lemond` will show on the `models` endpoint.
     - `backend_versions.json`: customizable list that determines which versions of llama.cpp, FastFlowLM, etc. will be used as backends for `lemond`.
     - `defaults.json`: default values for `lemond`'s `config.json` file. Safe to delete after `config.json` has been initialized.
+    - `agent_versions.json`: the agent versions `lemonade-agent-host` installs and their checksums.
 
 ## Customization Overview
 

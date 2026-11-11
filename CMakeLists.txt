@@ -2405,6 +2405,7 @@ add_custom_target(embeddable
     # Copy binaries
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemond>" "${EMBEDDABLE_STAGING_DIR}/"
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemonade>" "${EMBEDDABLE_STAGING_DIR}/"
+    COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemonade-agent-host>" "${EMBEDDABLE_STAGING_DIR}/"
 
     # Copy LICENSE
     COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${EMBEDDABLE_STAGING_DIR}/"
@@ -2428,11 +2429,14 @@ add_custom_target(embeddable
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/toolDefinitions.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/agent_versions.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
 
     # Create archive
     COMMAND ${CMAKE_COMMAND} -E chdir "${CMAKE_BINARY_DIR}" ${EMBEDDABLE_TAR_CMD}
 
-    DEPENDS lemond lemonade
+    DEPENDS lemond lemonade lemonade-agent-host
     COMMENT "Assembling embeddable archive: ${EMBEDDABLE_ARCHIVE_NAME}"
     VERBATIM
 )
