@@ -29,6 +29,9 @@ struct BackendAvailability {
     // Named in the filter reason text, not used to decide anything.
     std::string processor = "Unknown";
     std::string os_version = "Unknown";
+    // Detected NPU family ("XDNA2", "XDNA3", or empty). Used to skip system-RAM
+    // size checks that don't apply when the model runs on NPU memory.
+    std::string npu_family;
 
     std::map<std::string, RecipeAvailability> recipes;
 

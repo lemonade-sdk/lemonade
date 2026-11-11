@@ -154,6 +154,9 @@ BackendAvailability probe_backend_availability(
     if (system_info.contains("OS Version") && system_info["OS Version"].is_string()) {
         availability.os_version = system_info["OS Version"].get<std::string>();
     }
+    if (hardware.contains("amd_npu") && hardware["amd_npu"].is_object()) {
+        availability.npu_family = hardware["amd_npu"].value("family", "");
+    }
 
     static bool debug_printed = false;
     if (!debug_printed) {
