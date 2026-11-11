@@ -595,8 +595,9 @@ capabilities its `supported_modes` declare, next to the recipes `/system-info`
 reports. For an external recipe the panel asks for the main checkpoint plus one
 field per role in the row's `required_checkpoints`, and refuses to save while a
 declared role is empty; the built-in projector and image-encoder fields are not
-shown. The v1 schema row does not export `required_checkpoints` yet, so until the
-server adds it an external recipe gets the main checkpoint field only.
+shown. The server registers a definition that omits a declared role and refuses
+it at load with that artifact's `missing_error`, so the panel's check is the only
+one made before saving.
 
 Catalog state stays in memory and is keyed by effective API URL, opaque
 authentication generation and catalog ID. Raw API keys are absent from those
@@ -636,7 +637,12 @@ isolated server's `backends.d`, starts that server on a free port with the
 deterministic CPU engine `test/fake_catalog_engine.py`, and drives the renderer's
 own modules against it: catalog client, names, add-model choices, schema form
 markup, client and server validation, dry run, save, the catalog load flow, a
-chat request and reset. It does not open a browser, so layout, focus handling and
+chat request and reset. It also places `test/fixtures/catalog-roles.json`, whose
+definition declares the roles `main` and `adapter`, and takes a model through
+the add-model path: the role field markup, the refusal of an empty role, the
+registration request, the stored checkpoints, a load that passes both files to
+the engine, and the server's refusals when the adapter file or role is missing.
+It does not open a browser, so layout, focus handling and
 the wiring of the React components to these modules are not exercised by it.
 Native Tauri behavior and distribution packaging require their own
 environment-specific qualification; see

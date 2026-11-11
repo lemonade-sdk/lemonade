@@ -32,6 +32,7 @@ import { findRegisteredRemoteModel } from '../features/models/registeredRemoteMo
 import { useI18n } from '../i18n';
 import { loadThroughCatalog } from '../features/backends/catalogLoad';
 import { catalogRecipeCapabilities, externalCheckpointRoles, externalCheckpoints, externalRecipeChoices } from '../features/backends/catalogRecipeOptions';
+import { ExternalCheckpointFields } from './ExternalCheckpointFields';
 import { own } from '../features/backends/backendSchema';
 import { catalogRecipes, serverRecipeDisplayName } from '../features/backends/catalogState';
 import { useBackendCatalog } from '../hooks/useBackendCatalog';
@@ -3108,19 +3109,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                       placeholder={primaryCheckpointPlaceholder}
                     />
                   </label>
-                  {(selectedExternalRoles ?? []).map(role => (
-                    <label key={role} className="custom-model-form__field custom-model-form__wide">
-                      <span>{t('Checkpoint for role')}: <code>{role}</code></span>
-                      <input
-                        className="input"
-                        value={customDraft.roleCheckpoints[role] || ''}
-                        onChange={e => handleCustomDraftChange({
-                          roleCheckpoints: { ...customDraft.roleCheckpoints, [role]: e.target.value },
-                        })}
-                        placeholder={t('Checkpoint accepted by this server recipe')}
-                      />
-                    </label>
-                  ))}
+                  <ExternalCheckpointFields
+                    roles={selectedExternalRoles ?? []}
+                    values={customDraft.roleCheckpoints}
+                    onChange={roleCheckpoints => handleCustomDraftChange({ roleCheckpoints })}
+                  />
                   {showLlamacppMmprojField && (
                     <label className="custom-model-form__field custom-model-form__wide">Vision projector (mmproj)
                       <InlineCheckpointExample

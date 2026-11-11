@@ -27,6 +27,7 @@ async function main() {
   fs.mkdirSync(path.join(config, 'backends.d'), { recursive: true });
   fs.mkdirSync(cache);
   fs.copyFileSync(path.join(repo, 'test/fixtures/catalog-fourth.json'), path.join(config, 'backends.d/90-fourth.json'));
+  fs.copyFileSync(path.join(repo, 'test/fixtures/catalog-roles.json'), path.join(config, 'backends.d/91-roles.json'));
   const fixture = path.join(work, 'tiny.fixture');
   fs.writeFileSync(fixture, 'deterministic CPU fixture\n');
   fs.writeFileSync(path.join(config, 'user_models.json'), JSON.stringify({
@@ -56,7 +57,9 @@ async function main() {
     const state = load('features/backends/catalogState.ts');
     const form = load('features/backends/recipeForm.ts');
     const { loadThroughCatalog } = load('features/backends/catalogLoad.ts');
-    const { externalRecipeChoices, externalCheckpointRoles } = load('features/backends/catalogRecipeOptions.ts');
+    const { externalRecipeChoices, externalCheckpointRoles, externalCheckpoints } = load('features/backends/catalogRecipeOptions.ts');
+    const { buildCustomModelRecord, customModelToModelInfo, customRegistrationOptions } = load('features/customModels/customModelStore.ts');
+    const { ExternalCheckpointFields } = load('components/ExternalCheckpointFields.tsx');
     const { recipeBackendOptionName } = load('features/backends/recipeMetadata.ts');
     const { backendLabel, backendCompactLabel } = load('modelPresentation.ts');
     const React = require(path.join(app, 'node_modules/react'));
@@ -66,7 +69,7 @@ async function main() {
 
     const harness = path.join(repo, 'test/fake_catalog_engine.py');
     const set = await fetch(base + '/internal/set', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ catalog_fourth: { cpu_bin: harness } }) });
+      body: JSON.stringify({ catalog_fourth: { cpu_bin: harness }, catalog_roles: { cpu_bin: harness } }) });
     check(set.ok, 'server accepts the fake engine binary setting');
 
     const catalog = await refreshBackendCatalog();
@@ -78,10 +81,11 @@ async function main() {
     check(backendSelector(row) === null && recipeBackendOptionName(await api.systemInfo(), 'catalog-fourth') === null,
       'fixed-backend recipe has no backend option and none is guessed');
     const choices = externalRecipeChoices();
-    check(choices.length === 1 && choices[0].recipe === 'catalog-fourth' && choices[0].capabilities.includes('chat'),
-      'add-model offers the external recipe under its declared mode');
-    transcript.checkpoint_roles = externalCheckpointRoles('catalog-fourth');
-    transcript.schema_exports_required_checkpoints = Array.isArray(row.required_checkpoints);
+    check(choices.map(choice => choice.recipe).sort().join() === 'catalog-fourth,catalog-roles'
+      && choices.every(choice => choice.capabilities.includes('chat')),
+      'add-model offers the external recipes under their declared mode');
+    check(JSON.stringify(row.required_checkpoints) === '["main"]' && externalCheckpointRoles('catalog-fourth').length === 0,
+      'single-checkpoint recipe exports only the main role and gets no extra field');
 
     const listed = (await api.models(true)).data.find(item => item.recipe === 'catalog-fourth');
     check(listed, 'model list reports the external model');
@@ -125,6 +129,52 @@ async function main() {
     const reset = await api.resetModelOptions(model);
     check(Object.keys(reset.saved).length === 0, 'reset clears the saved option');
     transcript.catalog_id = catalog.catalog.catalog_id;
+
+    const roles = state.catalogRecipe('catalog-roles');
+    check(roles && JSON.stringify(roles.required_checkpoints) === '["main","adapter"]',
+      'server schema row exports the declared checkpoint roles');
+    const extraRoles = externalCheckpointRoles('catalog-roles');
+    check(JSON.stringify(extraRoles) === '["adapter"]', 'add-model asks for exactly the non-main declared role');
+    const adapter = path.join(work, 'tiny.adapter');
+    fs.writeFileSync(adapter, 'deterministic adapter fixture\n');
+    const fields = values => renderToStaticMarkup(React.createElement(I18nProvider, null,
+      React.createElement(ExternalCheckpointFields, { roles: extraRoles, values, onChange: () => {} })));
+    check((fields({}).match(/<input/g) || []).length === 1 && fields({}).includes('<code>adapter</code>'),
+      'panel renders one field for the adapter role');
+    check(fields({ adapter }).includes(`value="${adapter}"`), 'panel field shows the entered role checkpoint');
+    const incomplete = externalCheckpoints('catalog-roles', fixture, {});
+    check(incomplete.missing.join() === 'adapter', 'panel refuses to save while the adapter role is empty');
+    const complete = externalCheckpoints('catalog-roles', fixture, { adapter });
+    check(complete.missing.length === 0 && complete.checkpoints.main === fixture && complete.checkpoints.adapter === adapter,
+      'panel builds one checkpoint per declared role');
+    const record = buildCustomModelRecord({ name: 'user.CatalogRoles', displayName: 'Catalog Roles Model', checkpoint: fixture,
+      checkpoints: complete.checkpoints, recipe: 'catalog-roles', capability: 'chat', labels: [], components: [], componentRoles: {}, customTools: [] });
+    const registration = customRegistrationOptions(customModelToModelInfo(record));
+    check(registration.recipe === 'catalog-roles' && registration.checkpoints.adapter === adapter && registration.checkpoint === undefined,
+      'registration request carries the role checkpoints');
+    const registered = await api.registerModelDefinition(record.name, registration);
+    const rolesModel = typeof registered.model_name === 'string' && registered.model_name ? registered.model_name : record.name;
+    transcript.roles_model = rolesModel;
+    const rolesInfo = await api.modelDetail(rolesModel);
+    check(rolesInfo.recipe === 'catalog-roles' && rolesInfo.checkpoints && rolesInfo.checkpoints.adapter === adapter
+      && rolesInfo.checkpoints.main === fixture, 'server stores and reports both role checkpoints');
+    fs.rmSync(fixture.replace(/\.fixture$/, '.observations.jsonl'), { force: true });
+    check(await loadThroughCatalog(rolesModel, rolesInfo, {}), 'catalog load flow handles the multi-checkpoint model');
+    const rolesArgv = fs.readFileSync(fixture.replace(/\.fixture$/, '.observations.jsonl'), 'utf8')
+      .trim().split('\n').map(line => JSON.parse(line)).find(event => event.event === 'argv').argv;
+    check(rolesArgv[rolesArgv.indexOf('--model-fixture') + 1] === fixture
+      && rolesArgv[rolesArgv.indexOf('--adapter-fixture') + 1] === adapter, 'both role checkpoints reached the engine argv');
+    transcript.roles_engine_argv = rolesArgv.map(value => value === fixture ? '<fixture>' : value === adapter ? '<adapter>' : value);
+    await api.unloadModel(rolesModel);
+    fs.rmSync(adapter);
+    const refused = await loadThroughCatalog(rolesModel, await api.modelDetail(rolesModel), {}).then(() => '', error => String(error.message || error));
+    check(refused.includes("'adapter' file is unusable"), 'server refuses the load when the adapter role file is gone');
+    const bareName = String((await api.registerModelDefinition('user.CatalogRolesBare',
+      { custom: true, recipe: 'catalog-roles', checkpoint: fixture, labels: ['chat'] })).model_name || 'user.CatalogRolesBare');
+    const bareInfo = await api.modelDetail(bareName);
+    const bare = await loadThroughCatalog(bareName, bareInfo, {}).then(handled => 'loaded:' + handled, error => String(error.message || error));
+    check(Object.keys(bareInfo.checkpoints).join() === 'main', 'server registers a definition that omits the adapter role');
+    check(bare.includes('Adapter fixture not found'), 'server refuses to load a model that omits the adapter role');
   } finally {
     if (!spawnError && server.exitCode === null) {
       server.kill('SIGTERM');

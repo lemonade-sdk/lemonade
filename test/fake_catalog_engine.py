@@ -13,6 +13,7 @@ def main():
     parser.add_argument("--batch", type=int, default=2)
     parser.add_argument("--tag", default="initial")
     parser.add_argument("--model-fixture", required=True)
+    parser.add_argument("--adapter-fixture")
     args = parser.parse_args()
     trace = Path(args.model_fixture).with_suffix(".observations.jsonl")
     lock = threading.Lock()
