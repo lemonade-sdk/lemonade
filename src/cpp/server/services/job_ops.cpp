@@ -1,5 +1,6 @@
 #include "lemon/server/job_ops.h"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -13,12 +14,85 @@
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/server.h"
+#include "lemon/server/api_route.h"
+#include "lemon/server/audio_formats.h"
 #include "lemon/server/model_json.h"
 #include "lemon/server/system_stats.h"
 #include "lemon/system_info.h"
 #include "lemon/system_metrics_platform.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/wrapped_server.h"
 
 namespace lemon {
+
+namespace {
+
+std::string error_message(const nlohmann::json& response, const std::string& fallback) {
+    const auto& err = response["error"];
+    if (err.is_object() && err.contains("message") && err["message"].is_string())
+        return err["message"].get<std::string>();
+    if (err.is_string()) return err.get<std::string>();
+    return fallback;
+}
+
+lemon::jobs::json json_op_result(const nlohmann::json& response, const std::string& op) {
+    if (response.contains("error"))
+        throw lemon::jobs::JobError(424, error_message(response, op + " failed"));
+    return lemon::jobs::json::parse(response.dump());
+}
+
+constexpr size_t kMaxJobMediaOutputBytes = 8 * 1024 * 1024;
+
+void throw_if_format_error(const AudioFormat& format) {
+    if (format.error.empty()) return;
+    if (format.error.find("'" + format.format + "'") != std::string::npos)
+        throw lemon::jobs::JobError(400, format.error);
+    throw lemon::jobs::JobError(400, format.error + ": '" + format.format + "'");
+}
+
+void throw_if_cancelled(const lemon::jobs::CancelFlag& cancel) {
+    if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
+}
+
+lemon::jobs::json media_op_result(const std::string& op, lemon::jobs::CancelFlag& cancel,
+                                  const std::function<void(httplib::DataSink&)>& generate,
+                                  const std::string& mime_type,
+                                  const std::string& response_format) {
+    std::string buf;
+    bool overflow = false;
+    httplib::DataSink sink;
+    sink.write = [&buf, &cancel, &overflow](const char* data, size_t len) {
+        if (cancel.load()) return false;
+        if (buf.size() + len > kMaxJobMediaOutputBytes) {
+            overflow = true;
+            return false;
+        }
+        buf.append(data, len);
+        return true;
+    };
+    sink.is_writable = [&cancel, &overflow]() { return !cancel.load() && !overflow; };
+    sink.done = []() {};
+    {
+        WrappedServer::RequestCancelScope cancel_scope(utils::RequestCancelToken{&cancel});
+        generate(sink);
+    }
+    throw_if_cancelled(cancel);
+    if (overflow) {
+        throw lemon::jobs::JobError(413, op + " output exceeds the job media output limit of " +
+                                             std::to_string(kMaxJobMediaOutputBytes) + " bytes");
+    }
+    if (buf.empty()) throw lemon::jobs::JobError(502, op + " produced no output");
+    if (auto error_payload = extract_error_payload(buf); !error_payload.is_null())
+        throw lemon::jobs::JobError(424, error_message(error_payload, op + " failed"));
+    lemon::jobs::json out;
+    out["data"] = lemon::utils::JsonUtils::base64_encode(buf);
+    out["mime_type"] = mime_type;
+    out["size"] = buf.size();
+    out["response_format"] = response_format;
+    return out;
+}
+
+} // namespace
 
 lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     lemon::jobs::OpProviders providers;
@@ -142,6 +216,70 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
             throw lemon::jobs::JobError(424, msg);
         }
         return lemon::jobs::json::parse(response.dump());
+    };
+    providers.image_generations_op = [router](const lemon::jobs::json& params,
+                                              lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+        throw_if_cancelled(cancel);
+        nlohmann::json request = nlohmann::json::parse(params.dump());
+        nlohmann::json response = router->image_generations(request, &cancel);
+        throw_if_cancelled(cancel);
+        return json_op_result(response, "image_generations");
+    };
+    providers.image_edits_op = [router](const lemon::jobs::json& params,
+                                        lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+        throw_if_cancelled(cancel);
+        nlohmann::json request = nlohmann::json::parse(params.dump());
+        nlohmann::json response = router->image_edits(request, &cancel);
+        throw_if_cancelled(cancel);
+        return json_op_result(response, "image_edits");
+    };
+    providers.image_variations_op = [router](const lemon::jobs::json& params,
+                                             lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+        throw_if_cancelled(cancel);
+        nlohmann::json request = nlohmann::json::parse(params.dump());
+        nlohmann::json response = router->image_variations(request, &cancel);
+        throw_if_cancelled(cancel);
+        return json_op_result(response, "image_variations");
+    };
+    providers.audio_speech_op = [router](const lemon::jobs::json& params,
+                                         lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+        throw_if_cancelled(cancel);
+        nlohmann::json request = nlohmann::json::parse(params.dump());
+        const AudioFormat format = negotiate_speech_format(
+            *router, request.value("model", ""), request.value("response_format", nlohmann::json()),
+            false);
+        throw_if_format_error(format);
+        request["response_format"] = format.format;
+        return media_op_result(
+            "audio_speech", cancel,
+            [&](httplib::DataSink& sink) { router->audio_speech(request, sink); },
+            format.mime_type, format.format);
+    };
+    providers.audio_generations_op = [router](const lemon::jobs::json& params,
+                                              lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+        throw_if_cancelled(cancel);
+        nlohmann::json request = nlohmann::json::parse(params.dump());
+        const std::string model = request.value("model", "");
+        AudioFormat format = negotiate_audio_generation_format(
+            *router, model, request.value("response_format", nlohmann::json()));
+        if (format.error.empty() && router->audio_generation_supported_formats(model).empty() &&
+            !is_known_audio_format(format.format))
+            format.error = "Unsupported audio format requested";
+        throw_if_format_error(format);
+        request["response_format"] = format.format;
+        return media_op_result(
+            "audio_generations", cancel,
+            [&](httplib::DataSink& sink) { router->audio_generations(request, sink); },
+            format.mime_type, format.format);
+    };
+    providers.model_3d_generations_op = [router](const lemon::jobs::json& params,
+                                                 lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+        throw_if_cancelled(cancel);
+        nlohmann::json request = nlohmann::json::parse(params.dump());
+        return media_op_result(
+            "model_3d_generations", cancel,
+            [&](httplib::DataSink& sink) { router->model_3d_generations(request, sink); },
+            "model/gltf-binary", "glb");
     };
     providers.begin_exclusive = [router, job_states, current_job, state_mutex](
                                     const std::string& job_id,

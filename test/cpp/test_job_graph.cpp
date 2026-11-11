@@ -14,7 +14,11 @@ static void check(const char* name, bool ok) {
     if (!ok) ++g_failures;
 }
 
-static const std::set<std::string> kOps = {"system_info", "load", "unload", "chat"};
+static const std::set<std::string> kOps = {
+    "system_info", "load", "unload", "chat",
+    "image_generations", "image_edits", "image_variations",
+    "audio_speech", "audio_generations", "model_3d_generations",
+};
 
 static StepRecord step(const std::string& id, const std::string& op) {
     StepRecord s;
