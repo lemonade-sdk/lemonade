@@ -33,7 +33,7 @@ void production_gufo_protocols(const fs::path& scratch, const Fixture& fixture, 
     FakeHost host;
     auto containers = std::make_shared<utils::ContainerManager>(host.host());
     BackendManager manager(containers);
-    BackendManagerTestAccess::pins(manager, Json{{"gufo", {{"rocm", "rocm-10.0-gufo@sha256:67aa0b040993fedfd4e300242c5cb48f8add5874454a7486993668e74185e7a9"}}}});
+    BackendManagerTestAccess::pins(manager, Json{{"gufo", {{"rocm", "rocm-10.0-gufo@sha256:2d7e9995ff2dfd7035f610a419b4f38d5d1604c0c7ab7f3b81415ad6f3e8db8b"}}}});
     auto services = std::make_shared<Services>(manager);
     httplib::Server http;
     Json observed = Json::array();

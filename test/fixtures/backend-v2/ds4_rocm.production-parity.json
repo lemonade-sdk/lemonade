@@ -15,7 +15,10 @@
   },
   "models": {
     "DeepSeek-V4-Flash-IQ2XXS-DS4": {
-      "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
+      "checkpoints": {
+        "main": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
+        "draft": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-DSpark-support-0731.gguf"
+      },
       "recipe": "ds4",
       "suggested": true,
       "labels": [
@@ -23,7 +26,7 @@
         "reasoning",
         "tool-calling"
       ],
-      "size": 81.0,
+      "size": 92.7,
       "min_resident_gb": 16.0
     }
   },

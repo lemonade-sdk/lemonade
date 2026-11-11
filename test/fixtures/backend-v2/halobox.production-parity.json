@@ -7,7 +7,7 @@
   "active": false,
   "registry_validated": false,
   "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
-  "pin": "rocm-10.0-strix-llama@sha256:7d3844524fda1865a2ae60cc73eb232589626ccca245cc3c7bd2afb153bd9bd6",
+  "pin": "rocm-10.0-strix-llama@sha256:015fddafc28bfdb1653a99905010e83a9327f072206cb1f882f1f9f922069f48",
   "owner_digest": "sha256:35519afe45fc37e887a6597af3c3ae1fa653f64eb5d040593515640c5b888e1c",
   "authored_lines": 409,
   "defaults": {
@@ -977,7 +977,7 @@
       "size": 63.4
     },
     "gpt-oss-20b-mxfp4-GGUF": {
-      "checkpoint": "ggml-org/gpt-oss-20b-GGUF",
+      "checkpoint": "ggml-org/gpt-oss-20b-GGUF:gpt-oss-20b-MXFP4.gguf",
       "recipe": "llamacpp",
       "suggested": true,
       "labels": [

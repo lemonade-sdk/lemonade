@@ -3,7 +3,7 @@
   "active": false,
   "registry_validated": false,
   "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
-  "pin": "rocm-10.0-gufo@sha256:67aa0b040993fedfd4e300242c5cb48f8add5874454a7486993668e74185e7a9",
+  "pin": "rocm-10.0-gufo@sha256:2d7e9995ff2dfd7035f610a419b4f38d5d1604c0c7ab7f3b81415ad6f3e8db8b",
   "owner_digest": "sha256:9d49f5bc516ae6de035e05906125954b520de367758883bca753289f0d7e463b",
   "authored_lines": 97,
   "argv": [
