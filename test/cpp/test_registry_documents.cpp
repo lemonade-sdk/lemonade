@@ -173,7 +173,7 @@ static void test_registrations_do_not_overwrite_one_another() {
 
     std::vector<std::thread> writers;
     for (int w = 0; w < kWriters; ++w) {
-        writers.emplace_back([&registries, &name, w] {
+        writers.emplace_back([&registries, &name, w, kPerWriter] {
             for (int i = 0; i < kPerWriter; ++i) {
                 const std::string model = name(w, i);
                 registries.update_user([&model](json& user_models) {

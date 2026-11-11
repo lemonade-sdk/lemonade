@@ -27,6 +27,12 @@ inline const BackendDescriptor descriptor = {
         {"metal", BackendTier::Core, BackendFormat::Native, {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
         {"cpu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
     },
+    /*about*/ {
+        {"metal", {"Kokoros, a Rust runtime for the Kokoro text-to-speech model, on Apple Silicon.",
+                   "lucasjinreal (Kokoros)", "lemonade-sdk", "Apache-2.0", "https://github.com/lucasjinreal/Kokoros"}},
+        {"cpu", {"Kokoros, a Rust runtime for the Kokoro text-to-speech model, on the CPU.",
+                 "lucasjinreal (Kokoros)", "lemonade-sdk", "Apache-2.0", "https://github.com/lucasjinreal/Kokoros"}},
+    },
     /*supported_modes*/ {"tts"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},

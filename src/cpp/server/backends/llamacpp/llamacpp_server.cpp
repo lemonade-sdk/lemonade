@@ -2,16 +2,20 @@
 #include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/llamacpp/llamacpp_gguf.h"
 #include "lemon/backends/llamacpp/llamacpp_request.h"
+#include "lemon/backends/llamacpp/llamacpp_rulehead.h"
 #include "lemon/backends/llamacpp/llamacpp_systemone.h"
 #include "llamacpp_system_utils.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/systemone_classify.h"
+#include "lemon/classification_labels.h"
 #include "lemon/gguf_capabilities.h"
 #include "lemon/gguf_reader.h"
 #include "lemon/gguf_shard_utils.h"
 #include "lemon/model_manager.h"
+#include "lemon/models/model_errors.h"
+#include "lemon/models/registry_types.h"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -32,9 +36,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <lemon/utils/aixlog.hpp>
+#include <mutex>
 #include <set>
+#include <tuple>
 #ifdef __APPLE__
 #include <pwd.h>
 #include <unistd.h>
@@ -350,6 +358,30 @@ void LlamaCppServer::load(const std::string& model_name,
                                  << model_info.model_name << "', so if it is an encoder it "
                                  << "keeps llama-server's default batch sizes" << std::endl;
     }
+    rule_head_.reset();
+    {
+        std::lock_guard<std::mutex> lock(rule_head_counts_mutex_);
+        rule_head_counts_.reset();
+    }
+    if (is_rule_head_router_model(model_info)) {
+        const std::string rule_head_path = model_info.resolved_path("rulehead");
+        if (rule_head_path.empty()) {
+            throw std::runtime_error(llamacpp::missing_rule_head_message(
+                model_name, model_info.checkpoint("rulehead")));
+        }
+        std::ifstream in(path_from_utf8(rule_head_path), std::ios::binary);
+        const std::string bytes((std::istreambuf_iterator<char>(in)),
+                                std::istreambuf_iterator<char>());
+        if (!in.good() && !in.eof()) {
+            throw std::runtime_error("Could not read the rule head file " + rule_head_path);
+        }
+        rule_head_ = std::make_shared<const llamacpp::RuleHead>(
+            llamacpp::parse_rule_head(bytes, model_info.gguf.embedding_length));
+        LOG(INFO, "LlamaCpp") << "Prompt-router encoder: lemond applies its rule head ("
+                              << rule_head_->proj << "x" << rule_head_->hidden
+                              << ") to llama-server's token vectors" << std::endl;
+    }
+
     encoder_max_input_tokens_ = 0;
     const bool encoder_decision_model = is_encoder_decision_model(model_info);
     if (encoder_decision_model) {
@@ -358,6 +390,15 @@ void LlamaCppServer::load(const std::string& model_name,
             LOG(INFO, "LlamaCpp") << "Encoder decision model: using its trained context of " << capped
                                   << " tokens instead of " << ctx_size << std::endl;
             ctx_size = capped;
+        }
+    }
+    if (rule_head_) {
+        const int window = llamacpp::rule_head_ctx_size(ctx_size);
+        if (window != ctx_size) {
+            LOG(INFO, "LlamaCpp") << "Prompt-router encoder: ctx_size " << ctx_size
+                                  << " means its default window of " << window << " tokens"
+                                  << std::endl;
+            ctx_size = window;
         }
     }
 
@@ -432,11 +473,14 @@ void LlamaCppServer::load(const std::string& model_name,
     push_reserved(reserved_flags, "--model-draft", std::vector<std::string>{"-md", "--spec-draft-model"});
 
     // Add embeddings support if the model supports it
-    if (supports_embeddings) {
+    if (supports_embeddings || rule_head_) {
         LOG(INFO, "LlamaCpp") << "Model supports embeddings, adding --embeddings flag" << std::endl;
         push_arg(args, reserved_flags, "--embeddings");
     }
     push_reserved(reserved_flags, "--embeddings", std::vector<std::string>{"--embedding"});
+    if (rule_head_) {
+        push_arg(args, reserved_flags, "--pooling", "none");
+    }
 
     // Add reranking support if the model supports it
     if (supports_reranking) {
@@ -449,7 +493,7 @@ void LlamaCppServer::load(const std::string& model_name,
     // the default -ub 512 rejects any state longer than about 500 tokens.
     // llama-server switches these models to embedding mode on its own, so no
     // --embeddings flag is added.
-    if (encoder_decision_model) {
+    if (encoder_decision_model || rule_head_) {
         const llamacpp::SingleBatchPlan batch =
             llamacpp::plan_single_batch(ctx_size, parse_custom_args(llamacpp_args));
         if (batch.add_batch_size) {
@@ -724,6 +768,9 @@ json LlamaCppServer::unsupported_decision_request(const std::string& operation) 
 }
 
 json LlamaCppServer::classify(const json& request) {
+    if (rule_head_) {
+        return classify_with_rule_head(request);
+    }
     if (!decision_model_) {
         return unsupported_decision_request("Classification");
     }
@@ -753,6 +800,98 @@ json LlamaCppServer::classify(const json& request) {
                           : 0;
     try {
         return systemone::classify_response(response, request["labels"], top_k);
+    } catch (const std::exception& e) {
+        return ErrorResponse::create(e.what(), ErrorType::BACKEND_ERROR);
+    }
+}
+
+json LlamaCppServer::classify_with_rule_head(const json& request) {
+    const json text = request.contains("text") ? request["text"] : request.value("input", json());
+    if (!text.is_string()) {
+        return systemone::invalid_decision_request("Missing 'input' (or 'text') string in classify request");
+    }
+    if (!request.contains("labels") || !request["labels"].is_array() || request["labels"].empty()) {
+        return systemone::invalid_decision_request(
+            "this model scores a label list supplied per request; include a non-empty "
+            "\"labels\" array in the request body");
+    }
+    std::vector<std::string> labels;
+    for (const auto& label : request["labels"]) {
+        if (!label.is_string()) {
+            return systemone::invalid_decision_request("\"labels\" must be an array of strings");
+        }
+        labels.push_back(label.get<std::string>());
+    }
+    if (const std::string reason = validate_label_list(labels); !reason.empty()) {
+        return systemone::invalid_decision_request(reason);
+    }
+    const int top_k = request.contains("top_k") && request["top_k"].is_number_integer()
+                          ? request["top_k"].get<int>()
+                          : 0;
+
+    if (encoder_max_input_tokens_ <= 0) {
+        return ErrorResponse::create("the prompt-router encoder has no token window",
+                                     ErrorType::BACKEND_ERROR);
+    }
+    const size_t window = static_cast<size_t>(encoder_max_input_tokens_);
+
+    // Carries llama-server's own error response out of the tokenizer callback.
+    struct TokenizeFailure {
+        json response;
+    };
+    auto tokens_of = [this](const std::string& content, bool add_special) {
+        json body = {{"content", content}, {"add_special", add_special}};
+        if (!add_special) body["with_pieces"] = true;
+        json response = tokenize(body);
+        if (response.contains("error")) throw TokenizeFailure{std::move(response)};
+        return response.value("tokens", json());
+    };
+
+    try {
+        size_t n_specials = 0;
+        size_t elision_tokens = 0;
+        {
+            std::lock_guard<std::mutex> lock(rule_head_counts_mutex_);
+            if (!rule_head_counts_) {
+                rule_head_counts_.emplace(tokens_of("", true).size(),
+                                          tokens_of("\n...\n", false).size());
+            }
+            std::tie(n_specials, elision_tokens) = *rule_head_counts_;
+        }
+
+        const llamacpp::RouterFit fit = llamacpp::fit_router_input(
+            labels, text.get<std::string>(), window, n_specials, elision_tokens,
+            [&](const std::string& content) { return tokens_of(content, false); });
+        bool truncated = fit.truncated;
+
+        llamacpp::RouterTokens tokens = llamacpp::router_tokens(
+            tokens_of(fit.input.text, true), fit.tokens, fit.input.text.size());
+        if (tokens.ids.size() > window) {
+            tokens.ids.resize(window);
+            tokens.spans.resize(window);
+            truncated = true;
+        }
+        const llamacpp::RouterTokenGroups groups =
+            llamacpp::group_router_tokens(fit.input, tokens.spans, labels);
+
+        json embedded = forward_request("/embedding", json{{"content", tokens.ids}});
+        if (embedded.is_object() && embedded.contains("error")) {
+            return encoder_max_input_tokens_ > 0
+                       ? llamacpp::map_encoder_overflow_error(std::move(embedded),
+                                                              encoder_max_input_tokens_)
+                       : embedded;
+        }
+        if (!embedded.is_array() || embedded.empty() || !embedded[0].is_object() ||
+            !embedded[0].contains("embedding")) {
+            throw std::runtime_error("llama-server /embedding returned no token vectors");
+        }
+        const std::vector<double> probabilities = llamacpp::score_router_labels(
+            *rule_head_, embedded[0]["embedding"], tokens.ids.size(), groups);
+        return llamacpp::router_classify_response(labels, probabilities, top_k, truncated);
+    } catch (const TokenizeFailure& failure) {
+        return failure.response;
+    } catch (const std::invalid_argument& e) {
+        return systemone::invalid_decision_request(e.what());
     } catch (const std::exception& e) {
         return ErrorResponse::create(e.what(), ErrorType::BACKEND_ERROR);
     }
@@ -968,10 +1107,36 @@ bool is_ggml_hip_plugin_available() {
     return false;
 }
 
-
 // llamacpp model-management behavior: GGUF metadata + capability labels.
 class LlamaCppOps : public BackendOps {
 public:
+    void add_implied_checkpoints(ModelInfo& info) const override {
+        const std::string main = info.checkpoint();
+        if (!has_label(info.labels, "zero-shot") || has_label(info.labels, "systemone") ||
+            !info.checkpoint("rulehead").empty() || main.empty()) {
+            return;
+        }
+        info.checkpoints["rulehead"] =
+            llamacpp::implied_rule_head_checkpoint(main, is_local_origin(info.source));
+    }
+
+    void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
+                        const BackendOpsContext& ctx) const override {
+        if (const std::string mixed = llamacpp::mixed_rule_head_source_error(
+                info.model_name, info.checkpoint(), info.checkpoint("rulehead"),
+                is_local_origin(info.source));
+            !mixed.empty()) {
+            throw std::runtime_error(mixed);
+        }
+        try {
+            BackendOps::download_model(info, do_not_upgrade, std::move(progress), ctx);
+        } catch (const MissingCheckpointError& e) {
+            if (e.checkpoint_type != "rulehead") throw;
+            throw std::runtime_error(
+                llamacpp::missing_rule_head_message(info.model_name, info.checkpoint("rulehead")));
+        }
+    }
+
     void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const override {
         const json merge_args_value = options.get_option("merge_args");
         const bool merge_args =
@@ -1031,6 +1196,15 @@ public:
     }
 
     std::string validate_registration_checkpoint(const std::string& checkpoint) const override {
+        if (llamacpp::checkpoint_is_local(checkpoint, false)) return "";
+        // lemond resolves a relative path against its own working folder, which is
+        // not the client's, and a remote client's is on another machine.
+        if (checkpoint.rfind("./", 0) == 0 || checkpoint.rfind("../", 0) == 0 ||
+            checkpoint.rfind(".\\", 0) == 0 || checkpoint.rfind("..\\", 0) == 0) {
+            return "'" + checkpoint + "' is a relative path. lemond reads a GGUF on disk "
+                   "from its own machine and working folder, not the client's, so name "
+                   "the file by its absolute path.";
+        }
         // A GGUF checkpoint must name its quant via CHECKPOINT:VARIANT.
         std::string lower = checkpoint;
         std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
@@ -1045,6 +1219,36 @@ public:
     }
 
     std::string validate_load(const ModelInfo& info) const override {
+        if (is_rule_head_router_model(info) &&
+            (info.type != ModelType::CLASSIFICATION || has_label(info.labels, "systemone"))) {
+            return "model '" + info.model_name + "' has a 'rulehead' checkpoint, which lemond "
+                   "applies only to a prompt-router encoder labelled 'classification' and "
+                   "'zero-shot', not 'systemone'";
+        }
+        if (is_rule_head_router_model(info)) {
+            if (info.extra<bool>("hf_load", false)) {
+                return "model '" + info.model_name + "' has a 'rulehead' checkpoint and "
+                       "'hf_load', but lemond reads the encoder's width from the GGUF header "
+                       "to apply the head, and with 'hf_load' it has no GGUF of its own. "
+                       "Remove 'hf_load'.";
+            }
+            const std::string mixed = llamacpp::mixed_rule_head_source_error(
+                info.model_name, info.checkpoint(), info.checkpoint("rulehead"),
+                is_local_origin(info.source));
+            if (!mixed.empty()) return mixed;
+            // Else the folder reaches llama-server as -m, and the missing GGUF
+            // header surfaces only as an unknown encoder width.
+            if (llamacpp::checkpoint_is_local(info.checkpoint(), is_local_origin(info.source))) {
+                const std::string folder = llamacpp::local_directory_checkpoint_error(
+                    info.model_name,
+                    info.resolved_path().empty() ? info.checkpoint() : info.resolved_path());
+                if (!folder.empty()) return folder;
+            }
+        }
+        if (has_label(info.labels, "zero-shot") && !has_label(info.labels, "systemone") &&
+            !is_rule_head_router_model(info)) {
+            return llamacpp::missing_rule_head_message(info.model_name, llamacpp::RULE_HEAD_FILE);
+        }
         if (!has_label(info.labels, "systemone")) return "";
         return llamacpp::decision_model_load_refusal(info.model_name,
                                                      info.extra<bool>("hf_load", false),

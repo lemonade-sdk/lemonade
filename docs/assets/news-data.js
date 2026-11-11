@@ -1,6 +1,15 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+        title: "AMD-Backed Lemonade Local AI Server Ships Redesigned Desktop App & Web UI",
+        url: "https://www.phoronix.com/news/Lemonade-2026.45.3",
+        date: "November 5, 2026",
+        description: "Phoronix covers the Lemonade 2026.45.3 release: a rebuilt desktop app and web UI with built-in tools, a new model manager, and a mobile web UI.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/phoronix.svg",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "blog"
+        },
+    {
         title: "Lemonade's GUI has been completely overhauled!",
         url: "https://www.youtube.com/watch?v=mg2PqmRujMo",
         date: "November 4, 2026",
@@ -77,7 +86,7 @@ const newsData = [
         url: "https://lemonade-server.ai/news/muse-glimmer.html",
         date: "August 10, 2026",
         description: "Meta Superintelligence Labs released Muse Glimmer 30B under Apache 2.0. Run this agentic, multimodal open-weights model locally with Lemonade on AMD, NVIDIA, Intel, and ARM GPUs in three commands.",
-        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner_03.png",
         imageStyle: "width: 100%; height: 100%; object-position: center top; ",
         type: "blog"
         },
@@ -113,7 +122,7 @@ const newsData = [
         url: "https://lemonade-server.ai/news/vllm-rocm.html",
         date: "May 8, 2026",
         description: "Lemonade now includes experimental vLLM ROCm support on Linux for AMD GPUs, with day-0 model support, multi-GPU concurrency, and a self-contained backend bundle.",
-        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner_03.png",
         imageStyle: "width: 100%; height: 100%; object-position: center top; ",
         type: "blog"
         },
@@ -149,7 +158,7 @@ const newsData = [
         url: "https://lemonade-server.ai/flm_npu_linux.html",
         date: "March 11, 2026",
         description: "Run LLMs and Whisper on AMD XDNA 2 NPUs under Linux using the upstream NPU driver, AMD IRON compiler, FastFlowLM runtime, and Lemonade.",
-        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner_03.png",
         imageStyle: "width: 100%; height: 100%; object-position: center top; ",
         type: "tutorial"
         },
@@ -212,7 +221,7 @@ const newsData = [
     url: "https://lemonade-server.ai/news/gpt-oss.html",
     date: "August 12, 2025",
     description: "Lemonade now supports OpenAI's gpt-oss models, bringing you the power to run these cutting-edge models locally on your own hardware! 🎉",
-    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner_03.png",
     imageStyle: "width: 100%; height: 100%; object-position: center top; ",
     type: "blog"
     },
@@ -401,7 +410,7 @@ const newsData = [
     url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v8.1.0",
     date: "July 30, 2025",
     description: "Support for Ryzen™ AI Software v1.5.0 and NPU-only execution.",
-    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner_03.png",
     imageStyle: "width: 100%; height: 100%; object-position: center top; ",
     type: "release"
     },
@@ -410,7 +419,7 @@ const newsData = [
     url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v8.0.6",
     date: "July 17, 2025",
     description: "Overhauled llamacpp support in the Lemonade Developer CLI.",
-    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner_03.png",
     imageStyle: "width: 100%; height: 100%; object-position: center top; ",
     type: "release"
     },
@@ -419,7 +428,7 @@ const newsData = [
     url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v8.0.5",
     date: "July 14, 2025",
     description: "Added device enumeration capability on Windows and Linux to `lemonade system-info` command.",
-    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner_03.png",
     imageStyle: "width: 100%; height: 100%; object-position: center top; ",
     type: "release"
     },
@@ -428,7 +437,7 @@ const newsData = [
     url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v8.0.4",
     date: "July 09, 2025",
     description: "Added `reranking` and `embeddings` support to Lemonade Server.",
-    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner_03.png",
     imageStyle: "width: 100%; height: 100%; object-position: center top; ",
     type: "release"
     },
@@ -437,7 +446,7 @@ const newsData = [
     url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v8.0.3",
     date: "June 27, 2025",
     description: "Support for large (sharded) GGUF models. Added `Llama-4-Scout-17B-16E-Instruct-GGUF` to server models list.",
-    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner_03.png",
     imageStyle: "width: 100%; height: 100%; object-position: center top; ",
     type: "release"
     },
@@ -446,7 +455,7 @@ const newsData = [
     url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v8.0.0",
     date: "June 19, 2025",
     description: "Major release with Ubuntu support, model manager, and Windows tray app.",
-    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner_03.png",
     imageStyle: "width: 100%; height: 100%; object-position: center top; ",
     type: "release"
     },
@@ -455,7 +464,7 @@ const newsData = [
     url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v7.0.2",
     date: "June 02, 2025",
     description: "lm-evaluation-harness is now fully integrated as an automated Lemonade CLI tool.",
-    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner_03.png",
     imageStyle: "width: 100%; height: 100%; object-position: center top; ",
     type: "release"
     },
@@ -464,7 +473,7 @@ const newsData = [
     url: "https://github.com/lemonade-sdk/lemonade/releases/tag/v7.0.1",
     date: "May 30, 2025",
     description: "Added support for GGUF models and llama.cpp backend to Lemonade Server.",
-    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+    image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner_03.png",
     imageStyle: "width: 100%; height: 100%; object-position: center top; ",
     type: "release"
     },

@@ -6,11 +6,13 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/fastflowlm/fastflowlm_models.h"
@@ -368,6 +370,47 @@ int run() {
 
 }  // namespace backend_uninstall
 
+namespace backend_about {
+
+static int g_failures = 0;
+
+static void check(const std::string& name, bool ok) {
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name.c_str());
+    if (!ok) ++g_failures;
+}
+
+int run() {
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        std::set<std::string> backends;
+        for (const auto& row : desc->support) {
+            backends.insert(row.backend);
+        }
+        for (const auto& backend : backends) {
+            const std::string spec = desc->recipe + ":" + backend;
+            auto it = desc->about.find(backend);
+            check(spec + " says what it is and who made it", it != desc->about.end());
+            if (it == desc->about.end()) continue;
+            check(spec + " has a description", !it->second.description.empty());
+            check(spec + " names its author", !it->second.author.empty());
+            check(spec + " names its publisher", !it->second.publisher.empty());
+            check(spec + " links its project", it->second.project_url.rfind("https://", 0) == 0);
+        }
+        for (const auto& [backend, about] : desc->about) {
+            check(desc->recipe + ":" + backend + " describes a backend the recipe has",
+                  backends.count(backend) == 1);
+        }
+    }
+
+    if (g_failures != 0) {
+        std::printf("FAILED: %d\n", g_failures);
+        return 1;
+    }
+    std::printf("All backend about checks passed\n");
+    return 0;
+}
+
+}  // namespace backend_about
+
 int main() {
     int failures = 0;
     std::printf("\n=== download policy ===\n");
@@ -378,5 +421,7 @@ int main() {
     failures |= flm_pull_args::run();
     std::printf("\n=== backend uninstall ===\n");
     failures |= backend_uninstall::run();
+    std::printf("\n=== backend about ===\n");
+    failures |= backend_about::run();
     return failures;
 }

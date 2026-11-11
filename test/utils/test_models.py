@@ -214,9 +214,6 @@ MULTI_MODEL_QUATERNARY = "Llama-3.2-1B-Instruct-GGUF"
 
 # Whisper test configuration
 WHISPER_MODEL = "Whisper-Tiny"
-TEST_AUDIO_URL = (
-    "https://raw.githubusercontent.com/lemonade-sdk/assets/main/audio/test_speech.wav"
-)
 
 # Vision model test configuration
 VISION_MODEL = "Qwen3.5-0.8B-GGUF"

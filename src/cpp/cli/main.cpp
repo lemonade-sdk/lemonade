@@ -595,7 +595,18 @@ static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& confi
 static int handle_backends_command(lemonade::LemonadeClient& client,
                                    const CliConfig& config,
                                    bool install_requested,
-                                   bool uninstall_requested) {
+                                   bool uninstall_requested,
+                                   bool info_requested) {
+    if (info_requested) {
+        int result = 1;
+        handle_backend_operation(config.backend_spec, "Info",
+            [&client, &result](const std::string& recipe, const std::string& backend) {
+                result = client.show_backend_info(recipe, backend);
+                return result;
+            });
+        return result;
+    }
+
     if (install_requested) {
         int result = 0;
         handle_backend_operation(config.backend_spec, "Install",
@@ -1539,6 +1550,7 @@ int main(int argc, char* argv[]) {
     backends_cmd->add_flag("--all", config.backends_showall, "Show all backends");
     CLI::App* backends_install_cmd = backends_cmd->add_subcommand("install", "Install a backend")->group("Subcommands");
     CLI::App* backends_uninstall_cmd = backends_cmd->add_subcommand("uninstall", "Uninstall a backend")->group("Subcommands");
+    CLI::App* backends_info_cmd = backends_cmd->add_subcommand("info", "Show a backend's description, author, publisher and license")->group("Subcommands");
     CLI::App* status_cmd = app.add_subcommand("status", "Check server status")->group("Server");
     status_cmd->add_flag("--json", config.json_output, "Output status as JSON");
     CLI::App* logs_cmd = app.add_subcommand("logs", "Open server logs in the web UI")->group("Server");
@@ -1591,6 +1603,7 @@ int main(int argc, char* argv[]) {
     backends_install_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
     backends_install_cmd->add_flag("--force", config.force, "Bypass hardware filtering when installing a backend");
     backends_uninstall_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
+    backends_info_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
 
     // Cloud provider commands. `cloud` is a subcommand group with install /
     // uninstall / auth / list. Mirrors the `backends` group shape on purpose
@@ -1784,6 +1797,16 @@ int main(int argc, char* argv[]) {
     // Bench command
     CLI::App* bench_cmd = lemon_cli::register_bench_command(app, config.output_file, config.bench);
 
+    std::function<void(CLI::App*)> add_global_options_footer = [&](CLI::App* parent) {
+        for (CLI::App* command : parent->get_subcommands([](CLI::App*) { return true; })) {
+            const std::string footer = command->get_footer();
+            command->footer((footer.empty() ? "" : footer + "\n\n") +
+                            "Global options (--host, --port, --api-key) are listed in 'lemonade --help'.");
+            add_global_options_footer(command);
+        }
+    };
+    add_global_options_footer(&app);
+
     // Parse arguments
     try {
         app.parse(argc, argv);
@@ -1892,7 +1915,8 @@ int main(int argc, char* argv[]) {
     } else if (backends_cmd->count() > 0) {
         return handle_backends_command(client, config,
                                        backends_install_cmd->count() > 0,
-                                       backends_uninstall_cmd->count() > 0);
+                                       backends_uninstall_cmd->count() > 0,
+                                       backends_info_cmd->count() > 0);
     } else if (alias_cmd->count() > 0) {
         if (alias_add_cmd->count() > 0) {
             return client.alias_add(config.alias_name, config.alias_target);

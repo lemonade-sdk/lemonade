@@ -52,7 +52,7 @@ Some Lemonade endpoints live on other pages: the per-model [`/v1/models/{id}/fil
 ## `POST /v1/classify`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on a string and returns a score for each label. It serves `onnxruntime` sequence classifiers (one label set), token classifiers (aggregated span labels) and zero-shot models (labels sent with each request), and llama.cpp and FastFlowLM decision models, which are zero-shot. It provides the classification that the router's `classifier` and `zero_shot` conditions use.
+Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on a string and returns a score for each label. It serves `onnxruntime` sequence classifiers (one label set) and token classifiers (aggregated span labels), and zero-shot models that take `labels` with each request: `onnxruntime` zero-shot models, llama.cpp and FastFlowLM decision models, and llama.cpp prompt-router encoders with a `rulehead` checkpoint. It provides the classification that the router's `classifier` and `zero_shot` conditions use.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -74,6 +74,8 @@ Single-sequence encoder families: BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERT
 A servable model directory holds `model.onnx`, `tokenizer.json` and `config.json`. The `config.json` is always required: its architecture is checked against the families above, so an unsupported family such as XLNet is rejected at load time rather than served with wrong scores. Label names (`id2label`), normalization and the token budget come from the same config, and an optional `manifest.json` overrides them. Without a manifest, inference assumes single-label softmax, so a multi-label (sigmoid) model declares `problem_type: multi_label_classification` in its config or ships a `manifest.json`.
 
 Zero-shot family: LFM2 (`Lfm2BidirForSequenceRouting`), such as `LFM2.5-Encoder-350M-Prompt-Router-ONNX`. Every request to it carries `labels`.
+
+The same family as a GGUF runs on `llamacpp`, on the GPU too. Its GGUF holds only the encoder, and its head ships beside it as `rulehead.bin`. Register the GGUF with the labels `classification` and `zero-shot`: `{"model_name": "user.my-router", "recipe": "llamacpp", "checkpoint": "<repo>:<file>-f16.gguf", "labels": ["classification", "zero-shot"]}`. Lemonade downloads `rulehead.bin` from the same repository and refuses the model when the file is missing; a head stored elsewhere is named as the `rulehead` checkpoint, from the same kind of place as the GGUF (both in repositories, or both on disk). A GGUF on disk is registered with `"source": "local_path"` and the file's absolute path as `checkpoint`; its head is `rulehead.bin` in the same folder. llama-server returns one vector per token and lemond applies the head. A long text is cut as ort-server cuts it, so the GGUF and the ONNX export score the same tokens: the labels are never cut, and the text keeps a third of what they leave of the window from its start and the rest from its end, with `\n...\n` between them. The response then carries `truncated: true`. The window is 2048 tokens, as in the ONNX export's manifest; `ctx_size` 0 means the same, another `ctx_size` changes it; `-b` and `-ub` cap it, and so does `-np` above 1 without `--kv-unified`, which gives each slot its share of `ctx_size`.
 
 Some upstream models declare only generic `LABEL_<n>` label names; their model card explains them.
 
@@ -2183,6 +2185,11 @@ The same backend can carry different labels on different operating systems. Each
         - `version` - Installed or configured backend version (when available)
         - `tier` - `core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
         - `format` - `native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats).
+        - `description` - One or two sentences on what the backend is for.
+        - `author` - Who wrote the engine or fork the backend runs, such as `ggml-org`.
+        - `publisher` - Who builds the artifact Lemonade installs. Differs from `author` when someone other than the author builds it, as `lemonade-sdk` builds `llamacpp:rocm` from ggml-org's code.
+        - `license` - The author's license, as an SPDX id such as `MIT` or a license name. Empty when the author declares none.
+        - `project_url` - The upstream project's URL. Metadata may describe the upstream project rather than a custom or system-provided binary.
         - `release_url` - Where the backend's release asset downloads from.
         - `download_filename` - The release asset's filename.
         - `can_uninstall` - Whether Lemonade can uninstall this backend. If `false`, hide the uninstall button. Defaults to `true` when omitted.

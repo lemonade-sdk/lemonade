@@ -29,6 +29,7 @@
 #include <set>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <vector>
 #include <cmath>
 
@@ -658,6 +659,74 @@ bool SystemInfo::backend_supports_arch(const std::string& recipe,
     return false;
 }
 
+struct NvidiaDriverBlock {
+    std::string state;
+    std::string message;
+    std::string action;
+};
+
+// Only rows that run exclusively on an NVIDIA GPU (the CUDA rows) depend on the
+// NVIDIA driver. Rows that also list other devices, such as Vulkan, must stay
+// available: they are the fallback when CUDA cannot run.
+//
+// A missing driver blocks the row. A driver older than the row's CUDA major version
+// is action_required rather than unsupported so clients surface the driver download
+// link. Neither replaces an unsupported-architecture result, since no driver change
+// fixes that; the one exception is a missing driver on a GPU whose architecture is
+// unknown, which is what a driverless card looks like.
+static std::optional<NvidiaDriverBlock> nvidia_driver_block(const RecipeBackendDef& def,
+                                                            const json& devices,
+                                                            const std::string& current_os,
+                                                            bool arch_supported) {
+    if (def.devices.size() != 1 || def.devices.count("nvidia_gpu") == 0 ||
+        !devices.contains("nvidia_gpu") || !devices["nvidia_gpu"].is_array()) {
+        return std::nullopt;
+    }
+
+    bool any_gpu = false;
+    bool all_missing = true;
+    bool any_known_family = false;
+    std::string driver_version;
+    for (const auto& gpu : devices["nvidia_gpu"]) {
+        if (!gpu.value("available", false)) continue;
+        any_gpu = true;
+        if (!gpu.value("family", "").empty()) any_known_family = true;
+        if (!gpu.value("driver_missing", false)) {
+            all_missing = false;
+            if (driver_version.empty()) driver_version = gpu.value("driver_version", "");
+        }
+    }
+    if (!any_gpu) {
+        return std::nullopt;
+    }
+
+    if (all_missing) {
+        if (arch_supported || !any_known_family) {
+            return NvidiaDriverBlock{
+                "unsupported",
+                "NVIDIA GPU found, but the NVIDIA driver is not installed or not loaded; "
+                "restart Lemonade after installing it",
+                ""};
+        }
+        return std::nullopt;
+    }
+    if (!arch_supported) {
+        return std::nullopt;
+    }
+
+    const std::string minimum =
+        system_info_detail::cuda_min_driver_version(def.recipe, def.backend, current_os);
+    if (!minimum.empty() &&
+        system_info_detail::nvidia_driver_older_than(driver_version, minimum)) {
+        return NvidiaDriverBlock{
+            "action_required",
+            "NVIDIA driver " + driver_version + " is too old; " + minimum +
+                " or newer is required. Restart Lemonade after updating",
+            "https://www.nvidia.com/en-us/drivers/"};
+    }
+    return std::nullopt;
+}
+
 // Marks `status` action_required when a setup check fails, returning whether one did.
 static bool mark_container_setup(json& status,
                                  const std::optional<utils::SetupReport>& failure) {
@@ -981,6 +1050,9 @@ json SystemInfo::get_device_dict() {
             if (!gpu.driver_version.empty()) {
                 gpu_json["driver_version"] = gpu.driver_version;
             }
+            if (gpu.driver_missing) {
+                gpu_json["driver_missing"] = true;
+            }
             if (!gpu.error.empty()) {
                 gpu_json["error"] = gpu.error;
             }
@@ -1275,6 +1347,16 @@ json SystemInfo::build_recipes_info(const json& devices) {
             can_uninstall = false;
         }
         backend_status["can_uninstall"] = can_uninstall;
+        if (const auto* desc = backends::descriptor_for(recipe)) {
+            auto about = desc->about.find(backend_name);
+            if (about != desc->about.end()) {
+                backend_status["description"] = about->second.description;
+                backend_status["author"] = about->second.author;
+                backend_status["publisher"] = about->second.publisher;
+                backend_status["license"] = about->second.license;
+                backend_status["project_url"] = about->second.project_url;
+            }
+        }
         recipes[recipe]["backends"][backend_name] = backend_status;
         backend_status_priority[key] = priority;
     };
@@ -1606,6 +1688,13 @@ json SystemInfo::build_recipes_info(const json& devices) {
             if (!container_setup) container_setup = backends::container_setup_failure();
             mark_container_setup(backend, backends::container_setup_failure(
                                               def.recipe, def.backend, *container_setup));
+        }
+
+        if (auto block = nvidia_driver_block(def, devices, current_os, supported)) {
+            supported = false;
+            backend["state"] = block->state;
+            backend["message"] = block->message;
+            backend["action"] = block->action;
         }
 
         set_backend_status(def, backend, kCurrentOsUnsupportedPriority);
@@ -2747,7 +2836,9 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_gpu_devices() {
                 if (driver_version.empty()) {
                     driver_version = wmi::get_property_string(pObj, L"DriverVersion");
                 }
-                gpu.driver_version = driver_version.empty() ? "Unknown" : driver_version;
+                gpu.driver_version = driver_version.empty()
+                    ? "Unknown"
+                    : system_info_detail::nvidia_driver_version_from_windows(driver_version);
 
                 gpu.vram_gb = get_gpu_vram_dxdiag(name);
                 if (gpu.vram_gb == 0.0) {
@@ -2758,6 +2849,29 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_gpu_devices() {
             }
         }
     });
+
+    // Without the NVIDIA driver, Windows binds the Microsoft Basic Display Adapter,
+    // so the card is only recognizable by its PCI vendor ID.
+    if (gpus.empty()) {
+        wmi.query(
+            L"SELECT PNPDeviceID FROM Win32_PnPEntity "
+            L"WHERE PNPDeviceID LIKE '%VEN_10DE%' AND PNPClass = 'Display'",
+            [&gpus](IWbemClassObject* pObj) {
+                std::string pnp_id = wmi::get_property_string(pObj, L"PNPDeviceID");
+                std::string device_id;
+                size_t dev_pos = pnp_id.find("DEV_");
+                if (dev_pos != std::string::npos) {
+                    device_id = pnp_id.substr(dev_pos + 4, 4);
+                }
+
+                GPUInfo gpu;
+                gpu.name = device_id.empty() ? "NVIDIA GPU" : "NVIDIA GPU [" + device_id + "]";
+                gpu.available = true;
+                gpu.driver_missing = true;
+                gpu.driver_version = "Unknown";
+                gpus.push_back(gpu);
+            });
+    }
 
     if (gpus.empty()) {
         GPUInfo gpu;
@@ -3290,9 +3404,19 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
                 std::ifstream device_file(device_path);
                 if (device_file.is_open()) std::getline(device_file, device_id);
 
+                // nouveau also exposes these card nodes; only the proprietary
+                // driver provides the libcuda that CUDA backends load. When the
+                // link is unreadable, a loaded nvidia module is the best evidence.
+                std::error_code link_ec;
+                fs::path driver_link = fs::read_symlink(entry.path() / "device" / "driver", link_ec);
+
                 GPUInfo gpu;
                 gpu.available      = true;
-                gpu.driver_version = driver_version.empty() ? "Unknown" : driver_version;
+                gpu.driver_missing = link_ec
+                    ? driver_version.empty()
+                    : driver_link.filename().string() != "nvidia";
+                gpu.driver_version = gpu.driver_missing || driver_version.empty()
+                    ? "Unknown" : driver_version;
                 gpu.name           = device_id.empty()
                     ? "NVIDIA GPU"
                     : "NVIDIA GPU [" + device_id + "]";
@@ -3336,6 +3460,7 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
             gpu.name = name;
             gpu.available = true;
             gpu.driver_version = get_nvidia_driver_version();
+            gpu.driver_missing = gpu.driver_version.empty();
             if (gpu.driver_version.empty()) gpu.driver_version = "Unknown";
             double vram = get_nvidia_vram();
             if (vram > 0.0) gpu.vram_gb = vram;

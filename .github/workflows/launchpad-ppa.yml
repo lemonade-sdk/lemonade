@@ -143,8 +143,12 @@ jobs:
     if: github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
+    # A hang should fail this job well before the merge queue's check timeout.
+    timeout-minutes: 30
     container:
       image: ubuntu:${{ matrix.release }}
+    env:
+      DEBIAN_FRONTEND: noninteractive
     steps:
       - name: Install checkout prerequisites
         run: |
