@@ -1159,6 +1159,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/configuration/container-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -3464,6 +3492,10 @@
 <tr>
 <td>Changes model downloads or registry search</td>
 <td><code>test/server_downloads.py</code></td>
+</tr>
+<tr>
+<td>Changes how container backends run (<code>ContainerManager</code>, <code>ContainerProcess</code>)</td>
+<td><code>test/cpp/test_container_manager.cpp</code>, and <code>test/server_containers.py</code>, which the <code>test-container-smoke</code> job runs against rootless Podman, rootful Podman and Docker on hosted runners</td>
 </tr>
 <tr>
 <td>Changes API key authentication</td>

@@ -1159,6 +1159,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/configuration/container-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -8411,7 +8439,7 @@
 <!-- BEGIN GENERATED: lemonade.classify -->
 <h2 id="post-v1classify"><code>POST /v1/classify</code></h2>
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-experimental-orange" /></sub></p>
-<p>Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on a string and returns a score for each label. It serves <code>onnxruntime</code> models, both sequence classifiers (one label set) and token classifiers (aggregated span labels), and provides the classification that the router's <code>classifier</code> condition uses.</p>
+<p>Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on a string and returns a score for each label. It serves <code>onnxruntime</code> sequence classifiers (one label set), token classifiers (aggregated span labels) and zero-shot models (labels sent with each request), and llama.cpp and FastFlowLM decision models, which are zero-shot. It provides the classification that the router's <code>classifier</code> and <code>zero_shot</code> conditions use.</p>
 <p>Requires <code>LEMONADE_API_KEY</code> when it is set.</p>
 <h3 id="parameters">Parameters</h3>
 <table>
@@ -8427,7 +8455,7 @@
 <tr>
 <td><code>model</code></td>
 <td>No</td>
-<td>The classifier model. Optional when exactly one classification model is loaded; that model is used.</td>
+<td>The classification model. Optional when exactly one classification model is loaded; that model is used.</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
 <tr>
@@ -8442,12 +8470,19 @@
 <td>Return only the highest-scoring <code>k</code> labels. Defaults to every label.</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
+<tr>
+<td><code>labels</code></td>
+<td>No</td>
+<td>The labels to score <code>input</code> against. Required by a zero-shot model, and refused by every other model. The entries are unique, not blank, and carry no control character. How many are accepted, and how long each may be, is the model's token window to decide.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
 </tbody>
 </table>
-<p>A malformed request, such as one with a blank <code>input</code> or a non-positive <code>top_k</code>, is rejected before any model loads.</p>
+<p>A malformed request, such as one with a blank <code>input</code>, a non-positive <code>top_k</code>, or a <code>labels</code> entry that is blank, repeated or holds a control character, is rejected before any model loads. How many labels a zero-shot model accepts, and how long each may be, depends on its token window, so the model enforces those limits itself and names both numbers when it refuses.</p>
 <h3 id="supported-models">Supported Models</h3>
 <p>Single-sequence encoder families: BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa (v1/v2), ELECTRA, ALBERT and CamemBERT. A stock <code>optimum-cli export onnx</code> directory of one of these works as is.</p>
 <p>A servable model directory holds <code>model.onnx</code>, <code>tokenizer.json</code> and <code>config.json</code>. The <code>config.json</code> is always required: its architecture is checked against the families above, so an unsupported family such as XLNet is rejected at load time rather than served with wrong scores. Label names (<code>id2label</code>), normalization and the token budget come from the same config, and an optional <code>manifest.json</code> overrides them. Without a manifest, inference assumes single-label softmax, so a multi-label (sigmoid) model declares <code>problem_type: multi_label_classification</code> in its config or ships a <code>manifest.json</code>.</p>
+<p>Zero-shot family: LFM2 (<code>Lfm2BidirForSequenceRouting</code>), such as <code>LFM2.5-Encoder-350M-Prompt-Router-ONNX</code>. Every request to it carries <code>labels</code>.</p>
 <p>Some upstream models declare only generic <code>LABEL_&lt;n&gt;</code> label names; their model card explains them.</p>
 <h3 id="example">Example</h3>
 <div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">PowerShell</label><label for="__tabbed_1_2">Bash</label></div>
@@ -8478,7 +8513,8 @@
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"classification"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Phishing-Email-Detection-ONNX"</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"labels"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"LABEL_0"</span><span class="p">:</span><span class="w"> </span><span class="mf">5.558096745517105e-05</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="err">more</span><span class="p">}</span>
+<span class="w">  </span><span class="nt">"labels"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"LABEL_0"</span><span class="p">:</span><span class="w"> </span><span class="mf">5.558096745517105e-05</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="err">more</span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"truncated"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
 <span class="p">}</span>
 </code></pre></div>
 <h3 id="response-format">Response format</h3>
@@ -8487,6 +8523,7 @@
 <li><code>model</code> - The model that classified the input, including one chosen because it was the only one loaded.</li>
 <li><code>labels</code> - Each label's score, keyed by label name.</li>
 <li>The label's score, in <code>[0, 1]</code>.</li>
+<li><code>truncated</code> - <code>true</code> when the model cut the input text to fit its token window before scoring, <code>false</code> when it scored the whole input. Labels are never cut, so the scores still cover every label sent. Absent when the backend does not report cuts (ort-server before 0.4.0, or a llama.cpp decision model of type <code>lfm2-d1-omni</code>, or <code>h2o-lightning</code> with a long text), so absence means unknown.</li>
 </ul>
 <h3 id="errors">Errors</h3>
 <table>
@@ -8521,7 +8558,17 @@
 <tr>
 <td><code>400</code></td>
 <td></td>
-<td>The backend rejects the request, for example because <code>model</code> is not a classification model, which is found only after it loads</td>
+<td><code>model</code> lacks the <code>classification</code> label, checked before it loads</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td></td>
+<td>The backend rejects the request, for example <code>labels</code> sent to a fixed-label model or left out for a zero-shot one</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td><code>model_load_refused</code></td>
+<td>The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support</td>
 </tr>
 <tr>
 <td><code>404</code></td>
@@ -8761,16 +8808,6 @@
 <li><code>update_available</code> - Whether the model's registry has a newer commit; <code>false</code> except for downloaded registry models.</li>
 <li><code>suggested</code> - Whether the model is recommended for general use.</li>
 <li><code>labels</code> - The model's capabilities and characteristics; see <a href=".././openai/#model-labels">Model Labels</a>.</li>
-<li><code>image_defaults</code> - Image models only: default generation parameters.<ul>
-<li><code>steps</code> - Number of inference steps, such as <code>4</code> for turbo models or <code>20</code> for standard models.</li>
-<li><code>cfg_scale</code> - Classifier-free guidance scale, such as <code>1.0</code> for turbo models or <code>7.5</code> for standard models.</li>
-<li><code>width</code> - Default image width in pixels.</li>
-<li><code>height</code> - Default image height in pixels.</li>
-<li><code>sampling_method</code> - Default sampler, when the model sets one.</li>
-<li><code>flow_shift</code> - Default flow shift, when the model sets one.</li>
-<li><code>soft_pixel_cap</code> - Largest output area, in pixels, that <code>images/edits</code> infers from the first reference image when <code>size</code> is omitted.</li>
-</ul>
-</li>
 <li><code>components</code> - The names of a collection's component models, in order; empty for other models.</li>
 <li><code>models</code> - Omni collections only: each component's full model object, in the order of <code>components</code>, so an exported collection can be imported elsewhere through <a href=".././lemonade/#post-v1pull"><code>/v1/pull</code></a>.</li>
 <li><code>checkpoints</code> - Every checkpoint by role, such as <code>main</code>, <code>mmproj</code>, <code>draft</code>, <code>text_encoder</code> or <code>vae</code>.<ul>
@@ -8787,12 +8824,11 @@
 </li>
 <li><code>source</code> - Where the model came from: a registry name, <code>local_upload</code>, <code>local_path</code> or <code>extra_models_dir</code>.</li>
 <li><code>registry_source</code> - Remote registry the checkpoint downloads from: <code>huggingface</code> or <code>modelscope</code>.</li>
-<li><code>recipe_options</code> - The model's own options: its image defaults and registry options, with what was saved in <code>recipe_options.json</code> on top.</li>
+<li><code>recipe_options</code> - The model's own options: those its registry row authors, with what was saved in <code>recipe_options.json</code> on top.</li>
 <li><code>cloud_provider</code> - Cloud models only: the provider that serves the model.</li>
 <li><code>cost_input_per_million</code> - Cloud models only: USD per million input tokens, when the provider reports it.</li>
 <li><code>cost_output_per_million</code> - Cloud models only: USD per million output tokens, when the provider reports it.</li>
 <li><code>system_prompt</code> - Omni collections only: the collection's system prompt override.</li>
-<li><code>audio_defaults</code> - Audio models only: default generation parameters.</li>
 <li><code>version</code> - Router collections only: the policy document's version.</li>
 <li><code>routing</code> - Router collections only: the routing policy.</li>
 </ul>
@@ -9914,7 +9950,7 @@ data: {"file": "", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "by
 <tr>
 <td><code>llamacpp_backend</code></td>
 <td>No</td>
-<td><code>llamacpp</code>: the llama.cpp backend: <code>auto</code>, <code>vulkan</code>, <code>rocm</code>, <code>cuda</code>, <code>metal</code>, <code>cpu</code>, or <code>system</code> for a <code>llama-server</code> already installed where supported.</td>
+<td><code>llamacpp</code>: the llama.cpp backend: <code>auto</code>, <code>vulkan</code>, <code>rocm</code>, <code>cuda</code>, <code>metal</code>, <code>cpu</code>, <code>nathanw</code>, <code>halobox</code>, or <code>system</code> for a <code>llama-server</code> already installed where supported.</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
 <tr>
@@ -10084,6 +10120,11 @@ data: {"file": "", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "by
 <td><code>400</code></td>
 <td><code>invalid_argument</code></td>
 <td>An argument or a value nested in it has the wrong JSON type, or a value its schema does not list</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td><code>model_load_refused</code></td>
+<td>The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support</td>
 </tr>
 <tr>
 <td><code>404</code></td>
@@ -10349,7 +10390,7 @@ data: {"file": "", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "by
 </div>
 </div>
 </div>
-<p><strong>Response:</strong> <code>200 OK</code>, <code>audio/wav</code>, 8,640,044 bytes</p>
+<p><strong>Response:</strong> <code>200 OK</code>, <code>audio/wav</code>, 8,593,964 bytes</p>
 <h3 id="errors_10">Errors</h3>
 <table>
 <thead>
@@ -10384,6 +10425,11 @@ data: {"file": "", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "by
 <td><code>400</code></td>
 <td></td>
 <td><code>response_format</code> is not a format <code>model</code>'s backend produces, or, when streaming, one it streams</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td><code>model_load_refused</code></td>
+<td>The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support</td>
 </tr>
 <tr>
 <td><code>404</code></td>
@@ -10516,7 +10562,7 @@ data: {"file": "", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "by
 </div>
 </div>
 </div>
-<p><strong>Response:</strong> <code>200 OK</code>, <code>model/gltf-binary</code>, 4,534,160 bytes</p>
+<p><strong>Response:</strong> <code>200 OK</code>, <code>model/gltf-binary</code>, 4,453,452 bytes</p>
 <h3 id="errors_11">Errors</h3>
 <table>
 <thead>
@@ -10551,6 +10597,11 @@ data: {"file": "", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "by
 <td><code>400</code></td>
 <td></td>
 <td><code>image</code> is not a PNG, JPEG, BMP or GIF</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td><code>model_load_refused</code></td>
+<td>The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support</td>
 </tr>
 <tr>
 <td><code>404</code></td>
@@ -11272,15 +11323,16 @@ lemonade_loaded_models 4
 <li><code>modality</code> - The kind of model the recipe mainly serves, such as <code>Text generation</code>.</li>
 <li><code>selectable_backend</code> - Whether a <code>&lt;recipe&gt;_backend</code> option chooses the recipe's backend.</li>
 <li><code>uses_ctx_size</code> - Whether the recipe accepts the shared <code>ctx_size</code> option.</li>
-<li><code>slot_policy</code> - How the recipe's models count against loaded-model limits: <code>standard</code>, <code>exclusive_npu</code> (loading one evicts every NPU model), <code>coexist_by_type</code> (one per model type) or <code>unmetered</code> (never counted or evicted).</li>
+<li><code>slot_policy</code> - How the recipe's models count against loaded-model limits: <code>standard</code>, <code>exclusive_npu</code> (loading one evicts every NPU model), <code>coexist_by_type</code> (one per model type), <code>exclusive_host</code> (shares the machine with no other local model) or <code>unmetered</code> (never counted or evicted).</li>
 <li><code>support</code> - Every backend's operating systems, devices and tier, the same on every host.</li>
 <li><code>options</code> - The recipe's load options, with each one's CLI flag, default and help text.</li>
 <li><code>backends</code> - Available backends for this recipe</li>
 <li>One entry per backend.<ul>
 <li><code>devices</code> - Devices <strong>on this system</strong> that support this backend; empty when none do.</li>
-<li><code>state</code> - Backend lifecycle state: <code>unsupported</code>, <code>installable</code>, <code>update_required</code>, <code>update_available</code> or <code>installed</code>.</li>
+<li><code>state</code> - Backend lifecycle state: <code>unsupported</code>, <code>installable</code>, <code>update_required</code>, <code>update_available</code>, <code>action_required</code> or <code>installed</code>.</li>
 <li><code>message</code> - Human-readable status text for GUI and CLI users. Required for <code>unsupported</code>, <code>installable</code>, and <code>update_required</code>; empty for <code>installed</code>.</li>
 <li><code>action</code> - An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL.</li>
+<li><code>setup_checks</code> - For a container backend in the <code>action_required</code> state, the ids of its failed setup checks, in the order of <code>message</code>'s lines (for example <code>["container_tool", "device_groups"]</code>). <code>message</code> then holds one failed check per line and <code>action</code> the numbered steps that fix them. See <a href="../../guide/configuration/container-backends/">Container Backends</a>.</li>
 <li><code>version</code> - Installed or configured backend version (when available)</li>
 <li><code>tier</code> - <code>core</code>, <code>experimental</code>, or <code>guest</code>. See <a href="#backend-tiers-and-formats">Backend Tiers and Formats</a>.</li>
 <li><code>format</code> - <code>native</code>, <code>python</code>, or <code>container</code>. See <a href="#backend-tiers-and-formats">Backend Tiers and Formats</a>.</li>

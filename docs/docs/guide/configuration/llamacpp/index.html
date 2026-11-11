@@ -1196,6 +1196,28 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#nathanw" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        nathanw
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#halobox" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        halobox
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1453,6 +1475,34 @@
     
   
     Cloud Offload
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../container-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
   
 
     
@@ -3326,6 +3376,28 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#nathanw" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        nathanw
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#halobox" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        halobox
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3590,6 +3662,24 @@ separate <code>llamacpp:cpu</code> backend is not required on macOS.</p>
 <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">LEMONADE_GGML_HIP_PATH</span><span class="o">=</span>/opt/rocm/lib/libggml-hip.so
 </code></pre></div>
 <p>The filename must look like <code>libggml-hip*.so*</code> (versioned sonames such as <code>libggml-hip.so.0</code> are accepted). This Linux-only variable is used solely to detect plugin availability; it is not forwarded to the GGML loader, so it does not change where llama.cpp actually loads the plugin from.</p>
+<h3 id="nathanw">nathanw</h3>
+<ul>
+<li><strong>Platform</strong>: Linux only</li>
+<li><strong>Hardware</strong>: AMD Strix Halo (gfx1151)</li>
+<li><strong>Use Case</strong>: The Strix Halo Vulkan performance fork of llama.cpp, running ordinary GGUF models</li>
+<li><strong>Tier and format</strong>: guest, container</li>
+<li><strong>Installation</strong>: <code>lemonade backends install llamacpp:nathanw</code> pulls the <code>vulkan-radv-performance</code> build of <a href="https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes">kyuz0/amd-strix-halo-toolboxes</a>, pinned by digest. Podman or Docker is required; see <a href="../container-backends/">Container Backends</a></li>
+<li><strong>Enable</strong>: <code>lemonade config set llamacpp.backend=nathanw</code>, or <code>--llamacpp nathanw</code> for one load</li>
+</ul>
+<h3 id="halobox">halobox</h3>
+<ul>
+<li><strong>Platform</strong>: Linux only</li>
+<li><strong>Hardware</strong>: AMD Strix Halo (gfx1151)</li>
+<li><strong>Use Case</strong>: <a href="https://github.com/halo-box/strix-llama.cpp">halo-box/strix-llama.cpp</a>, the Strix Halo community fork of llama.cpp, on ROCm with ordinary GGUF models</li>
+<li><strong>Tier and format</strong>: guest, container</li>
+<li><strong>Installation</strong>: <code>lemonade backends install llamacpp:halobox</code> pulls the ROCm <code>strix-llama</code> build of <a href="https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes">kyuz0/amd-strix-halo-toolboxes</a>, pinned by digest. Podman or Docker is required; see <a href="../container-backends/">Container Backends</a></li>
+<li><strong>Enable</strong>: <code>lemonade config set llamacpp.backend=halobox</code>, or <code>--llamacpp halobox</code> for one load</li>
+</ul>
 <h2 id="rocm-channel-configuration">ROCm Channel Configuration</h2>
 <p>The ROCm backend supports three channels to balance stability, performance, and access to latest features:</p>
 <h3 id="stable-channel-default">Stable Channel (Default)</h3>

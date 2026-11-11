@@ -1159,6 +1159,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/configuration/container-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -6504,6 +6532,11 @@ data: [DONE]
 <td><code>model</code> is not an LLM, which is checked after it loads</td>
 </tr>
 <tr>
+<td><code>400</code></td>
+<td><code>model_load_refused</code></td>
+<td>The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support</td>
+</tr>
+<tr>
 <td><code>404</code></td>
 <td><code>model_not_supported</code></td>
 <td>The requested model is filtered out on this system, such as an NPU model without an NPU</td>
@@ -6835,6 +6868,11 @@ data: [DONE]
 <td><code>model</code> is not an LLM, which is checked after it loads</td>
 </tr>
 <tr>
+<td><code>400</code></td>
+<td><code>model_load_refused</code></td>
+<td>The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support</td>
+</tr>
+<tr>
 <td><code>404</code></td>
 <td><code>model_not_supported</code></td>
 <td>The requested model is filtered out on this system, such as an NPU model without an NPU</td>
@@ -7003,6 +7041,11 @@ data: [DONE]
 <td><code>400</code></td>
 <td></td>
 <td><code>model</code>'s backend cannot embed, such as a text-to-speech model</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td><code>model_load_refused</code></td>
+<td>The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support</td>
 </tr>
 <tr>
 <td><code>404</code></td>
@@ -7301,6 +7344,11 @@ data: [DONE]
 <td>The request does not stream and <code>model</code> is not an LLM</td>
 </tr>
 <tr>
+<td><code>400</code></td>
+<td><code>model_load_refused</code></td>
+<td>The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support</td>
+</tr>
+<tr>
 <td><code>404</code></td>
 <td><code>model_not_supported</code></td>
 <td>The requested model is filtered out on this system, such as an NPU model without an NPU</td>
@@ -7393,7 +7441,6 @@ data: [DONE]
 </tr>
 </tbody>
 </table>
-<p>On FastFlowLM, which reports no segment timestamps, <code>verbose_json</code> has no <code>segments</code>.</p>
 <h3 id="examples_3">Examples</h3>
 <h4 id="transcript">Transcript</h4>
 <div class="tabbed-set tabbed-alternate" data-tabs="10:2"><input checked="checked" id="__tabbed_10_1" name="__tabbed_10" type="radio" /><input id="__tabbed_10_2" name="__tabbed_10" type="radio" /><div class="tabbed-labels"><label for="__tabbed_10_1">PowerShell</label><label for="__tabbed_10_2">Bash</label></div>
@@ -7475,7 +7522,12 @@ data: [DONE]
 <tr>
 <td><code>400</code></td>
 <td></td>
-<td><code>response_format</code> is <code>srt</code> or <code>vtt</code> and <code>model</code> is a FastFlowLM model, which reports no segment timestamps</td>
+<td><code>response_format</code> is <code>srt</code> or <code>vtt</code> and <code>model</code> is a FastFlowLM model</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td><code>model_load_refused</code></td>
+<td>The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support</td>
 </tr>
 <tr>
 <td><code>404</code></td>
@@ -7827,6 +7879,11 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <td>The backend's reply does not parse, or a request field not listed above has the wrong JSON type</td>
 </tr>
 <tr>
+<td><code>400</code></td>
+<td><code>model_load_refused</code></td>
+<td>The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support</td>
+</tr>
+<tr>
 <td><code>404</code></td>
 <td><code>model_not_supported</code></td>
 <td>The requested model is filtered out on this system, such as an NPU model without an NPU</td>
@@ -7908,7 +7965,7 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <tr>
 <td><code>size</code></td>
 <td>No</td>
-<td>Output size as <code>WIDTHxHEIGHT</code>, such as <code>512x512</code>. Defaults to the first reference image's size, scaled down to fit the model's <code>image_defaults.soft_pixel_cap</code> (2048x2048 pixels, about 4 MP, unless the model sets one). An explicit size skips that cap; backend limits still apply.</td>
+<td>Output size as <code>WIDTHxHEIGHT</code>, such as <code>512x512</code>. Defaults to the first reference image's size, scaled down to fit the model's <code>soft_pixel_cap</code> option (2048x2048 pixels, about 4 MP, unless the model sets one). An explicit size skips that cap; backend limits still apply.</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
 <tr>
@@ -8070,6 +8127,11 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <td><code>400</code></td>
 <td></td>
 <td>The backend's reply does not parse, or a request field not listed above has the wrong JSON type</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td><code>model_load_refused</code></td>
+<td>The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support</td>
 </tr>
 <tr>
 <td><code>404</code></td>
@@ -8262,6 +8324,11 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <td>The backend's reply does not parse, or a request field not listed above has the wrong JSON type</td>
 </tr>
 <tr>
+<td><code>400</code></td>
+<td><code>model_load_refused</code></td>
+<td>The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support</td>
+</tr>
+<tr>
 <td><code>404</code></td>
 <td><code>model_not_supported</code></td>
 <td>The requested model is filtered out on this system, such as an NPU model without an NPU</td>
@@ -8303,7 +8370,7 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <!-- BEGIN GENERATED: openai.images_upscale -->
 <h2 id="post-v1imagesupscale"><code>POST /v1/images/upscale</code></h2>
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
-<p>Upscales an image with an upscaling model such as <code>RealESRGAN-x4plus</code>. The model sets the upscale factor, which its name usually states.</p>
+<p>Upscales an image with an upscaling model such as <code>RealESRGAN-x4plus</code>. The model sets the default upscale factor; TheNoise models also accept an optional <code>upscale_factor</code>.</p>
 <p>Requires <code>LEMONADE_API_KEY</code> when it is set.</p>
 <h3 id="parameters_8">Parameters</h3>
 <table>
@@ -8326,6 +8393,12 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <td><code>model</code></td>
 <td>Yes</td>
 <td>The upscaling model to use, such as <code>RealESRGAN-x4plus</code> or <code>Remacri-4x-TheNoise</code>.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>upscale_factor</code></td>
+<td>No</td>
+<td>Optional scale factor for TheNoise (up to the upscaler's native scale).</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
 </tbody>
@@ -8606,6 +8679,11 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <td><code>response_format</code> is not a format <code>model</code>'s backend produces, or, when streaming, one it streams</td>
 </tr>
 <tr>
+<td><code>400</code></td>
+<td><code>model_load_refused</code></td>
+<td>The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support</td>
+</tr>
+<tr>
 <td><code>404</code></td>
 <td><code>model_not_supported</code></td>
 <td>The requested model is filtered out on this system, such as an NPU model without an NPU</td>
@@ -8743,16 +8821,6 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <li><code>update_available</code> - Whether the model's registry has a newer commit; <code>false</code> except for downloaded registry models.</li>
 <li><code>suggested</code> - Whether the model is recommended for general use.</li>
 <li><code>labels</code> - The model's capabilities and characteristics; see <a href=".././openai/#model-labels">Model Labels</a>.</li>
-<li><code>image_defaults</code> - Image models only: default generation parameters.<ul>
-<li><code>steps</code> - Number of inference steps, such as <code>4</code> for turbo models or <code>20</code> for standard models.</li>
-<li><code>cfg_scale</code> - Classifier-free guidance scale, such as <code>1.0</code> for turbo models or <code>7.5</code> for standard models.</li>
-<li><code>width</code> - Default image width in pixels.</li>
-<li><code>height</code> - Default image height in pixels.</li>
-<li><code>sampling_method</code> - Default sampler, when the model sets one.</li>
-<li><code>flow_shift</code> - Default flow shift, when the model sets one.</li>
-<li><code>soft_pixel_cap</code> - Largest output area, in pixels, that <code>images/edits</code> infers from the first reference image when <code>size</code> is omitted.</li>
-</ul>
-</li>
 <li><code>components</code> - The names of a collection's component models, in order; empty for other models.</li>
 <li><code>models</code> - Omni collections only: each component's full model object, in the order of <code>components</code>, so an exported collection can be imported elsewhere through <a href=".././lemonade/#post-v1pull"><code>/v1/pull</code></a>.</li>
 <li><code>checkpoints</code> - Every checkpoint by role, such as <code>main</code>, <code>mmproj</code>, <code>draft</code>, <code>text_encoder</code> or <code>vae</code>.<ul>
@@ -8769,12 +8837,11 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 </li>
 <li><code>source</code> - Where the model came from: a registry name, <code>local_upload</code>, <code>local_path</code> or <code>extra_models_dir</code>.</li>
 <li><code>registry_source</code> - Remote registry the checkpoint downloads from: <code>huggingface</code> or <code>modelscope</code>.</li>
-<li><code>recipe_options</code> - The model's own options: its image defaults and registry options, with what was saved in <code>recipe_options.json</code> on top.</li>
+<li><code>recipe_options</code> - The model's own options: those its registry row authors, with what was saved in <code>recipe_options.json</code> on top.</li>
 <li><code>cloud_provider</code> - Cloud models only: the provider that serves the model.</li>
 <li><code>cost_input_per_million</code> - Cloud models only: USD per million input tokens, when the provider reports it.</li>
 <li><code>cost_output_per_million</code> - Cloud models only: USD per million output tokens, when the provider reports it.</li>
 <li><code>system_prompt</code> - Omni collections only: the collection's system prompt override.</li>
-<li><code>audio_defaults</code> - Audio models only: default generation parameters.</li>
 <li><code>version</code> - Router collections only: the policy document's version.</li>
 <li><code>routing</code> - Router collections only: the routing policy.</li>
 </ul>
@@ -8848,9 +8915,10 @@ so on.</p>
 <p>Two label sets describe a model that cannot exist, and are refused rather than
 repaired:</p>
 <ul>
-<li><strong>A mode the recipe's backend does not serve.</strong> <code>/classify</code> is served only by
-  <code>onnxruntime</code>, so <code>labels: ["classification"]</code> on a <code>llamacpp</code> model is an
-  error; register it as the chat model it is.</li>
+<li><strong>A mode the recipe's backend does not serve.</strong> <code>/classify</code> is served by
+  <code>onnxruntime</code>, and by <code>llamacpp</code> only for a model that also has the
+  <code>systemone</code> label. <code>labels: ["classification"]</code> on a <code>llamacpp</code> model without
+  <code>systemone</code> is an error; register it as the chat model it is.</li>
 <li><strong>Two different modes.</strong> <code>labels: ["chat", "embeddings"]</code> on a <code>llamacpp</code> model
   is an error even though llama.cpp serves both: the subprocess is launched for
   one mode, so the second would name an endpoint it was never configured to
@@ -8876,6 +8944,21 @@ an error naming it; the file is left for you to correct.</p>
 <tr>
 <td><code>chat-transcription</code></td>
 <td>Accepts audio attachments in chat messages and transcribes them as part of its answer (e.g. Qwen2.5-Omni). Like <code>vision</code>, this is something a chat model can do, not a deployment mode of its own; a model carrying it also carries <code>chat</code>. It is distinct from <code>transcription</code>, which deploys a dedicated ASR model on <code>/audio/transcriptions</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Classification capability labels:</strong> carried alongside <code>classification</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Label</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>zero-shot</code></td>
+<td>Takes its labels from each <code>/classify</code> request instead of a fixed label set (e.g. <code>LFM2.5-Encoder-350M-Prompt-Router-ONNX</code>). A router policy must use such a model in a <code>zero_shot</code> classifier, and a fixed-label model in a <code>classifier</code>; registration refuses either mismatch.</td>
 </tr>
 </tbody>
 </table>
@@ -9040,14 +9123,6 @@ an error naming it; the file is left for you to correct.</p>
 <li><code>update_available</code> - Whether the model's registry has a newer commit; <code>false</code> except for downloaded registry models.</li>
 <li><code>suggested</code> - Whether the model is recommended for general use.</li>
 <li><code>labels</code> - The model's capabilities and characteristics; see <a href=".././openai/#model-labels">Model Labels</a>.</li>
-<li><code>image_defaults</code> - Image models only: default generation parameters.</li>
-<li><code>steps</code> - Number of inference steps, such as <code>4</code> for turbo models or <code>20</code> for standard models.</li>
-<li><code>cfg_scale</code> - Classifier-free guidance scale, such as <code>1.0</code> for turbo models or <code>7.5</code> for standard models.</li>
-<li><code>width</code> - Default image width in pixels.</li>
-<li><code>height</code> - Default image height in pixels.</li>
-<li><code>sampling_method</code> - Default sampler, when the model sets one.</li>
-<li><code>flow_shift</code> - Default flow shift, when the model sets one.</li>
-<li><code>soft_pixel_cap</code> - Largest output area, in pixels, that <code>images/edits</code> infers from the first reference image when <code>size</code> is omitted.</li>
 <li><code>components</code> - The names of a collection's component models, in order; empty for other models.</li>
 <li><code>models</code> - Omni collections only: each component's full model object, in the order of <code>components</code>, so an exported collection can be imported elsewhere through <a href=".././lemonade/#post-v1pull"><code>/v1/pull</code></a>.</li>
 <li><code>checkpoints</code> - Every checkpoint by role, such as <code>main</code>, <code>mmproj</code>, <code>draft</code>, <code>text_encoder</code> or <code>vae</code>.</li>
@@ -9060,12 +9135,11 @@ an error naming it; the file is left for you to correct.</p>
 <li><code>path</code> - Absolute path to the checkpoint file; present only with <code>include_paths=true</code> and when <code>present</code> is <code>true</code>.</li>
 <li><code>source</code> - Where the model came from: a registry name, <code>local_upload</code>, <code>local_path</code> or <code>extra_models_dir</code>.</li>
 <li><code>registry_source</code> - Remote registry the checkpoint downloads from: <code>huggingface</code> or <code>modelscope</code>.</li>
-<li><code>recipe_options</code> - The model's own options: its image defaults and registry options, with what was saved in <code>recipe_options.json</code> on top.</li>
+<li><code>recipe_options</code> - The model's own options: those its registry row authors, with what was saved in <code>recipe_options.json</code> on top.</li>
 <li><code>cloud_provider</code> - Cloud models only: the provider that serves the model.</li>
 <li><code>cost_input_per_million</code> - Cloud models only: USD per million input tokens, when the provider reports it.</li>
 <li><code>cost_output_per_million</code> - Cloud models only: USD per million output tokens, when the provider reports it.</li>
 <li><code>system_prompt</code> - Omni collections only: the collection's system prompt override.</li>
-<li><code>audio_defaults</code> - Audio models only: default generation parameters.</li>
 <li><code>version</code> - Router collections only: the policy document's version.</li>
 <li><code>routing</code> - Router collections only: the routing policy.</li>
 </ul>

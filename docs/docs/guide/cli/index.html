@@ -1197,10 +1197,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#thenoise-rocm-thenoise-recipe" class="md-nav__link">
+  <a href="#thenoise-thenoise-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        TheNoise ROCm (<code>thenoise</code> recipe)
+        TheNoise (<code>thenoise</code> recipe)
       </span>
     </span>
   </a>
@@ -1212,6 +1212,39 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         DwarfStar4 (<code>ds4</code> recipe)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rocm-fpx-rocmfpx-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        ROCm FPX (<code>rocmfpx</code> recipe)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#halogen-flash-halogen-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Halogen Flash (<code>halogen</code> recipe)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gufo-gufo-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Gufo (<code>gufo</code> recipe)
       </span>
     </span>
   </a>
@@ -1893,6 +1926,34 @@
     
   
     Cloud Offload
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/container-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
   
 
     
@@ -3956,10 +4017,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#thenoise-rocm-thenoise-recipe" class="md-nav__link">
+  <a href="#thenoise-thenoise-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        TheNoise ROCm (<code>thenoise</code> recipe)
+        TheNoise (<code>thenoise</code> recipe)
       </span>
     </span>
   </a>
@@ -3971,6 +4032,39 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         DwarfStar4 (<code>ds4</code> recipe)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rocm-fpx-rocmfpx-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        ROCm FPX (<code>rocmfpx</code> recipe)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#halogen-flash-halogen-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Halogen Flash (<code>halogen</code> recipe)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gufo-gufo-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Gufo (<code>gufo</code> recipe)
       </span>
     </span>
   </a>
@@ -4901,11 +4995,6 @@ lemonade<span class="w"> </span><span class="nb">alias</span><span class="w"> </
 <td>Recipe-specific options (e.g., <code>{"ctx-size": 8192, "llamacpp": "vulkan"}</code>)</td>
 </tr>
 <tr>
-<td><code>image_defaults</code></td>
-<td>object</td>
-<td>Image generation defaults for image models</td>
-</tr>
-<tr>
 <td><code>size</code></td>
 <td>string</td>
 <td>Model size description</td>
@@ -5177,7 +5266,7 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alia
 </tr>
 </tbody>
 </table>
-<h4 id="thenoise-rocm-thenoise-recipe">TheNoise ROCm (<code>thenoise</code> recipe)</h4>
+<h4 id="thenoise-thenoise-recipe">TheNoise (<code>thenoise</code> recipe)</h4>
 <table>
 <thead>
 <tr>
@@ -5212,6 +5301,67 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alia
 <tr>
 <td><code>--ds4-args ARGS</code></td>
 <td>Custom arguments to pass to ds4-server</td>
+<td><code>""</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="rocm-fpx-rocmfpx-recipe">ROCm FPX (<code>rocmfpx</code> recipe)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--ctx-size SIZE</code></td>
+<td>Context size for the model</td>
+<td>auto</td>
+</tr>
+<tr>
+<td><code>--rocmfpx-args ARGS</code></td>
+<td>Custom arguments to pass to the ROCm FPX llama-server</td>
+<td><code>""</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="halogen-flash-halogen-recipe">Halogen Flash (<code>halogen</code> recipe)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--ctx-size SIZE</code></td>
+<td>Context size for the model</td>
+<td>auto</td>
+</tr>
+</tbody>
+</table>
+<h4 id="gufo-gufo-recipe">Gufo (<code>gufo</code> recipe)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--ctx-size SIZE</code></td>
+<td>Context size for the model</td>
+<td>auto</td>
+</tr>
+<tr>
+<td><code>--gufo-args ARGS</code></td>
+<td>Custom arguments to pass to gufo serve llm</td>
 <td><code>""</code></td>
 </tr>
 </tbody>
@@ -5913,6 +6063,16 @@ lemonade<span class="w"> </span>telemetry<span class="w"> </span>off
 <td>—</td>
 </tr>
 <tr>
+<td><code>--submit</code></td>
+<td>Submit results to the Lemonade benchmark service (implies <code>--json</code>). Cannot be combined with <code>--compare</code></td>
+<td>False</td>
+</tr>
+<tr>
+<td><code>--submit-file FILE</code></td>
+<td>Submit an already-saved benchmark JSON file. Cannot be combined with <code>--compare</code></td>
+<td>—</td>
+</tr>
+<tr>
 <td><code>--compare FILE</code></td>
 <td>Compare results against a previously saved JSON file</td>
 <td>—</td>
@@ -5956,6 +6116,8 @@ lemonade<span class="w"> </span>telemetry<span class="w"> </span>off
 <p><strong>Timestamp behavior:</strong>
 - Top-level <code>timestamp</code> is the command invocation time.
 - Each per-model result includes its own <code>timestamp</code> for when that model run started.</p>
+<p><strong>Submitting results:</strong></p>
+<p><code>--submit</code> uploads the run to the Lemonade benchmark service and <code>--submit-file</code> uploads a benchmark JSON saved earlier with <code>--output</code>. The service answers with an id; <code>bench</code> prints a link to it so you can claim the results to your <a href="https://bench.lemonade-server.ai">bench.lemonade-server.ai</a> account. Submission progress goes to stderr, so <code>--submit --json &gt; results.json</code> still captures clean JSON.</p>
 <h3 id="scenario-files">Scenario Files</h3>
 <p>Scenarios are defined in JSON files. Each file contains a <code>scenarios</code> array where each entry specifies a workload:</p>
 <table>

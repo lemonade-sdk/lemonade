@@ -1159,6 +1159,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/configuration/container-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1861,6 +1889,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#gufo-gufo" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>gufo</code> — Gufo
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#llamacpp-llamacpp-gpu" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1916,6 +1955,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#rocmfpx-rocm-fpx" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>rocmfpx</code> — ROCm FPX
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#sd-cpp-stablediffusioncpp" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1927,10 +1977,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#thenoise-thenoise-rocm" class="md-nav__link">
+  <a href="#thenoise-thenoise" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>thenoise</code> — TheNoise ROCm
+        <code>thenoise</code> — TheNoise
       </span>
     </span>
   </a>
@@ -2025,17 +2075,6 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         llama.cpp (<code>llamacpp</code>)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#model-downloads" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Model downloads
       </span>
     </span>
   </a>
@@ -3324,6 +3363,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#gufo-gufo" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>gufo</code> — Gufo
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#llamacpp-llamacpp-gpu" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3379,6 +3429,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#rocmfpx-rocm-fpx" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>rocmfpx</code> — ROCm FPX
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#sd-cpp-stablediffusioncpp" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3390,10 +3451,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#thenoise-thenoise-rocm" class="md-nav__link">
+  <a href="#thenoise-thenoise" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>thenoise</code> — TheNoise ROCm
+        <code>thenoise</code> — TheNoise
       </span>
     </span>
   </a>
@@ -3495,17 +3556,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#model-downloads" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Model downloads
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#backend-auto-selection" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3579,6 +3629,20 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>npu</td>
 </tr>
 <tr>
+<td><code>gufo</code></td>
+<td>Gufo</td>
+<td>no</td>
+<td>yes</td>
+<td>rocm</td>
+</tr>
+<tr>
+<td><code>halogen</code></td>
+<td>Halogen Flash</td>
+<td>no</td>
+<td>yes</td>
+<td>rocm</td>
+</tr>
+<tr>
 <td><code>kokoro</code></td>
 <td>Kokoro</td>
 <td>no</td>
@@ -3590,7 +3654,7 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>Llama.cpp GPU</td>
 <td>yes</td>
 <td>yes</td>
-<td>cpu, cuda, metal, rocm, system, vulkan</td>
+<td>cpu, cuda, halobox, metal, nathanw, rocm, system, vulkan</td>
 </tr>
 <tr>
 <td><code>llamacpp-hrx</code></td>
@@ -3621,6 +3685,13 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>cuda, vulkan</td>
 </tr>
 <tr>
+<td><code>rocmfpx</code></td>
+<td>ROCm FPX</td>
+<td>no</td>
+<td>yes</td>
+<td>rocm</td>
+</tr>
+<tr>
 <td><code>ryzenai-llm</code></td>
 <td>Ryzen AI LLM</td>
 <td>no</td>
@@ -3636,10 +3707,10 @@ the generator instead. Prose outside the markers is preserved. -->
 </tr>
 <tr>
 <td><code>thenoise</code></td>
-<td>TheNoise ROCm</td>
+<td>TheNoise</td>
 <td>yes</td>
 <td>no</td>
-<td>rocm</td>
+<td>cuda, rocm</td>
 </tr>
 <tr>
 <td><code>thinksound</code></td>
@@ -3653,7 +3724,7 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>TRELLIS.2</td>
 <td>yes</td>
 <td>no</td>
-<td>cuda, rocm, vulkan</td>
+<td>cuda, cuda12, rocm, vulkan</td>
 </tr>
 <tr>
 <td><code>vllm</code></td>
@@ -3716,7 +3787,7 @@ the generator instead. Prose outside the markers is preserved. -->
 <td><code>ds4</code></td>
 <td>rocm</td>
 <td>guest</td>
-<td>native</td>
+<td>container</td>
 <td>linux</td>
 <td>amd_gpu (gfx1151)</td>
 </tr>
@@ -3727,6 +3798,22 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>native</td>
 <td>linux, windows</td>
 <td>amd_npu (XDNA2)</td>
+</tr>
+<tr>
+<td><code>gufo</code></td>
+<td>rocm</td>
+<td>guest</td>
+<td>container</td>
+<td>linux</td>
+<td>amd_gpu (gfx1151)</td>
+</tr>
+<tr>
+<td><code>halogen</code></td>
+<td>rocm</td>
+<td>guest</td>
+<td>container</td>
+<td>linux</td>
+<td>amd_gpu (gfx1151)</td>
 </tr>
 <tr>
 <td><code>kokoro</code></td>
@@ -3791,6 +3878,22 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>native</td>
 <td>linux, windows</td>
 <td>cpu (arm64, x86_64)</td>
+</tr>
+<tr>
+<td><code>llamacpp</code></td>
+<td>nathanw</td>
+<td>guest</td>
+<td>container</td>
+<td>linux</td>
+<td>amd_gpu (gfx1151)</td>
+</tr>
+<tr>
+<td><code>llamacpp</code></td>
+<td>halobox</td>
+<td>guest</td>
+<td>container</td>
+<td>linux</td>
+<td>amd_gpu (gfx1151)</td>
 </tr>
 <tr>
 <td><code>llamacpp-hrx</code></td>
@@ -3865,6 +3968,14 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>amd_gpu; cpu (x86_64); nvidia_gpu</td>
 </tr>
 <tr>
+<td><code>rocmfpx</code></td>
+<td>rocm</td>
+<td>guest</td>
+<td>container</td>
+<td>linux</td>
+<td>amd_gpu (gfx1151)</td>
+</tr>
+<tr>
 <td><code>ryzenai-llm</code></td>
 <td>npu</td>
 <td>core</td>
@@ -3921,6 +4032,14 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
 </tr>
 <tr>
+<td><code>thenoise</code></td>
+<td>cuda</td>
+<td>experimental</td>
+<td>python</td>
+<td>linux</td>
+<td>nvidia_gpu</td>
+</tr>
+<tr>
 <td><code>thinksound</code></td>
 <td>cuda</td>
 <td>experimental</td>
@@ -3943,6 +4062,14 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>native</td>
 <td>linux, windows</td>
 <td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
+</tr>
+<tr>
+<td><code>trellis</code></td>
+<td>cuda12</td>
+<td>experimental</td>
+<td>native</td>
+<td>linux, windows</td>
+<td>nvidia_gpu (sm_60, sm_61, sm_62, sm_70, sm_72)</td>
 </tr>
 <tr>
 <td><code>trellis</code></td>
@@ -4107,6 +4234,34 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 </tr>
 </tbody>
 </table>
+<h4 id="gufo-gufo"><code>gufo</code> — Gufo</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>CLI flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ctx_size</code></td>
+<td><code>--ctx-size</code></td>
+<td>SIZE</td>
+<td>-1</td>
+<td>Context size for the model</td>
+</tr>
+<tr>
+<td><code>gufo_args</code></td>
+<td><code>--gufo-args</code></td>
+<td>ARGS</td>
+<td>""</td>
+<td>Custom arguments to pass to gufo serve llm</td>
+</tr>
+</tbody>
+</table>
 <h4 id="llamacpp-llamacpp-gpu"><code>llamacpp</code> — Llama.cpp GPU</h4>
 <table>
 <thead>
@@ -4238,6 +4393,48 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 <td>""</td>
 <td>OpenMOSS TTS backend to use</td>
 </tr>
+<tr>
+<td><code>pcm_sample_rate</code></td>
+<td>—</td>
+<td>SIZE</td>
+<td>0</td>
+<td>Sample rate of the PCM this model emits, reported as X-MOSS-Sample-Rate (0 omits the header)</td>
+</tr>
+<tr>
+<td><code>pcm_channels</code></td>
+<td>—</td>
+<td>SIZE</td>
+<td>0</td>
+<td>Channel count of the PCM this model emits, reported as X-MOSS-Channels (0 omits the header)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="rocmfpx-rocm-fpx"><code>rocmfpx</code> — ROCm FPX</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>CLI flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ctx_size</code></td>
+<td><code>--ctx-size</code></td>
+<td>SIZE</td>
+<td>-1</td>
+<td>Context size for the model</td>
+</tr>
+<tr>
+<td><code>rocmfpx_args</code></td>
+<td><code>--rocmfpx-args</code></td>
+<td>ARGS</td>
+<td>""</td>
+<td>Custom arguments to pass to the ROCm FPX llama-server</td>
+</tr>
 </tbody>
 </table>
 <h4 id="sd-cpp-stablediffusioncpp"><code>sd-cpp</code> — StableDiffusion.cpp</h4>
@@ -4308,9 +4505,16 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 <td>0.0</td>
 <td>Flow shift</td>
 </tr>
+<tr>
+<td><code>soft_pixel_cap</code></td>
+<td>—</td>
+<td>SIZE</td>
+<td>0</td>
+<td>Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default)</td>
+</tr>
 </tbody>
 </table>
-<h4 id="thenoise-thenoise-rocm"><code>thenoise</code> — TheNoise ROCm</h4>
+<h4 id="thenoise-thenoise"><code>thenoise</code> — TheNoise</h4>
 <table>
 <thead>
 <tr>
@@ -4398,6 +4602,13 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 <td>ARGS</td>
 <td>""</td>
 <td>Comma-separated LoRA specs, e.g. "style:0.8,sub/detail:0.5"</td>
+</tr>
+<tr>
+<td><code>soft_pixel_cap</code></td>
+<td>—</td>
+<td>SIZE</td>
+<td>0</td>
+<td>Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default)</td>
 </tr>
 </tbody>
 </table>
@@ -4533,8 +4744,6 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 <p><code>MOSS-SoundEffect</code> uses the same recipe but is an audio-generation model: <code>audio_generations()</code> forwards to the backend's <code>/sfx</code> endpoint, accepting <code>duration</code>/<code>cfg</code> as aliases for <code>seconds</code>/<code>cfg_scale</code>.</p>
 <h3 id="llamacpp-llamacpp">llama.cpp (<code>llamacpp</code>)</h3>
 <p>Lemonade launches <code>llama-server</code> with <code>--parallel 1</code> and leaves the upstream <code>--cache-ram</code> host prompt cache at its default. <code>LlamaCppServer</code> does not override <code>downsize()</code>: slot <code>erase</code> frees no device memory (the KV buffer is allocated once at model load) and discards the slot's KV state without going through the host-cache save path, so soft idle leaves the slot resident and a resumed conversation reuses its cached prefix.</p>
-<h3 id="model-downloads">Model downloads</h3>
-<p>A checkpoint file can be reached twice during a registry download: once because the backend's <code>select_checkpoint_files</code> claimed it alongside the main weight, and again because it is also declared as its own checkpoint role (the OpenMOSS <code>.extras.gguf</code> sidecars are both). The same bytes either way, so <code>download_from_registry</code> collapses duplicates before counting, or the progress total overshoots.</p>
 <h3 id="backend-auto-selection">Backend auto-selection</h3>
 <p>When a recipe's backend is not pinned in <code>config.json</code> (the <code>backend</code> key is absent or <code>"auto"</code>), the default backend reported in <code>system-info</code> — and used by <code>RecipeOptions</code> when resolving <code>*_backend</code> options — is chosen as follows: the first supported backend in <code>RECIPE_DEFS</code> preference order wins, unless a later supported backend is already locally installed (state <code>installed</code>, <code>update_available</code>, or <code>update_required</code>) while the earlier candidates are merely installable. In that case the first installed one wins. This makes explicitly installing a variant (e.g. the Vulkan build of a GPU backend) an effective override: auto-selection uses what is on disk instead of downloading the preference-order winner. An explicit <code>backend</code> value in <code>config.json</code> always takes precedence over both rules. The llamacpp <code>system</code> variant is never auto-selected unless <code>prefer_system</code> is set.</p>
 

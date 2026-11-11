@@ -1159,6 +1159,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/configuration/container-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -3241,7 +3269,7 @@ model is involved.</p>
 </tbody>
 </table>
 <p>Validation is structural: every <code>candidates</code> entry, <code>default_model</code>, rule <code>route_to</code> and classifier model must be listed in <code>components</code>. Component names are not looked up in the model registry, so a policy can be tested before its candidates are downloaded, and registration's model-type checks, such as whether a <code>semantic_similarity</code> model can embed, do not run.</p>
-<p>Deterministic conditions (<code>keywords_any</code>, <code>regex</code>, <code>min_chars</code>, <code>metadata</code>, etc.) are evaluated locally. Model-backed conditions (<code>semantic_similarity</code>, <code>classifier</code> and <code>llm</code>, including <code>routing.router</code>) may load and run their models. A model failure follows the classifier's <code>on_error</code> policy (<code>match_false</code> by default), so routing continues to a later rule or to <code>default_model</code>.</p>
+<p>Deterministic conditions (<code>keywords_any</code>, <code>regex</code>, <code>min_chars</code>, <code>metadata</code>, etc.) are evaluated locally. Model-backed conditions (<code>semantic_similarity</code>, <code>classifier</code>, <code>zero_shot</code> and <code>llm</code>, including <code>routing.router</code>) may load and run their models. A model failure follows the classifier's <code>on_error</code> policy (<code>match_false</code> by default), so routing continues to a later rule or to <code>default_model</code>. A residency conflict is the exception: when the classifier model cannot be resident alongside the models already loaded, the request returns 409 and no decision is made, because the policy cannot run on this machine in this combination.</p>
 <p>The example below uses explicit <code>routing.rules</code>, so its <code>normalized_policy</code> comes back unchanged. The <code>routing.router</code> shorthand is expanded into an <code>llm</code> classifier plus one rule per candidate, so a <code>routing</code> block written as:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"router"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
@@ -3398,6 +3426,11 @@ model is involved.</p>
 <td><code>400</code></td>
 <td></td>
 <td><code>policy</code> is invalid or internally inconsistent</td>
+</tr>
+<tr>
+<td><code>409</code></td>
+<td><code>router_residency_conflict</code></td>
+<td>Loading the requested model would evict a model that a <code>collection.router</code> model needs resident on the same NPU</td>
 </tr>
 </tbody>
 </table>

@@ -1159,6 +1159,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/configuration/container-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -3488,7 +3516,7 @@
 <tr>
 <td><code>cuda</code></td>
 <td>Runner can execute CUDA GPU workloads</td>
-<td>TBD</td>
+<td>llama.cpp CUDA backend (<code>validate_llamacpp.yml</code>, <code>validate-linux</code> job)</td>
 </tr>
 <tr>
 <td><code>xdna2</code></td>
@@ -3500,7 +3528,7 @@
 <p>A job that exercises more than one backend should request all the labels it needs (e.g., <code>[Windows, X64, vulkan, rocm, lemon-prod]</code> for a test that runs both Vulkan and ROCm cases). GitHub Actions requires the runner to carry <em>every</em> label in the <code>runs-on</code> list.</p>
 <p>CPU-only jobs should target GitHub-hosted runners when possible.</p>
 <h3 id="architecture-label">Architecture label</h3>
-<p>GitHub registers every self-hosted runner with an architecture label (<code>X64</code>, <code>ARM64</code>, or <code>ARM</code>) alongside its OS label (<code>Linux</code>, <code>Windows</code>, <code>macOS</code>). <strong>Every self-hosted <code>runs-on</code> list must include one of these architecture labels.</strong> The pool contains both x86_64 and ARM64 machines (e.g. the DGX Spark is <code>[self-hosted, Linux, ARM64, cuda, lemon-prod]</code>), so a job that only asks for <code>[self-hosted, Linux, lemon-prod]</code> can be scheduled onto either and fail with a binary or package built for the other architecture.</p>
+<p>GitHub registers every self-hosted runner with an architecture label (<code>X64</code>, <code>ARM64</code>, or <code>ARM</code>) alongside its OS label (<code>Linux</code>, <code>Windows</code>, <code>macOS</code>). <strong>Every self-hosted <code>runs-on</code> list must include one of these architecture labels.</strong> The pool contains both x86_64 and ARM64 machines (e.g. the DGX Spark is <code>[self-hosted, Linux, ARM64, cuda, lemon-prod, sjlab-dgx-spark-01]</code>), so a job that only asks for <code>[self-hosted, Linux, lemon-prod]</code> can be scheduled onto either and fail with a binary or package built for the other architecture.</p>
 <h3 id="hardware-labels">Hardware labels</h3>
 <p>These pin a job to a specific hardware class when a capability label alone isn't enough to distinguish it. Combine them with a capability label.</p>
 <table>
@@ -3541,7 +3569,11 @@
 </tr>
 <tr>
 <td>DGX Spark (ARM64 + CUDA)</td>
-<td><code>lemon-prod</code>, <code>cuda</code></td>
+<td><code>lemon-prod</code>, <code>cuda</code>, <code>sjlab-dgx-spark-01</code></td>
+</tr>
+<tr>
+<td>Linux x64 RTX 5070 (CUDA)</td>
+<td><code>lemon-prod</code>, <code>cuda</code>, <code>sjlab-rtx-5070-fractal-01</code></td>
 </tr>
 </tbody>
 </table>

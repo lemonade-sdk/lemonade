@@ -1159,6 +1159,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/configuration/container-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -5661,7 +5689,7 @@ field that changes what a plan contains while <code>operator==</code> ignores it
 <span class="k">public</span><span class="o">:</span>
 <span class="w">    </span><span class="n">json</span><span class="w"> </span><span class="n">entry</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&amp;</span><span class="w"> </span><span class="n">canonical_id</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span><span class="w">      </span><span class="c1">// the user's own entry</span>
 <span class="w">    </span><span class="n">json</span><span class="w"> </span><span class="nf">resolved</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&amp;</span><span class="w"> </span><span class="n">canonical_id</span><span class="p">,</span>
-<span class="w">                  </span><span class="k">const</span><span class="w"> </span><span class="n">ModelInfo</span><span class="o">&amp;</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span><span class="w">                  </span><span class="c1">// three-layer merge</span>
+<span class="w">                  </span><span class="k">const</span><span class="w"> </span><span class="n">ModelInfo</span><span class="o">&amp;</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span><span class="w">                  </span><span class="c1">// authored row + saved entry</span>
 <span class="w">    </span><span class="n">json</span><span class="w"> </span><span class="nf">registry_defaults</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&amp;</span><span class="w"> </span><span class="n">canonical_id</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
 <span class="w">    </span><span class="n">json</span><span class="w"> </span><span class="nf">replace</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&amp;</span><span class="w"> </span><span class="n">canonical_id</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">json</span><span class="o">&amp;</span><span class="w"> </span><span class="n">entry</span><span class="p">);</span>
 <span class="w">    </span><span class="n">json</span><span class="w"> </span><span class="nf">merge</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&amp;</span><span class="w"> </span><span class="n">canonical_id</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">json</span><span class="o">&amp;</span><span class="w"> </span><span class="n">changes</span><span class="p">);</span>
@@ -5738,7 +5766,7 @@ field that changes what a plan contains while <code>operator==</code> ignores it
 <h2 id="source-layout">Source Layout</h2>
 <p>This section places each component in the tree and states how it is built.</p>
 <div class="highlight"><pre><span></span><code>src/cpp/include/lemon/models/     PUBLIC to consumers — exactly four:
-  model_info.h            ModelInfo, GgufMetadata, ImageDefaults, ModelFileInfo
+  model_info.h            ModelInfo, GgufMetadata, ModelFileInfo
   store_snapshot.h        StoreSnapshot, ResolvedModel, CheckpointStatus
   registry_types.h        wire facts that persist on disk or cross HTTP
   model_errors.h          what a refused call throws

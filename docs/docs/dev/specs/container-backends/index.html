@@ -1159,6 +1159,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/configuration/container-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -3683,7 +3711,7 @@
 <p>A <strong>container backend</strong> is a Lemonade backend whose executable is a digest-pinned OCI image instead of a downloaded binary.</p>
 <ul>
 <li>Install, load, unload, <code>/system-info</code>, benchmarking and the backend manager work unchanged.</li>
-<li>The one new host requirement is a container tool on Linux: Podman first, then Docker, each verified by a socket probe. Users will be guided to install Podman if needed.</li>
+<li>The one new host requirement is a container tool on Linux: Podman first, then Docker, verified by <code>podman info</code> and <code>docker info</code>. Users will be guided to install Podman if needed.</li>
 </ul>
 <h2 id="design-philosophy">Design Philosophy</h2>
 <p>Lemonade follows <a href="https://github.com/containers/ramalama">Ramalama</a>'s container conventions wherever they apply, and <a href="https://github.com/kyuz0/ai-toolbox-cockpit">AI Cockpit</a>'s wherever the choice belongs to this hardware. A dagger (†) marks an item taken from Ramalama, a double dagger (‡) one taken from AI Cockpit, and a section mark (§) one both already share, on the item or at the end of a table cell for the whole cell. <strong><a href="#appendix-a-ramalama-and-ai-cockpit-conventions-and-where-lemonade-differs">Appendix A</a></strong> sources each against Ramalama v0.24.0 and AI Cockpit v2026.9.19.1535.</p>
@@ -3710,7 +3738,7 @@
 - <code>llamacpp:rocm</code>: core, native
 - <code>vllm:rocm</code>: experimental, python
 - <code>halogen:rocm</code>: guest, container</p>
-<p>Lemonade's GUI and CLI will display a disclaimer the first time the user attempts to install a guest backend. Models specific to a guest backend should not be displayed in <code>/v1/models?show_all=true</code> until the backend has been installed.</p>
+<p>Models specific to a guest backend should not be displayed in <code>/v1/models?show_all=true</code> until the backend has been installed.</p>
 <blockquote>
 <p>Note: tier replaces the descriptor's <code>experimental</code> boolean. <code>/system-info</code> keeps each recipe's <code>experimental</code> field, <code>true</code> when its <code>default_backend</code> has the <code>experimental</code> or <code>guest</code> tier.</p>
 </blockquote>
@@ -3805,18 +3833,6 @@
 <td><code>HALOGEN_CTX</code></td>
 <td><code>ctx_size</code> when the user sets it, otherwise <code>262144</code> ‡</td>
 </tr>
-<tr>
-<td><code>HALOGEN_KV_POOL_POSITIONS</code></td>
-<td><code>524288</code> ‡</td>
-</tr>
-<tr>
-<td><code>HALOGEN_KV_SLOTS</code></td>
-<td><code>4</code> ‡</td>
-</tr>
-<tr>
-<td><code>HALOGEN_PROMPT_CACHE</code></td>
-<td><code>2</code> ‡</td>
-</tr>
 </tbody>
 </table>
 <h4 id="version-pins">Version Pins</h4>
@@ -3860,7 +3876,7 @@
 <ul>
 <li>picks the container tool (see <a href="#tool-choice-and-install-commands">Tool Choice and Install Commands</a>)</li>
 <li>builds the <code>podman run</code> or <code>docker run</code> command in one function, which holds every Podman and Docker difference § (see <a href="#command-contract">Command Contract</a>)</li>
-<li>runs, stops, inspects and sweeps containers by name and label †; the sweep runs at startup and includes stopped containers</li>
+<li>runs, stops and inspects containers by name and label †</li>
 <li>checks prerequisites before a load and gives each failure its fix (see <a href="#setup-assistant">Setup Assistant</a>)</li>
 <li>pulls and removes images for install and uninstall</li>
 </ul>
@@ -3895,8 +3911,8 @@
 </tr>
 <tr>
 <td><code>--name</code></td>
-<td><code>lemonade-&lt;recipe&gt;-&lt;backend&gt;-&lt;model&gt;</code></td>
-<td>The loaded model</td>
+<td><code>lemonade-&lt;port&gt;-&lt;recipe&gt;-&lt;backend&gt;-&lt;model&gt;</code>. <code>&lt;port&gt;</code> is the port <code>lemond</code> listens on, so <code>lemond</code> instances sharing a container daemon never remove each other's containers. The other parts keep letters, digits, <code>.</code> and <code>-</code>, double <code>_</code>, and write any other character as <code>_</code> plus its two hex digits (<code>user.foo/bar</code> becomes <code>user.foo_2fbar</code>)</td>
+<td>The loaded model and the <code>lemond</code> port</td>
 </tr>
 <tr>
 <td><code>--label</code></td>
@@ -3940,7 +3956,8 @@
 </tr>
 </tbody>
 </table>
-<p>When the container tool is Podman, <code>lemond</code> connects to the server at <code>127.0.0.1:&lt;port&gt;</code>, and the command adds:</p>
+<p>Only rootless Podman can publish a port from an <code>--internal</code> network.</p>
+<p>When the container tool is rootless Podman, <code>lemond</code> connects to the server at <code>127.0.0.1:&lt;port&gt;</code>, and the command adds:</p>
 <table>
 <thead>
 <tr>
@@ -3952,7 +3969,7 @@
 <tbody>
 <tr>
 <td><code>--group-add</code></td>
-<td><code>keep-groups</code> ‡, which carries the account's own <code>video</code> and <code>render</code> membership into the container</td>
+<td><code>keep-groups</code> ‡, which carries the account's own <code>render</code> membership into the container. Through the account's <code>podman.socket</code>, whose API rejects <code>keep-groups</code>, <code>lemond</code> passes <code>--annotation run.oci.keep_original_groups=1</code>, the crun annotation <code>keep-groups</code> stands for, instead</td>
 <td><code>ContainerPolicy.devices</code> (see <a href="#containers-descriptor-field"><code>containers</code> Descriptor Field</a>)</td>
 </tr>
 <tr>
@@ -3962,7 +3979,7 @@
 </tr>
 </tbody>
 </table>
-<p>When the container tool is Docker, <code>lemond</code> connects to the server at the container's address on its private network, and the command adds:</p>
+<p>When the container tool is Docker or rootful Podman, <code>lemond</code> connects to the server at the container's address on its private network, and the command adds:</p>
 <table>
 <thead>
 <tr>
@@ -3974,7 +3991,7 @@
 <tbody>
 <tr>
 <td><code>--group-add</code></td>
-<td>The host's <code>video</code> and <code>render</code> group IDs, resolved at launch ‡</td>
+<td>The host's <code>render</code> group ID, resolved at launch ‡</td>
 <td><code>ContainerPolicy.devices</code> (see <a href="#containers-descriptor-field"><code>containers</code> Descriptor Field</a>)</td>
 </tr>
 </tbody>
@@ -3988,15 +4005,15 @@
 <li><code>--host</code> is <code>0.0.0.0</code> instead of <code>127.0.0.1</code>, so <code>lemond</code> can reach the server from outside the container.</li>
 </ul>
 <h3 id="complete-example">Complete Example</h3>
-<p>Suppose <code>lemond</code> runs under the user's own account on a native host with rootless Podman, and loads the model <code>Qwen3-4B-GGUF</code> on <code>llamacpp:nathanw</code> with <code>ctx_size</code> set to 8192. <code>ContainerProcess</code> runs two commands. The first creates the container's private network, and the second starts the server:</p>
+<p>Suppose <code>lemond</code> listens on port 13305 under the user's own account on a native host with rootless Podman, and loads the model <code>Qwen3-4B-GGUF</code> on <code>llamacpp:nathanw</code> with <code>ctx_size</code> set to 8192. <code>ContainerProcess</code> runs two commands. The first creates the container's private network, and the second starts the server:</p>
 <div class="highlight"><pre><span></span><code>podman network create --internal \
   --label ai.lemonade \
-  lemonade-llamacpp-nathanw-Qwen3-4B-GGUF
+  lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF
 
 podman run \
   --rm \
   --init \
-  --name lemonade-llamacpp-nathanw-Qwen3-4B-GGUF \
+  --name lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF \
   --label ai.lemonade \
   --label ai.lemonade.recipe=llamacpp \
   --label ai.lemonade.backend=nathanw \
@@ -4005,7 +4022,7 @@ podman run \
   --cap-drop=all \
   --security-opt=no-new-privileges \
   --pull=never \
-  --network=lemonade-llamacpp-nathanw-Qwen3-4B-GGUF \
+  --network=lemonade-13305-llamacpp-nathanw-Qwen3-4B-GGUF \
   --device /dev/dri \
   --group-add keep-groups \
   -v /home/alice/.cache/huggingface/hub/models--unsloth--Qwen3-4B-GGUF/snapshots/a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4/Qwen3-4B-Q4_K_M.gguf:/mnt/models/Qwen3-4B-Q4_K_M.gguf:ro,z \
@@ -4029,10 +4046,10 @@ podman run \
 </ul>
 <p>Container backends are hidden on Windows and macOS.</p>
 <h3 id="setup-assistant">Setup Assistant</h3>
-<p>The setup assistant tells the user which setup step is missing and how to fix it. While one of its checks fails, the container backend's state is <code>action_required</code>, with two fields:</p>
+<p>The setup assistant tells the user every setup step that is missing and how to fix it, at once. While any of its checks fails, the container backend's state is <code>action_required</code>, and it reports:</p>
 <ul>
-<li><code>message</code>: the check's "Fails when" text.</li>
-<li><code>action</code>: the commands that fix it.</li>
+<li><code>message</code>: each failed check's "Fails when" text, one per line.</li>
+<li><code>action</code>: the commands that fix them, one step per line.</li>
 </ul>
 <p><code>/system-info</code> reports both fields. The Backend Manager panel in the desktop and web apps shows <code>message</code>, with a help button that copies <code>action</code>, and <code>lemonade backends</code> prints both. Checks rerun on each <code>/system-info</code> request, so the backend changes to <code>installable</code> as soon as a fix takes effect.</p>
 <p>Each install type below lists its checks in the order they run, in one table per container tool. The <code>action</code> cells are the user's setup steps.</p>
@@ -4067,7 +4084,7 @@ podman run \
 <h3 id="lemond-started-by-the-user"><code>lemond</code> Started by the User</h3>
 <p>The user starts <code>lemond</code> as their own account, through any of:</p>
 <ul>
-<li>a <code>systemctl --user</code> unit, <code>lemond-user.service</code>, which runs with the user's own rights, as a shell does. Rootless Podman needs the setuid <code>newuidmap</code>/<code>newgidmap</code> helpers and the user's full subordinate ID range, and in a user manager each of systemd's sandboxing options takes one away: the seccomp-based ones (<code>NoNewPrivileges</code>, <code>RestrictNamespaces</code>, <code>LockPersonality</code>, <code>RestrictRealtime</code>) set the no-new-privileges flag, and the mount-based ones (<code>PrivateTmp</code>, <code>ProtectSystem</code>) confine the service to a user namespace that maps only the user's own UID.</li>
+<li>a <code>systemctl --user</code> unit, <code>lemond-user.service</code>, which keeps systemd's sandboxing options and sets <code>CONTAINER_HOST</code> to the user's <code>podman.socket</code>. In a user manager those options take away what rootless Podman needs: the seccomp-based ones (<code>NoNewPrivileges</code>, <code>RestrictNamespaces</code>, <code>LockPersonality</code>, <code>RestrictRealtime</code>) set the no-new-privileges flag, which stops the setuid <code>newuidmap</code>/<code>newgidmap</code> helpers, and the mount-based ones (<code>PrivateTmp</code>, <code>ProtectSystem</code>) confine the service to a user namespace that maps only the user's own UID, not their subordinate range. So <code>podman</code> in the unit only sends requests to Podman's API service, which systemd starts from the socket outside the unit, and that service creates the containers. It resolves mount paths in the host's view, so model files must be outside the unit's private <code>/tmp</code>; the default Hugging Face cache, under the home directory, is. The containers belong to Podman's API service, not the unit: stopping the unit still stops them through <code>lemond</code>'s own shutdown, and when <code>lemond</code> alone dies, its <code>podman run</code> client gets SIGTERM and forwards it to the container, but when the whole unit is killed with SIGKILL, client included, a container keeps running until <code>lemond</code> loads the same model again.</li>
 <li>a shell, including a <code>lemond</code> built from source and run from its build directory</li>
 <li>an app that embeds <code>lemond</code></li>
 </ul>
@@ -4075,7 +4092,7 @@ podman run \
 <ul>
 <li><strong>With Podman:</strong></li>
 <li>Installs Podman.</li>
-<li>Adds their account to <code>video</code> and <code>render</code>, if it is not in both.</li>
+<li>Adds their account to <code>render</code>, if it is not already a member.</li>
 <li>Logs out and back in.</li>
 <li><strong>With Docker:</strong></li>
 <li>Adds their account to the <code>docker</code> group.</li>
@@ -4096,7 +4113,7 @@ podman run \
 </tr>
 <tr>
 <td>Docker</td>
-<td>The Docker daemon, through <code>/var/run/docker.sock</code></td>
+<td>The Docker daemon that <code>docker</code> connects to (<code>DOCKER_HOST</code> or the active Docker context)</td>
 </tr>
 </tbody>
 </table>
@@ -4117,11 +4134,27 @@ podman run \
 </tr>
 <tr>
 <td>Device nodes accessible</td>
-<td>The user's account is not in both <code>video</code> and <code>render</code></td>
-<td>1. <code>sudo usermod -aG video,render $USER</code><br>2. Log out and back in</td>
+<td>Podman is rootless and the user's account cannot read and write <code>/dev/kfd</code> and every <code>/dev/dri/renderD*</code> node</td>
+<td>1. <code>sudo usermod -aG render $USER</code><br>2. Log out and back in</td>
+</tr>
+<tr>
+<td>Podman answers</td>
+<td><code>podman info</code> fails</td>
+<td><code>systemctl --user enable --now podman.socket</code> when <code>CONTAINER_HOST</code> is the account's own <code>podman.socket</code>; otherwise run <code>podman info</code> (with that <code>CONTAINER_HOST</code>, if set) and fix the error it prints</td>
+</tr>
+<tr>
+<td>crun runtime</td>
+<td>Podman is rootless and <code>podman info</code> reports an OCI runtime other than crun</td>
+<td>The install command for crun for the host's <code>ID</code></td>
+</tr>
+<tr>
+<td>Network reachable</td>
+<td>Podman is rootful and its network backend is CNI, which gives an internal network no gateway for <code>lemond</code> to reach the container by</td>
+<td>Unset <code>CONTAINER_HOST</code> to use rootless Podman</td>
 </tr>
 </tbody>
 </table>
+<p>Rootless containers reach the GPU through the account's own <code>render</code> membership, which <code>--group-add keep-groups</code> carries into the container. Only crun supports <code>keep-groups</code>; runc always resets a container's supplementary groups, so under runc the device nodes are closed to the container and the engine silently falls back to the CPU. Podman installs crun by default, but on Debian and Ubuntu a host that had Docker first already has runc, which satisfies Podman's <code>crun | runc</code> dependency, so Podman runs with runc. The check therefore requires crun for rootless Podman, and the packages recommend it. Podman uses crun as soon as it is installed, so <code>lemond</code> asks <code>podman info</code> again until it reports crun instead of caching the first answer. Rootful Podman and Docker add the <code>render</code> group by its numeric ID and work with either runtime.</p>
 <p>When the container tool is Docker, the checks are:</p>
 <table>
 <thead>
@@ -4134,8 +4167,18 @@ podman run \
 <tbody>
 <tr>
 <td>Docker reachable</td>
-<td>The Docker daemon refuses the user's account</td>
+<td><code>docker info</code> fails</td>
 <td>1. <code>sudo usermod -aG docker $USER</code><br>2. Log out and back in</td>
+</tr>
+<tr>
+<td>Not Docker Desktop</td>
+<td><code>docker info</code> reports <code>Docker Desktop</code>, whose containers run in a VM without the host GPU</td>
+<td>The Podman install command for the host's <code>ID</code></td>
+</tr>
+<tr>
+<td>Not rootless Docker</td>
+<td><code>docker info</code> lists <code>name=rootless</code>, which can neither publish a port from an <code>--internal</code> network nor expose the container's address to <code>lemond</code></td>
+<td>The Podman install command for the host's <code>ID</code></td>
 </tr>
 </tbody>
 </table>
@@ -4159,7 +4202,7 @@ podman run \
 </thead>
 <tbody>
 <tr>
-<td>Adds <code>lemonade</code> to <code>video</code> and <code>render</code> with <code>usermod</code></td>
+<td>Adds <code>lemonade</code> to <code>render</code> with <code>usermod</code></td>
 <td><code>lemonade-server.postinst</code></td>
 <td><code>postinst-rpm</code></td>
 </tr>
@@ -4169,9 +4212,14 @@ podman run \
 <td><code>postinst-rpm</code></td>
 </tr>
 <tr>
-<td>Pulls in Podman by default</td>
-<td><code>debian/control</code> declares <code>Recommends: podman</code></td>
-<td><code>CPackRPM.cmake</code> sets <code>CPACK_RPM_PACKAGE_RECOMMENDS</code> to <code>podman</code></td>
+<td>Pulls in Podman unless Docker is installed</td>
+<td><code>debian/control</code> declares <code>Recommends: podman \| docker.io \| docker-ce</code></td>
+<td><code>CPackRPM.cmake</code> declares <code>Recommends: (podman or docker or docker-ce)</code></td>
+</tr>
+<tr>
+<td>Pulls in crun, which rootless Podman needs for the GPU (see <a href="#lemond-started-by-the-user"><code>lemond</code> Started by the User</a>)</td>
+<td><code>debian/control</code> declares <code>Recommends: crun</code></td>
+<td><code>CPackRPM.cmake</code> declares <code>Recommends: crun</code></td>
 </tr>
 </tbody>
 </table>
@@ -4190,7 +4238,7 @@ podman run \
 </tr>
 <tr>
 <td>Docker</td>
-<td>The Docker daemon, through <code>/var/run/docker.sock</code></td>
+<td>The Docker daemon that <code>docker</code> connects to (<code>DOCKER_HOST</code> or the active Docker context)</td>
 </tr>
 </tbody>
 </table>
@@ -4210,14 +4258,29 @@ podman run \
 <td>The install command for the host's <code>ID</code></td>
 </tr>
 <tr>
+<td>Podman answers</td>
+<td><code>podman info</code> fails</td>
+<td><code>systemctl --user enable --now podman.socket</code> when <code>CONTAINER_HOST</code> is the account's own <code>podman.socket</code>; otherwise run <code>podman info</code> (with that <code>CONTAINER_HOST</code>, if set) and fix the error it prints</td>
+</tr>
+<tr>
+<td>crun runtime</td>
+<td>Podman is rootless and <code>podman info</code> reports an OCI runtime other than crun</td>
+<td>The install command for crun for the host's <code>ID</code></td>
+</tr>
+<tr>
 <td>Device nodes accessible</td>
-<td><code>lemonade</code> is not in both <code>video</code> and <code>render</code></td>
-<td>1. <code>sudo usermod -aG video,render lemonade</code><br>2. <code>sudo systemctl restart lemond</code></td>
+<td><code>lemonade</code> cannot read and write <code>/dev/kfd</code> and every <code>/dev/dri/renderD*</code> node</td>
+<td>1. <code>sudo usermod -aG render lemonade</code><br>2. <code>sudo systemctl restart lemond</code></td>
 </tr>
 <tr>
 <td>Subordinate IDs allocated</td>
-<td><code>getsubids lemonade</code> or <code>getsubids -g lemonade</code> prints no range</td>
+<td>Podman is rootless and <code>getsubids lemonade</code> or <code>getsubids -g lemonade</code> prints no range</td>
 <td>Ask the host's administrator to allocate 65,536 subordinate UIDs and GIDs to <code>lemonade</code>, then <code>sudo systemctl restart lemond</code></td>
+</tr>
+<tr>
+<td>Network reachable</td>
+<td>Podman is rootful and its network backend is CNI</td>
+<td>1. Remove <code>CONTAINER_HOST</code> from <code>/etc/default/lemond</code> to use rootless Podman<br>2. <code>sudo systemctl restart lemond</code></td>
 </tr>
 </tbody>
 </table>
@@ -4233,24 +4296,34 @@ podman run \
 <tbody>
 <tr>
 <td>Docker reachable</td>
-<td>The Docker daemon refuses <code>lemonade</code></td>
+<td><code>docker info</code> fails</td>
 <td>1. <code>sudo usermod -aG docker lemonade</code><br>2. <code>sudo systemctl restart lemond</code></td>
+</tr>
+<tr>
+<td>Not Docker Desktop</td>
+<td><code>docker info</code> reports <code>Docker Desktop</code></td>
+<td>The Podman install command for the host's <code>ID</code></td>
+</tr>
+<tr>
+<td>Not rootless Docker</td>
+<td><code>docker info</code> lists <code>name=rootless</code></td>
+<td>The Podman install command for the host's <code>ID</code></td>
 </tr>
 </tbody>
 </table>
 <h4 id="lemondservice-and-rootless-podman"><code>lemond.service</code> and rootless Podman</h4>
 <p><code>lemond</code> runs <code>podman</code> as a child process, the same way it runs every native backend. The unit is configured to give rootless Podman what it needs:</p>
 <ul>
-<li>It lets <code>lemond</code> create user namespaces and run the setuid <code>newuidmap</code>/<code>newgidmap</code> helpers that rootless Podman relies on, by running without <code>NoNewPrivileges</code> and <code>RestrictNamespaces</code>. The unit keeps <code>LockPersonality</code>, <code>RestrictRealtime</code>, <code>ProtectSystem</code>, <code>ProtectHome</code> and <code>PrivateTmp</code>: systemd applies them while it still runs as root, before it switches to the <code>lemonade</code> account, so they leave the no-new-privileges flag unset and the account's user namespace unchanged.</li>
-<li>It points <code>XDG_RUNTIME_DIR</code> at the unit's existing <code>RuntimeDirectory</code> (<code>Environment=XDG_RUNTIME_DIR=%t/lemonade</code>), giving Podman a runtime directory without a login session.</li>
+<li>It lets <code>lemond</code> create user namespaces and run the setuid <code>newuidmap</code>/<code>newgidmap</code> helpers that rootless Podman relies on, by running without <code>NoNewPrivileges</code> and <code>RestrictNamespaces</code>. The unit keeps <code>LockPersonality</code>, <code>RestrictRealtime</code>, <code>ProtectSystem</code> and <code>ProtectHome</code>: systemd applies them while it still runs as root, before it switches to the <code>lemonade</code> account, so they leave the no-new-privileges flag unset and the account's user namespace unchanged.</li>
+<li>It leaves <code>XDG_RUNTIME_DIR</code> unset and runs without <code>PrivateTmp</code>, so Podman keeps its runtime state in the host's <code>/tmp</code> (<code>/tmp/storage-run-&lt;uid&gt;</code>, or <code>/tmp/containers-user-&lt;uid&gt;</code> before Podman 5), where Podman's own <code>tmpfiles.d</code> exempts it from age-based cleanup. The AppArmor profile that Ubuntu and Debian give <code>pasta</code> lets it write only under <code>/tmp</code>, <code>/run/user/&lt;uid&gt;</code> and home directories under <code>/home</code>, and <code>ProtectHome</code> hides <code>/run/user</code>. The host's <code>/tmp</code> also means <code>podman</code> run as <code>lemonade</code> outside the service finds the same runtime state: in a private <code>/tmp</code> it finds none, and Podman 5 then resets the state of containers <code>lemond</code> is running.</li>
 </ul>
 <p>Rootless Podman also needs the <code>lemonade</code> account to own a subordinate UID/GID range: a block of host IDs that the container's own users map onto. <code>useradd</code> allocates one only for regular accounts, and the packages create <code>lemonade</code> as a system account (<code>useradd -r</code>), so each package's install script allocates the range right after its <code>useradd</code>:</p>
 <ul>
 <li>When <code>/etc/subuid</code> and <code>/etc/subgid</code> both already have a <code>lemonade</code> entry, the script leaves them as they are, so upgrades and reinstalls keep the existing range.</li>
 <li>Otherwise it reads both files, takes the highest end (start plus count) of every range in them, with a minimum of 100000, and allocates the 65,536 IDs from there to whichever file lacks a <code>lemonade</code> entry, with <code>usermod --add-subuids &lt;start&gt;-&lt;start+65535&gt; lemonade</code> and <code>usermod --add-subgids &lt;start&gt;-&lt;start+65535&gt; lemonade</code>. The range sits past every account's existing block, and <code>useradd</code> allocates later accounts past it in turn.</li>
-<li>When <code>/etc/nsswitch.conf</code> has a <code>subid:</code> line, the host gets subordinate IDs from a central directory such as FreeIPA or SSSD, and the script leaves the allocation to the host's administrator. The setup assistant's "Subordinate IDs allocated" check reports a missing range.</li>
+<li>When <code>/etc/nsswitch.conf</code> has a <code>subid:</code> line naming a source other than <code>files</code>, the host gets subordinate IDs from a central directory such as FreeIPA or SSSD, and the script leaves the allocation to the host's administrator. The setup assistant's "Subordinate IDs allocated" check reports a missing range.</li>
 </ul>
-<p><code>lemond</code> starts, stops and sweeps the containers as children in its own cgroup, so stopping <code>lemond.service</code> tears down its containers with it.</p>
+<p><code>lemond</code> starts and stops the containers as children in its own cgroup, so stopping <code>lemond.service</code> tears down its containers with it.</p>
 <h3 id="selinux-check">SELinux Check</h3>
 <p>A container backend whose <code>devices</code> include <code>/dev/kfd</code> runs one more check before the checks for its install type. The SELinux policy on some Fedora releases lets a container read and write <code>/dev/kfd</code> but not map it, so ROCm fails at its first GPU operation. Hosts without SELinux, such as Ubuntu, have no <code>/sys/fs/selinux</code> and pass the check:</p>
 <table>
@@ -4293,8 +4366,8 @@ podman run \
 </tbody>
 </table>
 <h2 id="image-updates">Image Updates</h2>
-<p>A new workflow, <code>.github/workflows/validate_containers.yml</code>, keeps every container backend on the newest build of its tag. It follows the pattern of <code>validate_llamacpp.yml</code>: it runs weekly, every Sunday at 18:00 UTC, and opens its pull request only after the new pins pass validation on the self-hosted runners.</p>
-<p>The workflow changes only the digest in each pin. A maintainer sets the tag by hand to the tag AI Toolbox Cockpit runs for the same engine on the same GPU, such as <code>vulkan-radv-performance</code> for <code>llamacpp:nathanw</code> and <code>latest</code> for Halogen. This will be one of the first jobs to take advantage of Devlab Dispatch, which provides Strix Halo 128 GB Linux runners that can handle Halogen and DS4 models.</p>
+<p>A new workflow, <code>.github/workflows/validate_containers.yml</code>, keeps every container backend on the newest image upstream publishes. It runs weekly, every Sunday at 18:00 UTC, and on every pull request that changes a pin or a backend descriptor, where it only checks that each pin can still be resolved.</p>
+<p>A pin whose tag carries version numbers moves to the highest-numbered tag of the same shape: <code>0.18.22</code> moves to <code>0.18.23</code>, and <code>rocm-10.0-gufo</code> to <code>rocm-10.1-gufo</code>, but never to a timestamped build such as <code>rocm-10.0-gufo_20261103T122023</code>. A tag with no numbers, such as <code>vulkan-radv-performance</code>, keeps its name. Every pin then moves to its tag's newest digest. The workflow then opens one pull request with the new pins, the same way <code>validate_llamacpp.yml</code> does, and <code>test-container-backends</code> validates them on Devlab Dispatch's Strix Halo 128 GB Linux runners. Each starting tag is the one AI Toolbox Cockpit runs for the same engine on the same GPU, such as <code>vulkan-radv-performance</code> for <code>llamacpp:nathanw</code>. Halogen pins its release tag, such as <code>0.18.22</code>, because AI Cockpit's <code>latest</code> names no version.</p>
 <h2 id="appendix-a-ramalama-and-ai-cockpit-conventions-and-where-lemonade-differs">Appendix A: Ramalama and AI Cockpit Conventions, and Where Lemonade Differs</h2>
 <p><a href="https://github.com/containers/ramalama">Ramalama</a> (Red Hat) has run llama.cpp in Podman and Docker containers across Fedora, RHEL, Ubuntu, macOS and WSL for two years. <a href="https://github.com/kyuz0/ai-toolbox-cockpit">AI Toolbox Cockpit</a> (Donato Capitella) is the terminal app that launches these same images, Halogen included, and is where each engine's device access comes from. Ramalama answers how to run a model in a container at all; AI Cockpit answers what this hardware in particular needs. Every row is read from source (Ramalama at v0.24.0, AI Cockpit at v2026.9.19.1535), not from either README, one of which overstates its defaults (last row). Each †, ‡ or § in the body points at a row here. The last column says whether Lemonade is the same as, stricter than or looser than each, and why.</p>
 <table>
@@ -4347,7 +4420,7 @@ podman run \
 <td>Groups</td>
 <td><code>--group-add keep-groups</code> on Podman only when <code>--keep-groups</code> is passed; no group flags otherwise</td>
 <td><code>--group-add video --group-add render</code> in every GPU profile, rewritten to <code>--group-add keep-groups</code> on Podman by <code>upgrade_groups_for_podman()</code></td>
-<td><strong>Same as AI Cockpit</strong> ‡ on Podman: <code>keep-groups</code>. <strong>More robust than AI Cockpit</strong> on Docker: Lemonade passes the host's numeric <code>video</code> and <code>render</code> group IDs, which always match the device nodes, where a group name resolves in the image's <code>/etc/group</code> and may be missing or numbered differently.</td>
+<td><strong>Same as AI Cockpit</strong> ‡ on Podman: <code>keep-groups</code>. <strong>More robust than AI Cockpit</strong> on Docker: Lemonade passes the host's numeric <code>render</code> group ID, which always matches the device nodes, where a group name resolves in the image's <code>/etc/group</code> and may be missing or numbered differently.</td>
 </tr>
 <tr>
 <td>Model mount</td>
@@ -4383,7 +4456,7 @@ podman run \
 <td>Stop and sweep</td>
 <td><code>stop -t=0</code>, then <code>rm</code>; <code>containers()</code> lists by label</td>
 <td><code>rm -f &lt;fixed name&gt;</code> before the run and again after it; no sweep, since nothing is meant to outlive the foreground process</td>
-<td><strong>More robust than both:</strong> Lemonade stops by name and sweeps by label †, and gives the engine 10 seconds to exit cleanly before SIGKILL, where Ramalama kills it at once. AI Cockpit sweeps nothing.</td>
+<td><strong>More robust than both:</strong> Lemonade stops by name † and gives the engine 10 seconds to exit cleanly before SIGKILL, where Ramalama kills it at once.</td>
 </tr>
 <tr>
 <td>Dry run</td>
@@ -4422,9 +4495,9 @@ podman run \
 </ul>
 <p>Out of scope but not precluded: Ramalama emits Quadlet, Kubernetes and Compose files from the same run spec. <code>ContainerRunSpec</code> is plain data, so a later emitter needs no backend changes, which is the property Mario asked the design to keep.</p>
 <h2 id="appendix-b-halogen-launch-commands">Appendix B: Halogen Launch Commands</h2>
-<p>This appendix shows the exact commands Lemonade and AI Toolbox Cockpit run to launch Halogen, the most scrutinized engine, so that reviewers can compare them flag by flag. Both launch the same model: Qwen3.8-Flash-Next W4B with the quality overlay, which is Lemonade's <code>Qwen3.8-Flash-Next-Halogen</code> and AI Cockpit's <code>qwen38-flash-next-w4b-quality</code> bundle. Both use rootless Podman, each tool's default settings, and a user named <code>alice</code>.</p>
-<p>Lemonade's command is the one this spec defines: <a href="#command-contract">Command Contract</a> applied to Halogen's <code>ContainerPolicy</code> and version pin in <a href="#container-backends">Container Backends</a>, with the model files and variables that Halogen's <code>ServerCommand</code> names. AI Cockpit's command is the output of its <code>build_server_cmd()</code> at commit <code>57346d8</code> with its Server Mode defaults.</p>
-<p>Each row holds the options that serve one purpose. Where the options differ, the last column says whether Lemonade's are stricter, looser or the same as AI Cockpit's, and why. <code>&lt;snapshot&gt;</code> stands for <code>/home/alice/.cache/huggingface/hub/models--peonist-ai--halogen-qwen3.8-flash-next/snapshots/ac23b1b223b4e9192d27c22367d4dbacf2b595ef</code>:</p>
+<p>This appendix shows the exact commands Lemonade and AI Toolbox Cockpit run to launch Halogen, the most scrutinized engine, so that reviewers can compare them flag by flag. Both launch the same model: Qwen3.8-Flash-Next v2 with the vision tower, which is Lemonade's <code>Qwen3.8-Flash-Next-Halogen</code> and AI Cockpit's <code>qwen38-flash-next-v2-vision</code> bundle. Both use rootless Podman, each tool's default settings, and a user named <code>alice</code>.</p>
+<p>Lemonade's command is the one this spec defines: <a href="#command-contract">Command Contract</a> applied to Halogen's <code>ContainerPolicy</code> and version pin in <a href="#container-backends">Container Backends</a>, with the model files and variables that Halogen's <code>ServerCommand</code> names. AI Cockpit's command is the output of its <code>build_server_cmd()</code> at commit <code>95dbd52</code> with its Server Mode defaults.</p>
+<p>Each row holds the options that serve one purpose. Where the options differ, the last column says whether Lemonade's are stricter, looser or the same as AI Cockpit's, and why. <code>&lt;snapshot&gt;</code> stands for <code>/home/alice/.cache/huggingface/hub/models--peonist-ai--halogen-qwen3.8-flash-next/snapshots/20a9be6d7ba9e2ded47aa0193f14fc463b93add9</code>:</p>
 <table>
 <thead>
 <tr>
@@ -4503,15 +4576,15 @@ podman run \
 </tr>
 <tr>
 <td>Model files</td>
-<td><code>-v &lt;snapshot&gt;/<wbr>qwen38-flash-next-w4b.hgn:<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-w4b.hgn:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>qwen38-flash-next-w4b.overlay.hgn:<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-w4b.overlay.hgn:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>chat_template.jinja:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>chat_template.jinja:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>generation_config.json:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>generation_config.json:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>merges.txt:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>merges.txt:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>tokenizer.json:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>tokenizer.json:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>tokenizer_config.json:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>tokenizer_config.json:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>vocab.json:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>vocab.json:<wbr>ro,z</code><br><code>--env HALOGEN_CHECKPOINT=<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-w4b.hgn</code><br><code>--env HALOGEN_CK_OVERLAY=<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-w4b.overlay.hgn</code><br><code>--env HALOGEN_TOKENIZER=<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer</code></td>
-<td><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>qwen38-flash-next-w4b.hgn:<wbr>/<wbr>models/<wbr>qwen38-flash-next-w4b.hgn:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>qwen38-flash-next-w4b.overlay.hgn:<wbr>/<wbr>models/<wbr>qwen38-flash-next-w4b.overlay.hgn:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>chat_template.jinja:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>chat_template.jinja:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>generation_config.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>generation_config.json:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>merges.txt:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>merges.txt:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>tokenizer.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>tokenizer.json:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>tokenizer_config.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>tokenizer_config.json:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>vocab.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>vocab.json:<wbr>ro</code><br><code>-e HALOGEN_CHECKPOINT=<wbr>/<wbr>models/<wbr>qwen38-flash-next-w4b.hgn</code><br><code>-e HALOGEN_CK_OVERLAY=<wbr>/<wbr>models/<wbr>qwen38-flash-next-w4b.overlay.hgn</code><br><code>-e HALOGEN_TOKENIZER=<wbr>/<wbr>models/<wbr>tokenizer</code></td>
-<td><strong>Same.</strong> Both mount only Halogen's files, read-only, one mount per file. Lemonade also relabels them with <code>z</code> so SELinux lets the container read them.</td>
+<td><code>-v &lt;snapshot&gt;/<wbr>qwen38-flash-next-v2.hgn:<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-v2.hgn:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>qwen38-flash-next-ngram.hgn:<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-ngram.hgn:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>chat_template.jinja:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>chat_template.jinja:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>generation_config.json:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>generation_config.json:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>merges.txt:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>merges.txt:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>tokenizer.json:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>tokenizer.json:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>tokenizer_config.json:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>tokenizer_config.json:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>tokenizer/<wbr>vocab.json:<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer/<wbr>vocab.json:<wbr>ro,z</code><br><code>-v &lt;snapshot&gt;/<wbr>qwen38-flash-next-vision.hgn:<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-vision.hgn:<wbr>ro,z</code><br><code>--env HALOGEN_CHECKPOINT=<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-v2.hgn</code><br><code>--env HALOGEN_NGRAM_TABLE=<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-ngram.hgn</code><br><code>--env HALOGEN_TOKENIZER=<wbr>/<wbr>mnt/<wbr>models/<wbr>tokenizer</code><br><code>--env HALOGEN_VISION_TOWER=<wbr>/<wbr>mnt/<wbr>models/<wbr>qwen38-flash-next-vision.hgn</code></td>
+<td><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>qwen38-flash-next-v2.hgn:<wbr>/<wbr>models/<wbr>qwen38-flash-next-v2.hgn:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>qwen38-flash-next-ngram.hgn:<wbr>/<wbr>models/<wbr>qwen38-flash-next-ngram.hgn:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>chat_template.jinja:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>chat_template.jinja:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>generation_config.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>generation_config.json:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>merges.txt:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>merges.txt:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>tokenizer.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>tokenizer.json:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>tokenizer_config.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>tokenizer_config.json:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>tokenizer/<wbr>vocab.json:<wbr>/<wbr>models/<wbr>tokenizer/<wbr>vocab.json:<wbr>ro</code><br><code>-v /<wbr>home/<wbr>alice/<wbr>halogen-models/<wbr>qwen38-flash-next-vision.hgn:<wbr>/<wbr>models/<wbr>qwen38-flash-next-vision.hgn:<wbr>ro</code><br><code>-e HALOGEN_CHECKPOINT=<wbr>/<wbr>models/<wbr>qwen38-flash-next-v2.hgn</code><br><code>-e HALOGEN_TOKENIZER=<wbr>/<wbr>models/<wbr>tokenizer</code><br><code>-e HALOGEN_CK_OVERLAY=<wbr>none</code><br><code>-e HALOGEN_NGRAM_TABLE=<wbr>/<wbr>models/<wbr>qwen38-flash-next-ngram.hgn</code><br><code>-e HALOGEN_VISION_TOWER=<wbr>/<wbr>models/<wbr>qwen38-flash-next-vision.hgn</code></td>
+<td><strong>Same.</strong> Both mount only Halogen's files, read-only, one mount per file. Lemonade also relabels them with <code>z</code> so SELinux lets the container read them. AI Cockpit's <code>HALOGEN_CK_OVERLAY=none</code> has no effect, because v2 takes no overlay.</td>
 </tr>
 <tr>
 <td>Engine settings</td>
-<td><code>--env HALOGEN_API_PORT=<wbr>8001</code><br><code>--env HALOGEN_CTX=<wbr>262144</code><br><code>--env HALOGEN_KV_POOL_POSITIONS=<wbr>524288</code><br><code>--env HALOGEN_KV_SLOTS=<wbr>4</code><br><code>--env HALOGEN_PROMPT_CACHE=<wbr>2</code></td>
+<td><code>--env HALOGEN_API_PORT=<wbr>8001</code><br><code>--env HALOGEN_CTX=<wbr>262144</code></td>
 <td><code>-e HALOGEN_API_PORT=<wbr>8731</code><br><code>-e HALOGEN_CTX=<wbr>262144</code><br><code>-e HALOGEN_KV_POOL_POSITIONS=<wbr>524288</code><br><code>-e HALOGEN_KV_SLOTS=<wbr>4</code><br><code>-e HALOGEN_PROMPT_CACHE=<wbr>2</code></td>
-<td><strong>Same.</strong> The settings match, and only the port differs: <code>lemond</code> picks a free port for each load because it runs several servers at once.</td>
+<td><strong>Same.</strong> Halogen's defaults for the pool, slots and prompt cache are AI Cockpit's values at this context, and the pool follows a smaller <code>ctx_size</code> down. Only the port differs: <code>lemond</code> picks a free port for each load because it runs several servers at once.</td>
 </tr>
 <tr>
 <td>Image</td>

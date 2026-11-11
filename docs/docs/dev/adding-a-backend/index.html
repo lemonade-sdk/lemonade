@@ -1159,6 +1159,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/configuration/container-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -3562,9 +3590,10 @@
 
 <span class="p">}}}</span><span class="w">  </span><span class="c1">// namespace lemon::backends::myrecipe</span>
 </code></pre></div>
-<p><code>SlotPolicy</code> controls accelerator sharing: <code>Standard</code> (counts toward LRU slots), <code>ExclusiveNpu</code> (evicts all NPU servers first), <code>CoexistByType</code> (one per model type), <code>Unmetered</code> (never counted, never auto-evicted — cloud).</p>
+<p><code>SlotPolicy</code> controls accelerator sharing: <code>Standard</code> (counts toward LRU slots), <code>ExclusiveNpu</code> (evicts all NPU servers first), <code>CoexistByType</code> (one per model type), <code>ExclusiveHost</code> (shares the machine with no other local model: loading it evicts every other local model, and loading another local model evicts it), <code>Unmetered</code> (never counted, never auto-evicted — cloud).</p>
 <p>Each <code>support</code> row names its backend's tier (<code>BackendTier::Core</code>, <code>BackendTier::Experimental</code> or <code>BackendTier::Guest</code>) and format (<code>BackendFormat::Native</code>, <code>BackendFormat::Python</code> or <code>BackendFormat::Container</code>) right after the backend name, so a row without them does not compile. Rows for the same backend on different OSes can carry different labels; <code>/system-info</code> reports the labels of the row for the current OS. Tiers are defined in <a href="#support-tier">Support Tier</a> and formats in <a href="../../api/lemonade/#backend-tiers-and-formats">Backend Tiers and Formats</a>.</p>
 <p><code>supported_modes</code> is the backend's contract with the model registry. A model whose labels name no mode is stamped with <code>supported_modes[0]</code>; a model whose labels name a mode absent from the list is refused by <code>POST /pull</code> with a 400 rather than failing later at inference time. <code>BackendModeContractTest</code> fails the build if this list disagrees with the capability interfaces your server class implements.</p>
+<p>An <code>options</code> entry is a user knob unless it sets <code>user_configurable = false</code>, marking a value that is not supposed to be changed by the user. The option still resolves at load time and stays settable through the API and <code>config.json</code>.</p>
 <h3 id="the-server-class-factory-stemstem_serverhcpp">The server class + factory — <code>&lt;stem&gt;/&lt;stem&gt;_server.{h,cpp}</code></h3>
 <p>The server class is a <code>WrappedServer</code> subclass. Implement <code>load()</code> (<a href="#starting-the-server-process">Starting the server process</a>) and only the capability interfaces you serve (<code>ITranscriptionServer</code>, <code>IImageServer</code>, <code>ITextToSpeechServer</code>, …). <code>WrappedServer</code> provides default "unsupported" <code>chat_completion</code>/<code>completion</code>/<code>responses</code>, so a non-chat backend does not stub them. Alongside it, a free <code>create()</code> builds the instance.</p>
 <p><code>&lt;stem&gt;_server.h</code>:</p>

@@ -1474,10 +1474,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#image-defaults" class="md-nav__link">
+  <a href="#image-generation-options" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Image defaults
+        Image generation options
       </span>
     </span>
   </a>
@@ -1736,6 +1736,34 @@
     
   
     Cloud Offload
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../container-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Backends
   
 
     
@@ -3943,10 +3971,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#image-defaults" class="md-nav__link">
+  <a href="#image-generation-options" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Image defaults
+        Image generation options
       </span>
     </span>
   </a>
@@ -4188,7 +4216,7 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyCodingModel<s
 </tr>
 <tr>
 <td><code>--recipe RECIPE</code></td>
-<td>Recipe to associate with the new <code>user.*</code> model. Common values: <!-- BEGIN GENERATED: recipe-values --><code>llamacpp</code>, <code>llamacpp-hrx</code>, <code>whispercpp</code>, <code>moonshine</code>, <code>kokoro</code>, <code>sd-cpp</code>, <code>flm</code>, <code>ryzenai-llm</code>, <code>vllm</code>, <code>thenoise</code>, <code>ds4</code>, <code>thinksound</code>, <code>acestep</code>, <code>onnxruntime</code>, <code>trellis</code>, <code>openmoss</code>, <code>collection.omni</code><!-- END GENERATED: recipe-values -->.</td>
+<td>Recipe to associate with the new <code>user.*</code> model. Common values: <!-- BEGIN GENERATED: recipe-values --><code>llamacpp</code>, <code>llamacpp-hrx</code>, <code>whispercpp</code>, <code>moonshine</code>, <code>kokoro</code>, <code>sd-cpp</code>, <code>flm</code>, <code>ryzenai-llm</code>, <code>vllm</code>, <code>thenoise</code>, <code>ds4</code>, <code>rocmfpx</code>, <code>halogen</code>, <code>gufo</code>, <code>thinksound</code>, <code>acestep</code>, <code>onnxruntime</code>, <code>trellis</code>, <code>openmoss</code>, <code>collection.omni</code><!-- END GENERATED: recipe-values -->.</td>
 </tr>
 <tr>
 <td><code>--label LABEL</code></td>
@@ -4862,12 +4890,6 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 <td>String</td>
 <td>Filename of the multimodal projector file for llamacpp vision models (must be in the same registry repo as the checkpoint). This is a <strong>top-level field</strong>, not inside <code>checkpoints</code>.</td>
 </tr>
-<tr>
-<td><code>image_defaults</code></td>
-<td>No</td>
-<td>Object</td>
-<td>Default image generation parameters for <code>sd-cpp</code> models. See <a href="#image-defaults">Image defaults</a>.</td>
-</tr>
 </tbody>
 </table>
 <p>* Either <code>checkpoint</code> or <code>checkpoints</code> is required, but not both.
@@ -4936,18 +4958,15 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 </code></pre></div>
 <p>Components must already be registered (built-in models, or other <code>user.*</code> entries earlier in this file). Loading the collection (<code>lemonade load user.MyKit</code>) loads each component; deleting the collection removes only the collection entry, leaving components on disk.</p>
 <p>The equivalent CLI registration is shown in <a href="#pull-an-omni-collection">Pull an Omni Collection</a>.</p>
-<h3 id="image-defaults">Image defaults</h3>
-<p>For image models (including <code>sd-cpp</code> and <code>thenoise</code>), you can specify default generation parameters.
-The optional <code>soft_pixel_cap</code> limits the <strong>inferred output area</strong> of <code>/images/edits</code> when
-<code>size</code> is omitted; Lemonade preserves the input aspect ratio. If this field is
-missing or zero, the global 4,194,304-pixel (~4 MP) fallback applies.
-Explicitly requested output sizes are not subject to this soft cap:</p>
+<h3 id="image-generation-options">Image generation options</h3>
+<p>An image model (<code>sd-cpp</code> or <code>thenoise</code>) sets its own generation parameters through
+<code>recipe_options</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">    </span><span class="nt">"My-SD-Model"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"org/repo:model.safetensors"</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sd-cpp"</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">5.2</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">"image_defaults"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"recipe_options"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">            </span><span class="nt">"steps"</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span>
 <span class="w">            </span><span class="nt">"cfg_scale"</span><span class="p">:</span><span class="w"> </span><span class="mf">7.0</span><span class="p">,</span>
 <span class="w">            </span><span class="nt">"width"</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
@@ -4957,6 +4976,11 @@ Explicitly requested output sizes are not subject to this soft cap:</p>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
+<p><code>soft_pixel_cap</code> limits the <strong>inferred output area</strong> of <code>/images/edits</code> when <code>size</code>
+is omitted; Lemonade preserves the input aspect ratio. Missing or zero falls back to
+4,194,304 pixels (~4 MP). An explicit <code>size</code> is not subject to the cap.</p>
+<p>An entry written by an older version keeps these keys in an <code>image_defaults</code> block.
+It is still read, and <code>recipe_options</code> wins any key both name.</p>
 <h3 id="model-naming">Model naming</h3>
 <ul>
 <li>In <code>user_models.json</code>, store model names <strong>without</strong> the <code>user.</code> prefix (e.g., <code>MyCustomModel</code>).</li>
