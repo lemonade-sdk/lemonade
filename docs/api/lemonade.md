@@ -2201,7 +2201,7 @@ A backend can be uninstalled only when all of the following apply:
         - `project_url` - The upstream project's URL. Metadata may describe the upstream project rather than a custom or system-provided binary.
         - `release_url` - Where the backend's release asset downloads from.
         - `download_filename` - The release asset's filename.
-        - `can_uninstall` - Whether Lemonade can uninstall this backend. See [Backend Uninstall Availability](#backend-uninstall-availability) for the requirements. If `false`, hide the uninstall button. Defaults to `true` when omitted.
+        - `can_uninstall` - Whether Lemonade can uninstall this backend. This field does not indicate whether the backend is installed; clients must also check `state` before showing the uninstall button. See [Backend Uninstall Availability](#backend-uninstall-availability) for the requirements. If `false`, hide the uninstall button. Defaults to `true` when omitted.
 - `cloud` - Cloud providers installed on this server.
   - `providers` - One entry per installed provider.
     - `name` - Provider name used as the model-name prefix (e.g. `fireworks`).
