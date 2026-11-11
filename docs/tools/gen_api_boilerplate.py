@@ -21,7 +21,7 @@ response is stale or invalid.
 
 Usage:
     python docs/tools/gen_api_boilerplate.py [--lemond PATH] [--check] [--bin-dir DIR]
-                                             [--refresh RECIPE ...]
+                                             [--refresh RECIPE]...
 """
 
 from __future__ import annotations
