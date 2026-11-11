@@ -64,6 +64,11 @@ struct BackendRegistration {
 const std::vector<BackendRegistration>& builtin_registrations();
 const std::vector<BackendRegistration>& all_registrations();
 
+// A builtin selector (e.g. a staged container variant of a shared recipe) is
+// inactive when its definition ships but no active registration serves it.
+bool is_inactive_backend_selector(const std::string& recipe, const std::string& backend);
+void require_active_backend_selector(const std::string& recipe, const std::string& backend);
+
 // Install/download spec for a recipe, or nullptr if the recipe has none.
 const BackendSpec* spec_for(const std::string& recipe);
 

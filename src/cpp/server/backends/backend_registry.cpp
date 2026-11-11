@@ -67,6 +67,18 @@ const BackendRegistration* select_backend_registration(const std::vector<Backend
     return nullptr;
 }
 
+bool is_inactive_backend_selector(const std::string& recipe, const std::string& backend) {
+    if (builtin_container_selector_id(recipe, backend).empty()) return false;
+    for (const auto& registration : all_registrations())
+        if (registration.descriptor->recipe == recipe && registration.backend_selector == backend) return false;
+    return true;
+}
+
+void require_active_backend_selector(const std::string& recipe, const std::string& backend) {
+    if (is_inactive_backend_selector(recipe, backend))
+        throw std::runtime_error("Backend " + recipe + ":" + backend + " is staged and not active in this build");
+}
+
 std::unique_ptr<WrappedServer> create_server(const std::string& recipe, const BackendContext& ctx) {
     if (const auto* selected = select_backend_registration(all_registrations(), recipe, ctx.backend_selector)) {
         const auto& reg = *selected;

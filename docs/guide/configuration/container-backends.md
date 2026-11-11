@@ -3,7 +3,7 @@
 A container backend runs its server from a container image instead of a downloaded binary. `lemonade backends` lists these backends with the format `container`. Installing one pulls its image, pinned by digest, and loading a model starts a container from that image.
 
 !!! note "Staged backends"
-    `llamacpp:nathanw`, `llamacpp:halobox`, `rocmfpx:rocm`, `halogen:rocm`, `gufo:rocm` and the container form of `ds4:rocm` are staged in this build: their definitions ship with the server, but none is active. `lemonade backends` and `/system-info` do not list them, they cannot be installed or loaded, and the generated backend tables cover active recipes only. The rest of this page describes how they run once activated.
+    `llamacpp:nathanw`, `llamacpp:halobox`, `rocmfpx:rocm`, `halogen:rocm`, `gufo:rocm` and the container form of `ds4:rocm` are staged in this build: their definitions ship with the server, but none is active. `lemonade backends` and `/system-info` do not list them, they cannot be installed or loaded (an install or uninstall request for `llamacpp:nathanw` or `llamacpp:halobox` is refused with `400` and "is staged and not active in this build"), and the generated backend tables cover active recipes only. The rest of this page describes how they run once activated.
 
 Container backends run on Linux with Podman or Docker. Lemonade picks one when it runs a container:
 

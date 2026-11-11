@@ -2,6 +2,7 @@
 #include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/configured/backend_catalog.h"
 #include "lemon/backends/configured/backend_spec_utils.h"
@@ -582,6 +583,7 @@ std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
 
 BackendManager::InstallParams BackendManager::get_install_params(const std::string& recipe, const std::string& backend) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
+    backends::require_active_backend_selector(recipe, resolved_backend);
 
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {
@@ -605,6 +607,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
                                      DownloadProgressCallback progress_cb) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << resolved_backend << std::endl;
+    backends::require_active_backend_selector(recipe, resolved_backend);
 
     if (!progress_cb && download_manager_ && resolved_backend != "system") {
         const std::string name = recipe + ":" + resolved_backend;
@@ -898,6 +901,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 void BackendManager::uninstall_backend(const std::string& recipe, const std::string& backend) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     LOG(DEBUG, "BackendManager") << "Uninstalling " << recipe << ":" << resolved_backend << std::endl;
+    backends::require_active_backend_selector(recipe, resolved_backend);
 
     auto* spec = backends::try_get_spec_for_recipe(recipe);
     if (!spec) {

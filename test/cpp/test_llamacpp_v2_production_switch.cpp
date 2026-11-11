@@ -2,6 +2,7 @@
 #include "backend_capabilities_generated.h"
 #include "backend_catalog_execution_fixture.h"
 #include "backend_catalog_publication_internal.h"
+#include "lemon/backend_manager.h"
 #include "lemon/router.h"
 #include "llamacpp_oracle_descriptor.h"
 #include "llamacpp_v2_oracle.h"
@@ -283,6 +284,23 @@ int main(int argc, char** argv) {
             auto fallback = RoutingHelperTestHook::create_backend(router, unknown);
             check(dynamic_cast<ConfiguredServer*>(fallback.get()) && fallback->get_descriptor() == llama_row->descriptor &&
                 fallback->supports_operation(op, buffered, ModelType::EMBEDDING), "NoLlamaWrapperFallback");
+        }
+        {
+            BackendManager manager;
+            for (const std::string selector : {"nathanw", "halobox"}) {
+                const std::string refusal = "Backend llamacpp:" + selector + " is staged and not active in this build";
+                const auto refused = [&](const std::function<void()>& action) {
+                    try { action(); }
+                    catch (const std::runtime_error& error) { return std::string(error.what()) == refusal; }
+                    return false;
+                };
+                check(is_inactive_backend_selector("llamacpp", selector) &&
+                    refused([&] { manager.install_backend("llamacpp", selector); }) &&
+                    refused([&] { manager.uninstall_backend("llamacpp", selector); }) &&
+                    refused([&] { (void)manager.get_install_params("llamacpp", selector); }), "StagedLlamaSelectorRefusedBeforeInstall:" + selector);
+            }
+            check(!is_inactive_backend_selector("llamacpp", "vulkan") && !is_inactive_backend_selector("llamacpp", "") &&
+                !is_inactive_backend_selector("gufo", "rocm"), "OnlyStagedSelectorsAreRefused");
         }
         RuntimeConfig::set_global(previous);
     } catch (const std::exception& error) {
