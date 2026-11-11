@@ -42,8 +42,9 @@ def replay_layout(root, dependencies):
             (scratch / source.name).symlink_to(
                 source, target_is_directory=source.is_dir()
             )
-    if not (directory / "artifacts").exists():
-        (directory / "artifacts").symlink_to(
+    artifacts = directory / "artifacts"
+    if not artifacts.is_symlink() and not artifacts.exists():
+        artifacts.symlink_to(
             workspace / ".synagent/artifacts", target_is_directory=True
         )
     frozen.build_control(scratch / "backend-v2-4e3b/frozen-control", dependencies, 6)
