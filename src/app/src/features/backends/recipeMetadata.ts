@@ -6,6 +6,26 @@
  * branding remain in the existing UI presentation helpers.
  */
 
+export interface RecipeSchemaOption {
+  value_type: string;
+  enum?: unknown[];
+  minimum?: number;
+  maximum?: number;
+  help?: string;
+  ui?: { label: string; choices?: string };
+}
+
+export interface RecipeSchemaSource {
+  backendOptionName(recipe: string, systemOptionName: string | undefined, selectableBackend: boolean): string | null;
+  option(recipe: string, key: string): RecipeSchemaOption | undefined;
+}
+
+let schemaSource: RecipeSchemaSource | null = null;
+
+export function setRecipeSchemaSource(source: RecipeSchemaSource | null): void {
+  schemaSource = source;
+}
+
 export type RecipeCapability = 'LLM' | 'Audio' | 'Image' | 'TTS' | '3D' | 'Other';
 
 export interface RecipeOptionMetadata {
@@ -34,7 +54,8 @@ function normalizedRecipeKey(recipe: string): string {
 
 function recipeRecord(systemInfo: unknown, recipe: string): Record<string, unknown> {
   const recipes = asRecord(asRecord(systemInfo).recipes);
-  return asRecord(recipes[normalizedRecipeKey(recipe)]);
+  const key = normalizedRecipeKey(recipe);
+  return asRecord(Object.prototype.hasOwnProperty.call(recipes, key) ? recipes[key] : undefined);
 }
 
 export function recipeCapability(systemInfo: unknown, recipe: string): RecipeCapability {
@@ -86,11 +107,16 @@ export function recipeOption(
 }
 
 export function recipeBackendOptionName(systemInfo: unknown, recipe: string): string | null {
+  const key = normalizedRecipeKey(recipe);
   const explicit = recipeOptions(systemInfo, recipe).find(option => option.typeName === 'BACKEND')?.name;
+  const selectable = recipeRecord(systemInfo, recipe).selectable_backend === true;
+  if (schemaSource) return schemaSource.backendOptionName(key, explicit, selectable);
   if (explicit) return explicit;
-  return recipeRecord(systemInfo, recipe).selectable_backend === true
-    ? `${normalizedRecipeKey(recipe)}_backend`
-    : null;
+  return selectable ? `${key}_backend` : null;
+}
+
+export function recipeSchemaOption(recipe: string, key: string): RecipeSchemaOption | undefined {
+  return schemaSource?.option(normalizedRecipeKey(recipe), key);
 }
 
 function recipeOptionIsUserConfigurable(systemInfo: unknown, recipe: string, key: string): boolean {
@@ -103,6 +129,8 @@ export function recipeConfigurableOptionNames(systemInfo: unknown, recipe: strin
 }
 
 export function recipeOptionLabel(systemInfo: unknown, recipe: string, key: string): string {
+  const schemaLabel = recipeSchemaOption(recipe, key)?.ui?.label;
+  if (schemaLabel) return schemaLabel;
   const typeName = recipeOption(systemInfo, recipe, key)?.typeName;
   if (recipeOptionIsBackend(systemInfo, recipe, key)) return 'Backend';
   if (typeName === 'DEVICES') return 'Device';
@@ -111,7 +139,7 @@ export function recipeOptionLabel(systemInfo: unknown, recipe: string, key: stri
 }
 
 export function recipeOptionHint(systemInfo: unknown, recipe: string, key: string): string | undefined {
-  const help = recipeOption(systemInfo, recipe, key)?.help;
+  const help = recipeOption(systemInfo, recipe, key)?.help || recipeSchemaOption(recipe, key)?.help;
   if (help) return help;
   if (recipeOptionIsArgs(systemInfo, recipe, key)) return 'Raw backend args for this model only.';
   return undefined;
@@ -131,9 +159,23 @@ export function recipeOptionIsArgs(systemInfo: unknown, recipe: string, key: str
 }
 
 export function recipeOptionIsNumeric(systemInfo: unknown, recipe: string, key: string): boolean {
-  return recipeOption(systemInfo, recipe, key)?.typeName === 'SIZE' || key === 'speed';
+  if (recipeOption(systemInfo, recipe, key)?.typeName === 'SIZE' || key === 'speed') return true;
+  const valueType = recipeSchemaOption(recipe, key)?.value_type;
+  return !recipeOption(systemInfo, recipe, key) && (valueType === 'integer' || valueType === 'number');
 }
 
 export function recipeOptionIsBoolean(systemInfo: unknown, recipe: string, key: string): boolean {
-  return recipeOption(systemInfo, recipe, key)?.typeName === 'BOOL';
+  if (recipeOption(systemInfo, recipe, key)?.typeName === 'BOOL') return true;
+  return !recipeOption(systemInfo, recipe, key) && recipeSchemaOption(recipe, key)?.value_type === 'boolean';
+}
+
+export function recipeOptionChoices(recipe: string, key: string): string[] {
+  const option = recipeSchemaOption(recipe, key);
+  if (!option?.enum?.length || option.ui?.choices) return [];
+  return option.enum.filter((choice): choice is string | number => typeof choice === 'string' || typeof choice === 'number').map(String);
+}
+
+export function recipeOptionRange(recipe: string, key: string): { minimum?: number; maximum?: number } {
+  const option = recipeSchemaOption(recipe, key);
+  return { minimum: option?.minimum, maximum: option?.maximum };
 }
