@@ -736,7 +736,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 <!-- BEGIN GENERATED: openai.responses -->
 ## `POST /v1/responses`
-<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+<sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
 Generates a model response to an input, in OpenAI's Responses format, downloading and loading the model if it is not loaded.
 
@@ -749,6 +749,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `input` | Yes | The input, as a string or an array of input items. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_output_tokens` | No | Upper bound on generated tokens. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `previous_response_id` | No | The response this one continues. llama.cpp rejects it. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `temperature` | No | Sampling temperature. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `repeat_penalty` | No | From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage repetition. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -758,6 +759,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
+
+A request that continues earlier responses, through `previous_response_id`, `conversation` or an `item_reference` input, is rejected on a `collection.router` model, since the candidate picked for this turn may not be the one holding them. Resend the full `input`, or send the request to the candidate named in the earlier response's `x_lemonade_route.route_to`, which a streamed response carries on its first event.
 
 ### Examples
 
@@ -920,6 +923,7 @@ Sent in place of the rest of the stream when the backend fails after the stream 
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The request does not stream and `model` is a FastFlowLM or cloud model, which has no Responses API |
 | `400` | `model_not_applicable` | The request does not stream and `model` is not an LLM |
+| `400` | `router_response_chain_unsupported` | The request continues earlier responses through `previous_response_id`, `conversation` or an `item_reference` input, and `model` is a `collection.router` model whose policy can pick a different candidate than the one holding that state |
 | `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
