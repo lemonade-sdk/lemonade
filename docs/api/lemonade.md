@@ -30,6 +30,8 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/v1/system-stats`](#get-v1system-stats) | Read the host's resource usage |
 | `GET` | [`/metrics`](#get-metrics) | Serve metrics for Prometheus to scrape |
 | `GET` | [`/v1/system-info`](#get-v1system-info) | Read the host's hardware and backend support |
+| `GET` | [`/v1/backends/schema`](#get-v1backendsschema) | List backend recipes with their options and support |
+| `POST` | [`/v1/backends/validate`](#post-v1backendsvalidate) | Check a backend definition against this server without installing it |
 | `POST` | [`/v1/install`](#post-v1install) | Install or update a backend, or register a cloud provider |
 | `POST` | [`/v1/install/dry-run`](#post-v1installdry-run) | Resolve backend install metadata without downloading the backend asset |
 | `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend or cloud provider |
@@ -1105,7 +1107,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `pinned` | No | If `true`, pins the model so least-recently-used eviction skips it; `false` unpins it. When omitted, a loaded model keeps its pin state and a new load uses the model's saved `pinned` option, else `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `save_options` | No | If `true`, saves the options sent in this request as the model's `recipe_options.json` entry, replacing the stored one, so an option the request omits is no longer saved; one sent as `null` keeps its stored value. To save options without loading, or to change one option without resending the rest, use [`POST /v1/models/{id}/options`](openai.md#post-v1modelsidoptions). Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Context size: a positive whole number, or `-1` to size it automatically even when the server-wide `ctx_size` is a specific number. Only recipes that take a context size use it, such as `llamacpp`, `flm`, `ryzenai-llm` and `vllm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `llamacpp_backend` | No | `llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, `nathanw`, `halobox`, or `system` for a `llama-server` already installed where supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `llamacpp_backend` | No | `llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, or `system` for a `llama-server` already installed where supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `llamacpp_args` | No | `llamacpp`: extra arguments for `llama-server`. Flags Lemonade sets itself are rejected, with their aliases: `-m`, `--port`, `--ctx-size`, `--jinja`, `--device`, `--mmproj`, `--model-draft`, `--embeddings`, `--reranking` and `--metrics`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `whispercpp_backend` | No | `whispercpp`: the whisper.cpp backend, such as `cpu`, `npu`, `vulkan`, `rocm` or `metal`. [`/v1/system-info`](#get-v1system-info) lists the ones this system supports. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `whispercpp_args` | No | `whispercpp`: extra arguments for `whisper-server`, such as `--convert`. `-m`, `--model` and `--port` are rejected. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -2211,6 +2213,454 @@ The same backend can carry different labels on different operating systems. Each
 - `no_fetch_executables` - Whether the server is configured not to download backend executables.
 <!-- END GENERATED: lemonade.system_info -->
 
+<!-- BEGIN GENERATED: lemonade.backends_schema -->
+## `GET /v1/backends/schema`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Returns the server's backend catalog: every recipe with the options it accepts, the backends it supports per operating system and device, and the operations it serves. Clients use it to build option forms and to check a request against the server they are connected to.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `recipe` (query) | No | Returns only this recipe, such as `llamacpp`, in the same envelope. The match is exact. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `representation` (query) | No | `1`, the default, returns the catalog of executable backends. `2` adds the admission view: the definition versions the server accepts and the identities of its admission rules. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+The response carries an `ETag` and `Cache-Control: private, no-cache`. Send the tag back in `If-None-Match` to get `304` with no body while the catalog is unchanged. The tag covers the exact body, so it differs per `recipe` and `representation`.
+
+Executable paths, command lines, environment values, install configuration, current settings and credentials are never part of the catalog.
+
+### Examples
+
+#### Recipe
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest -Uri "http://localhost:13305/v1/backends/schema?recipe=kokoro"
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl "http://localhost:13305/v1/backends/schema?recipe=kokoro"
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "schema_version": 1,
+  "control_version": 1,
+  "definition_schema_version": 1,
+  "catalog_id": "sha256:87f5d447f7c1ee81883ae6131a145135f8b6adacf72cbe5abb3899c25b51cb69",
+  "feature_manifest_id": "sha256:a41f76bea185e69fe20f7e9dfe5497da98e661ab36368e38c899c69e995baacf",
+  "recipes": [
+    {
+      "recipe": "kokoro",
+      "display_name": "Kokoro",
+      "source": "builtin",
+      "definition_id": "kokoro",
+      "definition_hash": "sha256:b557cb134d365266752db624c80e67f4771fe00883c170f59d2ba37943fc0efb",
+      "supported_modes": ["tts"],
+      "required_checkpoints": ["main"],
+      "operations_complete": true,
+      "operations": [
+        {
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "chat",
+            "embedding",
+            "reranking",
+            "transcription",
+            "image",
+            "tts",
+            "audio-generation",
+            "classification",
+            "mesh"
+          ],
+          "provenance": "legacy_forwarding"
+        },
+        ... 4 more
+      ],
+      "options": [
+        {
+          "name": "merge_args",
+          "value_type": "boolean",
+          "default_value": true,
+          "unset_values": [null, -1, "", "auto"]
+        },
+        ... 6 more
+      ],
+      "support": [
+        {
+          "backend": "metal",
+          "tier": "core",
+          "format": "native",
+          "supported_os": ["macos"],
+          "devices": {"metal": []},
+          "device_summary": "Apple Silicon GPU",
+          "arch_gates": {}
+        },
+        ... 1 more
+      ]
+    }
+  ]
+}
+```
+
+#### Admission
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest -Uri "http://localhost:13305/v1/backends/schema?recipe=kokoro&representation=2"
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl "http://localhost:13305/v1/backends/schema?recipe=kokoro&representation=2"
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "schema_version": 2,
+  "control_version": 1,
+  "definition_schema_version": 2,
+  "catalog_id": "sha256:87f5d447f7c1ee81883ae6131a145135f8b6adacf72cbe5abb3899c25b51cb69",
+  "feature_manifest_id": "sha256:ca82f53dfa43331f761f109fcf387c0ece045824a478c184b89ae4bc3edb4865",
+  "recipes": [
+    {
+      "recipe": "kokoro",
+      "display_name": "Kokoro",
+      "source": "builtin",
+      "definition_id": "kokoro",
+      "definition_hash": "sha256:b557cb134d365266752db624c80e67f4771fe00883c170f59d2ba37943fc0efb",
+      "input_schema_version": 1,
+      "supported_modes": ["tts"],
+      "required_checkpoints": ["main"],
+      "operations_complete": true,
+      "operations": [
+        {
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "chat",
+            "embedding",
+            "reranking",
+            "transcription",
+            "image",
+            "tts",
+            "audio-generation",
+            "classification",
+            "mesh"
+          ],
+          "provenance": "legacy_forwarding"
+        },
+        ... 4 more
+      ],
+      "options": [
+        {
+          "name": "merge_args",
+          "value_type": "boolean",
+          "default_value": true,
+          "unset_values": [null, -1, "", "auto"]
+        },
+        ... 6 more
+      ],
+      "support": [
+        {
+          "backend": "metal",
+          "tier": "core",
+          "format": "native",
+          "supported_os": ["macos"],
+          "devices": {"metal": []},
+          "device_summary": "Apple Silicon GPU",
+          "arch_gates": {}
+        },
+        ... 1 more
+      ]
+    }
+  ],
+  "catalog_v2_id": "sha256:8491329f27e53ae779753647b93ac59c28aa04d93396205d00422065eab5ec90",
+  "legacy_feature_manifest_id": "sha256:a41f76bea185e69fe20f7e9dfe5497da98e661ab36368e38c899c69e995baacf",
+  "accepted_definition_versions": [1, 2],
+  "executable_definition_versions": [1, 2],
+  "acceptance_stage": "execution_finalization",
+  "resolver_revision": 1,
+  "authorizer_revision": 1,
+  "grant_policy_revision": 1,
+  "export_registry_id": "sha256:d68571eec21471c353dbf19229af776f034c8e7776d65fdbe869aa5698304b96",
+  "admission_manifest": {
+    "acceptance_stage": "execution_finalization",
+    "accepted_definition_versions": [1, 2],
+    "authorizer_revision": 1,
+    "bounds": {
+      "definitions": 1024,
+      "diagnostics": 100,
+      "recipe_rows": 1024,
+      "retained_logical_bytes": 134217728,
+      "source_bytes": 67108864
+    },
+    "definition_schema_version": 2,
+    "executable_definition_versions": [1, 2],
+    "export_registry_id": "sha256:d68571eec21471c353dbf19229af776f034c8e7776d65fdbe869aa5698304b96",
+    "grant_policy_revision": 1,
+    "hook_abi_id": "sha256:b80e5f74cf8ddabc833fa81c16c4dadec6fcc376980a1e03322ae82197a24c36",
+    "manifest_version": 1,
+    "resolver_revision": 1,
+    "schema_id": "sha256:923163467f2d30fecaf29a524dc6c38312150bb64b99d035f615cdffec71d0bb"
+  }
+}
+```
+
+### Response format
+
+- `schema_version` - The representation returned: `1` or `2`.
+- `control_version` - Version of the option control vocabulary in `ui`.
+- `definition_schema_version` - Newest backend definition format this representation describes.
+- `catalog_id` - SHA-256 identity of the catalog of executable backends. It changes when a definition, its origin or the server's feature set changes.
+- `feature_manifest_id` - SHA-256 identity of the definition features this server implements.
+- `recipes` - The recipes, in catalog order.
+  - `recipe` - The recipe name.
+  - `display_name` - Name shown to users.
+  - `source` - `builtin` for a backend shipped with the server, otherwise where the definition was loaded from.
+  - `definition_id` - Identifier of the definition that serves the recipe; absent for a backend compiled into the server.
+  - `definition_hash` - SHA-256 of the definition's canonical JSON; absent for a backend compiled into the server.
+  - `input_schema_version` - `representation=2`: the format version the definition was written in, or `null` for a backend compiled into the server.
+  - `supported_modes` - Model modes the recipe can load, such as `chat` or `tts`.
+  - `required_checkpoints` - Checkpoint roles a model of this recipe must provide.
+  - `operations_complete` - `false` when `operations` may be missing entries. It does not mean an operation is unsupported.
+  - `operations` - The operations the backend serves.
+    - `operation` - The operation, such as `chat_completion` or `text_to_speech`.
+    - `delivery` - `buffered`, `streaming` or `realtime`.
+    - `model_modes` - Model modes the operation applies to.
+    - `provenance` - `implemented` when the backend serves the operation itself, `legacy_forwarding` when the request is forwarded unchanged.
+  - `options` - The options the recipe accepts, shared ones included.
+    - `name` - The option name, as used in `recipe_options` and [`POST /v1/load`](#post-v1load).
+    - `value_type` - `boolean`, `integer`, `number` or `string`.
+    - `default_value` - The default, or `null` when the server decides.
+    - `unset_values` - Values that mean the option is not set.
+    - `group` - Heading the option is listed under.
+    - `help` - One-line description.
+    - `ui` - How a client presents the option: `control`, `label`, `order` and, for a select, `choices`.
+  - `support` - The backends of the recipe and where each one runs.
+    - `backend` - The backend, such as `vulkan` or `cpu`.
+    - `tier` - `core`, `experimental` or `guest`, as defined by the [backend support tier policy](../dev/adding-a-backend.md#support-tier).
+    - `format` - How the backend is packaged, such as `native` or `python`.
+    - `supported_os` - Operating systems the backend runs on.
+    - `devices` - Device classes the backend runs on, each with the architectures or families it accepts; an empty list accepts all.
+    - `device_summary` - The devices in words.
+    - `arch_gates` - Per GPU architecture, the operating systems and release channels it is limited to.
+- `catalog_v2_id` - `representation=2`: SHA-256 identity of the admission view.
+- `legacy_feature_manifest_id` - `representation=2`: the `feature_manifest_id` of representation `1`.
+- `accepted_definition_versions` - `representation=2`: definition format versions the server admits.
+- `executable_definition_versions` - `representation=2`: definition format versions the server can run.
+- `acceptance_stage` - `representation=2`: the last stage an admitted definition passes.
+- `resolver_revision` - `representation=2`: revision of the dependency resolver.
+- `authorizer_revision` - `representation=2`: revision of the authorizer.
+- `grant_policy_revision` - `representation=2`: revision of the grant policy.
+- `export_registry_id` - `representation=2`: SHA-256 identity of the export registry.
+- `admission_manifest` - `representation=2`: the admission rules as one independently versioned record, including the schema and hook identities and the size bounds applied to definitions.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_representation` | `representation` is repeated or is neither `1` nor `2` |
+| `400` | `invalid_recipe_filter` | `recipe` is repeated or empty |
+| `404` | `unknown_recipe` | `recipe` names no recipe in the catalog |
+<!-- END GENERATED: lemonade.backends_schema -->
+
+<!-- BEGIN GENERATED: lemonade.backends_validate -->
+## `POST /v1/backends/validate`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Validates a backend definition document against the server's definition format, its installed feature set and its catalog. Nothing is written, installed, launched or published, and a valid answer does not promise that the executable or a model is available.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `schema_version` | Yes | The version of the backend definition format the document is written in. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` | Yes | The definition's identifier. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `recipe` | Yes | The recipe the backend serves. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `kind` | Yes | The kind of backend, such as `local`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `metadata` | Yes | Display name, binary, devices and the options the recipe accepts. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `install` | Yes | How the backend's executable is obtained. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `launch` | No | How the backend process is started, checked for readiness and watched. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `operations` | Yes | The operations the backend serves and how each request reaches it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+The body is the definition document itself, read as sent: the parameters below are its top-level fields. [Runtime backends](../dev/runtime-backends.md) describes the format.
+
+A definition that reuses the `id` and `recipe` of an installed external definition is checked as its replacement. A built-in recipe cannot be replaced.
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/backends/validate" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "schema_version": 1,
+          "id": "example",
+          "recipe": "example",
+          "kind": "local",
+          "metadata": {
+            "display_name": "Example",
+            "server_name": "example-server",
+            "binary": "example-server",
+            "default_device": "cpu",
+            "bin_variants": ["cpu"],
+            "options": [
+              {
+                "name": "example_batch",
+                "value_type": "integer",
+                "default_value": 2,
+                "minimum": -1,
+                "maximum": 8
+              }
+            ]
+          },
+          "install": {"strategy": "external_only"},
+          "launch": {
+            "prepare_order": ["artifacts", "backend", "program", "ports"],
+            "backend": {"fixed": "cpu"},
+            "program": {"source": "external_or_managed", "install_policy": "always"},
+            "ports": [{"name": "http", "reject_zero": true, "error": "No port"}],
+            "argv": [{"args": ["--serve"]}],
+            "environment": {"preset": "inherit"},
+            "working_directory": "inherit",
+            "readiness": {"port": "http", "path": "/health", "timeout": 5},
+            "watchdog": {"port": "http", "path": "/health", "policy": "none"},
+            "output": {"inherit_levels": ["debug"], "filter": false}
+          },
+          "operations": [
+            {
+              "operation": "chat_completion",
+              "delivery": "buffered",
+              "model_modes": ["chat"],
+              "transport": {
+                "kind": "http_json",
+                "method": "POST",
+                "path": "/chat",
+                "port": "http",
+                "timeout": 5,
+                "response_codec": "json.v1"
+              },
+              "request": {"base": "identity"}
+            }
+          ]
+        }'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/backends/validate \
+      -H "Content-Type: application/json" \
+      -d '{
+          "schema_version": 1,
+          "id": "example",
+          "recipe": "example",
+          "kind": "local",
+          "metadata": {
+            "display_name": "Example",
+            "server_name": "example-server",
+            "binary": "example-server",
+            "default_device": "cpu",
+            "bin_variants": ["cpu"],
+            "options": [
+              {
+                "name": "example_batch",
+                "value_type": "integer",
+                "default_value": 2,
+                "minimum": -1,
+                "maximum": 8
+              }
+            ]
+          },
+          "install": {"strategy": "external_only"},
+          "launch": {
+            "prepare_order": ["artifacts", "backend", "program", "ports"],
+            "backend": {"fixed": "cpu"},
+            "program": {"source": "external_or_managed", "install_policy": "always"},
+            "ports": [{"name": "http", "reject_zero": true, "error": "No port"}],
+            "argv": [{"args": ["--serve"]}],
+            "environment": {"preset": "inherit"},
+            "working_directory": "inherit",
+            "readiness": {"port": "http", "path": "/health", "timeout": 5},
+            "watchdog": {"port": "http", "path": "/health", "policy": "none"},
+            "output": {"inherit_levels": ["debug"], "filter": false}
+          },
+          "operations": [
+            {
+              "operation": "chat_completion",
+              "delivery": "buffered",
+              "model_modes": ["chat"],
+              "transport": {
+                "kind": "http_json",
+                "method": "POST",
+                "path": "/chat",
+                "port": "http",
+                "timeout": 5,
+                "response_codec": "json.v1"
+              },
+              "request": {"base": "identity"}
+            }
+          ]
+        }'
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "valid": true,
+  "validation": "server",
+  "catalog_id": "sha256:87f5d447f7c1ee81883ae6131a145135f8b6adacf72cbe5abb3899c25b51cb69",
+  "definition_id": "example",
+  "recipe": "example",
+  "definition_hash": "sha256:6e7c9758d515a21a9e8f97dab35affadaeb976588dae58f8ae844968fda3c14d",
+  "diagnostics": []
+}
+```
+
+### Response format
+
+- `valid` - Whether the server would accept and run the definition.
+- `validation` - `server`: the answer comes from this server's installed feature set.
+- `catalog_id` - The `catalog_id` of [`GET /v1/backends/schema`](#get-v1backendsschema) the definition was checked against.
+- `definition_id` - The definition's `id`, when it is valid.
+- `recipe` - The definition's `recipe`, when it is valid.
+- `definition_hash` - SHA-256 of the definition's canonical JSON, when it is valid. Key order and whitespace do not affect it.
+- `input_schema_version` - For a version 2 definition, its `schema_version`.
+- `stages` - For a version 2 definition, which admission stages it passed: `resolved`, `authorized`, `catalog_admitted` and `executable`.
+- `diagnostics` - What is wrong with the definition, in order; empty when it is valid.
+  - `code` - The kind of problem, such as `required` or `syntax_error`.
+  - `message` - The problem in words.
+  - `pointer` - JSON pointer to the field at fault.
+  - `definition` - The `id` of the definition at fault, or `""` when it could not be read.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | The definition is not valid; the body is the validation report with `valid` set to `false` |
+| `413` | The body is larger than 1 MiB |
+<!-- END GENERATED: lemonade.backends_validate -->
+
 <!-- BEGIN GENERATED: lemonade.install -->
 ## `POST /v1/install`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -2476,6 +2926,7 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | A local request has no `recipe` |
+| `400` |  | `recipe` and `backend` name a staged backend that is not active in this build |
 | `400` |  | The backend is not supported on this system and `force` is not set |
 | `400` |  | A cloud install is missing `provider` or `base_url`, or one is empty |
 | `400` |  | `provider` is longer than 64 characters or not lowercase `[a-z0-9_-]` |
@@ -2668,6 +3119,7 @@ A cloud provider removed.
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | A cloud uninstall has no `provider`, or an empty one |
 | `400` |  | A local request has no `recipe` |
+| `400` |  | `recipe` and `backend` name a staged backend that is not active in this build |
 | `404` |  | `provider` was not installed with [`POST /v1/install`](#post-v1install) |
 | `500` |  | The request fails unexpectedly |
 <!-- END GENERATED: lemonade.uninstall -->
