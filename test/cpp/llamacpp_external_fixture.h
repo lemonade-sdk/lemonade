@@ -69,7 +69,7 @@ inline void export_checks(const Check& check) {
             digest.empty() ? v2::export_registry_digest({p}, installed_hook_abis()) : digest);
     };
     check(audit(policy).entries.empty(), "ExternalContractPinsAreLiteral");
-    check(policy.slots.size() == 17 && policy.owners.size() == 11, "All17BaseSlotsCovered");
+    check(policy.slots.size() == 17 && policy.owners.size() == 12, "All17BaseSlotsCovered");
     const std::vector<std::pair<std::string, std::function<void(BuiltinExportContract&)>>> attacks{
         {"source_digest_mismatch", [](auto& p) { p.expected_source_digest.back() ^= 1; }},
         {"definition_digest_mismatch", [](auto& p) { p.expected_definition_hash.back() ^= 1; }},

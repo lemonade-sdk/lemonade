@@ -3,6 +3,7 @@
 #include "backend_runtime_fixture.h"
 #include "lemon/system_info.h"
 
+#include <algorithm>
 #include <array>
 #include <fstream>
 
@@ -154,7 +155,20 @@ inline void llamacpp_protocol_parity(const std::shared_ptr<const ExecutableDefin
             for (std::size_t delivery = 0; delivery < k_operation_delivery_count; ++delivery)
                 for (const auto mode : k_operation_model_types)
                     matrix.push_back(server.supports_operation(static_cast<BackendOperation>(op), static_cast<OperationDelivery>(delivery), mode));
-        check(bindings == expected.at("bindings") && bindings.size() == 11 && matrix == expected.at("matrix"), "FrozenProtocolElevenCells:" + view);
+        const Json decision = {{"operation", static_cast<int>(BackendOperation::Classification)}, {"delivery", static_cast<int>(OperationDelivery::Buffered)},
+            {"models", operation_model_type_mask(ModelType::CLASSIFICATION)}, {"provenance", static_cast<int>(OperationProvenance::Implemented)}};
+        const bool decision_bound = std::count(bindings.begin(), bindings.end(), decision) == 1 &&
+            server.supports_operation(BackendOperation::Classification, OperationDelivery::Buffered, ModelType::CLASSIFICATION);
+        bindings.erase(std::remove(bindings.begin(), bindings.end(), decision), bindings.end());
+        std::size_t cell = 0;
+        for (std::size_t op = 0; op < k_backend_operation_count; ++op)
+            for (std::size_t delivery = 0; delivery < k_operation_delivery_count; ++delivery)
+                for (const auto mode : k_operation_model_types) {
+                    if (op == static_cast<std::size_t>(BackendOperation::Classification) && delivery == 0 && mode == ModelType::CLASSIFICATION)
+                        matrix[cell] = false;
+                    ++cell;
+                }
+        check(decision_bound && bindings == expected.at("bindings") && bindings.size() == 11 && matrix == expected.at("matrix"), "FrozenProtocolElevenCells:" + view);
         for (const auto& [key, transcript] : expected.at("buffered").items()) {
             entries.clear();
             Json events = Json::array(), forwarded;

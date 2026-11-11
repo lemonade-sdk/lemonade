@@ -1,6 +1,7 @@
 #include "backend_definition_runner_internal.h"
 #include "lemon/backends/configured/backend_hook_registry.h"
 #include "lemon/backends/configured/configured_server.h"
+#include "lemon/backends/llamacpp/llamacpp_decision.h"
 #include "lemon/container_process.h"
 #include "lemon/error_types.h"
 #include "lemon/utils/aixlog.hpp"
@@ -99,6 +100,8 @@ void ConfiguredServer::load(const std::string& name, const ModelInfo& model, con
         cancel.should_cancel = [this, outer] { return load_cancelled() || (outer && outer()); };
         const auto& log = entry_->launch_compatibility.load_log;
         const auto category = entry_->records().at("metadata").at("log_category").get<std::string>();
+        std::shared_ptr<llamacpp::DecisionRuntime> decision;
+        if (entry_->runner_->llamacpp_decision_contract()) decision = std::make_shared<llamacpp::DecisionRuntime>(name, model);
         const auto prepared = entry_->runner_->prepare_load({name, model, options, log_level_, {},
             log && log->prepared ? std::function<void(const std::string&, const json&)>([&](const auto& phase, const auto& values) { log->prepared(category, phase, values); }) : nullptr,
             [this](DeviceType device) { device_type_ = device; }}, entry_->spec, *services_.launch, cancel);
@@ -119,6 +122,11 @@ void ConfiguredServer::load(const std::string& name, const ModelInfo& model, con
             throw;
         }
         if (log && log->success) log->success(category, prepared.session->frame.values, plan.command);
+        if (decision) {
+            const auto& hook = prepared.session->frame.values.at("launch").value("hook", json::object());
+            decision->set_max_input_tokens(hook.value("max_input_tokens", 0));
+        }
+        std::atomic_store(&decision_, std::move(decision));
         std::atomic_store(&session_, prepared.session);
         return;
     }
@@ -221,7 +229,21 @@ OperationHookContext ConfiguredServer::hook_context() {
     return {mapping_.values, entry_->definition->records["metadata"]["log_category"].get_ref<const std::string&>(), get_backend_port(), get_base_url(),
         [this](const std::string& endpoint, const json& body, long timeout) { return WrappedServer::forward_request(endpoint, body, timeout); }};
 }
+llamacpp::DecisionTransport ConfiguredServer::decision_transport() {
+    return {[this](const std::string& endpoint, const json& body) { return WrappedServer::forward_request(endpoint, body); },
+        [this](const std::string& endpoint, const nlohmann::ordered_json& body) { return WrappedServer::forward_ordered_request(endpoint, body); }};
+}
+nlohmann::ordered_json ConfiguredServer::systemone(const nlohmann::ordered_json& request) {
+    const auto decision = std::atomic_load(&decision_);
+    if (!decision) return nlohmann::ordered_json(ErrorResponse::from_exception(UnsupportedOperationException("SystemOne", get_model_name())));
+    return decision->systemone(decision_transport(), request);
+}
 json ConfiguredServer::classify(const json& request) {
+    if (entry_->runner_) {
+        const auto decision = std::atomic_load(&decision_);
+        if (!decision) return ErrorResponse::from_exception(UnsupportedOperationException("Classification", get_model_name()));
+        return decision->classify(decision_transport(), request);
+    }
     const auto& selected = bound(BackendOperation::Classification);
     return installed_backend_hooks().target<OperationHook>(selected.handler, HookStage::Operation)(hook_context(), request);
 }

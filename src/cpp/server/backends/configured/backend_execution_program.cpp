@@ -75,6 +75,16 @@ void compile_programs(Program& program, Budget& budget) {
         require(roles == std::set<std::string>{"main", "halogen_lookup_table", "halogen_tokenizer", "halogen_vision_tower"},
             "invalid_model_contract", "/artifacts");
     }
+    else if (doc.value("model_contract", "") == "llamacpp_decision_v1") {
+        const auto& operations = doc.at("operations");
+        const auto decision = std::find_if(operations.begin(), operations.end(), [](const auto& operation) {
+            return operation.at("operation") == "classification";
+        });
+        require(doc.at("kind") == "local" && (decision == operations.end() ||
+            (decision->contains("transport") && decision->at("transport").at("path") == "/v1/systemone")),
+            "invalid_model_contract", "/model_contract");
+        program.model_contract = ModelContract::LlamaCppDecisionV1;
+    }
     else if (doc.contains("model_contract")) {
         require(doc.at("model_contract") == "ds4_rocm_v1" && doc.at("kind") == "container" &&
             launch.at("backend") == Json{{"fixed", "rocm"}} && launch.contains("execution") &&
@@ -347,7 +357,7 @@ void compile_programs(Program& program, Budget& budget) {
         }
         const auto& transport = record["transport"];
         op.kind = transport["kind"]; op.method = transport["method"]; op.path = transport["path"]; op.port = transport["port"];
-        const bool json_operation = operation <= BackendOperation::Reranking || operation == BackendOperation::Slots || operation == BackendOperation::SlotAction || operation == BackendOperation::Tokenize;
+        const bool json_operation = operation <= BackendOperation::Classification || operation == BackendOperation::Slots || operation == BackendOperation::SlotAction || operation == BackendOperation::Tokenize;
         const bool json = op.kind == "http_json" && delivery == OperationDelivery::Buffered && json_operation && transport.value("response_codec", "") == "json.v1" && !transport.contains("stream_codec");
         const bool sse = op.kind == "http_sse" && delivery == OperationDelivery::Streaming && operation <= BackendOperation::Responses && transport.value("stream_codec", "") == "openai_sse.v1" && !transport.contains("response_codec");
         require((json || sse) && op.method == (operation == BackendOperation::Slots ? "GET" : "POST"), "unsupported_execution_feature", p + "/transport");

@@ -520,7 +520,7 @@ void check_registration() {
     uint32_t vanilla_capabilities = CAP_ALL;
     for (const auto& entry : lemon::backends::all_backend_capabilities())
         if (entry.descriptor->recipe == "llamacpp") vanilla_capabilities = entry.capabilities;
-    check(hrx::capabilities() == 0 && hrx::capabilities() == (vanilla_capabilities & ~(CAP_EMBEDDINGS | CAP_RERANKING)), "HRX advertised capability mask stays chat-only");
+    check(hrx::capabilities() == 0 && hrx::capabilities() == (vanilla_capabilities & ~(CAP_EMBEDDINGS | CAP_RERANKING | CAP_CLASSIFICATION)), "HRX advertised capability mask stays chat-only");
     const auto* ops = hrx::ops();
     const auto root = std::filesystem::temp_directory_path() / ("hrx-oracle-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(root / "snapshots/abc");

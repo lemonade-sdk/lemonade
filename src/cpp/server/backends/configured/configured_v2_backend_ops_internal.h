@@ -20,6 +20,8 @@ public:
     std::string resolve_checkpoint_path(const ModelInfo&, const CheckpointResolveContext&) const override;
     bool is_downloaded(const ModelInfo&, const BackendOpsContext&) const override;
     void download_model(const ModelInfo&, bool, DownloadProgressCallback, const BackendOpsContext&) const override;
+    void add_implied_checkpoints(ModelInfo& info) const override;
+    std::string validate_load(const ModelInfo& info) const override;
 private:
     const std::shared_ptr<const DefinitionRunner> runner_;
     const std::shared_ptr<const LaunchServices> memory_services_;

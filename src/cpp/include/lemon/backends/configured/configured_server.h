@@ -8,6 +8,7 @@
 namespace lemon::backends {
 
 struct ExecutionSession;
+namespace llamacpp { class DecisionRuntime; struct DecisionTransport; }
 struct ConfiguredServerServices {
     std::shared_ptr<LaunchServices> launch;
     std::function<std::unique_ptr<ServerProcess>(ProcessOutput, const std::string&)> make_process;
@@ -15,7 +16,7 @@ struct ConfiguredServerServices {
     std::function<std::unique_ptr<ServerProcess>(ProcessOutput)> make_container_client;
 };
 class ConfiguredServer final : public WrappedServer, public IEmbeddingsServer, public IRerankingServer,
-                               public IClassificationServer, public ITranscriptionServer, public IStreamingTranscriptionServer,
+                               public IClassificationServer, public ISystemOneServer, public ITranscriptionServer, public IStreamingTranscriptionServer,
                                public ISlotsServer, public ITokenizerServer, public ITextToSpeechServer,
                                public IAudioGenerationServer, public IModel3DServer {
 public:
@@ -31,6 +32,7 @@ public:
     json slots_action(int slot_id, const std::string& action, const json& request_body) override;
     json tokenize(const json& request_body) override;
     json classify(const json& request) override;
+    nlohmann::ordered_json systemone(const nlohmann::ordered_json& request) override;
     json audio_transcriptions(const json& request) override;
     std::string get_streaming_address() override;
     void audio_speech(const json& request, httplib::DataSink& sink) override;
@@ -47,6 +49,7 @@ private:
     const OperationProgram& bound(BackendOperation operation) const;
     const OperationProgram* media(OperationDelivery delivery) const;
     OperationHookContext hook_context();
+    llamacpp::DecisionTransport decision_transport();
     json send_json(const MappedRequest& mapped, const json& request);
     json send_completion(BackendOperation operation, const json& request);
     json send_v2(BackendOperation operation, const json& request, int slot_id = -1, const std::string& action = "");
@@ -54,6 +57,7 @@ private:
     ConfiguredServerServices services_;
     MappingContext mapping_;
     std::shared_ptr<const ExecutionSession> session_;
+    std::shared_ptr<llamacpp::DecisionRuntime> decision_;
     const BackendTransport transport_;
 };
 

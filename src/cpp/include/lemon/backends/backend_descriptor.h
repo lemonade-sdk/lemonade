@@ -174,4 +174,9 @@ struct BackendDescriptor {
     }
 };
 
+inline BackendDescriptor with_about(BackendDescriptor descriptor, std::map<std::string, BackendAbout> about) {
+    descriptor.about = std::move(about);
+    return descriptor;
+}
+
 } // namespace lemon

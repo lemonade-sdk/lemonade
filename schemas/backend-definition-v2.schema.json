@@ -560,6 +560,17 @@
             "type": "string"
           }
         },
+        "mode_capability_requirements": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        },
         "required_checkpoints": {
           "type": "array",
           "items": {
@@ -2388,7 +2399,8 @@
         "model_contract": {
           "enum": [
             "halogen_hgn_v1",
-            "ds4_rocm_v1"
+            "ds4_rocm_v1",
+            "llamacpp_decision_v1"
           ]
         }
       },

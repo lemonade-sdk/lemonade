@@ -124,7 +124,7 @@ int main(int argc, char** argv) {
     check(candidate_compiles, "RuntimeCandidateCompilesWithDeclaredRuntimeFacts");
     if (!candidate_compiles) return finish();
     const auto candidate_entry = ConfiguredBackendEntry::make(candidate_executable);
-    check(candidate_entry->bindings.size() == 11, "RuntimeCandidateHasElevenRealBoundCells");
+    check(candidate_entry->bindings.size() == 12, "RuntimeCandidateHasTwelveRealBoundCells");
     auto all_document = binding_fixture::document();
     const auto all = runtime_fixture::executable(all_document);
     DefinitionRunner runner(all);

@@ -246,6 +246,7 @@ def main(binary):
                 "backend_option": None,
                 "display_name": "HTTP Alpha",
                 "supported_modes": ["chat"],
+                "required_checkpoints": ["main"],
                 "options": [
                     {
                         "name": "http_batch",

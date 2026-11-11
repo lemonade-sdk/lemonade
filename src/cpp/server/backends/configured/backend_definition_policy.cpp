@@ -422,8 +422,10 @@ std::optional<TypedReferenceMetadata> typed_data_reference(const std::string& pa
     if (path == "/model/speculative_mode") return result(Type::String, Phase::Input);
     if (selected("launch", "llamacpp.prepare.v1")) {
         if (path == "/launch/hook/speculative_mode") return result(Type::String, Phase::Prepare);
-        if (path == "/launch/hook/context_size") return result(Type::Integer, Phase::Prepare);
-        for (const auto* field : {"hf_load", "use_mmproj", "mmproj_on_cpu", "use_draft_checkpoint", "embedding", "reranking"})
+        for (const auto* field : {"context_size", "batch_size", "max_input_tokens"})
+            if (path == std::string("/launch/hook/") + field) return result(Type::Integer, Phase::Prepare);
+        for (const auto* field : {"hf_load", "use_mmproj", "mmproj_on_cpu", "use_draft_checkpoint", "embedding", "reranking",
+            "rule_head", "add_batch_size", "add_ubatch_size"})
             if (path == std::string("/launch/hook/") + field) return result(Type::Boolean, Phase::Prepare);
     }
     if (selected("runtime_options", "llamacpp.runtime_options.v1"))

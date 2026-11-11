@@ -201,7 +201,7 @@ def main():
         ), "ProductionForkDiscoveredAndFinalized"
         assert (
             schema["export_registry_id"]
-            == "sha256:d644387f2d2838a76ace64304318e673244e8cd117e496ae4394dc0792e2b9fa"
+            == "sha256:d68571eec21471c353dbf19229af776f034c8e7776d65fdbe869aa5698304b96"
         ), "ProductionRegistryExact"
         for name, code, candidate in security_cases(fork, child):
             status, result, _ = request(

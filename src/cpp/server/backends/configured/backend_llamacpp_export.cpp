@@ -4,10 +4,10 @@ namespace lemon::backends {
 
 BuiltinExportContract llamacpp_external_contract() {
     BuiltinExportContract policy{{"llamacpp", 1},
-        "sha256:e8ea19f3af8db0b892cb5d3c9d5e217c944517734fbe26027d7270742e2371da",
-        "sha256:8ba9eb7509e84d8f93f5362ce0839dc2dede2691d6a99d7987cf8099bcdd606a",
-        "sha256:f75b38c730afe832f8c4d566549c51c10e34a800e0b3f1dbf2a2cf507bfcdb63",
-        1, "sha256:7e4a67f7dbb82b146277e5fafd994e62f33d789ef758adb872164827f7bc0976", {}};
+        "sha256:e5fffe49cc347c77cc348563cec8f453103c6738ce04c0e26b760bc868da0dbb",
+        "sha256:4e7f21167749734ad09dd84a6c9f62a932b5d3673e7388361d5ea9a665a0a218",
+        "sha256:40a05c7b30f7e143f55b216e7f951244cbb113846f9372e20ed408bc8f857980",
+        2, "sha256:6b3d670647d768c0b1e4d0094da28dc147779501a6120820415f0ed923f3d7a1", {}};
     {
         ExportSlotPolicy slot{{SlotOwnerKind::Root, "backend", "backend", "llamacpp.backend.v1"},
             1, "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
@@ -186,18 +186,21 @@ BuiltinExportContract llamacpp_external_contract() {
         {"reranking.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"reranking.buffered","model_modes":["*"],"operation":"reranking","transport":{"kind":"http_json","method":"POST","path":"/v1/rerank","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
             {}, {}, {}, true, {},
             {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"slot-action.buffered"}},
+        {"classification.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"classification.buffered","model_modes":["classification"],"operation":"classification","transport":{"kind":"http_json","method":"POST","path":"/v1/systemone","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
+            {}, {}, {}, true, {},
+            {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"slot-action.buffered"}},
         {"slots.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"slots.buffered","model_modes":["*"],"operation":"slots","transport":{"kind":"http_json","method":"GET","path":"/slots","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
             {}, {}, {}, true, {},
             {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"slot-action.buffered"}},
         {"slot-action.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"slot-action.buffered","model_modes":["*"],"operation":"slot_action","transport":{"kind":"http_json","method":"POST","path":"/slots/{slot_id}?action={action}","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
             {}, {}, {}, true, {},
-            {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"chat.buffered", "completion.buffered", "responses.buffered", "chat.streaming", "completion.streaming", "responses.streaming", "embedding.buffered", "reranking.buffered", "slots.buffered", "tokenize.buffered"}},
+            {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"chat.buffered", "completion.buffered", "responses.buffered", "chat.streaming", "completion.streaming", "responses.streaming", "embedding.buffered", "reranking.buffered", "classification.buffered", "slots.buffered", "tokenize.buffered"}},
         {"tokenize.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"tokenize.buffered","model_modes":["*"],"operation":"tokenize","transport":{"kind":"http_json","method":"POST","path":"/tokenize","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
             {}, {}, {}, true, {},
             {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"slot-action.buffered"}},
     };
-    policy.owner_graph_digest = "sha256:6bc3f2b40d73e44ceb384564fbc403b1f58cf22c91de863f0746c5f22713e0f8";
-    const auto pins = nlohmann::json::parse(R"pins({"owner_graph":"sha256:29ae8a1e9b961967b126009b7e2d3d66335b7cf6f1a8574e4c2184e72ce68d1b","policy":"sha256:fddeac59a68ca319b4fd5a9307800ab60691d61b30739e37405966b7b71ea5f6","registry":"sha256:d644387f2d2838a76ace64304318e673244e8cd117e496ae4394dc0792e2b9fa","slots":["sha256:57971cc997edbeace461bdd700caac82b127b1c2a58d0862f50394224691c5b0","sha256:e61399da847ff647f59ef76be980f4e6ff2a443cbaa6cf360db924dec4a26836","sha256:7fb0c97ce230af539796b73154b7631bf57df8d9346dcc40253b4f5e936996c4","sha256:b59051c54c35025431454b2d3b845d60dd7e651252892ae69f5e63729043f22c","sha256:89c0b78903d89a06fffe580f24be212f155da8fa3a587122b720ac27c586ff18","sha256:bbdb16f254d6acd4b5eb3042f94fb758caacc452187e4fa6e5cf598556df25b5","sha256:1073493abec936f4e0b2df24807380d2dcfbe380151625e8924e7cfa81433400","sha256:5346fff833bf07db27e532633182b22c4a11a3f4f02442e043506477f28c9c6a","sha256:da202c25060668cb86a5f592f4cfe936beb5a9c3e2b93bad7f407838d936f609","sha256:b760fa3b4a27f16ccb8c98faf344002f8a2e5e3617db42a2312e26a5e7a35094","sha256:cecbcfa10c10eb1596c89d345f921ef901cd98ad50c7aec0ca73c1a5bbbbd530","sha256:9e5a24213fd3c391fcb0e3a5b77435220e9a0b977ebc86335a0818abfe789d04","sha256:db70516f4f5d38896f2c1ee45997b5284177b20278759b2d4fb1caa8a8715539","sha256:6664531eac117cfddf79e1015d8a379bd25d71f8f838b9943cf62fa2882e478f","sha256:ee3466d39d602927e8b006b40c9675d208ed5d4d48417d689ef43e18dcb78d4d","sha256:84be9f9d543018e8b38dc35431e303c38bdcfbf6cd2dc123b828ca3f752c66cb","sha256:0b8eccb9ae6aaaf12fce2fe0c0c966c918c9fc1a3bf42a048c8dec8f31dde23a"]})pins");
+    policy.owner_graph_digest = "sha256:1688b4ba9a9d9b2d2124d1dd9ef5d03a0053385e2ee04e3d7b879bd61d820d70";
+    const auto pins = nlohmann::json::parse(R"pins({"owner_graph":"sha256:5b0c2f3d1ad5a1544e5f0ac95523fb882a8b4ec435edf73c89eb3ec7e386a979","policy":"sha256:ba1f45f51b471d70486a092e37d3ef2112a9e4333b4098680d21e6d16e1ddf31","registry":"sha256:d68571eec21471c353dbf19229af776f034c8e7776d65fdbe869aa5698304b96","slots":["sha256:57971cc997edbeace461bdd700caac82b127b1c2a58d0862f50394224691c5b0","sha256:e61399da847ff647f59ef76be980f4e6ff2a443cbaa6cf360db924dec4a26836","sha256:7fb0c97ce230af539796b73154b7631bf57df8d9346dcc40253b4f5e936996c4","sha256:b59051c54c35025431454b2d3b845d60dd7e651252892ae69f5e63729043f22c","sha256:89c0b78903d89a06fffe580f24be212f155da8fa3a587122b720ac27c586ff18","sha256:bbdb16f254d6acd4b5eb3042f94fb758caacc452187e4fa6e5cf598556df25b5","sha256:1073493abec936f4e0b2df24807380d2dcfbe380151625e8924e7cfa81433400","sha256:5346fff833bf07db27e532633182b22c4a11a3f4f02442e043506477f28c9c6a","sha256:da202c25060668cb86a5f592f4cfe936beb5a9c3e2b93bad7f407838d936f609","sha256:b760fa3b4a27f16ccb8c98faf344002f8a2e5e3617db42a2312e26a5e7a35094","sha256:cecbcfa10c10eb1596c89d345f921ef901cd98ad50c7aec0ca73c1a5bbbbd530","sha256:9e5a24213fd3c391fcb0e3a5b77435220e9a0b977ebc86335a0818abfe789d04","sha256:db70516f4f5d38896f2c1ee45997b5284177b20278759b2d4fb1caa8a8715539","sha256:6664531eac117cfddf79e1015d8a379bd25d71f8f838b9943cf62fa2882e478f","sha256:ee3466d39d602927e8b006b40c9675d208ed5d4d48417d689ef43e18dcb78d4d","sha256:84be9f9d543018e8b38dc35431e303c38bdcfbf6cd2dc123b828ca3f752c66cb","sha256:0b8eccb9ae6aaaf12fce2fe0c0c966c918c9fc1a3bf42a048c8dec8f31dde23a"]})pins");
     policy.mutable_fragments = {
         {MutableFragmentKind::SupportRowsV1, {"/metadata/support", {}, ""}},
         {MutableFragmentKind::CustomDefaultsV1, {"/launch/custom_args/defaults", {}, ""}},

@@ -1281,6 +1281,8 @@ set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_ops.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/hf_cache_util.cpp)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/BackendDescriptorFromDefinition.cmake)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_about.json)
 foreach(_backend_entry ${LEMON_BACKENDS})
     string(REPLACE "|" ";" _backend_parts "${_backend_entry}")
     list(GET _backend_parts 0 _backend_recipe)
@@ -1302,6 +1304,8 @@ foreach(_backend_entry ${LEMON_BACKENDS})
         lemon_backend_definition_version(_backend_version "${_backend_definition}")
         lemon_backend_descriptor_dispatch(_backend_descriptor
             ${_backend_stem} ${_backend_recipe} ${_backend_definition})
+        lemon_backend_descriptor_attach_about(_backend_descriptor "${_backend_descriptor}" ${_backend_recipe}
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_about.json)
         string(APPEND LEMON_DESCRIPTOR_DEFINITIONS "${_backend_descriptor}")
     else()
         string(APPEND LEMON_DESCRIPTOR_INCLUDES

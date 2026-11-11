@@ -555,7 +555,7 @@ const BuiltinExportRegistry& BuiltinCatalogLoader::installed_exports() {
         BuiltinExportRegistry value;
         auto impl = std::make_shared<BuiltinExportRegistry::Impl>();
         impl->contracts = {llamacpp_external_contract()};
-        impl->digest = "sha256:d644387f2d2838a76ace64304318e673244e8cd117e496ae4394dc0792e2b9fa";
+        impl->digest = "sha256:d68571eec21471c353dbf19229af776f034c8e7776d65fdbe869aa5698304b96";
         const auto sources = make_v2_source_snapshot(embedded_v2_sources());
         const auto audit = v2::audit_export_contracts(impl->contracts, sources.snapshot, installed_hook_abis(), impl->digest);
         if (!audit.entries.empty() || audit.truncated) throw std::logic_error("Installed export registry audit failed");

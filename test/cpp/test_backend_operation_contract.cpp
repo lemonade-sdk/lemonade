@@ -51,7 +51,7 @@ struct ExpectedBackend {
 
 const std::vector<ExpectedBackend> k_expected_backends = {
     {"llamacpp", {Op::ChatCompletion, Op::Completion, Op::Responses, Op::Embeddings, Op::Reranking,
-                   Op::Slots, Op::SlotAction, Op::Tokenize}, {Op::ChatCompletion, Op::Completion, Op::Responses}, {}, {}},
+                   Op::Classification, Op::Slots, Op::SlotAction, Op::Tokenize}, {Op::ChatCompletion, Op::Completion, Op::Responses}, {}, {}},
     {"llamacpp-hrx", {Op::ChatCompletion, Op::Completion, Op::Responses, Op::Embeddings, Op::Reranking,
                        Op::Slots, Op::SlotAction, Op::Tokenize}, {Op::ChatCompletion, Op::Completion, Op::Responses}, {}, {}},
     {"ds4", {Op::ChatCompletion, Op::Completion, Op::Responses}, {Op::ChatCompletion, Op::Completion, Op::Responses}, {}, {}},
@@ -93,6 +93,7 @@ bool expected_support(const ExpectedBackend& backend, Op operation, Delivery del
         if (operation == Op::Embeddings) return mode != ModelType::TRANSCRIPTION;
         return mode != ModelType::TRANSCRIPTION && mode != ModelType::EMBEDDING;
     }
+    if (recipe == "llamacpp" && operation == Op::Classification) return mode == ModelType::CLASSIFICATION;
     if (operation == Op::TextToSpeech) return mode == ModelType::TTS;
     if (operation == Op::AudioGeneration) return mode == ModelType::AUDIO_GENERATION;
     return true;
@@ -196,8 +197,8 @@ void check_complete_matrix() {
     uint32_t vanilla_capabilities = CAP_ALL;
     for (const auto& entry : lemon::backends::all_backend_capabilities())
         if (entry.descriptor->recipe == "llamacpp") vanilla_capabilities = entry.capabilities;
-    check(backends::hrx::capabilities() == (vanilla_capabilities & ~(CAP_EMBEDDINGS | CAP_RERANKING)),
-          "HRX entire advertised set differs only by embeddings and reranking");
+    check(backends::hrx::capabilities() == (vanilla_capabilities & ~(CAP_EMBEDDINGS | CAP_RERANKING | CAP_CLASSIFICATION)),
+          "HRX entire advertised set differs only by embeddings, reranking and classification");
 }
 
 class WitnessServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer,

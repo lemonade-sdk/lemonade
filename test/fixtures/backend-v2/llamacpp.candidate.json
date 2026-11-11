@@ -4,6 +4,7 @@
   "recipe": "llamacpp",
   "merge": {
     "kind": "local",
+    "model_contract": "llamacpp_decision_v1",
     "metadata": {
       "display_name": "Llama.cpp GPU",
       "server_name": "llama-server",
@@ -220,8 +221,15 @@
       "supported_modes": [
         "chat",
         "embeddings",
-        "reranking"
+        "reranking",
+        "classification"
       ],
+      "mode_capability_requirements": {
+        "classification": [
+          "systemone",
+          "zero-shot"
+        ]
+      },
       "required_checkpoints": [
         "main"
       ],
@@ -239,6 +247,7 @@
       "arg_variants": [
         "rocm",
         "vulkan",
+        "cuda",
         "cpu"
       ],
       "bin_variants": [
@@ -908,6 +917,15 @@
           "reserve": "always"
         },
         {
+          "id": "pooling",
+          "flag": "--pooling",
+          "value": "none",
+          "when": {
+            "ref": "/launch/hook/rule_head"
+          },
+          "reserve": "when_active"
+        },
+        {
           "id": "reranking",
           "flag": "--reranking",
           "when": {
@@ -917,6 +935,38 @@
             "--rerank"
           ],
           "reserve": "always"
+        },
+        {
+          "id": "batch",
+          "flag": "-b",
+          "value": {
+            "string": {
+              "ref": "/launch/hook/batch_size"
+            }
+          },
+          "when": {
+            "ref": "/launch/hook/add_batch_size"
+          },
+          "aliases": [
+            "--batch-size"
+          ],
+          "reserve": "when_active"
+        },
+        {
+          "id": "ubatch",
+          "flag": "-ub",
+          "value": {
+            "string": {
+              "ref": "/launch/hook/batch_size"
+            }
+          },
+          "when": {
+            "ref": "/launch/hook/add_ubatch_size"
+          },
+          "aliases": [
+            "--ubatch-size"
+          ],
+          "reserve": "when_active"
         }
       ],
       "custom_args": {
@@ -1193,6 +1243,25 @@
           "kind": "http_json",
           "method": "POST",
           "path": "/v1/rerank",
+          "port": "http",
+          "timeout": "global",
+          "response_codec": "json.v1"
+        },
+        "request": {
+          "base": "identity"
+        }
+      },
+      {
+        "id": "classification.buffered",
+        "operation": "classification",
+        "delivery": "buffered",
+        "model_modes": [
+          "classification"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/v1/systemone",
           "port": "http",
           "timeout": "global",
           "response_codec": "json.v1"

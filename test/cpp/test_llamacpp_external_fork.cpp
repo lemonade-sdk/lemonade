@@ -178,7 +178,7 @@ int main(int argc, char** argv) {
     }
     try {
         check(installed_builtin_exports().exports().size() == 1 && installed_builtin_exports().digest() ==
-            "sha256:d644387f2d2838a76ace64304318e673244e8cd117e496ae4394dc0792e2b9fa", "ProductionExportsMatchQualifiedContract");
+            "sha256:d68571eec21471c353dbf19229af776f034c8e7776d65fdbe869aa5698304b96", "ProductionExportsMatchQualifiedContract");
         const auto& selected = BuiltinCatalogLoader::selected_exports();
         check(selected.exports().size() == 1 && selected.exports()[0].slots.size() == 17, "All17BaseSlotsCovered");
         finalization_controls();

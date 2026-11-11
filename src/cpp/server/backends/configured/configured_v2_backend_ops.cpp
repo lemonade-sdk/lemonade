@@ -1,9 +1,14 @@
 #include "backend_builtin_entry_internal.h"
 #include "configured_v2_backend_ops_internal.h"
+#include "lemon/auto_tune.h"
 #include "lemon/backends/configured/backend_definition_descriptor.h"
 #include "lemon/backends/configured/backend_spec_utils.h"
 #include "lemon/backends/configured/configured_backend_entry.h"
 #include "lemon/backends/configured/configured_server.h"
+#include "lemon/backends/llamacpp/llamacpp_rulehead.h"
+#include "lemon/backends/llamacpp/llamacpp_systemone.h"
+#include "lemon/models/model_errors.h"
+#include "lemon/models/registry_types.h"
 
 namespace lemon::backends {
 
@@ -91,6 +96,7 @@ json descriptor_fields(const BackendDescriptor& d) {
         {"options", options},
         {"support", support},
         {"supported_modes", d.supported_modes},
+        {"mode_capability_requirements", d.mode_capability_requirements},
         {"required_checkpoints", d.required_checkpoints},
         {"default_capabilities", d.default_capabilities},
         {"web_display_name", d.web_display_name},
@@ -171,6 +177,7 @@ BackendOps::InstallCheck ConfiguredV2BackendOps::check_install(const std::string
 }
 std::string ConfiguredV2BackendOps::resolve_checkpoint_path(const ModelInfo& model, const CheckpointResolveContext& context) const {
     if (runner_->halogen_contract()) return BackendOps::resolve_checkpoint_path(model, context);
+    if (runner_->llamacpp_decision_contract() && context.type == "rulehead") return BackendOps::resolve_checkpoint_path(model, context);
     return runner_->resolve_artifact(context);
 }
 bool ConfiguredV2BackendOps::is_downloaded(const ModelInfo& model, const BackendOpsContext& context) const {
@@ -178,10 +185,72 @@ bool ConfiguredV2BackendOps::is_downloaded(const ModelInfo& model, const Backend
 }
 void ConfiguredV2BackendOps::download_model(const ModelInfo& model, bool do_not_upgrade, DownloadProgressCallback progress, const BackendOpsContext& context) const {
     if (!context.fetch) throw std::invalid_argument("V2 registry download requires fetch service");
-    BackendOps::download_model(model, do_not_upgrade, std::move(progress), context);
+    if (!runner_->llamacpp_decision_contract()) {
+        BackendOps::download_model(model, do_not_upgrade, std::move(progress), context);
+        return;
+    }
+    if (const std::string mixed = llamacpp::mixed_rule_head_source_error(model.model_name, model.checkpoint(),
+            model.checkpoint("rulehead"), is_local_origin(model.source)); !mixed.empty())
+        throw std::runtime_error(mixed);
+    try {
+        BackendOps::download_model(model, do_not_upgrade, std::move(progress), context);
+    } catch (const MissingCheckpointError& error) {
+        if (error.checkpoint_type != "rulehead") throw;
+        throw std::runtime_error(llamacpp::missing_rule_head_message(model.model_name, model.checkpoint("rulehead")));
+    }
+}
+void ConfiguredV2BackendOps::add_implied_checkpoints(ModelInfo& info) const {
+    if (!runner_->llamacpp_decision_contract()) return;
+    const std::string main = info.checkpoint();
+    if (!has_label(info.labels, "zero-shot") || has_label(info.labels, "systemone") ||
+        !info.checkpoint("rulehead").empty() || main.empty()) return;
+    info.checkpoints["rulehead"] = llamacpp::implied_rule_head_checkpoint(main, is_local_origin(info.source));
+}
+std::string ConfiguredV2BackendOps::validate_load(const ModelInfo& info) const {
+    if (!runner_->llamacpp_decision_contract()) return "";
+    if (is_rule_head_router_model(info) &&
+        (info.type != ModelType::CLASSIFICATION || has_label(info.labels, "systemone"))) {
+        return "model '" + info.model_name + "' has a 'rulehead' checkpoint, which lemond "
+               "applies only to a prompt-router encoder labelled 'classification' and "
+               "'zero-shot', not 'systemone'";
+    }
+    if (is_rule_head_router_model(info)) {
+        if (info.extra<bool>("hf_load", false)) {
+            return "model '" + info.model_name + "' has a 'rulehead' checkpoint and "
+                   "'hf_load', but lemond reads the encoder's width from the GGUF header "
+                   "to apply the head, and with 'hf_load' it has no GGUF of its own. "
+                   "Remove 'hf_load'.";
+        }
+        const std::string mixed = llamacpp::mixed_rule_head_source_error(
+            info.model_name, info.checkpoint(), info.checkpoint("rulehead"), is_local_origin(info.source));
+        if (!mixed.empty()) return mixed;
+        if (llamacpp::checkpoint_is_local(info.checkpoint(), is_local_origin(info.source))) {
+            const std::string folder = llamacpp::local_directory_checkpoint_error(
+                info.model_name, info.resolved_path().empty() ? info.checkpoint() : info.resolved_path());
+            if (!folder.empty()) return folder;
+        }
+    }
+    if (has_label(info.labels, "zero-shot") && !has_label(info.labels, "systemone") &&
+        !is_rule_head_router_model(info)) {
+        return llamacpp::missing_rule_head_message(info.model_name, llamacpp::RULE_HEAD_FILE);
+    }
+    if (!has_label(info.labels, "systemone")) return "";
+    return llamacpp::decision_model_load_refusal(info.model_name, info.extra<bool>("hf_load", false),
+                                                 info.gguf.architecture, info.gguf.decision_type);
 }
 void ConfiguredV2BackendOps::populate_metadata(ModelInfo& info, const BackendOpsContext&) const { runner_->populate_metadata(info); }
-std::string ConfiguredV2BackendOps::validate_registration_checkpoint(const std::string& checkpoint) const { return runner_->validate_registration(checkpoint); }
+std::string ConfiguredV2BackendOps::validate_registration_checkpoint(const std::string& checkpoint) const {
+    if (runner_->llamacpp_decision_contract()) {
+        if (llamacpp::checkpoint_is_local(checkpoint, false)) return "";
+        if (checkpoint.rfind("./", 0) == 0 || checkpoint.rfind("../", 0) == 0 ||
+            checkpoint.rfind(".\\", 0) == 0 || checkpoint.rfind("..\\", 0) == 0) {
+            return "'" + checkpoint + "' is a relative path. lemond reads a GGUF on disk "
+                   "from its own machine and working folder, not the client's, so name "
+                   "the file by its absolute path.";
+        }
+    }
+    return runner_->validate_registration(checkpoint);
+}
 std::string ConfiguredV2BackendOps::validate_checkpoint_file(const std::string& path) const { return runner_->validate_file(path); }
 std::string ConfiguredV2BackendOps::find_imported_checkpoint(const std::string& path) const { return runner_->find_imported(path); }
 

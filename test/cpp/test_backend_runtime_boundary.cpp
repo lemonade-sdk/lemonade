@@ -53,7 +53,7 @@ int main() {
         if (mutation == 4) op.path = "//foreign/path";
         if (mutation == 5) op.timeout_seconds = std::numeric_limits<std::uint64_t>::max();
         if (mutation == 6) op.description.model_types = 0;
-        if (mutation == 7) op.description.operation = BackendOperation::Classification;
+        if (mutation == 7) op.description.operation = BackendOperation::Transcription;
         const auto compiled = ex::Inspection::test_program(bound->compiled(), program);
         const auto admitted = std::shared_ptr<const AdmittedCatalog>(&bd::Inspection::admitted(*bound), [](const auto*) {});
         const auto rebound = bind_execution_definition(admitted, compiled);

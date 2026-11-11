@@ -80,7 +80,13 @@ int main() {
         hrx.expected_dependency_digest != parent.expected_dependency_digest && hrx.policy_digest != parent.policy_digest &&
         hrx.slots.size() == 11 && hrx.owners.size() == 11 && hrx.mutable_fragments.empty(),
         "HrxHasIndependentFixedLeafPins");
-    check(v2::owner_graph_json(hrx.owners) == v2::owner_graph_json(parent.owners) && hrx.owner_graph_digest == parent.owner_graph_digest,
+    auto protocol_owners = parent.owners;
+    protocol_owners.erase(std::remove_if(protocol_owners.begin(), protocol_owners.end(),
+        [](const auto& owner) { return owner.id == "classification.buffered"; }), protocol_owners.end());
+    for (auto& owner : protocol_owners) owner.collisions.erase(
+        std::remove(owner.collisions.begin(), owner.collisions.end(), "classification.buffered"), owner.collisions.end());
+    check(parent.owners.size() == 12 && v2::owner_graph_json(hrx.owners) == v2::owner_graph_json(protocol_owners) &&
+        hrx.owner_graph_digest == v2::owner_graph_digest(protocol_owners) && hrx.owner_graph_digest != parent.owner_graph_digest,
         "HrxPreservesParentElevenOperationOwnerGraph");
     for (const auto& slot : hrx.slots) {
         const auto found = std::find_if(parent.slots.begin(), parent.slots.end(), [&](const auto& candidate) { return v2::slot_json(candidate.slot) == v2::slot_json(slot.slot); });

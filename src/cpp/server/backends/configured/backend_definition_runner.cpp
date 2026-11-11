@@ -3,6 +3,7 @@
 #include "ds4_contract_internal.h"
 #include "halogen_model_contract_internal.h"
 #include "lemon/backends/backend_option_contract.h"
+#include "lemon/backends/llamacpp/llamacpp_decision.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/path_utils.h"
@@ -109,7 +110,7 @@ std::vector<OperationBinding> DefinitionRunner::operation_bindings() const {
         const auto& description = op.description;
         const auto operation = description.operation;
         const bool buffered = description.delivery == OperationDelivery::Buffered;
-        const bool json_operation = operation <= BackendOperation::Reranking || operation == BackendOperation::Slots ||
+        const bool json_operation = operation <= BackendOperation::Classification || operation == BackendOperation::Slots ||
             operation == BackendOperation::SlotAction || operation == BackendOperation::Tokenize;
         const bool installed = buffered ? json_operation && op.kind == "http_json" && op.codec == "json.v1" :
             description.delivery == OperationDelivery::Streaming && operation <= BackendOperation::Responses && op.kind == "http_sse" && op.codec == "openai_sse.v1";
@@ -632,8 +633,22 @@ PreparedExecution DefinitionRunner::prepare_load(const LoadContext& context, con
                     [&](auto target, auto&) { return target({context.model_info.type, context.model_info.extra<bool>("hf_load", false), use_gpu, context_size,
                         context.model_info.resolved_path("main"), context.model_info.resolved_path("mmproj"), context.model_info.resolved_path("draft"),
                         context.model_info.checkpoint("draft"), context.model_info.labels, speculative_mode}); });
-                values["launch"]["hook"] = {{"hf_load", facts.hf_load}, {"embedding", facts.embedding}, {"reranking", facts.reranking},
-                    {"use_mmproj", facts.use_mmproj}, {"mmproj_on_cpu", facts.mmproj_on_cpu}, {"use_draft_checkpoint", facts.use_draft_checkpoint}, {"context_size", facts.context_size}, {"speculative_mode", facts.speculative_mode}};
+                llamacpp::DecisionLaunch decision;
+                decision.context_size = static_cast<int>(facts.context_size);
+                if (llamacpp_decision_contract()) {
+                    std::string custom_args;
+                    if (launch.custom_args_slot) {
+                        const auto& value = options.at(program_.bindings.at(*launch.custom_args_slot).public_name);
+                        if (value.is_string()) custom_args = value.get<std::string>();
+                    }
+                    if (const auto planned = llamacpp::plan_decision_launch(context.model_name, context.model_info, decision.context_size, custom_args))
+                        decision = *planned;
+                }
+                values["launch"]["hook"] = {{"hf_load", facts.hf_load}, {"embedding", facts.embedding || decision.rule_head}, {"reranking", facts.reranking},
+                    {"use_mmproj", facts.use_mmproj}, {"mmproj_on_cpu", facts.mmproj_on_cpu}, {"use_draft_checkpoint", facts.use_draft_checkpoint},
+                    {"context_size", static_cast<std::uint64_t>(decision.context_size)}, {"speculative_mode", facts.speculative_mode},
+                    {"rule_head", decision.rule_head}, {"add_batch_size", decision.add_batch_size}, {"add_ubatch_size", decision.add_ubatch_size},
+                    {"batch_size", decision.batch_size}, {"max_input_tokens", decision.max_input_tokens}};
             }
         } else if (phase == "artifacts") {
             const auto bundle = halogen_contract() ? halogen_bundle(context.model_name, context.model_info, services) : std::map<std::string, std::string>{};

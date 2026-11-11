@@ -64,6 +64,9 @@ BackendDescriptor descriptor_from_declaration(const nlohmann::json& declaration,
     }
     descriptor.supported_modes = metadata.value("supported_modes", std::vector<std::string>{"chat"});
     descriptor.required_checkpoints = metadata.value("required_checkpoints", std::vector<std::string>{"main"});
+    const auto requirements = metadata.value("mode_capability_requirements", nlohmann::json::object());
+    for (const auto& [mode, capabilities] : requirements.items())
+        descriptor.mode_capability_requirements.emplace_back(mode, capabilities.get<std::vector<std::string>>());
     descriptor.default_capabilities = metadata.value("default_capabilities", std::vector<std::string>{});
     descriptor.web_display_name = metadata.value("web_display_name", "");
     descriptor.rocm_channels = metadata.value("rocm_channels", std::vector<std::string>{});

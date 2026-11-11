@@ -15,7 +15,8 @@ bool type_matches(const Json& value, const std::string& type) {
 
 std::pair<std::size_t, std::size_t> model_fact(const std::string& reference, const Program& program) {
     static const std::vector<std::string> fields = {"hf_load", "embedding", "reranking", "use_mmproj",
-        "mmproj_on_cpu", "use_draft_checkpoint", "context_size", "speculative_mode"};
+        "mmproj_on_cpu", "use_draft_checkpoint", "context_size", "speculative_mode",
+        "rule_head", "add_batch_size", "add_ubatch_size", "batch_size", "max_input_tokens"};
     require(reference.rfind("/launch/hook/", 0) == 0, "unsupported_execution_feature", "");
     const auto found = std::find(fields.begin(), fields.end(), reference.substr(13));
     require(found != fields.end(), "unsupported_execution_feature", "");
@@ -125,7 +126,7 @@ Expression compile(const Json& value, const std::string& pointer, Program& progr
                 const auto fact = model_fact(text, program);
                 result.producer = fact.first;
                 result.fact_field = fact.second;
-                const auto type = fact.second == 7 ? "string" : fact.second == 6 ? "integer" : "boolean";
+                const auto type = fact.second == 7 ? "string" : fact.second == 6 || fact.second >= 11 ? "integer" : "boolean";
                 require(result.type.empty() || result.type == type, "invalid_type", pointer);
                 require(!result.default_value || type_matches(*result.default_value, type), "invalid_type", pointer);
                 result.type = type;

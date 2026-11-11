@@ -11,7 +11,7 @@ namespace lemon::backends::execution {
 
 using Json = nlohmann::json;
 
-inline constexpr unsigned compiler_revision = 5;
+inline constexpr unsigned compiler_revision = 6;
 inline constexpr unsigned defaults_revision = 2;
 inline constexpr unsigned binding_revision = 1;
 inline constexpr unsigned adapter_revision = 2;
@@ -214,7 +214,7 @@ struct SymbolicHook {
     std::vector<std::size_t> dependencies;
 };
 
-enum class ModelContract { None, HalogenHgnV1, Ds4RocmV1 };
+enum class ModelContract { None, HalogenHgnV1, Ds4RocmV1, LlamaCppDecisionV1 };
 
 struct Program {
     ModelContract model_contract = ModelContract::None;

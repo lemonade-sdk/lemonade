@@ -1,6 +1,7 @@
 #include "backend_definition_v2_descriptor.h"
 #include "backend_descriptors_generated.h"
 #include "lemon/backends/configured/backend_definition_resolver.h"
+#include "llamacpp_decision_additions.h"
 #include "llamacpp_oracle_descriptor.h"
 
 #include <cstdio>
@@ -51,7 +52,8 @@ void check_candidate(const std::filesystem::path& path) {
             std::printf("%s %s\n", diagnostic.code.c_str(), diagnostic.pointer.c_str());
         return;
     }
-    const auto& declaration = resolved.definition->declaration;
+    check(llamacpp_decision_additions::present(resolved.definition->declaration), "CandidateDecisionAdditionsExact");
+    const auto declaration = llamacpp_decision_additions::removed(resolved.definition->declaration);
     const auto& metadata = declaration.at("metadata");
     for (const auto* view : {"linux", "windows", "macos"}) {
         const auto actual = descriptor_from_declaration(declaration, DefinitionNamespace::Builtin, {view});

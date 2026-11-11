@@ -170,7 +170,7 @@ int main(int argc, char** argv) {
         check(policy.leaves[0].slots.size() == 17 && policy.leaves[0].owners.size() == 11 &&
             policy.digest == v2::export_registry_digest(policy.leaves, installed_hook_abis()), "FixedPolicySeventeenOccurrencesElevenOwners");
         check(installed_builtin_exports().exports().size() == 1 && installed_builtin_exports().digest() ==
-            "sha256:d644387f2d2838a76ace64304318e673244e8cd117e496ae4394dc0792e2b9fa", "BuiltinPolicyDoesNotAuthorizeExport");
+            "sha256:d68571eec21471c353dbf19229af776f034c8e7776d65fdbe869aa5698304b96", "BuiltinPolicyDoesNotAuthorizeExport");
         std::ifstream file(std::string(LEMON_PRODUCTION_DEFINITIONS) + "/llamacpp.json", std::ios::binary);
         const std::string production_bytes{std::istreambuf_iterator<char>(file), {}};
         check(production_bytes == read_bytes("llamacpp.candidate.json") && embedded_v2_sources().size() == 3 + LEMON_C8_SOURCE_COUNT + LEMON_C9_SOURCE_COUNT &&

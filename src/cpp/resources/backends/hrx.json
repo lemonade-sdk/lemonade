@@ -108,6 +108,7 @@
         "machine_arch": "The HRX backend is available on Linux x86-64 only"
       }
     }},
+    {"op": "remove", "path": "/operations", "match": {"id": "classification.buffered"}},
     {"op": "remove", "path": "/artifacts/mmproj"},
     {"op": "remove", "path": "/artifacts/draft"},
     {"op": "clear", "path": "/hooks"},
@@ -122,7 +123,10 @@
     {"op": "remove", "path": "/launch/argv", "match": {"id": "vision-cpu"}},
     {"op": "remove", "path": "/launch/argv", "match": {"id": "draft"}},
     {"op": "remove", "path": "/launch/argv", "match": {"id": "embedding"}},
+    {"op": "remove", "path": "/launch/argv", "match": {"id": "pooling"}},
     {"op": "remove", "path": "/launch/argv", "match": {"id": "reranking"}},
+    {"op": "remove", "path": "/launch/argv", "match": {"id": "batch"}},
+    {"op": "remove", "path": "/launch/argv", "match": {"id": "ubatch"}},
     {"op": "replace", "path": "/launch/environment", "value": {"preset": "inherit", "set": []}},
     {"op": "add", "path": "/launch/environment/set", "value": {"name": "GGML_DISABLE_VULKAN", "value": "1"}}
   ]

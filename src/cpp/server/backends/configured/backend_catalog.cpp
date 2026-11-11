@@ -74,7 +74,7 @@ json descriptor_row(const BackendDescriptor& descriptor, const BackendDefinition
     }
     json row = {{"recipe", descriptor.recipe}, {"definition_id", definition ? json(definition->id) : executable ? json(executable->compiled().authorized().definition().key.id) : json()},
         {"source", external ? "external" : "builtin"}, {"display_name", descriptor.display_name},
-        {"supported_modes", descriptor.supported_modes}, {"options", options}, {"operations_complete", records != nullptr},
+        {"supported_modes", descriptor.supported_modes}, {"required_checkpoints", descriptor.required_checkpoints}, {"options", options}, {"operations_complete", records != nullptr},
         {"operations", json::array()}, {"support", support}};
     if (external) {
         const auto& backend = records->at("launch").at("backend");
@@ -216,7 +216,7 @@ void BackendCatalog::finalize() {
         registrations_.push_back({&entry->descriptor, entry->factory, &entry->spec, entry->backend_ops(), entry.get()});
     }
     json identity = {{"export", schema_}, {"arms", arms}};
-    if (!executions.empty()) { identity["executions"] = executions; identity["runner_service_policy"] = 19; }
+    if (!executions.empty()) { identity["executions"] = executions; identity["runner_service_policy"] = 20; }
     schema_["catalog_id"] = schema_digest(identity.dump());
 }
 

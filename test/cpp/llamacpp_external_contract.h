@@ -6,10 +6,10 @@ namespace lemon::backends::external_fixture {
 
 inline BuiltinExportContract contract() {
     BuiltinExportContract policy{{"llamacpp", 1},
-        "sha256:e8ea19f3af8db0b892cb5d3c9d5e217c944517734fbe26027d7270742e2371da",
-        "sha256:8ba9eb7509e84d8f93f5362ce0839dc2dede2691d6a99d7987cf8099bcdd606a",
-        "sha256:f75b38c730afe832f8c4d566549c51c10e34a800e0b3f1dbf2a2cf507bfcdb63",
-        1, "sha256:7e4a67f7dbb82b146277e5fafd994e62f33d789ef758adb872164827f7bc0976", {}};
+        "sha256:e5fffe49cc347c77cc348563cec8f453103c6738ce04c0e26b760bc868da0dbb",
+        "sha256:4e7f21167749734ad09dd84a6c9f62a932b5d3673e7388361d5ea9a665a0a218",
+        "sha256:40a05c7b30f7e143f55b216e7f951244cbb113846f9372e20ed408bc8f857980",
+        2, "sha256:6b3d670647d768c0b1e4d0094da28dc147779501a6120820415f0ed923f3d7a1", {}};
     {
         ExportSlotPolicy slot{{SlotOwnerKind::Root, "backend", "backend", "llamacpp.backend.v1"},
             1, "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
@@ -188,17 +188,20 @@ inline BuiltinExportContract contract() {
         {"reranking.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"reranking.buffered","model_modes":["*"],"operation":"reranking","transport":{"kind":"http_json","method":"POST","path":"/v1/rerank","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
             {}, {}, {}, true, {},
             {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"slot-action.buffered"}},
+        {"classification.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"classification.buffered","model_modes":["classification"],"operation":"classification","transport":{"kind":"http_json","method":"POST","path":"/v1/systemone","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
+            {}, {}, {}, true, {},
+            {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"slot-action.buffered"}},
         {"slots.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"slots.buffered","model_modes":["*"],"operation":"slots","transport":{"kind":"http_json","method":"GET","path":"/slots","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
             {}, {}, {}, true, {},
             {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"slot-action.buffered"}},
         {"slot-action.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"slot-action.buffered","model_modes":["*"],"operation":"slot_action","transport":{"kind":"http_json","method":"POST","path":"/slots/{slot_id}?action={action}","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
             {}, {}, {}, true, {},
-            {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"chat.buffered", "completion.buffered", "responses.buffered", "chat.streaming", "completion.streaming", "responses.streaming", "embedding.buffered", "reranking.buffered", "slots.buffered", "tokenize.buffered"}},
+            {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"chat.buffered", "completion.buffered", "responses.buffered", "chat.streaming", "completion.streaming", "responses.streaming", "embedding.buffered", "reranking.buffered", "classification.buffered", "slots.buffered", "tokenize.buffered"}},
         {"tokenize.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"tokenize.buffered","model_modes":["*"],"operation":"tokenize","transport":{"kind":"http_json","method":"POST","path":"/tokenize","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
             {}, {}, {}, true, {},
             {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"slot-action.buffered"}},
     };
-    policy.owner_graph_digest = "sha256:6bc3f2b40d73e44ceb384564fbc403b1f58cf22c91de863f0746c5f22713e0f8";
+    policy.owner_graph_digest = "sha256:1688b4ba9a9d9b2d2124d1dd9ef5d03a0053385e2ee04e3d7b879bd61d820d70";
     const auto pins = nlohmann::json::parse(export_fixture::read_bytes("external/llamacpp.pins.json"));
     policy.mutable_fragments = {
         {MutableFragmentKind::SupportRowsV1, {"/metadata/support", {}, ""}},

@@ -1,14 +1,16 @@
 #include "backend_definition_exports_internal.h"
 
+#include <algorithm>
+
 namespace lemon::backends {
 
 const BuiltinExecutionPolicies& fixed_builtin_v2_policies() {
     static const BuiltinExecutionPolicies policies = [] {
         BuiltinExportContract policy{{"llamacpp", 1},
-            "sha256:e8ea19f3af8db0b892cb5d3c9d5e217c944517734fbe26027d7270742e2371da",
-            "sha256:8ba9eb7509e84d8f93f5362ce0839dc2dede2691d6a99d7987cf8099bcdd606a",
-            "sha256:f75b38c730afe832f8c4d566549c51c10e34a800e0b3f1dbf2a2cf507bfcdb63",
-            1, "sha256:7e4a67f7dbb82b146277e5fafd994e62f33d789ef758adb872164827f7bc0976", {}};
+            "sha256:e5fffe49cc347c77cc348563cec8f453103c6738ce04c0e26b760bc868da0dbb",
+            "sha256:4e7f21167749734ad09dd84a6c9f62a932b5d3673e7388361d5ea9a665a0a218",
+            "sha256:40a05c7b30f7e143f55b216e7f951244cbb113846f9372e20ed408bc8f857980",
+            2, "sha256:6b3d670647d768c0b1e4d0094da28dc147779501a6120820415f0ed923f3d7a1", {}};
         {
             ExportSlotPolicy slot{{SlotOwnerKind::Root, "backend", "backend", "llamacpp.backend.v1"},
                 1, "sha256:6d693d6f53d8a4cf83131c975c7332b76757260037939107fb0d48576143e5e3",
@@ -187,22 +189,25 @@ const BuiltinExecutionPolicies& fixed_builtin_v2_policies() {
             {"reranking.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"reranking.buffered","model_modes":["*"],"operation":"reranking","transport":{"kind":"http_json","method":"POST","path":"/v1/rerank","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
                 {}, {}, {}, false, {},
                 {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"slot-action.buffered"}},
+            {"classification.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"classification.buffered","model_modes":["classification"],"operation":"classification","transport":{"kind":"http_json","method":"POST","path":"/v1/systemone","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
+                {}, {}, {}, false, {},
+                {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"slot-action.buffered"}},
             {"slots.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"slots.buffered","model_modes":["*"],"operation":"slots","transport":{"kind":"http_json","method":"GET","path":"/slots","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
                 {}, {}, {}, false, {},
                 {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"slot-action.buffered"}},
             {"slot-action.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"slot-action.buffered","model_modes":["*"],"operation":"slot_action","transport":{"kind":"http_json","method":"POST","path":"/slots/{slot_id}?action={action}","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
                 {}, {}, {}, false, {},
-                {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"chat.buffered", "completion.buffered", "responses.buffered", "chat.streaming", "completion.streaming", "responses.streaming", "embedding.buffered", "reranking.buffered", "slots.buffered", "tokenize.buffered"}},
+                {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"chat.buffered", "completion.buffered", "responses.buffered", "chat.streaming", "completion.streaming", "responses.streaming", "embedding.buffered", "reranking.buffered", "classification.buffered", "slots.buffered", "tokenize.buffered"}},
             {"tokenize.buffered", nlohmann::json::parse(R"owner({"delivery":"buffered","id":"tokenize.buffered","model_modes":["*"],"operation":"tokenize","transport":{"kind":"http_json","method":"POST","path":"/tokenize","port":"http","response_codec":"json.v1","timeout":"global"}})owner"),
                 {}, {}, {}, false, {},
                 {"id", "operation", "delivery", "model_modes", "transport", "formats", "format_metadata"}, {"slot-action.buffered"}},
         };
-        policy.owner_graph_digest = "sha256:6bc3f2b40d73e44ceb384564fbc403b1f58cf22c91de863f0746c5f22713e0f8";
+        policy.owner_graph_digest = "sha256:1688b4ba9a9d9b2d2124d1dd9ef5d03a0053385e2ee04e3d7b879bd61d820d70";
         BuiltinExportContract hrx{{"hrx", 1},
-            "sha256:78063d3875c9aecd65057024597a8cf23418d5b6da4b2f1447c59c915af5fda6",
-            "sha256:ee73dc63ecaaa4f9d6b1b731043343374870a11774f9c30978b6401db46371f8",
-            "sha256:b66479f8db00a65498d36f0a306ead473678e9cc8f631151d214c28e5808d0c6",
-            1, "sha256:36dd27c1b1cb774af2bd66e92de5ede08ddff7b336c61c22e04ee175da6b4a49", {}};
+            "sha256:dca615147be661dff76992490a9c85f1049b6bcbbba344d91ed541d5c48fa250",
+            "sha256:047270c2ef4f33bfe9ffb1ec1445da68e6b44cbfe2f9ffc110768177b3881f59",
+            "sha256:05bb0943e738af5f950cf76be5ecb4d7e24e37bac77a419147f49360281cf126",
+            2, "sha256:2cfd48572b63530a1bec56712ba75b1ebb7cd69457ce2c101c1efd3689fcbbab", {}};
         for (const auto& slot : policy.slots) {
             if (slot.slot.owner_kind == SlotOwnerKind::Root) continue;
             auto restricted = slot;
@@ -212,9 +217,15 @@ const BuiltinExecutionPolicies& fixed_builtin_v2_policies() {
             }
             hrx.slots.push_back(std::move(restricted));
         }
-        hrx.owners = policy.owners;
-        hrx.owner_graph_digest = policy.owner_graph_digest;
-        return BuiltinExecutionPolicies{{std::move(policy), std::move(hrx)}, "sha256:825b372899c818ecf43a42529ccc9e254632721dfda84e661396474bcecb6f61"};
+        for (const auto& owner : policy.owners) {
+            if (owner.id == "classification.buffered") continue;
+            auto restricted = owner;
+            restricted.collisions.erase(std::remove(restricted.collisions.begin(), restricted.collisions.end(), "classification.buffered"),
+                restricted.collisions.end());
+            hrx.owners.push_back(std::move(restricted));
+        }
+        hrx.owner_graph_digest = "sha256:6bc3f2b40d73e44ceb384564fbc403b1f58cf22c91de863f0746c5f22713e0f8";
+        return BuiltinExecutionPolicies{{std::move(policy), std::move(hrx)}, "sha256:bf4796852e4663dbee003ccf7cef41c1dc6f440172623a33d375fc4749355c10"};
     }();
     return policies;
 }
