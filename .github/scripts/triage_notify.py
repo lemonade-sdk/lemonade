@@ -8,7 +8,7 @@ comment has been posted in the last 7 days, to avoid spam.
 Rules (in priority order):
   1. rfc-blocked       — rfc:required label + 14d+ no update → @jeremyfowers
   2. wg-stale          — WG declared in body + 21d+ no update → WG lead
-  3. first-timer       — FIRST_TIME_CONTRIBUTOR + 5d+ with no review
+  3. first-timer       — FIRST_TIME_CONTRIBUTOR/FIRST_TIMER + 5d+, no comments
   4. stale-unassigned  — 45d+ no update + unassigned → @jeremyfowers
 
 Usage:
@@ -62,6 +62,11 @@ CANONICAL_WGS = {
     "platform-core": "Platform Core",
     "platform core": "Platform Core",
 }
+
+WRITE_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
+# GitHub assigns exactly one of these; FIRST_TIMER means no prior GitHub
+# contribution at all, so it is not covered by FIRST_TIME_CONTRIBUTOR.
+FIRST_TIME_ASSOCIATIONS = {"FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER"}
 
 SENTINEL = "<!-- triage-notify:"
 DEDUP_DAYS = 7
@@ -132,16 +137,20 @@ def fetch_open_prs(repo):
 
 
 def already_notified(repo, pr_number):
-    """Return True if a triage-notify comment was posted in the last DEDUP_DAYS."""
+    """Return True if a triage-notify comment was posted in the last DEDUP_DAYS.
+
+    Raises CalledProcessError when comments can't be read; callers must skip
+    the PR rather than risk a duplicate ping.
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(days=DEDUP_DAYS)
-    try:
-        comments = gh_api_pages(
-            f"/repos/{repo}/issues/{pr_number}/comments?per_page=100"
-        )
-    except subprocess.CalledProcessError:
-        return False
+    comments = gh_api_pages(f"/repos/{repo}/issues/{pr_number}/comments?per_page=100")
     for c in comments:
         if SENTINEL not in c.get("body", ""):
+            continue
+        # Only bot/maintainer sentinels count, so a PR author can't paste one
+        # to suppress pings.
+        user_type = (c.get("user") or {}).get("type")
+        if user_type != "Bot" and c.get("author_association") not in WRITE_ASSOCIATIONS:
             continue
         created = datetime.fromisoformat(c["created_at"].replace("Z", "+00:00"))
         if created >= cutoff:
@@ -164,7 +173,7 @@ def classify_pr(pr):
 
     # Rule 3: First-timer with no engagement yet
     if (
-        pr["author_association"] == "FIRST_TIME_CONTRIBUTOR"
+        pr["author_association"] in FIRST_TIME_ASSOCIATIONS
         and pr["days_old"] >= 5
         and pr["comments"] == 0
     ):
@@ -247,7 +256,15 @@ def main():
             f"  #{pr['number']} matches rule={rule} ping=@{ping_login}", file=sys.stderr
         )
 
-        if already_notified(args.repo, pr["number"]):
+        try:
+            recent = already_notified(args.repo, pr["number"])
+        except subprocess.CalledProcessError as exc:
+            print(
+                f"    skipped (could not read comments: {exc.stderr.strip()[:120]})",
+                file=sys.stderr,
+            )
+            continue
+        if recent:
             print(f"    skipped (notified within {DEDUP_DAYS}d)", file=sys.stderr)
             continue
 

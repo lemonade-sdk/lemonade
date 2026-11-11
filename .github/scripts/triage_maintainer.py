@@ -127,7 +127,7 @@ def community_tier(login, author_association, top_contributors):
         return "wg-lead"
     if login in top_contributors:
         return "active"
-    if author_association == "FIRST_TIME_CONTRIBUTOR":
+    if author_association in ("FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER"):
         return "first-timer"
     return "returning"
 
@@ -710,7 +710,7 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
 
   /* filter bar */
   .page-band { padding:14px 24px; border-bottom:1px solid var(--border); }
-  #filter-bar {
+  div#filter-bar {
                 background:var(--panel); display:flex; gap:16px;
                 flex-wrap:wrap; align-items:flex-end; }
   .filter-group { display:flex; flex-direction:column; gap:5px; }
@@ -726,15 +726,15 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
             font:inherit; font-size:13px; white-space:nowrap; }
   .toggle.on { border-color:var(--link); color:var(--fg); background:var(--panel-2); }
   .toggle:hover { border-color:var(--link); color:var(--fg); }
-  #clear-btn { padding:5px 12px; border:1px solid var(--border); border-radius:6px;
+  button#clear-btn { padding:5px 12px; border:1px solid var(--border); border-radius:6px;
                background:none; color:var(--muted); cursor:pointer;
                font:inherit; font-size:13px; align-self:flex-end; }
-  #clear-btn:hover { color:var(--fg); border-color:var(--fg); }
+  button#clear-btn:hover { color:var(--fg); border-color:var(--fg); }
 
   /* result bar */
   .flex-row { display:flex; align-items:center; flex-wrap:wrap; }
   /* activity chart */
-  #activity-chart { background:var(--panel); }
+  div#activity-chart { background:var(--panel); }
   .chart-header { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
   .chart-header h2 { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin:0; }
   .legend-item { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--muted); }
@@ -771,10 +771,10 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
   .wg-bar-unclaim { background:var(--border); }
   .wg-bar-count { position:absolute; right:-28px; top:0; font-size:11px; color:var(--muted); line-height:12px; }
   /* Cumulative open line */
-  #cumulative-chart { width:100%; overflow:hidden; }
+  div#cumulative-chart { width:100%; overflow:hidden; }
 
-  #result-bar { gap:16px; font-size:13px; }
-  #result-count { font-weight:600; }
+  div#result-bar { gap:16px; font-size:13px; }
+  span#result-count { font-weight:600; }
   .result-breakdown { color:var(--muted); font-size:12px; }
   .chip { display:inline-block; padding:1px 8px; border-radius:10px;
           font-size:11px; font-weight:600; margin:0 2px; }
@@ -792,7 +792,7 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
   .chip.draft  { background:var(--draft); color:var(--fg); }
 
   /* pr list */
-  #pr-list { padding:16px 24px; max-width:1100px; margin:0 auto; }
+  div#pr-list { padding:16px 24px; max-width:1100px; margin:0 auto; }
   .group-header { font-size:12px; font-weight:700; text-transform:uppercase;
                   letter-spacing:0.5px; color:var(--muted); margin:24px 0 10px;
                   padding-bottom:6px; border-bottom:1px solid var(--border);
@@ -825,15 +825,15 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
   .site-nav a.active { color:var(--fg); border-bottom-color:var(--link); }
 
   /* focus panel */
-  #focus-panel { padding:14px 24px; border-bottom:1px solid var(--border); background:var(--panel); }
-  #focus-panel summary { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); cursor:pointer; user-select:none; }
-  #focus-panel summary:hover { color:var(--fg); }
+  details#focus-panel { padding:14px 24px; border-bottom:1px solid var(--border); background:var(--panel); }
+  details#focus-panel summary { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); cursor:pointer; user-select:none; }
+  details#focus-panel summary:hover { color:var(--fg); }
   .focus-wg-section { margin-top:14px; }
   .focus-wg-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin-bottom:6px; }
-  #pulse-banner { border-bottom:1px solid var(--border); }
-  #pulse-banner summary::-webkit-details-marker { display:none; }
-  #pulse-banner[open] summary .pulse-toggle::after { content:" ▴"; }
-  #pulse-banner:not([open]) summary .pulse-toggle::after { content:" ▾"; }
+  details#pulse-banner { border-bottom:1px solid var(--border); }
+  details#pulse-banner summary::-webkit-details-marker { display:none; }
+  details#pulse-banner[open] summary .pulse-toggle::after { content:" ▴"; }
+  details#pulse-banner:not([open]) summary .pulse-toggle::after { content:" ▾"; }
   .pulse-toggle { color:var(--muted);font-size:11px;margin-left:auto; }
   .pulse-contrib { background:var(--panel-2);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:12px;color:var(--fg); }
   .pulse-table { width:100%;border-collapse:collapse;font-size:12px;margin-top:8px; }
@@ -857,9 +857,9 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
   .focus-meta { font-size:11px; color:var(--muted); margin-top:4px; display:flex; gap:8px; flex-wrap:wrap; }
 
   /* RFC panel */
-  #rfc-panel { padding:14px 24px; border-bottom:1px solid var(--border); background:var(--panel); }
-  #rfc-panel summary { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); cursor:pointer; user-select:none; }
-  #rfc-panel summary:hover { color:var(--fg); }
+  details#rfc-panel { padding:14px 24px; border-bottom:1px solid var(--border); background:var(--panel); }
+  details#rfc-panel summary { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); cursor:pointer; user-select:none; }
+  details#rfc-panel summary:hover { color:var(--fg); }
   .rfc-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:12px; }
   .rfc-table th { text-align:left; color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; padding:4px 8px; border-bottom:1px solid var(--border); }
   .rfc-table td { padding:6px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
@@ -869,7 +869,7 @@ MAINTAINER_TEMPLATE = r"""<!doctype html>
   .rfc-status-chip { display:inline-block; padding:1px 6px; border-radius:8px; font-size:10px; font-weight:600; background:var(--panel-2); border:1px solid var(--border); }
 
   /* trend chart */
-  #trend-chart-wrap { width:100%; overflow:hidden; }
+  div#trend-chart-wrap { width:100%; overflow:hidden; }
 </style>
 </head>
 <body>
