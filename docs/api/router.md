@@ -45,6 +45,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `prompt` | No | The prompt text to route. Defaults to `""`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `has_images` | No | Simulate a request carrying image input. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `has_tools` | No | Simulate a request carrying tool definitions. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `turns` | No | Simulate conversation depth for `min_turns` and `max_turns` conditions. Defaults to `1`. An explicit `0` counts as `1`, like every real request. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `metadata` | No | String-valued metadata pairs matched by `metadata` conditions. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Validation is structural: every `candidates` entry, `default_model`, rule `route_to` and classifier model must be listed in `components`. Component names are not looked up in the model registry, so a policy can be tested before its candidates are downloaded, and registration's model-type checks, such as whether a `semantic_similarity` model can embed, do not run.
