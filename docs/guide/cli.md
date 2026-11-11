@@ -442,26 +442,6 @@ The following options are available depending on the recipe being used:
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--ds4-args ARGS` | Custom arguments to pass to ds4-server | `""` |
 
-#### ROCm FPX (`rocmfpx` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | auto |
-| `--rocmfpx-args ARGS` | Custom arguments to pass to the ROCm FPX llama-server | `""` |
-
-#### Halogen (`halogen` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | auto |
-
-#### Gufo (`gufo` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | auto |
-| `--gufo-args ARGS` | Custom arguments to pass to gufo serve llm | `""` |
-
 #### ThinkSound (`thinksound` recipe)
 
 | Option | Description | Default |
@@ -640,7 +620,7 @@ lemonade backends uninstall SPEC
 |--------|-------------|
 | `lemonade backends` | List supported recipes and backends |
 | `lemonade backends --all` | List all available recipes and backends |
-| `lemonade backends info SPEC` | Show a backend's description, author, publisher, license, project page and status. Format: `recipe:backend` (e.g., `llamacpp:nathanw`) |
+| `lemonade backends info SPEC` | Show a backend's description, author, publisher, license, project page and status. Format: `recipe:backend` (e.g., `llamacpp:vulkan`) |
 | `lemonade backends install SPEC` | Install a backend. Format: `recipe:backend` (e.g., `llamacpp:vulkan`) |
 | `lemonade backends uninstall SPEC` | Uninstall a backend. Format: `recipe:backend` (e.g., `llamacpp:cpu`) |
 | `lemonade backends install SPEC --force` | Bypass hardware filtering and attempt the install anyway |
@@ -660,8 +640,8 @@ lemonade backends
 # List all available recipes and backends
 lemonade backends --all
 
-# See what the nathanw llamacpp backend is and who made it
-lemonade backends info llamacpp:nathanw
+# See what the Vulkan llamacpp backend is and who made it
+lemonade backends info llamacpp:vulkan
 
 # Install Vulkan backend for llamacpp
 lemonade backends install llamacpp:vulkan
