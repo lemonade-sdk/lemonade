@@ -1539,6 +1539,20 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
 
+      # The model cache persists across jobs on the same disk as the runner, and
+      # a full disk kills the next job before any step runs.
+      # Record usage so a disk-full failure can be traced to what filled it.
+      - name: Report disk usage
+        if: always()
+        continue-on-error: true
+        run: |
+          df -h "$GITHUB_WORKSPACE" ${HF_HOME:+"$HF_HOME"} || true
+          if [ -n "${HF_HOME:-}" ] && [ -d "$HF_HOME" ]; then
+            timeout 120 du -sh "$HF_HOME" || true
+            timeout 120 du -sh "$HF_HOME"/hub/models--* 2>/dev/null | sort -h | tail -n 15 || true
+          fi
+          timeout 60 docker system df || true
+
   # llamacpp:nathanw's image runs llama-server on the CPU when it finds no GPU,
   # so hosted runners can drive each container tool end to end on every PR.
   # Runs on the bare runner, not the build-environment image, because lemond
