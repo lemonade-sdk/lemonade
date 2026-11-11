@@ -291,11 +291,13 @@ set(MIN_ZSTD_VERSION "1.5.5")
 set(DOWNLOAD_ZSTD_VERSION "1.5.7")
 set(MIN_HTTPLIB_VERSION "0.26.0")
 set(MIN_LWS_VERSION "4.3.3")
+set(MIN_FTXUI_VERSION "5.0.0")
 
 find_package(PkgConfig QUIET)
 
 # Try to find system packages with version requirements
 find_package(nlohmann_json ${MIN_NLOHMANN_JSON_VERSION} QUIET)
+find_package(ftxui ${MIN_FTXUI_VERSION} QUIET)
 if(PkgConfig_FOUND)
     pkg_check_modules(CURL QUIET libcurl>=${MIN_CURL_VERSION})
     pkg_check_modules(ZSTD QUIET libzstd>=${MIN_ZSTD_VERSION})
@@ -330,6 +332,7 @@ set(USE_SYSTEM_ZSTD ${ZSTD_FOUND})
 set(USE_SYSTEM_CLI11 ${CLI11_INCLUDE_DIRS})
 set(USE_SYSTEM_HTTPLIB ${HTTPLIB_FOUND})
 set(USE_SYSTEM_LWS ${LWS_FOUND})
+set(USE_SYSTEM_FTXUI ${ftxui_FOUND})
 
 # On macOS, always statically link dependencies to avoid Homebrew dylib issues
 if(APPLE)
@@ -387,6 +390,12 @@ else()
     message(STATUS "System libwebsockets not found or version < ${MIN_LWS_VERSION}, will use FetchContent")
 endif()
 
+if(USE_SYSTEM_FTXUI)
+    message(STATUS "Using system FTXUI (>= ${MIN_FTXUI_VERSION})")
+else()
+    message(STATUS "System FTXUI not found or version < ${MIN_FTXUI_VERSION}, will use FetchContent")
+endif()
+
 # ============================================================
 # Common dependency configurations
 # ============================================================
@@ -397,7 +406,7 @@ set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "")  # Build static libraries
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # Fetch missing dependencies
-if(NOT USE_SYSTEM_JSON OR NOT USE_SYSTEM_CURL OR NOT USE_SYSTEM_ZSTD OR NOT USE_SYSTEM_CLI11 OR NOT USE_SYSTEM_HTTPLIB OR NOT USE_SYSTEM_LWS)
+if(NOT USE_SYSTEM_JSON OR NOT USE_SYSTEM_CURL OR NOT USE_SYSTEM_ZSTD OR NOT USE_SYSTEM_CLI11 OR NOT USE_SYSTEM_HTTPLIB OR NOT USE_SYSTEM_LWS OR NOT USE_SYSTEM_FTXUI)
     include(FetchContent)
 endif()
 
@@ -433,6 +442,20 @@ if(NOT USE_SYSTEM_CLI11)
     set(CLI11_BUILD_TESTS OFF CACHE INTERNAL "")
     set(CLI11_BUILD_EXAMPLES OFF CACHE INTERNAL "")
     FetchContent_MakeAvailable(CLI11)
+endif()
+
+# === FTXUI ===
+if(NOT USE_SYSTEM_FTXUI)
+    FetchContent_Declare(ftxui
+        GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
+        GIT_TAG v${MIN_FTXUI_VERSION}
+        GIT_SHALLOW TRUE
+    )
+    set(FTXUI_BUILD_DOCS OFF CACHE INTERNAL "")
+    set(FTXUI_BUILD_EXAMPLES OFF CACHE INTERNAL "")
+    set(FTXUI_BUILD_TESTS OFF CACHE INTERNAL "")
+    set(FTXUI_ENABLE_INSTALL OFF CACHE INTERNAL "")
+    FetchContent_MakeAvailable(ftxui)
 endif()
 
 # === curl ===
@@ -4083,6 +4106,17 @@ if(BUILD_TESTING AND EXISTS "${_LAUNCH_COMMAND_TEST_SRC}")
     add_executable(test_launch_command test/cpp/test_launch_command.cpp)
     target_link_libraries(test_launch_command PRIVATE lemonade-server-core)
     add_cpp_ci_test(LaunchCommandTest CI ON COMMAND test_launch_command)
+endif()
+
+if(BUILD_TESTING)
+    find_package(Threads REQUIRED)
+    add_executable(test_tui_launch
+        test/cpp/test_tui_launch.cpp
+        src/cpp/cli/tui_launch_model.cpp
+    )
+    target_include_directories(test_tui_launch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    target_link_libraries(test_tui_launch PRIVATE nlohmann_json::nlohmann_json Threads::Threads)
+    add_cpp_ci_test(TuiLaunchTest CI ON COMMAND test_tui_launch)
 endif()
 
 # What `lemonade launch pi` writes into pi's agent directory. The CLI sources

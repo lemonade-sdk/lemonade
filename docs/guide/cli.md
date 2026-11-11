@@ -678,7 +678,7 @@ lemonade backends install llamacpp:rocm --force
 
 ## Options for launch
 
-The `launch` command launches an agent and triggers model loading asynchronously. If no model is provided, launch prompts for recipe/model selection before starting the agent:
+The `launch` command launches an agent and triggers model loading asynchronously. In an interactive terminal, omitting the agent or model opens an FTXUI launcher. A complete command launches directly; add `--tui` to review or edit it first. Non-interactive launches require both an agent and `--model`.
 
 ```bash
 lemonade launch [AGENT] [--model MODEL_NAME] [options]
@@ -686,11 +686,23 @@ lemonade launch [AGENT] [--model MODEL_NAME] [options]
 
 | Option/Argument | Description | Required |
 |-----------------|-------------|----------|
-| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex`, `opencode`, `pi`, `junie`. If omitted, you will be prompted to select one. | No |
+| `AGENT` | Agent name to launch. Supported agents: `pi`, `opencode`, `claude`, `codex`, `junie`. If omitted, you will be prompted to select one. | No |
 | `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
 | `--directory DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
 | `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
 | `--agent-args ARGS` | Custom arguments to pass directly to the launched agent process | `""` |
+| `--tui` | Open the interactive launcher, including for a complete command; requires a terminal | No |
+| `--no-tui` | Use simple text prompts instead of FTXUI when choices are missing in a terminal | No |
+| `--ctx-size SIZE` | Override context size for this launch (`-1` requests automatic sizing) | No |
+| `--llamacpp BACKEND` | Override the llama.cpp backend for this launch | No |
+
+Other recipe-specific load flags are also accepted; see `lemonade launch AGENT --help`.
+
+The launcher shows agent installation status on the client and models on the connected server. Browse **Downloaded**, **Recommended**, **Presets**, or **All**, with a preview of model settings and agent profile changes. Presets are remote recipe files; their configuration is fetched and previewed before import. Downloads and preset imports require confirmation. Missing agents must be installed before launching.
+
+Use `Tab` / `Shift+Tab` to change focus, arrow keys to navigate, and `/` to focus search when not editing text. `Enter` activates the focused control: in search it moves to results, and in results it focuses the launch button. `F2` requests launch. `Esc` closes a dialog or exits without starting an agent. Advanced options contain agent arguments and the selected agent's Codex or Pi settings. Agents not found on this machine are marked **missing** in the agent row.
+
+Context accepts `inherit`, `auto`, or a positive token count. Backend choices include **Inherit**, the server's default selection, and supported server backends. In the launcher, **Auto (server default)** bypasses the model's saved backend; **Inherit** sends no override. Edits apply to this launch only and do not change saved model options. The TUI closes and restores the terminal before imports, downloads, or agent startup.
 
 Codex-only option:
 
@@ -707,15 +719,15 @@ Pi-only options:
 
 **Notes:**
 - The model load request is asynchronous: launch starts the agent immediately while loading continues in the background. The exception is `pi` with an automatic context size: launch waits for the load so it can give pi the size Lemonade picked.
-- If a model is already provided, launch skips recipe import prompts.
+- If an agent and model are already provided, launch skips the launcher unless `--tui` is specified.
 - `--directory` and `--recipe-file` are only used for remote recipe import at prompt time.
 - For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first, then launch with the imported model id.
 - `--api-key` is propagated to the launched agent process.
 - For `codex`, launch now injects a Lemonade model provider by default so host/port settings are honored.
 - `--provider` is accepted only by `lemonade launch codex` and is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
-- To customize recipe options (e.g. context size) for the launched model, configure them ahead of time with `lemonade load <model> ... --save-options`, or with `lemonade config set`.
+- Customize recipe options for one launch with flags such as `--ctx-size` and `--llamacpp`, or edit them in the launcher. To persist model settings, use `lemonade load <model> ... --save-options`; shared defaults can be changed with `lemonade config set`.
 - `--agent-args` is parsed and appended to the launched agent command.
-- Supported agents: `claude`, `codex`, `opencode`, `pi`, `junie`
+- Supported agents: `pi`, `opencode`, `claude`, `codex`, `junie`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
 - `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json` (honors `PI_CODING_AGENT_DIR`), plus `mcp.json` with `--mcp`. See [Pi](../integrations/pi.md).
 - `junie` uses an auto-managed custom model profile at `~/.junie/models/lemonade.json` (honors `JUNIE_HOME`) and is launched with `--model custom:lemonade`.
@@ -724,6 +736,15 @@ Pi-only options:
 **Examples:**
 
 ```bash
+# Browse agents, models, and presets interactively
+lemonade launch
+
+# Review a prefilled launch and edit its options
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --tui
+
+# Launch directly with a per-launch context override
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --ctx-size 8192
+
 # Launch an agent with default model settings
 lemonade launch claude --model Qwen3.5-0.8B-GGUF
 

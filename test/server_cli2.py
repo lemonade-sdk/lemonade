@@ -1324,36 +1324,16 @@ sys.exit(0)
     # parser-only tests: run on all OSes
     # process-execution tests: run on non-Windows only with shebang-based fake binaries
 
-    def test_110_launch_without_agent_prompts_selection(self):
-        """Launch without an agent argument should present agent choices and continue."""
-        if IS_WINDOWS:
-            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
-
-        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
-            capture_path = os.path.join(temp_dir, "claude_capture_agent_prompt.json")
-            self._write_fake_agent(temp_dir, "claude", capture_path)
-            env = self._build_stubbed_agent_env(temp_dir)
-
-            result = run_cli_command(
-                [
-                    "launch",
-                    "--model",
-                    ENDPOINT_TEST_MODEL,
-                ],
-                timeout=TIMEOUT_DEFAULT,
-                env=env,
-                input_text="1\n",
-            )
-
-            self.assertEqual(result.returncode, 0)
-            self.assertTrue(
-                os.path.exists(capture_path),
-                "Fake claude binary was not executed",
-            )
-
-            output = result.stdout + result.stderr
-            self.assertIn("Select an agent to launch", output)
-            self.assertIn("Selected agent: claude", output)
+    def test_110_launch_without_agent_requires_terminal(self):
+        """Incomplete launch commands must not prompt when stdin is redirected."""
+        result = run_cli_command(
+            ["launch", "--model", ENDPOINT_TEST_MODEL],
+            timeout=TIMEOUT_DEFAULT,
+            input_text="1\n",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Non-interactive launch requires", result.stderr)
+        self.assertNotIn("Select an agent to launch", result.stdout)
 
     def test_111_launch_invalid_agent_rejected(self):
         """Launch should reject unsupported agent names."""
@@ -3012,9 +2992,9 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         self.assertEqual(claude_result.returncode, 0)
         claude_help = claude_result.stdout + claude_result.stderr
         self.assertNotIn("--provider", claude_help)
-        self.assertNotIn("--ctx-size", claude_help)
+        self.assertIn("--ctx-size", claude_help)
         self.assertNotIn("LEMONADE_CTX_SIZE", claude_help)
-        self.assertNotIn("--llamacpp", claude_help)
+        self.assertIn("--llamacpp", claude_help)
 
         opencode_result = run_cli_command(
             ["launch", "opencode", "--help"], timeout=TIMEOUT_DEFAULT
@@ -3022,7 +3002,7 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         self.assertEqual(opencode_result.returncode, 0)
         opencode_help = opencode_result.stdout + opencode_result.stderr
         self.assertNotIn("--provider", opencode_help)
-        self.assertNotIn("--ctx-size", opencode_help)
+        self.assertIn("--ctx-size", opencode_help)
         self.assertNotIn("LEMONADE_CTX_SIZE", opencode_help)
 
         codex_result = run_cli_command(
@@ -3032,7 +3012,7 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         codex_help = codex_result.stdout + codex_result.stderr
         self.assertIn("Use model provider name for Codex", codex_help)
         self.assertIn("--provider", codex_help)
-        self.assertNotIn("--ctx-size", codex_help)
+        self.assertIn("--ctx-size", codex_help)
         self.assertNotIn("LEMONADE_CTX_SIZE", codex_help)
 
         docs_path = os.path.join(
@@ -3059,8 +3039,374 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         launch_section = docs_text.split("## Options for launch", 1)[1].split(
             "## Options for scan", 1
         )[0]
-        self.assertNotIn("--ctx-size", launch_section)
-        self.assertNotIn("--llamacpp", launch_section)
+        self.assertIn("--ctx-size", launch_section)
+        self.assertIn("--llamacpp", launch_section)
+
+
+@unittest.skipIf(IS_WINDOWS, "Interactive terminal tests require a POSIX PTY")
+class CLILaunchTuiTests(unittest.TestCase):
+    """Exercise the real launcher without downloads or real agents."""
+
+    def setUp(self):
+        import http.server
+        import threading
+
+        self.temp = tempfile.TemporaryDirectory(prefix="lemonade-tui-test-")
+        self.addCleanup(self.temp.cleanup)
+        self.capture = os.path.join(self.temp.name, "agent.json")
+        self.requests = []
+        self.request_bodies = []
+        self.model_lookup = {}
+        self.load_received = threading.Event()
+        self.metadata_started = threading.Event()
+        self.metadata_gate = threading.Event()
+        self.metadata_gate.set()
+        self.listing_error = False
+        owner = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass
+
+            def do_GET(self):
+                owner.requests.append(("GET", self.path))
+                if self.path in owner.model_lookup:
+                    data = owner.model_lookup[self.path]
+                elif self.path.startswith("/api/v1/models"):
+                    owner.metadata_started.set()
+                    owner.metadata_gate.wait(timeout=10)
+                    data = {
+                        "data": [
+                            {
+                                "id": "fixture-tool-model",
+                                "recipe": "llamacpp",
+                                "downloaded": True,
+                                "labels": ["chat", "tool-calling"],
+                                "recipe_options": {"ctx_size": 4096},
+                            },
+                            {
+                                "id": "fixture-needs-download",
+                                "recipe": "llamacpp",
+                                "downloaded": False,
+                                "labels": ["chat", "tool-calling"],
+                            },
+                        ]
+                    }
+                    if owner.listing_error:
+                        data = {"error": "invalid catalog"}
+                elif self.path == "/api/v1/system-info":
+                    data = {
+                        "recipes": {
+                            "llamacpp": {"backends": {"cpu": {"state": "installed"}}}
+                        }
+                    }
+                else:
+                    data = {"status": "ok", "all_models_loaded": []}
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                try:
+                    self.wfile.write(json.dumps(data).encode())
+                except BrokenPipeError:
+                    pass
+
+            def do_POST(self):
+                owner.requests.append(("POST", self.path))
+                body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                owner.request_bodies.append((self.path, json.loads(body)))
+                owner.load_received.set()
+                is_pull = self.path.endswith("/pull")
+                self.send_response(200)
+                self.send_header(
+                    "Content-Type",
+                    "text/event-stream" if is_pull else "application/json",
+                )
+                self.end_headers()
+                self.wfile.write(
+                    b"event: complete\ndata: {}\n\n"
+                    if is_pull
+                    else b'{"status":"success"}'
+                )
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.addCleanup(self._stop_server)
+        self.env = os.environ.copy()
+        for key in ("LEMONADE_API_KEY", "LEMONADE_ADMIN_API_KEY"):
+            self.env.pop(key, None)
+        self.env.update(
+            {
+                "PATH": self.temp.name + os.pathsep + self.env.get("PATH", ""),
+                "HOME": self.temp.name,
+                "XDG_CONFIG_HOME": self.temp.name,
+                "TERM": "xterm-256color",
+                "TUI_AGENT_CAPTURE": self.capture,
+            }
+        )
+        fake_agent = os.path.join(self.temp.name, "claude")
+        with open(fake_agent, "w", encoding="utf-8") as script:
+            script.write(
+                f"#!{sys.executable}\n"
+                "import json, os, sys, termios\n"
+                "attrs = termios.tcgetattr(0) if os.isatty(0) else None\n"
+                "data = {'args': sys.argv[1:], 'tty': os.isatty(0), "
+                "'echo': bool(attrs[3] & termios.ECHO) if attrs else False, "
+                "'canonical': bool(attrs[3] & termios.ICANON) if attrs else False}\n"
+                "with open(os.environ['TUI_AGENT_CAPTURE'], 'w') as out:\n"
+                "    json.dump(data, out)\n"
+                "print('TUI_AGENT_STARTED', flush=True)\n"
+                "if os.environ.get('TUI_AGENT_WAIT'): input()\n"
+                "sys.exit(7)\n"
+            )
+        os.chmod(fake_agent, 0o755)
+
+    def _stop_server(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+
+    def _command(self, *args):
+        return [
+            os.path.abspath(get_cli_binary()),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(self.server.server_port),
+            "--no-discovery",
+            *args,
+        ]
+
+    def _terminal(self, *args, columns=120, rows=32):
+        from utils.tui_terminal import TerminalSession
+
+        session = TerminalSession(
+            self._command(*args), self.env, columns=columns, rows=rows
+        )
+        self.addCleanup(session.close)
+        return session
+
+    def _launcher(self, model="fixture-tool-model", columns=120, rows=32):
+        session = self._terminal(
+            "launch", "claude", "--model", model, "--tui", columns=columns, rows=rows
+        )
+        session.wait_for("Lemonade / launch")
+        session.wait_for(model)
+        return session
+
+    def _capture(self):
+        with open(self.capture, encoding="utf-8") as capture:
+            return json.load(capture)
+
+    def test_910_complete_command_bypasses_tui_in_terminal(self):
+        session = self._terminal("launch", "claude", "--model", "fixture-tool-model")
+        self.assertEqual(session.wait(), 7)
+        self.assertNotIn(b"Lemonade / launch", session.output)
+        self.assertTrue(self._capture()["tty"])
+
+    def test_911_forced_tui_requires_terminal(self):
+        result = subprocess.run(
+            self._command("launch", "claude", "--model", "fixture-tool-model", "--tui"),
+            capture_output=True,
+            text=True,
+            env=self.env,
+            timeout=10,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--tui requires an interactive terminal", result.stderr)
+        self.assertFalse(os.path.exists(self.capture))
+
+    def test_912_escape_has_no_server_side_effects(self):
+        session = self._launcher()
+        session.send(b"\x1b")
+        self.assertEqual(session.wait(), 0)
+        self.assertFalse(os.path.exists(self.capture))
+        self.assertFalse(any(method == "POST" for method, _ in self.requests))
+
+    def test_913_search_enter_does_not_launch(self):
+        session = self._launcher()
+        session.send(b"/fixture\r")
+        session.send(b"\x1b")
+        self.assertEqual(session.wait(), 0)
+        self.assertFalse(os.path.exists(self.capture))
+        self.assertFalse(any(method == "POST" for method, _ in self.requests))
+
+    def test_914_launch_restores_terminal_and_exit_code(self):
+        session = self._launcher()
+        session.send(b"\x1bOQ")
+        self.assertEqual(session.wait(), 7)
+        capture = self._capture()
+        self.assertTrue(capture["tty"])
+        self.assertTrue(capture["echo"])
+        self.assertTrue(capture["canonical"])
+
+    def test_915_narrow_terminal_keeps_launch_usable(self):
+        session = self._launcher(columns=80, rows=24)
+        session.wait_for("llamacpp, downloaded, unloaded")
+        session.wait_for("Context: ")
+        session.send(b"\x1bOQ")
+        self.assertEqual(session.wait(), 7)
+        self.assertTrue(self._capture()["canonical"])
+
+    def test_916_download_confirmation_can_be_cancelled(self):
+        session = self._launcher(model="fixture-needs-download")
+        session.send(b"\x1bOQ")
+        session.wait_for("Confirm launch")
+        session.send(b"\r\x1b")
+        self.assertEqual(session.wait(), 0)
+        self.assertFalse(any(method == "POST" for method, _ in self.requests))
+
+    def test_917_arguments_can_contain_slashes_and_q(self):
+        session = self._launcher()
+        session.send(b"\t\t\t\r")
+        session.wait_for("Advanced launch options")
+        session.send(b"/tmp/q-session\t\r")
+        session.send(b"\x1bOQ")
+        self.assertEqual(session.wait(), 7)
+        self.assertIn("/tmp/q-session", self._capture()["args"])
+
+    def test_918_listing_error_stays_in_ui(self):
+        self.listing_error = True
+        session = self._terminal("launch", "claude", "--tui")
+        session.wait_for("Unexpected model listing response")
+        session.send(b"\x1b")
+        self.assertEqual(session.wait(), 0)
+        self.assertFalse(any(method == "POST" for method, _ in self.requests))
+
+    def test_919_tab_changes_focus_not_model_selection(self):
+        session = self._launcher()
+        session.send(b"\t\x1bOQ")
+        self.assertEqual(session.wait(), 7)
+        self.assertFalse(any(path.endswith("/pull") for _, path in self.requests))
+
+    def test_920_invalid_context_stays_in_launcher(self):
+        session = self._launcher()
+        session.send(b"\t\x1b[H" + b"\x1b[3~" * 7 + b"0\r")
+        session.wait_for("Context must be a positive integer")
+        session.send(b"\x1b")
+        self.assertEqual(session.wait(), 0)
+        self.assertFalse(any(method == "POST" for method, _ in self.requests))
+
+    def test_921_cancel_advanced_discards_edits(self):
+        session = self._launcher()
+        session.send(b"\t\t\t\r")
+        session.wait_for("Advanced launch options")
+        session.send(b"discard-this-argument\t\t\r\x1bOQ")
+        self.assertEqual(session.wait(), 7)
+        self.assertNotIn("discard-this-argument", self._capture()["args"])
+
+    def test_922_cancel_does_not_wait_for_metadata(self):
+        self.metadata_gate.clear()
+        self.addCleanup(self.metadata_gate.set)
+        session = self._terminal("launch", "claude", "--tui")
+        session.wait_for("Lemonade / launch")
+        self.assertTrue(self.metadata_started.wait(timeout=2))
+        session.send(b"\x1b")
+        self.assertEqual(session.wait(timeout=1), 0)
+
+    def test_923_backend_auto_masks_saved_model_backend(self):
+        self.env["TUI_AGENT_WAIT"] = "1"
+        session = self._launcher()
+        session.send(b"\t\t\r\x1b[B\r\x1bOQ")
+        session.wait_for("TUI_AGENT_STARTED")
+        self.assertTrue(self.load_received.wait(timeout=2))
+        load = next(
+            body for path, body in self.request_bodies if path.endswith("/load")
+        )
+        self.assertIn("llamacpp_backend", load)
+        self.assertIsNone(load["llamacpp_backend"])
+        self.assertFalse(load["save_options"])
+        session.send(b"\r")
+        self.assertEqual(session.wait(), 7)
+
+    def test_924_missing_prefilled_model_requires_explicit_choice(self):
+        session = self._terminal(
+            "launch", "claude", "--model", "missing-prefill", "--tui"
+        )
+        session.wait_for("Requested model is unavailable")
+        session.send(b"\x1bOQ\x1b")
+        self.assertEqual(session.wait(), 0)
+        self.assertFalse(os.path.exists(self.capture))
+        self.assertFalse(any(method == "POST" for method, _ in self.requests))
+
+    def test_925_terminal_drains_output_after_process_exit(self):
+        from utils.tui_terminal import TerminalSession
+
+        session = TerminalSession(
+            [sys.executable, "-c", "print('FINAL_OUTPUT')"], self.env
+        )
+        self.addCleanup(session.close)
+        session.process.wait(timeout=2)
+        session.wait_for("FINAL_OUTPUT")
+
+    def test_926_canonical_prefill_resolves_server_alias(self):
+        self.model_lookup["/api/v1/models/user.fixture-tool-model"] = {
+            "id": "fixture-tool-model",
+            "recipe": "llamacpp",
+            "downloaded": True,
+            "labels": ["chat", "tool-calling"],
+        }
+        session = self._terminal(
+            "launch", "claude", "--model", "user.fixture-tool-model", "--tui"
+        )
+        session.wait_for("Runtime")
+        session.send(b"\x1bOQ")
+        self.assertEqual(session.wait(), 7)
+
+    def test_927_non_chat_prefill_cannot_select_another_model(self):
+        self.model_lookup["/api/v1/models/user.embedding"] = {
+            "id": "user.embedding",
+            "recipe": "llamacpp",
+            "downloaded": True,
+            "labels": ["embedding"],
+        }
+        session = self._terminal(
+            "launch", "claude", "--model", "user.embedding", "--tui"
+        )
+        session.wait_for("Requested model is unavailable")
+        session.send(b"\x1bOQ\x1b")
+        self.assertEqual(session.wait(), 0)
+        self.assertFalse(any(method == "POST" for method, _ in self.requests))
+
+    def test_928_retry_preserves_missing_prefill_guard(self):
+        self.listing_error = True
+        session = self._terminal(
+            "launch", "claude", "--model", "missing-prefill", "--tui"
+        )
+        session.wait_for("Unexpected model listing response")
+        self.listing_error = False
+        session.send(b"\t\t\r")
+        session.wait_for("Requested model is unavailable")
+        session.send(b"\x1bOQ\x1b")
+        self.assertEqual(session.wait(), 0)
+        self.assertFalse(any(method == "POST" for method, _ in self.requests))
+
+    def test_929_agent_version_preflight_precedes_download(self):
+        fake_pi = os.path.join(self.temp.name, "pi")
+        with open(fake_pi, "w", encoding="utf-8") as script:
+            script.write(
+                f"#!{sys.executable}\nimport sys\nprint('0.99.2')\nsys.exit(0)\n"
+            )
+        os.chmod(fake_pi, 0o755)
+        session = self._terminal(
+            "launch", "pi", "--model", "fixture-needs-download", "--codemode", "--tui"
+        )
+        session.wait_for("Download & launch pi")
+        session.send(b"\x1bOQ")
+        session.wait_for("Confirm launch")
+        session.send(b"\t\r")
+        self.assertEqual(session.wait(), 1)
+        self.assertFalse(any(method == "POST" for method, _ in self.requests))
+
+    def test_930_confirmed_download_restores_terminal_before_launch(self):
+        session = self._launcher(model="fixture-needs-download")
+        session.send(b"\x1bOQ")
+        session.wait_for("Confirm launch")
+        session.send(b"\t\r")
+        self.assertEqual(session.wait(), 7, session.output.decode(errors="replace"))
+        self.assertTrue(any(path.endswith("/pull") for _, path in self.requests))
+        self.assertTrue(self._capture()["canonical"])
 
 
 class CLIUrlSchemeTests(unittest.TestCase):
@@ -3211,6 +3557,7 @@ def run_cli_client_tests():
     suite = unittest.TestSuite()
     suite.addTests(loader.loadTestsFromTestCase(PersistentServerCLIClientTests))
     suite.addTests(loader.loadTestsFromTestCase(CLIHelpDocsConsistencyTests))
+    suite.addTests(loader.loadTestsFromTestCase(CLILaunchTuiTests))
     suite.addTests(loader.loadTestsFromTestCase(CLIUrlSchemeTests))
     suite.addTests(loader.loadTestsFromTestCase(CLIConnectionErrorMessageTests))
 
