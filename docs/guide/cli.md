@@ -284,7 +284,6 @@ The JSON file must contain the following fields:
 |-------|------|-------------|
 | `labels` | array | Array of label strings (e.g., `["reasoning", "coding"]`) |
 | `recipe_options` | object | Recipe-specific options (e.g., `{"ctx-size": 8192, "llamacpp": "vulkan"}`) |
-| `image_defaults` | object | Image generation defaults for image models |
 | `size` | string | Model size description |
 
 **Notes:**
@@ -430,7 +429,7 @@ The following options are available depending on the recipe being used:
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
 
-#### TheNoise ROCm (`thenoise` recipe)
+#### TheNoise (`thenoise` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -442,6 +441,26 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--ds4-args ARGS` | Custom arguments to pass to ds4-server | `""` |
+
+#### ROCm FPX (`rocmfpx` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--rocmfpx-args ARGS` | Custom arguments to pass to the ROCm FPX llama-server | `""` |
+
+#### Halogen Flash (`halogen` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
+#### Gufo (`gufo` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--gufo-args ARGS` | Custom arguments to pass to gufo serve llm | `""` |
 
 #### ThinkSound (`thinksound` recipe)
 
@@ -922,6 +941,8 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | `--scenario-dir DIR` | Load all `.json` scenario files from a directory | — |
 | `--json` | Output results as JSON instead of a table | Table output |
 | `--output FILE` | Write results to file (in addition to stdout) | — |
+| `--submit` | Submit results to the Lemonade benchmark service (implies `--json`). Cannot be combined with `--compare` | False |
+| `--submit-file FILE` | Submit an already-saved benchmark JSON file. Cannot be combined with `--compare` | — |
 | `--compare FILE` | Compare results against a previously saved JSON file | — |
 | `--auto-pull` | Automatically pull the model if not downloaded | False |
 | `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
@@ -938,6 +959,10 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 **Timestamp behavior:**
 - Top-level `timestamp` is the command invocation time.
 - Each per-model result includes its own `timestamp` for when that model run started.
+
+**Submitting results:**
+
+`--submit` uploads the run to the Lemonade benchmark service and `--submit-file` uploads a benchmark JSON saved earlier with `--output`. The service answers with an id; `bench` prints a link to it so you can claim the results to your [bench.lemonade-server.ai](https://bench.lemonade-server.ai) account. Submission progress goes to stderr, so `--submit --json > results.json` still captures clean JSON.
 
 ### Scenario Files
 

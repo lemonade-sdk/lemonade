@@ -1074,7 +1074,8 @@ jobs:
             suites: >-
               [{"name":"ryzenai","script":"server_llm.py","extra_args":"--wrapped-server ryzenai","backends":"cpu hybrid npu"},
                {"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"},
-               {"name":"flm-whisper","script":"server_whisper.py","extra_args":"--wrapped-server flm","backends":"npu"}]
+               {"name":"flm-whisper","script":"server_whisper.py","extra_args":"--wrapped-server flm","backends":"npu"},
+               {"name":"systemone-flm","script":"server_systemone.py","extra_args":"--wrapped-server flm","backends":"npu"}]
           - name: stx-halo
             runner: [Windows, X64, stx-halo, lemon-prod]
             suites: >-
@@ -1089,6 +1090,7 @@ jobs:
             suites: >-
               [{"name":"moonshine","script":"server_moonshine.py","extra_args":"--wrapped-server moonshine","backends":"cpu"},
                {"name":"classify-onnxruntime","script":"server_classify.py","extra_args":"--wrapped-server onnxruntime","backends":"cpu"},
+               {"name":"systemone-llamacpp","script":"server_systemone.py","extra_args":"--wrapped-server llamacpp","backends":"cpu"},
                {"name":"router-onnxruntime","script":"server_router.py","extra_args":"--wrapped-server onnxruntime","backends":"cpu"},
                {"name":"text-to-speech","script":"server_tts.py","extra_args":"","backends":""}]
     env:
@@ -1341,11 +1343,13 @@ jobs:
           - name: xdna2
             runner: [Linux, X64, xdna2, lemon-prod]
             suites: >-
-              [{"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"}]
+              [{"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"},
+               {"name":"systemone-flm","script":"server_systemone.py","extra_args":"--wrapped-server flm","backends":"npu"}]
           - name: generic
             runner: [self-hosted, Linux, X64, lemon-prod]
             suites: >-
               [{"name":"moonshine","script":"server_moonshine.py","extra_args":"--wrapped-server moonshine","backends":"cpu"},
+               {"name":"systemone-llamacpp","script":"server_systemone.py","extra_args":"--wrapped-server llamacpp","backends":"cpu"},
                {"name":"text-to-speech","script":"server_tts.py","extra_args":"","backends":""}]
     env:
       LEMONADE_CI_MODE: "True"
@@ -1445,6 +1449,173 @@ jobs:
       - name: Cleanup
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
+
+  # Container backends run on Devlab Dispatch's ephemeral Strix Halo Linux
+  # runners, which have the memory and scratch disk for DS4 and Halogen models.
+  test-container-backends:
+    name: Test container backend - ${{ matrix.name }}
+    runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
+    needs: build-lemonade-deb
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      !startsWith(github.ref, 'refs/heads/release-v') &&
+      inputs.enable_signing != true &&
+      inputs.disable_macos_signing != true &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
+    timeout-minutes: 240
+    strategy:
+      fail-fast: ${{ github.event_name == 'merge_group' }}
+      matrix:
+        include:
+          - name: ds4
+            install: "ds4:rocm"
+            script: server_llm.py
+            extra_args: "--wrapped-server ds4 --backend rocm"
+          - name: llamacpp-nathanw
+            install: "llamacpp:nathanw"
+            script: server_llm.py
+            extra_args: "--wrapped-server llamacpp --backend nathanw"
+          - name: llamacpp-halobox
+            install: "llamacpp:halobox"
+            script: server_llm.py
+            extra_args: "--wrapped-server llamacpp --backend halobox"
+          - name: rocmfpx
+            install: "rocmfpx:rocm"
+            script: server_llm.py
+            extra_args: "--wrapped-server rocmfpx --backend rocm"
+          - name: halogen
+            install: "halogen:rocm"
+            script: server_llm.py
+            extra_args: "--wrapped-server halogen --backend rocm"
+          - name: gufo
+            install: "gufo:rocm"
+            script: server_llm.py
+            extra_args: "--wrapped-server gufo --backend rocm"
+    env:
+      LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
+    # No HF_HOME override: the runners set it to a cache on their scratch disk
+    # that outlives the job, so a model is downloaded once per machine.
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Print the Docker version
+        run: docker --version
+
+      - name: Install Lemonade (.deb)
+        uses: ./.github/actions/install-lemonade-deb
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+          port: auto
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Install the container backend
+        run: |
+          set -e
+          lemonade backends
+          lemonade backends install ${{ matrix.install }}
+
+      - name: Run tests
+        run: |
+          set -e
+          .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --cli-binary lemonade
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-container-${{ matrix.name }}
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-linux
+
+  # llamacpp:nathanw's image runs llama-server on the CPU when it finds no GPU,
+  # so hosted runners can drive each container tool end to end on every PR.
+  # Runs on the bare runner, not the build-environment image, because lemond
+  # must share a filesystem and network with the container tool: it mounts
+  # model files by its own paths and connects to the container's address.
+  # Pinned to 24.04 because that is the only release this CI action builds a
+  # .deb for.
+  test-container-smoke:
+    name: Container smoke test - ${{ matrix.tool }} (${{ matrix.mode }})
+    runs-on: ubuntu-24.04
+    needs: build-lemonade-deb
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {tool: podman, mode: rootless}
+          - {tool: podman, mode: rootful}
+          - {tool: docker, mode: rootful}
+    env:
+      LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v5
+
+      # The .deb needs libcpp-httplib0.26, which 24.04 has only in this PPA.
+      - name: Add the Lemonade PPA
+        run: sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge
+
+      - name: Install Lemonade (.deb)
+        uses: ./.github/actions/install-lemonade-deb
+        with:
+          version: ${{ needs.build-lemonade-deb.outputs.version }}
+          start-server: 'false'
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Prepare the container tool
+        run: |
+          set -e
+          # nathanw maps /dev/dri, and both tools refuse a missing or empty one.
+          sudo mkdir -p /dev/dri
+          [ -e /dev/dri/renderD128 ] || sudo mknod -m 666 /dev/dri/renderD128 c 1 3
+          case "${{ matrix.tool }}-${{ matrix.mode }}" in
+            podman-rootless)
+              sudo usermod -aG render "$USER"
+              ;;
+            podman-rootful)
+              sudo systemctl start podman.socket
+              sudo chmod 755 /run/podman
+              sudo chmod 666 /run/podman/podman.sock
+              echo "CONTAINER_HOST=unix:///run/podman/podman.sock" >> "$GITHUB_ENV"
+              ;;
+            docker-rootful)
+              sudo apt-get remove -y podman
+              ;;
+          esac
+          ${{ matrix.tool }} --version
+
+      # sudo -u starts a fresh login, so lemond carries the groups added above.
+      - name: Run the smoke test
+        run: |
+          sudo -E -u "$USER" env "PATH=$PATH" .venv/bin/python test/server_containers.py \
+            --lemond "$(command -v lemond)" --cli-binary "$(command -v lemonade)" \
+            --backend llamacpp:nathanw --tool ${{ matrix.tool }} --mode ${{ matrix.mode }}
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-container-smoke-${{ matrix.tool }}-${{ matrix.mode }}
 
   test-watchdog-lifecycle-linux:
     name: Test watchdog lifecycle (ubuntu-latest)
@@ -1618,13 +1789,12 @@ jobs:
           needs: ${{ toJSON(needs) }}
           event-name: ${{ github.event_name }}
 
-  # Same gate pattern as packaging-gate, for the self-hosted inference runners
-  # that PR pushes skip. The job name below belongs in main's required status
-  # checks — that registration is what makes the merge-queue strictness bind,
-  # so renaming the job requires a matching branch-protection update.
+  # Same gate pattern as packaging-gate. Also includes jobs that run on every
+  # PR, so that we can keep those as required PR checks without adjusting repo
+  # settings.
   backends-gate:
     name: Inference backend tests
-    needs: [build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-watchdog-lifecycle-linux]
+    needs: [build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-container-backends, test-container-smoke, test-watchdog-lifecycle-linux]
     if: always()
     runs-on: ubuntu-latest
     steps:

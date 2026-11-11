@@ -276,36 +276,19 @@ void AceStepServer::audio_generations(const json& request, httplib::DataSink& si
 namespace backends {
 
 namespace {
-// ACE-Step's HF repo holds many variants; the checkpoint variant names the DiT,
-// and we additionally fetch one LM, the text encoder, and the VAE. Resolves to
-// the active snapshot directory (ace-server scans --models).
+// The main checkpoint resolves to the active snapshot directory, which
+// ace-server scans via --models.
 class AceStepOps : public BackendOps {
 public:
     std::string resolve_checkpoint_path(const ModelInfo& info,
                                         const CheckpointResolveContext& ctx) const override {
-        (void)info;
+        if (ctx.type != "main") return BackendOps::resolve_checkpoint_path(info, ctx);
         std::filesystem::path root = lemon::utils::path_from_utf8(ctx.model_cache_path);
         std::filesystem::path snap = hf_cache::active_snapshot_path(root);
         if (!snap.empty() && hf_cache::exists(snap)) {
             return lemon::utils::path_to_utf8(snap);
         }
         return ctx.model_cache_path;
-    }
-
-    std::optional<std::vector<std::string>> select_checkpoint_files(
-        const std::string& main_variant, const std::vector<std::string>& repo_files) const override {
-        static const std::vector<std::string> kCompanions = {
-            "acestep-5Hz-lm-4B-Q8_0.gguf",     // language model (vocals/auto-lyrics)
-            "Qwen3-Embedding-0.6B-BF16.gguf",  // text encoder
-            "vae-BF16.gguf",                   // VAE
-        };
-        std::vector<std::string> want = {main_variant};
-        for (const auto& c : kCompanions) {
-            if (std::find(repo_files.begin(), repo_files.end(), c) != repo_files.end()) {
-                want.push_back(c);
-            }
-        }
-        return want;
     }
 };
 }  // namespace

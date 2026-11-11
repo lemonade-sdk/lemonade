@@ -146,4 +146,10 @@ const RouteArg kSeed{"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Supp
                      "Random seed for reproducibility. Defaults to the backend's own."};
 } // namespace inference
 
+namespace classification {
+const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                      "The classification model. Optional when exactly one classification model is loaded; "
+                      "that model is used."};
+} // namespace classification
+
 } // namespace lemon

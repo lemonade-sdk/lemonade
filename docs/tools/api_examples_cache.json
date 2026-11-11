@@ -922,7 +922,7 @@
       }
     }
   },
-  "990ebf5dcf2c2bb07c838de48f4395c5b0ffab2ce8672b64dafa42c9afc8993c": {
+  "39039e20691972db87aa212fde223a7a1f556aeacdd6a5a4364445ad027bc073": {
     "route": "lemonade.3d_generations",
     "format": "Binary",
     "request": {
@@ -930,8 +930,8 @@
       "path": "/v1/3d/generations",
       "query": {},
       "json": {
-        "image": "@fixtures/image.png",
         "model": "TRELLIS-3D",
+        "image": "@fixtures/image.png",
         "resolution": 512,
         "seed": 42
       },
@@ -941,10 +941,10 @@
     "response": {
       "status": 200,
       "content_type": "model/gltf-binary",
-      "bytes": 4534160
+      "bytes": 4453452
     }
   },
-  "a292d73fcbb22dfdecb48de484e9a1a902c92f2b2a71a90e577f76d91bc101c6": {
+  "ef19a068886c2ac92937213d9d7bf0ff4a2695c112d5cf81d78e9217d1bc4784": {
     "route": "lemonade.audio_generations",
     "format": "Binary",
     "request": {
@@ -964,7 +964,7 @@
     "response": {
       "status": 200,
       "content_type": "audio/wav",
-      "bytes": 8640044
+      "bytes": 8593964
     }
   },
   "204810b5025ebac94883a81a51034a5258f47458789e607159848e8054dd6a1c": {
@@ -989,7 +989,7 @@
       "bytes": 884780
     }
   },
-  "d882ab2725e2de9614b742d512074747aa05bceeabb9b5c771e9ed81b287541b": {
+  "5edf6f16fedcea8f06a94123596c9ced6f9d8089ee82d526eb70024df6a63895": {
     "route": "lemonade.classify",
     "format": "Json",
     "request": {
@@ -997,8 +997,8 @@
       "path": "/v1/classify",
       "query": {},
       "json": {
-        "input": "Please verify your account at http://secure-login.example now.",
-        "model": "Phishing-Email-Detection-ONNX"
+        "model": "Phishing-Email-Detection-ONNX",
+        "input": "Please verify your account at http://secure-login.example now."
       },
       "form": {},
       "files": {}
@@ -1014,7 +1014,8 @@
           "LABEL_3": 2.331440818181818e-08
         },
         "model": "Phishing-Email-Detection-ONNX",
-        "object": "classification"
+        "object": "classification",
+        "truncated": false
       }
     }
   },
@@ -4898,6 +4899,90 @@
         "n_written": 5277108,
         "timings": {
           "save_ms": 8.225
+        }
+      }
+    }
+  },
+  "af2ea29a04067b551bf32d4d57adfe3e7b2c0b400212d34b4f047956e1371747": {
+    "route": "llamacpp.systemone",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/systemone",
+      "query": {},
+      "json": {
+        "model": "Laya-GGUF",
+        "state": "Customer message: I was charged twice for my order last week and nobody has replied.",
+        "questions": {
+          "route": {
+            "type": "choice",
+            "instructions": "Which team should handle this?",
+            "criteria": {
+              "billing": null,
+              "shipping": null,
+              "technical": null
+            }
+          },
+          "angry": {
+            "type": "noul",
+            "instructions": "Is the customer angry?"
+          },
+          "urgency": {
+            "type": "score",
+            "instructions": "How urgent is this?",
+            "criteria": [
+              "can wait",
+              "this week",
+              "today",
+              "right now"
+            ]
+          }
+        }
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "model": "Laya-GGUF",
+        "answers": {
+          "route": {
+            "type": "choice",
+            "choice": "billing",
+            "probabilities": {
+              "billing": 0.9914327368198715,
+              "shipping": 0.0058968890569228395,
+              "technical": 0.0026703741232054364
+            },
+            "confidence": 0.9871491052298071
+          },
+          "angry": {
+            "type": "noul",
+            "noul": 0.7880857763496107
+          },
+          "urgency": {
+            "type": "score",
+            "score": 1.8974064521547507,
+            "legend": {
+              "0": "can wait",
+              "1": "this week",
+              "2": "today",
+              "3": "right now"
+            },
+            "probabilities": {
+              "0": 0.03941832754688493,
+              "1": 0.4667585212872725,
+              "2": 0.050821522630049645,
+              "3": 0.44300162853579295
+            },
+            "confidence": 0.02375689275147952
+          }
+        },
+        "usage": {
+          "input_tokens": 136,
+          "output_tokens": 0
         }
       }
     }
@@ -9414,12 +9499,6 @@
             "created": 1234567890,
             "downloaded": true,
             "id": "SD-Turbo",
-            "image_defaults": {
-              "cfg_scale": 1.0,
-              "height": 512,
-              "steps": 4,
-              "width": 512
-            },
             "labels": [
               "image"
             ],
@@ -9429,6 +9508,7 @@
             "recipe_options": {
               "cfg_scale": 1.0,
               "height": 512,
+              "soft_pixel_cap": 525625,
               "steps": 4,
               "width": 512
             },

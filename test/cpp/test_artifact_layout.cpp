@@ -346,33 +346,6 @@ static void test_a_side_checkpoint_naming_an_absent_file_is_an_error() {
     check("a side checkpoint naming a file the repository lacks is reported", threw);
 }
 
-// The address says which bytes; the placement says whose policy reads them. One ref, two
-// backends: a GGUF selection takes the quantization the variant names, a ThinkSound one
-// wants its own fixed set of audio files and finds none of them here.
-static void test_the_policy_travels_with_the_source_not_the_address() {
-    const ArtifactRef artifact = ref("model-Q4_K_M.gguf");
-    const ListingRepository ggufs(artifact, policy("llamacpp"));
-    const ListingRepository audio(artifact, policy("thinksound"));
-    const RepoListing listing = ggufs.list("org/repo", "");
-    const Placement where{"/cache", "snapshot-1", ""};
-
-    const DownloadPlan gguf_plan =
-        registry_download_plan(ggufs, artifact, hf_hub_layout(), where, listing);
-    const DownloadPlan audio_plan =
-        registry_download_plan(audio, artifact, hf_hub_layout(), where, listing);
-
-    check("the placement's recipe decides what the same address offers",
-          planned(gguf_plan, "model-Q4_K_M.gguf") &&
-          !planned(audio_plan, "model-Q4_K_M.gguf"));
-    check("a policy that wants other files still takes the shared config",
-          planned(audio_plan, "config.json"));
-    check("choosing a policy leaves the address and its destination alone",
-          gguf_plan.download_path == audio_plan.download_path);
-
-    ArtifactRef same_bytes = artifact;
-    check("identity is the address alone", same_bytes == artifact);
-}
-
 static void test_a_sibling_source_resolves_beside_its_model() {
     const fs::path model_dir = scratch_dir("sibling_source");
     const fs::path main_file = model_dir / "whisper.bin";
@@ -468,7 +441,6 @@ int main() {
     test_a_sibling_lands_beside_the_file_it_belongs_to();
     test_layout_selection_is_a_backend_fact();
     test_the_plan_names_the_files_the_ref_needs();
-    test_the_policy_travels_with_the_source_not_the_address();
     test_a_variant_matching_no_file_is_an_error();
     test_a_side_checkpoint_fetches_only_its_own_file();
     test_a_side_checkpoint_naming_an_absent_file_is_an_error();

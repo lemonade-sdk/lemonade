@@ -7,6 +7,7 @@ import { attachServerModelState, useServerModelState } from './features/models/m
 import { preloadInteractionSurfaces } from './interactionPreload';
 import { I18nContext, translate, useI18n, type I18nContextValue } from './i18n';
 import { routerDependencies } from './features/router/routerRuntime';
+import { captureBrowserPromptFromUrl } from './features/browserPrompt';
 const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
 type MarketplaceApp = {
   id: string;
@@ -345,6 +346,9 @@ function consumeNavigationQuery(hash: string): void {
 }
 
 function loadSavedRoute(): AppRoute {
+  try {
+    if (new URLSearchParams(window.location.search).has('q')) return { view: 'chat' };
+  } catch { /* ignore */ }
   const fromLocation = routeFromCurrentLocation();
   if (fromLocation) {
     canonicalizeLegacyHash(fromLocation);
@@ -383,6 +387,9 @@ function loadTheme(): Theme {
   } catch { /* ignore */ }
   return 'dark';
 }
+
+// Capture before React mounts ChatView so its first send cannot race URL cleanup.
+captureBrowserPromptFromUrl();
 
 const App: React.FC = () => {
   const { t } = useI18n();
@@ -999,11 +1006,11 @@ const App: React.FC = () => {
     if (failed) setDictationTarget(null);
   }, []);
 
-  const handleModelSelect = useCallback((modelName: string) => {
+  const handleModelSelect = useCallback((modelName: string, options?: { navigate?: boolean }) => {
     setDictationTarget(null);
     setCurrentModel(modelName);
     setModelSelectionEpoch(epoch => epoch + 1);
-    setView('chat');
+    if (options?.navigate !== false) setView('chat');
   }, [setView]);
 
   const handleModelSelectFromModels = useCallback((modelName: string) => {
@@ -1251,6 +1258,7 @@ const App: React.FC = () => {
             <ViewErrorBoundary view={t('Chat')}>
               <ChatView
                 key={clientDataResetNonce}
+                isVisible={view === 'chat'}
                 currentModel={currentModel}
                 modelSelectionEpoch={modelSelectionEpoch}
                 composerFocusEpoch={composerFocusEpoch}

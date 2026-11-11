@@ -1,5 +1,6 @@
 #include "lemon/models/ingest_collections.h"
 
+#include "lemon/backends/backend_registry.h"
 #include "lemon/canonical_id.h"
 #include "lemon/models/artifact_store.h"
 #include "lemon/models/store.h"
@@ -380,14 +381,19 @@ std::optional<std::string> IngestCollections::validate(
                     return std::nullopt;
                 }
             },
-            [this](const std::string& name) -> std::optional<ModelType> {
+            [this](const std::string& name) -> std::optional<RoutingModelFacts> {
                 try {
-                    return require_row(deps_, name).type;
+                    const ModelInfo row = require_row(deps_, name);
+                    RoutingModelFacts facts = routing_model_facts(row.type, row.labels, row.recipe);
+                    if (const auto* ops = backends::ops_for(row.recipe)) {
+                        facts.load_refusal = ops->validate_load(row);
+                    }
+                    return facts;
                 } catch (...) {
                     return std::nullopt;
                 }
             },
-            [this, &find_inline_def](const std::string& name) -> std::optional<ModelType> {
+            [this, &find_inline_def](const std::string& name) -> std::optional<RoutingModelFacts> {
                 // Not registered - the name may match an inline `models[]`
                 // definition in this same request. Derive the type exactly as
                 // register_user_model() would once that definition is
@@ -400,8 +406,9 @@ std::optional<std::string> IngestCollections::validate(
                     return std::nullopt;
                 }
                 std::set<std::string> label_set = normalized_definition_labels(*def);
-                return get_model_type_from_labels(
-                    std::vector<std::string>(label_set.begin(), label_set.end()));
+                const std::vector<std::string> labels(label_set.begin(), label_set.end());
+                return routing_model_facts(get_model_type_from_labels(labels), labels,
+                                           def->value("recipe", std::string()));
             },
         });
         try {

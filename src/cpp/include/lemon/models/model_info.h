@@ -18,19 +18,6 @@ namespace lemon {
 // holds it behind a shared_ptr, which supports incomplete types.
 struct RoutePolicy;
 
-// Image generation defaults for SD models
-struct ImageDefaults {
-    int steps = 20;
-    float cfg_scale = 7.0f;
-    int width = 512;
-    int height = 512;
-    std::string sampling_method;
-    float flow_shift = 0.0f;
-    std::uint64_t soft_pixel_cap = 0;  // 0 uses the server's inferred edit-size cap
-
-    bool has_defaults = false;  // True if explicit defaults were provided in JSON
-};
-
 /// Metadata extracted from a GGUF file's KV header.
 ///
 /// Stored inside ModelInfo for llama.cpp models so that auto-tune and other
@@ -51,6 +38,9 @@ struct GgufMetadata {
     int64_t key_length_swa = 0;      // SWA-reduced key length (Gemma4, etc.)
     int64_t swa_layer_count = 0;     // layers with sliding-window attention (derived)
     int64_t full_attention_interval = 0; // every Nth layer does full attention (Qwen SSM)
+    bool causal_attention = true;    // "<arch>.attention.causal"; false for encoders
+    std::string decision_type;       // "<arch>.decision.type"; set only on SystemOne decision models
+    int64_t decision_max_head_tokens = 0; // "<arch>.decision.max_head_tokens": question + options (laya)
     GgufCapabilities caps;
 
     // ── Raw per-layer arrays (stored as read from GGUF) ───────────────
@@ -75,6 +65,8 @@ struct ModelInfo {
     bool suggested = false;
     std::string source;  // Local origin: local_upload/local_path/extra_models_dir
     std::string registry_source;  // Remote registry: huggingface/modelscope; empty when unpinned
+    // A by-name source choice is valid only under the default that selected it.
+    std::string pull_source_default;
     bool downloaded = false;     // Whether model is downloaded and available
     bool update_available = false; // Whether a newer remote-registry version exists
     std::optional<bool> auto_update = std::nullopt; // Optional per-model auto-update override
@@ -92,9 +84,6 @@ struct ModelInfo {
     // Multi-model support fields
     ModelType type = ModelType::LLM;      // Model type for LRU cache management
     DeviceType device = DEVICE_NONE;      // Target device(s) for this model
-
-    // Image generation defaults (for sd-cpp models)
-    ImageDefaults image_defaults;
 
     // Per-collection system prompt template (collection.omni models only).
     // When non-empty, overrides the global default in toolDefinitions.json.
