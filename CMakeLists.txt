@@ -4142,7 +4142,9 @@ if(BUILD_TESTING)
         endforeach()
         add_cpp_ci_test(${_agent_test_name}Test CI ON COMMAND test_${_agent_test})
     endforeach()
-    add_dependencies(test_agent_pins copy_resources)
+    # The shipped file, wherever the build puts resources (MSVC puts the exe in Release/).
+    target_compile_definitions(test_agent_pins PRIVATE
+        LEMONADE_SHIPPED_AGENT_VERSIONS="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/agent_versions.json")
 
     foreach(_agent_test agent_host_protocol agent_host_registry)
         add_executable(test_${_agent_test} test/cpp/test_${_agent_test}.cpp)

@@ -25,7 +25,9 @@ int main() {
     // cmd.exe reads a batch file in the console code page, so a non-ASCII
     // profile path is written through %LOCALAPPDATA%, which it expands as Unicode.
     const std::string unicode = render_cmd_shim(
-        "pi", "C:\\Users\\Jos\xc3\xa9\\AppData\\Local\\lemonade\\agents\\pi\\1.5.0\\pi.exe",
+        "pi",
+        lemon::utils::path_from_utf8(
+            "C:\\Users\\Jos\xc3\xa9\\AppData\\Local\\lemonade\\agents\\pi\\1.5.0\\pi.exe"),
         {{"LOCALAPPDATA", "C:\\Users\\Jos\xc3\xa9\\AppData\\Local"}});
     check("cmd shim names the payload through %LOCALAPPDATA%",
           unicode.find("\"%LOCALAPPDATA%\\lemonade\\agents\\pi\\1.5.0\\pi.exe\" %*") !=

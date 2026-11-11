@@ -71,6 +71,19 @@ std::string sha256_of(const std::string& data) {
     return "sha256:" + protocol::token_hash(data);
 }
 
+#ifdef _WIN32
+constexpr const char* kPiBinary = "pi.exe";
+#else
+constexpr const char* kPiBinary = "pi";
+#endif
+
+// Whether the shim runs binary. A cmd shim names it through %LOCALAPPDATA%
+// when it's below that, so only the version directory and file are compared.
+bool shim_names(const fs::path& shim, const fs::path& binary) {
+    fs::path tail = binary.parent_path().filename() / binary.filename();
+    return read_file(shim).find(tail.make_preferred().string()) != std::string::npos;
+}
+
 int error_status(const std::function<void()>& fn, std::string* code = nullptr) {
     try {
         fn();
@@ -149,8 +162,7 @@ int main(int argc, char** argv) {
     check("install writes the manifest",
           fs::exists(first.installed.dir / ".lemonade-install.json"));
     check("install writes our shim", first.shim == ShimState::Ours &&
-                                         read_file(shim).find(first.installed.binary.string()) !=
-                                             std::string::npos);
+                                         shim_names(shim, first.installed.binary));
     check("find_installed sees it", find_installed(pi, paths).has_value() &&
                                         find_installed(pi, paths)->version == "1.5.0");
 
@@ -187,8 +199,7 @@ int main(int argc, char** argv) {
 
     const auto upgraded = install_agent(pi, pin_for("v1.6.0"), paths, false, nullptr, no_cancel,
                                         loopback);
-    check("upgrade moves the shim", read_file(shim).find(upgraded.installed.binary.string()) !=
-                                        std::string::npos);
+    check("upgrade moves the shim", shim_names(shim, upgraded.installed.binary));
     check("upgrade removes the version it replaced when nothing runs it",
           !fs::exists(paths.agent_dir("pi") / "1.5.0"));
 
@@ -200,7 +211,7 @@ int main(int argc, char** argv) {
     const auto downgraded = install_agent(pi, pin_for("v1.5.0"), paths, false, nullptr, no_cancel,
                                           loopback);
     check("a downgrade points the shim at the pinned version",
-          read_file(shim).find(downgraded.installed.binary.string()) != std::string::npos);
+          shim_names(shim, downgraded.installed.binary));
     check("find_active prefers the pinned version", find_active(pi, paths, "1.5.0")->version == "1.5.0");
 
     {
@@ -266,10 +277,10 @@ int main(int argc, char** argv) {
         }
         leases.release(v16, std::chrono::seconds(0));
         install_agent(pi, pin_for("v1.7.0"), leased, false, nullptr, no_cancel, loopback, &leases);
-        check("a version another launch still uses is kept", fs::exists(v16 / "pi"));
+        check("a version another launch still uses is kept", fs::exists(v16 / kPiBinary));
         leases.release(v16, std::chrono::seconds(60));
         install_agent(pi, pin_for("v1.7.0"), leased, true, nullptr, no_cancel, loopback, &leases);
-        check("a version stays through its grace period", fs::exists(v16 / "pi"));
+        check("a version stays through its grace period", fs::exists(v16 / kPiBinary));
 
         // Retiring holds the lease lock, so a launch can't pick a version mid-removal.
         VersionLeases busy;
@@ -297,7 +308,7 @@ int main(int argc, char** argv) {
                            &busy_code) == 409 &&
                   busy_code == "agent_busy");
         check("a busy uninstall removes nothing",
-              fs::exists(v17 / "pi") && fs::exists(shim_path(leased, "pi")));
+              fs::exists(v17 / kPiBinary) && fs::exists(shim_path(leased, "pi")));
         launching.release(v17, std::chrono::seconds(0));
         check("once released, uninstall removes everything",
               uninstall_agent(pi, leased, uninstall_warnings, &launching) &&

@@ -49,7 +49,11 @@ int main() {
               500);
 
     // The shipped pins cover every asset pi publishes.
-    const auto shipped = lemon::agents::load_agent_versions();
+    lemon::utils::set_environment_variable_utf8("LEMONADE_AGENT_VERSIONS",
+                                                LEMONADE_SHIPPED_AGENT_VERSIONS);
+    json shipped;
+    check("shipped agent_versions.json loads",
+          error_status([&] { shipped = lemon::agents::load_agent_versions(); }) == 0);
     bool all = true;
     for (const char* os : {"linux", "darwin", "windows"}) {
         for (const char* arch : {"x64", "arm64"}) {
