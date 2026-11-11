@@ -921,7 +921,7 @@ jobs:
         run: |
           set -e
           cmake --preset default -DBUILD_WEB_APP=OFF
-          cmake --build --preset default --target lemond lemonade
+          cmake --build --preset default --target lemond lemonade lemonade-agent-host
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
@@ -930,6 +930,7 @@ jobs:
           path: |
             build/lemond
             build/lemonade
+            build/lemonade-agent-host
             build/resources/
           retention-days: 7
 
@@ -2284,7 +2285,7 @@ jobs:
           path: build
 
       - name: Make binaries executable
-        run: chmod +x build/lemond build/lemonade
+        run: chmod +x build/lemond build/lemonade build/lemonade-agent-host
 
       - name: Set HF_HOME
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
