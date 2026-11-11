@@ -1369,6 +1369,31 @@ class RouterTests(ServerTestBase):
                 )
         print("[OK] conversation and item_reference on a router collection -> 400")
 
+    def test_646_responses_allows_full_message_with_id(self):
+        """A full message that carries its own id is resent input, not a
+        reference, so it must not trip the guard."""
+        resp = self._post_responses(
+            {
+                "model": COLLECTION_NAME,
+                "input": [
+                    {
+                        "id": "msg_abc123",
+                        "role": "user",
+                        "content": "say hi",
+                    }
+                ],
+                "max_output_tokens": 8,
+            },
+            timeout=600,
+        )
+        code = None
+        if resp.status_code >= 400:
+            code = resp.json().get("error", {}).get("code")
+        self.assertNotEqual(
+            code, "router_response_chain_unsupported", f"status {resp.status_code}"
+        )
+        print(f"[OK] full message with an id not rejected (status {resp.status_code})")
+
 
 if __name__ == "__main__":
     run_server_tests(RouterTests, description="ROUTER TESTS")

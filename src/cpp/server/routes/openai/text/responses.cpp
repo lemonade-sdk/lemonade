@@ -147,7 +147,8 @@ public:
             "`conversation` or an `item_reference` input, is rejected on a `collection.router` "
             "model, since the candidate picked for this turn may not be the one holding them. "
             "Resend the full `input`, or send the request to the candidate named in the earlier "
-            "response's `x_lemonade_route.route_to`.",
+            "response's `x_lemonade_route.route_to`, which a streamed response carries on its first "
+            "event.",
         };
         s.args = {
             kInput, model_loading::kModel, kMaxOutputTokens, kPreviousResponseId, generation::kTemperature,
@@ -213,7 +214,8 @@ protected:
                 "This request continues earlier responses, which are held by the backend that "
                 "served them, and router collection '" + req.model + "' may select a different "
                 "candidate for this turn. Resend the full 'input', or send the request to the "
-                "candidate named in the earlier response's 'x_lemonade_route.route_to'.");
+                "candidate named in the earlier response's 'x_lemonade_route.route_to' (on the "
+                "first event when it was streamed).");
             return false;
         }
         // Router policies call backends here, before run() does.
