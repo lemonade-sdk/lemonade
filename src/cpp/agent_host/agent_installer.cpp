@@ -17,6 +17,14 @@
 #include <libproc.h>
 #endif
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <tlhelp32.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace lemon::agents {
@@ -269,9 +277,40 @@ bool runs_from(const fs::path& dir) {
         }
     }
     return false;
+#elif defined(_WIN32)
+    // Windows lets a directory be renamed while an executable in it runs, so
+    // running processes have to be looked up like on the other platforms.
+    (void)prefix;
+    auto lower = [](std::wstring s) {
+        CharLowerBuffW(s.data(), static_cast<DWORD>(s.size()));
+        return s;
+    };
+    const std::wstring wprefix =
+        lower((canonical_ec ? dir : resolved).lexically_normal().wstring() + L"\\");
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    bool found = false;
+    PROCESSENTRY32W entry = {};
+    entry.dwSize = sizeof(entry);
+    for (BOOL more = Process32FirstW(snapshot, &entry); more && !found;
+         more = Process32NextW(snapshot, &entry)) {
+        HANDLE process =
+            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
+        if (process == nullptr) {
+            continue;
+        }
+        std::vector<wchar_t> image(32768);
+        DWORD size = static_cast<DWORD>(image.size());
+        if (QueryFullProcessImageNameW(process, 0, image.data(), &size)) {
+            found = lower(std::wstring(image.data(), size)).rfind(wprefix, 0) == 0;
+        }
+        CloseHandle(process);
+    }
+    CloseHandle(snapshot);
+    return found;
 #else
-    // Windows refuses to rename a directory with a running executable, which
-    // the removal relies on instead.
     (void)prefix;
     return false;
 #endif
@@ -505,8 +544,16 @@ bool uninstall_agent(const AgentDescriptor& agent, const AgentPaths& paths,
                                  agent.name + " is being launched; uninstall it again in a minute.");
             }
         }
-        // All versions move aside or none do: a version Windows keeps open
-        // (its executable runs) puts back the ones already moved.
+        for (const fs::path& entry : entries) {
+            if (entry.filename().string()[0] != '.' && runs_from(entry)) {
+                throw AgentError(409, "agent_busy",
+                                 "Can't remove " + agent.name + " " +
+                                     entry.filename().string() +
+                                     " while it's running. Close it and uninstall again.");
+            }
+        }
+        // All versions move aside or none do: a version that can't be renamed
+        // puts back the ones already moved.
         std::vector<std::pair<fs::path, fs::path>> moved;
         for (const fs::path& entry : entries) {
             const std::string name = entry.filename().string();

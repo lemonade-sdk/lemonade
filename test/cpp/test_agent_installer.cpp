@@ -14,6 +14,7 @@
 
 #include "lemon/agents/agent_installer.h"
 #include "lemon/agents/host_protocol.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 
 using agent_test::check;
@@ -82,7 +83,12 @@ int error_status(const std::function<void()>& fn, std::string* code = nullptr) {
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    // macOS kills a copy of a system binary, so the test runs a copy of itself as a pi.
+    if (argc == 3 && std::string(argv[1]) == "--sleep") {
+        std::this_thread::sleep_for(std::chrono::seconds(std::stoi(argv[2])));
+        return 0;
+    }
     const fs::path work = agent_test::temp_dir("agent-installer");
     AgentPaths paths;
     paths.data_root = work / "data" / "lemonade" / "agents";
@@ -197,31 +203,54 @@ int main() {
           read_file(shim).find(downgraded.installed.binary.string()) != std::string::npos);
     check("find_active prefers the pinned version", find_active(pi, paths, "1.5.0")->version == "1.5.0");
 
-#ifdef __linux__
     {
         // A pi still running from an old version keeps it; nothing else does.
+        AgentPaths running = paths;
+#ifdef _WIN32
+        running.data_root = work / "running" / "agents";
+        running.bin_dir = work / "running" / "bin";
+        const fs::path sleeper_exe =
+            fs::path(lemon::utils::get_environment_variable_utf8("SystemRoot")) / "System32" /
+            "ping.exe";
+        const std::vector<std::string> sleeper_args = {"-n", "30", "127.0.0.1"};
+#else
         // Reached through a symlink, as with a symlinked XDG_DATA_HOME.
         fs::create_directories(work / "running-real");
         fs::create_directory_symlink(work / "running-real", work / "running");
-        AgentPaths running = paths;
         running.data_root = work / "running" / "agents";
         running.bin_dir = work / "running" / "bin";
+#ifdef __APPLE__
+        const fs::path sleeper_exe = fs::absolute(argv[0]);
+        const std::vector<std::string> sleeper_args = {"--sleep", "30"};
+#else
+        const fs::path sleeper_exe = "/bin/sleep";
+        const std::vector<std::string> sleeper_args = {"30"};
+#endif
+#endif
         install_agent(pi, pin_for("v1.5.0"), running, false, nullptr, no_cancel, loopback);
         const auto v16 =
             install_agent(pi, pin_for("v1.6.0"), running, false, nullptr, no_cancel, loopback);
         check("an upgrade removes a version nothing runs", !fs::exists(running.agent_dir("pi") / "1.5.0"));
-        fs::copy_file("/bin/sleep", v16.installed.binary, fs::copy_options::overwrite_existing);
+        fs::copy_file(sleeper_exe, v16.installed.binary, fs::copy_options::overwrite_existing);
         auto sleeper = lemon::utils::ProcessManager::start_process(
-            v16.installed.binary.string(), {"30"}, "", false, false, {});
+            v16.installed.binary.string(), sleeper_args, "", false, false, {});
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         install_agent(pi, pin_for("v1.7.0"), running, false, nullptr, no_cancel, loopback);
-        check("a version a process runs from is kept", fs::exists(running.agent_dir("pi") / "1.6.0" / "pi"));
+        check("a version a process runs from is kept", fs::exists(v16.installed.binary));
+        std::vector<std::string> running_warnings;
+        std::string running_code;
+        check("uninstall while a process runs from a version is busy",
+              error_status([&] { uninstall_agent(pi, running, running_warnings); },
+                           &running_code) == 409 &&
+                  running_code == "agent_busy");
+        check("a refused uninstall removes nothing",
+              fs::exists(v16.installed.binary) && fs::exists(shim_path(running, "pi")) &&
+                  find_installed(pi, running, "1.7.0").has_value());
         lemon::utils::ProcessManager::kill_process(sleeper);
         lemon::utils::ProcessManager::wait_for_exit(sleeper, 5);
         install_agent(pi, pin_for("v1.7.0"), running, true, nullptr, no_cancel, loopback);
         check("once it exits, the next install removes it", !fs::exists(running.agent_dir("pi") / "1.6.0"));
     }
-#endif
     {
         // A launch that picked a version keeps it until the client has run it.
         AgentPaths leased = paths;
