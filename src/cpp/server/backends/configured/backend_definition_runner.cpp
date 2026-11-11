@@ -494,7 +494,9 @@ std::string DefinitionRunner::resolve_artifact(const CheckpointResolveContext& c
     if (context.model_cache_path.empty()) return "";
     if (context.type == "npu_cache") return "";
     const auto role = context.type.empty() ? "main" : context.type;
-    const bool declared = std::any_of(program_.artifacts.begin(), program_.artifacts.end(), [&](const auto& item) { return item.role == role; });
+    const bool declared = std::any_of(program_.artifacts.begin(), program_.artifacts.end(), [&](const auto& item) {
+        return item.role == role && slots(SlotOwnerKind::Artifact, item.name, "artifacts").size() == 1;
+    });
     const auto owner = declared ? role : "main";
     const auto resolved_role = !declared && role != "main" ? "mmproj" : role;
     return artifact(owner, [&](const auto& target, auto& guard) {
