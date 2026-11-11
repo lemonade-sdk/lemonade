@@ -26,6 +26,28 @@ assert.match(client, /body: options\.dryRun \? \{ \.\.\.changes, dry_run: true \
   'option saves must support dry_run');
 assert.doesNotMatch(client, /options\[`\$\{recipe\}_backend`\]/,
   'the API client must not guess the backend option from the recipe name');
+assert.match(detail, /builtinOptionErrors\(\s*schemaRecipe\?\.source === 'builtin' \? schemaRecipe : undefined/,
+  'built-in recipes must validate their draft against the schema row');
+assert.match(detail, /disabled=\{!serverOptionsLoaded \|\| schemaOptionErrors\.size > 0\}/,
+  'Save must stay disabled while a built-in option fails schema validation');
+assert.match(client, /if \(catalogRow\?\.source === 'builtin'\) \{[\s\S]*?await prepareBuiltinLoad\(modelName, cachedModelInfo, body\);/,
+  'built-in loads must run the catalog preflight before posting the load');
+assert.match(client, /private async _json<T = unknown>[\s\S]*?this\.assertCurrentConnection\(connection\);\s*return data;/,
+  'JSON answers must be dropped when the connection changed while they were in flight');
+assert.match(client, /if \(!this\.isCurrentConnection\(connection\)\) \{\s*await reader\.cancel\(\)/,
+  'a chat stream must stop when the connection changes');
+assert.match(manager, /externalCheckpointRoles\(selectedCustomRecipeName\)/,
+  'external recipes must take their checkpoint fields from the schema row');
+const presentation = read('modelPresentation.ts');
+assert.match(presentation, /return serverRecipeDisplayName\(recipe\) \|\| backendPresentation\(recipe\)\?\.compact/,
+  'compact labels must prefer the server name over the curated table');
+for (const view of ['components/ChatView.tsx', 'components/BackendManager.tsx', 'components/Monitor.tsx']) {
+  assert.match(read(view), /useServerRecipeNames\(\);/, `${view} must re-render when server recipe names change`);
+}
+assert.match(read('components/BackendManager.tsx'), /new Proxy\(CURATED_RECIPE_LABELS, \{\s*get: \(curated, recipe\) => typeof recipe !== 'string' \? undefined\s*: serverRecipeDisplayName\(recipe\)/,
+  'the Backends view must read recipe names from the server before its curated table');
+assert.match(manager, /const backendCatalog = useBackendCatalog\(\);/,
+  'the Models view, which owns the model list, must re-render when server recipe names change');
 
 const suite = path.resolve(__dirname, '../../../test/app');
 let failed = false;

@@ -1,11 +1,12 @@
-const { assert, fixture, load, test, run, bridge, tick, app, path } = require('./helpers/catalogHarness.cjs');
+const { assert, fixture, load, stub, test, run, bridge, tick } = require('./helpers/catalogHarness.cjs');
 const { api, connection: connect } = bridge();
 const { BackendCatalogClient, backendCatalogClient, refreshBackendCatalog } = load('features/backends/backendCatalog.ts');
 const { parseBackendSchema, backendSelector, own } = load('features/backends/backendSchema.ts');
 const state = load('features/backends/catalogState.ts');
 const { recipeBackendOptionName } = load('features/backends/recipeMetadata.ts');
-const { catalogBackend, ensureCatalogModelReady, loadThroughCatalog } = load('features/backends/catalogLoad.ts');
-const { catalogRecipeCapabilities, externalRecipeChoices } = load('features/backends/catalogRecipeOptions.ts');
+const { catalogBackend, ensureCatalogModelReady, loadThroughCatalog, prepareBuiltinLoad } = load('features/backends/catalogLoad.ts');
+const { builtinOptionErrors } = load('features/backends/builtinOptions.ts');
+const { catalogRecipeCapabilities, externalCheckpointRoles, externalCheckpoints, externalRecipeChoices } = load('features/backends/catalogRecipeOptions.ts');
 let client;
 const calls = [];
 let reply = () => new Response(JSON.stringify(fixture('catalog-fourth')), { headers: { ETag: 'fourth-etag' } });
@@ -127,7 +128,7 @@ test('a connection change drops cached system info and late responses', async ()
   const pending = api.systemInfo();
   await tick(); connect('http://four-b.test', 'new-private-key');
   release(new Response(JSON.stringify({ recipes: { stale: {} } })));
-  await pending;
+  await assert.rejects(pending, /connection changed/);
   assert.equal(api.systemInfoData, null);
 });
 test('selector identity is independent of suffix/UI and supports compatible older hints', () => {
@@ -162,12 +163,14 @@ test('server display names replace tables, vanish with the catalog and survive p
   assert.equal(backendCompactLabel('constructor'), 'Unlisted controls');
   state.setSystemRecipeNames({ recipes: { llamacpp: { display_name: 'Llama.cpp from server' }, toString: {} } });
   assert.equal(backendLabel('llamacpp'), 'Llama.cpp from server');
-  assert.equal(backendCompactLabel('llamacpp'), 'llama.cpp');
+  assert.equal(backendCompactLabel('llamacpp'), 'Llama.cpp from server');
   assert.equal(backendLabel('toString'), 'toString');
   state.clearServerRecipeNames();
   state.setCatalogState({ status: 'loading', connection: api.connectionSnapshot() });
   assert.equal(backendLabel('constructor'), 'constructor');
   assert.equal(backendLabel('llamacpp'), 'llama.cpp');
+  assert.equal(backendCompactLabel('llamacpp'), 'llama.cpp');
+  assert.equal(backendCompactLabel('flm'), 'FLM');
   assert.equal(state.serverRecipeDisplayName('__proto__'), undefined);
 });
 test('external recipes join the add-model choices with their declared modes', () => {
@@ -356,6 +359,185 @@ test('built-in and unknown recipes stay on the regular load path', async () => {
   assert.equal(await loadThroughCatalog('m', { id: 'm', recipe: 'catalog-fourth' }), false);
   assert.equal(await loadThroughCatalog('m', { id: 'm', recipe: 'toString' }), false);
   assert.equal(await loadThroughCatalog('m', null), false);
+});
+
+const builtinWire = () => ({
+  schema_version: 1, control_version: 1, definition_schema_version: 1, catalog_id: 'builtin-fixture',
+  recipes: [{ recipe: 'shipped', source: 'builtin', display_name: 'Shipped engine', supported_modes: ['chat'], support: [], options: [
+    { name: 'ctx_size', value_type: 'integer', default_value: 4096, unset_values: [null] },
+    { name: 'shipped_backend', value_type: 'string', default_value: '', unset_values: [null, -1, '', 'auto'] },
+    { name: 'steps', value_type: 'integer', default_value: 20, unset_values: [null, -1, '', 'auto'] },
+    { name: 'scale', value_type: 'number', default_value: 7.5, unset_values: [null, -1, '', 'auto'] },
+    { name: 'tristate', value_type: 'string', default_value: null, unset_values: [null, -1, '', 'auto'] },
+    { name: 'merge_args', value_type: 'boolean', default_value: true, unset_values: [null, -1, '', 'auto'] },
+  ] }],
+});
+const publishBuiltin = () => state.setCatalogState({ status: 'ready', connection: api.connectionSnapshot(), catalog: parseBackendSchema(builtinWire()) });
+const builtinInfo = backendState => ({ recipes: { shipped: {
+  default_backend: 'cpu', options: [{ name: 'shipped_backend', type_name: 'BACKEND' }],
+  backends: { cpu: { state: 'installed' }, gpu: { state: backendState, message: 'GPU message' } },
+} } });
+const builtinOptions = effective => ({ recipe: 'shipped', model_name: 'm', saved: {}, defaults: {}, effective });
+
+test('built-in drafts validate against the schema row and leave tri-state options to the server', () => {
+  const row = parseBackendSchema(builtinWire()).recipes[0];
+  assert.equal(builtinOptionErrors(row, { steps: 12, scale: 0.5, ctx_size: -1, tristate: true, shipped_backend: 'gpu' }).size, 0);
+  const errors = builtinOptionErrors(row, { steps: 2.5, scale: 'x', unknown: 1, tristate: 'anything' });
+  assert.deepEqual([...errors.keys()], ['steps', 'scale']);
+  assert.match(errors.get('steps'), /integer/);
+  assert.equal(builtinOptionErrors(row, { steps: null, scale: -1 }).size, 0);
+  assert.equal(builtinOptionErrors(undefined, { steps: 2.5 }).size, 0);
+});
+test('a built-in load dry-runs the shown options, installs the resolved backend and stays bound', async () => {
+  publishBuiltin();
+  const posts = [];
+  reply = (url, options) => {
+    if (url.endsWith('/options')) { posts.push([url, body(options)]); return new Response(JSON.stringify(builtinOptions({ shipped_backend: 'gpu' }))); }
+    if (url.endsWith('/system-info')) return new Response(JSON.stringify(builtinInfo('installable')));
+    if (options.method === 'POST') { posts.push([url, body(options)]); return new Response(JSON.stringify({ status: 'completed', complete: true })); }
+    return new Response('{}');
+  };
+  const apiUrl = api.connectionSnapshot().apiUrl;
+  const result = await prepareBuiltinLoad('m', { id: 'm', recipe: 'shipped', downloaded: true },
+    { model_name: 'm', shipped_backend: 'gpu', steps: null, mmproj_enabled: true, pinned: true, save_options: false });
+  assert.deepEqual(result, { outcome: 'prepared', backend: 'gpu', installed: true, pulled: false });
+  assert.deepEqual(posts, [
+    [apiUrl + '/models/m/options', { shipped_backend: 'gpu', steps: null, dry_run: true }],
+    [apiUrl + '/install', { recipe: 'shipped', backend: 'gpu', stream: true, subscribe: false }],
+  ]);
+});
+test('a built-in load falls back to the default backend and pulls a missing model', async () => {
+  publishBuiltin();
+  const posts = [];
+  reply = (url, options) => {
+    if (url.endsWith('/options')) return new Response(JSON.stringify(builtinOptions({ shipped_backend: 'auto' })));
+    if (url.endsWith('/system-info')) return new Response(JSON.stringify(builtinInfo('installable')));
+    if (url.endsWith('/downloads')) return new Response('[]');
+    if (options.method === 'POST') { posts.push(url); return new Response(JSON.stringify({ status: 'completed', complete: true })); }
+    return new Response(JSON.stringify({ recipe: 'shipped', downloaded: false }));
+  };
+  const result = await prepareBuiltinLoad('m', { id: 'm', recipe: 'shipped', downloaded: false }, {});
+  assert.deepEqual(result, { outcome: 'prepared', backend: 'cpu', installed: false, pulled: true });
+  assert.deepEqual(posts, [api.connectionSnapshot().apiUrl + '/pull']);
+});
+test('a dry run the server refuses never blocks a built-in load', async () => {
+  publishBuiltin();
+  let others = 0;
+  for (const status of [400, 404, 500]) {
+    reply = url => { if (!url.endsWith('/options')) others++; return new Response('{"error":"Unknown option"}', { status }); };
+    const result = await prepareBuiltinLoad('m', { id: 'm', recipe: 'shipped' }, { steps: 2.5 });
+    assert.equal(result.outcome, 'server-validation');
+    assert.equal(result.reason, status === 400 ? 'dry-run-rejected' : 'dry-run-unavailable');
+  }
+  reply = () => { throw new Error('offline'); };
+  assert.equal((await prepareBuiltinLoad('m', { id: 'm', recipe: 'shipped' }, {})).outcome, 'server-validation');
+  assert.equal(others, 0);
+});
+test('a built-in load stops only for an unsupported backend or a connection change', async () => {
+  publishBuiltin();
+  reply = url => new Response(JSON.stringify(url.endsWith('/options') ? builtinOptions({ shipped_backend: 'gpu' }) : builtinInfo('unsupported')));
+  await assert.rejects(prepareBuiltinLoad('m', { id: 'm', recipe: 'shipped' }, {}), /GPU message/);
+  reply = url => new Response(JSON.stringify(url.endsWith('/options') ? builtinOptions({ shipped_backend: 'gpu' }) : builtinInfo('mystery')));
+  assert.equal((await prepareBuiltinLoad('m', { id: 'm', recipe: 'shipped' }, {})).outcome, 'prepared');
+  reply = url => { connect('http://eight.test', 'private-eight-key'); return new Response(JSON.stringify(builtinOptions({}))); };
+  await assert.rejects(prepareBuiltinLoad('m', { id: 'm', recipe: 'shipped' }, {}), /connection changed/);
+  await assert.rejects(prepareBuiltinLoad('m', { id: 'm', recipe: 'shipped' }, {}), /connection changed/);
+  publishBuiltin();
+  assert.deepEqual(await prepareBuiltinLoad('m', { id: 'm', recipe: 'elsewhere' }, {}), { outcome: 'skipped', reason: 'not-builtin' });
+  state.setCatalogState({ status: 'missing', connection: api.connectionSnapshot(), message: 'none' });
+  assert.deepEqual(await prepareBuiltinLoad('m', { id: 'm', recipe: 'shipped' }, {}), { outcome: 'skipped', reason: 'no-schema' });
+});
+test('the regular load runs the built-in preflight and then posts the unchanged load body', async () => {
+  publishBuiltin();
+  const posts = [];
+  reply = (url, options) => {
+    if (url.endsWith('/options')) { posts.push(url); return new Response(JSON.stringify(builtinOptions({ shipped_backend: 'cpu' }))); }
+    if (url.endsWith('/system-info')) return new Response(JSON.stringify(builtinInfo('installed')));
+    if (options.method === 'POST') { posts.push([url, body(options)]); return new Response('{"status":"success"}'); }
+    return new Response('{}');
+  };
+  const root = api.connectionSnapshot().apiUrl;
+  await api.loadModel('m', { steps: 12, unknown_key: 1 }, { id: 'm', recipe: 'shipped', downloaded: true });
+  assert.deepEqual(posts, [root + '/models/m/options', [root + '/load', { model_name: 'm', steps: 12, unknown_key: 1, save_options: false }]]);
+});
+test('a load answer from the previous server is discarded', async () => {
+  state.setCatalogState({ status: 'missing', connection: api.connectionSnapshot(), message: 'none' });
+  let changed = 0;
+  const unsubscribe = api.onModelsChanged(() => { changed++; });
+  reply = (url, options) => {
+    if (options.method === 'POST') connect('http://nine.test', 'private-nine-key');
+    return new Response('{"status":"success"}');
+  };
+  await assert.rejects(api.loadModel('m', {}, { id: 'm', recipe: 'shipped' }), /connection changed/);
+  assert.equal(changed, 0);
+  unsubscribe();
+});
+test('late health and model-list answers never reach the new connection', async () => {
+  let release;
+  reply = () => new Promise(resolve => { release = resolve; });
+  const health = api.health();
+  await tick(); connect('http://ten.test', 'private-ten-key');
+  release(new Response(JSON.stringify({ status: 'ok', version: 'stale-server' })));
+  await assert.rejects(health, /connection changed/);
+  assert.notEqual(api.healthData?.version, 'stale-server');
+  const models = api.models(true);
+  await tick(); connect('http://eleven.test', 'private-eleven-key');
+  release(new Response(JSON.stringify({ data: [{ id: 'stale-model' }] })));
+  await assert.rejects(models, /connection changed/);
+  assert(!api.allModels.some(model => model.id === 'stale-model'));
+  reply = url => new Response(JSON.stringify(url.includes('/models') ? { data: [{ id: 'fresh-model' }] } : { status: 'ok' }));
+  assert.deepEqual((await api.models(true)).data.map(model => model.id), ['fresh-model']);
+});
+test('a refresh interrupted by a connection change asks the new server instead of failing', async () => {
+  const seen = [];
+  let switched = false;
+  reply = url => {
+    seen.push(url);
+    if (!switched) { switched = true; connect('http://twelve.test', 'private-twelve-key'); }
+    return new Response(JSON.stringify(url.includes('/models') ? { data: [{ id: 'twelve-model' }] } : { status: 'ok' }));
+  };
+  const result = await api.refresh();
+  assert(result, 'refresh must settle on the new connection');
+  assert.deepEqual(result.models.data.map(model => model.id), ['twelve-model']);
+  assert(seen.at(-1).startsWith('http://twelve.test/'));
+  assert.notEqual(api.status, 'disconnected');
+});
+test('a chat stream from the previous server stops applying tokens', async () => {
+  global.performance = global.performance || { now: () => Date.now() };
+  stub('modelConfiguration.ts', { samplingForModel: () => ({}) });
+  const encoder = new TextEncoder();
+  const chunk = text => encoder.encode('data: ' + JSON.stringify({ choices: [{ delta: { content: text } }] }) + '\n\n');
+  let feed;
+  const stream = new ReadableStream({ start(controller) { feed = controller; controller.enqueue(chunk('first')); } });
+  reply = () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } });
+  const tokens = []; let error; let done = false;
+  await api.chatCompletion('m', [{ role: 'user', content: 'hi' }], {
+    onToken: token => {
+      tokens.push(token);
+      if (tokens.length > 1) return;
+      connect('http://thirteen.test', 'private-thirteen-key');
+      feed.enqueue(chunk('stale'));
+      feed.close();
+    },
+    onDone: () => { done = true; }, onError: caught => { error = caught; },
+  });
+  assert.deepEqual(tokens, ['first']);
+  assert.equal(done, false);
+  assert.match(error.message, /connection changed/);
+});
+test('external checkpoint roles come from the schema row', () => {
+  const catalog = parseBackendSchema(fixture('controls'));
+  state.setCatalogState({ status: 'ready', connection: api.connectionSnapshot(), catalog });
+  assert.deepEqual(externalCheckpointRoles('constructor'), []);
+  assert.deepEqual(externalCheckpoints('constructor', 'org/model', { mmproj: 'ignored' }), { checkpoints: undefined, missing: [] });
+  const wire = fixture('controls'); wire.recipes[0].required_checkpoints = ['main', 'vocoder', 'vocoder', 'toString'];
+  state.setCatalogState({ status: 'ready', connection: api.connectionSnapshot(), catalog: parseBackendSchema(wire) });
+  assert.deepEqual(externalCheckpointRoles('constructor'), ['vocoder', 'toString']);
+  assert.deepEqual(externalCheckpoints('constructor', 'org/model', { vocoder: ' org/vocoder ' }),
+    { checkpoints: { main: 'org/model', vocoder: 'org/vocoder' }, missing: ['toString'] });
+  assert.equal(externalCheckpointRoles('llamacpp'), undefined);
+  wire.recipes[0].required_checkpoints = [1];
+  assert.throws(() => parseBackendSchema(wire), /Malformed/);
 });
 
 run();
