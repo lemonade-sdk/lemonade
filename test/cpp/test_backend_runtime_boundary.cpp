@@ -1,5 +1,6 @@
 #include "backend_runtime_fixture.h"
 #include "lemon/config_file.h"
+#include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/runtime_config.h"
 #include "llamacpp_external_catalog_fixture.h"

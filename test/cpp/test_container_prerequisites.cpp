@@ -3,6 +3,7 @@
 #include "backend_definition_runner_internal.h"
 #include "lemon/auto_tune.h"
 #include "lemon/backends/configured/configured_server.h"
+#include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/utils/path_utils.h"
 

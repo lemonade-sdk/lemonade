@@ -174,7 +174,7 @@ int main() {
     } catch (const std::exception& error) { check(false, std::string("HookBearingCompileAndBindInvokeNothing:unexpected ") + error.what()); }
     {
         namespace external = lemon::backends::external_fixture;
-        const auto admitted = external::admit({external::fork(), external::fork("fork-b")});
+        const auto admitted = external::admit({external::fork_leaf(), external::fork_leaf("fork-b")});
         check(bool(admitted.catalog), "ExternalBindingFixtureAdmitted");
         if (admitted.catalog) {
             const auto token = admitted.catalog->v2_definition("fork-b");

@@ -554,12 +554,12 @@ int main(int argc, char** argv) {
     rt::Frame hrx_frame(*hrx); hrx_frame.facts = {typed::Fact::ModelArtifacts, typed::Fact::ModelLabels};
     auto hrx_guard = rt::TestAccess::guard(hrx_frame, *hrx, static_cast<std::size_t>(hrx_hook - hrx_program.hooks.begin()), *hrx_hook,
         hrx_hook->slot.owner_kind, hrx_hook->slot.owner_id, hrx_hook->slot.stage);
-    rt::SystemServices hrx_system(*hrx_guard, {typed::Platform::Linux, "system", true}, probes_sources);
+    rt::SystemServices hrx_system_services(*hrx_guard, {typed::Platform::Linux, "system", true}, probes_sources);
     auto hrx_environment = rt::TestAccess::environment(*hrx_guard, environment_sources, scratch.string());
     const auto before_probes = probes;
     const auto before_parents = parent_reads;
     const auto before_runtime = runtime_reads;
-    check(throws([&] { hrx_system.llama_version(); }, "Effect outside") &&
+    check(throws([&] { hrx_system_services.llama_version(); }, "Effect outside") &&
         throws([&] { hrx_environment->parent(typed::ParentKey::Path); }, "Effect outside") &&
         throws([&] { hrx_environment->runtime(typed::RuntimeQuery::RocmArchitecture); }, "Effect outside") &&
         probes == before_probes && parent_reads == before_parents && runtime_reads == before_runtime,
@@ -740,7 +740,7 @@ int main(int argc, char** argv) {
     llamacpp_loopback(candidate_entry);
     {
         namespace external = lemon::backends::external_fixture;
-        auto leaf = external::fork();
+        auto leaf = external::fork_leaf();
         auto& edits = leaf["edits"];
         edits.erase(std::remove_if(edits.begin(), edits.end(), [](const auto& edit) {
             return edit.at("path") == "/hooks/environment";

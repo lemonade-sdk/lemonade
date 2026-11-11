@@ -2,6 +2,7 @@
 #include "lemon/backends/configured/configured_server.h"
 #include "lemon/backends/thinksound/thinksound_server.h"
 #include "lemon/config_file.h"
+#include "lemon/model_manager.h"
 #include "lemon/utils/path_utils.h"
 
 #include <cstdlib>

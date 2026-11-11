@@ -5,7 +5,7 @@
 #include "lemon/backends/configured/backend_definition.h"
 #include "lemon/backends/configured/container_memory.h"
 #include "lemon/backends/container_policy.h"
-#include "lemon/model_manager.h"
+#include "lemon/model_manager_types.h"
 #include "lemon/utils/container_manager.h"
 
 #include <cstdint>

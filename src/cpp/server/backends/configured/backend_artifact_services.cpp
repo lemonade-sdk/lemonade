@@ -1,4 +1,5 @@
 #include "backend_runtime_services_internal.h"
+#include "lemon/models/download_markers.h"
 #include "lemon/utils/path_utils.h"
 
 #include <algorithm>
@@ -280,7 +281,7 @@ std::vector<typed::ArtifactEntry> ArtifactServices::entries(typed::ArtifactHandl
         bool committed = entry.relative.find(".incomplete") == std::string::npos;
         if (entry.relative.rfind("snapshots/", 0) == 0) {
             const auto end = entry.relative.find('/', 10);
-            if (end != std::string::npos && fs::exists(inventory_->entries.front().path / entry.relative.substr(0, end) / ".download_manifest.json")) committed = false;
+            if (end != std::string::npos && !models::interrupted_download(utils::path_to_utf8(inventory_->entries.front().path / entry.relative.substr(0, end))).empty()) committed = false;
         }
         result.push_back({handle(entry.token), relative, utils::path_to_utf8(entry.path), entry.active,
             committed});

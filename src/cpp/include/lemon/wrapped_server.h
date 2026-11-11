@@ -3,7 +3,7 @@
 #include "backend_manager.h"
 #include "backend_operation.h"
 #include "backends/backend_descriptor.h"
-#include "model_manager.h"
+#include "model_manager_types.h"
 #include "model_residency.h"
 #include "operation_adapters.h"
 #include "recipe_options.h"

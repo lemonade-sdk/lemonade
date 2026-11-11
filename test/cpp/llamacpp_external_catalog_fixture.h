@@ -24,7 +24,7 @@ inline CatalogAdmissionResult admit(const std::vector<Json>& leaves, std::shared
     const auto snapshot = make_catalog_source_snapshot(std::move(builtin), sources, limits);
     return snapshot.snapshot ? admit_catalog(snapshot.snapshot) : CatalogAdmissionResult{nullptr, snapshot.diagnostics};
 }
-inline std::shared_ptr<const ExecutableDefinition> bound(const Json& leaf = fork()) {
+inline std::shared_ptr<const ExecutableDefinition> bound(const Json& leaf = fork_leaf()) {
     const auto admitted = admit({leaf});
     if (!admitted.catalog) { diagnose(admitted.diagnostics); throw std::logic_error("External fixture admission failed"); }
     const auto compiled = compile_execution_definition(admitted.catalog->v2_definition(leaf.at("id")));
@@ -34,27 +34,27 @@ inline std::shared_ptr<const ExecutableDefinition> bound(const Json& leaf = fork
     return result.definition;
 }
 inline void admission_checks(const Check& check) {
-    const auto accepted = admit({fork(), fork("fork-b")});
+    const auto accepted = admit({fork_leaf(), fork_leaf("fork-b")});
     check(bool(accepted.catalog), "RealExportDerivedChainCatalogAdmission");
     for (const auto& [pointer, value, expected] : std::vector<std::tuple<std::string, std::string, std::string>>{
         {"/metadata/config_section", "research-llama", "section_collision"},
         {"/metadata/options", "research_llama_args", "option_collision"}}) {
-        auto leaf = fork("fork-b");
+        auto leaf = fork_leaf("fork-b");
         leaf["edits"].push_back(edit("replace", pointer, value, pointer == "/metadata/options" ? "args" : "", pointer == "/metadata/options" ? "/name" : ""));
-        const auto result = admit({fork(), leaf});
+        const auto result = admit({fork_leaf(), leaf});
         check(!result.catalog && code(result.diagnostics, expected), "EveryLeafOwnsItsNamesPathsAndPins:" + expected);
     }
     auto changed = contract(); ++changed.policy_revision; export_fixture::repin(changed);
-    const auto second = admit({fork(), fork("fork-b")}, builtins(changed));
+    const auto second = admit({fork_leaf(), fork_leaf("fork-b")}, builtins(changed));
     check(accepted.catalog && second.catalog && accepted.catalog->admission_id() != second.catalog->admission_id(), "ExternalPolicyInvalidatesAdmissionIdentity");
     DefinitionLimits limits; limits.chain_documents = 2;
-    const auto bounded = admit({fork(), fork("fork-b")}, builtins(), limits);
+    const auto bounded = admit({fork_leaf(), fork_leaf("fork-b")}, builtins(), limits);
     check(!bounded.catalog && code(bounded.diagnostics, "limit_exceeded"), "ExternalGraphBoundsFailClosed");
     if (bounded.catalog || !code(bounded.diagnostics, "limit_exceeded")) diagnose(bounded.diagnostics);
 }
 inline void owner_checks(const Check& check) {
     for (const auto& owner : contract().owners) {
-        auto leaf = fork(); leaf["edits"].push_back(edit("remove", "/operations", nullptr, owner.id));
+        auto leaf = fork_leaf(); leaf["edits"].push_back(edit("remove", "/operations", nullptr, owner.id));
         const auto removed = authorize({leaf});
         check(bool(removed.definition), "WholeExternalOwnerRemovable:" + owner.id);
         if (!removed.definition) { diagnose(removed.diagnostics); continue; }

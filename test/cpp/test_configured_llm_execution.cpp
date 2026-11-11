@@ -1,5 +1,6 @@
 #include "lemon/backends/ds4/ds4_server.h"
 #include "lemon/backends/ryzenai/ryzenai_server.h"
+#include "lemon/model_manager.h"
 #include "llm_configured_fixture.h"
 
 using namespace llm_oracle;

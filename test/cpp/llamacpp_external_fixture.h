@@ -10,7 +10,7 @@
 namespace lemon::backends::external_fixture {
 using Json = nlohmann::json;
 using Check = std::function<void(bool, const std::string&)>;
-inline Json fork(const std::string& name = "research-llama") {
+inline Json fork_leaf(const std::string& name = "research-llama") {
     return Json::parse(export_fixture::read_bytes("external/" + name + ".json"));
 }
 inline bool code(const CompositionDiagnostics& diagnostics, const std::string& expected) {
@@ -94,7 +94,7 @@ inline void mutable_checks(const Check& check) {
     const Json identical{{"schema_version", 2}, {"id", "llamacpp"}, {"recipe", "llamacpp"},
         {"extends", {{"builtin", "llamacpp"}, {"contract", 1}}}};
     reject(check, identical, "invalid_local_executable_profile", "TrustedBaseAuditCannotAuthorizeExternalIdentity");
-    const auto admitted = authorize({fork()});
+    const auto admitted = authorize({fork_leaf()});
     check(bool(admitted.definition), "RealLlamaScalarPresentationPreservesUnsetSentinels");
     if (!admitted.definition) { diagnose(admitted.diagnostics); return; }
     const auto& options = admitted.definition->definition().declaration.at("metadata").at("options");
@@ -104,29 +104,29 @@ inline void mutable_checks(const Check& check) {
         {"/install/strategy", "none"}, {"/install/install_recipe", "llamacpp"}, {"/install/pin_recipe", "research-parent"},
         {"/install/backend_fallback", "cpu"}, {"/install/repository_result", "full_params"},
         {"/launch/program/source", "managed"}, {"/launch/direct_stream_policy", "llamacpp_legacy"}}) {
-        auto leaf = fork(); leaf["edits"].push_back(edit(path == "/install/backend_fallback" || path == "/install/repository_result" ? "add" : "replace", path, value));
+        auto leaf = fork_leaf(); leaf["edits"].push_back(edit(path == "/install/backend_fallback" || path == "/install/repository_result" ? "add" : "replace", path, value));
         reject(check, leaf, path == "/install/strategy" ? "invalid_relationship" : "invalid_local_executable_profile", "LocalExecutableProfileIsClosed:" + path);
     }
-    auto legacy = fork();
+    auto legacy = fork_leaf();
     legacy["edits"].push_back(edit("replace", "/launch/direct_stream_policy", "llamacpp_legacy"));
     reject(check, legacy, "invalid_local_executable_profile", "ExternalLegacyStreamRejected");
-    auto basename = fork();
+    auto basename = fork_leaf();
     basename["edits"].push_back(edit("replace", "/metadata/binary/linux", "../llama-server"));
     reject(check, basename, "invalid_local_executable_profile", "LocalExecutableBinaryIsBasename");
-    auto named = fork(); named["edits"].push_back(edit("add", "/metadata/options", "--fork", "args", "/cli_flag"));
+    auto named = fork_leaf(); named["edits"].push_back(edit("add", "/metadata/options", "--fork", "args", "/cli_flag"));
     reject(check, named, "external_named_flag", "NoExternalNamedFlags");
-    auto changed = fork(); changed["edits"].push_back(edit("replace", "/metadata/options", "number", "args", "/value_type"));
+    auto changed = fork_leaf(); changed["edits"].push_back(edit("replace", "/metadata/options", "number", "args", "/value_type"));
     reject(check, changed, "sealed_data_changed", "StableOptionTypesCannotChange");
-    changed = fork(); changed["edits"].push_back(edit("replace", "/metadata/options", Json::array({"auto"}), "args", "/unset_values"));
+    changed = fork_leaf(); changed["edits"].push_back(edit("replace", "/metadata/options", Json::array({"auto"}), "args", "/unset_values"));
     reject(check, changed, "sealed_data_changed", "UnsetSentinelsCannotChange");
-    changed = fork(); changed["edits"].push_back(edit("replace", "/launch/environment/set", "PATH", "", ""));
+    changed = fork_leaf(); changed["edits"].push_back(edit("replace", "/launch/environment/set", "PATH", "", ""));
     reject(check, changed, "invalid_type", "EnvironmentCannotBecomeUnboundedObject");
-    changed = fork(); changed["edits"].push_back(edit("add", "/launch/environment/set", {{"name", "PATH"}, {"value", "escape"}}));
+    changed = fork_leaf(); changed["edits"].push_back(edit("add", "/launch/environment/set", {{"name", "PATH"}, {"value", "escape"}}));
     reject(check, changed, "mutable_domain_escape", "EnvironmentNamesAreFinite");
-    changed = fork(); changed["edits"].push_back(edit("replace", "/metadata/options", 42, "args", "/help"));
+    changed = fork_leaf(); changed["edits"].push_back(edit("replace", "/metadata/options", 42, "args", "/help"));
     reject(check, changed, "invalid_type", "PresentationIsExactScalar");
     auto policy = contract(); policy.slots[0].mutable_inputs.erase(policy.slots[0].mutable_inputs.begin()); export_fixture::repin(policy);
-    const auto restricted = authorize({fork()}, policy);
+    const auto restricted = authorize({fork_leaf()}, policy);
     check(!restricted.definition && code(restricted.diagnostics, "sealed_data_changed"), "MutableSurfaceIsIntersection");
 }
 inline Json tuple(const SealedHookGrant& grant) {
@@ -135,8 +135,8 @@ inline Json tuple(const SealedHookGrant& grant) {
         {"abi", grant.abi_revision}, {"parameters", grant.parameter_digest}, {"policy", grant.mutation_policy_digest}};
 }
 inline void authorization_checks(const Check& check) {
-    const auto a = authorize({fork()});
-    const auto b = authorize({fork(), fork("fork-b")});
+    const auto a = authorize({fork_leaf()});
+    const auto b = authorize({fork_leaf(), fork_leaf("fork-b")});
     check(a.definition && b.definition, "ExternalForkChainAuthorizes");
     if (!a.definition || !b.definition) return;
     check(AuthorityInspection::grant_count(*a.definition) == 13 && AuthorityInspection::grant_count(*b.definition) == 10,
@@ -148,32 +148,32 @@ inline void authorization_checks(const Check& check) {
             found |= child_tuple == tuple(AuthorityInspection::grant(*a.definition, j));
         check(found && child_tuple.at("base") == "llamacpp", "GrantTuplesOnlyAttenuate:completeTuple");
     }
-    auto growing = fork("fork-b");
+    auto growing = fork_leaf("fork-b");
     growing["edits"].push_back(edit("add", "/hooks/system", {{"id", "llamacpp.system.v1"}, {"params", Json::object()}}));
-    const auto denied_growth = authorize({fork(), growing});
+    const auto denied_growth = authorize({fork_leaf(), growing});
     check(!denied_growth.definition && code(denied_growth.diagnostics, "authored_hook_selection"),
         "DescendantCannotRegainRemovedHook");
-    auto authored = fork(); authored["merge"]["origin"] = "builtin";
+    auto authored = fork_leaf(); authored["merge"]["origin"] = "builtin";
     reject(check, authored, "unknown_key", "ExternalLeafNeverBuiltin");
-    authored = fork(); authored["merge"]["compatibility"] = "legacy_non_chat_sse";
+    authored = fork_leaf(); authored["merge"]["compatibility"] = "legacy_non_chat_sse";
     reject(check, authored, "unknown_key", "ExternalLeafNeverBuiltin:compatibility");
     for (const auto* root : {"backend", "launch"}) {
-        authored = fork(); authored["edits"].push_back(edit("remove", std::string("/hooks/") + root));
+        authored = fork_leaf(); authored["edits"].push_back(edit("remove", std::string("/hooks/") + root));
         reject(check, authored, std::string(root) == "launch" ? "invalid_relationship" : "mandatory_slot_removed", "MandatoryExternalRoot:" + std::string(root));
     }
-    authored = fork(); authored["edits"].push_back(edit("replace", "/hooks/backend", {{"id", "llamacpp.backend.v1"}, {"params", Json::object()}}));
+    authored = fork_leaf(); authored["edits"].push_back(edit("replace", "/hooks/backend", {{"id", "llamacpp.backend.v1"}, {"params", Json::object()}}));
     reject(check, authored, "authored_hook_selection", "AuthoredHookWritesAlwaysReject");
     authored["edits"].push_back(edit("remove", "/hooks/backend"));
     reject(check, authored, "authored_hook_selection", "AuthoredHookWritesAlwaysReject:overwritten");
-    authored = fork(); authored["edits"].push_back(edit("clear", "/operations", nullptr, "chat.buffered", "/request/hooks"));
+    authored = fork_leaf(); authored["edits"].push_back(edit("clear", "/operations", nullptr, "chat.buffered", "/request/hooks"));
     reject(check, authored, "mandatory_slot_removed", "ProtocolChainMandatoryWithOwner");
-    authored = fork("fork-b");
+    authored = fork_leaf("fork-b");
     const auto base = DefinitionResolver(make_v2_source_snapshot(embedded_v2_sources()).snapshot).resolve({DefinitionNamespace::Builtin, "llamacpp", 1});
     for (const auto& owner : base.definition->declaration.at("operations")) if (owner.at("id") == "responses.buffered") {
         auto restored = owner; restored["request"].erase("hooks"); restored.erase("response");
         authored["edits"].push_back(edit("add", "/operations", restored));
     }
-    const auto result = authorize({fork(), fork("fork-b"), Json{{"schema_version", 2}, {"id", "grandchild"}, {"recipe", "grandchild"},
+    const auto result = authorize({fork_leaf(), fork_leaf("fork-b"), Json{{"schema_version", 2}, {"id", "grandchild"}, {"recipe", "grandchild"},
         {"extends", {{"external", "fork-b"}}}, {"merge", {{"install", {{"install_recipe", "grandchild"}, {"pin_recipe", "grandchild"}}}}},
         {"edits", Json::array({authored.at("edits").back()})}}});
     check(!result.definition && code(result.diagnostics, "authored_owner_change"), "RemovedOwnerCannotReturn");
