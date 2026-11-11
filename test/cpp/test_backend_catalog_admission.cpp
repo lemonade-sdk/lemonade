@@ -10,7 +10,7 @@ int main() {
     const auto admitted = admit({child("child", "root"), root(), legacy()});
     check(admitted.catalog != nullptr, "frozen mixed graph supports forward references");
     if (admitted.catalog) {
-        check(admitted.catalog->metrics().authorized_definitions == 4, "every v2 node authorized");
+        check(admitted.catalog->metrics().authorized_definitions == 10, "every v2 node authorized");
         check(admitted.catalog->v1_definition("legacy") != nullptr && admitted.catalog->v2_definition("child") != nullptr, "mixed versions retained without conversion");
         check(admitted.catalog->v2_definition("child")->definition().key.space == DefinitionNamespace::External, "intake forces external origin");
     }
@@ -104,7 +104,7 @@ int main() {
         "hook-free v2 candidate completes executable validation");
     check(active.export_schema() == before && !backend_catalog(), "private candidate cannot publish");
     BackendCatalog executable({{"", root().dump(), DefinitionOrigin::External}});
-    check(executable.registrations().size() == 18 && !backend_catalog(), "hook-free v2 construction finalizes without publication");
+    check(executable.registrations().size() == 23 && !backend_catalog(), "hook-free v2 construction finalizes without publication");
     value = child("child", "missing");
     auto response = active.validate(value.dump());
     check(response["diagnostics"][0]["code"] == "missing_parent" && response["diagnostics"][0]["pointer"] == "/extends/external", "candidate missing dependency response");
@@ -121,7 +121,7 @@ int main() {
     check(v2["accepted_definition_versions"] == Json::array({1, 2}) && v2["executable_definition_versions"] == Json::array({1, 2}), "honest input admission versus execution versions");
     check(v2["admission_manifest"]["manifest_version"] == 1 && v2["export_registry_id"] == installed_builtin_exports().digest(), "separate versioned admission manifest");
     for (std::size_t i = 0; i < before["recipes"].size(); ++i)
-        check(v2["recipes"][i]["input_schema_version"] == ((before["recipes"][i]["recipe"] == "llamacpp" || before["recipes"][i]["recipe"] == "llamacpp-hrx") ? Json(2) : before["recipes"][i]["definition_id"].is_null() ? Json() : Json(1)), "honest recipe source version " + std::to_string(i));
+        check(v2["recipes"][i]["input_schema_version"] == ((std::set<std::string>{"llamacpp", "llamacpp-hrx", "gufo", "rocmfpx", "halogen", "ds4"}.count(before["recipes"][i]["recipe"].get<std::string>())) ? Json(2) : before["recipes"][i]["definition_id"].is_null() ? Json() : Json(1)), "honest recipe source version " + std::to_string(i));
     check(active.export_schema("", 1) == before && !before.contains("catalog_v2_id") && !installed_definition_features().contains("accepted_definition_versions"), "legacy projection remains isolated");
     lemon::backends::external_fixture::admission_checks(check);
     return finish();

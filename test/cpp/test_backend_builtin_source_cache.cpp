@@ -85,10 +85,10 @@ int run_test(int argc, char** argv) {
         return 1;
     }
     if (order == "freeze") check(bool(freeze_builtin_catalog()), "FreezeFirstAccess");
-    if (order == "seeds") check(builtin_registration_seeds().size() == 18, "SeedsFirstAccess");
+    if (order == "seeds") check(builtin_registration_seeds().size() == 23, "SeedsFirstAccess");
     if (order == "registrations" || order == "public-fallback") {
         const auto& registrations = order == "registrations" ? builtin_registrations() : all_registrations();
-        check(registrations.size() == 18 && registrations.back().descriptor == &source_cache_fixture::descriptor &&
+        check(registrations.size() == 23 && registrations.back().descriptor == &source_cache_fixture::descriptor &&
             registrations.back().create && registrations.back().spec && registrations.back().ops,
             "BuiltinOnlyFallbackIsCompletelyFinalized");
         if (order == "public-fallback") {

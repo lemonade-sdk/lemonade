@@ -6,7 +6,7 @@ void c9_production_contracts(const std::string& id, const Json& doc, const Fixtu
     if (!llama) { c9_ds4_contracts(id, doc, fixture, bound, services, std::move(model), std::move(options)); return; }
     const auto& frozen = load_json(fs::path(LEMON_TEST_FIXTURES) / "backend-v2" / (id + ".production-parity.json"));
     const auto c8a = Json::parse(read_bytes(frozen.at("c8a_fixture")));
-    if (llama) check(doc == c8a.at("definition"), "C9ExactC8aProductionDefinition:" + id);
+    if (llama) check(doc == container_activation::document(c8a.at("definition")), "C9ExactC8aProductionDefinition:" + id);
     const auto entry = ConfiguredBackendEntry::make(bound);
     DefinitionRunner runner(bound);
     services.install_failure = true; services.events.clear();

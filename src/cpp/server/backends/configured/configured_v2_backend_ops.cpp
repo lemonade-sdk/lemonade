@@ -240,6 +240,7 @@ std::string ConfiguredV2BackendOps::validate_load(const ModelInfo& info) const {
 }
 void ConfiguredV2BackendOps::populate_metadata(ModelInfo& info, const BackendOpsContext&) const { runner_->populate_metadata(info); }
 std::string ConfiguredV2BackendOps::validate_registration_checkpoint(const std::string& checkpoint) const {
+    if (runner_->declaration().at("kind") == "container" && llamacpp::checkpoint_is_local(checkpoint, false)) return "";
     if (runner_->llamacpp_decision_contract()) {
         if (llamacpp::checkpoint_is_local(checkpoint, false)) return "";
         if (checkpoint.rfind("./", 0) == 0 || checkpoint.rfind("../", 0) == 0 ||

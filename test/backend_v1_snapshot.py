@@ -12,7 +12,7 @@ import tempfile
 from urllib.parse import quote
 
 from backend_catalog_http import Server, definition, prepare, request
-from backend_definition_inventory import DORMANT_CONTAINERS, production_inventory
+from backend_definition_inventory import production_inventory
 from backend_schema_cli import Fixture
 
 REPO = Path(__file__).resolve().parents[1]
@@ -53,24 +53,32 @@ def capture(lemond, cli, source_root=REPO):
                 if row["definition_id"] is not None
             }
             inventory = production_inventory(source_root)
-            expected_inactive = inventory & DORMANT_CONTAINERS.keys()
+            selectors = {"halobox", "nathanw"}
+            expected_inactive = {"ds4"} | selectors
             assert (
                 set(result["definitions"]) == inventory - expected_inactive
             ), "ExactMixedDefinitionSet"
             inactive = {}
-            for name in sorted(inventory - set(result["definitions"])):
+            result["selector_definitions"] = {}
+            for name in sorted(selectors):
+                source = source_root / "src/cpp/resources/backends" / (name + ".json")
+                result["selector_definitions"][name] = {
+                    "recipe": "llamacpp",
+                    "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                }
+            for name in sorted(inventory - set(result["definitions"]) - selectors):
                 path = source_root / "src/cpp/resources/backends" / (name + ".json")
                 value = json.loads(path.read_bytes())
                 inactive[name] = dict(
                     recipe=value["recipe"],
-                    kind=value["merge"]["kind"],
+                    kind=value.get("merge", value)["kind"],
                     source_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
                 )
             if inactive:
                 result["inactive_definitions"] = inactive
             assert (
                 not set(result["definitions"]) & set(inactive)
-                and set(result["definitions"]) | set(inactive) == inventory
+                and set(result["definitions"]) | set(inactive) | selectors == inventory
             ), "ExactMixedDefinitionSet"
             result["filtered"] = {
                 row["recipe"]: api("/v1/backends/schema?recipe=" + quote(row["recipe"]))

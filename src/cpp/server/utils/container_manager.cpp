@@ -459,16 +459,10 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         argv.push_back(device);
     }
     if (!spec.devices.empty()) {
-        if (rootless) {
-            argv.push_back("--group-add");
-            argv.push_back("keep-groups");
-        } else {
-            const std::string gid = host_.group_id("render");
-            if (!gid.empty()) {
-                argv.push_back("--group-add");
-                argv.push_back(gid);
-            }
-        }
+        const std::string gid = host_.group_id("render");
+        if (gid.empty()) throw std::runtime_error("The render group is required for container GPU access");
+        argv.push_back("--group-add");
+        argv.push_back(gid);
     }
     for (const auto& capability : spec.cap_add) {
         if (!std::regex_match(capability, std::regex("[A-Z][A-Z0-9_]*")) || capability == "ALL") {
@@ -494,7 +488,9 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         argv.push_back(mount.source + ":" + mount.destination + ":ro,z");
     }
     argv.push_back("--env");
-    argv.push_back("HOME=/tmp");
+    argv.push_back("HOME=/var/tmp");
+    argv.push_back("--env");
+    argv.push_back("TMPDIR=/var/tmp");
     for (const auto& [key, value] : spec.env) {
         argv.push_back("--env");
         argv.push_back(key + "=" + value);

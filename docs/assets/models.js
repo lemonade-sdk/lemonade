@@ -7,12 +7,15 @@ const RECIPE_PRIORITY = [
   'acestep',
   'ds4',
   'flm',
+  'gufo',
+  'halogen',
   'llamacpp-hrx',
   'kokoro',
   'llamacpp',
   'moonshine',
   'onnxruntime',
   'openmoss',
+  'rocmfpx',
   'ryzenai-llm',
   'sd-cpp',
   'thenoise',
@@ -36,7 +39,9 @@ const RECIPE_DISPLAY_NAMES = {
   acestep: 'ACE-Step',
   onnxruntime: 'ONNX Runtime',
   trellis: 'TRELLIS.2',
-  openmoss: 'OpenMOSS TTS'
+  openmoss: 'OpenMOSS TTS',
+  rocmfpx: 'ROCm FPX',
+  halogen: 'Halogen Flash'
 };
 /* END GENERATED: models-js-recipes */
 

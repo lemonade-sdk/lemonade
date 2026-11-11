@@ -225,7 +225,9 @@ const BuiltinExecutionPolicies& fixed_builtin_v2_policies() {
             hrx.owners.push_back(std::move(restricted));
         }
         hrx.owner_graph_digest = "sha256:6bc3f2b40d73e44ceb384564fbc403b1f58cf22c91de863f0746c5f22713e0f8";
-        return BuiltinExecutionPolicies{{std::move(policy), std::move(hrx)}, "sha256:bf4796852e4663dbee003ccf7cef41c1dc6f440172623a33d375fc4749355c10"};
+        BuiltinExecutionPolicies active{{std::move(policy), std::move(hrx)}, "sha256:bf4796852e4663dbee003ccf7cef41c1dc6f440172623a33d375fc4749355c10"};
+        append_active_container_policies(active);
+        return active;
     }();
     return policies;
 }

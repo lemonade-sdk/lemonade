@@ -91,7 +91,7 @@
       {"id": "responses.streaming", "operation": "responses", "delivery": "streaming", "model_modes": ["*"], "transport": {"kind": "http_sse", "method": "POST", "path": "/v1/responses", "port": "http", "timeout": "global", "stream_codec": "openai_sse.v1"}, "request": {"base": "identity"}}
     ],
     "rationale": [
-      {"subject": "", "text": "Inactive builtin leaf pending registry, real container/network/device/inference/cancellation and packaging qualification. The fixed execution grant is reviewed separately; no active leaf policy or registration is installed.", "source": "container-conversion C4b", "tests": ["ContainerExecutionTest"]}
+      {"subject": "", "text": "Experimental container backend. Runtime and packaging qualification is recorded separately for each engine.", "source": "container-conversion C4b", "tests": ["ContainerExecutionTest"]}
     ]
   }
 }

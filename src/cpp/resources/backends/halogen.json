@@ -137,7 +137,7 @@
     "rationale": [
       {
         "subject": "",
-        "text": "Inactive builtin leaf. The independently fixed dormant execution grant is not installed in active policies. Registry/image, real runtime and packaging qualification and a disclosed activation stage remain required.",
+        "text": "Experimental container backend. Runtime and packaging qualification is recorded separately for each engine.",
         "source": "container-conversion C8",
         "tests": ["ContainerProductionParityTest"]
       }

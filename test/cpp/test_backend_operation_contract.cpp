@@ -50,6 +50,11 @@ struct ExpectedBackend {
 };
 
 const std::vector<ExpectedBackend> k_expected_backends = {
+    {"gufo", {Op::ChatCompletion, Op::Completion, Op::Responses}, {Op::ChatCompletion, Op::Completion, Op::Responses}, {}, {}},
+    {"rocmfpx", {Op::ChatCompletion, Op::Completion, Op::Responses, Op::Embeddings, Op::Reranking, Op::Slots, Op::SlotAction, Op::Tokenize}, {Op::ChatCompletion, Op::Completion, Op::Responses}, {}, {}},
+    {"halogen", {Op::ChatCompletion}, {Op::ChatCompletion, Op::Completion, Op::Responses}, {}, {}},
+    {"llamacpp:halobox", {Op::ChatCompletion, Op::Completion, Op::Responses, Op::Embeddings, Op::Reranking, Op::Slots, Op::SlotAction, Op::Tokenize}, {Op::ChatCompletion, Op::Completion, Op::Responses}, {}, {}},
+    {"llamacpp:nathanw", {Op::ChatCompletion, Op::Completion, Op::Responses, Op::Embeddings, Op::Reranking, Op::Slots, Op::SlotAction, Op::Tokenize}, {Op::ChatCompletion, Op::Completion, Op::Responses}, {}, {}},
     {"llamacpp", {Op::ChatCompletion, Op::Completion, Op::Responses, Op::Embeddings, Op::Reranking,
                    Op::Classification, Op::Slots, Op::SlotAction, Op::Tokenize}, {Op::ChatCompletion, Op::Completion, Op::Responses}, {}, {}},
     {"llamacpp-hrx", {Op::ChatCompletion, Op::Completion, Op::Responses, Op::Embeddings, Op::Reranking,
@@ -93,6 +98,7 @@ bool expected_support(const ExpectedBackend& backend, Op operation, Delivery del
         if (operation == Op::Embeddings) return mode != ModelType::TRANSCRIPTION;
         return mode != ModelType::TRANSCRIPTION && mode != ModelType::EMBEDDING;
     }
+    if (recipe == "halogen" && operation == Op::ChatCompletion) return mode == ModelType::LLM;
     if (recipe == "llamacpp" && operation == Op::Classification) return mode == ModelType::CLASSIFICATION;
     if (operation == Op::TextToSpeech) return mode == ModelType::TTS;
     if (operation == Op::AudioGeneration) return mode == ModelType::AUDIO_GENERATION;
@@ -142,11 +148,12 @@ void check_complete_matrix() {
     static_assert(k_backend_operation_count == 18);
     static_assert(k_operation_delivery_count == 3);
     static_assert(k_operation_model_types.size() == 9);
-    check(backends::all_registrations().size() == 17, "every registered backend has an independent fixture");
+    check(backends::all_registrations().size() == 22, "every registered backend has an independent fixture");
     std::set<std::string> seen;
     for (const auto& registration : backends::all_registrations()) {
         const auto found = std::find_if(k_expected_backends.begin(), k_expected_backends.end(), [&](const auto& item) {
-            return registration.descriptor->recipe == item.recipe;
+            const auto key = registration.descriptor->recipe + (registration.backend_selector.empty() ? "" : ":" + registration.backend_selector);
+            return key == item.recipe;
         });
         check(found != k_expected_backends.end(), "no unclassified backend");
         if (found == k_expected_backends.end()) continue;
@@ -156,7 +163,8 @@ void check_complete_matrix() {
         backends::BackendContext context;
         context.log_level = "error";
         context.model_info = &model;
-        auto server = backends::create_server(found->recipe, context);
+        context.backend_selector = registration.backend_selector;
+        auto server = backends::create_server(registration.descriptor->recipe, context);
         check(server && server->operation_bindings(), std::string(found->recipe) + " binds before load");
         for (size_t op = 0; op < 18; ++op) {
             for (size_t delivery = 0; delivery < 3; ++delivery) {

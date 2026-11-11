@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "ds4_rocm",
-  "active": false,
+  "active": true,
   "source_revision": "8f8b905a1cf68b60a4d7fdc66a15d846b0cebc78",
   "source_pin": {
     "recipe": "ds4",
@@ -11,7 +11,7 @@
     "recipe": "ds4_rocm",
     "backend": "rocm",
     "value": "rocm-10.0@sha256:31b4e7e3584684768ee060e3dfeb62c1d716219da468090f3483977fdf6dfb47",
-    "registry_validated": false
+    "registry_validated": true
   },
   "defaults": {
     "args": ""

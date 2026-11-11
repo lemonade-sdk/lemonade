@@ -96,7 +96,8 @@ namespace lemon::backends {
 
     // Return the backend spec for recipes that use the standard BackendSpec flow.
     // Returns nullptr for recipes that require custom handling (e.g., flm) or unknown recipes.
-    const BackendSpec* try_get_spec_for_recipe(const std::string& recipe);
+    const BackendSpec* try_get_spec_for_recipe(const std::string& recipe, const std::string& backend = "");
+    const BackendDescriptor* try_get_descriptor_for_recipe(const std::string& recipe, const std::string& backend);
 
     /**
     * Utility functions for backend management

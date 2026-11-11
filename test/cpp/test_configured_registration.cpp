@@ -5,10 +5,11 @@
 #include "lemon/backends/kokoro/kokoro_server.h"
 #include "lemon/backends/moonshine/moonshine_server.h"
 #include "lemon/backends/onnxruntime/onnxruntime_server.h"
-#include "lemon/backends/trellis/trellis_server.h"
 #include "lemon/backends/ryzenai/ryzenai_server.h"
 #include "lemon/backends/thinksound/thinksound_server.h"
+#include "lemon/backends/trellis/trellis_server.h"
 
+#include <algorithm>
 #include <cstdlib>
 
 using namespace thinksound_oracle;
@@ -57,7 +58,7 @@ uint32_t mode_capabilities(const ConfiguredBackendEntry& entry) {
 }
 struct Registered {
     std::string recipe;
-    std::shared_ptr<const ConfiguredBackendEntry> entry;
+    const ConfiguredBackendEntry* entry;
     const BackendSpec* spec;
     const BackendOps* ops;
     uint32_t capabilities;
@@ -65,16 +66,18 @@ struct Registered {
 }
 
 int main() {
+    const auto ds4_registration = std::find_if(builtin_registrations().begin(), builtin_registrations().end(),
+        [](const auto& row) { return row.descriptor->recipe == "ds4" && row.backend_selector.empty(); });
     for (int pass = 0; pass < 3; ++pass) {
         const std::vector<Registered> registered = {
-            {"thinksound", thinksound::configured_entry(), thinksound::spec(), thinksound::ops(), thinksound::capabilities()},
-            {"ds4", ds4::configured_entry(), ds4::spec(), ds4::ops(), ds4::capabilities()},
-            {"ryzenai-llm", ryzenai::configured_entry(), ryzenai::spec(), ryzenai::ops(), ryzenai::capabilities()},
-            {"llamacpp-hrx", hrx::configured_entry(), hrx::spec(), hrx::ops(), hrx::capabilities()},
-            {"kokoro", kokoro::configured_entry(), kokoro::spec(), kokoro::ops(), kokoro::capabilities()},
-            {"moonshine", moonshine::configured_entry(), moonshine::spec(), moonshine::ops(), moonshine::capabilities()},
-            {"onnxruntime", onnxruntime::configured_entry(), onnxruntime::spec(), onnxruntime::ops(), onnxruntime::capabilities()},
-            {"trellis", trellis::configured_entry(), trellis::spec(), trellis::ops(), trellis::capabilities()},
+            {"thinksound", thinksound::configured_entry().get(), thinksound::spec(), thinksound::ops(), thinksound::capabilities()},
+            {"ds4", ds4_registration->configured_entry, ds4_registration->spec, ds4_registration->ops, ds4::capabilities()},
+            {"ryzenai-llm", ryzenai::configured_entry().get(), ryzenai::spec(), ryzenai::ops(), ryzenai::capabilities()},
+            {"llamacpp-hrx", hrx::configured_entry().get(), hrx::spec(), hrx::ops(), hrx::capabilities()},
+            {"kokoro", kokoro::configured_entry().get(), kokoro::spec(), kokoro::ops(), kokoro::capabilities()},
+            {"moonshine", moonshine::configured_entry().get(), moonshine::spec(), moonshine::ops(), moonshine::capabilities()},
+            {"onnxruntime", onnxruntime::configured_entry().get(), onnxruntime::spec(), onnxruntime::ops(), onnxruntime::capabilities()},
+            {"trellis", trellis::configured_entry().get(), trellis::spec(), trellis::ops(), trellis::capabilities()},
         };
         for (const auto& backend : registered) {
             auto server = create_server(backend.recipe, BackendContext{"error"});
@@ -84,9 +87,11 @@ int main() {
             check(spec_for(backend.recipe) == backend.spec && ops_for(backend.recipe) == backend.ops, backend.recipe + " registry lookups return the configured spec/ops");
             check(backend.capabilities == (implemented_capabilities(*backend.entry) & mode_capabilities(*backend.entry)), backend.recipe + " capability export matches the definition's implemented bindings within its declared modes");
         }
-        bool shared_descriptors = builtin_registrations().size() == builtin_descriptors().size();
+        std::vector<const BackendRegistration*> primary;
+        for (const auto& row : builtin_registrations()) if (row.backend_selector.empty()) primary.push_back(&row);
+        bool shared_descriptors = primary.size() == builtin_descriptors().size();
         for (size_t i = 0; shared_descriptors && i < builtin_descriptors().size(); ++i) {
-            shared_descriptors = builtin_registrations()[i].descriptor == builtin_descriptors()[i] && descriptor_for(builtin_descriptors()[i]->recipe) == builtin_descriptors()[i];
+            shared_descriptors = primary[i]->descriptor == builtin_descriptors()[i] && descriptor_for(builtin_descriptors()[i]->recipe) == builtin_descriptors()[i];
         }
         check(shared_descriptors, "factory registrations and the descriptor registry share every descriptor object");
         check(thinksound::capabilities() == CAP_AUDIO_GENERATION && ds4::capabilities() == 0 && ryzenai::capabilities() == 0 && hrx::capabilities() == 0 && kokoro::capabilities() == CAP_TTS && moonshine::capabilities() == (CAP_TRANSCRIPTION | CAP_STREAMING_TRANSCRIPTION) && onnxruntime::capabilities() == CAP_CLASSIFICATION && trellis::capabilities() == CAP_MODEL_3D, "unchanged capability exports");

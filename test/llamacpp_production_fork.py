@@ -153,7 +153,7 @@ def main():
             server.port, "/v1/backends/schema?representation=2"
         )
         assert (
-            status == 200 and len(before_schema["recipes"]) == 17
+            status == 200 and len(before_schema["recipes"]) == 20
         ), "ProductionBaselineHasNoFork"
         health = request(server.port, "/v1/health")[1]
         assert health["all_models_loaded"] == [], "ProductionBaselineNoModels"
@@ -197,7 +197,7 @@ def main():
     with Server(args.build / "lemond", root, env_overrides=env) as server:
         status, schema, _ = request(server.port, "/v1/backends/schema?representation=2")
         assert (
-            status == 200 and len(schema["recipes"]) == 19
+            status == 200 and len(schema["recipes"]) == 22
         ), "ProductionForkDiscoveredAndFinalized"
         assert (
             schema["export_registry_id"]

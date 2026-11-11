@@ -565,7 +565,7 @@ std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
                                                        const std::string& backend) {
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
-        auto* spec = backends::try_get_spec_for_recipe(recipe);
+        auto* spec = backends::try_get_spec_for_recipe(recipe, resolved_backend);
         if (!spec || !spec->install_params_fn) return "";
         const std::string pin_recipe = spec->pin_recipe.empty() ? recipe : spec->pin_recipe;
         std::string pinned = get_version_from_config(pin_recipe, resolved_backend);
@@ -585,7 +585,7 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     backends::require_active_backend_selector(recipe, resolved_backend);
 
-    auto* spec = backends::try_get_spec_for_recipe(recipe);
+    auto* spec = backends::try_get_spec_for_recipe(recipe, resolved_backend);
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
@@ -635,7 +635,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         ~InvalidateBackendStatusOnExit() { SystemInfoCache::invalidate_recipes(); }
     } invalidate_backend_status_on_exit;
 
-    auto* spec = backends::try_get_spec_for_recipe(recipe);
+    auto* spec = backends::try_get_spec_for_recipe(recipe, resolved_backend);
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
@@ -903,7 +903,7 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
     LOG(DEBUG, "BackendManager") << "Uninstalling " << recipe << ":" << resolved_backend << std::endl;
     backends::require_active_backend_selector(recipe, resolved_backend);
 
-    auto* spec = backends::try_get_spec_for_recipe(recipe);
+    auto* spec = backends::try_get_spec_for_recipe(recipe, resolved_backend);
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
@@ -939,7 +939,7 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
 std::string BackendManager::get_latest_version(const std::string& recipe, const std::string& backend) {
     try {
         const auto selected = normalize_backend_name(recipe, backend);
-        if (const auto* spec = backends::try_get_spec_for_recipe(recipe)) {
+        if (const auto* spec = backends::try_get_spec_for_recipe(recipe, selected)) {
             if (const auto policy = backends::configured_container_policy(*spec, selected)) return container_pin(*policy);
         }
         return get_version_from_config(recipe, selected);

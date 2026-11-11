@@ -123,13 +123,19 @@ int main() {
         metrics.retained_bytes, metrics.peak_temporary_bytes, metrics.peak_bytes, metrics.work_bytes, metrics.work_visits, metrics.dependency_references);
     std::size_t owned = 0, bytes = 0, visits = 0;
     for (const auto& stage : metrics.stages) { owned += stage.owned_bytes; bytes += stage.work_bytes; visits += stage.work_visits; }
-    check(owned == metrics.retained_bytes && bytes == metrics.work_bytes && visits == metrics.work_visits && metrics.dependency_references == 13,
+    check(owned == metrics.retained_bytes && bytes == metrics.work_bytes && visits == metrics.work_visits && metrics.dependency_references == 31,
         "StageTotalsDescribeUniqueOwnershipAndCumulativeWork");
     check(metrics.peak_temporary_bytes > 0 && metrics.peak_bytes >= metrics.retained_bytes && metrics.stages[3].owned_bytes > 0, "AllFinalizationAndTemporaryStorageIsCharged");
     const auto empty = build({});
     check(metrics.stages[3].owned_bytes > empty.metrics.stages[3].owned_bytes + 2 * sizeof(ConfiguredBackendEntry), "EveryEntryAndProjectionReservesOwnedStorage");
-    check(metrics.stages[3].peak_temporary_bytes == 2 * metrics.stages[3].owned_bytes + 8192,
+    const auto schema_reservation = 2 * metrics.stages[3].owned_bytes + 8192;
+    check(metrics.stages[3].peak_temporary_bytes >= schema_reservation,
         "FinalSchemaAndIdentityTemporaryReservationIsCharged");
+    CatalogExecutionLimits schema_limit;
+    schema_limit.stages[3].peak_temporary_bytes = schema_reservation - 1;
+    const auto schema_failure = build(graph, schema_limit);
+    check(!schema_failure.catalog && has_code(schema_failure.diagnostics, "limit_exceeded"),
+        "FinalSchemaReservationRejectsOneByteShortBudget");
     CatalogExecutionLimits exact;
     exact.retained_bytes = metrics.peak_bytes;
     exact.temporary_bytes = metrics.peak_temporary_bytes;

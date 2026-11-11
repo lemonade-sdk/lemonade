@@ -276,7 +276,11 @@ void c7b_engine(const std::string& name) {
     effects.make_process = [](auto, const auto&) -> std::unique_ptr<ServerProcess> { throw std::logic_error("Native forbidden"); };
     ConfiguredServer server(backend, {"trace", nullptr, nullptr}, effects);
     server.load("fixture", model, options);
-    const auto expected = c7b_expected(fixture, main, port);
+    auto expected = c7b_expected(fixture, main, port);
+    for (auto& line : expected) {
+        const std::string prefix = "Debug LlamaCpp Per-model settings: ";
+        if (line.rfind(prefix, 0) == 0) line = prefix + "ctx_size=8192, gufo_args=--fixture 7, merge_args=true, auto_evict=(none), evict_idle_timeout=300, downsize_idle_timeout=60, evict_weight_factor=1.000000, pinned=false, auto_update=(none)";
+    }
     check(lines == expected, "C7bExactOrderedDiagnostics:" + name);
     check(std::count(events.begin(), events.end(), "install") == 1, "C7bContainerImageInstalledOnce:" + name);
     c7b_evidence(name, {{"actual", lines}, {"expected", expected}, {"events", events}, {"port", port}});
@@ -350,6 +354,7 @@ void c7b_engine(const std::string& name) {
         options.set_option("gufo_args", ""); lines.clear(); events.clear();
         server.load("fixture", model, options);
         auto empty_expected = expected; empty_expected.erase(empty_expected.end() - 3);
+        for (auto& line : empty_expected) line = c7b_replace(line, "gufo_args=--fixture 7", "gufo_args=(none)");
         check(lines == empty_expected, "C7bEmptyCustomDiagnosticsSuppressed:" + name);
         server.unload();
     }

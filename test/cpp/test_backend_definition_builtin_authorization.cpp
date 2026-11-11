@@ -68,11 +68,11 @@ int main() {
 #if LEMON_C9_SOURCE_COUNT >= 3
     expected_source_ids.insert("ds4_rocm");
 #endif
-    check(source_ids == expected_source_ids && policy_ids == std::set<std::string>{"hrx", "llamacpp"},
-        "ProductionBuiltinV2TableExactlyHrxAndLlama");
+    check(source_ids == expected_source_ids && policy_ids == expected_source_ids,
+        "ProductionBuiltinV2TableExactlyEightReviewedLeaves");
     const auto production = BuiltinCatalogLoader::freeze_embedded();
     if (production.snapshot) for (const auto& key : BuiltinCatalogLoader::builtin_leaves(*production.snapshot)) authorized_ids.insert(key.id);
-    check(production.snapshot && authorized_ids == policy_ids, "ProductionMintsOnlyReviewedHrxAndLlamaLeaves");
+    check(production.snapshot && authorized_ids == policy_ids, "ProductionMintsOnlyEightReviewedLeaves");
     const auto& parent = embedded_v2_policies().leaves.at(0);
     const auto& hrx = embedded_v2_policies().leaves.at(1);
     check(parent.key.id == "llamacpp" && hrx.key.id == "hrx" && hrx.key.contract == 1 &&

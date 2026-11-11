@@ -472,6 +472,26 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--openmoss BACKEND` | OpenMOSS TTS backend to use | Auto-detected |
+
+#### Gufo (`gufo` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--gufo-args ARGS` | Custom arguments to pass to gufo serve llm | `""` |
+
+#### ROCm FPX (`rocmfpx` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--rocmfpx-args ARGS` | Custom arguments to pass to the ROCm FPX llama-server | `""` |
+
+#### Halogen Flash (`halogen` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
 <!-- END GENERATED: cli-recipe-options -->
 **Notes:**
 - Unspecified options will use the backend's default values

@@ -9,7 +9,8 @@ repos:
       - id: check-added-large-files
         # Allow the vendored model-viewer bundle (see src/app/src/renderer/vendor/README.md),
         # which is necessarily larger than 500 KB.
-        exclude: ^src/app/src/renderer/vendor/model-viewer\.min\.js$
+        # Complete immutable HTTP and CLI snapshots exceed the size limit.
+        exclude: ^(src/app/src/renderer/vendor/model-viewer\.min\.js|test/fixtures/backend-v2/container-activation\.catalog-transition\.json)$
 
   - repo: https://github.com/psf/black
     rev: 26.1.0

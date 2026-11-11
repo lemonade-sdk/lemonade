@@ -2,7 +2,9 @@
 #include "backend_capabilities_generated.h"
 #include "backend_catalog_execution_fixture.h"
 #include "backend_catalog_publication_internal.h"
+#include "container_activation_expectations.h"
 #include "lemon/backend_manager.h"
+#include "lemon/backends/configured/container_execution.h"
 #include "lemon/router.h"
 #include "llamacpp_oracle_descriptor.h"
 #include "llamacpp_v2_oracle.h"
@@ -22,7 +24,7 @@ using namespace runtime_fixture;
 namespace {
 const DefinitionKey llama{DefinitionNamespace::Builtin, "llamacpp", 1};
 const std::vector<std::string> recipes{"llamacpp", "llamacpp-hrx", "whispercpp", "moonshine", "kokoro", "sd-cpp",
-    "flm", "ryzenai-llm", "vllm", "thenoise", "ds4", "cloud", "thinksound", "acestep", "onnxruntime", "trellis", "openmoss"};
+    "flm", "ryzenai-llm", "vllm", "thenoise", "ds4", "cloud", "thinksound", "acestep", "onnxruntime", "trellis", "openmoss", "gufo", "rocmfpx", "halogen"};
 
 void failed(const CatalogBuildResult& result, const std::string& name) {
     check(!result.catalog && !result.stages.executable && catalog_publication().state() == CatalogPublication::State::Empty,
@@ -48,6 +50,11 @@ void authority_failures() {
     for (const auto& [code, mutate] : mutations) {
         for (std::size_t leaf = 0; leaf < embedded_v2_policies().leaves.size(); ++leaf) {
             auto stale = embedded_v2_policies();
+            if (code == "uncovered_hook_slot" && stale.leaves[leaf].slots.empty()) {
+                check(stale.leaves[leaf].key.id == "halogen" || stale.leaves[leaf].key.id == "ds4_rocm",
+                    "DataOnlyContainerNeedsNoHookGrant:" + stale.leaves[leaf].key.id);
+                continue;
+            }
             std::swap(stale.leaves[0], stale.leaves[leaf]);
             mutate(stale);
             std::swap(stale.leaves[0], stale.leaves[leaf]);
@@ -137,6 +144,17 @@ void identity_evidence(const BackendCatalog& catalog, const AdmittedCatalog& adm
                 "HrxCanonicalDescriptorSpecOpsFactoryOwnFinalizedExecutable");
             evidence["hrx"] = leaf_evidence(*entry->executable_definition, embedded_v2_policies().leaves.at(1));
         }
+        evidence["container_leaves"] = Json::object();
+        for (const auto& row : catalog.registrations()) {
+            if (!row.configured_entry || !row.configured_entry->executable_definition) continue;
+            const auto& executable = *row.configured_entry->executable_definition;
+            const auto& token = executable.compiled().authorized();
+            if (token.definition().declaration.at("kind") != "container") continue;
+            const auto& id = token.definition().key.id;
+            const auto policy = std::find_if(embedded_v2_policies().leaves.begin(), embedded_v2_policies().leaves.end(),
+                [&](const auto& value) { return value.key.id == id; });
+            evidence["container_leaves"][id] = leaf_evidence(executable, *policy);
+        }
         std::ofstream(out) << evidence.dump(2) << '\n';
     }
 }
@@ -165,9 +183,9 @@ int main(int argc, char** argv) {
     try {
         allow_entries = false;
         const auto& policy = embedded_v2_policies();
-        check(policy.leaves.size() == 2 && policy.leaves[0].key.id == "llamacpp" && policy.leaves[0].key.contract == 1,
-            "ExactlyTwoFixedBuiltinPolicies");
-        if (policy.leaves.size() != 2) return finish();
+        check(container_activation::exact_policies() && policy.leaves[0].key.id == "llamacpp" && policy.leaves[0].key.contract == 1,
+            "ExactlyEightFixedBuiltinPolicies");
+        if (!container_activation::exact_policies()) return finish();
         check(policy.leaves[0].slots.size() == 17 && policy.leaves[0].owners.size() == 12 && policy.leaves[1].owners.size() == 11 &&
             policy.digest == v2::export_registry_digest(policy.leaves, installed_hook_abis()), "FixedPolicySeventeenOccurrencesElevenOwners");
         check(installed_builtin_exports().exports().size() == 1 && installed_builtin_exports().digest() ==
@@ -221,8 +239,8 @@ int main(int argc, char** argv) {
         const BackendRegistration* llama_row = nullptr;
         std::vector<std::string> actual_recipes;
         for (const auto& row : complete.catalog->registrations()) {
-            actual_recipes.push_back(row.descriptor->recipe);
-            if (row.descriptor->recipe == "llamacpp") llama_row = &row;
+            if (row.backend_selector.empty()) actual_recipes.push_back(row.descriptor->recipe);
+            if (row.descriptor->recipe == "llamacpp" && row.backend_selector.empty()) llama_row = &row;
         }
         check(actual_recipes == recipes && llama_row && llama_row->configured_entry &&
             llama_row->configured_entry->executable_definition, "ExactlyOneLlamaRegistration");
@@ -246,7 +264,7 @@ int main(int argc, char** argv) {
         const auto op = BackendOperation::Embeddings, rank = BackendOperation::Reranking;
         const auto buffered = OperationDelivery::Buffered;
         for (const auto& capability : all_backend_capabilities()) {
-            if (capability.descriptor->recipe == "llamacpp") {
+            if (capability.descriptor == llama_row->descriptor) {
                 check(capability.capabilities == (CAP_EMBEDDINGS | CAP_RERANKING | CAP_CLASSIFICATION) &&
                     operation_adapter<IEmbeddingsServer>(*server, op, buffered, ModelType::LLM) &&
                     operation_adapter<IEmbeddingsServer>(*server, op, buffered, ModelType::EMBEDDING) &&
@@ -273,12 +291,10 @@ int main(int argc, char** argv) {
         RuntimeConfig::set_global(&config);
         {
             Router router(&config, nullptr, nullptr);
-            ModelInfo dormant;
-            dormant.recipe = "gufo";
-            bool denied = false;
-            try { (void)RoutingHelperTestHook::create_backend(router, dormant); }
-            catch (const std::runtime_error& error) { denied = std::string(error.what()) == "Builtin backend recipe is inactive: gufo"; }
-            check(denied, "InactiveGufoCannotFallBackToLlama");
+            ModelInfo active_gufo;
+            active_gufo.recipe = "gufo";
+            const auto gufo = RoutingHelperTestHook::create_backend(router, active_gufo);
+            check(dynamic_cast<ConfiguredServer*>(gufo.get()) && gufo->get_descriptor()->recipe == "gufo", "ActiveGufoCannotFallBackToLlama");
             ModelInfo unknown;
             unknown.recipe = "unregistered-fallback-fixture";
             auto fallback = RoutingHelperTestHook::create_backend(router, unknown);
@@ -288,19 +304,15 @@ int main(int argc, char** argv) {
         {
             BackendManager manager;
             for (const std::string selector : {"nathanw", "halobox"}) {
-                const std::string refusal = "Backend llamacpp:" + selector + " is staged and not active in this build";
-                const auto refused = [&](const std::function<void()>& action) {
-                    try { action(); }
-                    catch (const std::runtime_error& error) { return std::string(error.what()) == refusal; }
-                    return false;
-                };
-                check(is_inactive_backend_selector("llamacpp", selector) &&
-                    refused([&] { manager.install_backend("llamacpp", selector); }) &&
-                    refused([&] { manager.uninstall_backend("llamacpp", selector); }) &&
-                    refused([&] { (void)manager.get_install_params("llamacpp", selector); }), "StagedLlamaSelectorRefusedBeforeInstall:" + selector);
+                const auto* spec = try_get_spec_for_recipe("llamacpp", selector);
+                check(!is_inactive_backend_selector("llamacpp", selector) && spec && spec->executable_definition &&
+                    spec->executable_definition->compiled().authorized().definition().key.id == selector,
+                    "ActiveLlamaSelectorHasItsOwnInstallSpec:" + selector);
+                const auto policy = configured_container_policy(*spec, selector);
+                check(policy && policy->pin.recipe == "llamacpp" && policy->pin.backend == selector &&
+                    manager.get_latest_version("llamacpp", selector).find("@sha256:") != std::string::npos,
+                    "ActiveLlamaSelectorHasItsOwnImagePin:" + selector);
             }
-            check(!is_inactive_backend_selector("llamacpp", "vulkan") && !is_inactive_backend_selector("llamacpp", "") &&
-                !is_inactive_backend_selector("gufo", "rocm"), "OnlyStagedSelectorsAreRefused");
         }
         RuntimeConfig::set_global(previous);
     } catch (const std::exception& error) {

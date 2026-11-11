@@ -162,6 +162,11 @@ void BackendCatalog::finalize() {
         const auto* executable = entry ? entry->executable_definition.get() : nullptr;
         arms.push_back({descriptor->recipe, executable ? "D2" : definition ? "D" : "A"});
         auto row = descriptor_row(*descriptor, definition, false, executable);
+        for (const auto& selector : registrations_) {
+            if (selector.backend_selector.empty() || selector.descriptor->recipe != descriptor->recipe) continue;
+            const auto selected = descriptor_row(*selector.descriptor, nullptr, false, selector.configured_entry->executable_definition.get());
+            for (const auto& support : selected.at("support")) row["support"].push_back(support);
+        }
         if (definition) {
             ids.insert(definition->id);
             if (!entry) throw std::logic_error("Configured registration has no finalized entry");
@@ -216,7 +221,7 @@ void BackendCatalog::finalize() {
         registrations_.push_back({&entry->descriptor, entry->factory, &entry->spec, entry->backend_ops(), entry.get()});
     }
     json identity = {{"export", schema_}, {"arms", arms}};
-    if (!executions.empty()) { identity["executions"] = executions; identity["runner_service_policy"] = 20; }
+    if (!executions.empty()) { identity["executions"] = executions; identity["runner_service_policy"] = 21; }
     schema_["catalog_id"] = schema_digest(identity.dump());
 }
 

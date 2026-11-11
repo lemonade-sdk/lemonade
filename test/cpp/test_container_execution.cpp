@@ -1,5 +1,6 @@
 #include "backend_definition_binding_fixture.h"
 #include "backend_definition_runner_internal.h"
+#include "container_activation_expectations.h"
 #include "gufo_parity_capabilities.h"
 #include "lemon/backend_manager.h"
 #include "lemon/backends/configured/backend_spec_utils.h"
@@ -416,11 +417,11 @@ void format_parity(const fs::path& scratch) {
             "--label", "ai.lemonade", "--label", "ai.lemonade.recipe=gufo", "--label", "ai.lemonade.backend=rocm",
             "--label", "ai.lemonade.model=format-fixture", "--label", "ai.lemonade.port=1", "--cap-drop=all",
             "--security-opt=no-new-privileges", "--pull=never", "--network=lemonade-gufo-rocm-format-fixture",
-            "--device", "/dev/dri", "--device", "/dev/kfd", "--group-add", "keep-groups",
+            "--device", "/dev/dri", "--device", "/dev/kfd", "--group-add", "109",
             "-v", fs::canonical(model.resolved_paths.at("main")).string() + ":/mnt/models/checkpoint.bin:ro,z",
             "-v", fs::canonical(model.resolved_paths.at("mmproj")).string() + ":/mnt/models/2/checkpoint.bin:ro,z",
             "-v", fs::canonical(model.resolved_paths.at("draft")).string() + ":/mnt/models/3/checkpoint.bin:ro,z",
-            "--env", "HOME=/tmp", "--env", "HIP_VISIBLE_DEVICES=1", "-p", "127.0.0.1:1:1", services.image_override, "gufo"};
+            "--env", "HOME=/var/tmp", "--env", "TMPDIR=/var/tmp", "--env", "HIP_VISIBLE_DEVICES=1", "-p", "127.0.0.1:1:1", services.image_override, "gufo"};
         expected_runtime.insert(expected_runtime.end(), expected.begin(), expected.end());
         check(client.invocation.program == "podman" && argv == expected_runtime, "GufoExactFakeHostInvocation");
         process.stop();

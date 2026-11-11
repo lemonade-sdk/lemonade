@@ -669,7 +669,7 @@ protected:
     bool load_cancelled() const { return load_cancel_ && load_cancel_->load(); }
 
     // Choose an available port
-    int choose_port();
+    int choose_port(bool ephemeral = false);
 
     // Configure/start the generic backend watchdog. Non-streaming requests are
     // always monitored so a hung backend becomes a reload+retry delay instead

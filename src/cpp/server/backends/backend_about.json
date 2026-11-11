@@ -156,5 +156,32 @@
       "license": "MIT",
       "project_url": "https://github.com/pwilkin/trellis.cpp"
     }
+  },
+  "gufo": {
+    "rocm": {
+      "description": "Gufo container runtime for AMD Strix Halo.",
+      "author": "Gufo contributors",
+      "publisher": "kyuz0",
+      "license": "See image metadata",
+      "project_url": "https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes"
+    }
+  },
+  "rocmfpx": {
+    "rocm": {
+      "description": "The ROCm FPX llama.cpp fork packaged for AMD Strix Halo.",
+      "author": "ROCm FPX contributors",
+      "publisher": "kyuz0",
+      "license": "See image metadata",
+      "project_url": "https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes"
+    }
+  },
+  "halogen": {
+    "rocm": {
+      "description": "Halogen Flash container runtime for its HGN checkpoints on AMD Strix Halo.",
+      "author": "peonist-ai",
+      "publisher": "peonist-ai",
+      "license": "See image metadata",
+      "project_url": "https://github.com/orgs/peonist-ai/packages/container/package/halogen-flash-server"
+    }
   }
 }

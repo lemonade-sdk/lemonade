@@ -28,6 +28,9 @@
     "prefer_system": false
   },
   "global_timeout": 600,
+  "gufo": {
+    "args": ""
+  },
   "host": "localhost",
   "hrx": {
     "args": "",
@@ -77,6 +80,9 @@
   "port": 13305,
   "rocm_channel": "stable",
   "rocm_install_method": "auto",
+  "rocmfpx": {
+    "args": ""
+  },
   "ryzenai": {
     "server_bin": "builtin"
   },

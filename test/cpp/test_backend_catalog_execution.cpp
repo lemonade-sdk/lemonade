@@ -1,6 +1,7 @@
 #include "backend_catalog_execution_fixture.h"
 #include "backend_catalog_publication_internal.h"
 #include "backend_runtime_fixture.h"
+#include "container_activation_expectations.h"
 #include "container_source_inventory.h"
 #include "lemon/backends/configured/backend_definition_descriptor.h"
 
@@ -20,7 +21,7 @@ int main() {
     check(good.catalog && good.stages.resolved && good.stages.authorized && good.stages.catalog_admitted &&
         good.stages.compiled && good.stages.bound && good.stages.executable, "WholeMixedGraphFinalizes");
     if (!good.catalog) { dump_errors(good); return finish(); }
-    check(good.catalog->registrations().size() == 20 && !backend_catalog(), "PrivateBuildNeverPublishes");
+    check(good.catalog->registrations().size() == 25 && !backend_catalog(), "PrivateBuildNeverPublishes");
     const auto before = good.catalog->export_schema();
     auto changed = parent;
     changed["merge"]["metadata"]["display_name"] = "Changed parent";
@@ -54,7 +55,7 @@ int main() {
     binding::counters = {};
     const auto binding_failure = build({parent, larger_leaf}, binding_limit);
     check(!binding_failure.catalog && binding_failure.stages.compiled && !binding_failure.stages.bound &&
-        binding::counters.membership_scans == 3 && has_code(binding_failure.diagnostics, "limit_exceeded") && !backend_catalog(),
+        binding::counters.membership_scans == 9 && has_code(binding_failure.diagnostics, "limit_exceeded") && !backend_catalog(),
         "FailingDescendantBindingRejectsAlreadyBoundParent");
     auto invalid_adapter = leaf;
     invalid_adapter["merge"]["launch"]["readiness"]["path"] = "//remote/health";
@@ -85,8 +86,8 @@ int main() {
     foreign["merge"]["hooks"]["backend"] = {{"id", "llamacpp.backend"}};
     check(!build({foreign}).catalog, "ExternalDeclarationsCannotMintHookAuthority");
     check(installed_builtin_exports().exports().size() == 1 && embedded_v2_sources().size() == 3 + LEMON_C8_SOURCE_COUNT + LEMON_C9_SOURCE_COUNT &&
-        current_container_source_ids() == expected_container_source_ids() && embedded_v2_policies().leaves.size() == 2,
-            "ProductionV2HrxAndLlamaActiveGufoDormantAndSingleReviewedExport");
+        current_container_source_ids() == expected_container_source_ids() && container_activation::exact_policies(),
+            "ProductionV2EightActiveLeavesAndSingleReviewedExport");
     const auto rich = good.catalog->export_schema("catalog-leaf", 2);
     check(rich["recipes"][0]["input_schema_version"] == 2 && rich["executable_definition_versions"] == Json::array({1, 2}), "ExecutableV2PublicProjectionUsesLeafVersion");
     check(before["catalog_id"] == build({parent, leaf, legacy()}).catalog->export_schema()["catalog_id"], "ExecutionCatalogIdentityIsDeterministic");
@@ -103,7 +104,7 @@ int main() {
     trusted_seeds.push_back({&trusted_descriptor, "binding-fixture", {}});
     check(!build({}, {}, CatalogAdmissionBuilder::test_with_seeds(trusted_builtins, trusted_seeds)).catalog,
         "SyntheticAuthorityCannotServeProductionLlamaSeed");
-    trusted_seeds.erase(std::remove_if(trusted_seeds.begin(), trusted_seeds.end(), [](const auto& seed) { return seed.definition_id == "llamacpp" || seed.definition_id == "hrx"; }), trusted_seeds.end());
+    trusted_seeds.erase(std::remove_if(trusted_seeds.begin(), trusted_seeds.end(), [](const auto& seed) { return !seed.definition_id.empty() && seed.definition_id != "binding-fixture"; }), trusted_seeds.end());
     const auto trusted = build({}, {}, CatalogAdmissionBuilder::test_with_seeds(trusted_builtins, trusted_seeds));
     check(trusted.catalog && trusted.stages.executable && binding_fixture::calls.empty(), "HookBearingWholeGraphFinalizationInvokesNothing");
     if (!trusted.catalog) dump_errors(trusted);

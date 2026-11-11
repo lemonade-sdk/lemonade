@@ -204,13 +204,13 @@ void pins_and_commands() {
     check(!contains(argv, "--privileged") && !contains(argv, "--security-opt=seccomp=unconfined"),
           "Default seccomp and no privileged mode");
     check(values(argv, "--device") == run.devices, "Exact granted devices");
-    check(values(argv, "--group-add") == std::vector<std::string>{"keep-groups"},
-          "Rootless supplementary groups retained");
+    check(values(argv, "--group-add") == std::vector<std::string>{"109"},
+          "Rootless container receives only the render group");
     check(values(argv, "-p") == std::vector<std::string>{"127.0.0.1:32123:32123"},
           "Rootless loopback publication only");
     check(values(argv, "-v") == std::vector<std::string>{"/cache/blob:/mnt/models/main:ro,z"},
           "Read only SELinux mount");
-    check(values(argv, "--env") == std::vector<std::string>{"HOME=/tmp", "ENGINE=a b"},
+    check(values(argv, "--env") == std::vector<std::string>{"HOME=/var/tmp", "TMPDIR=/var/tmp", "ENGINE=a b"},
           "Environment remains separate argv values");
     auto image = std::find(argv.begin(), argv.end(), run.image);
     check(image != argv.end() && std::vector<std::string>(image + 1, argv.end()) == run.command,

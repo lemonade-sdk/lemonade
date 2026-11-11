@@ -43,14 +43,20 @@
 
 using json = nlohmann::json;
 
+#include "backend_container_selectors_internal.h"
 #include "llamacpp/llamacpp_effects.h"
 
 #line 43
 namespace lemon::backends {
 
-    const BackendSpec* try_get_spec_for_recipe(const std::string& recipe) {
-        // Each backend exposes its install/download spec through the registry.
-        return spec_for(recipe);
+    const BackendSpec* try_get_spec_for_recipe(const std::string& recipe, const std::string& backend) {
+        const auto* selected = select_backend_registration(all_registrations(), recipe, backend);
+        return selected ? selected->spec : nullptr;
+    }
+
+    const BackendDescriptor* try_get_descriptor_for_recipe(const std::string& recipe, const std::string& backend) {
+        const auto* selected = select_backend_registration(all_registrations(), recipe, backend);
+        return selected ? selected->descriptor : nullptr;
     }
 
     static std::string hash_string_from_json(const json& node) {

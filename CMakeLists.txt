@@ -242,6 +242,9 @@ set(LEMON_BACKENDS
     "onnxruntime|onnxruntime"
     "trellis|trellis"
     "openmoss|openmoss"
+    "gufo|gufo"
+    "rocmfpx|rocmfpx"
+    "halogen|halogen"
 )
 
 # ============================================================
@@ -1234,6 +1237,7 @@ add_library(lemonade-backend-definition-v2 STATIC
     src/cpp/server/backends/configured/backend_builtin_authorization.cpp
     src/cpp/server/backends/configured/backend_dormant_container_owners.cpp
     src/cpp/server/backends/configured/backend_llamacpp_export.cpp
+    src/cpp/server/backends/configured/backend_active_container_policies.cpp
     src/cpp/server/backends/configured/backend_llamacpp_policy.cpp
     src/cpp/server/backends/configured/backend_hook_abi.cpp)
 target_include_directories(lemonade-backend-definition-v2 PUBLIC
@@ -1300,6 +1304,9 @@ foreach(_backend_entry ${LEMON_BACKENDS})
     list(APPEND LEMON_BACKEND_FACTORY_SOURCES ${_backend_srcs})
     set(_backend_version 0)
     set(_backend_definition ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/${_backend_stem}.json)
+    if(_backend_stem STREQUAL "ds4")
+        set(_backend_definition ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/ds4_rocm.json)
+    endif()
     if(_backend_definition IN_LIST LEMON_BACKEND_DEFINITION_FILES)
         lemon_backend_definition_version(_backend_version "${_backend_definition}")
         lemon_backend_descriptor_dispatch(_backend_descriptor
@@ -1318,6 +1325,16 @@ foreach(_backend_entry ${LEMON_BACKENDS})
     string(APPEND LEMON_FACTORY_INCLUDES "${_seed_includes}")
     string(APPEND LEMON_FACTORY_ENTRIES "${_seed_entry}")
     string(APPEND LEMON_CAPABILITY_ENTRIES "${_seed_capability}")
+endforeach()
+
+foreach(_selector halobox nathanw)
+    set(_definition "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backends/${_selector}.json")
+    lemon_backend_descriptor_dispatch(_descriptor ${_selector} llamacpp "${_definition}")
+    string(APPEND LEMON_DESCRIPTOR_DEFINITIONS "${_descriptor}")
+    string(APPEND LEMON_FACTORY_ENTRIES
+        "        { &lemon::backends::${_selector}::descriptor, \"${_selector}\", {}, \"${_selector}\" },\n")
+    string(APPEND LEMON_CAPABILITY_ENTRIES
+        "        { &lemon::backends::${_selector}::descriptor, lemon::CAP_EMBEDDINGS | lemon::CAP_RERANKING },\n")
 endforeach()
 
 configure_file(
@@ -4811,13 +4828,18 @@ if(BUILD_TESTING)
             --dependencies "${CMAKE_CURRENT_BINARY_DIR}/_deps")
     add_dependencies(upstream-absorption-control-build
         llamacpp-frozen-control-build container-production-control-build container-c8a-control-build container-c9-control-build)
+    add_custom_target(container-activation-control-build
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/container_activation_control.py
+            --root "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-activation-20261111/base-control"
+            --dependencies "${CMAKE_CURRENT_BINARY_DIR}/_deps")
+    add_dependencies(container-activation-control-build upstream-absorption-control-build)
     add_cpp_ci_test(LlamaCppV2ProductionSwitchTest CI ON
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/upstream_absorption_transition.py
-            --base-build "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/absorption/base-control/build"
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/container_activation_transition.py
+            --base-build "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-activation-20261111/base-control/build"
             --build "${CMAKE_CURRENT_BINARY_DIR}"
-            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-v2/absorption/transition"
-            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-v2/absorption/transition"
-        DEPENDS test_llamacpp_v2_production_switch upstream-absorption-control-build)
+            --out "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/artifacts/container-activation-20261111/transition"
+            --scratch "${CMAKE_CURRENT_SOURCE_DIR}/.synagent/scratch/container-activation-20261111/transition"
+        DEPENDS test_llamacpp_v2_production_switch container-activation-control-build)
 endif()
 
 if(BUILD_TESTING)

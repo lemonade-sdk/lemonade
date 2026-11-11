@@ -11,6 +11,7 @@
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/url_utils.h>
 #include <lemon/wrapped_server.h>
+#include <random>
 #include <thread>
 
 namespace lemon {
@@ -598,8 +599,9 @@ void WrappedServer::backend_watchdog_loop() {
     }
 }
 
-int WrappedServer::choose_port() {
-    const int chosen_port = utils::ProcessManager::find_free_port(8001);
+int WrappedServer::choose_port(bool ephemeral) {
+    const int start = ephemeral ? 49152 + static_cast<int>(std::random_device{}() % 15000) : 8001;
+    const int chosen_port = utils::ProcessManager::find_free_port(start);
     if (chosen_port < 0) {
         throw std::runtime_error("Failed to find free port for " + server_name_);
     }

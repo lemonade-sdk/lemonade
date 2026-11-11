@@ -3,6 +3,7 @@
 #include "backend_definition_binding_fixture.h"
 #include "backend_definition_runner_internal.h"
 #include "configured_v2_backend_ops_internal.h"
+#include "container_activation_expectations.h"
 #include "container_production_capabilities.h"
 #include "lemon/backends/configured/configured_backend_entry.h"
 #include "lemon/backends/configured/configured_server.h"
@@ -159,12 +160,14 @@ void parity(const std::string& id) {
         check(data.at("launch").at("prepare_order") == frozen.at("launch").at("prepare_order") &&
             data.at("launch").value("pre_install_refusal", "") == frozen.at("launch").value("pre_install_refusal", ""), "C9FrozenPreInstallContract:" + id);
     }
-    if (doc != expected.at("production_definition")) { check(false, "C8FrozenProductionDefinition:" + id); return; }
+    if (doc != container_activation::document(expected.at("production_definition"))) { check(false, "C8FrozenProductionDefinition:" + id); return; }
     const auto fixture = fixed_fixture(doc);
     const auto bound = bind(fixture);
     check(bool(bound.definition), "C8FixedGrantBinds:" + id);
     if (!bound.definition) { diagnostics(bound.diagnostics); return; }
     const auto entry = ConfiguredBackendEntry::make(bound.definition);
+    check(entry->backend_ops()->validate_registration_checkpoint((root / "local-model.gguf").string()).empty(),
+        "ContainerAcceptsAbsoluteLocalCheckpoint:" + id);
     const auto& owner = reviewed_container_execution_owner(id);
     check(owner.digest == expected.at("owner_digest") && owner.digest == v2::identity("lemonade.backend-container-owner.v1\n", owner.semantics), "C8FixedOwnerDigest:" + id);
     const auto stripped = AuthorityInspection::test_without_grants(*fixture.token);
@@ -175,11 +178,11 @@ void parity(const std::string& id) {
     foreign = fixture.compiled->normalized_declaration(); foreign["launch"]["diagnostics"].erase(0);
     check(!AuthorityInspection::permits_execution(*stripped, foreign), "C8OwnerCannotRemoveDiagnostics:" + id);
     const auto active = admit({}, freeze_builtin_catalog());
-    check(active.catalog && !active.catalog->builtin_v2_definition({DefinitionNamespace::Builtin, id, 1}) &&
-        embedded_v2_policies().leaves.size() == 2 && embedded_v2_policies().execution_owners.empty(), "C8InactiveProductionLeaf:" + id);
+    check(active.catalog && active.catalog->builtin_v2_definition({DefinitionNamespace::Builtin, id, 1}) &&
+        container_activation::exact_policies(), "ActiveProductionLeaf:" + id);
     const auto recipe = expected.at("recipe").get<std::string>();
     auto services = std::make_shared<Services>(); services->pins = load_json(root / "src/cpp/resources/backend_versions.json");
-    check(services->pins.at(expected.value("pin_recipe", recipe)).at(expected.at("backend").get<std::string>()) == expected.at("pin") && !expected.at("registry_validated").get<bool>(), "C8ExactUnvalidatedStackPin:" + id);
+    check(services->pins.at(expected.value("pin_recipe", recipe)).at(expected.at("backend").get<std::string>()) == expected.at("pin") && !expected.at("registry_validated").get<bool>(), "C8PinMatchesHistoricalFixture:" + id);
     const auto registry = load_json(root / "src/cpp/resources/server_models.json");
     for (const auto& [name, row] : expected.at("models").items()) check(registry.at(name) == row, "C8ExactRegistry:" + id + ":" + name);
     const auto scratch = fs::path(LEMON_C8_SCRATCH) / id;

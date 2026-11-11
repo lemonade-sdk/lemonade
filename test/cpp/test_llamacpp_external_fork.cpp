@@ -2,6 +2,7 @@
 #include "backend_catalog_admission_internal.h"
 #include "backend_catalog_publication_internal.h"
 #include "backend_definition_authorization_internal.h"
+#include "container_activation_expectations.h"
 #include "lemon/backends/configured/backend_catalog.h"
 #include "lemon/backends/configured/configured_server.h"
 #include "lemon/runtime_config.h"
@@ -60,8 +61,8 @@ void finalization_controls() {
     check(bool(complete.catalog) && catalog_publication().state() == CatalogPublication::State::Empty,
         "ExternalCandidateHasZeroEffects:unpublished");
     if (!complete.catalog) return;
-    bool canonical = embedded_v2_policies().leaves.size() == 2 && embedded_v2_sources().size() == 3 + LEMON_C8_SOURCE_COUNT + LEMON_C9_SOURCE_COUNT &&
-        std::none_of(complete.catalog->registrations().begin(), complete.catalog->registrations().end(),
+    bool canonical = container_activation::exact_policies() && embedded_v2_sources().size() == 3 + LEMON_C8_SOURCE_COUNT + LEMON_C9_SOURCE_COUNT &&
+        std::any_of(complete.catalog->registrations().begin(), complete.catalog->registrations().end(),
             [](const auto& row) { return row.descriptor->recipe == "gufo"; });
     for (const auto& seed : builtin_registration_seeds()) {
         const auto found = std::find_if(complete.catalog->registrations().begin(), complete.catalog->registrations().end(),
@@ -188,7 +189,7 @@ int main(int argc, char** argv) {
             std::ofstream(directory / "backends.d" / (std::string(id) + ".json")) << export_fixture::read_bytes(std::string("external/") + id + ".json");
         bootstrap_backend_catalog(directory.string());
         const auto* catalog = backend_catalog();
-        check(catalog && catalog->registrations().size() == 19, "ExternalForkDeclarationToProcessExact:published");
+        check(catalog && catalog->registrations().size() == 24, "ExternalForkDeclarationToProcessExact:published");
         if (catalog) for (const auto& row : catalog->registrations()) if (row.configured_entry && row.configured_entry->executable_definition) {
             const auto& token = row.configured_entry->executable_definition->compiled().authorized();
             const auto& key = token.definition().key;

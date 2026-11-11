@@ -1,4 +1,5 @@
 #include "lemon/backend_manager.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_effects.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
@@ -6,6 +7,7 @@
 #include "lemon/utils/container_manager.h"
 #include "lemon/utils/process_manager.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 
@@ -29,7 +31,16 @@ BackendEffects production_backend_effects(BackendManager* manager, std::function
         BackendUtils::get_backend_binary_path
     };
     effects.supported_backends = [](const std::string& recipe) { return SystemInfo::get_supported_backends(recipe).backends; };
-    effects.validate_backend = RuntimeConfig::validate_backend_choice;
+    effects.validate_backend = [](const std::string& recipe, const std::string& backend) {
+        const auto* descriptor = descriptor_for(recipe);
+        if (descriptor && !descriptor->selectable_backend && descriptor->container_for(backend)) {
+            const auto supported = SystemInfo::get_supported_backends(recipe);
+            if (std::find(supported.backends.begin(), supported.backends.end(), backend) == supported.backends.end())
+                throw std::invalid_argument(SystemInfo::get_unsupported_backend_error(recipe, backend));
+            return;
+        }
+        RuntimeConfig::validate_backend_choice(recipe, backend);
+    };
     effects.allocate_port = std::move(allocate_port);
     effects.find_free_port = [](int start) { return utils::ProcessManager::find_free_port(start); };
     effects.rocm_arch = SystemInfo::get_rocm_arch;

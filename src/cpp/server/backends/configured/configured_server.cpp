@@ -58,7 +58,7 @@ ConfiguredServer::ConfiguredServer(std::shared_ptr<const ConfiguredBackendEntry>
           [this](const auto& endpoint, const auto& body, auto& sink, bool sse, long timeout, TelemetryCallback callback) {
               WrappedServer::forward_streaming_request(endpoint, body, sink, sse, timeout, std::move(callback));
           }}) {
-    if (!services_.launch) services_.launch = std::make_shared<EffectLaunchServices>(production_backend_effects(context.backend_manager, [this] { return choose_port(); }), entry_->launch_compatibility.posix_executable_loader_path);
+    if (!services_.launch) services_.launch = std::make_shared<EffectLaunchServices>(production_backend_effects(context.backend_manager, [this] { return choose_port(entry_->records().value("kind", "local") == "container"); }), entry_->launch_compatibility.posix_executable_loader_path);
     if (!services_.make_process) services_.make_process = [](ProcessOutput output, const std::string& cwd) { return std::make_unique<NativeProcess>(output, cwd); };
     OperationAdapters adapters;
     adapters.completion = this;

@@ -123,8 +123,8 @@ void production_gufo_parity(const fs::path& scratch) {
     check(!AuthorityInspection::permits_execution(*stripped, foreign), "ProductionGufoGrantCannotAdmitForeignRepository");
     const auto production = freeze_builtin_catalog();
     const auto active = admit({}, production);
-    check(active.catalog && !active.catalog->builtin_v2_definition({DefinitionNamespace::Builtin, "gufo", 1}) &&
-        embedded_v2_policies().leaves.size() == 2 && embedded_v2_policies().execution_owners.empty(), "ProductionGufoLeafDeliberatelyInactive");
+    check(active.catalog && active.catalog->builtin_v2_definition({DefinitionNamespace::Builtin, "gufo", 1}) &&
+        container_activation::exact_policies(), "ProductionGufoLeafHasFixedActivePolicy");
     const auto root = fs::path(LEMON_TEST_FIXTURES).parent_path().parent_path();
     std::ifstream pin_input(root / "src/cpp/resources/backend_versions.json");
     const auto pins = Json::parse(pin_input);
@@ -168,7 +168,7 @@ void production_gufo_parity(const fs::path& scratch) {
         ClientState client;
         ContainerProcess process({}, *plan.container, manager, std::make_unique<FakeClient>(client));
         process.start(plan.command); process.stop();
-        check(std::find(client.invocation.args.begin(), client.invocation.args.end(), "HOME=/tmp") != client.invocation.args.end() &&
+        check(std::find(client.invocation.args.begin(), client.invocation.args.end(), "HOME=/var/tmp") != client.invocation.args.end() &&
             client.starts == 1 && client.stops == 1, "ProductionGufoFakeContainerLifecycle");
         transcripts.push_back({{"mode", mode}, {"argv", plan.command.args}, {"runtime_argv", client.invocation.args}, {"mounts", destinations}});
     }

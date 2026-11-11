@@ -24,7 +24,10 @@ void load(WrappedServer& server, const RecipeOptions& options = RecipeOptions("d
 int main() {
     const auto entry = ds4::configured_entry();
     check(entry->compatibility == TrustedCompatibility::None && entry->launch_compatibility.device_on_backend_selection == DEVICE_GPU && entry->launch_compatibility.posix_executable_loader_path && entry->launch_compatibility.load_log, "registered DS4 entry carries the GPU device, POSIX loader and load-log attachment");
-    descriptor(entry->descriptor, registered_descriptor("ds4"));
+    auto native_descriptor = registered_descriptor("ds4");
+    check(native_descriptor.support[0].format == BackendFormat::Container && native_descriptor.containers.count("rocm") == 1, "production DS4 uses the reviewed OCI registration");
+    native_descriptor.support[0].format = BackendFormat::Native;
+    descriptor(entry->descriptor, native_descriptor);
     const auto& d = entry->descriptor;
     check(d.recipe == "ds4" && d.display_name == "DwarfStar4" && d.binary == "ds4-server" && d.config_section.empty() && d.default_device == DEVICE_GPU && d.slot_policy == SlotPolicy::Standard && d.uses_ctx_size && !d.selectable_backend && d.streams_model_from_storage, "independent DS4 metadata identities");
     check(d.options.size() == 1 && d.options[0].name == "ds4_args" && d.options[0].cli_flag == "--ds4-args" && d.options[0].default_value == "" && d.config_defaults() == json{{"args", ""}} && d.supported_modes == std::vector<std::string>{"chat"} && d.required_checkpoints == std::vector<std::string>{"main"}, "independent DS4 options/defaults/modes");
@@ -126,8 +129,9 @@ int main() {
         {"rocm", "linux", "", "ds4 backend 'rocm' requires a ROCm GPU, but no ROCm architecture was detected"},
         {"rocm", "linux", "gfx9999", "ds4 backend 'rocm' publishes no build for gfx9999; only gfx1151 is validated upstream"}
     };
-    const auto* registered = try_get_spec_for_recipe("ds4");
-    check(registered == ds4::spec() && registered == &entry->spec, "install path resolves the registered DS4 spec");
+    const auto* registered = ds4::spec();
+    const auto* active = try_get_spec_for_recipe("ds4");
+    check(registered == &entry->spec && active != registered && active->executable_definition, "native install oracle remains separate from active OCI DS4");
     for (const auto& [backend, os, arch, error] : cases) for (const char* version : {"b0001", "b0002"}) {
         const std::string host_os = os, host_arch = arch;
         std::vector<std::string> probes;

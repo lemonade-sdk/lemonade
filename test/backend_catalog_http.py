@@ -509,7 +509,7 @@ def main(binary):
             failed.close()
         with Server(binary, root, "--builtin-backends-only") as server:
             check(
-                len(request(server.port, "/v1/backends/schema")[1]["recipes"]) == 17,
+                len(request(server.port, "/v1/backends/schema")[1]["recipes"]) == 20,
                 "builtins-only skips broken external files",
             )
         (directory / "a.json").write_text(json.dumps(alpha, indent=4))
