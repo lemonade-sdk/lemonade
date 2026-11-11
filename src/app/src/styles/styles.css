@@ -16093,3 +16093,7 @@ button.workspace-metadata-chip:hover {
 .schema-recipe-options__inherit {
   align-self: flex-start;
 }
+
+.detail-configuration__schema-errors {
+  padding-left: 1.2em;
+}

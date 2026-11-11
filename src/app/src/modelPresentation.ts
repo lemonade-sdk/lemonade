@@ -26,7 +26,7 @@ function backendPresentation(recipe: string) {
 }
 
 export function backendCompactLabel(recipe: string): string {
-  return backendPresentation(recipe)?.compact || serverRecipeDisplayName(recipe) || recipe || 'Backend';
+  return serverRecipeDisplayName(recipe) || backendPresentation(recipe)?.compact || recipe || 'Backend';
 }
 
 export function backendLabel(recipe: string): string {

@@ -1,6 +1,7 @@
 import { api, ConnectionSnapshot, ModelInfo } from '../../api';
 import { BackendRecipe, Scalar, backendSelector, isRecord, isUnset, own, validateValue } from './backendSchema';
 import { refreshBackendCatalog } from './backendCatalog';
+import { catalogRecipe, catalogState, resolveBackendOptionName } from './catalogState';
 import { parseModelOptions } from './recipeForm';
 
 export interface CatalogLoadContext {
@@ -14,6 +15,7 @@ type SystemRecipes = Record<string, {
   backends?: Record<string, { state?: string; message?: string }>;
 }>;
 
+const BUILTIN_SYSTEM_INFO_MAX_AGE_MS = 10_000;
 const TRANSIENT_LOAD_KEYS = new Set(['pinned', 'save_options', 'model_name', 'dry_run']);
 
 function modelRecipe(model: ModelInfo | null | undefined): string {
@@ -135,4 +137,103 @@ export async function loadThroughCatalog(
   api.assertCurrentConnection(connection);
   await ensureCatalogModelReady(modelName, model, body, { connection, recipe, effective: snapshot.effective });
   return true;
+}
+
+export type BuiltinPreflight =
+  | { outcome: 'skipped'; reason: 'no-schema' | 'not-builtin' }
+  | { outcome: 'server-validation'; reason: 'dry-run-rejected' | 'dry-run-unavailable' }
+  | { outcome: 'prepared'; backend: string | null; installed: boolean; pulled: boolean };
+
+function systemBackendOption(recipes: SystemRecipes | undefined, recipe: string): {
+  name: string | undefined;
+  selectable: boolean;
+} {
+  const row = own(recipes as Record<string, unknown> | undefined, recipe);
+  const options = isRecord(row) && Array.isArray(row.options) ? row.options : [];
+  const explicit = options.find(option => isRecord(option) && option.type_name === 'BACKEND');
+  return {
+    name: isRecord(explicit) && typeof explicit.name === 'string' ? explicit.name : undefined,
+    selectable: isRecord(row) && row.selectable_backend === true,
+  };
+}
+
+// /load ignores keys it does not know and accepts values /options refuses (a
+// fractional value for a whole-number option, `pinned`), so a rejected dry run
+// must not stop a built-in load: the server validates it instead.
+export async function prepareBuiltinLoad(
+  modelName: string,
+  model: ModelInfo | null | undefined,
+  body: Record<string, unknown>,
+): Promise<BuiltinPreflight> {
+  const state = catalogState();
+  if (state.status !== 'ready') return { outcome: 'skipped', reason: 'no-schema' };
+  const recipe = catalogRecipe(modelRecipe(model));
+  if (!recipe || recipe.source !== 'builtin') return { outcome: 'skipped', reason: 'not-builtin' };
+  const { connection } = state;
+  api.assertCurrentConnection(connection);
+  const contract = new Set(recipe.options.map(option => option.name));
+  const changes = Object.fromEntries(Object.entries(persistentOptions(body))
+    .filter(([key]) => contract.has(key) && key !== 'recipe'));
+  let response: Response;
+  try {
+    response = await api.fetchForConnection(connection, `/models/${encodeURIComponent(modelName)}/options`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...changes, dry_run: true }),
+    });
+  } catch (error) {
+    api.assertCurrentConnection(connection);
+    return { outcome: 'server-validation', reason: 'dry-run-unavailable' };
+  }
+  if (!response.ok) {
+    return { outcome: 'server-validation', reason: response.status === 400 ? 'dry-run-rejected' : 'dry-run-unavailable' };
+  }
+  let effective: Record<string, Scalar>;
+  try {
+    effective = parseModelOptions(await response.json(), recipe.recipe, modelName).effective;
+  } catch {
+    api.assertCurrentConnection(connection);
+    return { outcome: 'server-validation', reason: 'dry-run-unavailable' };
+  }
+  api.assertCurrentConnection(connection);
+  const resolve = (recipes: SystemRecipes | undefined): string | null => {
+    const fromSystem = systemBackendOption(recipes, recipe.recipe);
+    const selector = resolveBackendOptionName(recipe.recipe, fromSystem.name, fromSystem.selectable);
+    const requested = selector ? own(effective, selector) : undefined;
+    const option = selector ? recipe.options.find(item => item.name === selector) : undefined;
+    return typeof requested === 'string' && requested && !(option && isUnset(option, requested))
+      ? requested
+      : own(recipes, recipe.recipe)?.default_backend ?? null;
+  };
+  const cached = await api.systemInfo({ maxAgeMs: BUILTIN_SYSTEM_INFO_MAX_AGE_MS });
+  api.assertCurrentConnection(connection);
+  let recipes = isRecord(cached.recipes) ? cached.recipes as SystemRecipes : undefined;
+  let backend = resolve(recipes);
+  // A cached snapshot may predate an install, so only "installed" is taken from it.
+  if (backend && own(own(recipes, recipe.recipe)?.backends, backend)?.state !== 'installed') {
+    recipes = await systemRecipes(connection);
+    backend = resolve(recipes);
+  }
+  let installed = false;
+  if (backend) {
+    const info = own(own(recipes, recipe.recipe)?.backends, backend);
+    if (info?.state === 'unsupported') {
+      throw new Error(info.message || `Backend ${backend} is not supported on the selected server.`);
+    }
+    if (info?.state === 'installable' || info?.state === 'update_required') {
+      await installSelectedBackend(connection, recipe.recipe, backend);
+      installed = true;
+    }
+  }
+  let pulled = false;
+  if (model?.downloaded === false) {
+    const detail = await api.fetchForConnection(connection, `/models/${encodeURIComponent(modelName)}`);
+    const current: unknown = detail.ok ? await detail.json() : null;
+    api.assertCurrentConnection(connection);
+    if (isRecord(current) && current.downloaded === false) {
+      await pullMissingModel(connection, modelName);
+      pulled = true;
+    }
+  }
+  return { outcome: 'prepared', backend, installed, pulled };
 }

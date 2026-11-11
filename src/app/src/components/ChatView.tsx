@@ -11,6 +11,7 @@ import { WorkspaceList, WorkspaceListRow } from './WorkspacePanels';
 import { backendCompactLabel, capabilityColor } from '../modelPresentation';
 import { scheduleIdleWork } from '../startupScheduler';
 import { useI18n } from '../i18n';
+import { useServerRecipeNames } from '../hooks/useBackendCatalog';
 import ChatReadinessProgress from './ChatReadinessProgress';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
@@ -934,6 +935,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   onOpenModelDetails,
   onRefresh,
 }) => {
+  useServerRecipeNames();
   const { t } = useI18n();
   const [showLoadedOverview, setShowLoadedOverview] = useState(
     () => modelSelectionEpoch === 0,

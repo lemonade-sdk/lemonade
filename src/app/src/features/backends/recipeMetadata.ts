@@ -159,14 +159,18 @@ export function recipeOptionIsArgs(systemInfo: unknown, recipe: string, key: str
 }
 
 export function recipeOptionIsNumeric(systemInfo: unknown, recipe: string, key: string): boolean {
+  const schema = recipeSchemaOption(recipe, key);
+  const declared = schema?.value_type === 'integer' || schema?.value_type === 'number';
+  if (schema?.ui) return declared;
   if (recipeOption(systemInfo, recipe, key)?.typeName === 'SIZE' || key === 'speed') return true;
-  const valueType = recipeSchemaOption(recipe, key)?.value_type;
-  return !recipeOption(systemInfo, recipe, key) && (valueType === 'integer' || valueType === 'number');
+  return !recipeOption(systemInfo, recipe, key) && declared;
 }
 
 export function recipeOptionIsBoolean(systemInfo: unknown, recipe: string, key: string): boolean {
+  const schema = recipeSchemaOption(recipe, key);
+  if (schema?.ui) return schema.value_type === 'boolean';
   if (recipeOption(systemInfo, recipe, key)?.typeName === 'BOOL') return true;
-  return !recipeOption(systemInfo, recipe, key) && recipeSchemaOption(recipe, key)?.value_type === 'boolean';
+  return !recipeOption(systemInfo, recipe, key) && schema?.value_type === 'boolean';
 }
 
 export function recipeOptionChoices(recipe: string, key: string): string[] {

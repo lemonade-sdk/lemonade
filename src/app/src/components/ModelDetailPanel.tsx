@@ -25,6 +25,7 @@ import {
 } from '../features/backends/recipeMetadata';
 import { own } from '../features/backends/backendSchema';
 import { LEGACY_OPTIONS_NOTICE, catalogRecipe, serverRecipeDisplayName } from '../features/backends/catalogState';
+import { builtinOptionErrors } from '../features/backends/builtinOptions';
 import { useBackendCatalog } from '../hooks/useBackendCatalog';
 import { SchemaModelOptions } from './SchemaModelOptions';
 import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo, isOnDemandModelInfo } from '../modelCapabilities';
@@ -1659,9 +1660,18 @@ const ModelConfigurationTab: React.FC<{
     return sanitizeRecipeOptions(raw);
   };
 
+  const schemaOptionErrors = builtinOptionErrors(
+    schemaRecipe?.source === 'builtin' ? schemaRecipe : undefined,
+    buildConfigOptions() as Record<string, unknown>,
+  );
+
   const saveConfig = async (showNotice = true): Promise<boolean> => {
     if (!serverOptionsLoaded) {
       if (showNotice) setNotice(t('Saved model options are still loading from lemond.'));
+      return false;
+    }
+    if (schemaOptionErrors.size > 0) {
+      if (showNotice) setNotice(t('Correct the highlighted options before saving.'));
       return false;
     }
 
@@ -2111,6 +2121,16 @@ const ModelConfigurationTab: React.FC<{
 
         </div>
 
+        {schemaOptionErrors.size > 0 && (
+          <ul className="schema-recipe-options__error detail-configuration__schema-errors" role="alert">
+            {[...schemaOptionErrors].map(([key, error]) => (
+              <li key={key}>
+                {t(TUNING_FIELD_LABELS[key as keyof RecipeOptions] || recipeOptionLabel(systemInfo, activeRecipe, key))}: {error}
+              </li>
+            ))}
+          </ul>
+        )}
+
         <div className="detail-tuning__actions detail-configuration__actions">
           {loadedModel && onReloadModel && (reloadWouldChange ? (
             <button
@@ -2127,7 +2147,7 @@ const ModelConfigurationTab: React.FC<{
               <Icon name="check" size={13} aria-hidden="true" /> {t('Running with these settings')}
             </span>
           ))}
-          <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()} disabled={!serverOptionsLoaded}>{t('Save')}</button>
+          <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()} disabled={!serverOptionsLoaded || schemaOptionErrors.size > 0}>{t('Save')}</button>
           {hasLoadSettingChanges && (
             <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>{t('Discard changes')}</button>
           )}
@@ -2640,6 +2660,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   pullingHf,
   onCancelHfPull,
 }) => {
+  useBackendCatalog();
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<DetailTab>('config');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);

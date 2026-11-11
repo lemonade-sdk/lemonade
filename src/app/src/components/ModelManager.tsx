@@ -31,7 +31,7 @@ import { useServerModelState } from '../features/models/modelState';
 import { findRegisteredRemoteModel } from '../features/models/registeredRemoteModel';
 import { useI18n } from '../i18n';
 import { loadThroughCatalog } from '../features/backends/catalogLoad';
-import { catalogRecipeCapabilities, externalRecipeChoices } from '../features/backends/catalogRecipeOptions';
+import { catalogRecipeCapabilities, externalCheckpointRoles, externalCheckpoints, externalRecipeChoices } from '../features/backends/catalogRecipeOptions';
 import { own } from '../features/backends/backendSchema';
 import { catalogRecipes, serverRecipeDisplayName } from '../features/backends/catalogState';
 import { useBackendCatalog } from '../hooks/useBackendCatalog';
@@ -559,6 +559,7 @@ type CustomModelDraftState = {
   mmproj: string;
   imageTextEncoder: string;
   imageVae: string;
+  roleCheckpoints: Record<string, string>;
   recipe: string;
   capability: CustomModelCapability;
   maxContextWindow: string;
@@ -722,6 +723,7 @@ function createEmptyCustomDraft(mode: CustomFormMode = 'model'): CustomModelDraf
     mmproj: '',
     imageTextEncoder: '',
     imageVae: '',
+    roleCheckpoints: {},
     recipe: isOmniCollection ? 'collection.omni' : 'llamacpp',
     capability: isOmniCollection ? 'omni' : 'chat',
     maxContextWindow: '',
@@ -753,6 +755,9 @@ function customDraftFromModel(model: ModelInfo): CustomModelDraftState {
     mmproj: String((model as any).mmproj || checkpoints.mmproj || ''),
     imageTextEncoder: String(checkpoints.text_encoder || ''),
     imageVae: String(checkpoints.vae || ''),
+    roleCheckpoints: Object.fromEntries(Object.entries(checkpoints)
+      .filter(([role, value]) => role !== 'main' && typeof value === 'string')
+      .map(([role, value]) => [role, String(value)])),
     recipe: String((model as any).recipe || (collection ? 'collection.omni' : 'llamacpp')),
     capability,
     maxContextWindow: String((model as any).max_context_window || ''),
@@ -2324,9 +2329,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         if (customDraft.imageTextEncoder.trim()) extraCheckpoints.text_encoder = customDraft.imageTextEncoder.trim();
         if (customDraft.imageVae.trim()) extraCheckpoints.vae = customDraft.imageVae.trim();
       }
-      const checkpoints = checkpoint && Object.keys(extraCheckpoints).length > 0
-        ? { main: checkpoint, ...extraCheckpoints }
-        : undefined;
+      const declaredRoles = externalCheckpointRoles(selectedRecipe);
+      const declared = declaredRoles ? externalCheckpoints(selectedRecipe, checkpoint, customDraft.roleCheckpoints) : null;
+      if (declared && declared.missing.length > 0 && !isOmniCollection) {
+        setCustomError(`${backendLabel(selectedRecipe)} needs a checkpoint for: ${declared.missing.join(', ')}.`);
+        return;
+      }
+      const checkpoints = declared
+        ? declared.checkpoints
+        : checkpoint && Object.keys(extraCheckpoints).length > 0
+          ? { main: checkpoint, ...extraCheckpoints }
+          : undefined;
       const saveName = editingCustomModelName || implicitCustomModelName(customDraft.displayName, customDraft.checkpoint, customDraft.capability === 'omni' ? 'omni-model' : 'custom-model');
       const saved = buildCustomModelRecord({
         name: saveName,
@@ -2646,7 +2659,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const remotePull = activeRemotePull(provider, result.id, variants);
     const pullPercent = remotePull?.percent;
     const isPulling = pullPercent !== undefined;
-    const recipeBadge = variants ? (own(RECIPE_BADGES, variants.recipe) || serverRecipeDisplayName(variants.recipe) || variants.recipe) : '';
+    const recipeBadge = variants ? (serverRecipeDisplayName(variants.recipe) || own(RECIPE_BADGES, variants.recipe) || variants.recipe) : '';
     const isSelected = selectedRemoteModel?.id === result.id && selectedRemoteProvider === provider;
 
     // Provider identity stays on the zone header, so the row spends its lead
@@ -2725,7 +2738,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const selectedCustomRecipe = customRecipeOptions.find(option => option.value === customDraft.recipe) || customRecipeOptions[0];
   const selectedCustomRecipeName = selectedCustomRecipe?.recipe || optionRecipe(customDraft.recipe);
   const selectedCustomRecipeSuggestion = own(CUSTOM_RECIPE_SUGGESTIONS, selectedCustomRecipeName);
-  const primaryCheckpointPlaceholder = selectedCustomRecipeSuggestion?.checkpoint || t('org/model:Q4_K_M.gguf or /path/to/model.gguf');
+  const selectedExternalRoles = isCustomOmniCollectionDraft ? undefined : externalCheckpointRoles(selectedCustomRecipeName);
+  const primaryCheckpointPlaceholder = selectedCustomRecipeSuggestion?.checkpoint
+    || (selectedExternalRoles ? t('Checkpoint accepted by this server recipe') : t('org/model:Q4_K_M.gguf or /path/to/model.gguf'));
   const mmprojCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'mmproj');
   const textEncoderCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'text_encoder');
   const vaeCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'vae');
@@ -3093,6 +3108,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                       placeholder={primaryCheckpointPlaceholder}
                     />
                   </label>
+                  {(selectedExternalRoles ?? []).map(role => (
+                    <label key={role} className="custom-model-form__field custom-model-form__wide">
+                      <span>{t('Checkpoint for role')}: <code>{role}</code></span>
+                      <input
+                        className="input"
+                        value={customDraft.roleCheckpoints[role] || ''}
+                        onChange={e => handleCustomDraftChange({
+                          roleCheckpoints: { ...customDraft.roleCheckpoints, [role]: e.target.value },
+                        })}
+                        placeholder={t('Checkpoint accepted by this server recipe')}
+                      />
+                    </label>
+                  ))}
                   {showLlamacppMmprojField && (
                     <label className="custom-model-form__field custom-model-form__wide">Vision projector (mmproj)
                       <InlineCheckpointExample

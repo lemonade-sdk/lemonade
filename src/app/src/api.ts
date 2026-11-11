@@ -898,6 +898,7 @@ class LemonadeAPI {
     this._systemInfoInFlight = null;
     this._systemInfoData = null;
     this._systemInfoFetchedAt = 0;
+    this._modelsRequestInFlight.clear();
     const snapshot = this.connectionSnapshot();
     this._connectionListeners.forEach(listener => { try { listener(snapshot); } catch {} });
   }
@@ -912,11 +913,13 @@ class LemonadeAPI {
   }
 
   assertCurrentConnection(snapshot: ConnectionSnapshot): void {
+    if (!this.isCurrentConnection(snapshot)) throw new ObsoleteConnectionError();
+  }
+
+  isCurrentConnection(snapshot: ConnectionSnapshot): boolean {
     const current = this.connectionSnapshot();
-    if (snapshot.generation !== current.generation || snapshot.apiUrl !== current.apiUrl
-        || snapshot.authenticationGeneration !== current.authenticationGeneration) {
-      throw new ObsoleteConnectionError();
-    }
+    return snapshot.generation === current.generation && snapshot.apiUrl === current.apiUrl
+      && snapshot.authenticationGeneration === current.authenticationGeneration;
   }
 
   onConnectionChange(listener: (snapshot: ConnectionSnapshot) => void): () => void {
@@ -1316,8 +1319,11 @@ class LemonadeAPI {
   }
 
   private async _json<T = unknown>(path: string, opts?: LemonadeRequestInit): Promise<T> {
+    const connection = this.connectionSnapshot();
     const resp = await this._fetch(path, opts);
-    return resp.json() as Promise<T>;
+    const data = await resp.json() as T;
+    this.assertCurrentConnection(connection);
+    return data;
   }
 
   private _buildWebSocketUrl(path: string, port?: number, query?: URLSearchParams): string {
@@ -1653,7 +1659,8 @@ class LemonadeAPI {
     const { catalogRecipe } = await import(
       /* webpackChunkName: "model-configuration" */ './features/backends/catalogState'
     );
-    if (catalogRecipe(cachedRecipe)?.source === 'external') {
+    const catalogRow = catalogRecipe(cachedRecipe);
+    if (catalogRow?.source === 'external') {
       const { loadThroughCatalog } = await import(
         /* webpackChunkName: "model-configuration" */ './features/backends/catalogLoad'
       );
@@ -1676,6 +1683,12 @@ class LemonadeAPI {
       ...recipeOptions,
       save_options: false,
     };
+    if (catalogRow?.source === 'builtin') {
+      const { prepareBuiltinLoad } = await import(
+        /* webpackChunkName: "model-configuration" */ './features/backends/catalogLoad'
+      );
+      await prepareBuiltinLoad(modelName, cachedModelInfo, body);
+    }
     let stopDownloadWatch: (() => void) | undefined;
     try {
       const { downloadStore } = await import(
@@ -2744,12 +2757,14 @@ class LemonadeAPI {
       const body: Record<string, unknown> = { model, messages, stream: true, ...samplingForModel(model, requestModelInfo), ...(params || {}) };
       if (isRouterRequest && body.route_trace === undefined) body.route_trace = true;
       if (tools && tools.length > 0) body.tools = tools;
+      const connection = this.connectionSnapshot();
       const resp = await this._fetch('/api/v1/chat/completions', {
         method: 'POST',
         body,
         signal,
         includeSessionHeaders: true,
       });
+      this.assertCurrentConnection(connection);
 
       const reader = resp.body!.getReader();
       const dec = new TextDecoder();
@@ -2761,6 +2776,10 @@ class LemonadeAPI {
 
       while (true) {
         const { done, value } = await reader.read();
+        if (!this.isCurrentConnection(connection)) {
+          await reader.cancel().catch(() => undefined);
+          throw new ObsoleteConnectionError();
+        }
         if (done) break;
         buf += dec.decode(value, { stream: true });
         const lines = buf.split('\n');
@@ -2916,6 +2935,7 @@ class LemonadeAPI {
       await this.health();
       return true;
     } catch (err) {
+      if (err instanceof ObsoleteConnectionError) return false;
       this._lastConnectionError = friendlyErrorMessage(err);
       this._healthData = null;
       this._healthDataSignature = '';
@@ -2952,7 +2972,7 @@ class LemonadeAPI {
     this._refreshGenerationInFlight = generationAtStart;
     this._setModelStateRefreshing(true);
     const request = (async (): Promise<{ health: HealthData; models: ModelsData } | null> => {
-      try {
+      for (let attempt = 0; ; attempt += 1) try {
         const health = await this.health();
         let models: ModelsData;
         try {
@@ -2960,6 +2980,7 @@ class LemonadeAPI {
             ? this._modelsData
             : await this.models(true);
         } catch (err) {
+          if (err instanceof ObsoleteConnectionError) throw err;
           // Health is the connection source of truth. Some tests and lightweight
           // servers expose health/MCP before the model registry is available; do
           // not flip the whole app back to disconnected merely because /models
@@ -2975,6 +2996,9 @@ class LemonadeAPI {
         }
         return { health, models };
       } catch (err) {
+        // The connection changed under this attempt, so its answer belongs to
+        // the previous server; ask the current one instead of reporting a failure.
+        if (err instanceof ObsoleteConnectionError && attempt < 2) continue;
         this._lastConnectionError = friendlyErrorMessage(err);
         this._healthData = null;
         this._healthDataSignature = '';

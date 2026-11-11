@@ -7,3 +7,7 @@ export function useBackendCatalog(): CatalogState {
   useSyncExternalStore(subscribeCatalog, catalogVersion, catalogVersion);
   return catalogState();
 }
+
+export function useServerRecipeNames(): number {
+  return useSyncExternalStore(subscribeCatalog, catalogVersion, catalogVersion);
+}

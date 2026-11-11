@@ -17,6 +17,7 @@ export interface BackendRecipe {
   source: 'builtin' | 'external';
   display_name: string;
   supported_modes?: string[];
+  required_checkpoints?: string[];
   options: BackendOption[];
   backend_option?: string | null;
   support: { backend: string; tier: string; device_summary: string; supported_os: string[] }[];
@@ -73,8 +74,8 @@ export function parseBackendSchema(value: unknown): BackendSchema {
     requireShape((row.source === 'builtin' || row.source === 'external') && typeof row.display_name === 'string' &&
       Array.isArray(row.options) && row.options.length <= 1024 && Array.isArray(row.support));
     requireShape(row.backend_option === undefined || row.backend_option === null || typeof row.backend_option === 'string');
-    requireShape(row.supported_modes === undefined ||
-      (Array.isArray(row.supported_modes) && row.supported_modes.every(mode => typeof mode === 'string')));
+    for (const key of ['supported_modes', 'required_checkpoints']) requireShape(row[key] === undefined ||
+      (Array.isArray(row[key]) && row[key].length <= 1024 && row[key].every(item => typeof item === 'string')));
     const optionNames = new Set<string>();
     const options = row.options.map((item: unknown): BackendOption => {
       requireShape(isRecord(item) && typeof item.name === 'string' && item.name.length > 0 && !optionNames.has(item.name));

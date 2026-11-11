@@ -48,3 +48,26 @@ export function externalRecipeChoices(): ExternalRecipeChoice[] {
       capabilities: recipeModeCapabilities(row) ?? ['chat', 'omni'],
     }));
 }
+
+export function externalCheckpointRoles(recipe: string): string[] | undefined {
+  const row = catalogRecipe(recipe);
+  if (!row || row.source !== 'external') return undefined;
+  const roles = Array.isArray(row.required_checkpoints) ? row.required_checkpoints : ['main'];
+  return [...new Set(roles.filter(role => role && role !== 'main'))];
+}
+
+export function externalCheckpoints(
+  recipe: string,
+  main: string,
+  values: Record<string, string>,
+): { checkpoints?: Record<string, string>; missing: string[] } {
+  const roles = externalCheckpointRoles(recipe) ?? [];
+  const checkpoints: Record<string, string> = { main };
+  const missing: string[] = [];
+  for (const role of roles) {
+    const value = Object.prototype.hasOwnProperty.call(values, role) ? String(values[role] || '').trim() : '';
+    if (value) checkpoints[role] = value;
+    else missing.push(role);
+  }
+  return { checkpoints: roles.length && main ? checkpoints : undefined, missing };
+}
