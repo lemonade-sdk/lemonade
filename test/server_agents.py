@@ -311,6 +311,10 @@ class AgentManagerTests(unittest.TestCase):
 
     @property
     def state_dir(self):
+        if sys.platform == "darwin":
+            return os.path.join(
+                self.home, "Library", "Application Support", "lemonade", "agent-host"
+            )
         return os.path.join(self.home, ".local", "state", "lemonade", "agent-host")
 
     @property
@@ -319,6 +323,10 @@ class AgentManagerTests(unittest.TestCase):
 
     @property
     def payload_root(self):
+        if sys.platform == "darwin":
+            return os.path.join(
+                self.home, "Library", "Application Support", "lemonade", "agents", "pi"
+            )
         return os.path.join(self.home, ".local", "share", "lemonade", "agents", "pi")
 
     def token(self):
