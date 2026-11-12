@@ -1267,6 +1267,46 @@ namespace lemon::backends {
         }
     }  // namespace
 
+    namespace {
+        // The \\?\ prefix below turns off Win32 path normalization, so a "." or
+        // ".." component left in the path makes every call against it fail.
+        // fs::absolute() does not remove them; lexically_normal() does.
+        fs::path normalized_absolute(const fs::path& p) {
+            std::error_code ec;
+            fs::path absolute = fs::absolute(p, ec);
+            if (ec) {
+                absolute = p;
+            }
+            return absolute.lexically_normal().make_preferred();
+        }
+
+        // MSVC's std::filesystem never applies the Win32 long-path prefix, so
+        // both walking and deleting stop at MAX_PATH.
+        // The prefix requires an absolute, backslashed path.
+        fs::path long_path(const fs::path& p) {
+#ifdef _WIN32
+            static const std::wstring kPrefix = L"\\\\?\\";
+            if (p.native().rfind(kPrefix, 0) == 0) {
+                return p;
+            }
+            const std::wstring native = normalized_absolute(p).native();
+            // \\server\share has to take the UNC form; prefixing it as-is would
+            // produce \\?\\\server, which Windows rejects.
+            if (native.rfind(L"\\\\", 0) == 0) {
+                return fs::path(kPrefix + L"UNC" + native.substr(1));
+            }
+            return fs::path(kPrefix + native);
+#else
+            return p;
+#endif
+        }
+
+        void remove_rocm_tree(const fs::path& dir, std::error_code& ec) {
+            ec.clear();
+            fs::remove_all(long_path(dir), ec);
+        }
+    }  // namespace
+
     void BackendUtils::cleanup_old_therock_versions() {
         const json& config = backend_versions_config();
 
@@ -1294,7 +1334,12 @@ namespace lemon::backends {
                         LOG(DEBUG, "BackendUtils") << "Cleaning up old TheRock version: "
                                                    << subdir << "/" << dir_name << std::endl;
                         std::error_code ec;
-                        fs::remove_all(entry.path(), ec);
+                        remove_rocm_tree(entry.path(), ec);
+                        if (ec) {
+                            LOG(WARNING, "BackendUtils")
+                                << "Failed to remove old TheRock directory "
+                                << utils::path_to_utf8(entry.path()) << ": " << ec.message() << std::endl;
+                        }
                     }
                 }
             } catch (const std::exception& e) {
@@ -1315,18 +1360,6 @@ namespace lemon::backends {
         constexpr const char* kRocblasDepthFile = "rocblas_path_depth.txt";
 #endif
 
-        // The \\?\ prefix below turns off Win32 path normalization, so a "." or
-        // ".." component left in the path makes every call against it fail.
-        // fs::absolute() does not remove them; lexically_normal() does.
-        fs::path normalized_absolute(const fs::path& p) {
-            std::error_code ec;
-            fs::path absolute = fs::absolute(p, ec);
-            if (ec) {
-                absolute = p;
-            }
-            return absolute.lexically_normal().make_preferred();
-        }
-
 #ifdef _WIN32
         std::string resolved_cache_dir(const std::string& cache_dir) {
             const std::string raw = cache_dir.empty() ? utils::get_cache_dir() : cache_dir;
@@ -1342,32 +1375,6 @@ namespace lemon::backends {
             return normalized_absolute(utils::path_from_utf8(
                 wheel_layout ? BackendUtils::get_therock_wheel_dir(arch, version)
                              : BackendUtils::get_therock_install_dir(arch, version)));
-        }
-
-        // MSVC's std::filesystem never applies the Win32 long-path prefix, so
-        // both walking and deleting stop at MAX_PATH.
-        // The prefix requires an absolute, backslashed path.
-        fs::path long_path(const fs::path& p) {
-#ifdef _WIN32
-            static const std::wstring kPrefix = L"\\\\?\\";
-            if (p.native().rfind(kPrefix, 0) == 0) {
-                return p;
-            }
-            const std::wstring native = normalized_absolute(p).native();
-            // \\server\share has to take the UNC form; prefixing it as-is would
-            // produce \\?\\\server, which Windows rejects.
-            if (native.rfind(L"\\\\", 0) == 0) {
-                return fs::path(kPrefix + L"UNC" + native.substr(1));
-            }
-            return fs::path(kPrefix + native);
-#else
-            return p;
-#endif
-        }
-
-        void remove_rocm_tree(const fs::path& dir, std::error_code& ec) {
-            ec.clear();
-            fs::remove_all(long_path(dir), ec);
         }
 
 #ifdef _WIN32
@@ -1795,6 +1802,7 @@ namespace lemon::backends {
                 LOG(DEBUG, "BackendUtils")
                     << "ROCm wheels " << arch << "-" << version
                     << " already installed" << std::endl;
+                cleanup_old_therock_versions();
                 return true;
             }
         }
