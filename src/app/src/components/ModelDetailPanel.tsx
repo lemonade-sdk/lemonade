@@ -1246,7 +1246,6 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
   const lastEmittedValueRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (lastEmittedValueRef.current === value) {
-      lastEmittedValueRef.current = null;
       return;
     }
     lastEmittedValueRef.current = null;
@@ -1272,7 +1271,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
   const handleFreeformChange = (nextRest: string) => {
     setFreeformDraft(nextRest);
     const nextValue = composeSamplerArgs(specs, compositionFieldsRef.current, nextRest);
-    lastEmittedValueRef.current = nextValue === value ? null : nextValue;
+    lastEmittedValueRef.current = nextValue;
     onChange(nextValue);
   };
 

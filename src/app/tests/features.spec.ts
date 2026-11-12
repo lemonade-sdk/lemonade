@@ -2052,6 +2052,54 @@ test.describe('Lemonade UI — Feature Parity', () => {
       .toHaveText('Below 0.2 the model tends to repeat itself.');
   });
 
+  for (const recipe of ['llamacpp', 'gufo']) {
+    test(`backend args preserve typed spaces for ${recipe}`, async ({ page }) => {
+      const modelName = `${recipe}-spaces-model`;
+      const argsKey = `${recipe}_args`;
+      let loadRequestBody: Record<string, unknown> | null = null;
+      await page.route('**/api/v1/health**', route => route.fulfill({
+        json: { status: 'ok', version: 'test', all_models_loaded: [] },
+      }));
+      await page.route('**/api/v1/system-info**', route => route.fulfill({
+        json: { recipes: { [recipe]: {
+          modality: 'Text generation',
+          uses_ctx_size: true,
+          options: [{ name: argsKey, type_name: 'ARGS' }],
+        } } },
+      }));
+      await page.route('**/api/v1/models**', route => route.fulfill({
+        json: new URL(route.request().url()).pathname.endsWith('/options') ? {
+          model_name: modelName, recipe, saved: {}, effective: {}, defaults: {},
+          resolved_ctx_size: 4096,
+        } : {
+          data: [{ id: modelName, name: modelName, recipe, labels: ['chat'], downloaded: true }],
+        },
+      }));
+      await page.route('**/api/v1/load', route => {
+        loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+        return route.fulfill({ json: { status: 'ok' } });
+      });
+
+      await page.goto('/');
+      await page.locator('.titlebar__nav').getByText('Models').click();
+      await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+      await page.locator('#detail-tab-config').click();
+      const panel = page.locator('#detail-panel-config');
+      const args = panel.locator('textarea');
+      await args.pressSequentially('--sessions');
+      await args.press('Space');
+      await expect(args).toHaveValue('--sessions ');
+      await args.press('Space');
+      await expect(args).toHaveValue('--sessions  ');
+      await args.pressSequentially('4 --path "my model"');
+      await expect(args).toHaveValue('--sessions  4 --path "my model"');
+      await args.blur();
+      await expect(args).toHaveValue('--sessions 4 --path "my model"');
+      await page.getByRole('button', { name: `Load ${modelName}` }).click();
+      await expect.poll(() => loadRequestBody?.[argsKey]).toBe('--sessions  4 --path "my model"');
+    });
+  }
+
   test('25e — Reset names the backend Load will use, and Reload is only offered when it would change one', async ({ page }) => {
     const modelName = 'live-model';
     let loadRequestBody: Record<string, unknown> | null = null;
