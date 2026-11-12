@@ -910,6 +910,7 @@ const ZH_CN: Record<string, string> = {
   'Custom override exists': '已有自定义覆盖版本',
   'Built-in or external model': '内置或外部模型',
   'Change the inference engine? The model may be incompatible.': '切换推理引擎？该模型可能不兼容。',
+  'Save or discard the current load settings before switching inference engines.': '切换推理引擎前，请先保存或放弃当前的加载设置。',
   'Restore Built-in? Custom settings will be removed, but files will be kept.': '恢复内置模型？自定义设置将被移除，但文件会保留。',
   'Convert to Custom? This will override the built-in model name without deleting the original.': '转换为自定义模型？将覆盖内置模型名称，但不会删除原始模型。',
   'tool-calling, reasoning': '工具调用、推理',

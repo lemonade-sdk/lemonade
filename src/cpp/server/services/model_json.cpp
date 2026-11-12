@@ -62,12 +62,11 @@ json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int 
         public_components.push_back(model_manager_->get_public_model_name(component));
     }
 
-    // Listing copies carry their public name in info.model_name. Once a user
-    // registration shadows a built-in, that name is bare (e.g. "Foo") even
-    // though the underlying store key is "user.Foo". Resolve the store key
-    // before reporting the canonical identity or custom status.
+    // The route id identifies the matched row. A built-in ModelInfo keeps a
+    // bare internal name even after a user registration shadows that name.
+    const auto resolved = model_manager_->resolve(model_id);
     const std::string canonical_name = cache_key_to_canonical_id(
-        model_manager_->resolve_model_name(info.model_name));
+        resolved ? resolved->canonical_id : info.model_name);
     json model_json = {
         {"id", model_id},
         {"canonical_model_name", canonical_name},

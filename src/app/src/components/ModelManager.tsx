@@ -1804,7 +1804,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       }
       return;
     }
-    if (!confirm(`Delete "${model.display_name || name}"? This removes the downloaded files. If the model is loaded, it will be unloaded first.`)) return;
+    const standaloneCustom = modelIsCustom(model) && !visibleServerModels.some(candidate =>
+      canonicalModelId(candidate).toLowerCase() === `builtin.${bareModelId(model)}`.toLowerCase());
+    const confirmation = standaloneCustom
+      ? `Delete "${model.display_name || name}"? This removes the custom registration and managed model files. If the model is loaded, it will be unloaded first.`
+      : `Delete "${model.display_name || name}"? This removes the downloaded files. If the model is loaded, it will be unloaded first.`;
+    if (!confirm(confirmation)) return;
     markBusy(name);
     try {
       await api.deleteModel(name);

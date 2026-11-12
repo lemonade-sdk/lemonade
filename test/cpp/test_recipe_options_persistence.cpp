@@ -231,6 +231,62 @@ static void test_key_migration() {
     fs::remove_all(seeded.root);
 }
 
+static void test_failed_profile_write_does_not_change_registry() {
+    Fixture fx = create_fixture();
+    use_fixture_dirs(fx);
+    ModelManager manager;
+    const json before = read_json(fx.root / "user_models.json");
+
+    // An existing directory cannot be atomically replaced by the JSON file.
+    // This reliably fails even when the test runs as root.
+    fs::create_directory(fx.options_file);
+    bool rejected = false;
+    try {
+        manager.register_model("user.zz-opts",
+                               json{{"checkpoint", "zzopts/zzrepo:main.gguf"},
+                                    {"recipe", "sd-cpp"}},
+                               /*allow_missing_checkpoint=*/true,
+                               /*replace_existing=*/true);
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+    check("failed engine-profile write rejects registration", rejected);
+    check("failed profile write leaves the original registration unchanged",
+          read_json(fx.root / "user_models.json") == before &&
+          manager.get_model_info("user.zz-opts").recipe == "llamacpp");
+    fs::remove_all(fx.root);
+}
+
+static void test_failed_registration_restores_saved_profiles() {
+    Fixture fx = create_fixture();
+    use_fixture_dirs(fx);
+    ModelManager manager;
+    manager.replace_options("user.zz-opts", json{{"ctx_size", 4096}});
+    const json original_registry = read_json(fx.root / "user_models.json");
+    const json original_options = read_json(fx.options_file);
+
+    std::string failure_reason;
+    try {
+        manager.register_model("user.zz-opts",
+                               json{{"checkpoint", "zzopts/zzrepo:main.gguf"},
+                                    {"recipe", "sd-cpp"},
+                                    // Free-form labels are allowed. "chat" is a real
+                                    // deployment mode that image-only sd-cpp cannot serve.
+                                    {"labels", json::array({"chat"})}},
+                               /*allow_missing_checkpoint=*/true,
+                               /*replace_existing=*/true);
+    } catch (const std::exception& e) {
+        failure_reason = e.what();
+    }
+    check("failed registration rejects the incompatible deployment mode",
+          failure_reason.find("cannot serve 'chat'") != std::string::npos);
+    check("failed registration restores the original registry and engine profile",
+          read_json(fx.root / "user_models.json") == original_registry &&
+          read_json(fx.options_file) == original_options &&
+          manager.options("user.zz-opts")["saved"].value("ctx_size", 0) == 4096);
+    fs::remove_all(fx.root);
+}
+
 static void test_corrupt_file_is_not_fatal() {
     Fixture seeded = create_fixture(R"([1, 2, 3])");
     use_fixture_dirs(seeded);
@@ -294,6 +350,8 @@ int main() {
     }
 
     test_key_migration();
+    test_failed_profile_write_does_not_change_registry();
+    test_failed_registration_restores_saved_profiles();
     test_corrupt_file_is_not_fatal();
     use_fixture_dirs(fx);
     test_saved_options_follow_the_recipe(fx);

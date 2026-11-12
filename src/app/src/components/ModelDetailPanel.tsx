@@ -1990,7 +1990,7 @@ const ModelConfigurationTab: React.FC<{
                   const next = event.target.value;
                   if (next === currentRecipe || !onChangeInferenceEngine) return;
                   if (hasLoadSettingChanges) {
-                    setEngineError('Save or discard the current load settings before switching inference engines.');
+                    setEngineError(t('Save or discard the current load settings before switching inference engines.'));
                     return;
                   }
                   if (!window.confirm(t('Change the inference engine? The model may be incompatible.'))) return;

@@ -26,9 +26,9 @@ public:
         s.paths = {"models/unregister"};
         s.summary = "Unregister a custom model without deleting its files";
         s.description =
-            "Removes only an existing `user.*` entry from `user_models.json`. "
-            "Downloaded checkpoints are left untouched; an overridden built-in "
-            "becomes the default for its bare model name again.";
+            "Removes an existing `user.*` registration and its saved inference-engine "
+            "settings. Downloaded checkpoints are left untouched; an overridden "
+            "built-in becomes the default for its bare model name again.";
         s.args = {model_management::kModelName};
         s.request_format = RequestFormat::Json;
 
@@ -62,13 +62,19 @@ public:
             return;
         }
 
-        const std::string bare = strip_user_model_prefix(id);
-        if (ctx_.router->is_model_loaded(id) || ctx_.router->is_model_loaded(bare) ||
-            ctx_.router->is_model_loaded("builtin." + bare)) {
+        // A loaded or in-flight backend must not outlive its registration.
+        // The reservation also blocks loads that already resolved this id but
+        // have not yet acquired the router load slot.
+        if (!ctx_.router->begin_model_unregistration(id)) {
             write_plain_error(res, kRegistrationBusy,
-                              "Unload the model before restoring the built-in definition");
+                              "Unload the model or finish the ongoing load before restoring it");
             return;
         }
+        struct Reservation {
+            Router* router;
+            std::string id;
+            ~Reservation() { router->end_model_unregistration(id); }
+        } reservation{ctx_.router, id};
 
         try {
             ctx_.model_manager->unregister_user_model(id);

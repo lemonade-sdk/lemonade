@@ -1,4 +1,5 @@
 #include "lemon/router.h"
+#include "lemon/canonical_id.h"
 #include "lemon/cloud_provider_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
@@ -875,6 +876,15 @@ void Router::load_model(const std::string& model_name,
                && (!exclusive_active_ || exclusive_owner_ == std::this_thread::get_id());
     });
 
+    // An earlier caller may have captured a user ModelInfo and waited while its
+    // registration was removed. Check the identity of that captured row, not
+    // only the name that now resolves (which may point at a built-in).
+    const std::string original_id = cache_key_to_canonical_id(model_info.model_name);
+    if (unregistering_models_.count(canonical_model_name) ||
+        unregistering_models_.count(original_id) ||
+        (is_user_model_name(original_id) && !model_manager_->model_exists(original_id))) {
+        throw ModelLoadRefusedException("Model registration is unavailable: " + original_id);
+    }
     is_loading_ = true;
 
     LOG(DEBUG, "Router") << "Loading model: " << canonical_model_name
@@ -1515,6 +1525,26 @@ bool Router::is_model_loaded(const std::string& model_name) const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     auto* server = find_server_by_model_name(resolve_model_name(model_name));
     return server != nullptr && server->is_backend_alive();
+}
+
+bool Router::begin_model_unregistration(const std::string& canonical_id) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    if (!is_user_model_name(canonical_id) || is_loading_ ||
+        unregistering_models_.count(canonical_id)) return false;
+    const std::string bare = strip_user_model_prefix(canonical_id);
+    for (const auto& server : loaded_servers_) {
+        if (server->is_backend_alive() &&
+            (server->get_model_name() == canonical_id || server->get_model_name() == bare)) {
+            return false;
+        }
+    }
+    unregistering_models_.insert(canonical_id);
+    return true;
+}
+
+void Router::end_model_unregistration(const std::string& canonical_id) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    unregistering_models_.erase(canonical_id);
 }
 
 RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,

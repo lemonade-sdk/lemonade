@@ -239,9 +239,8 @@ static void test_precedence_and_public_naming(ModelManager& manager, const Fixtu
               "zzorg/zzshadow:main.gguf");
 }
 
-// The wire identity must describe the underlying catalog row, not the bare
-// public name returned by get_supported_models(). This is what the GUI uses to
-// hide identical built-ins and allow engine edits after Convert to Custom.
+// The wire identity describes the matched catalog row, not the bare public
+// name returned by get_supported_models().
 static void test_model_wire_identity(ModelManager& manager, const Fixture& fx) {
     const auto listed = manager.get_supported_models();
     const auto registered = listed.find(fx.shadowed_builtin);
@@ -274,6 +273,12 @@ static void test_model_wire_identity(ModelManager& manager, const Fixture& fx) {
           detail_wire.value("canonical_model_name", std::string()) ==
               registered_wire.value("canonical_model_name", std::string()) &&
               detail_wire.value("custom", false));
+
+    const ModelInfo builtin_detail = manager.get_model_info("builtin." + fx.shadowed_builtin);
+    const json builtin_wire = model_json.to_json("builtin." + fx.shadowed_builtin, builtin_detail);
+    check("explicit built-in detail preserves the built-in identity under an override",
+          builtin_wire.value("canonical_model_name", std::string()) ==
+              "builtin." + fx.shadowed_builtin && !builtin_wire.value("custom", true));
 }
 
 static void test_public_names_resolve(ModelManager& manager) {

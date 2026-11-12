@@ -61,8 +61,9 @@ try {
   assert.match(deleteBlock, /if \(modelIsCustom\(model\) && isCollectionModel\(model\)\)/);
   assert.match(deleteBlock, /Delete Omni collection/);
   assert.doesNotMatch(deleteBlock, /Delete custom override|Delete custom model/);
-  assert.ok(deleteBlock.includes('if (!confirm(`Delete "${model.display_name || name}"?'),
-    'ordinary models must share the existing built-in delete confirmation');
+  assert.match(deleteBlock, /const standaloneCustom = modelIsCustom\(model\)/);
+  assert.match(deleteBlock, /custom registration and managed model files/);
+  assert.match(deleteBlock, /if \(!confirm\(confirmation\)\) return;/);
   assert.equal((deleteBlock.match(/await api\.deleteModel\(name\);/g) || []).length, 2,
     'the collection path and standard model path must both delete through the API');
   assert.match(route, /unregister_user_model\(id\)/);
