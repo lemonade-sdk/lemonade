@@ -4059,10 +4059,11 @@ if(BUILD_TESTING AND EXISTS "${_OPENCODE_PROFILE_TEST_SRC}")
     add_executable(test_opencode_profile
         test/cpp/test_opencode_profile.cpp
         src/cpp/cli/agent_config_file.cpp
+        src/cpp/cli/agent_launcher.cpp
         src/cpp/cli/opencode_profile.cpp
     )
     target_include_directories(test_opencode_profile PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
-    target_link_libraries(test_opencode_profile PRIVATE nlohmann_json::nlohmann_json)
+    target_link_libraries(test_opencode_profile PRIVATE lemonade-server-core nlohmann_json::nlohmann_json)
     add_cpp_ci_test(OpencodeProfileTest CI ON COMMAND test_opencode_profile)
 endif()
 

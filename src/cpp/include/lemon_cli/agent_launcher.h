@@ -38,6 +38,9 @@ bool build_agent_config(const std::string& agent,
                         AgentConfig& config,
                         std::string& error_message);
 
+// Major version from a line of `opencode --version` output, or nullopt.
+std::optional<int> parse_opencode_major_version(const std::string& line);
+
 // Major version from `opencode --version`, or nullopt when it can't be determined.
 std::optional<int> opencode_major_version(const std::string& binary);
 

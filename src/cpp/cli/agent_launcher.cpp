@@ -366,17 +366,24 @@ bool build_agent_config(const std::string& agent,
     return false;
 }
 
+std::optional<int> parse_opencode_major_version(const std::string& line) {
+    static const std::regex version_pattern(R"(^\s*(?:opencode\s+)?v?(\d{1,4})\.\d+\.\d+)");
+    std::smatch match;
+    if (!std::regex_search(line, match, version_pattern)) {
+        return std::nullopt;
+    }
+    return std::stoi(match[1].str());
+}
+
 std::optional<int> opencode_major_version(const std::string& binary) {
-    const std::regex version_pattern(R"(^\s*(?:opencode\s+)?v?(\d{1,4})\.\d+\.\d+)");
     std::optional<int> major;
     try {
         lemon::utils::ProcessManager::run_process_with_output(
             binary,
             {"--version"},
             [&](const std::string& line) {
-                std::smatch match;
-                if (!major && std::regex_search(line, match, version_pattern)) {
-                    major = std::stoi(match[1].str());
+                if (!major) {
+                    major = parse_opencode_major_version(line);
                 }
                 return true;
             },

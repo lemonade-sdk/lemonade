@@ -1,8 +1,9 @@
-// Checks the JSON `lemonade launch opencode` writes into opencode.json: the
-// Lemonade provider block and the "lemonade" MCP server.
+// Checks what `lemonade launch opencode` writes into opencode.json (the Lemonade
+// provider block and the "lemonade" MCP server) and how it builds the launch.
 // Build with: cmake --build --preset default --target test_opencode_profile
 // Run with: ctest --test-dir build -R '^OpencodeProfileTest$' --output-on-failure
 
+#include "lemon_cli/agent_launcher.h"
 #include "lemon_cli/opencode_profile.h"
 
 #include <nlohmann/json.hpp>
@@ -14,6 +15,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 using nlohmann::json;
@@ -185,6 +187,73 @@ void test_codemode_config(const fs::path& config_path) {
     check("no codemode config without the entry", lemon_cli::opencode_codemode_config().is_null());
 }
 
+void set_env(const char* name, const std::string& value) {
+#ifdef _WIN32
+    _putenv_s(name, value.c_str());
+#else
+    if (value.empty()) {
+        unsetenv(name);
+    } else {
+        setenv(name, value.c_str(), 1);
+    }
+#endif
+}
+
+void test_version_parse() {
+    using lemon_tray::parse_opencode_major_version;
+    check("v1 version", parse_opencode_major_version("1.19.0") == 1);
+    check("v2 version with prefix", parse_opencode_major_version("opencode v2.0.29") == 2);
+    check("non-version output", !parse_opencode_major_version("fake-agent-ok"));
+    check("oversized major is unknown, not a crash",
+          !parse_opencode_major_version("99999999999.0.0"));
+}
+
+void test_standalone_placement() {
+    const std::vector<std::pair<std::vector<std::string>, std::vector<std::string>>> cases = {
+        {{}, {"--standalone"}},
+        {{"--auto"}, {"--standalone", "--auto"}},
+        {{"./project"}, {"--standalone", "./project"}},
+        {{"run", "hello"}, {"run", "--standalone", "hello"}},
+        {{"--log-level", "debug", "run", "hi"},
+         {"--log-level", "debug", "run", "--standalone", "hi"}},
+        {{"debug", "config"}, {"debug", "config"}},
+        {{"--server", "http://127.0.0.1:4096"}, {"--server", "http://127.0.0.1:4096"}},
+        {{"--standalone"}, {"--standalone"}},
+    };
+    for (const auto& [args, expected] : cases) {
+        std::vector<std::string> actual = args;
+        lemon_tray::add_opencode_standalone_arg(actual);
+        std::string name = "--standalone placement for [";
+        for (const auto& arg : args) name += " " + arg;
+        check(name + " ]", actual == expected);
+    }
+}
+
+std::string inline_config_for(const std::string& existing) {
+    set_env("OPENCODE_CONFIG_CONTENT", existing);
+    lemon_tray::AgentConfig config;
+    std::string error;
+    lemon_tray::build_agent_config("opencode", "localhost", 13305, "Qwen", "", {}, config, error);
+    set_env("OPENCODE_CONFIG_CONTENT", "");
+    for (const auto& [name, value] : config.env_vars) {
+        if (name == "OPENCODE_CONFIG_CONTENT") return value;
+    }
+    return "";
+}
+
+void test_inline_config() {
+    check("model is selected inline",
+          json::parse(inline_config_for("")) == json{{"model", "Lemonade/Qwen"}});
+    check("user inline keys survive and the model is overridden",
+          json::parse(inline_config_for(R"({"foo": 1, "model": "other/model"})")) ==
+              json{{"foo", 1}, {"model", "Lemonade/Qwen"}});
+    check("user inline config with comments is merged",
+          json::parse(inline_config_for("{ // keep me\n \"foo\": 1 }")) ==
+              json{{"foo", 1}, {"model", "Lemonade/Qwen"}});
+    // Launch passes the user's own variable through when it isn't set here.
+    check("unparsable user inline config is left alone", inline_config_for(R"({"foo": 1,})").empty());
+}
+
 #ifndef _WIN32
 // opencode.json can hold other providers' keys and other servers' tokens, so
 // rewriting it must not widen its permissions or replace a symlinked file.
@@ -239,6 +308,9 @@ int main() {
     setenv("XDG_CONFIG_HOME", config_home.string().c_str(), 1);
 #endif
 
+    test_version_parse();
+    test_standalone_placement();
+    test_inline_config();
     test_provider_block();
     test_api_key();
     test_mcp_servers(config_dir / "opencode.json");
