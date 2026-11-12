@@ -138,7 +138,7 @@ function AccountAccess({ showSignOut = false }: { showSignOut?: boolean }) {
     {notice && <p className="nexus-error" role="alert">{t(notice === 'reconnecting' ? 'The network is temporarily unavailable. Reconnecting…' : notice)}</p>}
   </div>;
   return <div className="nexus-account-access">
-    <p>{t('Enable Mesh to bring your Lemonade devices together.')}</p>
+    <p>{t('Connect this computer to your other Lemonade devices.')}</p>
     {notice === 'session-ended' && <p className="nexus-error" role="status">{t('Account access ended. Enable Mesh again to continue.')}</p>}
     {notice === 'account-deleted' && <p className="nexus-hint" role="status">{t('Your account was deleted. Enable Mesh to create or join a network again.')}</p>}
     <WorkspaceActionButton onClick={onSignIn} disabled={!onSignIn} aria-describedby={!onSignIn ? hintId : undefined}>{t('Enable Mesh')}</WorkspaceActionButton>
@@ -200,10 +200,7 @@ function MyDevices() {
   return <details className="nexus-section nexus-device-disclosure" open>
     <summary><span>{t('My devices')}</span><Icon name="chevron-right" size={16} /></summary>
     <div className="nexus-device-disclosure__content">
-    {listed.length ? <NexusDeviceRows status={status} devices={listed} /> : <div className="nexus-device-empty">
-      <Icon name="smartphone" size={25} />
-      <div><strong>{t('Your devices')}</strong><p>{account ? t('No devices connected yet.') : t('Enable Mesh to connect your phone or another computer.')}</p></div>
-    </div>}
+    {listed.length ? <NexusDeviceRows status={status} devices={listed} /> : <p className="nexus-mesh__empty">{account ? t('No devices connected yet.') : t('Enable Mesh to list your devices.')}</p>}
     {account && onConnectDevice && <WorkspaceActionButton icon="plus" onClick={onConnectDevice}>{t('Connect another device')}</WorkspaceActionButton>}
     </div>
   </details>;
@@ -228,7 +225,7 @@ export function NexusAccountPage() {
     </section>
     {account && <React.Fragment key={account.id}>
     <div className="nexus-view-heading">
-      <div><h3>{t('Your network')}</h3><p aria-hidden={!advanced}>{t('Explore the tree and manage group access.')}</p></div>
+      <h3>{t('Network')}</h3>
       <fieldset className="nexus-view-mode"><legend className="sr-only">{t('Management mode')}</legend>
         <label className={!advanced ? 'is-selected' : ''}><input type="radio" name={modeId} checked={!advanced} onChange={() => changeMode(false)} />{t('Basic')}</label>
         <label className={advanced ? 'is-selected' : ''}><input type="radio" name={modeId} checked={advanced} onChange={() => changeMode(true)} />{t('Advanced')}</label>
