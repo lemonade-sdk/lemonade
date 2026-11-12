@@ -39,6 +39,24 @@ The values shown in the form are sent by **Load** or **Get & Load**, even if the
 
 These are persistent, pre-load model settings. They are not the same as the request-time controls in Chat.
 
+### Override a built-in inference engine
+
+The **Configuration** tab shows the **Inference Engine** separately from the hardware
+**Backend** and **Device** choices. **Convert to Custom** registers a `user.*`
+definition using the built-in model's name and checkpoint references. The unqualified
+name now selects that custom definition; `builtin.*` still selects the original.
+The engine dropdown permits recipes for the same deployment mode reported by the
+server; an engine can still reject an incompatible architecture at load time.
+
+**Restore Built-in** removes only the `user.*` registration and keeps model files.
+**Delete** removes managed model files (except those claimed by other independent
+models). Deleting a custom override restores the built-in definition, but it
+must be downloaded again when its files were removed; a pure custom model
+loses its registration. Saved load settings are kept separately for each
+inference engine and restored when switching back.
+An engine cannot be switched while the model is loaded. Identical custom and
+built-in checkpoints appear as one GUI entry; distinct quantizations stay separate.
+
 ### Register custom models, collections, and routers
 
 Select **Open custom models** in the Models toolbar to register a checkpoint that is not in the catalog. Choose the capability and a compatible recipe, enter the checkpoint and any required companion artifacts, then save. The server registers it with a `user.<name>` identifier.

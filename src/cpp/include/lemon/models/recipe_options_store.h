@@ -31,6 +31,19 @@ public:
 // Applies changes over the stored entry; a null value removes that option.
     json merge(const std::string& canonical_id, const json& changes);
 
+    // Full durable state, including inactive recipes, for registration rollback.
+    json snapshot() const;
+    void restore_snapshot(const json& snapshot);
+
+    // Switch only the active saved settings. Inactive recipe profiles remain
+    // server-owned, keyed by the same canonical model id.
+    void switch_recipe(const std::string& canonical_id, const std::string& previous_recipe,
+                       const std::string& next_recipe, const json& previous_saved,
+                       const json& next_authored = json::object());
+
+    // Called when a custom definition is removed, not when a recipe changes.
+    void forget_model(const std::string& canonical_id);
+
     const std::string& file_path() const { return file_path_; }
 
 private:

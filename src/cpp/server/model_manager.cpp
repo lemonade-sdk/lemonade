@@ -147,6 +147,8 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     deps.store = &store_;
     deps.notifier = &change_notifier_;
     deps.save_options = [this](const ModelInfo& info) { save_model_options(info); };
+    deps.recipe_options = &recipe_options_;
+    deps.recipe_options_write_mutex = &recipe_options_write_mutex_;
     return deps;
 }
 
@@ -681,8 +683,7 @@ void ModelManager::register_model(const std::string& model_name,
                                  const json& model_data,
                                  bool allow_missing_checkpoint,
                                  bool replace_existing) {
-    ingest_->register_model(model_name, model_data, allow_missing_checkpoint,
-                            replace_existing);
+    ingest_->register_model(model_name, model_data, allow_missing_checkpoint, replace_existing);
 }
 
 void ModelManager::download_model(const std::string& model_name,
@@ -784,7 +785,25 @@ void ModelManager::delete_model(const std::string& model_name) {
     // Who else claims these bytes is a question about the published set, and that
     // set stays valid for the whole disk walk because this holds it.
     const auto published = store_.read();
-    const models::DeleteReport report = artifacts_->delete_artifacts(info, published->models);
+    models::KnownModels adjusted_claims;
+    const models::KnownModels* claims = &published->models;
+    if (is_user_model_name(canonical_model_name)) {
+        const std::string bare = strip_user_model_prefix(canonical_model_name);
+        const auto built_in = published->models.find(bare);
+        // An overridden built-in with precisely the same checkpoint set is a
+        // fallback definition, not an independent owner of the same bytes.
+        // Other models (including different quants and shared auxiliaries)
+        // continue to protect their files in delete_artifacts().
+        if (built_in != published->models.end() &&
+            built_in->second.checkpoints == info.checkpoints &&
+            registry_source_of(built_in->second) == registry_source_of(info) &&
+            (info.source.empty() || is_remote_registry_source(info.source))) {
+            adjusted_claims = published->models;
+            adjusted_claims.erase(bare);
+            claims = &adjusted_claims;
+        }
+    }
+    const models::DeleteReport report = artifacts_->delete_artifacts(info, *claims);
 
     // Bytes outside the models directory belong to whoever placed them. A user
     // registration is the only record of such a model, so forgetting it is the
@@ -800,6 +819,9 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     forget_registered_model(canonical_model_name);
     store_.patch_removed(canonical_model_name);
+    if (is_user_model_name(canonical_model_name)) {
+        ingest_->forget_recipe_profiles(canonical_model_name);
+    }
 }
 
 void ModelManager::register_user_model(const std::string& model_name,
@@ -809,7 +831,11 @@ void ModelManager::register_user_model(const std::string& model_name,
 }
 
 void ModelManager::unregister_user_model(const std::string& model_name) {
+    // Restore Built-in removes the override and its saved engine profiles,
+    // but deliberately does not touch downloaded files.
     ingest_->unregister_user_model(model_name);
+    const std::string id = is_user_model_name(model_name) ? model_name : "user." + model_name;
+    ingest_->forget_recipe_profiles(id);
 }
 
 void ModelManager::forget_registered_model(const std::string& canonical_model_name) {

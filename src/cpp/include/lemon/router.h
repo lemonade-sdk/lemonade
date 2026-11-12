@@ -210,6 +210,11 @@ public:
 
     bool is_model_loaded(const std::string& model_name) const;
 
+    // Reserve a user registration while removing it. No load may enter the
+    // residency slot for that canonical id until the reservation is released.
+    bool begin_model_unregistration(const std::string& canonical_id);
+    void end_model_unregistration(const std::string& canonical_id);
+
     RecipeOptions get_model_recipe_options(const std::string& model_name) const;
 
     ModelType get_model_type(const std::string& model_name = "") const;
@@ -309,6 +314,7 @@ private:
     mutable std::mutex load_mutex_;              // Protects loading state and loaded_servers_
     bool is_loading_ = false;                    // True when a load operation is in progress
     std::condition_variable load_cv_;            // Signals when load completes
+    std::set<std::string> unregistering_models_; // Protected by load_mutex_
 
     // Canonicalized routing-helper models the active policies need resident.
     // Guarded by load_mutex_; the authoritative snapshot a freshly loaded helper

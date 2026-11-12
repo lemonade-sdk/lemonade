@@ -19,6 +19,7 @@
 namespace lemon {
 
 struct ModelInfo;
+class RecipeOptionsStore;
 
 namespace models {
 
@@ -55,6 +56,10 @@ class ModelIngest : public ArtifactFetchService {
         // The facade's options write: its store, its file mutex, and a store patch that
         // may not be opened outside the facade.
         std::function<void(const ModelInfo&)> save_options;
+        // The options file and its outer writer guard also order engine-definition
+        // transitions. The store has a separate internal mutex for its JSON data.
+        RecipeOptionsStore* recipe_options = nullptr;
+        std::mutex* recipe_options_write_mutex = nullptr;
         // Refs and repositories both come from the resolver, never assembled here.
         const ArtifactSourceResolver* resolver = nullptr;
     };
@@ -80,6 +85,8 @@ class ModelIngest : public ArtifactFetchService {
                              const std::string& source = "");
     void unregister_user_model(const std::string& model_name);
     void forget_registered_model(const std::string& canonical_model_name);
+    // Best-effort cleanup after the definition was already removed.
+    void forget_recipe_profiles(const std::string& canonical_model_name);
 
     void register_model(const std::string& model_name, const nlohmann::json& model_data,
                         bool allow_missing_checkpoint, bool replace_existing);
@@ -127,6 +134,11 @@ class ModelIngest : public ArtifactFetchService {
     Deps deps_;
 
     std::unique_ptr<IngestCollections> collections_;
+
+    // Serializes all explicit definition registrations, regardless of whether
+    // the recipe changes. Separate from recipe_options_write_mutex: ordinary
+    // registration may call save_options(), which acquires that mutex itself.
+    std::mutex registration_mutex_;
 
     // Serializes downloads that write the same repository's `.partial` files.
     std::mutex download_locks_mutex_;
