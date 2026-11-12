@@ -1,4 +1,3 @@
-#include <map>
 #include <optional>
 #include <string>
 
@@ -18,19 +17,93 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kInvalidPolicy{400, "", "`policy` is invalid or internally inconsistent"};
+const RouteError kAmbiguousBody{400, "",
+    "More than one of `messages`, `input` and `prompt` is sent, or `has_images` or `has_tools` "
+    "is sent with `messages`, `input`, `tools` or an array `prompt`"};
+const RouteError kInvalidContent{400, "",
+    "A `messages` or `input` item's `role` is not a string or its `content` is neither a "
+    "string nor an array of objects, a content part's `type` is not a string, or a text "
+    "part's `text` is not a string"};
 
 const RouteArg kPolicy{"policy", ArgIn::JsonBody, {{"type", "object"}}, true, Support::Available,
                        "A `collection.router` policy document. `model_name` is accepted but is not required "
                        "for validation. See [Router Policies](../dev/router-policy.md)."};
-const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
-                       "The prompt text to route. Defaults to `\"\"`."};
+const RouteArg kPrompt{"prompt", ArgIn::JsonBody,
+                       {{"type", json::array({"string", "array"})}, {"items", {{"type", "string"}}}},
+                       false, Support::Available,
+                       "The prompt text to route, either a string or an array of strings. A string is a "
+                       "single-turn preview. An array is read like a completions `prompt`, its strings "
+                       "joined as separate lines, and counts as a request body. Any other type, or an "
+                       "array holding a non-string, returns 400. Defaults to `\"\"`."};
+const RouteArg kMessages{"messages", ArgIn::JsonBody,
+                         {{"type", "array"}, {"items", {{"type", "object"}}}}, false, Support::Available,
+                         "A chat completions `messages` array, read the way a routed `chat/completions` "
+                         "request is: the latest user turn is the routing text, and image parts set "
+                         "`has_images`."};
+const RouteArg kInput{"input", ArgIn::JsonBody,
+                      {{"type", json::array({"string", "array"})},
+                       {"items", {{"type", json::array({"string", "object"})}}}},
+                      false, Support::Available,
+                      "A Responses API `input`, read the way a routed `responses` request is."};
+const RouteArg kTools{"tools", ArgIn::JsonBody,
+                      {{"type", "array"}, {"items", {{"type", "object"}}}}, false, Support::Available,
+                      "A `tools` array; a non-empty one sets `has_tools`. Counts as a request body."};
 const RouteArg kHasImages{"has_images", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                          "Simulate a request carrying image input. Defaults to `false`."};
+                          "Simulate a request carrying image input. Defaults to `false`. Cannot be "
+                          "combined with a request body."};
 const RouteArg kHasTools{"has_tools", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
-                         "Simulate a request carrying tool definitions. Defaults to `false`."};
+                         "Simulate a request carrying tool definitions. Defaults to `false`. Cannot be "
+                         "combined with a request body."};
 const RouteArg kMetadata{"metadata", ArgIn::JsonBody,
                          {{"type", "object"}, {"additionalProperties", {{"type", "string"}}}}, false, Support::Available,
                          "String-valued metadata pairs matched by `metadata` conditions."};
+
+std::optional<std::string> content_error(const json& content, const char* field) {
+    if (content.is_null() || content.is_string()) return std::nullopt;
+    if (!content.is_array()) {
+        return std::string("'") + field + "' content must be a string or an array";
+    }
+    for (const auto& part : content) {
+        if (!part.is_object()) {
+            return std::string("'") + field + "' content parts must be objects";
+        }
+        if (part.contains("type") && !part["type"].is_string()) {
+            return std::string("'") + field + "' content part 'type' must be a string";
+        }
+        const std::string type = part.value("type", std::string());
+        if ((type == "text" || type == "input_text") &&
+            (!part.contains("text") || !part["text"].is_string())) {
+            return std::string("'") + field + "' text parts must contain a string 'text'";
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> role_error(const json& item, const char* field) {
+    if (item.contains("role") && !item["role"].is_string()) {
+        return std::string("'") + field + "' item 'role' must be a string";
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> body_content_error(const RouteRequest& req) {
+    if (req.has(kMessages)) {
+        for (const auto& message : req.arg(kMessages)) {
+            if (auto error = role_error(message, "messages")) return error;
+            if (!message.contains("content")) continue;
+            if (auto error = content_error(message["content"], "messages")) return error;
+        }
+    }
+    if (req.has(kInput) && req.arg(kInput).is_array()) {
+        for (const auto& item : req.arg(kInput)) {
+            if (item.is_string()) continue;
+            if (auto error = role_error(item, "input")) return error;
+            const json content = item.contains("content") ? item["content"] : json::array({item});
+            if (auto error = content_error(content, "input")) return error;
+        }
+    }
+    return std::nullopt;
+}
 
 class RoutingValidateRoute : public ApiRoute {
 public:
@@ -113,7 +186,12 @@ public:
             "`routing.router` has no rules of its own, only the generated `__route_0`, "
             "`__route_1`, etc.",
         };
-        s.args = {kPolicy, kPrompt, kHasImages, kHasTools, kMetadata};
+        s.notes.push_back(
+            "Send either the preview fields (a string `prompt`, `has_images`, `has_tools`) or a "
+            "request body (`messages`, `input`, `tools` or an array `prompt`). A request body is "
+            "read by the same code that reads a routed request, so signals such as images in "
+            "earlier turns and the length of the whole conversation come from the body itself.");
+        s.args = {kPolicy, kPrompt, kMessages, kInput, kTools, kHasImages, kHasTools, kMetadata};
 
         const ordered_json decision = {
             {"type", "object"},
@@ -135,6 +213,7 @@ public:
         s.responses = {response};
 
         RouteExample example;
+        example.name = "preview";
         example.format = ResponseFormat::Json;
         example.args = ordered_json::parse(R"({
             "policy": {
@@ -155,24 +234,77 @@ public:
             },
             "prompt": "please write a def to reverse a list"
         })");
-        s.examples = {example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidPolicy,
-                    ModelLoader::kRouterResidencyConflict};
+        RouteExample body_example;
+        body_example.name = "request body";
+        body_example.description =
+            "A chat `messages` array with an image part, sent with a `tools` array, sets both "
+            "`has_images` and `has_tools` from the body itself, so the rule that needs both "
+            "matches.";
+        body_example.format = ResponseFormat::Json;
+        body_example.args = ordered_json::parse(R"({
+            "policy": {
+                "version": "1",
+                "recipe": "collection.router",
+                "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "routing": {
+                    "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                    "default_model": "Qwen3-8B-GGUF",
+                    "rules": [
+                        {
+                            "id": "vision-and-tools-to-big",
+                            "match": {"all": [{"has_images": true}, {"has_tools": true}]},
+                            "route_to": "vllm.qwen3-32b"
+                        }
+                    ]
+                }
+            },
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What is in this picture?"},
+                        {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAA"}}
+                    ]
+                }
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "lookup_product",
+                        "parameters": {"type": "object", "properties": {}}
+                    }
+                }
+            ]
+        })");
+        s.examples = {example, body_example};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kAmbiguousBody, kInvalidContent,
+                    kInvalidPolicy, ModelLoader::kRouterResidencyConflict};
         s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        const std::string prompt = req.value(kPrompt, std::string());
-        const bool has_images = req.value(kHasImages, false);
-        const bool has_tools = req.value(kHasTools, false);
-
-        std::map<std::string, std::string> metadata;
-        if (req.has(kMetadata)) {
-            const json& metadata_json = req.arg(kMetadata);
-            for (auto it = metadata_json.begin(); it != metadata_json.end(); ++it) {
-                metadata[it.key()] = it.value().get<std::string>();
-            }
+        const bool prompt_is_array = req.has(kPrompt) && req.arg(kPrompt).is_array();
+        const bool real_body = req.has(kMessages) || req.has(kInput) || req.has(kTools) ||
+                               prompt_is_array;
+        const int primary_fields = static_cast<int>(req.has(kMessages)) +
+                                   static_cast<int>(req.has(kInput)) +
+                                   static_cast<int>(req.has(kPrompt));
+        if (primary_fields > 1) {
+            write_plain_error(res, kAmbiguousBody,
+                              "only one of 'messages', 'input', or 'prompt' may be provided");
+            return;
+        }
+        if (real_body && (req.has(kHasImages) || req.has(kHasTools))) {
+            write_plain_error(res, kAmbiguousBody,
+                              "cannot combine 'has_images'/'has_tools' with a request body "
+                              "('messages', 'input', 'tools', or an array 'prompt')");
+            return;
+        }
+        if (auto error = body_content_error(req)) {
+            write_plain_error(res, kInvalidContent, *error);
+            return;
         }
 
         try {
@@ -194,16 +326,11 @@ public:
                 });
             RoutingPolicyEngine engine(std::move(policy), std::move(services));
 
-            RouteContext route_context;
-            route_context.input = prompt;
-            route_context.params.chars = prompt.size();
-            // A test prompt is a single turn with no history, so its whole-request
-            // total is the prompt itself. Leaving this at 0 would make every
-            // min_total_chars rule untestable here.
-            route_context.params.total_chars = prompt.size();
-            route_context.params.has_images = has_images;
-            route_context.params.has_tools = has_tools;
-            route_context.metadata = std::move(metadata);
+            RouteContext route_context = build_route_context(req.body, std::string());
+            if (!real_body) {
+                route_context.params.has_images = req.value(kHasImages, false);
+                route_context.params.has_tools = req.value(kHasTools, false);
+            }
 
             Decision decision = engine.route(route_context, /*want_trace=*/true);
 

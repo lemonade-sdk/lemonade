@@ -578,13 +578,6 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
-            "Text to continue or an image to generate, versus text to route",
-            [
-                "routes/ollama/generate.cpp:kPrompt",
-                "routes/router/routing_validate.cpp:kPrompt",
-            ],
-        ),
-        (
             "Speech streams audio; server-sent events default to false; Ollama's NDJSON "
             "defaults to true",
             [

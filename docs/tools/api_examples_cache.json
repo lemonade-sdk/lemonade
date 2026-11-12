@@ -10046,6 +10046,133 @@
       }
     }
   },
+  "52fe027a5c1482bc1e2a218fb64f6ea40bf0f0d57b9dc6cb327fc2fe6c68723a": {
+    "route": "router.routing_validate",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/routing/validate",
+      "query": {},
+      "json": {
+        "policy": {
+          "version": "1",
+          "recipe": "collection.router",
+          "components": [
+            "Qwen3-8B-GGUF",
+            "vllm.qwen3-32b"
+          ],
+          "routing": {
+            "candidates": [
+              "Qwen3-8B-GGUF",
+              "vllm.qwen3-32b"
+            ],
+            "default_model": "Qwen3-8B-GGUF",
+            "rules": [
+              {
+                "id": "vision-and-tools-to-big",
+                "match": {
+                  "all": [
+                    {
+                      "has_images": true
+                    },
+                    {
+                      "has_tools": true
+                    }
+                  ]
+                },
+                "route_to": "vllm.qwen3-32b"
+              }
+            ]
+          }
+        },
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "What is in this picture?"
+              },
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "data:image/png;base64,AAA"
+                }
+              }
+            ]
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "lookup_product",
+              "parameters": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        ]
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "decision": {
+          "default_used": false,
+          "matched_rule": "vision-and-tools-to-big",
+          "outputs": {},
+          "route_to": "vllm.qwen3-32b",
+          "trace": [
+            {
+              "condition": "has_images",
+              "result": true
+            },
+            {
+              "condition": "has_tools",
+              "result": true
+            }
+          ],
+          "version": "1"
+        },
+        "normalized_policy": {
+          "components": [
+            "Qwen3-8B-GGUF",
+            "vllm.qwen3-32b"
+          ],
+          "recipe": "collection.router",
+          "routing": {
+            "candidates": [
+              "Qwen3-8B-GGUF",
+              "vllm.qwen3-32b"
+            ],
+            "default_model": "Qwen3-8B-GGUF",
+            "rules": [
+              {
+                "id": "vision-and-tools-to-big",
+                "match": {
+                  "all": [
+                    {
+                      "has_images": true
+                    },
+                    {
+                      "has_tools": true
+                    }
+                  ]
+                },
+                "route_to": "vllm.qwen3-32b"
+              }
+            ]
+          },
+          "version": "1"
+        }
+      }
+    }
+  },
   "0ce62c2a14bcd87cf608e9c57e0e6f3abacadafb825c8c553daecb5401a99279": {
     "route": "router.routing_validate",
     "format": "Json",
