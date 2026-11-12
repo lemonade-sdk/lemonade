@@ -14,9 +14,9 @@ namespace backends {
 namespace llamacpp {
 
 // An LFM2 prompt-router GGUF holds only the bidirectional encoder. Its
-// head ships beside it as `rulehead.bin`, so llama-server returns one vector per
-// token (--pooling none) and lemond pools the label and text spans and scores
-// them, as Lfm2BidirForSequenceRouting.route() and ort-server's zero-shot task do.
+// head ships beside it as `rulehead.bin`, so llama-server (--pooling none) pools
+// the label and text spans and lemond scores them, as
+// Lfm2BidirForSequenceRouting.route() and ort-server's zero-shot task do.
 
 constexpr const char* RULE_HEAD_FILE = "rulehead.bin";
 
@@ -120,6 +120,13 @@ RuleHead parse_rule_head(const std::string& bytes, int64_t hidden);
 
 std::vector<double> score_router_labels(const RuleHead& head, const nlohmann::json& rows,
                                         size_t n_tokens, const RouterTokenGroups& groups);
+
+using RouterPoolGroups = std::vector<std::vector<std::pair<size_t, size_t>>>;
+RouterPoolGroups router_pool_groups(const RouterTokenGroups& groups);
+
+// Scores from the n_labels + 1 means llama-server returns for router_pool_groups().
+std::vector<double> score_pooled_router_labels(const RuleHead& head, const nlohmann::json& means,
+                                               size_t n_labels);
 
 nlohmann::json router_classify_response(const std::vector<std::string>& labels,
                                         const std::vector<double>& probabilities, int top_k,

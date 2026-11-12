@@ -379,7 +379,7 @@ void LlamaCppServer::load(const std::string& model_name,
             llamacpp::parse_rule_head(bytes, model_info.gguf.embedding_length));
         LOG(INFO, "LlamaCpp") << "Prompt-router encoder: lemond applies its rule head ("
                               << rule_head_->proj << "x" << rule_head_->hidden
-                              << ") to llama-server's token vectors" << std::endl;
+                              << ") to llama-server's label and text vectors" << std::endl;
     }
 
     encoder_max_input_tokens_ = 0;
@@ -874,7 +874,9 @@ json LlamaCppServer::classify_with_rule_head(const json& request) {
         const llamacpp::RouterTokenGroups groups =
             llamacpp::group_router_tokens(fit.input, tokens.spans, labels);
 
-        json embedded = forward_request("/embedding", json{{"content", tokens.ids}});
+        json embedded = forward_request(
+            "/embedding",
+            json{{"content", tokens.ids}, {"pool_groups", llamacpp::router_pool_groups(groups)}});
         if (embedded.is_object() && embedded.contains("error")) {
             return encoder_max_input_tokens_ > 0
                        ? llamacpp::map_encoder_overflow_error(std::move(embedded),
@@ -885,8 +887,11 @@ json LlamaCppServer::classify_with_rule_head(const json& request) {
             !embedded[0].contains("embedding")) {
             throw std::runtime_error("llama-server /embedding returned no token vectors");
         }
-        const std::vector<double> probabilities = llamacpp::score_router_labels(
-            *rule_head_, embedded[0]["embedding"], tokens.ids.size(), groups);
+        const json& rows = embedded[0]["embedding"];
+        const std::vector<double> probabilities =
+            rows.is_array() && rows.size() == labels.size() + 1
+                ? llamacpp::score_pooled_router_labels(*rule_head_, rows, labels.size())
+                : llamacpp::score_router_labels(*rule_head_, rows, tokens.ids.size(), groups);
         return llamacpp::router_classify_response(labels, probabilities, top_k, truncated);
     } catch (const TokenizeFailure& failure) {
         return failure.response;

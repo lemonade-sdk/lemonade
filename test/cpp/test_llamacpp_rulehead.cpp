@@ -21,12 +21,15 @@ using lemon::backends::llamacpp::mixed_rule_head_source_error;
 using lemon::backends::llamacpp::rule_head_ctx_size;
 using lemon::backends::llamacpp::parse_rule_head;
 using lemon::backends::llamacpp::router_classify_response;
+using lemon::backends::llamacpp::router_pool_groups;
 using lemon::backends::llamacpp::router_tokens;
 using lemon::backends::llamacpp::RouterFit;
 using lemon::backends::llamacpp::RouterInput;
+using lemon::backends::llamacpp::RouterPoolGroups;
 using lemon::backends::llamacpp::RouterTokenGroups;
 using lemon::backends::llamacpp::RouterTokens;
 using lemon::backends::llamacpp::RuleHead;
+using lemon::backends::llamacpp::score_pooled_router_labels;
 using lemon::backends::llamacpp::score_router_labels;
 using lemon::backends::llamacpp::token_byte_spans;
 using nlohmann::json;
@@ -191,6 +194,59 @@ int main() {
                std::abs(probabilities[1] - 1.0 / z) < 1e-12 &&
                std::abs(probabilities[2] - std::exp(-1.0) / z) < 1e-12,
            "scores are softmax(cos * e^logit_scale + bias)");
+
+    {
+        const RouterPoolGroups pool = router_pool_groups(groups);
+        bool runs_match = pool.size() == labels.size() + 1;
+        for (size_t g = 0; runs_match && g < pool.size(); ++g) {
+            const std::vector<size_t>& want = g < labels.size() ? groups.labels[g] : groups.text;
+            std::vector<size_t> got;
+            for (const auto& [start, end] : pool[g]) {
+                runs_match = runs_match && start < end;
+                for (size_t t = start; t < end; ++t) got.push_back(t);
+            }
+            runs_match = runs_match && got == want;
+        }
+        expect(runs_match, "pool groups cover each label's tokens, then the text's, in runs");
+
+        RouterTokenGroups gapped;
+        gapped.labels = {{4}, {6, 7}};
+        gapped.text = {10, 11, 15, 16, 17};
+        const RouterPoolGroups gaps = router_pool_groups(gapped);
+        expect(gaps.size() == 3 &&
+                   gaps[1] == std::vector<std::pair<size_t, size_t>>{{6, 8}} &&
+                   gaps[2] == std::vector<std::pair<size_t, size_t>>{{10, 12}, {15, 18}},
+               "a text cut by the elision marker pools as two runs");
+
+        // The means llama-server returns for those groups score as the token rows do.
+        json means = json::array();
+        auto mean = [&](const std::vector<size_t>& tokens) {
+            std::vector<double> m(2, 0.0);
+            for (size_t t : tokens) {
+                m[0] += rows[t][0].get<double>();
+                m[1] += rows[t][1].get<double>();
+            }
+            return json::array({m[0] / tokens.size(), m[1] / tokens.size()});
+        };
+        for (const auto& label : groups.labels) means.push_back(mean(label));
+        means.push_back(mean(groups.text));
+        const std::vector<double> pooled = score_pooled_router_labels(head, means, labels.size());
+        bool same = pooled.size() == probabilities.size();
+        for (size_t i = 0; same && i < pooled.size(); ++i) {
+            same = std::abs(pooled[i] - probabilities[i]) < 1e-12;
+        }
+        expect(same, "pooled means score the same as the token rows they average");
+        expect(throws<std::runtime_error>([&] {
+                   score_pooled_router_labels(head, means, labels.size() + 1);
+               }),
+               "a pooled vector count that differs from the labels + 1 is refused");
+        json narrow = means;
+        narrow[0] = json::array({1.0});
+        expect(throws<std::runtime_error>([&] {
+                   score_pooled_router_labels(head, narrow, labels.size());
+               }),
+               "a pooled vector of the wrong width is refused");
+    }
 
     {
         // Each projection has a different non-symmetric matrix and a bias, so a

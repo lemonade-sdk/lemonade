@@ -78,16 +78,34 @@ std::vector<float> take(const std::vector<float>& floats, size_t& offset, size_t
     return out;
 }
 
-std::vector<double> pooled_projection(const nlohmann::json& rows, const std::vector<size_t>& tokens,
-                                      const std::vector<float>& w, const std::vector<float>& b,
-                                      int64_t hidden, int64_t proj) {
+std::vector<double> mean_of_rows(const nlohmann::json& rows, const std::vector<size_t>& tokens,
+                                 int64_t hidden) {
     std::vector<double> mean(static_cast<size_t>(hidden), 0.0);
     for (const size_t token : tokens) {
         const nlohmann::json& row = rows[token];
         for (int64_t d = 0; d < hidden; ++d) mean[d] += row[d].get<double>();
     }
     for (double& value : mean) value /= static_cast<double>(tokens.size());
+    return mean;
+}
 
+std::vector<double> row_of(const nlohmann::json& row) {
+    std::vector<double> out;
+    out.reserve(row.size());
+    for (const auto& value : row) out.push_back(value.get<double>());
+    return out;
+}
+
+void check_row_width(const nlohmann::json& row, int64_t hidden) {
+    if (!row.is_array() || static_cast<int64_t>(row.size()) != hidden) {
+        throw std::runtime_error("llama-server returned a vector of width " +
+                                 std::to_string(row.is_array() ? row.size() : 0) +
+                                 " for a rule head of width " + std::to_string(hidden));
+    }
+}
+
+std::vector<double> projection(const std::vector<double>& mean, const std::vector<float>& w,
+                               const std::vector<float>& b, int64_t hidden, int64_t proj) {
     std::vector<double> out(static_cast<size_t>(proj), 0.0);
     double norm = 0.0;
     for (int64_t p = 0; p < proj; ++p) {
@@ -101,6 +119,32 @@ std::vector<double> pooled_projection(const nlohmann::json& rows, const std::vec
     norm = std::max(std::sqrt(norm), 1e-12);
     for (double& value : out) value /= norm;
     return out;
+}
+
+std::vector<double> score_means(const RuleHead& head, const std::vector<double>& text_mean,
+                                const std::vector<std::vector<double>>& label_means) {
+    const std::vector<double> query =
+        projection(text_mean, head.tok_w, head.tok_b, head.hidden, head.proj);
+    const double scale = std::min(std::exp(static_cast<double>(head.logit_scale)), MAX_LOGIT_SCALE);
+
+    std::vector<double> logits;
+    logits.reserve(label_means.size());
+    for (const auto& label_mean : label_means) {
+        const std::vector<double> rule =
+            projection(label_mean, head.rule_w, head.rule_b, head.hidden, head.proj);
+        double cosine = 0.0;
+        for (size_t p = 0; p < rule.size(); ++p) cosine += query[p] * rule[p];
+        logits.push_back(cosine * scale + head.score_bias);
+    }
+
+    const double max_logit = *std::max_element(logits.begin(), logits.end());
+    double sum = 0.0;
+    for (double& value : logits) {
+        value = std::exp(value - max_logit);
+        sum += value;
+    }
+    for (double& value : logits) value /= sum;
+    return logits;
 }
 
 }  // namespace
@@ -380,41 +424,52 @@ std::vector<double> score_router_labels(const RuleHead& head, const nlohmann::js
                                  " token vectors for " + std::to_string(n_tokens) + " tokens");
     }
     auto check_rows = [&](const std::vector<size_t>& tokens) {
-        for (const size_t token : tokens) {
-            const nlohmann::json& row = rows[token];
-            if (!row.is_array() || static_cast<int64_t>(row.size()) != head.hidden) {
-                throw std::runtime_error("llama-server returned a token vector of width " +
-                                         std::to_string(row.is_array() ? row.size() : 0) +
-                                         " for a rule head of width " +
-                                         std::to_string(head.hidden));
-            }
-        }
+        for (const size_t token : tokens) check_row_width(rows[token], head.hidden);
     };
     check_rows(groups.text);
     for (const auto& label : groups.labels) check_rows(label);
 
-    const std::vector<double> query =
-        pooled_projection(rows, groups.text, head.tok_w, head.tok_b, head.hidden, head.proj);
-    const double scale = std::min(std::exp(static_cast<double>(head.logit_scale)), MAX_LOGIT_SCALE);
-
-    std::vector<double> logits;
-    logits.reserve(groups.labels.size());
+    std::vector<std::vector<double>> label_means;
+    label_means.reserve(groups.labels.size());
     for (const auto& label : groups.labels) {
-        const std::vector<double> rule =
-            pooled_projection(rows, label, head.rule_w, head.rule_b, head.hidden, head.proj);
-        double cosine = 0.0;
-        for (size_t p = 0; p < rule.size(); ++p) cosine += query[p] * rule[p];
-        logits.push_back(cosine * scale + head.score_bias);
+        label_means.push_back(mean_of_rows(rows, label, head.hidden));
     }
+    return score_means(head, mean_of_rows(rows, groups.text, head.hidden), label_means);
+}
 
-    const double max_logit = *std::max_element(logits.begin(), logits.end());
-    double sum = 0.0;
-    for (double& value : logits) {
-        value = std::exp(value - max_logit);
-        sum += value;
+RouterPoolGroups router_pool_groups(const RouterTokenGroups& groups) {
+    auto runs = [](const std::vector<size_t>& tokens) {
+        std::vector<std::pair<size_t, size_t>> out;
+        for (const size_t token : tokens) {
+            if (!out.empty() && out.back().second == token) {
+                ++out.back().second;
+            } else {
+                out.emplace_back(token, token + 1);
+            }
+        }
+        return out;
+    };
+    RouterPoolGroups out;
+    out.reserve(groups.labels.size() + 1);
+    for (const auto& label : groups.labels) out.push_back(runs(label));
+    out.push_back(runs(groups.text));
+    return out;
+}
+
+std::vector<double> score_pooled_router_labels(const RuleHead& head, const nlohmann::json& means,
+                                               size_t n_labels) {
+    if (!means.is_array() || means.size() != n_labels + 1) {
+        throw std::runtime_error("llama-server returned " +
+                                 std::to_string(means.is_array() ? means.size() : 0) +
+                                 " pooled vectors for " + std::to_string(n_labels) +
+                                 " labels and the text");
     }
-    for (double& value : logits) value /= sum;
-    return logits;
+    for (const auto& row : means) check_row_width(row, head.hidden);
+
+    std::vector<std::vector<double>> label_means;
+    label_means.reserve(n_labels);
+    for (size_t i = 0; i < n_labels; ++i) label_means.push_back(row_of(means[i]));
+    return score_means(head, row_of(means[n_labels]), label_means);
 }
 
 nlohmann::json router_classify_response(const std::vector<std::string>& labels,
