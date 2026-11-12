@@ -329,10 +329,14 @@ export async function nexusRequest<T>(path: string, body?: unknown, pinnedContro
   try {
     ({ response } = await send());
   } catch (error) {
-    // A lost POST response may already have changed the server; only reads can be retried safely.
+    // A lost POST response may already have changed the server; only reads can be retried
+    // safely. A read goes out once more: to a rediscovered controller, or to the pinned one
+    // of an account flow. The desktop webview has no warm same-origin connection pool, so a
+    // read there often opens a fresh connection, and one that the server closes must not
+    // end the Enable Mesh dialog by itself.
     const previousController = knownController;
     knownController = undefined;
-    if (pinnedController || !previousController || body !== undefined) throw error;
+    if (body !== undefined || (!pinnedController && !previousController)) throw error;
     ({ response } = await send());
   }
   if (body === undefined && response.status === 429) {
