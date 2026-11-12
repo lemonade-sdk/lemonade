@@ -823,7 +823,7 @@ jobs:
       matrix:
         include:
           - arch-name: X86_64
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04
             platform: ubuntu-x64
             artifact-suffix: x86_64
             job-suffix: ""
@@ -1840,7 +1840,7 @@ jobs:
       matrix:
         include:
           - label: Linux
-            os: ubuntu-latest
+            os: ubuntu-24.04
             platform: ubuntu-x64
             artifact: lemonade-embeddable-linux-x86_64
           - label: Linux ARM64
