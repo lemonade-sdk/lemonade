@@ -25,6 +25,7 @@
 
 #ifdef _WIN32
 // Windows embeds the server
+#include <lemon/agents/host_protocol.h>
 #include <lemon/cli_parser.h>
 #include <lemon/config_file.h>
 #include <lemon/logging_config.h>
@@ -32,6 +33,9 @@
 #include <lemon/server.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/path_utils.h>
+#include <lemon/utils/process_manager.h>
+#include <deque>
+#include <filesystem>
 #include <winsock2.h>
 #include <windows.h>
 
@@ -58,6 +62,54 @@ static void create_child_process_job() {
     // the job is closed (i.e. when this process exits), Windows terminates
     // every remaining process in the job.
     AssignProcessToJobObject(g_job_object, GetCurrentProcess());
+}
+
+// Keeps lemonade-agent-host running while the tray runs; the job above ends
+// it with the tray. After 5 restarts in 10 minutes it waits 10 minutes before
+// trying again, since a lemonade CLI would otherwise start a host the tray
+// doesn't own.
+static void supervise_agent_host(const std::string& lemond_url) {
+    const std::filesystem::path exe =
+        std::filesystem::path(lemon::utils::get_executable_dir()) / "lemonade-agent-host.exe";
+    std::error_code ec;
+    if (!std::filesystem::exists(exe, ec)) {
+        return;
+    }
+    std::thread([exe, lemond_url]() {
+        using Clock = std::chrono::steady_clock;
+        std::deque<Clock::time_point> restarts;
+        auto backoff = std::chrono::seconds(1);
+        while (true) {
+            const auto started = Clock::now();
+            try {
+                auto handle = lemon::utils::ProcessManager::start_process(
+                    lemon::utils::path_to_utf8(exe), {"--persistent", "--lemond", lemond_url}, "",
+                    false, false, {});
+                lemon::utils::ProcessManager::wait_for_exit(handle, -1);
+                lemon::utils::ProcessManager::reap_process(handle);
+            } catch (const std::exception& e) {
+                LOG(WARNING, "Tray") << "Can't start the agent host: " << e.what() << std::endl;
+            }
+            const auto now = Clock::now();
+            if (now - started > std::chrono::minutes(1)) {
+                backoff = std::chrono::seconds(1);
+            }
+            restarts.push_back(now);
+            while (!restarts.empty() && now - restarts.front() > std::chrono::minutes(10)) {
+                restarts.pop_front();
+            }
+            if (restarts.size() > 5) {
+                LOG(ERROR, "Tray") << "The agent host keeps exiting; trying again in 10 minutes"
+                                   << std::endl;
+                std::this_thread::sleep_for(std::chrono::minutes(10));
+                restarts.clear();
+                backoff = std::chrono::seconds(1);
+                continue;
+            }
+            std::this_thread::sleep_for(backoff);
+            backoff = std::min(backoff * 2, std::chrono::seconds(60));
+        }
+    }).detach();
 }
 #else
 #include <csignal>
@@ -249,6 +301,15 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             "Lemonade Server Error", MB_OK | MB_ICONERROR);
         WSACleanup();
         return 1;
+    }
+
+    if (const auto loopback = lemon::agents::protocol::loopback_host(runtime_config->host())) {
+        supervise_agent_host(
+            lemon::agents::protocol::loopback_url(*loopback, runtime_config->port()));
+    } else {
+        LOG(WARNING, "Tray") << "Not running the agent host: it only serves a server on this "
+                             << "machine, and this one listens on " << runtime_config->host()
+                             << std::endl;
     }
 
     // Create and run tray UI.  If initialization fails (e.g. no display

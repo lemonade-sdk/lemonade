@@ -164,6 +164,10 @@
         <File Id="lemonade.exe" Source="$(var.BuildDir)\Release\lemonade.exe" KeyPath="yes" />
       </Component>
 
+      <Component Id="LemonadeAgentHost" Guid="f15cfec6-c593-44f0-9a36-356bc1668a50">
+        <File Id="lemonade_agent_host.exe" Source="$(var.BuildDir)\Release\lemonade-agent-host.exe" KeyPath="yes" />
+      </Component>
+
       <!-- Clean up stale lemonade:// protocol handler keys on every install.
            Handles: previous full install replaced by minimal, or desktop-app runtime registration.
            In full installs, LemonadeProtocolHandler recreates the keys afterward
@@ -200,6 +204,10 @@
 
       <Component Id="BackendVersionsJson" Directory="ResourcesDir" Guid="b9c0d1e2-f3a4-4b5c-6d7e-8f9a0b1c2d3e">
         <File Id="backend_versions.json" Source="$(var.BuildDir)\Release\resources\backend_versions.json" KeyPath="yes" />
+      </Component>
+
+      <Component Id="AgentVersionsJson" Directory="ResourcesDir" Guid="8056bac2-8d1c-4471-9bd1-69adcd400d63">
+        <File Id="agent_versions.json" Source="$(var.BuildDir)\Release\resources\agent_versions.json" KeyPath="yes" />
       </Component>
 
       <Component Id="DefaultsJson" Directory="ResourcesDir" Guid="0b2d4f6a-7c8e-49f1-a2b3-c4d5e6f70819">
@@ -353,10 +361,11 @@
 
     <!-- Stop server before upgrade.  taskkill /t kills the entire process tree
          (LemonadeServer.exe + child processes like llama-server).  The Job Object
-         in LemonadeServer.exe also guarantees children die when the parent exits. -->
+         in LemonadeServer.exe also guarantees children die when the parent exits.
+         An agent host the CLI started is outside that tree, so it's stopped by name. -->
     <CustomAction Id="StopServerCmd"
                   Directory="SystemFolder"
-                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; exit /b 0"'
+                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; taskkill /f /im lemonade-agent-host.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
@@ -364,7 +373,7 @@
     <!-- Alias for machine-wide — same action -->
     <CustomAction Id="StopServerCmdMachine"
                   Directory="SystemFolder"
-                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; exit /b 0"'
+                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; taskkill /f /im lemonade-agent-host.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
@@ -406,7 +415,7 @@
     <!-- Stop server during uninstall — taskkill /t kills process tree. -->
     <CustomAction Id="StopServerOnUninstall"
                   Directory="SystemFolder"
-                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; exit /b 0"'
+                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; taskkill /f /im lemonade-agent-host.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
