@@ -126,6 +126,8 @@ std::pair<std::string, std::string> multipart_body(const httplib::Request& req) 
 
 namespace {
 
+constexpr time_t kUpstreamReadTimeoutSeconds = 3600;
+
 /// Sends one upstream request on a worker thread and returns once the
 /// response headers arrived or the attempt ended without them.
 std::shared_ptr<MeshProxyPipe> start_pipe(const std::shared_ptr<MeshPortProxies>& proxies, const std::string& host,
@@ -135,8 +137,11 @@ std::shared_ptr<MeshProxyPipe> start_pipe(const std::shared_ptr<MeshPortProxies>
     pipe->owner = proxies;
     pipe->client = std::make_unique<httplib::Client>(host, port);
     pipe->client->set_connection_timeout(10, 0);
-    pipe->client->set_read_timeout(300, 0);
-    pipe->client->set_write_timeout(300, 0);
+    // A model load answers nothing until the weights are in memory, which can
+    // take longer than five minutes on a large model; the per-read deadline
+    // matches lemond's own relay deadline for a POST.
+    pipe->client->set_read_timeout(kUpstreamReadTimeoutSeconds, 0);
+    pipe->client->set_write_timeout(kUpstreamReadTimeoutSeconds, 0);
     pipe->client->set_keep_alive(false);
     if (!proxies->add(pipe)) {
         // The listener is shutting down: never send this request.
