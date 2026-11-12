@@ -206,10 +206,23 @@ extern const char* const kPeerAuthorizationHeader;
 /// mesh address.
 std::pair<int, std::string> relay_target(const nlohmann::json& members, const std::string& self_node_id,
     const std::string& node_id);
-/// Whether a relayed read that failed with this HTTP client error (libcurl's text) is
+/// Whether a relayed request that failed with this HTTP client error (libcurl's text) is
 /// repeated: the connection was refused, reset or closed before an answer. A timeout
 /// or an HTTP answer is final.
 bool relay_retryable(const std::string& reason);
+/// The answer the relay gives when the peer's server did not answer: the HTTP status,
+/// the `error` text the client shows and the transport failure in `detail`.
+struct RelayFailure {
+    int status{502};
+    std::string error;
+    std::string detail;
+};
+/// Maps a failed relayed request to its answer. A libcurl timeout (`curl_code`
+/// CURLE_OPERATION_TIMEDOUT) is 504 "did not answer within `waited_seconds` seconds":
+/// the device took the request, as during a model load. Any other failure is 502
+/// "Cannot reach that device's server through the mesh". `reason` becomes `detail`,
+/// or "no answer from the device" when empty.
+RelayFailure relay_failure(int curl_code, const std::string& reason, long waited_seconds);
 /// The catalog revision: bump it when a route's family changes within one lemond
 /// version. It must stay below 100.
 extern const unsigned kCatalogRevision;
@@ -259,11 +272,16 @@ bool route_policy_available();
 /// body sets "stream": true is streamed like a backend response: a peer that refuses it
 /// before the first body byte keeps its status and body, and a stream that breaks after
 /// that ends with one `event: error` SSE event. Other replies keep the peer's status and
-/// body. A GET waits 30 s for the peer, a POST 300 s. An unreachable peer answers 502
-/// with the transport failure in `detail`, and one WARNING line names `node_id`, the
-/// method, the path without its query and that failure.
+/// body. A GET waits 30 s for the peer, a POST one hour; a peer that took the request
+/// but did not answer in time gets 504. A request whose connection was refused, reset
+/// or closed before any answer (relay_retryable) is repeated three times over about
+/// 6 s; before the last repeat `reopen`, when set, replaces the mesh bridge and returns
+/// the new loopback port (0 keeps the old one). An unreachable peer answers 502 with the
+/// transport failure in `detail`, and one WARNING line names `node_id`, the method, the
+/// path without its query and that failure.
 void relay_http(uint16_t port, const std::string& node_id, const std::string& path, const httplib::Request& req,
-    httplib::Response& res, const std::string& peer_authorization, const std::string& body);
+    httplib::Response& res, const std::string& peer_authorization, const std::string& body,
+    const std::function<uint16_t()>& reopen = {});
 }
 
 class NexusManager {

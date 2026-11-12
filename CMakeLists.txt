@@ -4087,6 +4087,18 @@ if(BUILD_TESTING AND EXISTS "${_LAUNCH_COMMAND_TEST_SRC}")
     add_cpp_ci_test(LaunchCommandTest CI ON COMMAND test_launch_command)
 endif()
 
+# How `lemonade launch --device` picks a mesh device from lemond's Nexus status.
+set(_MESH_DEVICE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_mesh_device.cpp")
+if(BUILD_TESTING AND EXISTS "${_MESH_DEVICE_TEST_SRC}")
+    add_executable(test_mesh_device
+        test/cpp/test_mesh_device.cpp
+        src/cpp/cli/mesh_device.cpp
+    )
+    target_include_directories(test_mesh_device PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    target_link_libraries(test_mesh_device PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(MeshDeviceTest CI ON COMMAND test_mesh_device)
+endif()
+
 # What `lemonade launch pi` writes into pi's agent directory. The CLI sources
 # are compiled in directly because the CLI is not a library.
 set(_PI_PROFILE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_pi_profile.cpp")
