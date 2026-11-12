@@ -992,7 +992,7 @@ static bool apply_mesh_device(CliConfig& config) {
     nlohmann::json status;
     try {
         lemonade::LemonadeClient home(config.host, config.port, config.api_key, config.is_ssl);
-        status = nlohmann::json::parse(home.make_request("/api/v1/nexus/status", "GET", "", "", 5000, 15000));
+        status = nlohmann::json::parse(home.make_request("/v1/nexus/status", "GET", "", "", 5000, 15000));
     } catch (const std::exception& e) {
         std::cerr << "Error: Cannot read the mesh status of " << config.host << ":" << config.port << ": "
                   << e.what() << std::endl;

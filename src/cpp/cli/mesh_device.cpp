@@ -61,7 +61,7 @@ bool resolve_mesh_device(const nlohmann::json& status, const std::string& wanted
         const auto tls = port.find("tls");
         const auto reason = tls != port.end() && tls->is_object() ? text(*tls, "error") : std::string();
         error += reason.empty() ? "." : " (" + reason + ").";
-        error += " Its selection (POST /api/v1/nexus/selection) is the only way to reach one through it.";
+        error += " Its selection (POST /v1/nexus/selection) is the only way to reach one through it.";
         return false;
     }
     for (const auto& candidate : devices) {
