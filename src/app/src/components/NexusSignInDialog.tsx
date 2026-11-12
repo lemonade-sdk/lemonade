@@ -6,7 +6,6 @@ import {
   type NexusAccountInspection, type NexusAccountService, type NexusSignInInput, type VerifiedNexusAccount,
 } from '../features/nexus/accountSession';
 import { usesNexusDeviceKey, type NexusInvite } from '../features/nexus/nexus';
-import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
 
 export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive }: {
@@ -73,14 +72,14 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
   };
   if (joined) {
     return <div className="nexus-account-dialog-backdrop"><div ref={ref} className="nexus-account-dialog" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}>
-      <div className="nexus-account-dialog__header"><span className="nexus-tree-detail__icon"><Icon name="user-round" size={23} /></span><div><h2 id={`${id}-title`}>{t(joined.error ? 'Invite not accepted' : 'Joined as a member')}</h2></div></div>
+      <div className="nexus-account-dialog__header"><h2 id={`${id}-title`}>{t(joined.error ? 'Invite not accepted' : 'Joined as a member')}</h2></div>
       <p className={joined.error ? 'nexus-error' : undefined} role={joined.error ? 'alert' : 'status'}>{t(joined.message)}</p>
       <div className="nexus-group-actions"><WorkspaceActionButton onClick={() => onSignedIn(joined.session)}>{t('Done')}</WorkspaceActionButton></div>
     </div></div>;
   }
   return <div className="nexus-account-dialog-backdrop" aria-hidden={passkeyActive || undefined} onPointerDown={event => { if (event.target === event.currentTarget && !busy && !passkeyActive) onClose(); }}>
     <div ref={ref} className="nexus-account-dialog" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} aria-busy={busy || checking}>
-      <div className="nexus-account-dialog__header"><span className="nexus-tree-detail__icon"><Icon name="user-round" size={23} /></span><div><h2 id={`${id}-title`}>{t('Enable Mesh')}</h2><p>{t('One account for your devices.')}</p></div><WorkspaceActionButton iconOnly icon="x" size="small" appearance="quiet" aria-label={t('Close Enable Mesh')} disabled={busy || passkeyActive} onClick={onClose} /></div>
+      <div className="nexus-account-dialog__header"><h2 id={`${id}-title`}>{t('Enable Mesh')}</h2><WorkspaceActionButton iconOnly icon="x" size="small" appearance="quiet" aria-label={t('Close Enable Mesh')} disabled={busy || passkeyActive} onClick={onClose} /></div>
       {checking ? <p role="status">{t('Checking account access…')}</p> : <>
         {remote && inspection && <p className="nexus-server-target"><span>{t('Managing server')}</span><strong>{new URL(inspection.source).origin}</strong></p>}
         {inspection && !available && <p className="nexus-hint">{!inspection.status.available ? t('This server does not include Nexus account support.') : t('Set up this server through its local controller or SSH forwarding. After setup, manage it through the authenticated Nexus mesh.')}</p>}
@@ -90,7 +89,6 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
           {inspection.status.error && <p className="nexus-error" role="alert">{inspection.status.error}</p>}
         </> : <p role="status">{t('Waiting for your device key from the Lemonade tray.')}</p>)}
         {available && !waitingForKey && <form onSubmit={event => void submit(event)}>
-          <p className="nexus-hint">{deviceKey ? t('Nexus uses this device’s key. Other devices see this device under its device name.') : t('Nexus uses a device key and passkey. Other devices see this device under its device name.')}</p>
           {retiresPasskey && <p className="nexus-hint">{t('This device registered a passkey, which only the Lemonade desktop app can verify. Enable Mesh here moves it to its device key.')}</p>}
           <fieldset className="nexus-sign-in__fields" disabled={busy}>
             <legend className="sr-only">{t('Account access')}</legend>
@@ -100,12 +98,12 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
               <label><input type="radio" name={id} checked={action === 'join'} onChange={() => { setAction('join'); setError(''); }} />{t('Join by invitation')}</label>
             </div>
             <label htmlFor={`${id}-device`}>{t('Device name')}</label><input autoFocus id={`${id}-device`} className="input" value={deviceName} maxLength={128} onChange={event => setDeviceName(event.target.value)} />
-            {action === 'join' && <><label htmlFor={`${id}-invite`}>{t('Invitation code or token')}</label><input id={`${id}-invite`} className="input" autoComplete="off" spellCheck={false} maxLength={68} value={invitation} onChange={event => setInvitation(event.target.value.trim())} /><p className="nexus-hint">{t(inspection.status.registered && inspection.status.has_network !== false ? 'This device keeps its own network and joins the invited one as a member.' : 'Get an invitation from a device already linked to the account.')}</p></>}
-            {action === 'create' && <p className="nexus-hint">{t('This device will create the account. Administrator access is confirmed by Nexus after joining.')}</p>}
+            <p className="nexus-hint">{t('Other devices in the mesh see this computer by this name.')}</p>
+            {action === 'join' && <><label htmlFor={`${id}-invite`}>{t('Invitation code or token')}</label><input id={`${id}-invite`} className="input" autoComplete="off" spellCheck={false} maxLength={68} value={invitation} onChange={event => setInvitation(event.target.value.trim())} /><p className="nexus-hint">{t(inspection.status.registered && inspection.status.has_network !== false ? 'This device keeps its own network and joins the invited one as a member.' : 'Create the invitation with Connect another device on a device that is already in the mesh.')}</p></>}
           </fieldset>
           {nameTooLong && <p className="nexus-error" role="alert">{t('This name is too long. Try a shorter name.')}</p>}
           <WorkspaceActionButton type="submit" disabled={busy || !deviceName.trim() || nameTooLong || (action === 'join' && !validNexusInvitation(invitation))}>{busy ? t('Enabling Mesh…') : t('Enable Mesh')}</WorkspaceActionButton>
-          {!deviceKey && <p className="nexus-hint">{t('Use the passkey registered for this device. New devices will register a passkey first.')}</p>}
+          {!deviceKey && <p className="nexus-hint">{t('Enable Mesh asks for this device’s passkey.')}</p>}
         </form>}
         {error && <p ref={errorRef} className="nexus-error" role="alert" tabIndex={-1}>{t(error)}</p>}
         <div className="nexus-group-actions">{!busy && <WorkspaceActionButton size="small" appearance="quiet" icon="rotate-ccw" onClick={() => void inspect()}>{t('Check again')}</WorkspaceActionButton>}<WorkspaceActionButton appearance="quiet" disabled={busy || passkeyActive} onClick={onClose}>{t('Cancel')}</WorkspaceActionButton></div>
@@ -147,14 +145,14 @@ export function NexusAccountInviteDialog({ service, session, onClose }: {
       <p role="timer">{expires ? t('Expires in {minutes}:{seconds}', { minutes: Math.floor(expires / 60), seconds: String(expires % 60).padStart(2, '0') }) : t('This invitation has expired.')}</p>
       <WorkspaceActionButton ref={copyRef} disabled={!expires} onClick={() => copy(code || invite.link_token)}>{code ? t('Copy invitation code') : t('Copy invitation')}</WorkspaceActionButton>
       {code && invite.link_token && <WorkspaceActionButton appearance="quiet" size="small" disabled={!expires} onClick={() => copy(invite.link_token)}>{t('Copy full invite token')}</WorkspaceActionButton>}
-      <p className="nexus-hint">{t('The invitation works once and expires after 10 minutes. Closing this dialog does not revoke it.')}</p></> : <form onSubmit={event => {
+      <p className="nexus-hint">{t('The invitation works once. Closing this dialog does not revoke it.')}</p></> : <form onSubmit={event => {
       event.preventDefault(); if (busy || !deviceName.trim()) return; setBusy(true); setError('');
       void service.invite(session, deviceName, role).then(setInvite).catch(error => setError(error instanceof Error ? error.message : String(error))).finally(() => setBusy(false));
-    }}><label htmlFor={id}>{t('Device you are inviting')}</label><input autoFocus id={id} className="input" value={deviceName} disabled={busy} maxLength={128} onChange={event => setDeviceName(event.target.value)} placeholder={t('For example, my phone')} />
-      <label htmlFor={`${id}-role`}>{t('Invitation access')}</label>
+    }}><label htmlFor={id}>{t('Device name')}</label><input autoFocus id={id} className="input" value={deviceName} disabled={busy} maxLength={128} onChange={event => setDeviceName(event.target.value)} placeholder={t('For example, my phone')} />
+      <label htmlFor={`${id}-role`}>{t('Role')}</label>
       <select id={`${id}-role`} className="input" value={role} disabled={busy} onChange={event => setRole(event.target.value as 'user' | 'moderator')}><option value="user">{t('User')}</option><option value="moderator">{t('Moderator')}</option></select>
       <p className="nexus-hint">{role === 'user' ? t('Connect to the mesh and run inference.') : t('Run inference, use MCP tools, manage models and jobs, and invite devices.')}</p>
-      <p className="nexus-hint">{t('Nexus limits the invitation to permissions you hold. Administrator access can only be granted after joining.')}</p>
+      <p className="nexus-hint">{t('An invitation grants at most your own permissions.')}</p>
       <WorkspaceActionButton type="submit" disabled={busy || !deviceName.trim()}>{busy ? t('Creating invitation…') : t('Create invitation')}</WorkspaceActionButton></form>}
     {error && <p className="nexus-error" role="alert">{t(error)}</p>}<div className="nexus-group-actions"><WorkspaceActionButton appearance="quiet" disabled={busy} onClick={onClose}>{t('Close')}</WorkspaceActionButton></div>
   </div></div>;

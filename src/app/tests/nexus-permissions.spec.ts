@@ -62,14 +62,14 @@ test('moderator invitations delegate their preset to the server and display deni
   const fixture = await openLocalAccount(page);
   await page.getByRole('button', { name: 'Connect another device', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Connect another device', exact: true });
-  await dialog.getByRole('textbox', { name: 'Device you are inviting', exact: true }).fill('Lab workstation');
-  await dialog.getByLabel('Invitation access', { exact: true }).selectOption('moderator');
+  await dialog.getByRole('textbox', { name: 'Device name', exact: true }).fill('Lab workstation');
+  await dialog.getByLabel('Role', { exact: true }).selectOption('moderator');
   await expect(dialog).toContainText('Administrator access can only be granted after joining.');
   await page.screenshot({ path: testInfo.outputPath('mesh-moderator-invitation.png') });
   fixture.rejectWrites = true;
   await dialog.getByRole('button', { name: 'Create invitation', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('Nexus refused');
-  await expect(dialog.getByLabel('Invitation access', { exact: true })).toHaveValue('moderator');
+  await expect(dialog.getByLabel('Role', { exact: true })).toHaveValue('moderator');
   await expect(dialog.getByLabel('Invitation code', { exact: true })).toHaveCount(0);
   fixture.rejectWrites = false;
   await dialog.getByRole('button', { name: 'Create invitation', exact: true }).click();

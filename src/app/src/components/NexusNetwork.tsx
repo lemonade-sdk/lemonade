@@ -41,9 +41,8 @@ export function NexusNetwork({ advanced, showCompact = true }: { advanced: boole
       <p>{reconnecting ? t('This device is set up. Its network comes back as soon as the server reconnects.') : t('Start with a group of your devices. Add teams, people or locations as your network grows.')}</p>
       {reconnecting ? <p className="nexus-hint">{network.error || (connecting ? t('The server is joining its network. This takes a moment.') : t('The server has a network but is not connected to it. Check again in a moment.'))}</p>
         : status?.available ? <form onSubmit={event => { event.preventDefault(); void prepare(); }}>
-        {!status.enabled && <><label htmlFor={id}>{t('This device’s name')}</label><input id={id} className="input" value={deviceName} maxLength={128} placeholder={t('My Lemonade device')} onChange={event => setDeviceName(event.target.value)} /></>}
+        {!status.enabled && <><label htmlFor={id}>{t('Device name')}</label><input id={id} className="input" value={deviceName} maxLength={128} placeholder={t('My Lemonade device')} onChange={event => setDeviceName(event.target.value)} /><p className="nexus-hint">{t('Other devices in the mesh see this computer by this name.')}</p></>}
         <WorkspaceActionButton type="submit" disabled={busy}>{busy ? t('Connecting…') : status.enabled && status.locked ? (deviceKey ? t('Use this device’s key') : t('Unlock with passkey')) : t('Create my network')}</WorkspaceActionButton>
-        <p className="nexus-hint">{deviceKey ? t('Nexus uses this device’s key. Other devices see this device under its device name.') : t('Verify this device with a passkey to manage its network.')}</p>
       </form> : <p className="nexus-hint">{network.error || (status && !status.available) ? t('Nexus is not available on this server. Connect to a server with Nexus support to continue.') : t('Checking network status…')}</p>}
       {error && <p className="nexus-error" role="alert">{error}</p>}
       {status?.error && <p className="nexus-error" role="alert">{status.error}</p>}

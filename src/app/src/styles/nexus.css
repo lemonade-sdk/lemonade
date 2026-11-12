@@ -311,7 +311,6 @@
 @media (max-width: 480px) {
   .nexus-account-dialog-backdrop { padding: 12px; }
   .nexus-account-dialog { padding: 20px; max-height: calc(100dvh - 24px); }
-  .nexus-account-dialog__header .nexus-tree-detail__icon { display: none; }
   .nexus-account-dialog h2 { font-size: var(--text-lg); }
   .nexus-sign-in__choices { flex-direction: column; gap: 14px; }
 }

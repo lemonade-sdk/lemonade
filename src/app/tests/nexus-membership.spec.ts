@@ -121,7 +121,7 @@ for (const action of ['create', 'join'] as const) {
     await expect(dialog.getByRole('radio', { name: 'Create account' })).toBeChecked();
     if (action === 'join') {
       await dialog.getByRole('radio', { name: 'Join by invitation' }).check();
-      await expect(dialog).toContainText('Get an invitation from a device already linked');
+      await expect(dialog).toContainText('a device that is already in the mesh');
       await dialog.getByRole('textbox', { name: 'Invitation code or token' }).fill('12345678');
     }
     await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();

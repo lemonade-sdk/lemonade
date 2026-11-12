@@ -435,7 +435,7 @@ test('read-only members have no admin badge or invitation action', async ({ page
 async function createInvitation(page: Page) {
   await page.getByRole('button', { name: 'Connect another device' }).click();
   const dialog = page.getByRole('dialog', { name: 'Connect another device' });
-  await dialog.getByRole('textbox', { name: 'Device you are inviting' }).fill('My phone');
+  await dialog.getByRole('textbox', { name: 'Device name', exact: true }).fill('My phone');
   await dialog.getByRole('button', { name: 'Create invitation', exact: true }).click();
   return dialog;
 }
