@@ -20,17 +20,15 @@ std::string resolve_opencode_config_path() {
     if (xdg && xdg[0] != '\0') {
         base = xdg;
     } else {
+        // opencode reads ~/.config on Windows too, not %APPDATA%.
 #ifdef _WIN32
-        const char* appdata = std::getenv("APPDATA");
-        if (appdata && appdata[0] != '\0') {
-            base = appdata;
-        }
+        const char* home = std::getenv("USERPROFILE");
 #else
         const char* home = std::getenv("HOME");
+#endif
         if (home && home[0] != '\0') {
             base = (fs::path(home) / ".config").string();
         }
-#endif
     }
 
     if (base.empty()) {

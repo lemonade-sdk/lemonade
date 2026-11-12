@@ -294,6 +294,30 @@ void test_config_file_kept(const fs::path& config_dir) {
 }
 #endif
 
+// opencode reads ~/.config/opencode on every platform, %USERPROFILE% on Windows.
+void test_default_config_path(const fs::path& home) {
+#ifdef _WIN32
+    const char* home_var = "USERPROFILE";
+#else
+    const char* home_var = "HOME";
+#endif
+    const char* saved_xdg = std::getenv("XDG_CONFIG_HOME");
+    const std::string xdg = saved_xdg ? saved_xdg : "";
+    const char* saved_home = std::getenv(home_var);
+    const std::string old_home = saved_home ? saved_home : "";
+    set_env("XDG_CONFIG_HOME", "");
+    set_env(home_var, home.string());
+
+    std::string error;
+    lemon_cli::sync_agent_config_file(lemon_cli::opencode_profile(), "Lemonade",
+                                      "http://localhost:13305/v1", "", {}, error);
+    check("without XDG_CONFIG_HOME, opencode.json goes to ~/.config/opencode",
+          fs::exists(home / ".config" / "opencode" / "opencode.json"));
+
+    set_env(home_var, old_home);
+    set_env("XDG_CONFIG_HOME", xdg);
+}
+
 }  // namespace
 
 int main() {
@@ -319,6 +343,7 @@ int main() {
 #ifndef _WIN32
     test_config_file_kept(config_dir);
 #endif
+    test_default_config_path(config_home / "home");
 
     std::error_code ec;
     fs::remove_all(config_home, ec);

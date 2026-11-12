@@ -20,7 +20,7 @@
 lemonade launch opencode --model Qwen3.5-35B-A3B-GGUF
 ```
 
-Without `--model`, launch shows an interactive menu to pick or import a model. Launch writes the Lemonade provider to `~/.config/opencode/opencode.json` (or `$XDG_CONFIG_HOME/opencode/opencode.json`) and starts OpenCode on the chosen model. See [How it works](#how-it-works).
+Without `--model`, launch shows an interactive menu to pick or import a model. Launch writes the Lemonade provider to `~/.config/opencode/opencode.json` (`%USERPROFILE%\.config\opencode\opencode.json` on Windows, or `$XDG_CONFIG_HOME/opencode/opencode.json` when it is set) and starts OpenCode on the chosen model. See [How it works](#how-it-works).
 
 If the model's context size is automatic, launch waits for the model to load so it can give OpenCode the size Lemonade picked; otherwise it starts OpenCode while the model loads.
 
