@@ -94,8 +94,8 @@ const newsData = [
         title: "Search ModelScope from Lemonade",
         url: "https://lemonade-server.ai/news/modelscope-search.html",
         date: "July 27, 2026",
-        description: "Lemonade v11.5 adds ModelScope as a second model registry alongside Hugging Face. Search both from one box in the Model Manager, the CLI, and the registry search API.",
-        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-search-results.png",
+        description: "Lemonade v11.5 adds ModelScope as a second model registry alongside Hugging Face. Search both from one box in the Models page, the CLI, and the registry search API.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-search-results-02.png",
         imageStyle: "width: 100%; height: 100%; object-position: center top; ",
         type: "blog"
         },
