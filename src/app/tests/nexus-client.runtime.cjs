@@ -23,6 +23,7 @@ let failedPeer;
 let loseMutationReply = false;
 let rejectApiKey = false;
 let rateLimitedRequests = 0;
+let lostReads = 0;
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { 'Content-Type': 'application/json' },
 });
@@ -32,6 +33,12 @@ global.fetch = async (url, init = {}) => {
   calls.push({ url: String(url), headers });
   if (target.pathname.endsWith('/nexus/rate-limit-test')) {
     if (rateLimitedRequests-- > 0) return json({ error: 'The network is busy. Try again shortly.', retryable: true }, 429);
+    return json({ ready: true });
+  }
+  if (target.pathname.endsWith('/nexus/lost-connection-test')) {
+    // The server closed a fresh connection before answering, as a descriptor-starved
+    // lemond does: a read may be sent again, a mutation must not be.
+    if (init.method === 'POST' || lostReads-- > 0) throw new TypeError('Load failed');
     return json({ ready: true });
   }
   if (rejectApiKey && target.pathname.endsWith('/nexus/status')) return json({ error: 'Unauthorized' }, 401);
@@ -116,6 +123,13 @@ global.fetch = async (url, init = {}) => {
   await pinned.request('status');
   assert.equal(calls.at(-1).url, `${controller}/api/v1/nexus/status`, 'an in-flight account flow stays on its original controller');
   assert.equal(calls.at(-1).headers.get('Authorization'), 'Bearer test-local-key', 'a pinned flow retains its original controller credentials');
+  lostReads = 1;
+  const lostReadsBefore = calls.filter(call => call.url.endsWith('/nexus/lost-connection-test')).length;
+  assert.deepEqual(await pinned.request('lost-connection-test'), { ready: true }, 'a pinned read is sent again after the server closed the connection');
+  assert.equal(calls.filter(call => call.url.endsWith('/nexus/lost-connection-test')).length, lostReadsBefore + 2);
+  assert.ok(calls.slice(-2).every(call => call.url === `${controller}/api/v1/nexus/lost-connection-test`), 'the repeated read stays on the pinned controller');
+  await assert.rejects(pinned.request('lost-connection-test', {}), /Load failed/, 'a pinned mutation is not replayed');
+  assert.equal(calls.filter(call => call.url.endsWith('/nexus/lost-connection-test')).length, lostReadsBefore + 3);
   api.baseUrl = local;
   api.setSessionApiKey('test-local-key');
 

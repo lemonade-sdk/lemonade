@@ -23,11 +23,16 @@
 #include <thread>
 
 #ifndef _WIN32
+#include <algorithm>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#if defined(__APPLE__)
+#include <sys/syslimits.h>
+#endif
 #endif
 
 struct TestResult {
@@ -438,6 +443,50 @@ static void test_configure_tcp_keepalive(TestResult& r) {
 #endif
 }
 
+#ifndef _WIN32
+// The soft descriptor limit a service manager hands lemond (launchd: 256) must rise to
+// the hard limit, or to OPEN_MAX where Darwin caps it, and the function must report the
+// limit that is in effect afterwards.
+static void test_raise_open_file_limit(TestResult& r) {
+    struct rlimit original {};
+    if (getrlimit(RLIMIT_NOFILE, &original) != 0) {
+        r.fail("raise_open_file_limit: getrlimit failed");
+        return;
+    }
+    struct rlimit lowered = original;
+    lowered.rlim_cur = std::min<rlim_t>(256, original.rlim_max);
+    if (setrlimit(RLIMIT_NOFILE, &lowered) != 0) {
+        r.fail("raise_open_file_limit: could not lower the soft limit for the test");
+        return;
+    }
+
+    const std::size_t reported = lemon::utils::raise_open_file_limit();
+
+    struct rlimit raised {};
+    const bool read_back = getrlimit(RLIMIT_NOFILE, &raised) == 0;
+    rlim_t expected = original.rlim_max;
+#if defined(__APPLE__)
+    if (expected == RLIM_INFINITY || expected > OPEN_MAX) {
+        expected = OPEN_MAX;
+    }
+#endif
+    if (expected == RLIM_INFINITY) {
+        expected = lowered.rlim_cur;  // nothing to raise to; the soft limit stays
+    }
+
+    setrlimit(RLIMIT_NOFILE, &original);
+
+    if (read_back && raised.rlim_cur == expected && reported == static_cast<std::size_t>(expected)) {
+        r.ok("raise_open_file_limit raises the soft limit and reports it");
+    } else {
+        printf("  expected %llu, soft limit %llu, reported %zu\n",
+               static_cast<unsigned long long>(expected),
+               static_cast<unsigned long long>(raised.rlim_cur), reported);
+        r.fail("raise_open_file_limit raises the soft limit and reports it");
+    }
+}
+#endif
+
 int main() {
 #ifdef _WIN32
     WSADATA wsaData;
@@ -452,6 +501,9 @@ int main() {
     test_active_port(r);
     test_listener_startup_state(r);
     test_configure_tcp_keepalive(r);
+#ifndef _WIN32
+    test_raise_open_file_limit(r);
+#endif
 
     printf("\n%d/%d tests passed\n", r.passed, r.passed + r.failed);
 
