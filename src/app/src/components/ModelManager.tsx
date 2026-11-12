@@ -215,6 +215,10 @@ const CUSTOM_RECIPE_SUGGESTIONS: Record<string, CustomRecipeSuggestion> = {
     checkpoint: 'amd/Llama-3.2-1B-Instruct-onnx-ryzenai-1.7-hybrid',
     note: 'RyzenAI-compatible ONNX/HF checkpoint or local path.',
   },
+  thenoise: {
+    checkpoint: 'circlestone-labs/Anima:split_files/diffusion_models/anima-turbo-v1.1.safetensors',
+    note: 'DiT, VAE and text encoder must all be provided as separate checkpoints.',
+  },
   'sd-cpp': {
     checkpoint: 'unsloth/FLUX.2-klein-9B-GGUF:flux-2-klein-9b-Q8_0.gguf',
     note: 'Primary diffusion checkpoint. Extra fields below cover multi-file image models.',
@@ -295,7 +299,10 @@ const CUSTOM_RECIPE_OPTIONS: Record<CustomModelCapability, CustomRecipeOption[]>
   chat: CHAT_RECIPE_OPTIONS,
   omni: CHAT_RECIPE_OPTIONS,
   classification: [customRecipeOption('onnxruntime', 'ONNX Runtime', 'Text classification through /classify')],
-  image: [customRecipeOption('sd-cpp', 'Stable Diffusion', 'Stable Diffusion C++ backend')],
+  image: [
+    customRecipeOption('sd-cpp', 'Stable Diffusion', 'Stable Diffusion C++ backend'),
+    customRecipeOption('thenoise', 'TheNoise', 'PyTorch image generation backend'),
+  ],
   audio: [
     customRecipeOption('whispercpp', 'Whisper', 'Whisper C++ transcription backend'),
     customRecipeOption('moonshine', 'Moonshine', 'CPU streaming speech-to-text backend'),
@@ -338,6 +345,7 @@ const CUSTOM_RECIPE_CAPABILITIES: Record<string, CustomModelCapability[]> = {
   flm: ['chat', 'omni'],
   'ryzenai-llm': ['chat', 'omni'],
   'sd-cpp': ['image'],
+  thenoise: ['image'],
   whispercpp: ['audio'],
   moonshine: ['audio'],
   kokoro: ['tts'],
@@ -347,7 +355,21 @@ const CUSTOM_RECIPE_CAPABILITIES: Record<string, CustomModelCapability[]> = {
   trellis: ['model3d'],
 };
 
-function recipeCapabilities(recipe: string, backendNames: string[]): CustomModelCapability[] {
+function recipeCapabilities(recipe: string, backendNames: string[], supportedModes?: unknown): CustomModelCapability[] {
+  if (Array.isArray(supportedModes)) {
+    const byMode: Record<string, CustomModelCapability[]> = {
+      chat: ['chat', 'omni'],
+      embeddings: ['embedding'],
+      reranking: ['reranking'],
+      classification: ['classification'],
+      transcription: ['audio'],
+      image: ['image'],
+      tts: ['tts'],
+      'audio-generation': ['audio-generation'],
+      '3d': ['model3d'],
+    };
+    return [...new Set(supportedModes.flatMap(mode => byMode[String(mode).toLowerCase()] || []))];
+  }
   const explicit = CUSTOM_RECIPE_CAPABILITIES[recipe];
   if (explicit) return explicit;
   const key = recipe.toLowerCase();
@@ -428,7 +450,7 @@ function recipeOptionsFromSystemInfo(info: Record<string, unknown> | null): Part
     if (!backends.length) continue;
 
     const backendNames = backends.map(([name]) => name);
-    const capabilities = recipeCapabilities(recipe, backendNames);
+    const capabilities = recipeCapabilities(recipe, backendNames, raw.supported_modes);
     const option = customRecipeOption(
       recipe,
       recipeLabel(recipe),
@@ -2300,7 +2322,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       if (selectedRecipe === 'llamacpp' && supportsVisionProjectorField(customDraft.capability) && customDraft.mmproj.trim()) {
         extraCheckpoints.mmproj = customDraft.mmproj.trim();
       }
-      if (selectedRecipe === 'sd-cpp') {
+      if (selectedRecipe === 'thenoise' && (!customDraft.imageTextEncoder.trim() || !customDraft.imageVae.trim())) {
+        throw new Error('TheNoise requires a text encoder and VAE checkpoint.');
+      }
+      if (selectedRecipe === 'sd-cpp' || selectedRecipe === 'thenoise') {
         if (customDraft.imageTextEncoder.trim()) extraCheckpoints.text_encoder = customDraft.imageTextEncoder.trim();
         if (customDraft.imageVae.trim()) extraCheckpoints.vae = customDraft.imageVae.trim();
       }
@@ -2712,7 +2737,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const showLlamacppMmprojField = !isCustomOmniCollectionDraft
     && selectedCustomRecipeName === 'llamacpp'
     && supportsVisionProjectorField(customDraft.capability);
-  const showImageExtraCheckpointFields = !isCustomOmniCollectionDraft && selectedCustomRecipeName === 'sd-cpp';
+  const showImageExtraCheckpointFields = !isCustomOmniCollectionDraft && ['sd-cpp', 'thenoise'].includes(selectedCustomRecipeName);
   const updateOmniComponent = (role: OmniComponentRole, value: string) => {
     if (role === 'llm') {
       const selectedInfo = allModels.find(m => modelName(m) === value);
