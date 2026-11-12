@@ -34,7 +34,7 @@ assert.match(nav, /model-nav-rail__backend-chip/);
 assert.match(manager, /recipeCapabilities\(recipe, backendNames, raw\.supported_modes\)/, 'custom model recipes must use server deployment modes');
 assert.match(manager, /thenoise: \['image'\]/, 'TheNoise must be an image recipe with older servers');
 assert.match(manager, /\['sd-cpp', 'thenoise'\]\.includes\(selectedCustomRecipeName\)/, 'image engines need companion checkpoints');
-assert.match(manager, /selectedRecipe === 'thenoise'/, 'TheNoise companion checkpoints must be registered');
+assert.match(manager, /customImageCompanionCheckpoints\(/, 'TheNoise companion checkpoints must use mode-aware validation');
 assert.match(nav, /\{backends\.map\(backend => \{/, 'the rail must render every derived backend');
 assert.doesNotMatch(nav, /model-nav-rail__backend-more/, 'the "+N" reveal pill must not return');
 assert.doesNotMatch(nav, /model-nav-rail__backend-remove/, 'backend chips must not carry a per-chip hide control');

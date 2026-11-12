@@ -176,6 +176,27 @@ export function generatedLabelsFor(capability: CustomModelCapability): Set<strin
   return new Set(labelsFor(capability));
 }
 
+export function isStandaloneImageUpscaler(recipe: string, labels: readonly string[]): boolean {
+  return (recipe === 'sd-cpp' || recipe === 'thenoise')
+    && labels.some(label => label.trim().toLowerCase() === 'upscaling');
+}
+
+export function customImageCompanionCheckpoints(
+  recipe: string, labels: readonly string[], textEncoder: string, vae: string,
+): Record<string, string> {
+  if (recipe !== 'thenoise' && recipe !== 'sd-cpp') return {};
+  const encoder = textEncoder.trim();
+  const vaeCheckpoint = vae.trim();
+  if (isStandaloneImageUpscaler(recipe, labels)) return {};
+  if (recipe === 'thenoise' && (!encoder || !vaeCheckpoint)) {
+    throw new Error('TheNoise requires a text encoder and VAE checkpoint for image generation.');
+  }
+  return {
+    ...(encoder ? { text_encoder: encoder } : {}),
+    ...(vaeCheckpoint ? { vae: vaeCheckpoint } : {}),
+  };
+}
+
 /**
  * Records written before the deployment-label contract carry only descriptive
  * labels. Their stored authoring capability still says how they deploy, so the

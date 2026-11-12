@@ -4,7 +4,7 @@ import { copyTextToClipboard } from '../clipboard';
 import { capabilityFromModelInfo, modelCapabilityTags, modelSupportsChatImageInput } from '../modelCapabilities';
 import { Icon } from './Icon';
 import { storageKey } from '../storage';
-import { CUSTOM_CAPABILITIES, CustomModelCapability, generatedLabelsFor, buildCustomModelRecord, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, exportCustomModelsPayload, parseCustomModelsImport, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
+import { CUSTOM_CAPABILITIES, CustomModelCapability, generatedLabelsFor, buildCustomModelRecord, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, customImageCompanionCheckpoints, isStandaloneImageUpscaler, exportCustomModelsPayload, parseCustomModelsImport, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
 import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import {
   detectHuggingFaceBackend,
@@ -2322,13 +2322,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       if (selectedRecipe === 'llamacpp' && supportsVisionProjectorField(customDraft.capability) && customDraft.mmproj.trim()) {
         extraCheckpoints.mmproj = customDraft.mmproj.trim();
       }
-      if (selectedRecipe === 'thenoise' && (!customDraft.imageTextEncoder.trim() || !customDraft.imageVae.trim())) {
-        throw new Error('TheNoise requires a text encoder and VAE checkpoint.');
-      }
-      if (selectedRecipe === 'sd-cpp' || selectedRecipe === 'thenoise') {
-        if (customDraft.imageTextEncoder.trim()) extraCheckpoints.text_encoder = customDraft.imageTextEncoder.trim();
-        if (customDraft.imageVae.trim()) extraCheckpoints.vae = customDraft.imageVae.trim();
-      }
+      Object.assign(extraCheckpoints, customImageCompanionCheckpoints(
+        selectedRecipe, customDraft.labels.split(','), customDraft.imageTextEncoder, customDraft.imageVae,
+      ));
       const checkpoints = checkpoint && Object.keys(extraCheckpoints).length > 0
         ? { main: checkpoint, ...extraCheckpoints }
         : undefined;
@@ -2729,7 +2725,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const customRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
   const selectedCustomRecipe = customRecipeOptions.find(option => option.value === customDraft.recipe) || customRecipeOptions[0];
   const selectedCustomRecipeName = selectedCustomRecipe?.recipe || optionRecipe(customDraft.recipe);
-  const selectedCustomRecipeSuggestion = CUSTOM_RECIPE_SUGGESTIONS[selectedCustomRecipeName];
+  const isStandaloneUpscaler = isStandaloneImageUpscaler(selectedCustomRecipeName, customDraft.labels.split(','));
+  const requiresTheNoiseCompanions = selectedCustomRecipeName === 'thenoise' && !isStandaloneUpscaler;
+  const missingTheNoiseCompanions = Boolean(customError?.startsWith('TheNoise requires a text encoder and VAE checkpoint'));
+  const selectedCustomRecipeSuggestion: CustomRecipeSuggestion | undefined = isStandaloneUpscaler
+    ? {
+        checkpoint: selectedCustomRecipeName === 'sd-cpp'
+          ? 'amd/realesrgan-x4plus:RealESRGAN_x4plus.pth'
+          : 'mikkoph/upscalers:esrgan/4x-remacri.safetensors',
+        note: 'Standalone pixel upscalers need only the main checkpoint.',
+      }
+    : CUSTOM_RECIPE_SUGGESTIONS[selectedCustomRecipeName];
   const primaryCheckpointPlaceholder = selectedCustomRecipeSuggestion?.checkpoint || t('org/model:Q4_K_M.gguf or /path/to/model.gguf');
   const mmprojCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'mmproj');
   const textEncoderCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'text_encoder');
@@ -2737,7 +2743,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const showLlamacppMmprojField = !isCustomOmniCollectionDraft
     && selectedCustomRecipeName === 'llamacpp'
     && supportsVisionProjectorField(customDraft.capability);
-  const showImageExtraCheckpointFields = !isCustomOmniCollectionDraft && ['sd-cpp', 'thenoise'].includes(selectedCustomRecipeName);
+  const showImageExtraCheckpointFields = !isCustomOmniCollectionDraft
+    && ['sd-cpp', 'thenoise'].includes(selectedCustomRecipeName) && !isStandaloneUpscaler;
+  const updateImagePurpose = (purpose: string) => {
+    const labels = customDraft.labels.split(',').map(label => label.trim())
+      .filter(label => label && label.toLowerCase() !== 'upscaling');
+    if (purpose === 'upscaling') labels.push('upscaling');
+    handleCustomDraftChange({ labels: labels.join(', ') });
+  };
   const updateOmniComponent = (role: OmniComponentRole, value: string) => {
     if (role === 'llm') {
       const selectedInfo = allModels.find(m => modelName(m) === value);
@@ -3084,6 +3097,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                         : customRecipeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
                   </label>
+                  {['sd-cpp', 'thenoise'].includes(selectedCustomRecipeName) && (
+                    <label className="custom-model-form__field">{t('Model purpose')}
+                      <select className="select" value={isStandaloneUpscaler ? 'upscaling' : 'image'} onChange={e => updateImagePurpose(e.target.value)}>
+                        <option value="image">{t('Image generation / editing')}</option>
+                        <option value="upscaling">{t('Standalone upscaling')}</option>
+                      </select>
+                    </label>
+                  )}
                   <label className="custom-model-form__field custom-model-form__wide">Checkpoint, Hugging Face repo, or local path
                     {selectedCustomRecipeSuggestion && (
                       <InlineCheckpointExample
@@ -3114,7 +3135,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                   )}
                   {showImageExtraCheckpointFields && (
                     <>
-                      <label className="custom-model-form__field">Text encoder checkpoint
+                      <label className="custom-model-form__field">Text encoder checkpoint {requiresTheNoiseCompanions && `(${t('Required')})`}
                         <InlineCheckpointExample
                           checkpoint={textEncoderCheckpointExample?.checkpoint || 'repo/text-encoder:model.safetensors'}
                           note={textEncoderCheckpointExample?.note}
@@ -3123,10 +3144,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                           className="input"
                           value={customDraft.imageTextEncoder}
                           onChange={e => handleCustomDraftChange({ imageTextEncoder: e.target.value })}
-                          placeholder={t('Optional')}
+                          placeholder={requiresTheNoiseCompanions ? t('Required') : t('Optional')}
+                          aria-required={requiresTheNoiseCompanions}
+                          aria-invalid={missingTheNoiseCompanions && !customDraft.imageTextEncoder.trim()}
+                          aria-describedby={missingTheNoiseCompanions && !customDraft.imageTextEncoder.trim() ? 'custom-model-editor-error' : undefined}
                         />
                       </label>
-                      <label className="custom-model-form__field">VAE checkpoint
+                      <label className="custom-model-form__field">VAE checkpoint {requiresTheNoiseCompanions && `(${t('Required')})`}
                         <InlineCheckpointExample
                           checkpoint={vaeCheckpointExample?.checkpoint || 'repo/vae:model.safetensors'}
                           note={vaeCheckpointExample?.note}
@@ -3135,7 +3159,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                           className="input"
                           value={customDraft.imageVae}
                           onChange={e => handleCustomDraftChange({ imageVae: e.target.value })}
-                          placeholder={t('Optional')}
+                          placeholder={requiresTheNoiseCompanions ? t('Required') : t('Optional')}
+                          aria-required={requiresTheNoiseCompanions}
+                          aria-invalid={missingTheNoiseCompanions && !customDraft.imageVae.trim()}
+                          aria-describedby={missingTheNoiseCompanions && !customDraft.imageVae.trim() ? 'custom-model-editor-error' : undefined}
                         />
                       </label>
                     </>
@@ -3294,7 +3321,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                   </details>
                 </>
               )}
-              {customError && <div className="custom-model-form__error"><Icon name="alert" size={14} /> {customError}</div>}
+              {customError && <div id="custom-model-editor-error" role="alert" className="custom-model-form__error"><Icon name="alert" size={14} /> {customError}</div>}
             </form>
             </div>
           <input

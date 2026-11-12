@@ -28,7 +28,10 @@ async function bundleStore() {
 (async () => {
   const { outputPath, modulePath } = await bundleStore();
   try {
-    const { customLoadOptions } = require(modulePath);
+    const {
+      customLoadOptions, isStandaloneImageUpscaler, customImageCompanionCheckpoints,
+      buildCustomModelRecord, customModelToModelInfo, customRegistrationOptions,
+    } = require(modulePath);
     const base = { custom: true, type: 'embedding', max_context_window: 40960 };
 
     // A saved ctx_size must win over the model's max context window — the GUI
@@ -82,6 +85,54 @@ async function bundleStore() {
       8192,
       'a saved ctx_size without a max window passes through',
     );
+
+    // Both image recipes support one-shot pixel upscalers using only main.
+    // TheNoise image generation still requires the text encoder and VAE.
+    assert.equal(isStandaloneImageUpscaler('thenoise', ['UPSCALING']), true);
+    assert.equal(isStandaloneImageUpscaler('thenoise', ['not-upscaling']), false);
+    assert.equal(isStandaloneImageUpscaler('sd-cpp', ['upscaling']), true);
+    assert.equal(isStandaloneImageUpscaler('sd-cpp', ['UPSCALE']), false);
+    assert.equal(isStandaloneImageUpscaler('llamacpp', ['upscaling']), false);
+    assert.deepEqual(customImageCompanionCheckpoints('thenoise', ['upscaling'], '', ''), {});
+    assert.deepEqual(customImageCompanionCheckpoints('thenoise', ['upscaling'], 'unused', 'unused'), {},
+      'a standalone upscaler must not register stale companion paths');
+    assert.deepEqual(customImageCompanionCheckpoints('thenoise', [], ' encoder ', ' vae '),
+      { text_encoder: 'encoder', vae: 'vae' });
+    assert.throws(() => customImageCompanionCheckpoints('thenoise', [], '', 'vae'), /text encoder and VAE/);
+    assert.throws(() => customImageCompanionCheckpoints('thenoise', [], 'encoder', ''), /text encoder and VAE/);
+    assert.deepEqual(customImageCompanionCheckpoints('sd-cpp', [], '', ''), {});
+    assert.deepEqual(customImageCompanionCheckpoints('sd-cpp', [], ' encoder ', ' vae '),
+      { text_encoder: 'encoder', vae: 'vae' }, 'SD.cpp diffusion checkpoints remain optional');
+    assert.deepEqual(customImageCompanionCheckpoints('sd-cpp', ['upscaling'], 'stale', 'stale'), {},
+      'SD.cpp upscalers must not register stale diffusion checkpoints');
+
+    const remacri = buildCustomModelRecord({
+      name: 'Remacri-4x-Custom',
+      displayName: 'Remacri custom',
+      checkpoint: 'mikkoph/upscalers:esrgan/4x-remacri.safetensors',
+      recipe: 'thenoise',
+      capability: 'image',
+      labels: ['upscaling'],
+    });
+    const registration = customRegistrationOptions(customModelToModelInfo(remacri));
+    assert.equal(registration.recipe, 'thenoise');
+    assert.deepEqual(registration.labels, ['image', 'upscaling']);
+    assert.equal(registration.checkpoint, 'mikkoph/upscalers:esrgan/4x-remacri.safetensors');
+    assert.equal(registration.checkpoints, undefined);
+
+    const realesrgan = buildCustomModelRecord({
+      name: 'RealESRGAN-4x-Custom',
+      displayName: 'RealESRGAN custom',
+      checkpoint: 'amd/realesrgan-x4plus:RealESRGAN_x4plus.pth',
+      recipe: 'sd-cpp',
+      capability: 'image',
+      labels: ['upscaling'],
+    });
+    const sdRegistration = customRegistrationOptions(customModelToModelInfo(realesrgan));
+    assert.equal(sdRegistration.recipe, 'sd-cpp');
+    assert.deepEqual(sdRegistration.labels, ['image', 'upscaling']);
+    assert.equal(sdRegistration.checkpoint, 'amd/realesrgan-x4plus:RealESRGAN_x4plus.pth');
+    assert.equal(sdRegistration.checkpoints, undefined);
 
     console.log('Lemonade App custom load options regression checks passed.');
   } finally {
