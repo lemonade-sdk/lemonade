@@ -2,12 +2,16 @@
 #include "lemon/models/recipe_options_store.h"
 #include "lemon/utils/path_utils.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <string>
+#include <thread>
 #include "show_all_models.h"
 
 namespace fs = std::filesystem;
@@ -287,6 +291,68 @@ static void test_failed_registration_restores_saved_profiles() {
     fs::remove_all(fx.root);
 }
 
+// Same-recipe registrations must be ordered against recipe changes. The
+// two requests can finish in either order; neither outcome may mix settings.
+static void test_concurrent_registration_and_recipe_switch() {
+    bool consistent = true;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        Fixture fx = create_fixture();
+        use_fixture_dirs(fx);
+        {
+            ModelManager manager;
+            std::atomic<bool> start{false};
+            std::exception_ptr a_error, b_error;
+            auto run = [&](const std::string& recipe, const json& recipe_options,
+                           std::exception_ptr& error) {
+                while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+                try {
+                    manager.register_model("user.zz-opts",
+                                           json{{"checkpoint", "zzopts/zzrepo:main.gguf"},
+                                                {"recipe", recipe},
+                                                {"recipe_options", recipe_options}},
+                                           /*allow_missing_checkpoint=*/true,
+                                           /*replace_existing=*/true);
+                } catch (...) {
+                    error = std::current_exception();
+                }
+            };
+            std::thread a(run, "llamacpp", json{{"ctx_size", 2304}}, std::ref(a_error));
+            std::thread b(run, "sd-cpp", json{{"steps", 33}}, std::ref(b_error));
+            start.store(true, std::memory_order_release);
+            a.join();
+            b.join();
+
+            if (a_error || b_error) {
+                consistent = false;
+            } else {
+                try {
+                    const std::string recipe = manager.get_model_info("user.zz-opts").recipe;
+                    const json active = manager.options("user.zz-opts")["saved"];
+                    const json disk = read_json(fx.options_file);
+                    const json profiles = disk.value("__lemonade_recipe_profiles_v1", json::object())
+                                              .value("user.zz-opts", json::object());
+                    if (recipe == "llamacpp") {
+                        consistent &= active.value("ctx_size", 0) == 2304 &&
+                                      !active.contains("steps") &&
+                                      profiles.value("sd-cpp", json::object()).value("steps", 0) == 33;
+                    } else if (recipe == "sd-cpp") {
+                        consistent &= active.value("steps", 0) == 33 &&
+                                      !active.contains("ctx_size") &&
+                                      profiles.value("llamacpp", json::object()).value("ctx_size", 0) == 2304;
+                    } else {
+                        consistent = false;
+                    }
+                } catch (const std::exception&) {
+                    consistent = false;
+                }
+            }
+        }
+        fs::remove_all(fx.root);
+        if (!consistent) break;
+    }
+    check("concurrent same-recipe registration and engine switch preserve profiles", consistent);
+}
+
 static void test_corrupt_file_is_not_fatal() {
     Fixture seeded = create_fixture(R"([1, 2, 3])");
     use_fixture_dirs(seeded);
@@ -352,6 +418,7 @@ int main() {
     test_key_migration();
     test_failed_profile_write_does_not_change_registry();
     test_failed_registration_restores_saved_profiles();
+    test_concurrent_registration_and_recipe_switch();
     test_corrupt_file_is_not_fatal();
     use_fixture_dirs(fx);
     test_saved_options_follow_the_recipe(fx);

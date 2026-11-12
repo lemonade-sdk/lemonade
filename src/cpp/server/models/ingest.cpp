@@ -505,6 +505,10 @@ void ModelIngest::register_model(const std::string& model_name,
                                  const json& model_data,
                                  bool allow_missing_checkpoint,
                                  bool replace_existing) {
+    // A same-recipe replacement and an engine switch must never interleave.
+    // Do not use recipe_options_write_mutex for this outer lock: a normal
+    // definition may save options through the facade and acquire it again.
+    std::lock_guard<std::mutex> registration_lock(registration_mutex_);
     const auto register_definition = [&](const json& definition) {
         std::set<std::string> visited;
         pull(model_name, definition, true, nullptr, visited,

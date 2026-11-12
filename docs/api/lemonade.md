@@ -13,6 +13,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/classify`](#post-v1classify) | Score text against a classifier model's labels |
 | `POST` | [`/v1/models/check-updates`](#post-v1modelscheck-updates) | Manually check downloaded models for upstream updates |
 | `POST` | [`/v1/models/register`](#post-v1modelsregister) | Register or update a user model definition without downloading it |
+| `POST` | [`/v1/models/unregister`](#post-v1modelsunregister) | Unregister a custom model without deleting its files |
 | `POST` | [`/v1/pull`](#post-v1pull) | Install a model |
 | `GET` | [`/v1/downloads`](#get-v1downloads) | List server-owned download jobs |
 | `POST` | [`/v1/downloads/control`](#post-v1downloadscontrol) | Pause, cancel, or remove server-owned download jobs |
@@ -26,7 +27,6 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/v1/docs`](#get-v1docs) | List the API reference pages bundled with the running server |
 | `GET` | [`/v1/docs/{page}`](#get-v1docspage) | Read one bundled API reference page |
 | `GET` | [`/v1/health`](#get-v1health) | Check the server's status and loaded models |
-| `POST` | [`/v1/models/unregister`](#post-v1modelsunregister) | Unregister a custom model without deleting its files |
 | `GET` | [`/v1/stats`](#get-v1stats) | Read performance statistics from the last request |
 | `GET` | [`/v1/system-stats`](#get-v1system-stats) | Read the host's resource usage |
 | `GET` | [`/metrics`](#get-metrics) | Serve metrics for Prometheus to scrape |
@@ -370,6 +370,11 @@ Requires `LEMONADE_API_KEY` when it is set.
 ```json
 {"status": "success", "model_name": "user.Phi-4-Mini-GGUF"}
 ```
+
+### Response format
+
+- `status` - Always `success`.
+- `model_name` - Canonical `user.*` model name that was unregistered.
 
 ### Errors
 

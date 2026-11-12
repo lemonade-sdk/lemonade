@@ -38,8 +38,8 @@ public:
             "type": "object",
             "required": ["status", "model_name"],
             "properties": {
-                "status": {"const": "success"},
-                "model_name": {"type": "string"}
+                "status": {"const": "success", "description": "Always `success`."},
+                "model_name": {"type": "string", "description": "Canonical `user.*` model name that was unregistered."}
             }
         })");
         s.responses = {response};

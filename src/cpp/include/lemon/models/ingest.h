@@ -135,6 +135,11 @@ class ModelIngest : public ArtifactFetchService {
 
     std::unique_ptr<IngestCollections> collections_;
 
+    // Serializes all explicit definition registrations, regardless of whether
+    // the recipe changes. Separate from recipe_options_write_mutex: ordinary
+    // registration may call save_options(), which acquires that mutex itself.
+    std::mutex registration_mutex_;
+
     // Serializes downloads that write the same repository's `.partial` files.
     std::mutex download_locks_mutex_;
     std::map<std::string, std::shared_ptr<std::mutex>> download_locks_;
