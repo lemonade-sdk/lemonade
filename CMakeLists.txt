@@ -525,6 +525,10 @@ endif()
 # === httplib ===
 # Defined before httplib is added so its compiled library uses the same value as our code.
 add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
+# The web app and the desktop app open several connections at once on startup;
+# cpp-httplib's default backlog of 5 lets a burst overflow and the OS resets the
+# extra connections (Windows resets instead of queueing).
+add_compile_definitions(CPPHTTPLIB_LISTEN_BACKLOG=128)
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
