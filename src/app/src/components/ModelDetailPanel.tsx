@@ -1579,12 +1579,15 @@ const ModelConfigurationTab: React.FC<{
   isActive: boolean;
   serverDefaultCtxSize: number;
   isLoadingThis?: boolean;
+  engineVariants?: readonly ModelInfo[];
+  onSelectEngineVariant?: (id: string) => void;
+  onAddEngineVariant?: (model: ModelInfo) => void;
   onReloadModel?: (model: LoadedModel, recipeOptions?: Record<string, unknown>) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
   /** Filled with a getter for the load settings as shown, so the panel's Load
       action can apply them without saving them. */
   loadOptionsRef?: React.MutableRefObject<(() => Record<string, unknown>) | null>;
-}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isLoadingThis, onReloadModel, onDirtyChange, loadOptionsRef }) => {
+}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isLoadingThis, engineVariants, onSelectEngineVariant, onAddEngineVariant, onReloadModel, onDirtyChange, loadOptionsRef }) => {
   const { t } = useI18n();
   const name = mdName(model);
   const [notice, setNotice] = useState<string | null>(null);
@@ -1637,7 +1640,10 @@ const ModelConfigurationTab: React.FC<{
   const [serverSavedRecipeOptions, setServerSavedRecipeOptions] = useState<RecipeOptions>({});
   const [serverEffectiveRecipeOptions, setServerEffectiveRecipeOptions] = useState<RecipeOptions>({});
   const [serverDefaultRecipeOptions, setServerDefaultRecipeOptions] = useState<RecipeOptions>({});
-  const [serverOptionsLoaded, setServerOptionsLoaded] = useState(false);
+  // Never publish the previous variant's settings under a newly selected ID,
+  // including the render before the normal options-fetch effect runs.
+  const [optionsLoadedFor, setOptionsLoadedFor] = useState<string | null>(null);
+  const serverOptionsLoaded = optionsLoadedFor === name;
   const [ctxSizeDraft, setCtxSizeDraft] = useState('-1');
   const [recipeDraft, setRecipeDraft] = useState<Record<string, string>>({});
   const [customVoiceMode, setCustomVoiceMode] = useState(false);
@@ -1678,7 +1684,7 @@ const ModelConfigurationTab: React.FC<{
     setServerEffectiveRecipeOptions({});
     setServerDefaultRecipeOptions({});
     setResolvedCtxSize(null);
-    setServerOptionsLoaded(false);
+    setOptionsLoadedFor(null);
     // The tab is mounted once for the whole panel, so the previous model's draft
     // has to go with its server state — otherwise it stays on screen, and in the
     // load body, until this fetch resolves.
@@ -1689,7 +1695,7 @@ const ModelConfigurationTab: React.FC<{
       .then(result => {
         if (cancelled) return;
         applyServerOptionsRef.current(result, true);
-        setServerOptionsLoaded(true);
+        setOptionsLoadedFor(name);
       })
       .catch(error => {
         if (cancelled) return;
@@ -1699,7 +1705,7 @@ const ModelConfigurationTab: React.FC<{
   }, [name, systemInfoSettled, serverUrl]);
 
   useEffect(() => api.onServerChange(() => {
-    setServerOptionsLoaded(false);
+    setOptionsLoadedFor(null);
     setRecipeDraft({});
     setSystemInfo(null);
     setSystemInfoSettled(false);
@@ -1714,8 +1720,8 @@ const ModelConfigurationTab: React.FC<{
     || !draftFieldsEqual(recipeKeys, recipeDraft, savedLoadSettings.recipe);
 
   useEffect(() => {
-    onDirtyChange?.(hasLoadSettingChanges);
-  }, [hasLoadSettingChanges, onDirtyChange]);
+    onDirtyChange?.(serverOptionsLoaded && hasLoadSettingChanges);
+  }, [serverOptionsLoaded, hasLoadSettingChanges, onDirtyChange]);
 
   useEffect(() => {
     if (hasLoadSettingChanges && notice === t('Saved for future loads')) setNotice(null);
@@ -2144,6 +2150,27 @@ const ModelConfigurationTab: React.FC<{
 
   return (
     <div className="detail-tab-content detail-configuration">
+      {(engineVariants || onAddEngineVariant) && (
+        <section className="detail-configuration__section" aria-label={t('Inference Engine')}>
+          <label className="detail-tuning__field detail-configuration__field">
+            <span>{t('Inference Engine')}</span>
+            <select className="select detail-configuration__select" value={name}
+              disabled={!onSelectEngineVariant || !engineVariants || engineVariants.length < 2}
+              onChange={e => onSelectEngineVariant?.(e.target.value)}>
+              {(engineVariants || [model]).map(variant => (
+                <option key={mdName(variant)} value={mdName(variant)}>
+                  {recipeDisplayLabel(String(variant.recipe || ''))}{engineVariants ? ` — ${mdName(variant)}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          {onAddEngineVariant && (
+            <button type="button" className="btn btn--secondary btn--sm" onClick={() => onAddEngineVariant(model)}>
+              {t('Add engine variant')}
+            </button>
+          )}
+        </section>
+      )}
       <section className="detail-configuration__section" aria-label={t('Load settings')}>
         <div className="detail-configuration__section-head">
           <div>
@@ -2704,6 +2731,9 @@ export interface ModelDetailPanelProps {
   onToggleFavorite?: (name: string) => void;
   /** Open the persistent settings editor for a saved custom Omni collection. */
   onEditCustomCollection?: (model: ModelInfo) => void;
+  engineVariants?: readonly ModelInfo[];
+  onSelectEngineVariant?: (id: string) => void;
+  onAddEngineVariant?: (model: ModelInfo) => void;
   /** Called when the "Back to models" button is clicked (narrow viewports). */
   onBack?: () => void;
   /** Called when the close button is clicked to dismiss the detail panel. */
@@ -2765,6 +2795,9 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   isFavorite = false,
   onToggleFavorite,
   onEditCustomCollection,
+  engineVariants,
+  onSelectEngineVariant,
+  onAddEngineVariant,
   onBack,
   onClose,
   noModelsAvailable = false,
@@ -3134,6 +3167,13 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
                         isActive={activeTab === 'config'}
                         serverDefaultCtxSize={serverDefaultCtxSize}
                         isLoadingThis={isLoadingThis}
+                        engineVariants={engineVariants}
+                        onSelectEngineVariant={onSelectEngineVariant ? id => {
+                          if (id !== name && confirmDiscardLoadSettings()) onSelectEngineVariant(id);
+                        } : undefined}
+                        onAddEngineVariant={onAddEngineVariant ? target => {
+                          if (confirmDiscardLoadSettings()) onAddEngineVariant(target);
+                        } : undefined}
                         onReloadModel={onReloadModel}
                         onDirtyChange={setConfigHasUnsavedChanges}
                         loadOptionsRef={configLoadOptionsRef}

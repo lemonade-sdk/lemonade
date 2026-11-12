@@ -80,7 +80,7 @@ export interface CustomModelDraft {
 }
 
 
-function normalizeModelName(name: string): string {
+export function normalizeModelName(name: string): string {
   const cleaned = name.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9._\-/]/g, '-').replace(/-+/g, '-');
   if (!cleaned) return '';
   return cleaned.startsWith('user.') ? cleaned : `user.${cleaned}`;

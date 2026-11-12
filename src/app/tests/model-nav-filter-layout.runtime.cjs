@@ -153,6 +153,22 @@ function loadListHelpers() {
       useState(initial) { return [typeof initial === 'function' ? initial() : initial, () => {}]; },
     };
     if (request === '../modelCapabilities') return capModule.exports;
+    if (request === '../features/models/engineVariants') {
+      const variantsPath = path.join(root, 'src/features/models/engineVariants.ts');
+      const variantsCompiled = ts.transpileModule(fs.readFileSync(variantsPath, 'utf8'), {
+        compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
+        fileName: variantsPath,
+        reportDiagnostics: true,
+      });
+      const errors = (variantsCompiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error);
+      assert.equal(errors.length, 0, errors.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')).join('\n'));
+      const variantsModule = { exports: {} };
+      Function('exports', 'require', 'module', variantsCompiled.outputText)(variantsModule.exports, dep => {
+        if (dep === '../../modelCapabilities') return capModule.exports;
+        throw new Error(`Unexpected dependency while loading engine variants: ${dep}`);
+      }, variantsModule);
+      return variantsModule.exports;
+    }
     if (request === './Icon') return { Icon() {}, CapabilityIcon() {} };
     if (request.includes('downloadStore')) return { activeDownloadForModel() { return undefined; } };
     if (request === './WorkspacePanels') return {

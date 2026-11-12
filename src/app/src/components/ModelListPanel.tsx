@@ -27,6 +27,7 @@ import {
   type WorkspaceListRowStatus,
 } from './WorkspacePanels';
 import { backendCompactLabel, backendLabel } from '../modelPresentation';
+import { collapseEngineVariantRows, engineVariantRowSelected, variantRecipe, type EngineVariantGroups } from '../features/models/engineVariants';
 import { recipeBackendOptionName } from '../features/backends/recipeMetadata';
 import { useI18n } from '../i18n';
 
@@ -425,6 +426,7 @@ export interface FlatModelEntry {
 
 export interface ModelListPanelProps {
   allModels: ModelInfo[];
+  engineVariants?: EngineVariantGroups;
   loadedNames: Set<string>;
   pulling: Record<string, number>;
   downloadItems: DownloadListItem[];
@@ -462,8 +464,11 @@ export interface ModelListPanelProps {
 
 /* ── ModelListPanel ──────────────────────────────────────────── */
 
+const NO_ENGINE_VARIANTS: EngineVariantGroups = new Map();
+
 export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   allModels,
+  engineVariants = NO_ENGINE_VARIANTS,
   loadedNames,
   pulling,
   downloadItems,
@@ -569,8 +574,8 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       });
     }
 
-    return result;
-  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, taskFilters, sortBy, pinnedNames, favoriteNames, primaryFilter, backendFilters, tagFilters]);
+    return collapseEngineVariantRows(result, engineVariants, selectedModelId);
+  }, [allModels, loadedNames, pulling, downloadItems, searchQuery, taskFilters, sortBy, pinnedNames, favoriteNames, primaryFilter, backendFilters, tagFilters, engineVariants, selectedModelId]);
 
   /* Whether a model is on this machine is the first thing someone new to local
      AI needs, and it used to be repeated as a status on every single row. As a
@@ -611,8 +616,11 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     // A collection routes to backends rather than being one, so it has no
     // engine to name on the meta line.
     const neutralCollectionGuide = isCollectionRecipe(recipe);
-    const displayedBackend = recipe && !neutralCollectionGuide ? modelListBackendLabel(recipe) : '';
-    const isSelected = mId === selectedModelId;
+    const variants = engineVariants.get(mId);
+    const engines = variants ? [...new Set(variants.map(variantRecipe))] : [];
+    const displayedBackend = engines.length > 1 ? t('{count} engines', { count: engines.length })
+      : recipe && !neutralCollectionGuide ? modelListBackendLabel(recipe) : '';
+    const isSelected = engineVariantRowSelected(model, selectedModelId, engineVariants);
     const capTags = modelCapabilityTags(model);
     const backendReadiness = status === 'downloaded'
       ? modelBackendReadiness(model, systemInfo)
@@ -666,7 +674,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         meta={meta}
         glyphs={secondaryTags.map(capabilityTagIconTarget)}
         anchor={recipe && !neutralCollectionGuide ? displayedBackend : undefined}
-        anchorTitle={recipe ? backendLabel(recipe) : undefined}
+        anchorTitle={engines.length > 1 ? engines.map(backendLabel).join(', ') : recipe ? backendLabel(recipe) : undefined}
         status={rowStatus}
         statusText={statusText}
         statusLabel={readinessLabel}
@@ -794,7 +802,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         listRef={listRef}
         className="model-list-panel__list"
         label={t('Model list')}
-        tabIndex={flatList.some(e => e.model && listModelName(e.model) === selectedModelId) ? -1 : 0}
+        tabIndex={flatList.some(e => engineVariantRowSelected(e.model, selectedModelId, engineVariants)) ? -1 : 0}
         onRowActivate={onSelectModel}
         activateOnMove
       >
