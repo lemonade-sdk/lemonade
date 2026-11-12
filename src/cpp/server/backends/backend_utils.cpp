@@ -1276,34 +1276,32 @@ namespace lemon::backends {
         }
 
         std::string version = config["therock"]["version"].get<std::string>();
-#ifdef __linux__
-        fs::path therock_base = fs::path(utils::get_downloaded_bin_dir()) / "therock";
 
-        if (!fs::exists(therock_base)) {
-            return;
-        }
+        for (const char* subdir : {"therock", "therock-wheels"}) {
+            fs::path base = fs::path(utils::get_downloaded_bin_dir()) / subdir;
 
-        try {
-            for (const auto& entry : fs::directory_iterator(therock_base)) {
-                if (entry.is_directory()) {
+            try {
+                if (!fs::exists(base)) {
+                    continue;
+                }
+                for (const auto& entry : fs::directory_iterator(base)) {
+                    if (!entry.is_directory()) {
+                        continue;
+                    }
                     std::string dir_name = entry.path().filename().string();
                     size_t dash_pos = dir_name.rfind('-');
-                    if (dash_pos != std::string::npos) {
-                        std::string dir_version = dir_name.substr(dash_pos + 1);
-                        if (dir_version != version) {
-                            LOG(DEBUG, "BackendUtils") << "Cleaning up old TheRock version: " << dir_name << std::endl;
-                            fs::remove_all(entry.path());
-                        }
+                    if (dash_pos != std::string::npos && dir_name.substr(dash_pos + 1) != version) {
+                        LOG(DEBUG, "BackendUtils") << "Cleaning up old TheRock version: "
+                                                   << subdir << "/" << dir_name << std::endl;
+                        std::error_code ec;
+                        fs::remove_all(entry.path(), ec);
                     }
                 }
+            } catch (const std::exception& e) {
+                LOG(WARNING, "BackendUtils")
+                    << "Failed to cleanup old TheRock versions in " << subdir << ": " << e.what() << std::endl;
             }
-        } catch (const std::exception& e) {
-            LOG(WARNING, "BackendUtils")
-                << "Failed to cleanup old TheRock versions: " << e.what() << std::endl;
         }
-#else
-        (void)version;
-#endif
     }
 
     namespace {
@@ -2017,6 +2015,8 @@ namespace lemon::backends {
         cleanup_stale_version_dirs(
             fs::path(utils::get_downloaded_bin_dir()) / "therock-wheels",
             fs::path(wheel_dir).filename().string());
+        // Also drop leftover tarball installs from older pinned versions.
+        cleanup_old_therock_versions();
 
         if (progress_cb) {
             DownloadProgress p;
