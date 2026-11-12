@@ -316,7 +316,14 @@ class PersistentServerCLIClientTests(unittest.TestCase):
         )
         return result
 
-    def _write_fake_agent(self, directory, agent_name, capture_file, version=None):
+    def _write_fake_agent(
+        self,
+        directory,
+        agent_name,
+        capture_file,
+        version=None,
+        version_stderr="",
+    ):
         """Create a tiny fake agent binary that captures argv and selected env vars."""
         exe_path = os.path.join(directory, agent_name)
         script = f"""#!/usr/bin/env python3
@@ -325,6 +332,8 @@ import os
 import sys
 
 if sys.argv[1:] == ["--version"]:
+    if {version_stderr!r}:
+        print({version_stderr!r}, file=sys.stderr, flush=True)
     print({(version or "fake-agent-ok")!r})
     sys.exit(0)
 
@@ -338,6 +347,7 @@ payload = {{
         "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
         "ANTHROPIC_DEFAULT_SONNET_MODEL": os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", ""),
         "CLAUDE_CODE_SUBAGENT_MODEL": os.environ.get("CLAUDE_CODE_SUBAGENT_MODEL", ""),
+        "OPENCODE_CONFIG_CONTENT": os.environ.get("OPENCODE_CONFIG_CONTENT", ""),
     }},
 }}
 
@@ -1778,13 +1788,19 @@ sys.exit(0)
         self.assertIn("Agent binary not found", output)
 
     def test_117_launch_opencode_with_fake_binary(self):
-        """Launch should execute fake opencode binary with -m Lemonade/MODEL."""
+        """On opencode v1, launch selects Lemonade/MODEL inline and ignores a v2 string on stderr."""
         if IS_WINDOWS:
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
 
         with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
             capture_path = os.path.join(temp_dir, "opencode_capture.json")
-            self._write_fake_agent(temp_dir, "opencode", capture_path)
+            self._write_fake_agent(
+                temp_dir,
+                "opencode",
+                capture_path,
+                version="1.19.0",
+                version_stderr="opencode v2.0.29",
+            )
             env = self._build_stubbed_agent_env(temp_dir)
 
             result = run_cli_command(
@@ -1802,10 +1818,49 @@ sys.exit(0)
             with open(capture_path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
 
-            argv = payload["argv"]
-            self.assertIn("-m", argv)
-            model_idx = argv.index("-m") + 1
-            self.assertEqual(argv[model_idx], f"Lemonade/{ENDPOINT_TEST_MODEL}")
+            self.assertEqual(payload["argv"], [])
+            self.assertNotIn(
+                "Could not determine the opencode version",
+                result.stdout + result.stderr,
+            )
+            inline_config = json.loads(payload["env"]["OPENCODE_CONFIG_CONTENT"])
+            self.assertEqual(inline_config["model"], f"Lemonade/{ENDPOINT_TEST_MODEL}")
+
+    def test_117b_launch_opencode_v2_runs_standalone(self):
+        """Launch should pass --standalone to opencode v2 so it reads the launch env."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "opencode_capture_v2.json")
+            self._write_fake_agent(
+                temp_dir, "opencode", capture_path, version="opencode v2.0.29"
+            )
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                ["launch", "opencode", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            self.assertEqual(payload["argv"], ["--standalone"])
+            inline_config = json.loads(payload["env"]["OPENCODE_CONFIG_CONTENT"])
+            self.assertEqual(inline_config["model"], f"Lemonade/{ENDPOINT_TEST_MODEL}")
+
+    def test_117e_launch_opencode_warns_when_version_unknown(self):
+        """Launch should warn when it can't tell whether opencode needs --standalone."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            result, payload = self._launch_opencode_agent(temp_dir, version="")
+            self.assertEqual(payload["argv"], [])
+            self.assertIn("opencode version", (result.stdout + result.stderr).lower())
 
     def test_118_launch_opencode_creates_config(self):
         """Launch opencode should create opencode.json with Lemonade provider."""
@@ -1839,10 +1894,15 @@ sys.exit(0)
             lemonade = cfg["provider"]["Lemonade"]
             self.assertEqual(lemonade["npm"], "@ai-sdk/openai-compatible")
             self.assertIn("baseURL", lemonade["options"])
-            # Mirrors lemonade api key in use; LEMONADE_API_KEY env wins.
+            # A key in use is referenced from the environment, never written.
             self.assertEqual(
                 lemonade["options"]["apiKey"],
-                os.environ.get("LEMONADE_API_KEY", "lemonade"),
+                (
+                    "{env:LEMONADE_API_KEY}"
+                    if os.environ.get("LEMONADE_API_KEY")
+                    or os.environ.get("LEMONADE_ADMIN_API_KEY")
+                    else "lemonade"
+                ),
             )
             self.assertIn(ENDPOINT_TEST_MODEL, lemonade["models"])
             self.assertEqual(
@@ -1910,7 +1970,7 @@ sys.exit(0)
             )
 
     def test_120_launch_opencode_with_api_key_sets_config(self):
-        """When --api-key is provided, opencode.json should contain the same apiKey."""
+        """When --api-key is provided, opencode.json references it from the environment."""
         if IS_WINDOWS:
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
 
@@ -1940,8 +2000,12 @@ sys.exit(0)
 
             self.assertEqual(
                 cfg["provider"]["Lemonade"]["options"].get("apiKey"),
-                "real-secret-key",
+                "{env:LEMONADE_API_KEY}",
             )
+            with open(config_path, encoding="utf-8") as f:
+                self.assertNotIn("real-secret-key", f.read())
+            with open(capture_path, "r", encoding="utf-8") as f:
+                self.assertTrue(json.load(f)["env"]["LEMONADE_API_KEY"])
 
     def test_121_launch_opencode_backfills_schema_on_existing_config(self):
         """Launch opencode should add $schema when syncing an existing config missing it."""
@@ -2592,6 +2656,123 @@ sys.exit(0)
             self.assertIn(
                 "--mcp needs pi 1.0 or newer (found 0.99.2)", payload["stderr"]
             )
+
+    def _launch_opencode_agent(
+        self,
+        temp_dir,
+        extra_args=None,
+        model=ENDPOINT_TEST_MODEL,
+        version="opencode v2.0.29",
+        expect_success=True,
+    ):
+        """Launch a fake opencode; return the result and its captured payload (None if not started)."""
+        capture_path = os.path.join(temp_dir, "opencode_capture.json")
+        self._write_fake_agent(temp_dir, "opencode", capture_path, version)
+        env = self._build_stubbed_agent_env(temp_dir)
+        env.pop("OPENCODE_CONFIG_CONTENT", None)
+        result = run_cli_command(
+            ["launch", "opencode", "--model", model] + (extra_args or []),
+            timeout=TIMEOUT_DEFAULT,
+            env=env,
+        )
+        if expect_success:
+            self.assertEqual(result.returncode, 0, result.stderr)
+        payload = None
+        if os.path.exists(capture_path):
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            payload["inline"] = json.loads(
+                payload["env"]["OPENCODE_CONFIG_CONTENT"] or "{}"
+            )
+        return result, payload
+
+    @staticmethod
+    def _opencode_config_path(temp_dir):
+        return os.path.join(temp_dir, ".config", "opencode", "opencode.json")
+
+    def _read_opencode_config(self, temp_dir):
+        path = self._opencode_config_path(temp_dir)
+        if not os.path.exists(path):
+            return {}
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_143_launch_opencode_mcp_flags(self):
+        """--mcp adds the lemonade MCP server, later launches keep it, --no-mcp removes it."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        def servers(temp_dir):
+            return (
+                self._read_opencode_config(temp_dir).get("mcp", {}).get("servers", {})
+            )
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            self._launch_opencode_agent(temp_dir)
+            self.assertNotIn("lemonade", servers(temp_dir))
+
+            self._launch_opencode_agent(temp_dir, ["--mcp"])
+            entry = servers(temp_dir)["lemonade"]
+            self.assertEqual(entry["type"], "remote")
+            self.assertRegex(entry["url"], rf"^http://[^/]+:{PORT}/mcp$")
+            # Code Mode is opt-in per launch, and OAuth discovery must not run.
+            self.assertIs(entry["codemode"], False)
+            self.assertIs(entry["oauth"], False)
+
+            self._launch_opencode_agent(temp_dir)
+            self.assertIn("lemonade", servers(temp_dir))
+            self._launch_opencode_agent(temp_dir, ["--no-mcp"])
+            self.assertNotIn("lemonade", servers(temp_dir))
+
+    def test_146_launch_opencode_codemode_is_per_launch(self):
+        """--codemode turns Code Mode on for this launch only, through the inline config."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            _, payload = self._launch_opencode_agent(temp_dir, ["--mcp", "--codemode"])
+            inline = payload["inline"]
+            self.assertEqual(inline["model"], f"Lemonade/{ENDPOINT_TEST_MODEL}")
+            server = inline["mcp"]["servers"]["lemonade"]
+            self.assertIs(server["codemode"], True)
+            self.assertRegex(server["url"], rf"^http://[^/]+:{PORT}/mcp$")
+            saved = self._read_opencode_config(temp_dir)["mcp"]["servers"]["lemonade"]
+            self.assertIs(saved["codemode"], False)
+
+            _, payload = self._launch_opencode_agent(temp_dir)
+            self.assertNotIn("mcp", payload["inline"])
+
+    def test_147_launch_opencode_mcp_and_codemode_need_opencode_2(self):
+        """opencode 1 rejects mcp.servers, so --mcp and --codemode stop launch unless opencode is 2."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        for flag, version in [
+            ("--mcp", "1.19.3"),
+            ("--codemode", "1.19.3"),
+            ("--mcp", ""),
+        ]:
+            with self.subTest(flag=flag, version=version):
+                with tempfile.TemporaryDirectory(
+                    prefix="lemonade-launch-stub-"
+                ) as temp_dir:
+                    result, payload = self._launch_opencode_agent(
+                        temp_dir, [flag], version=version, expect_success=False
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(f"{flag} needs opencode 2 or newer", result.stderr)
+                    self.assertIsNone(payload, "opencode was started")
+                    self.assertNotIn("mcp", self._read_opencode_config(temp_dir))
+
+    def test_149_launch_opencode_codemode_without_mcp_warns(self):
+        """Code Mode only covers MCP tools, so --codemode without the Lemonade server warns."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            result, payload = self._launch_opencode_agent(temp_dir, ["--codemode"])
+            self.assertIn("--codemode has no effect without --mcp", result.stderr)
+            self.assertNotIn("mcp", payload["inline"])
 
     # =============================================================================
     # Unload Tests
