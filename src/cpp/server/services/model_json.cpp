@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include "lemon/canonical_id.h"
 #include "lemon/model_manager.h"
 #include "lemon/models/registry_types.h"
 #include "lemon/router.h"
@@ -60,8 +61,17 @@ json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int 
     for (const auto& component : info.components) {
         public_components.push_back(model_manager_->get_public_model_name(component));
     }
+
+    // Listing copies carry their public name in info.model_name. Once a user
+    // registration shadows a built-in, that name is bare (e.g. "Foo") even
+    // though the underlying store key is "user.Foo". Resolve the store key
+    // before reporting the canonical identity or custom status.
+    const std::string canonical_name = cache_key_to_canonical_id(
+        model_manager_->resolve_model_name(info.model_name));
     json model_json = {
         {"id", model_id},
+        {"canonical_model_name", canonical_name},
+        {"custom", is_user_model_name(canonical_name)},
         {"object", "model"},
         {"created", 1234567890},
         {"owned_by", "lemonade"},
@@ -197,6 +207,8 @@ nlohmann::ordered_json ModelJson::schema() {
                      "labels", "components", "recipe_options"],
         "properties": {
             "id": {"type": "string", "description": "Model identifier for loading and inference requests."},
+            "canonical_model_name": {"type": "string", "description": "Explicit user.*, extra.* or builtin.* origin even when id is an unqualified alias."},
+            "custom": {"type": "boolean", "description": "Whether the model definition belongs to the user registry."},
             "created": {"type": "integer", "description": "Always `1234567890`, for OpenAI compatibility."},
             "object": {"const": "model", "description": "Always `\"model\"`."},
             "owned_by": {"const": "lemonade", "description": "Always `\"lemonade\"`."},

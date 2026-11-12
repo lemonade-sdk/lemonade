@@ -1,4 +1,5 @@
 #include "lemon/model_manager.h"
+#include "lemon/server/model_json.h"
 #include "lemon/utils/path_utils.h"
 #include "show_all_models.h"
 #include "support/server_wired_manager.h"
@@ -238,6 +239,43 @@ static void test_precedence_and_public_naming(ModelManager& manager, const Fixtu
               "zzorg/zzshadow:main.gguf");
 }
 
+// The wire identity must describe the underlying catalog row, not the bare
+// public name returned by get_supported_models(). This is what the GUI uses to
+// hide identical built-ins and allow engine edits after Convert to Custom.
+static void test_model_wire_identity(ModelManager& manager, const Fixture& fx) {
+    const auto listed = manager.get_supported_models();
+    const auto registered = listed.find(fx.shadowed_builtin);
+    const auto original = listed.find("builtin." + fx.shadowed_builtin);
+    if (registered == listed.end() || original == listed.end()) {
+        check("shadowed user and built-in both appear in the server model set", false);
+        return;
+    }
+
+    lemon::ModelJson model_json(&manager, nullptr);
+    const json registered_wire = model_json.to_json(registered->first, registered->second);
+    const json original_wire = model_json.to_json(original->first, original->second);
+
+    check("bare winner reports its user canonical id and custom status",
+          registered_wire.value("id", std::string()) == fx.shadowed_builtin &&
+              registered_wire.value("canonical_model_name", std::string()) ==
+                  "user." + fx.shadowed_builtin &&
+              registered_wire.value("custom", false));
+    check("shadowed built-in reports its own identity, not the winner's",
+          original_wire.value("id", std::string()) == "builtin." + fx.shadowed_builtin &&
+              original_wire.value("canonical_model_name", std::string()) ==
+                  "builtin." + fx.shadowed_builtin &&
+              !original_wire.value("custom", true));
+
+    // GET /models/{id} serializes a canonical ModelInfo rather than the list
+    // copy, so the two paths must agree on the model's real identity.
+    const ModelInfo by_canonical = manager.get_model_info("user." + fx.shadowed_builtin);
+    const json detail_wire = model_json.to_json(fx.shadowed_builtin, by_canonical);
+    check("canonical detail and bare listing agree on custom identity",
+          detail_wire.value("canonical_model_name", std::string()) ==
+              registered_wire.value("canonical_model_name", std::string()) &&
+              detail_wire.value("custom", false));
+}
+
 static void test_public_names_resolve(ModelManager& manager) {
     auto models = manager.get_supported_models();
     bool every_entry_has_a_recipe = true;
@@ -381,6 +419,7 @@ int main() {
         test_published_snapshot(manager, fx);
         test_canonical_identity(manager, fx);
         test_precedence_and_public_naming(manager, fx);
+        test_model_wire_identity(manager, fx);
         test_public_names_resolve(manager);
         test_list_model_files(manager, fx);
         test_list_sharded_model_files(manager, fx);

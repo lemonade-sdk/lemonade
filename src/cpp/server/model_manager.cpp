@@ -681,8 +681,46 @@ void ModelManager::register_model(const std::string& model_name,
                                  const json& model_data,
                                  bool allow_missing_checkpoint,
                                  bool replace_existing) {
+    // A custom engine change replaces the registered recipe, but must not
+    // replace the saved settings of the previous engine. Built-ins never use
+    // this store: the explicit user.* id keeps both layers separate.
+    std::string previous_recipe;
+    json previous_saved = json::object();
+    const std::string next_recipe = replace_existing && is_user_model_name(model_name) &&
+            model_data.contains("recipe") && model_data["recipe"].is_string()
+        ? model_data["recipe"].get<std::string>() : std::string();
+    if (!next_recipe.empty()) {
+        try {
+            const ModelInfo previous = get_model_info(model_name);
+            if (is_user_model_name(previous.model_name) && previous.recipe != next_recipe) {
+                previous_recipe = previous.recipe;
+                previous_saved = recipe_options_.entry(model_name);
+                // Preserve options authored in user_models.json as well: the
+                // replacement definition no longer carries the previous recipe.
+                const json authored = registry_recipe_options(resolve_model_name(model_name));
+                if (authored.is_object()) {
+                    for (const auto& [key, value] : authored.items()) {
+                        if (!previous_saved.contains(key)) previous_saved[key] = value;
+                    }
+                }
+            }
+        } catch (const std::exception&) {
+            // New custom registration: there is no previous recipe to archive.
+        }
+    }
+
     ingest_->register_model(model_name, model_data, allow_missing_checkpoint,
                             replace_existing);
+    if (!previous_recipe.empty()) {
+        std::lock_guard<std::mutex> write_lock(recipe_options_write_mutex_);
+        recipe_options_.switch_recipe(model_name, previous_recipe, next_recipe, previous_saved);
+        // Explicit settings in the new definition take precedence over its
+        // previously saved profile, when the caller provided them.
+        if (model_data.contains("recipe_options") && model_data["recipe_options"].is_object()) {
+            recipe_options_.merge(model_name, model_data["recipe_options"]);
+        }
+        invalidate_models_cache();
+    }
 }
 
 void ModelManager::download_model(const std::string& model_name,
@@ -784,7 +822,25 @@ void ModelManager::delete_model(const std::string& model_name) {
     // Who else claims these bytes is a question about the published set, and that
     // set stays valid for the whole disk walk because this holds it.
     const auto published = store_.read();
-    const models::DeleteReport report = artifacts_->delete_artifacts(info, published->models);
+    models::KnownModels adjusted_claims;
+    const models::KnownModels* claims = &published->models;
+    if (is_user_model_name(canonical_model_name)) {
+        const std::string bare = strip_user_model_prefix(canonical_model_name);
+        const auto built_in = published->models.find(bare);
+        // An overridden built-in with precisely the same checkpoint set is a
+        // fallback definition, not an independent owner of the same bytes.
+        // Other models (including different quants and shared auxiliaries)
+        // continue to protect their files in delete_artifacts().
+        if (built_in != published->models.end() &&
+            built_in->second.checkpoints == info.checkpoints &&
+            registry_source_of(built_in->second) == registry_source_of(info) &&
+            (info.source.empty() || info.source == "huggingface" || info.source == "modelscope")) {
+            adjusted_claims = published->models;
+            adjusted_claims.erase(bare);
+            claims = &adjusted_claims;
+        }
+    }
+    const models::DeleteReport report = artifacts_->delete_artifacts(info, *claims);
 
     // Bytes outside the models directory belong to whoever placed them. A user
     // registration is the only record of such a model, so forgetting it is the
@@ -798,6 +854,10 @@ void ModelManager::delete_model(const std::string& model_name) {
                                   << canonical_model_name << std::endl;
     }
 
+    if (is_user_model_name(canonical_model_name)) {
+        std::lock_guard<std::mutex> lock(recipe_options_write_mutex_);
+        recipe_options_.forget_model(canonical_model_name);
+    }
     forget_registered_model(canonical_model_name);
     store_.patch_removed(canonical_model_name);
 }
@@ -809,7 +869,12 @@ void ModelManager::register_user_model(const std::string& model_name,
 }
 
 void ModelManager::unregister_user_model(const std::string& model_name) {
+    // Restore Built-in removes the override and its saved engine profiles,
+    // but deliberately does not touch downloaded files.
     ingest_->unregister_user_model(model_name);
+    const std::string id = is_user_model_name(model_name) ? model_name : "user." + model_name;
+    std::lock_guard<std::mutex> lock(recipe_options_write_mutex_);
+    recipe_options_.forget_model(id);
 }
 
 void ModelManager::forget_registered_model(const std::string& canonical_model_name) {

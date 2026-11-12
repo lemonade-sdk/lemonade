@@ -1,4 +1,5 @@
 #include "lemon/model_manager.h"
+#include "lemon/models/recipe_options_store.h"
 #include "lemon/utils/path_utils.h"
 
 #include <chrono>
@@ -246,6 +247,33 @@ static void test_corrupt_file_is_not_fatal() {
     fs::remove_all(seeded.root);
 }
 
+static void test_saved_options_follow_the_recipe(const Fixture& fx) {
+    const std::string id = "user.zz-opts";
+    lemon::RecipeOptionsStore options(path_to_utf8(fx.options_file));
+    options.replace(id, json{{"sdcpp_args", "--steps 26"}, {"sdcpp_backend", "cuda"}});
+    options.switch_recipe(id, "sd-cpp", "thenoise", options.entry(id));
+    check("switching to a new engine starts with no settings", options.entry(id).empty());
+    check("inactive profiles do not leak into model composition",
+          !options.all().contains("__lemonade_recipe_profiles_v1"));
+
+    options.replace(id, json{{"thenoise_args", "--steps 8"}});
+    options.switch_recipe(id, "thenoise", "sd-cpp", options.entry(id));
+    check("switching back restores sd-cpp options, not TheNoise options",
+          options.entry(id) == json{{"sdcpp_args", "--steps 26"}, {"sdcpp_backend", "cuda"}});
+
+    lemon::RecipeOptionsStore restarted(path_to_utf8(fx.options_file));
+    check("per-engine settings survive a server restart",
+          restarted.entry(id).value("sdcpp_args", std::string()) == "--steps 26");
+    restarted.switch_recipe(id, "sd-cpp", "thenoise", restarted.entry(id));
+    check("switching again restores the TheNoise profile after restart",
+          restarted.entry(id).value("thenoise_args", std::string()) == "--steps 8" &&
+              !restarted.entry(id).contains("sdcpp_args"));
+    restarted.forget_model(id);
+    check("removing a custom definition discards all its engine profiles",
+          !read_json(fx.options_file).contains("__lemonade_recipe_profiles_v1") &&
+              !read_json(fx.options_file).contains(id));
+}
+
 int main() {
     ShowAllModels show_all_models;
     Fixture fx = create_fixture();
@@ -267,6 +295,8 @@ int main() {
 
     test_key_migration();
     test_corrupt_file_is_not_fatal();
+    use_fixture_dirs(fx);
+    test_saved_options_follow_the_recipe(fx);
 
     fs::remove_all(fx.root);
 

@@ -6,6 +6,7 @@ import { Icon } from './Icon';
 import { storageKey } from '../storage';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, generatedLabelsFor, buildCustomModelRecord, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, exportCustomModelsPayload, parseCustomModelsImport, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
 import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
+import { bareModelId, canonicalModelId, collapseIdenticalBuiltinOverrides } from '../features/models/engineOverrides';
 import {
   detectHuggingFaceBackend,
   isCompatibleHuggingFaceRecipe,
@@ -1790,11 +1791,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       setRouterDeleteCandidate(model);
       return;
     }
-    if (modelIsCustom(model)) {
+    if (modelIsCustom(model) && isCollectionModel(model)) {
       const displayName = model.display_name || name;
-      const message = isCollectionModel(model)
-        ? `Delete Omni collection "${displayName}"? This removes only the collection definition. Component model files will not be removed.`
-        : `Delete custom model "${displayName}"? This removes the model definition and downloaded model files, if present.`;
+      const message = `Delete Omni collection "${displayName}"? This removes only the collection definition. Component model files will not be removed.`;
       if (!confirm(message)) return;
       try {
         if (!api.isConnected) throw new Error('Connect to the Lemonade server before deleting a custom model.');
@@ -2360,13 +2359,66 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     }
   };
 
+  const modelRegistrationForRecipe = (model: ModelInfo, recipe: string): Record<string, unknown> => {
+    const definition = customRegistrationOptions({
+      ...model,
+      custom: true,
+      recipe,
+      recipe_options: String((model as any).recipe || '') === recipe
+        ? (model as any).recipe_options : {},
+      max_context_window: undefined,
+    });
+    if (!definition || (!definition.checkpoint && !definition.checkpoints)) {
+      throw new Error('This model has no checkpoint to register as custom.');
+    }
+    const source = String((model as any).source || (model as any).registry_source || '').trim();
+    if (['huggingface', 'modelscope', 'local_path', 'local_upload'].includes(source)) {
+      definition.source = source;
+    }
+    if (String((model as any).recipe || '') !== recipe) delete definition.recipe_options;
+    delete definition.ctx_size;
+    return definition;
+  };
+
+  const convertToCustom = async (model: ModelInfo) => {
+    if (!canonicalModelId(model).startsWith('builtin.')) throw new Error('Only built-in models can be converted.');
+    const bare = bareModelId(model);
+    if (visibleServerModels.some(other => canonicalModelId(other) === `user.${bare}`)) {
+      throw new Error('A custom override already exists for this model.');
+    }
+    await api.registerModelDefinition(`user.${bare}`, modelRegistrationForRecipe(model, String((model as any).recipe)));
+    await refresh();
+    setSelectedDetailModelId(bare);
+  };
+
+  const changeInferenceEngine = async (model: ModelInfo, recipe: string) => {
+    if (canonicalModelId(model) !== `user.${bareModelId(model)}`) {
+      throw new Error('Convert this model to custom before changing its inference engine.');
+    }
+    const id = `user.${bareModelId(model)}`;
+    await api.registerModelDefinition(id, modelRegistrationForRecipe(model, recipe));
+    // The server swaps the saved per-recipe profiles. Resetting here would
+    // erase the restored settings when switching back to an earlier engine.
+    await refresh();
+    setSelectedDetailModelId(bareModelId(model));
+  };
+
+  const restoreBuiltinModel = async (model: ModelInfo) => {
+    const id = canonicalModelId(model);
+    if (!id.startsWith('user.')) throw new Error('Only custom models can be restored.');
+    await api.modelDetail(`builtin.${bareModelId(model)}`);
+    await api.unregisterModelDefinition(id);
+    await refresh();
+    setSelectedDetailModelId(bareModelId(model));
+  };
+
   /* ── Derived data ────────────────────────────────────────── */
 
   const allModels = useMemo(() => {
     const seen = new Set<string>();
     const merged: ModelInfo[] = [];
     const loadedNames = new Set(loadedModels.map(lm => lm.model_name.toLowerCase()));
-    for (const m of visibleServerModels) {
+    for (const m of collapseIdenticalBuiltinOverrides(visibleServerModels)) {
       const name = modelName(m).toLowerCase();
       if (!name || seen.has(name)) continue;
       // Hide models explicitly marked as not suggested, unless they are downloaded or loaded
@@ -3318,6 +3370,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           onTogglePin={selectedDetailModelId && loadedModels.some(m => m.model_name.toLowerCase() === selectedDetailModelId.toLowerCase()) ? togglePinnedModel : undefined}
           isFavorite={selectedDetailModelId ? favoriteNameSet.has(selectedDetailModelId.toLowerCase()) : false}
           onToggleFavorite={toggleFavoriteModel}
+          onConvertToCustom={convertToCustom}
+          onChangeInferenceEngine={changeInferenceEngine}
+          onRestoreBuiltin={restoreBuiltinModel}
           onEditCustomCollection={(model) => {
             if (String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) openRouterEditor(model);
             else openCustomCollectionEditor(model);
