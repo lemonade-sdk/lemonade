@@ -225,6 +225,30 @@ public:
             "stream": true
         })");
 
+        RouteExample vllm_completion_example;
+        vllm_completion_example.name = "vLLM non-streaming";
+        vllm_completion_example.description = "Shows vLLM's `max_completion_tokens` parameter. "
+                                              "The response below is a synthetic offline example.";
+        vllm_completion_example.format = ResponseFormat::Json;
+        vllm_completion_example.args = ordered_json::parse(R"({
+            "model": "Qwen3.5-4B-FP16-vLLM",
+            "messages": [{"role": "user", "content": "What is 2+2? Reply in one sentence."}],
+            "max_completion_tokens": 50,
+            "stream": false
+        })");
+
+        RouteExample vllm_stream_example;
+        vllm_stream_example.name = "vLLM streaming";
+        vllm_stream_example.description = "Illustrates vLLM streaming, including a usage chunk. "
+                                          "These SSE events are illustrative, not recorded from vLLM.";
+        vllm_stream_example.format = ResponseFormat::EventStream;
+        vllm_stream_example.args = ordered_json::parse(R"({
+            "model": "Qwen3.5-4B-FP16-vLLM",
+            "messages": [{"role": "user", "content": "What is 2+2? Reply in one sentence."}],
+            "max_completion_tokens": 50,
+            "stream": true
+        })");
+
         RouteExample image_example;
         image_example.name = "image input";
         image_example.description =
@@ -253,7 +277,8 @@ public:
             "stream": false
         })");
 
-        s.examples = {completion_example, stream_example, image_example, tools_example};
+        s.examples = {completion_example, stream_example, vllm_completion_example,
+                      vllm_stream_example, image_example, tools_example};
         s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNotLlm, kBackendError,
                                  kUnexpectedException},
                                 ModelLoader::errors()});
