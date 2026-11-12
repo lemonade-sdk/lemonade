@@ -3582,10 +3582,10 @@ ${finalText}`
       // The model list says what is downloaded; only the health report says what is loaded.
       // Both are inference-family routes, so every role sees them. A model already loaded
       // on that host is then selected as it is, not loaded again.
-      const loadedOnHost = nexusHostRequest<{ all_models_loaded?: { model_name?: string }[] }>(hostId, 'api/v1/health')
+      const loadedOnHost = nexusHostRequest<{ all_models_loaded?: { model_name?: string }[] }>(hostId, 'v1/health')
         .then(health => new Set((health?.all_models_loaded || []).map(model => String(model?.model_name || '').toLowerCase()).filter(Boolean)))
         .catch(() => new Set<string>());
-      Promise.all([nexusHostRequest<ModelsData>(hostId, 'api/v1/models'), loadedOnHost]).then(([data, loadedNames]) => {
+      Promise.all([nexusHostRequest<ModelsData>(hostId, 'v1/models'), loadedOnHost]).then(([data, loadedNames]) => {
         const models = (Array.isArray(data?.data) ? data.data : []).flatMap((info): HostModel[] => {
           const name = modelInfoName(info);
           if (!name || capabilityFromModelInfo(info) !== 'chat' || !modelIsDownloaded(info)) return [];

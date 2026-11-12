@@ -245,9 +245,9 @@ interface Controller { mode: NexusManagementMode; source: string; endpoint: stri
 let knownController: Controller | undefined;
 const API_KEY_ERROR = 'The server requires a valid API key. Check it in Settings > Server, then try again.';
 // The server this client connected to before it selected a mesh peer. Relayed requests go to
-// `${home.endpoint}/api/v1/nexus/peers/<node>`; Nexus management keeps using home itself.
+// `${home.endpoint}/v1/nexus/peers/<node>`; Nexus management keeps using home itself.
 let home: { endpoint: string; key: string } | undefined;
-export const relayEndpoint = (endpoint: string, nodeId: string) => `${endpoint}/api/v1/nexus/peers/${encodeURIComponent(nodeId)}`;
+export const relayEndpoint = (endpoint: string, nodeId: string) => `${endpoint}/v1/nexus/peers/${encodeURIComponent(nodeId)}`;
 export function isNexusInferencePeer(device: NexusDevice, selfId?: string): boolean {
   return device.node_id !== selfId && Boolean(device.is_inference) && device.is_online === true;
 }
@@ -272,7 +272,7 @@ export function isLoopbackUrl(value: string): boolean {
 // is then managed through the mesh with its own authorization policy.
 async function discoverController(endpoint: string, key: string): Promise<Controller | undefined> {
   const loopback = isLoopbackUrl(endpoint);
-  const response = await fetch(`${endpoint}/api/v1/nexus/status`, { headers: key ? { Authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(10000) });
+  const response = await fetch(`${endpoint}/v1/nexus/status`, { headers: key ? { Authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(10000) });
   if (response.status === 401) throw new Error(API_KEY_ERROR);
   if (!response.ok) {
     if (loopback) throw new Error(`Cannot access the local network controller (${response.status}).`);
@@ -295,7 +295,7 @@ async function discoverController(endpoint: string, key: string): Promise<Contro
 async function controller(): Promise<Controller> {
   const { default: api } = await import('../../api');
   await api.loadConnectionSettings();
-  if (home && !state.switchingServer && !api.baseUrl.startsWith(`${home.endpoint}/api/v1/nexus/peers/`)) {
+  if (home && !state.switchingServer && !api.baseUrl.startsWith(`${home.endpoint}/v1/nexus/peers/`)) {
     home = undefined;
     if (state.selectedServerId) publish({ ...state, selectedServerId: undefined });
   }
@@ -316,7 +316,7 @@ export async function nexusRequest<T>(path: string, body?: unknown, pinnedContro
   const send = async () => {
     const target = pinnedController || await controller();
     if (state.mode !== target.mode) publish({ ...state, mode: target.mode });
-    return { target, response: await fetch(`${target.endpoint}/api/v1/nexus/${path}`, {
+    return { target, response: await fetch(`${target.endpoint}/v1/nexus/${path}`, {
       method: body === undefined ? 'GET' : 'POST',
       headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...(target.key ? { Authorization: `Bearer ${target.key}` } : {}) },
@@ -369,7 +369,7 @@ async function streamEvents() {
   try {
     const local = await controller();
     if (local.mode === 'remote') return;
-    const response = await fetch(`${local.endpoint}/api/v1/nexus/events?after=${state.status?.event_sequence || 0}`, {
+    const response = await fetch(`${local.endpoint}/v1/nexus/events?after=${state.status?.event_sequence || 0}`, {
       headers: local.key ? { Authorization: `Bearer ${local.key}` } : {}, signal: abort.signal,
     });
     if (!response.ok || !response.body) return;

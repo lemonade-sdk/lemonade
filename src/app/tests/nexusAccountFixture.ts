@@ -70,7 +70,8 @@ export async function setupNexusAccount(page: Page, options: {
       },
     } });
   }, { desktop: options.desktop !== false, cancelPasskey: Boolean(options.cancelPasskey), source, key: options.apiKey ?? (options.remote ? '' : 'fixture-server-key') });
-  await page.route('**/api/v1/**', async route => {
+  // The app's own API lives under /api/v1; the Nexus routes under /v1/nexus.
+  await page.route(/\/(api\/v1|v1\/nexus)\//, async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     const body = request.method() === 'POST' ? request.postDataJSON() as Record<string, unknown> : null;

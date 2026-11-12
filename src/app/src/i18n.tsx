@@ -106,7 +106,6 @@ const ZH_CN: Record<string, string> = {
   "This name resolves to 127.0.0.1. Lemonade on this computer carries the request over the mesh to {name}.": "此名称解析为 127.0.0.1。此计算机上的 Lemonade 通过 mesh 将请求传送到 {name}。",
   "The mesh port is not running on this computer, so this server has no hostname here.": "此计算机上的 mesh 端口未运行，因此此服务器在这里没有主机名。",
   "OpenAI-compatible base URL": "兼容 OpenAI 的基础 URL",
-  "The shorter /v1 path works too.": "更短的 /v1 路径同样可用。",
   "Through the local API (no hostname needed)": "通过本地 API（无需主机名）",
   "Details": "详情",
   "Path": "路径",

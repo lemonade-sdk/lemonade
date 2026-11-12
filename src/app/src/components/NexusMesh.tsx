@@ -109,8 +109,8 @@ function ServerInfoDialog({ status, nodeId, onClose }: { status: NexusStatus; no
   const serverId = self ? status.node_id || '' : nodeId;
   const name = self ? t('This device') : device?.device_name || t('Unnamed device');
   const meshUrl = nexusMeshPortUrl(status, serverId);
-  const localBase = status.controller_url ? `${self ? status.controller_url : relayEndpoint(status.controller_url, serverId)}/api/v1` : undefined;
-  const base = meshUrl ? `${meshUrl}/api/v1` : localBase;
+  const localBase = status.controller_url ? `${self ? status.controller_url : relayEndpoint(status.controller_url, serverId)}/v1` : undefined;
+  const base = meshUrl ? `${meshUrl}/v1` : localBase;
   const connection = device && nexusDeviceConnection(status, device);
   const address = (self ? status.tunnel_ip : device?.tunnel_ip)?.split('/')[0];
   const copy = (value: string) => void copyTextToClipboard(value)
@@ -129,10 +129,9 @@ function ServerInfoDialog({ status, nodeId, onClose }: { status: NexusStatus; no
       </div>
       {meshUrl && <div className="nexus-server-info__section">
         <p className="nexus-mesh__label">{t('OpenAI-compatible base URL')}</p>
-        <Endpoint label={t('base URL')} value={`${meshUrl}/api/v1`} copied={copied === `${meshUrl}/api/v1`} onCopy={() => copy(`${meshUrl}/api/v1`)} />
-        <p className="nexus-hint">{t('The shorter /v1 path works too.')}</p>
+        <Endpoint label={t('base URL')} value={`${meshUrl}/v1`} copied={copied === `${meshUrl}/v1`} onCopy={() => copy(`${meshUrl}/v1`)} />
         <p className="nexus-mesh__label">{t('Models')}</p>
-        <Endpoint label={t('models URL')} value={`${meshUrl}/api/v1/models`} copied={copied === `${meshUrl}/api/v1/models`} onCopy={() => copy(`${meshUrl}/api/v1/models`)} />
+        <Endpoint label={t('models URL')} value={`${meshUrl}/v1/models`} copied={copied === `${meshUrl}/v1/models`} onCopy={() => copy(`${meshUrl}/v1/models`)} />
       </div>}
       {localBase && <div className="nexus-server-info__section">
         <p className="nexus-mesh__label">{t('Through the local API (no hostname needed)')}</p>

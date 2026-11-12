@@ -35,7 +35,9 @@
 namespace lemon {
 namespace {
 using json = nlohmann::json;
-constexpr const char* nexus_prefixes[] = {"/api/v0/nexus/", "/api/v1/nexus/", "/v0/nexus/", "/v1/nexus/", "/api/nexus/"};
+// Nexus routes live under /v1 only. The /api/v1 prefix of the older routes is legacy and
+// new routes do not take it, so there is no alias.
+constexpr const char* nexus_prefix = "/v1/nexus/";
 struct NexusRoute {
     std::string method;
     std::string path;
@@ -569,9 +571,7 @@ nlohmann::ordered_json service_catalog(const nlohmann::ordered_json& routes, con
         current_methods.push_back(method);
     });
     flush();
-    for (const auto* prefix : nexus_prefixes) {
-        family_routes("management").push_back({{"methods", {"GET", "POST"}}, {"prefix", prefix}});
-    }
+    family_routes("management").push_back({{"methods", {"GET", "POST"}}, {"prefix", nexus_prefix}});
     return {{"version", catalog_version(lemond_version)},
         {"app", {{"name", "lemonade"}, {"version", lemond_version}}},
         {"families", families}};
@@ -936,10 +936,7 @@ bool remote_operation(const std::string& operation) {
 }
 
 bool nexus_request(const httplib::Request& req) {
-    for (const auto* prefix : nexus_prefixes) {
-        if (req.path.rfind(prefix, 0) == 0) return true;
-    }
-    return false;
+    return req.path.rfind(nexus_prefix, 0) == 0;
 }
 
 bool administers_tree(const json& path, const std::string& key) {
@@ -997,9 +994,7 @@ json route_permissions(const nlohmann::ordered_json& routes) {
     }
     for (const auto& route : nexus_routes()) {
         if (!remote_operation(route.operation)) continue;
-        json paths = json::array();
-        for (const auto* prefix : nexus_prefixes) paths.push_back(prefix + route.path);
-        append("management", route.method, paths, true);
+        append("management", route.method, json::array({nexus_prefix + route.path}), true);
     }
     return result;
 }
@@ -2868,23 +2863,21 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
             ? "http://127.0.0.1:" + std::to_string(req.local_port) : std::string();
         handle(req, res, operation, !local, controller);
     };
-    for (const auto* prefix : nexus_prefixes) {
-        for (const auto& route : nexus_routes()) {
-            auto pattern = std::string(prefix) + route.path;
-            const auto parameter = pattern.find("{node_id}");
-            if (parameter != std::string::npos) pattern.replace(parameter, 9, "([A-Za-z0-9_-]+)");
-            const auto handler = [dispatch, operation = route.operation](const auto& req, auto& res) { dispatch(req, res, operation); };
-            if (route.method == "GET") server.Get(pattern, handler);
-            else server.Post(pattern, handler);
-        }
-        const auto relayed = std::string(prefix) + R"(peers/([A-Za-z0-9_-]+)(/.*))";
-        const auto relay_route = [this, listener](const httplib::Request& req, httplib::Response& res) {
-            const auto access = nexus_access::route_access(listener, req, "relay");
-            if (access.first != 0) { reply_error(res, access.first, access.second); return; }
-            relay(req, res);
-        };
-        server.Get(relayed, relay_route);
-        server.Post(relayed, relay_route);
+    for (const auto& route : nexus_routes()) {
+        auto pattern = std::string(nexus_prefix) + route.path;
+        const auto parameter = pattern.find("{node_id}");
+        if (parameter != std::string::npos) pattern.replace(parameter, 9, "([A-Za-z0-9_-]+)");
+        const auto handler = [dispatch, operation = route.operation](const auto& req, auto& res) { dispatch(req, res, operation); };
+        if (route.method == "GET") server.Get(pattern, handler);
+        else server.Post(pattern, handler);
     }
+    const auto relayed = std::string(nexus_prefix) + R"(peers/([A-Za-z0-9_-]+)(/.*))";
+    const auto relay_route = [this, listener](const httplib::Request& req, httplib::Response& res) {
+        const auto access = nexus_access::route_access(listener, req, "relay");
+        if (access.first != 0) { reply_error(res, access.first, access.second); return; }
+        relay(req, res);
+    };
+    server.Get(relayed, relay_route);
+    server.Post(relayed, relay_route);
 }
 }
