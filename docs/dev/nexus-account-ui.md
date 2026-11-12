@@ -186,7 +186,7 @@ still subject to federation authorization.
 
 Service access and group/network permissions use separate collapsible sections.
 Advanced also includes a read-only Route permissions panel for Admin, Moderator
-and User presets. It loads `GET /api/v1/nexus/route-permissions` on expansion,
+and User presets. It loads `GET /v1/nexus/route-permissions` on expansion,
 using the selected controller and the existing Nexus authorization rules. The
 server derives methods, paths and aliases from the route registry and the same
 Nexus route definitions used to register handlers. Presets reuse the service

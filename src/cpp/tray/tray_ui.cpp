@@ -660,7 +660,7 @@ std::pair<int, std::string> TrayUI::controller_request(int port, bool post, cons
 
 void TrayUI::offer_device_key_if_needed() {
     if (nexus_key_busy_ || std::chrono::steady_clock::now() < nexus_key_retry_at_) return;
-    const std::string body = http_get("/api/v1/nexus/status");
+    const std::string body = http_get("/v1/nexus/status");
     if (body.empty()) return;
     const auto status = nlohmann::json::parse(body, nullptr, false);
     if (!lemon::nexus_user_key::wants_device_key(status)) {
@@ -681,7 +681,7 @@ void TrayUI::on_unlock_nexus() {
         return;
     }
     std::thread([this]() {
-        const std::string body = http_get("/api/v1/nexus/status");
+        const std::string body = http_get("/v1/nexus/status");
         const auto status = body.empty() ? nlohmann::json() : nlohmann::json::parse(body, nullptr, false);
         if (!status.is_object() || !status.value("available", false)) {
             show_notification("Nexus", "Lemonade Server is not reachable or has no Nexus support.");
@@ -732,7 +732,7 @@ bool TrayUI::offer_device_key(const nlohmann::json& status) {
         set_nexus_key_status("Nexus: device key unavailable: " + reason);
         return false;
     }
-    const auto request = controller_request(port, false, "/api/v1/nexus/key/handoff", "");
+    const auto request = controller_request(port, false, "/v1/nexus/key/handoff", "");
     if (request.first != 200) {
         identity.reset();
         std::cerr << "Nexus device key: hand-off request refused (HTTP " << request.first << ")" << std::endl;
@@ -750,7 +750,7 @@ bool TrayUI::offer_device_key(const nlohmann::json& status) {
     // waits for the user to create a network or join one with an invite.
     const nlohmann::json unlock = {{"identity_envelope", std::string(sealed)}};
     ln_free(sealed);
-    const auto delivered = controller_request(port, true, "/api/v1/nexus/key/unlock", unlock.dump());
+    const auto delivered = controller_request(port, true, "/v1/nexus/key/unlock", unlock.dump());
     const auto reply = nlohmann::json::parse(delivered.second, nullptr, false);
     const auto error = reply.is_object() ? reply.value("error", std::string()) : std::string();
     std::cerr << "Nexus device key: " << origin << " from the user store, hand-off answered HTTP " << delivered.first << std::endl;

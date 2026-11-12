@@ -80,7 +80,7 @@ export function NexusRoutePermissions({ viewerRole }: { viewerRole: NexusRole })
                 <table><caption className="sr-only">{t('{role}: {service}', { role: t(roleLabels[role]), service: familyLabel(family) })}</caption>
                   <thead><tr><th scope="col">{t('Method')}</th><th scope="col">{t('Allowed route')}</th></tr></thead>
                   <tbody>{filtered.map(route => {
-                    const primary = route.paths.find(path => path.startsWith('/api/v1/')) || route.paths[0];
+                    const primary = route.paths.find(path => path.startsWith('/v1/')) || route.paths[0];
                     const aliases = route.paths.filter(path => path !== primary);
                     return <tr key={`${route.method}:${primary}`}><td><span className="nexus-route-method">{route.method}</span></td><td><code>{primary}</code>
                       {aliases.length > 0 && <details className="nexus-route-aliases"><summary>{t('{count} aliases', { count: aliases.length })}</summary>{aliases.map(path => <code key={path}>{path}</code>)}</details>}

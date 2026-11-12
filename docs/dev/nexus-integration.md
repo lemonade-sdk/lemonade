@@ -52,7 +52,7 @@ Inference server selection is not exposed in the UI yet. `lemond` provides the
 [inference relay](#inference-relay), and `selectNexusInferenceServer(nodeId, key?)`
 in `src/app/src/features/nexus/nexus.ts` implements the client side: `'local'`
 restores the Local Server connection and drops the peer key; another node ID
-connects through `<server>/api/v1/nexus/peers/{node_id}` with that peer's key.
+connects through `<server>/v1/nexus/peers/{node_id}` with that peer's key.
 `isNexusInferencePeer` selects the online Tier 3 devices to offer. The client
 holds peer keys in memory and sends them in the relay header only with requests
 to that relay URL, and `lemond` forwards them to that peer alone. Any change to
@@ -187,7 +187,7 @@ federation answers 409 until then.
 
 The hand-off is the SDK's single-use sealed transfer:
 
-1. The tray reads `GET /api/v1/nexus/status` on the public port. When
+1. The tray reads `GET /v1/nexus/status` on the public port. When
    `available`, `enabled` and `needs_user_key` are all true, it runs the
    carrier (`lemon::nexus_user_key::wants_device_key`).
 2. It calls `ln_identity_user_load`, and on `LN_ERR_NOT_FOUND`
@@ -310,7 +310,7 @@ family changes within one `lemond` version; a release changes the version by
 itself, so the revision may return to 0 then. Two development builds of one
 release share a catalog version unless the revision changes.
 
-`GET /api/v1/nexus/status` reports `catalog_version`, `app` and
+`GET /v1/nexus/status` reports `catalog_version`, `app` and
 `route_policy`: `"enforced"` when the SDK accepted the catalog,
 `"unavailable"` when it refused the catalog (`catalog_error` names the SDK
 error) or `lemond` runs without a catalog. `lemond` registers the catalog with
@@ -359,9 +359,9 @@ session-header setting can read them.
 ### Inference relay
 
 `lemond` relays any request under
-`/api/v1/nexus/peers/{node_id}/<path>` (also the other route prefixes) to
+`/v1/nexus/peers/{node_id}/<path>` to
 `<path>` on that device's virtual port `13305`. GUI3 uses
-`<server>/api/v1/nexus/peers/{node_id}` as its base URL, so health, models,
+`<server>/v1/nexus/peers/{node_id}` as its base URL, so health, models,
 chat completions and other HTTP routes reach the peer unchanged. The relay uses
 lemond's backend HTTP client (`utils::HttpClient`) for `GET` and `POST`. A
 `POST` whose JSON body sets `"stream": true` is streamed with
@@ -415,7 +415,7 @@ are the SDK's; see the Nexus `Client-SDK.md`. When another program, such as the
 Lemonade Nexus desktop app, already owns the port, `lemond` keeps running and
 `status` reports the conflict in `mesh_port.error`.
 
-`GET`/`POST /api/v1/nexus/selection` with
+`GET`/`POST /v1/nexus/selection` with
 `{"target": "local" | "auto" | "<node_id>" | null, "peer_key": "..."}` wraps
 `ln_mesh_port_set_selection`. The management-route rules apply, and mesh
 peers cannot reach it. A missing device answers 404, a device this device may
@@ -461,8 +461,8 @@ the connect. GUI3 does not show it yet; a connecting screen can show
 
 ## Control API
 
-Routes are available under `/api/v0/nexus/`, `/api/v1/nexus/`, `/v0/nexus/`,
-`/v1/nexus/`, and `/api/nexus/` compatibility aliases.
+Routes live under `/v1/nexus/` only. The `/api/v1` prefix of the older
+`lemond` routes is legacy, so the Nexus routes have no alias under it.
 
 | Method | Route | Purpose |
 | --- | --- | --- |

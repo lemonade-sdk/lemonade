@@ -18,7 +18,7 @@ function policy(): NexusRoutePermissions {
       { family: 'jobs', method: 'GET', paths: ['/api/v1/jobs'], roles: ['admin', 'moderator'] },
       { family: 'backends', method: 'POST', paths: ['/api/v1/install'], roles: ['admin'] },
       { family: 'system', method: 'GET', paths: ['/metrics'], roles: ['admin'] },
-      { family: 'management', method: 'POST', paths: ['/api/v1/nexus/members/{node_id}/role'], roles: ['admin'] },
+      { family: 'management', method: 'POST', paths: ['/v1/nexus/members/{node_id}/role'], roles: ['admin'] },
     ],
   };
 }
@@ -51,8 +51,10 @@ test('role route lists use server data and preserve templates and aliases withou
   await panel.getByText('Run inference', { exact: true }).click();
   await expect(panel.locator('code', { hasText: '/api/v1/models/{id}' })).toBeVisible();
   await expect(panel.getByText('Use MCP tools', { exact: true })).toHaveCount(0);
-  await panel.locator('.nexus-route-aliases > summary').click();
   await expect(panel.getByText('/v1/chat/completions', { exact: true })).toBeVisible();
+  await expect(panel.getByText('/api/v1/chat/completions', { exact: true })).toBeHidden();
+  await panel.locator('.nexus-route-aliases > summary').click();
+  await expect(panel.getByText('/api/v1/chat/completions', { exact: true })).toBeVisible();
   await panel.screenshot({ path: testInfo.outputPath('routes-user.png') });
   await panel.getByRole('radio', { name: 'Moderator', exact: true }).check();
   await expect(categories.locator('option')).toHaveCount(4);
@@ -76,12 +78,12 @@ test('role route lists use server data and preserve templates and aliases withou
   await panel.getByRole('radio', { name: 'Admin', exact: true }).check();
   await categories.selectOption('management');
   await panel.getByLabel('Filter routes', { exact: true }).fill('nexus');
-  await expect(panel.getByText('/api/v1/nexus/members/{node_id}/role', { exact: true })).toBeVisible();
+  await expect(panel.getByText('/v1/nexus/members/{node_id}/role', { exact: true })).toBeVisible();
   await expect(panel).toContainText('Group actions also check current group assignments.');
   await panel.locator('.nexus-route-family > summary').click();
-  await expect(panel.getByText('/api/v1/nexus/members/{node_id}/role', { exact: true })).toBeHidden();
+  await expect(panel.getByText('/v1/nexus/members/{node_id}/role', { exact: true })).toBeHidden();
   await panel.getByLabel('Filter routes', { exact: true }).fill('members/{node_id}/role');
-  await expect(panel.getByText('/api/v1/nexus/members/{node_id}/role', { exact: true })).toBeVisible();
+  await expect(panel.getByText('/v1/nexus/members/{node_id}/role', { exact: true })).toBeVisible();
   await panel.screenshot({ path: testInfo.outputPath('routes-admin.png') });
   await panel.getByLabel('Filter routes', { exact: true }).fill('missing-route');
   await expect(panel.getByText('No routes match your search.', { exact: true })).toBeVisible();
@@ -157,7 +159,7 @@ test('route permissions fit a narrow viewport and support keyboard role selectio
   await categories.selectOption('management');
   await expect(categories).toHaveValue('management');
   await panel.getByLabel('Filter routes', { exact: true }).fill('nexus');
-  await expect(panel.getByText('/api/v1/nexus/members/{node_id}/role', { exact: true })).toBeVisible();
+  await expect(panel.getByText('/v1/nexus/members/{node_id}/role', { exact: true })).toBeVisible();
   expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const labels = await panel.getByRole('radio').locator('..').all();

@@ -85,8 +85,8 @@ global.fetch = async (url, init = {}) => {
 
   const status = await nexus.nexusRequest('status');
   assert.equal(status.enabled, false);
-  assert.equal(calls.at(-2).url, `${local}/api/v1/nexus/status`);
-  assert.equal(calls.at(-1).url, `${controller}/api/v1/nexus/status`);
+  assert.equal(calls.at(-2).url, `${local}/v1/nexus/status`);
+  assert.equal(calls.at(-1).url, `${controller}/v1/nexus/status`);
   assert.equal(calls.at(-1).headers.get('Authorization'), 'Bearer test-local-key');
   assert.equal(calls.at(-1).headers.get('X-Lemonade-Peer-Authorization'), null);
 
@@ -103,7 +103,7 @@ global.fetch = async (url, init = {}) => {
   staleController = controller;
   controller = 'http://127.0.0.1:15556';
   await nexus.nexusRequest('status');
-  assert.equal(calls.at(-1).url, `${controller}/api/v1/nexus/status`, 'rediscover the management listener after restart');
+  assert.equal(calls.at(-1).url, `${controller}/v1/nexus/status`, 'rediscover the management listener after restart');
   await assert.rejects(nexus.nexusRequest('members'), /Access denied/);
   loseMutationReply = true;
   const writesBefore = calls.filter(call => call.url.endsWith('/tree/root/groups')).length;
@@ -114,13 +114,13 @@ global.fetch = async (url, init = {}) => {
   api.baseUrl = 'https://different-controller.example';
   api.setSessionApiKey('test-different-key');
   await pinned.request('status');
-  assert.equal(calls.at(-1).url, `${controller}/api/v1/nexus/status`, 'an in-flight account flow stays on its original controller');
+  assert.equal(calls.at(-1).url, `${controller}/v1/nexus/status`, 'an in-flight account flow stays on its original controller');
   assert.equal(calls.at(-1).headers.get('Authorization'), 'Bearer test-local-key', 'a pinned flow retains its original controller credentials');
   api.baseUrl = local;
   api.setSessionApiKey('test-local-key');
 
   await nexus.selectNexusInferenceServer('gpu', 'test-peer-key');
-  assert.equal(api.baseUrl, `${local}/api/v1/nexus/peers/gpu`);
+  assert.equal(api.baseUrl, `${local}/v1/nexus/peers/gpu`);
   const relay = calls.filter(call => call.url.includes('/peers/gpu/'));
   assert.ok(relay.length >= 2);
   assert.ok(relay.every(call => call.headers.get('Authorization') === 'Bearer test-local-key'));
@@ -128,12 +128,12 @@ global.fetch = async (url, init = {}) => {
   assert.equal(storage.get('lemonade_base_url'), local, 'mesh selection stays in this client session');
   assert.ok([...storage.values()].every(value => !value.includes('test-peer-key')), 'peer credentials are never persisted');
   await nexus.nexusRequest('status');
-  assert.equal(calls.at(-1).url, `${controller}/api/v1/nexus/status`, 'management stays on the home server');
+  assert.equal(calls.at(-1).url, `${controller}/v1/nexus/status`, 'management stays on the home server');
   assert.equal(calls.at(-1).headers.get('X-Lemonade-Peer-Authorization'), null);
 
   failedPeer = 'offline';
   await assert.rejects(nexus.selectNexusInferenceServer('offline', 'test-failed-key'));
-  assert.equal(api.baseUrl, `${local}/api/v1/nexus/peers/gpu`, 'failed switches restore the working peer');
+  assert.equal(api.baseUrl, `${local}/v1/nexus/peers/gpu`, 'failed switches restore the working peer');
   assert.equal(api.peerApiKey, 'test-peer-key');
   assert.equal(api.status, 'connected');
   await nexus.selectNexusInferenceServer('local');
@@ -144,13 +144,13 @@ global.fetch = async (url, init = {}) => {
   api.baseUrl = 'https://nexus-server.example';
   api.setSessionApiKey('test-remote-key');
   await nexus.nexusRequest('status');
-  assert.equal(calls.at(-1).url, 'https://nexus-server.example/api/v1/nexus/status');
+  assert.equal(calls.at(-1).url, 'https://nexus-server.example/v1/nexus/status');
   assert.equal(calls.at(-1).headers.get('Authorization'), 'Bearer test-remote-key');
 
   api.baseUrl = 'http://192.168.10.20:13305';
   api.setSessionApiKey('');
   await nexus.nexusRequest('enable', {});
-  assert.equal(calls.at(-1).url, 'http://192.168.10.20:13305/api/v1/nexus/enable');
+  assert.equal(calls.at(-1).url, 'http://192.168.10.20:13305/v1/nexus/enable');
   assert.equal(calls.at(-1).headers.get('Authorization'), null);
 
   api.baseUrl = 'http://127.0.0.1:13306';
@@ -165,11 +165,11 @@ global.fetch = async (url, init = {}) => {
   controller = 'http://127.0.0.1:13305';
   api.baseUrl = 'http://localhost:13305';
   await nexus.nexusRequest('status');
-  assert.equal(calls.at(-1).url, 'http://localhost:13305/api/v1/nexus/status', 'a controller on the public port keeps the origin the page already uses');
+  assert.equal(calls.at(-1).url, 'http://localhost:13305/v1/nexus/status', 'a controller on the public port keeps the origin the page already uses');
   controller = 'http://127.0.0.1:15556';
   api.baseUrl = local;
   await nexus.nexusRequest('status');
-  assert.equal(calls.at(-1).url, 'http://127.0.0.1:15556/api/v1/nexus/status', 'a controller on another port is addressed directly');
+  assert.equal(calls.at(-1).url, 'http://127.0.0.1:15556/v1/nexus/status', 'a controller on another port is addressed directly');
   // A client on the server's local network is a local operator: lemond names the public port
   // as its controller and the page keeps the origin it reached. Only lemond decides: a status
   // without controller_url, or one naming a port the client cannot reach, stays remote.
@@ -177,7 +177,7 @@ global.fetch = async (url, init = {}) => {
   api.baseUrl = 'http://192.168.10.20:13305';
   await nexus.nexusRequest('enable', {});
   assert.deepEqual(calls.slice(-2).map(call => call.url),
-    ['http://192.168.10.20:13305/api/v1/nexus/status', 'http://192.168.10.20:13305/api/v1/nexus/enable'],
+    ['http://192.168.10.20:13305/v1/nexus/status', 'http://192.168.10.20:13305/v1/nexus/enable'],
     'a local-network client discovers the controller once and keeps its origin');
   const reuseBefore = calls.length;
   await nexus.nexusRequest('status');

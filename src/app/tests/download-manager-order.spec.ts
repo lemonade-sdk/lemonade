@@ -7,7 +7,7 @@ test('first Downloads open keeps the workspace stable while its code loads', asy
     await chunkReady;
     await route.continue();
   });
-  await page.route('**/api/v1/**', route => route.fulfill({
+  await page.route(/\/(api\/v1|v1\/nexus)\//, route => route.fulfill({
     headers: { 'Access-Control-Allow-Origin': '*' },
     json: { status: 'ok', available: false, enabled: false, locked: true, mesh_up: false, members: [], downloads: [], data: [], all_models_loaded: [] },
   }));
