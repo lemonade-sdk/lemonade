@@ -1,0 +1,434 @@
+From 0c4fac36fe35c58dde193fce8f5494e0200c3cdc Mon Sep 17 00:00:00 2001
+From: Thom Hadfield <100659456+festeraeb@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 03:13:24 +0000
+Subject: [PATCH 2/3] netstack: move bridge bytes in place, without staging
+ buffers
+
+Each connection staged up to tcp_buffer (1 MiB) in a Vec per direction and
+dropped sent bytes from its front, which moves the rest of the buffer on
+every send that smoltcp accepts (a few KB per ACK). The bridge was also read
+on every pump, a failed recvfrom per pass. Bytes now go straight between the
+bridge socket and smoltcp's socket buffers (send/recv with a closure), and
+the bridge is read or written only after its readiness event, since mio is
+edge-triggered.
+
+Measured on two Arch servers over 1 GbE (P2P path, 64 MiB uploads through
+the lemond peer relay): the sending netstack thread used 480 ms of CPU per
+request instead of 730 ms, and the wire ran at 100-113 MB/s instead of
+~88 MB/s. tests/bridge_transfer.rs wires two stacks back to back and checks
+bytes both ways, a half-close and a slow reader.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ crates/virtual-netstack/src/stack.rs          | 133 ++++++------
+ .../virtual-netstack/tests/bridge_transfer.rs | 189 ++++++++++++++++++
+ 2 files changed, 246 insertions(+), 76 deletions(-)
+ create mode 100644 crates/virtual-netstack/tests/bridge_transfer.rs
+
+diff --git a/crates/virtual-netstack/src/stack.rs b/crates/virtual-netstack/src/stack.rs
+index bc9d44c..9d98f3b 100644
+--- a/crates/virtual-netstack/src/stack.rs
++++ b/crates/virtual-netstack/src/stack.rs
+@@ -127,11 +127,14 @@ struct EgressListener {
+ struct Conn {
+     tcp: SocketHandle,
+     bridge: Bridge,
+-    // Staging in each direction holds at most `tcp_buffer` bytes. Bytes
+-    // beyond that stay in the smoltcp receive buffer, which closes the
+-    // window, or in the bridge socket, which the next pump reads again.
+-    to_bridge: Vec<u8>,   // decrypted-side bytes waiting to flush to the bridge
+-    to_tcp: Vec<u8>,      // bridge-side bytes waiting to flush into smoltcp
++    // Bytes move straight between the bridge socket and the smoltcp socket
++    // buffers, with no staging in between: what the bridge can't take yet
++    // stays in the smoltcp receive buffer (which closes the window), and
++    // what smoltcp can't take yet stays in the bridge socket.
++    // The bridge is edge-triggered: these are cleared when a call would
++    // block and set again by its readiness event.
++    bridge_readable: bool,
++    bridge_writable: bool,
+     established: bool,     // virtual socket reached Established at least once
+     bridge_eof: bool,     // bridge read returned 0
+     fin_to_bridge: bool,  // we already half-closed the bridge write side
+@@ -538,8 +541,8 @@ impl Stack {
+                         Conn {
+                             tcp: handle,
+                             bridge,
+-                            to_bridge: Vec::new(),
+-                            to_tcp: Vec::new(),
++                            bridge_readable: true,
++                            bridge_writable: true,
+                             established: false,
+                             bridge_eof: false,
+                             fin_to_bridge: false,
+@@ -604,8 +607,8 @@ impl Stack {
+                     Conn {
+                         tcp: handle,
+                         bridge,
+-                        to_bridge: Vec::new(),
+-                        to_tcp: Vec::new(),
++                        bridge_readable: true,
++                        bridge_writable: true,
+                         established: false,
+                         bridge_eof: false,
+                         fin_to_bridge: false,
+@@ -637,8 +640,6 @@ impl Stack {
+         let mut progressed = false;
+         let mut finished: Vec<Token> = Vec::new();
+         let tokens: Vec<Token> = self.conns.keys().copied().collect();
+-        let mut buf = [0u8; 16384];
+-        let staging_limit = self.tcp_buffer;
+ 
+         for token in tokens {
+             let mut remove = false;
+@@ -654,26 +655,26 @@ impl Stack {
+                     conn.established = true;
+                 }
+ 
+-                // smoltcp -> bridge
+-                while socket.can_recv() && conn.to_bridge.len() < staging_limit {
+-                    match socket.recv_slice(&mut buf) {
+-                        Ok(0) => break,
+-                        Ok(n) => {
+-                            conn.to_bridge.extend_from_slice(&buf[..n]);
+-                            progressed = true;
+-                        }
++                // smoltcp -> bridge, written from the receive buffer in place.
++                while conn.bridge_writable && socket.can_recv() {
++                    let bridge = &mut conn.bridge;
++                    match socket.recv(|data| match bridge.write(data) {
++                        Ok(n) => (n, Ok(n)),
++                        Err(e) => (0, Err(e)),
++                    }) {
++                        Ok(Ok(0)) => break,
++                        Ok(Ok(_)) => progressed = true,
++                        // Would block, or not connected yet: wait for the
++                        // bridge's next writable event.
++                        Ok(Err(_)) => conn.bridge_writable = false,
+                         Err(_) => break,
+                     }
+                 }
+-                if flush(&mut conn.bridge, &mut conn.to_bridge) {
+-                    progressed = true;
+-                }
+                 // Virtual peer half-closed and we've drained: FIN the bridge.
+                 // Only meaningful once established — !may_recv() is also true in
+                 // the pre-established SynReceived/SynSent states.
+                 if conn.established
+                     && !conn.fin_to_bridge
+-                    && conn.to_bridge.is_empty()
+                     && !socket.may_recv()
+                     && socket.recv_queue() == 0
+                 {
+@@ -681,43 +682,32 @@ impl Stack {
+                     conn.fin_to_bridge = true;
+                 }
+ 
+-                // bridge -> smoltcp. The bridge is edge-triggered, so a read
+-                // that stops at the limit leaves no event behind; the next
+-                // pump reads again once send_slice made room.
+-                if !conn.bridge_eof {
+-                    while conn.to_tcp.len() < staging_limit {
+-                        match conn.bridge.read(&mut buf) {
+-                            Ok(0) => {
+-                                conn.bridge_eof = true;
+-                                break;
+-                            }
+-                            Ok(n) => {
+-                                conn.to_tcp.extend_from_slice(&buf[..n]);
+-                                progressed = true;
+-                            }
+-                            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
+-                            Err(_) => {
+-                                conn.bridge_eof = true;
+-                                break;
+-                            }
+-                        }
+-                    }
+-                }
+-                if socket.can_send() && !conn.to_tcp.is_empty() {
+-                    if let Ok(n) = socket.send_slice(&conn.to_tcp) {
+-                        if n > 0 {
+-                            conn.to_tcp.drain(..n);
+-                            progressed = true;
++                // bridge -> smoltcp, read into the send buffer in place. A read
++                // that stops because the send buffer is full leaves the bridge
++                // readable, so the next pump reads again once ACKs make room.
++                while conn.bridge_readable && !conn.bridge_eof && socket.can_send() {
++                    let bridge = &mut conn.bridge;
++                    match socket.send(|space| match bridge.read(space) {
++                        Ok(n) => (n, Ok(n)),
++                        Err(e) => (0, Err(e)),
++                    }) {
++                        Ok(Ok(0)) => conn.bridge_eof = true,
++                        Ok(Ok(_)) => progressed = true,
++                        Ok(Err(ref e)) if e.kind() == io::ErrorKind::WouldBlock => {
++                            conn.bridge_readable = false
+                         }
++                        Ok(Err(_)) => conn.bridge_eof = true,
++                        Err(_) => break,
+                     }
+                 }
+                 // Bridge fully drained to the virtual peer: close the virtual side.
+-                if conn.established && conn.bridge_eof && conn.to_tcp.is_empty() && socket.may_send() {
++                // Bytes still in the send buffer go out before the FIN.
++                if conn.established && conn.bridge_eof && socket.may_send() {
+                     socket.close();
+                 }
+ 
+                 let tcp_closed = matches!(socket.state(), tcp::State::Closed);
+-                if tcp_closed && conn.to_bridge.is_empty() {
++                if tcp_closed && socket.recv_queue() == 0 {
+                     remove = true;
+                 }
+             }
+@@ -794,7 +784,21 @@ impl Stack {
+                     log::error!("virtual-netstack: poll error: {e}");
+                 }
+             }
+-            let ready: Vec<Token> = self.events.iter().map(|e| e.token()).collect();
++            let mut ready: Vec<Token> = Vec::with_capacity(self.events.iter().count());
++            for event in self.events.iter() {
++                let token = event.token();
++                if let Some(conn) = self.conns.get_mut(&token) {
++                    // Errors and hang-ups count as both: the next call reports them.
++                    let failed = event.is_error() || event.is_read_closed() || event.is_write_closed();
++                    if event.is_readable() || failed {
++                        conn.bridge_readable = true;
++                    }
++                    if event.is_writable() || failed {
++                        conn.bridge_writable = true;
++                    }
++                }
++                ready.push(token);
++            }
+             self.manage_egress(&ready);
+         }
+ 
+@@ -810,29 +814,6 @@ impl Stack {
+     }
+ }
+ 
+-/// Flush as much of `pending` to the bridge as possible. Returns true if any
+-/// bytes were written.
+-fn flush(bridge: &mut Bridge, pending: &mut Vec<u8>) -> bool {
+-    let mut wrote = 0;
+-    while !pending.is_empty() {
+-        match bridge.write(&pending[wrote..]) {
+-            Ok(0) => break,
+-            Ok(n) => wrote += n,
+-            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
+-            Err(_) => break,
+-        }
+-        if wrote == pending.len() {
+-            break;
+-        }
+-    }
+-    if wrote > 0 {
+-        pending.drain(..wrote);
+-        true
+-    } else {
+-        false
+-    }
+-}
+-
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+diff --git a/crates/virtual-netstack/tests/bridge_transfer.rs b/crates/virtual-netstack/tests/bridge_transfer.rs
+new file mode 100644
+index 0000000..3e2dd5f
+--- /dev/null
++++ b/crates/virtual-netstack/tests/bridge_transfer.rs
+@@ -0,0 +1,189 @@
++//! Two stacks wired back to back (each one's output is the other's inbound),
++//! with a loopback client on one side's egress and a loopback server behind
++//! the other side's forward. Bytes must arrive whole and in order both ways,
++//! including a half-close and a reader slower than the sender.
++
++use std::ffi::{c_void, CString};
++use std::io::{Read, Write};
++use std::net::{Shutdown, TcpListener, TcpStream};
++use std::sync::atomic::{AtomicPtr, Ordering};
++use std::thread;
++use std::time::{Duration, Instant};
++
++use lemonade_virtual_netstack::*;
++
++const MTU: u32 = 1420;
++const TCP_BUFFER: u32 = 1 << 20;
++
++unsafe extern "C" fn to_peer(ctx: *mut c_void, pkt: *const u8, len: usize) {
++    let peer = (*(ctx as *const AtomicPtr<NsHandle>)).load(Ordering::Acquire);
++    if !peer.is_null() {
++        ns_feed_inbound(peer, pkt, len);
++    }
++}
++
++struct Pair {
++    a: *mut NsHandle,
++    b: *mut NsHandle,
++    a_out: Box<AtomicPtr<NsHandle>>,
++    b_out: Box<AtomicPtr<NsHandle>>,
++}
++
++impl Pair {
++    fn new() -> Pair {
++        let a_out = Box::new(AtomicPtr::new(std::ptr::null_mut()));
++        let b_out = Box::new(AtomicPtr::new(std::ptr::null_mut()));
++        unsafe {
++            let a = ns_create(MTU, TCP_BUFFER, to_peer, &*a_out as *const _ as *mut c_void);
++            let b = ns_create(MTU, TCP_BUFFER, to_peer, &*b_out as *const _ as *mut c_void);
++            assert!(!a.is_null() && !b.is_null());
++            a_out.store(b, Ordering::Release);
++            b_out.store(a, Ordering::Release);
++            let ip = |s: &str| CString::new(s).unwrap();
++            assert_eq!(ns_add_local_ip(a, ip("10.64.0.1/32").as_ptr()), 0);
++            assert_eq!(ns_add_local_ip(b, ip("10.64.0.2/32").as_ptr()), 0);
++            Pair { a, b, a_out, b_out }
++        }
++    }
++
++    /// A loopback port on side A whose connections reach `server_port` behind side B.
++    fn route(&self, vport: u16, server_port: u16) -> u16 {
++        let s = |s: String| CString::new(s).unwrap();
++        unsafe {
++            assert_eq!(
++                ns_add_tcp_forward(
++                    self.b,
++                    s("10.64.0.2".into()).as_ptr(),
++                    vport,
++                    s(format!("tcp:127.0.0.1:{server_port}")).as_ptr(),
++                ),
++                0
++            );
++            let port = ns_add_tcp_egress(
++                self.a,
++                s("10.64.0.2".into()).as_ptr(),
++                vport,
++                s("10.64.0.1".into()).as_ptr(),
++            );
++            assert_ne!(port, 0);
++            port
++        }
++    }
++}
++
++impl Drop for Pair {
++    fn drop(&mut self) {
++        self.a_out.store(std::ptr::null_mut(), Ordering::Release);
++        self.b_out.store(std::ptr::null_mut(), Ordering::Release);
++        unsafe {
++            ns_destroy(self.a);
++            ns_destroy(self.b);
++        }
++    }
++}
++
++fn pattern(seed: u64, len: usize) -> Vec<u8> {
++    let mut x = seed | 1;
++    (0..len)
++        .map(|_| {
++            x ^= x << 13;
++            x ^= x >> 7;
++            x ^= x << 17;
++            x as u8
++        })
++        .collect()
++}
++
++fn digest(data: &[u8]) -> u64 {
++    data.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| {
++        (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
++    })
++}
++
++/// The server reads the whole upload (until the client's FIN), optionally
++/// slowly, then answers with its digest and `reply` bytes of pattern.
++fn serve_once(listener: TcpListener, reply: usize, slow_reader: bool) -> thread::JoinHandle<()> {
++    thread::spawn(move || {
++        let (mut conn, _) = listener.accept().unwrap();
++        let mut got = Vec::new();
++        let mut buf = vec![0u8; 64 * 1024];
++        let chunk = if slow_reader { 4096 } else { buf.len() };
++        let mut reads = 0;
++        loop {
++            if slow_reader && reads < 40 {
++                thread::sleep(Duration::from_millis(5));
++            }
++            let n = conn.read(&mut buf[..chunk]).unwrap();
++            if n == 0 {
++                break;
++            }
++            reads += 1;
++            got.extend_from_slice(&buf[..n]);
++        }
++        conn.write_all(&digest(&got).to_le_bytes()).unwrap();
++        conn.write_all(&(got.len() as u64).to_le_bytes()).unwrap();
++        conn.write_all(&pattern(7, reply)).unwrap();
++    })
++}
++
++fn transfer(upload: usize, reply: usize, slow_reader: bool) -> (Duration, Duration) {
++    let pair = Pair::new();
++    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
++    let server_port = listener.local_addr().unwrap().port();
++    let server = serve_once(listener, reply, slow_reader);
++    let port = pair.route(8080, server_port);
++
++    let sent = pattern(3, upload);
++    let mut client = TcpStream::connect(("127.0.0.1", port)).unwrap();
++    client
++        .set_read_timeout(Some(Duration::from_secs(60)))
++        .unwrap();
++    let started = Instant::now();
++    client.write_all(&sent).unwrap();
++    client.shutdown(Shutdown::Write).unwrap();
++
++    let mut head = [0u8; 16];
++    client.read_exact(&mut head).unwrap();
++    let up = started.elapsed();
++    assert_eq!(
++        u64::from_le_bytes(head[8..].try_into().unwrap()),
++        upload as u64,
++        "upload length"
++    );
++    assert_eq!(
++        u64::from_le_bytes(head[..8].try_into().unwrap()),
++        digest(&sent),
++        "upload bytes"
++    );
++
++    let down_started = Instant::now();
++    let mut back = Vec::new();
++    client.read_to_end(&mut back).unwrap();
++    let down = down_started.elapsed();
++    assert_eq!(back.len(), reply, "reply length");
++    assert!(back == pattern(7, reply), "reply bytes");
++    server.join().unwrap();
++    (up, down)
++}
++
++#[test]
++fn small_request_and_reply_arrive_whole() {
++    transfer(300, 2000, false);
++}
++
++#[test]
++fn bulk_both_ways_arrives_whole_and_in_order() {
++    let size = 32 << 20;
++    let (up, down) = transfer(size, size, false);
++    let mbps = |d: Duration| size as f64 / d.as_secs_f64() / 1e6;
++    eprintln!(
++        "bridge transfer, 32 MiB: up {:.0} MB/s, down {:.0} MB/s",
++        mbps(up),
++        mbps(down)
++    );
++}
++
++#[test]
++fn slow_reader_backpressure_loses_nothing() {
++    transfer(8 << 20, 1 << 20, true);
++}
+-- 
+2.43.0
+
