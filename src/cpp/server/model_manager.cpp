@@ -147,6 +147,8 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     deps.store = &store_;
     deps.notifier = &change_notifier_;
     deps.save_options = [this](const ModelInfo& info) { save_model_options(info); };
+    deps.recipe_options = &recipe_options_;
+    deps.recipe_options_write_mutex = &recipe_options_write_mutex_;
     return deps;
 }
 
@@ -681,79 +683,7 @@ void ModelManager::register_model(const std::string& model_name,
                                  const json& model_data,
                                  bool allow_missing_checkpoint,
                                  bool replace_existing) {
-    std::string previous_recipe;
-    json previous_saved = json::object();
-    json previous_definition;
-    const std::string next_recipe = replace_existing && is_user_model_name(model_name) &&
-            model_data.contains("recipe") && model_data["recipe"].is_string()
-        ? model_data["recipe"].get<std::string>() : std::string();
-    if (!next_recipe.empty()) {
-        try {
-            const ModelInfo previous = get_model_info(model_name);
-            if (is_user_model_name(previous.model_name) && previous.recipe != next_recipe) {
-                previous_recipe = previous.recipe;
-                const std::string cache_key = resolve_model_name(model_name);
-                const auto records = registries_.pin();
-                const json* row = registry_row(records, cache_key);
-                if (!row) throw std::runtime_error("Missing previous user model registration");
-                previous_definition = *row;
-            }
-        } catch (const std::runtime_error&) {
-            if (!previous_recipe.empty()) throw;
-        }
-    }
-    if (previous_recipe.empty()) {
-        ingest_->register_model(model_name, model_data, allow_missing_checkpoint, replace_existing);
-        return;
-    }
-
-    // The two on-disk documents cannot be written atomically together. Save
-    // the next recipe profile first: a failed options write leaves the
-    // registration untouched. Hold the write mutex across the transition so a
-    // rollback cannot overwrite another request's saved options.
-    std::lock_guard<std::mutex> lock(recipe_options_write_mutex_);
-    const json saved_state = recipe_options_.snapshot();
-    previous_saved = recipe_options_.entry(model_name);
-    const json authored = registry_recipe_options(resolve_model_name(model_name));
-    if (authored.is_object()) {
-        for (const auto& [key, value] : authored.items()) {
-            if (!previous_saved.contains(key)) previous_saved[key] = value;
-        }
-    }
-    const json next_authored = model_data.contains("recipe_options") &&
-                               model_data["recipe_options"].is_object()
-        ? model_data["recipe_options"] : json::object();
-    recipe_options_.switch_recipe(model_name, previous_recipe, next_recipe,
-                                  previous_saved, next_authored);
-
-    // The target engine's effective settings now reside in recipe_options.json.
-    // Passing them to ingest would persist them again while replacing the
-    // registration, making the two-file transition harder to roll back.
-    json registration = model_data;
-    registration.erase("recipe_options");
-    try {
-        ingest_->register_model(model_name, registration, allow_missing_checkpoint, replace_existing);
-    } catch (...) {
-        const std::exception_ptr failure = std::current_exception();
-        try {
-            bool definition_changed = true;
-            {
-                const auto records = registries_.pin();
-                const json* current = registry_row(records, model_name);
-                definition_changed = !current || *current != previous_definition;
-            }
-            if (definition_changed) ingest_->register_user_model(model_name, previous_definition);
-            recipe_options_.restore_snapshot(saved_state);
-            invalidate_models_cache();
-        } catch (const std::exception& rollback_error) {
-            LOG(ERROR, "ModelManager") << "Could not roll back recipe change for "
-                                       << model_name << ": " << rollback_error.what() << std::endl;
-            throw std::runtime_error("Inference recipe registration failed and rollback failed: " +
-                                     std::string(rollback_error.what()));
-        }
-        std::rethrow_exception(failure);
-    }
-    invalidate_models_cache();
+    ingest_->register_model(model_name, model_data, allow_missing_checkpoint, replace_existing);
 }
 
 void ModelManager::download_model(const std::string& model_name,
@@ -867,7 +797,7 @@ void ModelManager::delete_model(const std::string& model_name) {
         if (built_in != published->models.end() &&
             built_in->second.checkpoints == info.checkpoints &&
             registry_source_of(built_in->second) == registry_source_of(info) &&
-            (info.source.empty() || info.source == "huggingface" || info.source == "modelscope")) {
+            (info.source.empty() || is_remote_registry_source(info.source))) {
             adjusted_claims = published->models;
             adjusted_claims.erase(bare);
             claims = &adjusted_claims;
@@ -890,13 +820,7 @@ void ModelManager::delete_model(const std::string& model_name) {
     forget_registered_model(canonical_model_name);
     store_.patch_removed(canonical_model_name);
     if (is_user_model_name(canonical_model_name)) {
-        try {
-            std::lock_guard<std::mutex> lock(recipe_options_write_mutex_);
-            recipe_options_.forget_model(canonical_model_name);
-        } catch (const std::exception& e) {
-            LOG(WARNING, "ModelManager") << "Could not clean saved engine options for "
-                                         << canonical_model_name << ": " << e.what() << std::endl;
-        }
+        ingest_->forget_recipe_profiles(canonical_model_name);
     }
 }
 
@@ -911,13 +835,7 @@ void ModelManager::unregister_user_model(const std::string& model_name) {
     // but deliberately does not touch downloaded files.
     ingest_->unregister_user_model(model_name);
     const std::string id = is_user_model_name(model_name) ? model_name : "user." + model_name;
-    try {
-        std::lock_guard<std::mutex> lock(recipe_options_write_mutex_);
-        recipe_options_.forget_model(id);
-    } catch (const std::exception& e) {
-        LOG(WARNING, "ModelManager") << "Could not clean saved engine options for "
-                                     << id << ": " << e.what() << std::endl;
-    }
+    ingest_->forget_recipe_profiles(id);
 }
 
 void ModelManager::forget_registered_model(const std::string& canonical_model_name) {

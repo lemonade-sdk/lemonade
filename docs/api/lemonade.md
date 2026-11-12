@@ -26,6 +26,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/v1/docs`](#get-v1docs) | List the API reference pages bundled with the running server |
 | `GET` | [`/v1/docs/{page}`](#get-v1docspage) | Read one bundled API reference page |
 | `GET` | [`/v1/health`](#get-v1health) | Check the server's status and loaded models |
+| `POST` | [`/v1/models/unregister`](#post-v1modelsunregister) | Unregister a custom model without deleting its files |
 | `GET` | [`/v1/stats`](#get-v1stats) | Read performance statistics from the last request |
 | `GET` | [`/v1/system-stats`](#get-v1system-stats) | Read the host's resource usage |
 | `GET` | [`/metrics`](#get-metrics) | Serve metrics for Prometheus to scrape |
@@ -282,6 +283,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `canonical_model_name` - The `user.*` name the request registered.
 - `model` - The registered model, in the shape [`GET /v1/models/{id}`](./openai.md#get-v1modelsid) returns.
   - `id` - Model identifier for loading and inference requests.
+  - `canonical_model_name` - Explicit user.*, extra.* or builtin.* origin even when id is an unqualified alias.
+  - `custom` - Whether the model definition belongs to the user registry.
   - `created` - Always `1234567890`, for OpenAI compatibility.
   - `object` - Always `"model"`.
   - `owned_by` - Always `"lemonade"`.
@@ -327,6 +330,58 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` |  | A field not listed above has the wrong JSON type |
 | `500` |  | The definition is invalid in another way and nothing is registered, for example a GGUF `checkpoint` without a variant, a recipe this system cannot run, or labels that name two deployment modes |
 <!-- END GENERATED: lemonade.models_register -->
+
+<!-- BEGIN GENERATED: lemonade.models_unregister -->
+## `POST /v1/models/unregister`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Removes an existing `user.*` registration and its saved inference-engine settings. Downloaded checkpoints are left untouched; an overridden built-in becomes the default for its bare model name again.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `model_name` or `model` | Yes | [Lemonade Server model name](https://lemonade-server.ai/models.html). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/models/unregister" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{"model_name": "user.Phi-4-Mini-GGUF"}'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/models/unregister \
+      -H "Content-Type: application/json" \
+      -d '{"model_name": "user.Phi-4-Mini-GGUF"}'
+    ```
+
+**Response:** `200 OK`
+
+```json
+{"status": "success", "model_name": "user.Phi-4-Mini-GGUF"}
+```
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | Only an existing user.* model definition can be unregistered |
+| `409` |  | Unload the model before removing its registration |
+| `500` |  | The request fails unexpectedly |
+<!-- END GENERATED: lemonade.models_unregister -->
 
 <!-- BEGIN GENERATED: lemonade.pull -->
 ## `POST /v1/pull`

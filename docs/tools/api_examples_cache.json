@@ -1977,6 +1977,28 @@
       }
     }
   },
+  "6570f9b2f66c975209fc49c09c2bc26e022efc5f657d72e5b8d34e2c0828f46c": {
+    "route": "lemonade.models_unregister",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/models/unregister",
+      "query": {},
+      "json": {
+        "model_name": "user.Phi-4-Mini-GGUF"
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "model_name": "user.Phi-4-Mini-GGUF",
+        "status": "success"
+      }
+    }
+  },
   "f5a633c768db90c36ca66c4c6b728312b9e68d5e8ad9d510ca5284e4e64b022c": {
     "route": "lemonade.pull",
     "format": "EventStream",
