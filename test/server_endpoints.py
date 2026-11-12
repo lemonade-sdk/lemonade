@@ -5670,6 +5670,28 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response_bad_input_part_type.status_code, 400)
         self.assertIn("type", response_bad_input_part_type.json()["error"])
+
+        for bad_role in (17, None):
+            response_bad_message_role = requests.post(
+                f"{self.base_url}/routing/validate",
+                json={
+                    "policy": policy,
+                    "messages": [{"role": bad_role, "content": "hello"}],
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response_bad_message_role.status_code, 400)
+            error = response_bad_message_role.json()["error"]
+            self.assertIn("role", error)
+            self.assertNotIn("Invalid routing policy", error)
+
+        response_bad_input_role = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "input": [{"role": 17, "content": "hello"}]},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_input_role.status_code, 400)
+        self.assertIn("role", response_bad_input_role.json()["error"])
         print(
             "[OK] /routing/validate rejected ambiguous primary fields and malformed nested bodies"
         )

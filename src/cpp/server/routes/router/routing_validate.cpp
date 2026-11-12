@@ -21,8 +21,9 @@ const RouteError kAmbiguousBody{400, "",
     "More than one of `messages`, `input` and `prompt` is sent, or `has_images` or `has_tools` "
     "is sent with `messages`, `input`, `tools` or an array `prompt`"};
 const RouteError kInvalidContent{400, "",
-    "A `messages` or `input` item's `content` is neither a string nor an array of objects, a "
-    "content part's `type` is not a string, or a text part's `text` is not a string"};
+    "A `messages` or `input` item's `role` is not a string or its `content` is neither a "
+    "string nor an array of objects, a content part's `type` is not a string, or a text "
+    "part's `text` is not a string"};
 
 const RouteArg kPolicy{"policy", ArgIn::JsonBody, {{"type", "object"}}, true, Support::Available,
                        "A `collection.router` policy document. `model_name` is accepted but is not required "
@@ -78,9 +79,17 @@ std::optional<std::string> content_error(const json& content, const char* field)
     return std::nullopt;
 }
 
+std::optional<std::string> role_error(const json& item, const char* field) {
+    if (item.contains("role") && !item["role"].is_string()) {
+        return std::string("'") + field + "' item 'role' must be a string";
+    }
+    return std::nullopt;
+}
+
 std::optional<std::string> body_content_error(const RouteRequest& req) {
     if (req.has(kMessages)) {
         for (const auto& message : req.arg(kMessages)) {
+            if (auto error = role_error(message, "messages")) return error;
             if (!message.contains("content")) continue;
             if (auto error = content_error(message["content"], "messages")) return error;
         }
@@ -88,6 +97,7 @@ std::optional<std::string> body_content_error(const RouteRequest& req) {
     if (req.has(kInput) && req.arg(kInput).is_array()) {
         for (const auto& item : req.arg(kInput)) {
             if (item.is_string()) continue;
+            if (auto error = role_error(item, "input")) return error;
             const json content = item.contains("content") ? item["content"] : json::array({item});
             if (auto error = content_error(content, "input")) return error;
         }

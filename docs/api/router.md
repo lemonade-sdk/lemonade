@@ -327,7 +327,7 @@ A chat `messages` array with an image part, sent with a `tools` array, sets both
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | More than one of `messages`, `input` and `prompt` is sent, or `has_images` or `has_tools` is sent with `messages`, `input`, `tools` or an array `prompt` |
-| `400` |  | A `messages` or `input` item's `content` is neither a string nor an array of objects, a content part's `type` is not a string, or a text part's `text` is not a string |
+| `400` |  | A `messages` or `input` item's `role` is not a string or its `content` is neither a string nor an array of objects, a content part's `type` is not a string, or a text part's `text` is not a string |
 | `400` |  | `policy` is invalid or internally inconsistent |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 <!-- END GENERATED: router.routing_validate -->
