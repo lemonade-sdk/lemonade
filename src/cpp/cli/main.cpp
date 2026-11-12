@@ -11,6 +11,7 @@
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
 #include <lemon_cli/junie_profile.h>
+#include <lemon_cli/mesh_device.h>
 #include <lemon_cli/opencode_profile.h>
 #include <lemon_cli/pi_profile.h>
 #include <lemon/utils/process_manager.h>
@@ -173,6 +174,7 @@ struct CliConfig {
     bool sync_wait = false;
     std::vector<std::string> sync_target_models;
     std::string agent;
+    std::string device;  // launch --device: a mesh device's name or node id
     std::string repo_dir;
     std::string recipe_file;
     bool skip_prompt = false;
@@ -981,6 +983,42 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     return true;
 }
 
+// `launch --device`: the agent and every request launch makes for it (the model list,
+// the load, pi's config) go to that device through this server's mesh port. lemond's
+// mesh port (13306) forwards a request to "<device>.<group>.lo.<base>" over the mesh
+// to that device's own server, so pointing the target at that URL is all it takes.
+// Returns false when the device cannot be used; the reason was printed.
+static bool apply_mesh_device(CliConfig& config) {
+    nlohmann::json status;
+    try {
+        lemonade::LemonadeClient home(config.host, config.port, config.api_key, config.is_ssl);
+        status = nlohmann::json::parse(home.make_request("/api/v1/nexus/status", "GET", "", "", 5000, 15000));
+    } catch (const std::exception& e) {
+        std::cerr << "Error: Cannot read the mesh status of " << config.host << ":" << config.port << ": "
+                  << e.what() << std::endl;
+        return false;
+    }
+    lemon_cli::MeshDevice device;
+    std::string error;
+    if (!lemon_cli::resolve_mesh_device(status, config.device, device, error)) {
+        std::cerr << "Error: " << error << std::endl;
+        return false;
+    }
+    if (device.self) {
+        std::cout << device.device_name << " is this server; using it directly." << std::endl;
+        return true;
+    }
+    std::string host;
+    int port = config.port;
+    bool is_ssl = false;
+    lemonade::LemonadeClient::parse_target_url(device.url, host, port, is_ssl);
+    config.host = host;
+    config.port = port;
+    config.is_ssl = is_ssl;
+    std::cout << "Using " << device.device_name << " through the mesh port: " << device.url << std::endl;
+    return true;
+}
+
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
     if (config.agent.empty() && !prompt_agent_selection(config.agent)) {
         return 1;
@@ -1753,6 +1791,10 @@ int main(int argc, char* argv[]) {
     // Launch options
     auto add_common_launch_options = [&config](CLI::App& cmd) {
         cmd.add_option("--model,-m", config.model, "Model name to load")->type_name("MODEL");
+        cmd.add_option("--device", config.device,
+            "Run the agent on another device of your Lemonade Nexus mesh (its device name or node id); "
+            "the model loads and runs there, through this server's mesh port")
+            ->type_name("DEVICE");
         cmd.add_option("--directory", config.repo_dir,
             "Remote recipe directory used only if you choose recipe import at prompt")
             ->type_name("DIR");
@@ -1864,6 +1906,12 @@ int main(int argc, char* argv[]) {
     const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
     if (admin_api_key && admin_api_key[0]) {
         config.api_key = admin_api_key;
+    }
+
+    // The server reached so far is the home server; --device moves the target to a
+    // mesh device the home server's mesh port names.
+    if (launch_cmd->count() > 0 && !config.device.empty() && !apply_mesh_device(config)) {
+        return 1;
     }
 
     // Create client

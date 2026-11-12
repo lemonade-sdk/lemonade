@@ -47,6 +47,7 @@ set(COMMON_SOURCES
     agent_launcher.cpp
     agent_config_file.cpp
     junie_profile.cpp
+    mesh_device.cpp
     opencode_profile.cpp
     pi_profile.cpp
     # Self-describing backend descriptors (plain data; CLI-safe). Lets the CLI
