@@ -171,6 +171,15 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
     check(access::relay_retryable("CURL error: Couldn't connect to server"), "A relayed read the device refused is repeated");
     check(!access::relay_retryable("CURL error: Timeout was reached"), "A relayed read that timed out is final");
     check(!access::relay_retryable(""), "A relayed read without a reason is final");
+    const auto timed_out = access::relay_failure(28 /* CURLE_OPERATION_TIMEDOUT */, "CURL error: Timeout was reached", 3600);
+    check(timed_out.status == 504 && timed_out.error == "That device's server did not answer within 3600 seconds" &&
+              timed_out.detail == "CURL error: Timeout was reached",
+          "A device that took the request but did not answer in time is a 504, not unreachable");
+    const auto refused_connection = access::relay_failure(7 /* CURLE_COULDNT_CONNECT */, "CURL error: Couldn't connect to server", 300);
+    check(refused_connection.status == 502 && refused_connection.error == "Cannot reach that device's server through the mesh" &&
+              refused_connection.detail == "CURL error: Couldn't connect to server",
+          "A connection failure is unreachable with the transport failure in detail");
+    check(access::relay_failure(0, "", 30).detail == "no answer from the device", "A failure without a reason still names one");
 }
 
 void check_invite_completion(const std::function<void(bool, const char*)>& check) {
@@ -225,7 +234,9 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
         seen_authorization = req.get_header_value("Authorization");
         res.set_content(R"({"status":"ok"})", "application/json");
     });
+    int chats = 0;
     peer.Post("/api/v1/chat/completions", [&](const httplib::Request& req, httplib::Response& res) {
+        ++chats;
         seen_authorization = req.get_header_value("Authorization");
         seen_body = req.body;
         if (seen_authorization != "Bearer peer-key") {
@@ -256,6 +267,12 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
             return true;
         });
     });
+    int loads = 0;
+    peer.Post("/api/v1/load", [&](const httplib::Request& req, httplib::Response& res) {
+        ++loads;
+        seen_body = req.body;
+        res.set_content(R"({"status":"success"})", "application/json");
+    });
     const int peer_port = peer.bind_to_any_port("127.0.0.1");
     std::thread peer_worker([&] { peer.listen_after_bind(); });
     peer.wait_until_ready();
@@ -269,6 +286,14 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
     front.Post(R"(/closed(/.*))", [&](const httplib::Request& req, httplib::Response& res) {
         access::relay_http(1, "gpu", req.matches[1].str(), req, res, req.get_header_value(access::kPeerAuthorizationHeader), req.body);
     });
+    // A bridge whose connections are refused (port 1), replaced by one that reaches the peer.
+    int reopened = 0;
+    const auto revived = [&](const httplib::Request& req, httplib::Response& res) {
+        access::relay_http(1, "gpu", req.matches[1].str(), req, res, req.get_header_value(access::kPeerAuthorizationHeader), req.body,
+            [&] { ++reopened; return static_cast<uint16_t>(peer_port); });
+    };
+    front.Get(R"(/revived(/.*))", revived);
+    front.Post(R"(/revived(/.*))", revived);
     const int front_port = front.bind_to_any_port("127.0.0.1");
     std::thread front_worker([&] { front.listen_after_bind(); });
     front.wait_until_ready();
@@ -284,6 +309,7 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
     check(refused && refused->status == 503, "A peer refusal before the stream keeps its status");
     check(refused && refused->get_header_value("Content-Type") == "application/json" &&
         refused->body == R"({"error":{"message":"Model is loading","type":"backend_error"}})", "A peer refusal before the stream keeps its JSON body");
+    check(chats == 2, "A POST the peer answered, even with an error, is not repeated");
     auto broken = client.Post("/relay/api/v1/chat/completions", keys, R"({"stream":true,"fail":"during"})", "application/json");
     check(broken && broken->status == 200 && broken->get_header_value("Content-Type") == "text/event-stream", "A stream that breaks stays a stream");
     const std::string first_event = "data: {\"n\":1}\n\n";
@@ -312,6 +338,20 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
     check(unreachable_stream && unreachable_stream->status == 502 && stream_body.is_object() &&
               !stream_body.value("detail", std::string()).empty(),
           "An unreachable peer's streamed request names the transport failure in detail");
+    // A refused connection never carried the request, so a POST is repeated like a read,
+    // and the last repeat runs over the replaced bridge.
+    seen_body.clear();
+    auto revived_load = client.Post("/revived/api/v1/load", keys, R"({"model_name":"big"})", "application/json");
+    check(revived_load && revived_load->status == 200 && revived_load->body == R"({"status":"success"})" && loads == 1 &&
+              seen_body == R"({"model_name":"big"})" && reopened == 1,
+          "A model load whose bridge was dead reaches the peer once over a new bridge");
+    auto revived_health = client.Get("/revived/api/v1/health", keys);
+    check(revived_health && revived_health->status == 200 && revived_health->body == R"({"status":"ok"})" && reopened == 2,
+          "A read whose bridge was dead reaches the peer over a new bridge");
+    auto revived_stream = client.Post("/revived/api/v1/chat/completions", keys, R"({"stream":true})", "application/json");
+    check(revived_stream && revived_stream->status == 200 && revived_stream->get_header_value("Content-Type") == "text/event-stream" &&
+              revived_stream->body == "data: {\"n\":1}\n\ndata: {\"n\":2}\n\ndata: [DONE]\n\n" && reopened == 3,
+          "A stream whose bridge was dead is delivered intact over a new bridge");
     front.stop(); front_worker.join();
     peer.stop(); peer_worker.join();
 }

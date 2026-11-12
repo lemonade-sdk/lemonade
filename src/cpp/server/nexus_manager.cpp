@@ -31,6 +31,7 @@
 #include <unistd.h>
 #endif
 #include <LemonadeNexusSDK/lemonade_nexus.h>
+#include <curl/curl.h>
 
 namespace lemon {
 namespace {
@@ -1060,23 +1061,27 @@ std::pair<int, std::string> relay_target(const json& members, const std::string&
 
 namespace {
 // The GUI aborts a host GET at 35 s, so a stalled health or models poll must not hold a
-// lemond worker for the client's 300 s default; a POST such as a model load keeps it.
+// lemond worker for the client's 300 s default. A POST such as a model load answers only
+// once the work is done: a large model takes minutes to load, and the CLI waits a day
+// for a local load. The relay waits an hour, which also releases the worker of a
+// transport that died without a close.
 constexpr long kRelayGetTimeoutSeconds = 30;
-constexpr long kRelayPostTimeoutSeconds = 300;
+constexpr long kRelayPostTimeoutSeconds = 3600;
 
-// A read that found no answer repeats after these waits before the client hears "cannot
-// reach". The first request over a fresh mesh path, as right after lemond or the device
-// started, often meets a connection that is still forming.
-constexpr std::array<int, 3> kRelayGetRetryDelaysMs{1000, 2000, 3000};
+// A request that found no answer repeats after these waits before the client hears
+// "cannot reach". The first request over a fresh mesh path, as right after lemond or the
+// device started, often meets a connection that is still forming. The last repeat runs
+// over a new mesh bridge: one whose connections failed this often is dead, for example
+// after its mesh path changed, and the SDK's own mesh port replaces such a bridge too.
+constexpr std::array<int, 3> kRelayRetryDelaysMs{1000, 2000, 3000};
 
-void relay_unreachable(httplib::Response& res, const std::string& node_id, const std::string& method, const std::string& path,
-                       const std::string& reason) {
-    const auto detail = reason.empty() ? std::string("no answer from the device") : reason;
+void relay_failed(httplib::Response& res, const std::string& node_id, const std::string& method, const std::string& path,
+                  const RelayFailure& failure) {
     LOG(WARNING, "Nexus") << "Relay to " << node_id << " failed: " << method << " " << path.substr(0, path.find('?'))
-                          << ": " << detail << std::endl;
+                          << ": " << failure.detail << std::endl;
     res.set_header("Cache-Control", "no-store");
-    res.status = 502;
-    res.set_content(json{{"error", "Cannot reach that device's server through the mesh"}, {"detail", detail}}.dump(), "application/json");
+    res.status = failure.status;
+    res.set_content(json{{"error", failure.error}, {"detail", failure.detail}}.dump(), "application/json");
 }
 }
 
@@ -1090,31 +1095,27 @@ bool relay_retryable(const std::string& reason) {
     return false;
 }
 
+RelayFailure relay_failure(int curl_code, const std::string& reason, long waited_seconds) {
+    const auto detail = reason.empty() ? std::string("no answer from the device") : reason;
+    if (curl_code == CURLE_OPERATION_TIMEDOUT) {
+        // The connection stood and the device's server took the request; it did not answer
+        // in time, as during a long model load or while that server is busy.
+        return {504, "That device's server did not answer within " + std::to_string(waited_seconds) + " seconds", detail};
+    }
+    return {502, "Cannot reach that device's server through the mesh", detail};
+}
+
 void relay_http(uint16_t port, const std::string& node_id, const std::string& path, const httplib::Request& req, httplib::Response& res,
-                const std::string& peer_authorization, const std::string& request_body) {
-    const auto url = "http://127.0.0.1:" + std::to_string(port) + path;
+                const std::string& peer_authorization, const std::string& request_body, const std::function<uint16_t()>& reopen) {
     std::map<std::string, std::string> headers;
     if (!peer_authorization.empty()) headers["Authorization"] = peer_authorization;
     if (req.has_header("X-Client-Session-Id")) headers["X-Client-Session-Id"] = req.get_header_value("X-Client-Session-Id");
     res.set_header("Cache-Control", "no-store");
-    try {
-        if (req.method == "GET") {
-            // A read is safe to repeat; a POST (a model load, a chat) runs once.
-            for (size_t attempt = 0;; ++attempt) {
-                try {
-                    const auto reply = utils::HttpClient::get(url, headers, kRelayGetTimeoutSeconds, utils::HttpSecurityPolicy::TrustedLoopback);
-                    res.status = reply.status_code;
-                    res.set_content(reply.body, "application/json");
-                    return;
-                } catch (const std::exception& e) {
-                    if (attempt >= kRelayGetRetryDelaysMs.size() || !relay_retryable(e.what())) throw;
-                    LOG(INFO, "Nexus") << "Relay to " << node_id << " found no answer (" << e.what() << "); trying again in "
-                                       << kRelayGetRetryDelaysMs[attempt] << " ms" << std::endl;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(kRelayGetRetryDelaysMs[attempt]));
-                }
-            }
-        }
-        auto body = request_body;
+    const bool read = req.method == "GET";
+    const long timeout = read ? kRelayGetTimeoutSeconds : kRelayPostTimeoutSeconds;
+    auto body = request_body;
+    bool streamed = false;
+    if (!read) {
         if (req.is_multipart_form_data()) {
             std::random_device random;
             const auto boundary = "lemonade-relay-" + std::to_string(random()) + std::to_string(random()) + std::to_string(random());
@@ -1124,30 +1125,66 @@ void relay_http(uint16_t port, const std::string& node_id, const std::string& pa
             headers["Content-Type"] = req.has_header("Content-Type") ? req.get_header_value("Content-Type") : "application/json";
         }
         const auto request = json::parse(body, nullptr, false);
-        if (request.is_object() && request.value("stream", false)) {
-            auto stream = std::make_shared<RelayStream>();
-            stream->start(url, body, headers);
-            std::string reply;
-            std::string type;
-            const auto status = stream->wait_for_status(reply, type);
-            if (status == 0) { relay_unreachable(res, node_id, req.method, path, stream->failure()); return; }
-            if (status < 200 || status >= 300) {
-                res.status = status;
-                res.set_content(reply, type.empty() ? "application/json" : type);
+        streamed = request.is_object() && request.value("stream", false);
+    }
+    // A request whose connection was refused, reset or closed before any answer never
+    // reached the device's server, or that server closed before it read the request;
+    // a read and a POST (a model load, a chat) are both repeated then. A POST the
+    // device answered, even with an error, runs once.
+    for (size_t attempt = 0;; ++attempt) {
+        const auto url = "http://127.0.0.1:" + std::to_string(port) + path;
+        RelayFailure failure;
+        try {
+            if (read) {
+                const auto reply = utils::HttpClient::get(url, headers, timeout, utils::HttpSecurityPolicy::TrustedLoopback);
+                res.status = reply.status_code;
+                res.set_content(reply.body, "application/json");
                 return;
             }
-            // Like streamed backend responses, writes block on the client socket.
-            res.set_chunked_content_provider(type.empty() ? "text/event-stream" : type,
-                [stream](size_t, httplib::DataSink& sink) { return stream->pull(sink); },
-                [stream](bool) { stream->abandon(); });
+            if (streamed) {
+                auto stream = std::make_shared<RelayStream>();
+                stream->start(url, body, headers);
+                std::string reply;
+                std::string type;
+                const auto status = stream->wait_for_status(reply, type);
+                if (status != 0) {
+                    if (status < 200 || status >= 300) {
+                        res.status = status;
+                        res.set_content(reply, type.empty() ? "application/json" : type);
+                        return;
+                    }
+                    // Like streamed backend responses, writes block on the client socket.
+                    res.set_chunked_content_provider(type.empty() ? "text/event-stream" : type,
+                        [stream](size_t, httplib::DataSink& sink) { return stream->pull(sink); },
+                        [stream](bool) { stream->abandon(); });
+                    return;
+                }
+                failure = relay_failure(0, stream->failure(), timeout);
+            } else {
+                const auto reply = utils::HttpClient::post(url, body, headers, timeout, utils::HttpSecurityPolicy::TrustedLoopback);
+                const auto type = reply.headers.find("content-type");
+                res.status = reply.status_code;
+                res.set_content(reply.body, type != reply.headers.end() ? type->second : "application/json");
+                return;
+            }
+        } catch (const utils::HttpClientException& e) {
+            failure = relay_failure(e.curl_code(), e.what(), timeout);
+        } catch (const std::exception& e) {
+            failure = relay_failure(0, e.what(), timeout);
+        }
+        if (attempt >= kRelayRetryDelaysMs.size() || !relay_retryable(failure.detail)) {
+            relay_failed(res, node_id, req.method, path, failure);
             return;
         }
-        const auto reply = utils::HttpClient::post(url, body, headers, kRelayPostTimeoutSeconds, utils::HttpSecurityPolicy::TrustedLoopback);
-        const auto type = reply.headers.find("content-type");
-        res.status = reply.status_code;
-        res.set_content(reply.body, type != reply.headers.end() ? type->second : "application/json");
-    } catch (const std::exception& e) {
-        relay_unreachable(res, node_id, req.method, path, e.what());
+        LOG(INFO, "Nexus") << "Relay to " << node_id << " found no answer (" << failure.detail << "); trying again in "
+                           << kRelayRetryDelaysMs[attempt] << " ms" << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(kRelayRetryDelaysMs[attempt]));
+        if (attempt + 1 == kRelayRetryDelaysMs.size() && reopen) {
+            if (const auto fresh = reopen(); fresh != 0) {
+                LOG(INFO, "Nexus") << "Relay to " << node_id << " continues over a new mesh bridge" << std::endl;
+                port = fresh;
+            }
+        }
     }
 }
 
@@ -1889,6 +1926,15 @@ struct NexusManager::Session {
         }
         egress_ips[id] = target.second;
         return port;
+    }
+    // Replaces the mesh bridge to the device: the SDK aborts the old bridge's connections
+    // and the next open binds a fresh one. For a bridge whose connections keep failing.
+    uint16_t reopen_relay_port(const std::string& id) {
+        if (const auto known = egress_ips.find(id); known != egress_ips.end()) {
+            ln_mesh_close_egress(client.get(), known->second.c_str(), 13305);
+            egress_ips.erase(known);
+        }
+        return relay_port(id);
     }
     json mesh_status() {
         try { return sdk_call([&](auto out) { return ln_mesh_status(client.get(), out); }); }
@@ -2847,7 +2893,20 @@ void NexusManager::relay(const httplib::Request& req, httplib::Response& res) {
     }
     auto path = req.matches[2].str();
     if (const auto query = req.target.find('?'); query != std::string::npos) path += req.target.substr(query);
-    nexus_access::relay_http(port, req.matches[1].str(), path, req, res, req.get_header_value(nexus_access::kPeerAuthorizationHeader), req.body);
+    const auto node = req.matches[1].str();
+    const auto reopen = [this, node]() -> uint16_t {
+        std::lock_guard<std::mutex> session_lock(session_mutex_);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!enabled_ || !session_) return 0;
+        }
+        try { return session_->reopen_relay_port(node); }
+        catch (const std::exception& e) {
+            LOG(WARNING, "Nexus") << "Cannot replace the mesh bridge to " << node << ": " << e.what() << std::endl;
+            return 0;
+        }
+    };
+    nexus_access::relay_http(port, node, path, req, res, req.get_header_value(nexus_access::kPeerAuthorizationHeader), req.body, reopen);
 }
 
 void NexusManager::register_routes(httplib::Server& server, NexusListener listener) {
