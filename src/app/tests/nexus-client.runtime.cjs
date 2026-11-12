@@ -127,7 +127,7 @@ global.fetch = async (url, init = {}) => {
   const lostReadsBefore = calls.filter(call => call.url.endsWith('/nexus/lost-connection-test')).length;
   assert.deepEqual(await pinned.request('lost-connection-test'), { ready: true }, 'a pinned read is sent again after the server closed the connection');
   assert.equal(calls.filter(call => call.url.endsWith('/nexus/lost-connection-test')).length, lostReadsBefore + 2);
-  assert.ok(calls.slice(-2).every(call => call.url === `${controller}/api/v1/nexus/lost-connection-test`), 'the repeated read stays on the pinned controller');
+  assert.ok(calls.slice(-2).every(call => call.url === `${controller}/v1/nexus/lost-connection-test`), 'the repeated read stays on the pinned controller');
   await assert.rejects(pinned.request('lost-connection-test', {}), /Load failed/, 'a pinned mutation is not replayed');
   assert.equal(calls.filter(call => call.url.endsWith('/nexus/lost-connection-test')).length, lostReadsBefore + 3);
   api.baseUrl = local;
