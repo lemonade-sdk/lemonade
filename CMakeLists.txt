@@ -4108,3 +4108,13 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_SYNC_TEST_SRC}")
     include(CTest)
     add_cpp_ci_test(ModelSyncServiceTest CI ON COMMAND test_model_sync_service)
 endif()
+
+if(BUILD_TESTING)
+    add_executable(test_opencode_profile
+        test/cpp/test_opencode_profile.cpp
+        src/cpp/cli/opencode_profile.cpp
+    )
+    target_include_directories(test_opencode_profile PRIVATE src/cpp/include)
+    target_link_libraries(test_opencode_profile PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(OpenCodeProfileTest CI ON COMMAND test_opencode_profile)
+endif()

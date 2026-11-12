@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <regex>
 #include <string>
 
 namespace fs = std::filesystem;
@@ -77,6 +78,31 @@ const AgentConfigProfile& opencode_profile() {
     };
 
     return profile;
+}
+
+bool is_opencode_v2(const std::string& version) {
+    static const std::regex pattern(R"(^\s*(?:opencode\s+)?v?([0-9]+)\.[0-9]+\.[0-9]+)");
+    std::smatch match;
+    if (!std::regex_search(version, match, pattern)) {
+        return false;
+    }
+    try {
+        return std::stoi(match[1].str()) >= 2;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+nlohmann::json build_opencode_v2_config(const std::string& base_url,
+                                       const std::string& model,
+                                       const std::vector<AgentModelEntry>& models) {
+    auto provider = build_opencode_provider_block(base_url, "", models);
+    provider.erase("npm");
+    provider.erase("options");
+    provider["package"] = "@opencode/ai/providers/openai-compatible";
+    provider["env"] = {"LEMONADE_API_KEY"};
+    provider["settings"] = {{"baseURL", base_url}};
+    return {{"model", "Lemonade/" + model}, {"providers", {{"Lemonade", provider}}}};
 }
 
 } // namespace lemon_cli

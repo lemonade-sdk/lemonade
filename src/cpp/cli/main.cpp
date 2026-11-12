@@ -777,7 +777,8 @@ static bool check_pi_version_for_flags(const std::string& pi_binary, const CliCo
 // when the sync already loaded the launched model.
 static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                          const CliConfig& config,
-                                         bool* model_loaded = nullptr) {
+                                         bool* model_loaded = nullptr,
+                                         lemon_tray::AgentConfig* opencode_v2 = nullptr) {
     constexpr int default_context_window = 40960;
     // A window of 0 marks a model without a saved size until the fallback is applied.
     std::vector<lemon_cli::AgentModelEntry> models = fetch_llm_models_for_sync(client, 0);
@@ -843,6 +844,14 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         if (model.context_window <= 0) {
             model.context_window = default_context_window;
         }
+    }
+
+    if (opencode_v2 != nullptr) {
+        const auto inline_config = lemon_cli::build_opencode_v2_config(
+            lemon_tray::build_agent_server_base_url(config.host, config.port, config.is_ssl) + "/v1",
+            config.model, models);
+        opencode_v2->env_vars.emplace_back("OPENCODE_CONFIG_CONTENT", inline_config.dump());
+        return true;
     }
 
     if (config.agent == "junie") {
@@ -997,9 +1006,9 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         std::cout << "Model was provided explicitly; skipping recipe import prompts." << std::endl;
     }
 
-    // Pi's config sync can load the model, so it waits until pi is found.
+    // Pi may load the model; OpenCode's config format depends on its installed version.
     const bool needs_config_sync = lemon_tray::agent_needs_config_sync(config.agent);
-    const bool sync_after_binary_check = config.agent == "pi";
+    const bool sync_after_binary_check = config.agent == "pi" || config.agent == "opencode";
     if (needs_config_sync && !sync_after_binary_check &&
         !sync_agent_config_for_launch(client, config)) {
         return 1;
@@ -1052,8 +1061,29 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     }
 
     bool model_loaded = false;
+    bool opencode_v2 = false;
+    if (config.agent == "opencode") {
+        std::string version;
+        try {
+            const int result = lemon::utils::ProcessManager::run_process_with_output(
+                agent_binary, {"--version"},
+                [&version](const std::string& line) {
+                    version += line + "\n";
+                    return true;
+                }, "", 10, false);
+            opencode_v2 = result == 0 && lemon_cli::is_opencode_v2(version);
+        } catch (const std::exception&) {
+        }
+        if (opencode_v2) {
+            // A private server inherits this launch's model, endpoint and credentials.
+            agent_config.extra_args.erase(agent_config.extra_args.begin(),
+                                          agent_config.extra_args.begin() + 2);
+            agent_config.extra_args.insert(agent_config.extra_args.begin(), "--standalone");
+        }
+    }
     if (needs_config_sync && sync_after_binary_check &&
-        !sync_agent_config_for_launch(client, config, &model_loaded)) {
+        !sync_agent_config_for_launch(client, config, &model_loaded,
+                                      opencode_v2 ? &agent_config : nullptr)) {
         return 1;
     }
 

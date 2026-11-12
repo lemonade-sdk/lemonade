@@ -94,17 +94,8 @@ bool fetch_models_from_endpoint(lemonade::LemonadeClient& client,
     }
 }
 
-bool is_agent_launch_recipe(const std::string& recipe) {
-    static const std::unordered_set<std::string> kAgentLaunchRecipes = {
-        "flm",
-        "llamacpp",
-        "vllm",
-    };
-    return kAgentLaunchRecipes.find(recipe) != kAgentLaunchRecipes.end();
-}
-
 bool is_agent_launch_llm(const lemonade::ModelInfo& model) {
-    return is_agent_launch_recipe(model.recipe) && has_label(model, "chat");
+    return has_label(model, "chat");
 }
 
 bool is_tool_calling_agent_launch_llm(const lemonade::ModelInfo& model) {
