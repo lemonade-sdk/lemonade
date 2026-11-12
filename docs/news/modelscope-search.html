@@ -11,7 +11,7 @@
   <meta name="description" content="Lemonade v11.5 adds ModelScope as a second model registry, right next to Hugging Face. Same search box, twice the catalog.">
   <meta property="og:title" content="Search ModelScope from Lemonade">
   <meta property="og:description" content="Lemonade v11.5 adds ModelScope as a second model registry, right next to Hugging Face. Same search box, twice the catalog.">
-  <meta property="og:image" content="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-search-results-02.png">
+  <meta property="og:image" content="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-search-results.png">
   <meta property="og:type" content="article">
   <meta property="article:published_time" content="2026-07-27">
   <meta property="article:author" content="Lemonade Team">
@@ -38,7 +38,7 @@
           <div class="section-header">
             <span class="section-kicker">Announcement</span>
             <h2 class="section-title">Twice the catalog, same search box</h2>
-            <p>Starting with v11.5, Lemonade supports <a href="https://modelscope.cn" target="_blank" rel="noopener">ModelScope</a> as a model registry alongside Hugging Face. Search it the same way you search Hugging Face &mdash; right from the <strong>Models</strong> page &mdash; and download models from whichever registry has what you need. This matters most for users in regions where ModelScope mirrors are significantly faster, and for models that publish to ModelScope first.</p>
+            <p>Starting with v11.5, Lemonade supports <a href="https://modelscope.cn" target="_blank" rel="noopener">ModelScope</a> as a model registry alongside Hugging Face. Search it the same way you search Hugging Face &mdash; right from the Model Manager &mdash; and download models from whichever registry has what you need. This matters most for users in regions where ModelScope mirrors are significantly faster, and for models that publish to ModelScope first.</p>
           </div>
 
           <p>There's nothing to set up &mdash; no accounts, no extra configuration. Type a name, browse the GGUF variants, and hit download.</p>
@@ -49,23 +49,23 @@
           <div class="section-header">
             <span class="section-kicker">Walkthrough</span>
             <h2 class="section-title">Take it for a spin</h2>
-            <p>Open the Lemonade app (or the web app at <code>http://localhost:13305/app</code>) and head to the <strong>Models</strong> page. Start typing &mdash; <code>Qwen 2.5</code>, say. After two characters the search goes live, and results appear grouped under <strong>Online Catalog: Hugging Face</strong> and <strong>Online Catalog: ModelScope</strong> &mdash; both are on by default, and either can be toggled off from the <strong>Online Catalogs</strong> filter in the left rail.</p>
+            <p>Open the Lemonade app (or the web app at <code>http://localhost:13305/app</code>) and head to the <strong>Model Manager</strong>. Start typing &mdash; <code>Qwen 2.5</code>, say. After three characters the search goes live, and two new sections appear below your local models: <strong>FROM HUGGING FACE</strong> and <strong>FROM MODELSCOPE</strong>.</p>
           </div>
 
           <div class="blog-media">
-            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-search-results-02.png" alt="Models page showing search results from ModelScope">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-search-results.png" alt="Model Manager showing search results from Hugging Face and ModelScope">
           </div>
 
-          <p>Every result tells you what you're getting before you commit: the repository name, its backend, download count, and likes. Select a result to open its detail panel, where you'll find the available variants &mdash; Q4_K_M is preselected when available. Pick one and click download to watch it go.</p>
+          <p>Every result tells you what you're getting before you commit: the repository name, a source badge (<strong>MS</strong> or <strong>HF</strong>), the download size, and how many times the community has pulled it. Want a different quantization? Pick one from the dropdown &mdash; Q4_K_M is preselected when available. Then click download and watch it go.</p>
 
           <div class="blog-media">
-            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-download-02.png" alt="Download Manager pulling a model from ModelScope">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-download.png" alt="Download Manager pulling a model from ModelScope">
           </div>
 
-          <p>When the download finishes, the model registers itself and is ready to use &mdash; pick it from the model dropdown on the <strong>Chat</strong> page, point your favorite OpenAI-compatible client at it, whatever you'd do with any other Lemonade model. Where it came from stops mattering the moment it lands on your disk.</p>
+          <p>When the download finishes, the model registers itself and is ready to use &mdash; select it in the chat panel, point your favorite OpenAI-compatible client at it, whatever you'd do with any other Lemonade model. Where it came from stops mattering the moment it lands on your disk.</p>
 
           <div class="blog-media">
-            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-chat-02.png" alt="Chatting with a model downloaded from ModelScope">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/modelscope/modelscope-chat.png" alt="Chatting with a model downloaded from ModelScope">
           </div>
         </div>
 
@@ -84,7 +84,7 @@
             <pre><code id="modelscope-pull">lemonade pull Qwen/Qwen2.5-3B-Instruct-GGUF --source modelscope</code></pre>
           </div>
 
-          <p>If you're building on top of the server, the registry search behind the Models page is one GET away. It returns candidate repositories &mdash; the Models page then validates each candidate's file listing with <code>/v1/pull/variants</code> before offering a download.</p>
+          <p>If you're building on top of the server, the registry search behind the Model Manager is one GET away. It returns candidate repositories &mdash; the Model Manager then validates each candidate's file listing with <code>/v1/pull/variants</code> before offering a download.</p>
 
           <div class="enhanced-code-block">
             <div class="code-header">
