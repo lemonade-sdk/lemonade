@@ -2861,42 +2861,6 @@ sys.exit(0)
             self._launch_opencode_agent(temp_dir, ["--no-mcp"])
             self.assertNotIn("lemonade", servers(temp_dir))
 
-    def test_144_launch_opencode_mcp_follows_the_opencode_version(self):
-        """opencode 1 gets mcp.lemonade (1.0 rejects mcp.servers); opencode 2 moves it to mcp.servers."""
-        if IS_WINDOWS:
-            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
-
-        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
-            self._launch_opencode_agent(temp_dir, ["--mcp"], version="1.19.3")
-            mcp = self._read_opencode_config(temp_dir)["mcp"]
-            self.assertIn("lemonade", mcp)
-            self.assertNotIn("servers", mcp)
-            self.assertNotIn("codemode", mcp["lemonade"])
-
-            self._launch_opencode_agent(temp_dir)
-            mcp = self._read_opencode_config(temp_dir)["mcp"]
-            self.assertNotIn("lemonade", mcp)
-            self.assertIn("lemonade", mcp["servers"])
-
-    def test_144b_launch_opencode_unknown_version_keeps_the_mcp_entry_shape(self):
-        """A failed version probe must not move a v2 entry to mcp.lemonade, where v2 ignores codemode."""
-        if IS_WINDOWS:
-            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
-
-        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
-            self._launch_opencode_agent(temp_dir, ["--ctx-size", "4096", "--mcp"])
-            config = self._read_opencode_config(temp_dir)
-            config["mcp"]["servers"]["lemonade"]["disabled"] = True
-            with open(self._opencode_config_path(temp_dir), "w", encoding="utf-8") as f:
-                json.dump(config, f)
-
-            self._launch_opencode_agent(temp_dir, ["--ctx-size", "4096"], version="")
-            mcp = self._read_opencode_config(temp_dir)["mcp"]
-            self.assertNotIn("lemonade", mcp)
-            entry = mcp["servers"]["lemonade"]
-            self.assertIs(entry["codemode"], False)
-            self.assertIs(entry["disabled"], True)
-
     def test_145_launch_opencode_mcp_header_follows_the_key(self):
         """The MCP entry references the key only while launch exports one."""
         if IS_WINDOWS:
@@ -2933,33 +2897,27 @@ sys.exit(0)
             _, payload = self._launch_opencode_agent(temp_dir)
             self.assertNotIn("mcp", payload["inline"])
 
-    def test_147_launch_opencode_codemode_needs_opencode_2(self):
-        """--codemode on opencode 1 stops launch, since opencode 1 has no Code Mode."""
+    def test_147_launch_opencode_mcp_and_codemode_need_opencode_2(self):
+        """opencode 1 rejects mcp.servers, so --mcp and --codemode stop launch unless opencode is 2."""
         if IS_WINDOWS:
             self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
 
-        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
-            result, payload = self._launch_opencode_agent(
-                temp_dir,
-                ["--mcp", "--codemode"],
-                version="1.19.3",
-                expect_success=False,
-            )
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("--codemode needs opencode 2 or newer", result.stderr)
-            self.assertIsNone(payload, "opencode was started")
-
-    def test_148_launch_opencode_codemode_skipped_on_unknown_version(self):
-        """With an unknown opencode version, --codemode is skipped with a warning."""
-        if IS_WINDOWS:
-            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
-
-        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
-            result, payload = self._launch_opencode_agent(
-                temp_dir, ["--mcp", "--codemode"], version=""
-            )
-            self.assertIn("--codemode", result.stderr)
-            self.assertNotIn("mcp", payload["inline"])
+        for flag, version in [
+            ("--mcp", "1.19.3"),
+            ("--codemode", "1.19.3"),
+            ("--mcp", ""),
+        ]:
+            with self.subTest(flag=flag, version=version):
+                with tempfile.TemporaryDirectory(
+                    prefix="lemonade-launch-stub-"
+                ) as temp_dir:
+                    result, payload = self._launch_opencode_agent(
+                        temp_dir, [flag], version=version, expect_success=False
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(f"{flag} needs opencode 2 or newer", result.stderr)
+                    self.assertIsNone(payload, "opencode was started")
+                    self.assertNotIn("mcp", self._read_opencode_config(temp_dir))
 
     def test_149_launch_opencode_codemode_without_mcp_warns(self):
         """Code Mode only covers MCP tools, so --codemode without the Lemonade server warns."""

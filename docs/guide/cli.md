@@ -684,7 +684,7 @@ OpenCode-only options:
 
 | Option/Argument | Description | Required |
 |-----------------|-------------|----------|
-| `--mcp`, `--no-mcp` | Add or remove the `lemonade` server in `opencode.json`, giving OpenCode Lemonade's MCP tools. The choice is kept for later launches. | No |
+| `--mcp`, `--no-mcp` | Add or remove the `lemonade` server in `opencode.json`, giving OpenCode Lemonade's MCP tools. The choice is kept for later launches. Needs OpenCode 2. | No |
 | `--codemode` | Put the `lemonade` server's tools in OpenCode's Code Mode for this launch. Needs OpenCode 2 and `--mcp`. | No |
 
 **Notes:**

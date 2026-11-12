@@ -17,7 +17,6 @@
 
 namespace fs = std::filesystem;
 using nlohmann::json;
-using lemon_cli::OpencodeMcpShape;
 
 namespace {
 
@@ -74,20 +73,9 @@ void test_api_key() {
           build_provider("real-secret-key")["options"]["apiKey"] == "{env:LEMONADE_API_KEY}");
 }
 
-void test_mcp_shape() {
-    check("unknown version uses the shape every opencode reads",
-          lemon_cli::opencode_mcp_shape(std::nullopt) == OpencodeMcpShape::Legacy);
-    check("opencode 1 uses mcp.<name>",
-          lemon_cli::opencode_mcp_shape(1) == OpencodeMcpShape::Legacy);
-    check("opencode 2 uses mcp.servers.<name>",
-          lemon_cli::opencode_mcp_shape(2) == OpencodeMcpShape::Servers);
-}
-
-json sync_and_read(const fs::path& config_path, const std::string& origin, bool has_key,
-                   OpencodeMcpShape shape, bool* ok = nullptr) {
+json sync_and_read(const fs::path& config_path, const std::string& origin, bool has_key) {
     std::string error;
-    const bool synced = lemon_cli::sync_opencode_mcp_server(origin, has_key, shape, error);
-    if (ok != nullptr) *ok = synced;
+    lemon_cli::sync_opencode_mcp_server(origin, has_key, error);
     return json::parse(read_file(config_path));
 }
 
@@ -102,8 +90,7 @@ void test_mcp_servers(const fs::path& config_path) {
         }}
     })");
 
-    json config = sync_and_read(config_path, "http://localhost:13305", true,
-                                OpencodeMcpShape::Servers);
+    json config = sync_and_read(config_path, "http://localhost:13305", true);
     const json expected = json::parse(R"({
         "$schema": "https://opencode.ai/config.json",
         "provider": {"anthropic": {}},
@@ -120,8 +107,7 @@ void test_mcp_servers(const fs::path& config_path) {
     config["mcp"]["servers"]["lemonade"]["codemode"] = true;
     config["mcp"]["servers"]["lemonade"]["oauth"] = {{"clientId", "mine"}};
     write_file(config_path, config.dump());
-    config = sync_and_read(config_path, "http://localhost:13305", false,
-                           OpencodeMcpShape::Servers);
+    config = sync_and_read(config_path, "http://localhost:13305", false);
     const json& kept = config["mcp"]["servers"]["lemonade"];
     check("refresh keeps codemode and oauth the user set", kept["codemode"] == true &&
               kept["oauth"] == json{{"clientId", "mine"}});
@@ -132,8 +118,7 @@ void test_mcp_servers(const fs::path& config_path) {
     config["mcp"]["servers"]["lemonade"]["headers"]["Authorization"] = "Bearer token-for-old";
     config["mcp"]["servers"]["lemonade"]["auth"] = {{"provider", "old"}};
     write_file(config_path, config.dump());
-    config = sync_and_read(config_path, "http://127.0.0.1:9000", false,
-                           OpencodeMcpShape::Servers);
+    config = sync_and_read(config_path, "http://127.0.0.1:9000", false);
     const json& moved = config["mcp"]["servers"]["lemonade"];
     check("refresh to another server drops the old server's credentials",
           moved["url"] == "http://127.0.0.1:9000/mcp" && !moved.contains("headers") &&
@@ -143,8 +128,7 @@ void test_mcp_servers(const fs::path& config_path) {
         "type": "local", "command": ["npx", "lemonade-mcp"], "environment": {"A": "1"},
         "cwd": "/tmp", "timeout": {"startup": 5000}
     }}}})");
-    config = sync_and_read(config_path, "http://localhost:13305", false,
-                           OpencodeMcpShape::Servers);
+    config = sync_and_read(config_path, "http://localhost:13305", false);
     const json& migrated = config["mcp"]["servers"]["lemonade"];
     check("refresh turns a local entry into a remote one and keeps user settings",
           migrated["type"] == "remote" && migrated["url"] == "http://localhost:13305/mcp" &&
@@ -155,8 +139,7 @@ void test_mcp_servers(const fs::path& config_path) {
         "type": "remote", "url": "http://localhost:13305/mcp",
         "headers": {"Authorization": "Bearer my-own-token"}
     }}}})");
-    config = sync_and_read(config_path, "http://localhost:13305", false,
-                           OpencodeMcpShape::Servers);
+    config = sync_and_read(config_path, "http://localhost:13305", false);
     check("refresh to the same server without a key keeps the user's Authorization",
           config["mcp"]["servers"]["lemonade"]["headers"] ==
               json{{"Authorization", "Bearer my-own-token"}});
@@ -164,61 +147,25 @@ void test_mcp_servers(const fs::path& config_path) {
     write_file(config_path, "{ not json");
     std::string error;
     check("malformed opencode.json is refused and left untouched",
-          !lemon_cli::sync_opencode_mcp_server("http://localhost:13305", false,
-                                               OpencodeMcpShape::Servers, error) &&
+          !lemon_cli::sync_opencode_mcp_server("http://localhost:13305", false, error) &&
               read_file(config_path) == "{ not json");
 }
 
-void test_mcp_legacy(const fs::path& config_path) {
-    write_file(config_path, R"({"mcp": {"servers": {
-        "lemonade": {"type": "remote", "url": "http://localhost:13305/mcp", "codemode": false}
-    }}})");
-    json config = sync_and_read(config_path, "http://localhost:13305", true,
-                                OpencodeMcpShape::Legacy);
-    // opencode 1.0 rejects the whole config when mcp has a "servers" entry.
-    check("legacy shape moves the entry to mcp.lemonade without v2-only keys",
-          config == json::parse(R"({"mcp": {"lemonade": {
-              "type": "remote", "url": "http://localhost:13305/mcp", "oauth": false,
-              "headers": {"Authorization": "Bearer {env:LEMONADE_API_KEY}"}
-          }}})"));
-    check("an entry in mcp.lemonade is detected", lemon_cli::opencode_has_mcp_server());
-
+void test_mcp_remove(const fs::path& config_path) {
     write_file(config_path, R"({"mcp": {
         "mine": {"type": "remote", "url": "http://mine/mcp"},
-        "lemonade": {"type": "remote", "url": "http://localhost:13305/mcp", "enabled": false}
-    }})");
-    config = sync_and_read(config_path, "http://localhost:13305", false,
-                           OpencodeMcpShape::Servers);
-    check("servers shape moves the entry out of mcp.lemonade and keeps the user's servers",
-          !config["mcp"].contains("lemonade") &&
-              config["mcp"]["mine"] == json{{"type", "remote"}, {"url", "http://mine/mcp"}} &&
-              config["mcp"]["servers"]["lemonade"]["codemode"] == false &&
-              !config["mcp"]["servers"]["lemonade"].contains("enabled"));
-    check("an entry in mcp.servers.lemonade is detected", lemon_cli::opencode_has_mcp_server());
-
-    std::string error;
-    write_file(config_path, R"({"mcp": {
-        "mine": {"type": "remote", "url": "http://mine/mcp"},
-        "lemonade": {"type": "remote", "url": "http://a/mcp"},
         "servers": {"lemonade": {"type": "remote", "url": "http://b/mcp"},
                     "other": {"type": "remote", "url": "http://other/mcp"}}
     }})");
+    check("an entry in mcp.servers.lemonade is detected", lemon_cli::opencode_has_mcp_server());
+    std::string error;
     check("remove succeeds", lemon_cli::remove_opencode_mcp_server(error));
-    config = json::parse(read_file(config_path));
-    check("remove drops only the lemonade server, in both shapes",
-          config == json::parse(R"({"mcp": {
+    check("remove drops only the lemonade server",
+          json::parse(read_file(config_path)) == json::parse(R"({"mcp": {
               "mine": {"type": "remote", "url": "http://mine/mcp"},
               "servers": {"other": {"type": "remote", "url": "http://other/mcp"}}
           }})"));
     check("no entry is detected after remove", !lemon_cli::opencode_has_mcp_server());
-
-    write_file(config_path, R"({"mcp": {"servers": {"lemonade": {
-        "type": "remote", "url": "http://localhost:13305/mcp", "codemode": false
-    }}}})");
-    check("unknown version keeps an existing mcp.servers entry there",
-          lemon_cli::opencode_mcp_shape(std::nullopt) == OpencodeMcpShape::Servers);
-    check("opencode 1 still moves it to mcp.<name>",
-          lemon_cli::opencode_mcp_shape(1) == OpencodeMcpShape::Legacy);
 }
 
 void test_codemode_config(const fs::path& config_path) {
@@ -234,8 +181,8 @@ void test_codemode_config(const fs::path& config_path) {
                            "oauth": false, "codemode": true, "timeout": {"startup": 5000}}
           }}})"));
 
-    write_file(config_path, R"({"mcp": {"lemonade": {"type": "remote", "url": "http://x/mcp"}}})");
-    check("no codemode config without a v2 entry", lemon_cli::opencode_codemode_config().is_null());
+    write_file(config_path, R"({"mcp": {}})");
+    check("no codemode config without the entry", lemon_cli::opencode_codemode_config().is_null());
 }
 
 #ifndef _WIN32
@@ -257,8 +204,7 @@ void test_config_file_kept(const fs::path& config_dir) {
                                       "http://localhost:13305/v1", "", {}, error);
     check("provider sync keeps a private opencode.json private", is_private());
 
-    lemon_cli::sync_opencode_mcp_server("http://localhost:13305", false,
-                                        OpencodeMcpShape::Servers, error);
+    lemon_cli::sync_opencode_mcp_server("http://localhost:13305", false, error);
     check("MCP sync keeps a private opencode.json private", is_private());
 
     lemon_cli::remove_opencode_mcp_server(error);
@@ -270,8 +216,7 @@ void test_config_file_kept(const fs::path& config_dir) {
     fs::create_symlink(target, config_path);
     lemon_cli::sync_agent_config_file(lemon_cli::opencode_profile(), "Lemonade",
                                       "http://localhost:13305/v1", "", {}, error);
-    lemon_cli::sync_opencode_mcp_server("http://127.0.0.1:9000", false,
-                                        OpencodeMcpShape::Servers, error);
+    lemon_cli::sync_opencode_mcp_server("http://127.0.0.1:9000", false, error);
     const json written = json::parse(read_file(target));
     check("sync writes through a symlinked opencode.json",
           fs::is_symlink(config_path) && written["provider"].contains("Lemonade") &&
@@ -296,9 +241,8 @@ int main() {
 
     test_provider_block();
     test_api_key();
-    test_mcp_shape();
     test_mcp_servers(config_dir / "opencode.json");
-    test_mcp_legacy(config_dir / "opencode.json");
+    test_mcp_remove(config_dir / "opencode.json");
     test_codemode_config(config_dir / "opencode.json");
 #ifndef _WIN32
     test_config_file_kept(config_dir);

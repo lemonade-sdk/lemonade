@@ -80,26 +80,7 @@ nlohmann::json build_opencode_provider_block(
     return provider_block;
 }
 
-bool has_mcp_entry(const nlohmann::json& config) {
-    const auto mcp = config.find("mcp");
-    if (mcp == config.end() || !mcp->is_object()) {
-        return false;
-    }
-    const auto servers = mcp->find("servers");
-    return mcp->contains(kMcpServerName) ||
-           (servers != mcp->end() && servers->is_object() && servers->contains(kMcpServerName));
-}
-
-void erase_servers_entry(nlohmann::json& mcp) {
-    const auto servers = mcp.find("servers");
-    if (servers == mcp.end() || !servers->is_object()) {
-        return;
-    }
-    servers->erase(kMcpServerName);
-    if (servers->empty()) {
-        mcp.erase(servers);
-    }
-}
+const nlohmann::json::json_pointer kMcpServerPointer("/mcp/servers/lemonade");
 
 } // namespace
 
@@ -115,31 +96,15 @@ const AgentConfigProfile& opencode_profile() {
     return profile;
 }
 
-OpencodeMcpShape opencode_mcp_shape(std::optional<int> major_version) {
-    if (major_version) {
-        return *major_version >= 2 ? OpencodeMcpShape::Servers : OpencodeMcpShape::Legacy;
-    }
-    // Moving a v2 entry to mcp.<name> would turn its Code Mode back on, so
-    // without a version an existing entry keeps its shape.
-    nlohmann::json config;
-    std::string ignored;
-    if (read_json_object(resolve_opencode_config_path(), config, ignored) &&
-        config.contains(nlohmann::json::json_pointer("/mcp/servers/lemonade"))) {
-        return OpencodeMcpShape::Servers;
-    }
-    return OpencodeMcpShape::Legacy;
-}
-
 bool opencode_has_mcp_server() {
     nlohmann::json config;
     std::string ignored;
     return read_json_object(resolve_opencode_config_path(), config, ignored) &&
-           has_mcp_entry(config);
+           config.contains(kMcpServerPointer);
 }
 
 bool sync_opencode_mcp_server(const std::string& server_origin,
                               bool has_api_key,
-                              OpencodeMcpShape shape,
                               std::string& error_out) {
     const std::string config_path = resolve_opencode_config_path();
     if (config_path.empty()) {
@@ -155,20 +120,10 @@ bool sync_opencode_mcp_server(const std::string& server_origin,
         config["mcp"] = nlohmann::json::object();
     }
     nlohmann::json& mcp = config["mcp"];
-
-    // Keys differ between the shapes (enabled vs disabled, timeout), so a
-    // moved entry starts over instead of carrying them.
-    nlohmann::json* server = nullptr;
-    if (shape == OpencodeMcpShape::Servers) {
-        mcp.erase(kMcpServerName);
-        if (!mcp.contains("servers") || !mcp["servers"].is_object()) {
-            mcp["servers"] = nlohmann::json::object();
-        }
-        server = &mcp["servers"][kMcpServerName];
-    } else {
-        erase_servers_entry(mcp);
-        server = &mcp[kMcpServerName];
+    if (!mcp.contains("servers") || !mcp["servers"].is_object()) {
+        mcp["servers"] = nlohmann::json::object();
     }
+    nlohmann::json* server = &mcp["servers"][kMcpServerName];
     if (!server->is_object()) {
         *server = nlohmann::json::object();
     }
@@ -185,7 +140,7 @@ bool sync_opencode_mcp_server(const std::string& server_origin,
     if (!server->contains("oauth")) {
         (*server)["oauth"] = false;
     }
-    if (shape == OpencodeMcpShape::Servers && !server->contains("codemode")) {
+    if (!server->contains("codemode")) {
         (*server)["codemode"] = false;
     }
 
@@ -202,12 +157,14 @@ bool remove_opencode_mcp_server(std::string& error_out) {
     if (!read_json_object(config_path, config, error_out)) {
         return false;
     }
-    if (!has_mcp_entry(config)) {
+    if (!config.contains(kMcpServerPointer)) {
         return true;
     }
-    nlohmann::json& mcp = config["mcp"];
-    mcp.erase(kMcpServerName);
-    erase_servers_entry(mcp);
+    nlohmann::json& servers = config["mcp"]["servers"];
+    servers.erase(kMcpServerName);
+    if (servers.empty()) {
+        config["mcp"].erase("servers");
+    }
 
     return write_json_atomic(config_path, config, error_out);
 }
@@ -218,12 +175,11 @@ nlohmann::json opencode_codemode_config() {
     if (!read_json_object(resolve_opencode_config_path(), config, ignored)) {
         return nullptr;
     }
-    const nlohmann::json::json_pointer pointer("/mcp/servers/lemonade");
-    if (!config.contains(pointer) || !config[pointer].is_object()) {
+    if (!config.contains(kMcpServerPointer) || !config[kMcpServerPointer].is_object()) {
         return nullptr;
     }
     // opencode ignores a partial entry here, so the whole entry is passed.
-    nlohmann::json server = config[pointer];
+    nlohmann::json server = config[kMcpServerPointer];
     server["codemode"] = true;
     return {{"mcp", {{"servers", {{kMcpServerName, std::move(server)}}}}}};
 }

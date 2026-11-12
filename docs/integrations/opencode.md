@@ -10,7 +10,7 @@
     curl -fsSL https://opencode.ai/install | bash
     ```
 
-    Launch works with OpenCode 1 and 2. `--codemode` needs OpenCode 2. Check with `opencode --version`.
+    Launch works with OpenCode 1 and 2. `--mcp` and `--codemode` need OpenCode 2. Check with `opencode --version`.
 
 2. Make sure Lemonade Server is running (`lemond`).
 
@@ -42,7 +42,7 @@ Add `--mcp` to give OpenCode Lemonade's [MCP tools](../api/mcp.md): list models,
 lemonade launch opencode --model Qwen3.5-35B-A3B-GGUF --mcp
 ```
 
-This adds a `lemonade` server to `opencode.json`. It stays there for later launches, and each launch updates its URL and API key reference. To remove it again:
+This adds a `lemonade` server to `opencode.json`. It needs OpenCode 2, since OpenCode 1 can't read where it is written: launch stops with OpenCode 1 or when it can't tell the version. The server stays there for later launches, and each launch updates its URL and API key reference. To remove it again:
 
 ```bash
 lemonade launch opencode --model Qwen3.5-35B-A3B-GGUF --no-mcp
@@ -60,7 +60,7 @@ OpenCode 2's [Code Mode](https://opencode.ai/v2/docs/mcp-servers) lets the model
 lemonade launch opencode --model Qwen3.5-35B-A3B-GGUF --mcp --codemode
 ```
 
-Code Mode only covers MCP tools, so `--codemode` has no effect without the `lemonade` server. It needs OpenCode 2: launch stops with OpenCode 1, and skips it with a warning when it can't tell the version.
+Code Mode only covers MCP tools, so `--codemode` has no effect without the `lemonade` server. Like `--mcp`, it needs OpenCode 2.
 
 ## Images and tool calling
 
@@ -99,7 +99,7 @@ Code Mode only covers MCP tools, so `--codemode` has no effect without the `lemo
 - `apiKey` is the placeholder `lemonade` when Lemonade has no API key. When it has one (`--api-key`, `LEMONADE_API_KEY` or `LEMONADE_ADMIN_API_KEY`), the value is `{env:LEMONADE_API_KEY}`: launch passes the key to OpenCode in that environment variable, and it is never written to disk. Running `opencode` directly then needs `LEMONADE_API_KEY` set, and OpenCode 2's background service needs it in its own environment. If launch can't read or update `opencode.json` while a key is set, it stops instead of starting OpenCode, so the key is never sent to the server in the old config.
 - The launched model is selected through `OPENCODE_CONFIG_CONTENT`, so your default model in `opencode.json` is unchanged.
 
-With `--mcp`, the `lemonade` server is written where your OpenCode version reads it: `mcp.servers.lemonade` for OpenCode 2, and `mcp.lemonade` for OpenCode 1, which rejects `mcp.servers`.
+With `--mcp`, the `lemonade` server is written to `mcp.servers.lemonade`. OpenCode 1 rejects a config with `mcp.servers`, which is why `--mcp` needs OpenCode 2.
 
 ```json
 {

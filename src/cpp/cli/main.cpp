@@ -765,8 +765,7 @@ static bool check_pi_version_for_flags(const std::string& pi_binary, const CliCo
 // when the sync already loaded the launched model.
 static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                          const CliConfig& config,
-                                         bool* model_loaded = nullptr,
-                                         std::optional<int> opencode_major = std::nullopt) {
+                                         bool* model_loaded = nullptr) {
     constexpr int default_context_window = 40960;
     // A window of 0 marks a model without a saved size until the fallback is applied.
     std::vector<lemon_cli::AgentModelEntry> models = fetch_llm_models_for_sync(client, 0);
@@ -942,9 +941,8 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
             std::string mcp_error;
             const bool synced =
                 is_pi ? lemon_cli::sync_pi_mcp_server(origin, !config.api_key.empty(), mcp_error)
-                      : lemon_cli::sync_opencode_mcp_server(
-                            origin, !config.api_key.empty(),
-                            lemon_cli::opencode_mcp_shape(opencode_major), mcp_error);
+                      : lemon_cli::sync_opencode_mcp_server(origin, !config.api_key.empty(),
+                                                            mcp_error);
             if (!synced) {
                 if (with_key && had_mcp_entry) {
                     std::cerr << "Error: Failed to update Lemonade MCP in " << config.agent << ": "
@@ -1054,31 +1052,30 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         return 1;
     }
 
-    // The MCP entry's shape and --codemode depend on the opencode version.
     std::optional<int> opencode_major;
-    bool opencode_codemode = false;
     if (config.agent == "opencode") {
         opencode_major = lemon_tray::opencode_major_version(agent_binary);
-        if (config.agent_codemode && !opencode_major) {
-            std::cerr << "Warning: Could not determine the opencode version; ignoring --codemode,"
-                      << " which needs opencode 2 or newer." << std::endl;
-        } else if (config.agent_codemode && *opencode_major < 2) {
-            std::cerr << "Error: --codemode needs opencode 2 or newer (found opencode "
-                      << *opencode_major << ")." << std::endl;
+        // opencode 1 rejects the whole config once it has an mcp.servers entry.
+        const char* v2_flag = config.agent_codemode               ? "--codemode"
+                              : config.agent_mcp.value_or(false) ? "--mcp"
+                                                                  : nullptr;
+        if (v2_flag && (!opencode_major || *opencode_major < 2)) {
+            std::cerr << "Error: " << v2_flag << " needs opencode 2 or newer ("
+                      << (opencode_major ? "found opencode " + std::to_string(*opencode_major)
+                                         : std::string("could not determine the opencode version"))
+                      << ")." << std::endl;
             std::cerr << agent_config.install_instructions << std::endl;
             return 1;
-        } else {
-            opencode_codemode = config.agent_codemode;
         }
     }
 
     bool model_loaded = false;
     if (needs_config_sync && sync_after_binary_check &&
-        !sync_agent_config_for_launch(client, config, &model_loaded, opencode_major)) {
+        !sync_agent_config_for_launch(client, config, &model_loaded)) {
         return 1;
     }
 
-    if (opencode_codemode) {
+    if (config.agent == "opencode" && config.agent_codemode) {
         const nlohmann::json codemode = lemon_cli::opencode_codemode_config();
         auto inline_config = std::find_if(
             agent_config.env_vars.begin(), agent_config.env_vars.end(),
@@ -1830,7 +1827,7 @@ int main(int argc, char* argv[]) {
         if (agent_name == "opencode") {
             agent_cmd->add_flag("--mcp,!--no-mcp", config.agent_mcp,
                 "Add (or remove) the Lemonade MCP server in opencode.json; the choice is kept "
-                "for later launches");
+                "for later launches (opencode 2 or newer)");
             agent_cmd->add_flag("--codemode", config.agent_codemode,
                 "Put the Lemonade MCP server's tools in opencode's Code Mode for this launch "
                 "(opencode 2 or newer)");
