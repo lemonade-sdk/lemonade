@@ -142,13 +142,25 @@ std::size_t raise_open_file_limit() {
         LOG(DEBUG, "Server") << "getrlimit(RLIMIT_NOFILE) failed: " << std::strerror(errno) << " (" << errno << ")" << std::endl;
         return 0;
     }
+    // Child processes inherit the soft limit. A very high one (systemd and the
+    // GitHub runners hand out hard limits in the hundreds of thousands or more)
+    // makes programs that walk the descriptor table, llama-server's loader among
+    // them, slow down or fail, so the raise stops at a ceiling that still covers
+    // every connection lemond opens.
+    constexpr rlim_t kOpenFileCeiling = 65536;
     rlim_t target = limit.rlim_max;
+    if (target == RLIM_INFINITY || target > kOpenFileCeiling) {
+        target = kOpenFileCeiling;
+    }
 #if defined(__APPLE__)
     // Darwin refuses a soft limit above OPEN_MAX even when the hard limit is unlimited.
-    if (target == RLIM_INFINITY || target > OPEN_MAX) {
+    if (target > OPEN_MAX) {
         target = OPEN_MAX;
     }
 #endif
+    if (limit.rlim_max != RLIM_INFINITY && target > limit.rlim_max) {
+        target = limit.rlim_max;
+    }
     if (target != RLIM_INFINITY && target > limit.rlim_cur) {
         limit.rlim_cur = target;
         if (setrlimit(RLIMIT_NOFILE, &limit) != 0) {

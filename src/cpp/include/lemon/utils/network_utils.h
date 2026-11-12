@@ -55,8 +55,10 @@ private:
 // idle timeout) require periodic application data / SSE heartbeats.
 bool configure_tcp_keepalive(socket_t sock);
 
-// Raise the soft limit on open file descriptors to the hard limit (capped at
-// OPEN_MAX on Apple platforms, which refuse a higher soft limit). Every
+// Raise the soft limit on open file descriptors towards the hard limit, stopping
+// at 65536 (and at OPEN_MAX on Apple platforms, which refuse a higher soft
+// limit): children inherit the soft limit and a huge one slows or breaks
+// programs that walk the descriptor table, such as the model servers. Every
 // listener, accepted connection, event stream and backend pipe holds a
 // descriptor, and launchd starts a daemon with a soft limit of 256. Once that
 // limit is reached accept() fails: Darwin closes each new connection as soon

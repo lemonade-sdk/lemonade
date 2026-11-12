@@ -464,15 +464,17 @@ static void test_raise_open_file_limit(TestResult& r) {
 
     struct rlimit raised {};
     const bool read_back = getrlimit(RLIMIT_NOFILE, &raised) == 0;
+    // The raise stops at 65536 (and at OPEN_MAX on Apple) even when the hard
+    // limit allows more; see raise_open_file_limit.
     rlim_t expected = original.rlim_max;
+    if (expected == RLIM_INFINITY || expected > 65536) {
+        expected = 65536;
+    }
 #if defined(__APPLE__)
-    if (expected == RLIM_INFINITY || expected > OPEN_MAX) {
+    if (expected > OPEN_MAX) {
         expected = OPEN_MAX;
     }
 #endif
-    if (expected == RLIM_INFINITY) {
-        expected = lowered.rlim_cur;  // nothing to raise to; the soft limit stays
-    }
 
     setrlimit(RLIMIT_NOFILE, &original);
 
