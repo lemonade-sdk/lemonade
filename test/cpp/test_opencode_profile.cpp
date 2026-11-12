@@ -11,11 +11,11 @@ int main() {
         std::printf("%s: %s\n", ok ? "PASS" : "FAIL", name);
         if (!ok) ++failures;
     };
-    for (const auto& [version, expected] : std::vector<std::pair<std::string, bool>>{
-             {"opencode v2.2.7\n", true}, {"2.2.7", true}, {"v2.0.0-beta.1", true},
-             {"1.2.3", false}, {"opencode v1.9.0", false}, {"fake-agent-ok", false},
-             {"", false}, {"error: 2.2.7", false}}) {
-        check(lemon_cli::is_opencode_v2(version) == expected, version.c_str());
+    for (const auto& [version, major] : std::vector<std::pair<std::string, int>>{
+             {"opencode v2.2.7\n", 2}, {"2.2.7", 2}, {"v2.0.0-beta.1", 2}, {"1.2.3", 1},
+             {"opencode v1.9.0", 1}, {"v10.0.0", 10}, {"999.9.9", 999}, {"99999999999999.1.1", 0},
+             {"fake-agent-ok", 0}, {"", 0}, {"error: 2.2.7", 0}}) {
+        check(lemon_cli::opencode_major_version(version) == major, version.c_str());
     }
 
     const std::vector<lemon_cli::AgentModelEntry> models = {

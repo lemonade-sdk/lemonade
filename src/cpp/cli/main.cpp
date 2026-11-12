@@ -1064,6 +1064,7 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     bool opencode_v2 = false;
     if (config.agent == "opencode") {
         std::string version;
+        int major_version = 0;
         try {
             const int result = lemon::utils::ProcessManager::run_process_with_output(
                 agent_binary, {"--version"},
@@ -1071,13 +1072,24 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
                     version += line + "\n";
                     return true;
                 }, "", 10, false);
-            opencode_v2 = result == 0 && lemon_cli::is_opencode_v2(version);
+            if (result == 0) {
+                major_version = lemon_cli::opencode_major_version(version);
+            }
         } catch (const std::exception&) {
+        }
+        opencode_v2 = major_version >= 2;
+        if (major_version == 0) {
+            std::string observed = version.substr(0, version.find_first_of("\r\n"));
+            std::cerr << "Warning: unrecognized OpenCode version ("
+                      << (observed.empty() ? "no output" : observed)
+                      << "); assuming 1.x and writing its config file." << std::endl;
         }
         if (opencode_v2) {
             // A private server inherits this launch's model, endpoint and credentials.
-            agent_config.extra_args.erase(agent_config.extra_args.begin(),
-                                          agent_config.extra_args.begin() + 2);
+            if (agent_config.extra_args.size() >= 2 && agent_config.extra_args[0] == "-m") {
+                agent_config.extra_args.erase(agent_config.extra_args.begin(),
+                                              agent_config.extra_args.begin() + 2);
+            }
             agent_config.extra_args.insert(agent_config.extra_args.begin(), "--standalone");
         }
     }

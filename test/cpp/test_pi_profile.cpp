@@ -48,7 +48,6 @@ void test_provider_block() {
             {"Vision", "", 65536, {"chat", "vision"}},
             {"Thinker", "", 40960, {"chat", "reasoning"}},
             {"Unknown", "", 0, {"chat"}},
-            {"LargeContext", "", 262144, {"chat"}},
         });
 
     check("provider compat targets llama.cpp", provider["compat"] == json{
@@ -65,13 +64,6 @@ void test_provider_block() {
     check("unknown window is left to pi", provider["models"][3] == json{
         {"id", "Unknown"}, {"input", {"text"}},
     });
-    check("large context keeps its window with a bounded output budget",
-          provider["models"][4] == json{
-              {"id", "LargeContext"}, {"contextWindow", 262144},
-              {"maxTokens", 65536}, {"input", {"text"}},
-          });
-    check("output budget can fill a 64k context",
-          provider["models"][1]["maxTokens"] == 65536);
 }
 
 void test_api_key() {

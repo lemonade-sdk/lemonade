@@ -66,11 +66,11 @@ nlohmann::json build_pi_model_entry(const AgentModelEntry& model) {
     nlohmann::json entry = {{"id", model.id}};
 
     // Pi drops every custom provider when any value in models.json is invalid,
-    // so only positive windows are written. Halogen caps generation at 65536
-    // tokens independently of its context window.
+    // so only positive windows are written. maxTokens matches the window
+    // because pi clamps it to the room left after the prompt on each request.
     if (model.context_window > 0) {
         entry["contextWindow"] = model.context_window;
-        entry["maxTokens"] = std::min(model.context_window, 65536);
+        entry["maxTokens"] = model.context_window;
     }
 
     entry["input"] = has_label(model, "vision")

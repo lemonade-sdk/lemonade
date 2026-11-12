@@ -80,16 +80,16 @@ const AgentConfigProfile& opencode_profile() {
     return profile;
 }
 
-bool is_opencode_v2(const std::string& version) {
+int opencode_major_version(const std::string& version) {
     static const std::regex pattern(R"(^\s*(?:opencode\s+)?v?([0-9]+)\.[0-9]+\.[0-9]+)");
     std::smatch match;
     if (!std::regex_search(version, match, pattern)) {
-        return false;
+        return 0;
     }
     try {
-        return std::stoi(match[1].str()) >= 2;
+        return std::stoi(match[1].str());
     } catch (const std::exception&) {
-        return false;
+        return 0;
     }
 }
 
