@@ -2,6 +2,7 @@
 
 namespace lemon {
 
+class AgentHostRegistry;
 class BackendManager;
 class CloudProviderRegistry;
 class ConfigEffects;
@@ -39,6 +40,7 @@ struct ServerContext {
     ModelLoader* model_loader = nullptr;
     ModelJson* model_json = nullptr;
     DownloadManager* downloads = nullptr;
+    AgentHostRegistry* agent_hosts = nullptr;
 };
 
 } // namespace lemon

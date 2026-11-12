@@ -8,6 +8,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/runtime_config.h"
+#include "lemon/server/agent_host_registry.h"
 #include "lemon/server/config_effects.h"
 #include "lemon/server/download_manager.h"
 #include "lemon/server/http_listener.h"
@@ -36,6 +37,7 @@ void register_lemonade_inference_routes(RouteRegistry& registry, ServerContext& 
 void register_lemonade_backends_routes(RouteRegistry& registry, ServerContext& ctx);
 void register_lemonade_system_routes(RouteRegistry& registry, ServerContext& ctx);
 void register_lemonade_jobs_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_agents_routes(RouteRegistry& registry, ServerContext& ctx);
 void register_llamacpp_routes(RouteRegistry& registry, ServerContext& ctx);
 void register_router_routes(RouteRegistry& registry, ServerContext& ctx);
 void register_internal_routes(RouteRegistry& registry, ServerContext& ctx);
@@ -139,6 +141,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     register_lemonade_backends_routes(*registry_, ctx_);
     register_lemonade_system_routes(*registry_, ctx_);
     register_lemonade_jobs_routes(*registry_, ctx_);
+    register_lemonade_agents_routes(*registry_, ctx_);
     register_llamacpp_routes(*registry_, ctx_);
     register_router_routes(*registry_, ctx_);
     register_internal_routes(*registry_, ctx_);
@@ -148,15 +151,21 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
 
     middleware_ = std::make_unique<RequestMiddleware>(config_.get(), registry_.get());
     web_ui_ = std::make_unique<WebUi>(ctx_);
+    agent_hosts_ = std::make_unique<AgentHostRegistry>(middleware_->api_key_set());
+    ctx_.agent_hosts = agent_hosts_.get();
     listener_ = std::make_unique<HttpListener>(
         config_.get(), router_.get(),
         [this](httplib::Server& server) {
             middleware_->install(server);
+            agent_hosts_->register_endpoint(server);
             registry_->apply(server);
             web_ui_->register_routes(server);
         },
         [this]() { stop(); }, middleware_->api_key_set(), middleware_->admin_api_key_set());
     ctx_.listener = listener_.get();
+    // Hot rebinds stop the listener without Server::stop(); link handlers
+    // must let go of their workers first in both cases.
+    listener_->set_before_stop([this]() { agent_hosts_->shutdown(); });
 
     start_model_cache_warmup();
 }

@@ -366,6 +366,10 @@ sys.exit(0)
         env["XDG_CONFIG_HOME"] = os.path.join(stub_dir, ".config")
         env["XDG_CACHE_HOME"] = os.path.join(stub_dir, ".cache")
         env["XDG_DATA_HOME"] = os.path.join(stub_dir, ".local", "share")
+        # launch pi goes through an agent host that keeps its state and shim here.
+        env["XDG_STATE_HOME"] = os.path.join(stub_dir, ".local", "state")
+        env["XDG_BIN_HOME"] = os.path.join(stub_dir, ".local", "bin")
+        env["LEMONADE_AGENT_HOST_IDLE_SECONDS"] = "5"
         return env
 
     def _build_noop_opener_env(self, stub_dir):

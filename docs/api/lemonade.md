@@ -44,6 +44,11 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/jobs/{id}/resume`](#post-v1jobsidresume) | Resume a job |
 | `GET` | [`/v1/jobs/{id}`](#get-v1jobsid) | Read a job |
 | `DELETE` | [`/v1/jobs/{id}`](#delete-v1jobsid) | Delete a job |
+| `GET` | [`/v1/agents`](#get-v1agents) | List the agents Lemonade manages |
+| `POST` | [`/v1/agents/{id}/install`](#post-v1agentsidinstall) | Install or update an agent to its pinned version |
+| `DELETE` | [`/v1/agents/{id}`](#delete-v1agentsid) | Remove an installed agent |
+| `POST` | [`/v1/agents/{id}/configure`](#post-v1agentsidconfigure) | Point an agent at this server |
+| `POST` | [`/v1/agents/{id}/launch`](#post-v1agentsidlaunch) | Prepare an agent launch |
 <!-- END GENERATED: lemonade.summary -->
 
 Some Lemonade endpoints live on other pages: the per-model [`/v1/models/{id}/files`](openai.md#get-v1modelsidfiles) and [`/v1/models/{id}/options`](openai.md#get-v1modelsidoptions) extensions sit with the OpenAI models endpoints, routing and [`/v1/routing/validate`](router.md#post-v1routingvalidate) are on the [Router API](router.md) page, and endpoints for clients bundled with the server are on the [Internal API](internal.md) page.
@@ -3323,3 +3328,456 @@ Requires `LEMONADE_API_KEY` when it is set.
 |--------|------|
 | `404` | `id` names no job, or a deleted one |
 <!-- END GENERATED: lemonade.jobs_delete -->
+
+## Agent API
+
+The endpoints below install, configure and launch the coding agents Lemonade manages for a user; see [Agents](../guide/agents.md). lemond relays each request to the user's agent host, which does the work as that user.
+
+<!-- BEGIN GENERATED: lemonade.agents_list -->
+## `GET /v1/agents`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Reports, for each agent Lemonade can manage, the pinned version, the installed version, any copy found on `PATH`, which of them is in use and the state of the shim Lemonade writes.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+This endpoint does not take any parameters.
+
+Every `/v1/agents` request carries the `X-Lemonade-Agent-Token` header with the token the user's agent host wrote to its state directory. lemond relays the request to that host over the host's WebSocket at `/v1/agents/host`; see [Agent host protocol](#agent-host-protocol).
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest -Uri "http://localhost:13305/v1/agents"
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/agents
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "agents": [
+    {
+      "id": "pi",
+      "name": "Pi",
+      "pinned": "1.5.0",
+      "sandbox": "off",
+      "installed": null,
+      "external": null,
+      "active": "none",
+      "shim": {
+        "on_path": false,
+        "path": "~/.local/bin/pi",
+        "resolves_to": null,
+        "state": "absent"
+      }
+    }
+  ],
+  "host": {
+    "bin_dir": "~/.local/bin",
+    "data_dir": "~/.local/share/lemonade/agents",
+    "platform": "linux-x64",
+    "version": "2026.47.0~1788.a6ed024d"
+  }
+}
+```
+
+### Response format
+
+The agents and the host serving them.
+
+- `agents` - One entry per agent Lemonade manages.
+  - `id` - The agent's id, as routes take it.
+  - `name` - The agent's display name.
+  - `pinned` - The version this Lemonade installs.
+  - `sandbox` - Always `off`; reserved for running agents in a sandbox.
+  - `installed` - The installed `version` and its `binary`, or `null`.
+  - `external` - The `binary` of a copy Lemonade didn't install, found on the host's `PATH`, or `null`.
+  - `active` - Which copy launch uses.
+  - `shim` - The shim's `path`, its `state` (`ours`, `foreign` or `absent`), whether its directory is `on_path`, and the first match on `PATH` (`resolves_to`).
+  - `pin_error` - Why there's no pinned version for this platform, when there isn't.
+- `host` - The host's `version`, `platform`, shim directory (`bin_dir`) and install directory (`data_dir`).
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `agent_token_missing` | the request has no `X-Lemonade-Agent-Token` header |
+| `409` | `agent_busy` | the agent is being installed or removed, or too many agent requests are in flight |
+| `503` | `agent_host_unavailable` | no agent host with the request's token is connected |
+| `504` | `agent_host_timeout` | the agent host didn't answer in time |
+<!-- END GENERATED: lemonade.agents_list -->
+
+<!-- BEGIN GENERATED: lemonade.agents_install -->
+## `POST /v1/agents/{id}/install`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Downloads the pinned release, verifies its SHA-256, installs it under the user's data directory, writes the shim and configures the agent for this server. Installing the version that is already installed does nothing unless `force` is set.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `id` (path) | Yes | The agent. Lemonade manages `pi`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `stream` | No | Stream progress as server-sent events. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `force` | No | Download and install again even if the pinned version is installed. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `agent_dir` | No | The agent's configuration directory in the client's environment, such as pi's `PI_CODING_AGENT_DIR`. Defaults to the host's. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+Every `/v1/agents` request carries the `X-Lemonade-Agent-Token` header with the token the user's agent host wrote to its state directory. lemond relays the request to that host over the host's WebSocket at `/v1/agents/host`; see [Agent host protocol](#agent-host-protocol).
+
+### Examples
+
+#### Streaming
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/agents/pi/install" `
+      -Method POST
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:13305/v1/agents/pi/install
+    ```
+
+**Response:** `200 OK`
+
+```text
+event: status
+data: {"message": "Installing Pi 1.5.0"}
+event: progress
+data: {"file": "pi-linux-x64.tar.gz", "file_index": 1, "total_files": 1, "bytes_downloaded": 0, "bytes_total": 58876253}
+event: progress
+data: {"file": "pi-linux-x64.tar.gz", "file_index": 1, "total_files": 1, "bytes_downloaded": 637139, "bytes_total": 58876253}
+...
+event: progress
+data: {"file": "pi-linux-x64.tar.gz", "file_index": 1, "total_files": 1, "bytes_downloaded": 58876253, "bytes_total": 58876253}
+event: complete
+data: {"agent": "pi", "version": "1.5.0", "binary": "~/.local/share/lemonade/agents/pi/1.5.0/pi", "downloaded": true, "shim": {"path": "~/.local/bin/pi", "state": "ours"}, "warnings": []}
+```
+
+#### Installed
+
+Installing the pinned version again does nothing.
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/agents/pi/install" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{"stream": false}'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/agents/pi/install \
+      -H "Content-Type: application/json" \
+      -d '{"stream": false}'
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "agent": "pi",
+  "version": "1.5.0",
+  "binary": "~/.local/share/lemonade/agents/pi/1.5.0/pi",
+  "downloaded": false,
+  "shim": {"path": "~/.local/bin/pi", "state": "ours"},
+  "warnings": []
+}
+```
+
+### Response format
+
+#### Event stream
+
+`status`, `progress` and `warning` events, then `complete` with the result or `error`.
+
+- `agent` - The agent installed.
+- `version` - The installed version, which is the pinned one.
+- `binary` - Absolute path of the installed agent.
+- `downloaded` - `false` when the pinned version was already installed.
+- `shim` - The shim Lemonade writes, with its `path` and `state`: `ours`, `foreign` (someone else's file, left alone) or `absent`.
+- `warnings` - Problems that didn't stop the request, such as a foreign shim.
+- `message` - Status and warning events: a line for the user.
+- `file` - Progress events: the release asset being downloaded.
+- `file_index`, `total_files` - Progress events: always `1`.
+- `bytes_downloaded` - Progress events: bytes downloaded so far.
+- `bytes_total` - Progress events: the asset's size.
+- `error` - Error event: what went wrong.
+- `code` - Error event: the error's code, as for a non-streamed error.
+- `status` - Error event: the HTTP status a non-streamed request would have had.
+
+#### JSON
+
+The install's result.
+
+- `agent` - The agent installed.
+- `version` - The installed version, which is the pinned one.
+- `binary` - Absolute path of the installed agent.
+- `downloaded` - `false` when the pinned version was already installed.
+- `shim` - The shim Lemonade writes, with its `path` and `state`: `ours`, `foreign` (someone else's file, left alone) or `absent`.
+- `warnings` - Problems that didn't stop the request, such as a foreign shim.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` | `agent_token_missing` | the request has no `X-Lemonade-Agent-Token` header |
+| `404` | `unknown_agent` | `id` names no agent Lemonade manages |
+| `409` | `agent_busy` | the agent is being installed or removed, or too many agent requests are in flight |
+| `422` | `unsupported_platform` | the agent has no release for this OS and CPU |
+| `502` | `download_failed` | the release couldn't be downloaded |
+| `502` | `checksum_mismatch` | the download doesn't match its pinned checksum |
+| `503` | `agent_host_unavailable` | no agent host with the request's token is connected |
+<!-- END GENERATED: lemonade.agents_install -->
+
+<!-- BEGIN GENERATED: lemonade.agents_uninstall -->
+## `DELETE /v1/agents/{id}`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Removes the agent's installed versions and Lemonade's shim. The agent's own settings, such as `~/.pi/agent`, are kept.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `id` (path) | Yes | The agent. Lemonade manages `pi`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+Every `/v1/agents` request carries the `X-Lemonade-Agent-Token` header with the token the user's agent host wrote to its state directory. lemond relays the request to that host over the host's WebSocket at `/v1/agents/host`; see [Agent host protocol](#agent-host-protocol).
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/agents/pi" `
+      -Method DELETE
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl -X DELETE http://localhost:13305/v1/agents/pi
+    ```
+
+**Response:** `200 OK`
+
+```json
+{"removed": true, "warnings": []}
+```
+
+### Response format
+
+Whether anything was removed.
+
+- `removed` - `false` when nothing was installed.
+- `warnings` - Problems that didn't stop the request, such as a foreign shim.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `agent_token_missing` | the request has no `X-Lemonade-Agent-Token` header |
+| `404` | `unknown_agent` | `id` names no agent Lemonade manages |
+| `409` | `agent_busy` | the agent is being installed or removed, or too many agent requests are in flight |
+| `500` | `uninstall_failed` | the shim couldn't be removed, or removal stopped partway |
+| `503` | `agent_host_unavailable` | no agent host with the request's token is connected |
+| `504` | `agent_host_timeout` | the agent host didn't answer in time |
+<!-- END GENERATED: lemonade.agents_uninstall -->
+
+<!-- BEGIN GENERATED: lemonade.agents_configure -->
+## `POST /v1/agents/{id}/configure`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Writes the Lemonade provider with every chat model into the agent's own configuration, and adds, refreshes or removes Lemonade's MCP server.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `id` (path) | Yes | The agent. Lemonade manages `pi`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `mcp` | No | `true` adds Lemonade's MCP server to the agent, `false` removes it; unset refreshes an existing entry. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `agent_dir` | No | The agent's configuration directory in the client's environment, such as pi's `PI_CODING_AGENT_DIR`. Defaults to the host's. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+Every `/v1/agents` request carries the `X-Lemonade-Agent-Token` header with the token the user's agent host wrote to its state directory. lemond relays the request to that host over the host's WebSocket at `/v1/agents/host`; see [Agent host protocol](#agent-host-protocol).
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/agents/pi/configure" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{"mcp": true}'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/agents/pi/configure \
+      -H "Content-Type: application/json" \
+      -d '{"mcp": true}'
+    ```
+
+**Response:** `200 OK`
+
+```json
+{"warnings": []}
+```
+
+### Response format
+
+Problems that didn't stop the configuration.
+
+- `warnings` - Problems that didn't stop the request, such as a foreign shim.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` | `agent_token_missing` | the request has no `X-Lemonade-Agent-Token` header |
+| `404` | `unknown_agent` | `id` names no agent Lemonade manages |
+| `409` | `agent_busy` | the agent is being installed or removed, or too many agent requests are in flight |
+| `500` | `config_write_failed` | the agent's configuration couldn't be written |
+| `503` | `agent_host_unavailable` | no agent host with the request's token is connected |
+| `504` | `agent_host_timeout` | the agent host didn't answer in time |
+<!-- END GENERATED: lemonade.agents_configure -->
+
+<!-- BEGIN GENERATED: lemonade.agents_launch -->
+## `POST /v1/agents/{id}/launch`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Configures the agent for the model and returns the command the client runs. The host runs nothing itself. Status and warning events come first; the final `complete` event carries `binary`, `args`, `cwd`, `env` and `model_loaded`.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `id` (path) | Yes | The agent. Lemonade manages `pi`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model the agent starts with. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `cwd` | Yes | Absolute working directory for the agent. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `args` | No | Extra arguments for the agent. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `client_has_api_key` | No | Whether the client gives the agent `LEMONADE_API_KEY`, so its config references the key instead of a placeholder. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `mcp` | No | `true` adds Lemonade's MCP server to the agent, `false` removes it; unset refreshes an existing entry. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `codemode` | No | Start pi with its `codemode` tool. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `recipe_options` | No | Load options for the model, such as `ctx_size`, which also sets the agent's context window. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `agent_dir` | No | The agent's configuration directory in the client's environment, such as pi's `PI_CODING_AGENT_DIR`. Defaults to the host's. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `search_path` | No | The client's `PATH`, searched for an agent Lemonade didn't install. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+Every `/v1/agents` request carries the `X-Lemonade-Agent-Token` header with the token the user's agent host wrote to its state directory. lemond relays the request to that host over the host's WebSocket at `/v1/agents/host`; see [Agent host protocol](#agent-host-protocol).
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/agents/pi/launch" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model": "Qwen3-0.6B-GGUF",
+          "cwd": "/tmp",
+          "args": ["--thinking", "off"],
+          "recipe_options": {"ctx_size": 4096}
+        }'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/agents/pi/launch \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "Qwen3-0.6B-GGUF",
+          "cwd": "/tmp",
+          "args": ["--thinking", "off"],
+          "recipe_options": {"ctx_size": 4096}
+        }'
+    ```
+
+**Response:** `200 OK`
+
+```text
+event: complete
+data: {"binary": "~/.local/share/lemonade/agents/pi/1.5.0/pi", "args": ["--provider", "Lemonade", "--model", "Qwen3-0.6B-GGUF", "--thinking", "off"], "cwd": "/tmp", "env": {"PI_CODING_AGENT_DIR": "~/.pi/agent", "PI_SELF_UPDATE_COMMAND": "lemonade agents install pi", "PI_SKIP_VERSION_CHECK": "1"}, "model_loaded": false, "managed": true}
+```
+
+### Response format
+
+`status` and `warning` events, then `complete` with the command to run, or `error`.
+
+- `message` - Status and warning events: a line for the user.
+- `binary` - Complete event: absolute path of the agent to run.
+- `args` - Complete event: its arguments.
+- `cwd` - Complete event: the directory to run it in, as requested.
+- `env` - Complete event: variables to add to its environment. They never include an API key; the client adds its own `LEMONADE_API_KEY`.
+- `model_loaded` - Complete event: whether preparing the launch loaded the model, so the client needn't.
+- `managed` - Complete event: whether `binary` is the copy Lemonade installed.
+- `error` - Error event: what went wrong.
+- `code` - Error event: the error's code, as for a non-streamed error.
+- `status` - Error event: the HTTP status a non-streamed request would have had.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` | `agent_token_missing` | the request has no `X-Lemonade-Agent-Token` header |
+| `400` | `invalid_cwd` | `cwd` isn't an absolute directory |
+| `404` | `unknown_agent` | `id` names no agent Lemonade manages |
+| `409` | `agent_busy` | the agent is being installed or removed, or too many agent requests are in flight |
+| `409` | `agent_not_installed` | the agent is neither installed by Lemonade nor on `PATH` |
+| `424` | `model_load_failed` | the model failed to load |
+| `500` | `config_write_failed` | the agent's configuration couldn't be written |
+| `503` | `agent_host_unavailable` | no agent host with the request's token is connected |
+<!-- END GENERATED: lemonade.agents_launch -->
+
+### Agent host protocol
+
+An agent host connects to lemond with a WebSocket at `/v1/agents/host`, presenting lemond's API key when it has one, and exchanges JSON text frames, each with a `type`:
+
+| Direction | Frame |
+|---|---|
+| host → lemond, first | `{"type":"hello","protocol":1,"token":"<64 hex>","version":"…","platform":"linux-x64","persistent":false}` |
+| lemond → host | `{"type":"welcome","auth_required":true}`, or a close with `4400` (bad hello), `4408` (no hello within 5 seconds), `4409` (unsupported protocol) or `4429` (too many hosts) |
+| lemond → host | `{"type":"request","id":7,"route":"lemonade.agents_install","params":{"id":"pi"},"token":"…","body":{…}}` |
+| lemond → host | `{"type":"cancel","id":7}` when the client goes away |
+| host → lemond | `{"type":"event","id":7,"event":"progress","data":{…}}`, for streamed routes |
+| host → lemond | `{"type":"response","id":7,"status":200,"body":{…}}`, always last |
+
+lemond routes each request by the SHA-256 of its `X-Lemonade-Agent-Token` and keeps only that hash. The host checks the token in every request. `auth_required` tells the host whether lemond requires an API key, so the agent's configuration references `${LEMONADE_API_KEY}` instead of a placeholder. A lemond serves at most 4 hosts and relays at most 4 agent requests at once.

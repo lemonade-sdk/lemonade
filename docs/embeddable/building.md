@@ -84,7 +84,9 @@ Each archive contains:
 
 - `lemond` (or `lemond.exe`) — the server binary
 - `lemonade` (or `lemonade.exe`) — the CLI binary
+- `lemonade-agent-host` (or `lemonade-agent-host.exe`) — the agent host the CLI uses for `lemonade agents`
 - `LICENSE`
 - `resources/server_models.json`
 - `resources/backend_versions.json`
 - `resources/defaults.json`
+- `resources/agent_versions.json`

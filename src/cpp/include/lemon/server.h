@@ -82,6 +82,7 @@ private:
     std::unique_ptr<RouteRegistry> registry_;
     std::unique_ptr<RequestMiddleware> middleware_;
     std::unique_ptr<WebUi> web_ui_;
+    std::unique_ptr<AgentHostRegistry> agent_hosts_;
     std::unique_ptr<HttpListener> listener_;
 
     std::thread model_cache_warmup_thread_;

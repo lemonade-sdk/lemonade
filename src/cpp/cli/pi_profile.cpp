@@ -7,55 +7,64 @@
 #include <regex>
 #include <system_error>
 
+#include "lemon/utils/path_utils.h"
+
 namespace fs = std::filesystem;
 
 namespace lemon_cli {
+
+// Pi stores its config under ~/.pi/agent/ (%USERPROFILE%\.pi\agent\ on Windows)
+// by default, or in $PI_CODING_AGENT_DIR if set. It does not honor XDG_CONFIG_HOME.
+// The result is UTF-8, like every agent_dir below, since the host gets it as JSON.
+std::string resolve_pi_agent_dir() {
+    using lemon::utils::get_environment_variable_utf8;
+    const std::string pi_dir = get_environment_variable_utf8("PI_CODING_AGENT_DIR");
+    if (!pi_dir.empty()) {
+        return pi_dir;
+    }
+
+#ifdef _WIN32
+    const std::string home = get_environment_variable_utf8("USERPROFILE");
+#else
+    const std::string home = get_environment_variable_utf8("HOME");
+#endif
+    if (home.empty()) {
+        return "";
+    }
+    return lemon::utils::path_to_utf8(lemon::utils::path_from_utf8(home) / ".pi" / "agent");
+}
+
 namespace {
 
 constexpr const char* kPiPlaceholderApiKey = "lemonade";
 constexpr const char* kPiMcpServerName = "lemonade";
 
-// Pi stores its config under ~/.pi/agent/ (%USERPROFILE%\.pi\agent\ on Windows)
-// by default, or in $PI_CODING_AGENT_DIR if set. It does not honor XDG_CONFIG_HOME.
-std::string resolve_pi_agent_dir() {
-    const char* pi_dir = std::getenv("PI_CODING_AGENT_DIR");
-    if (pi_dir && pi_dir[0] != '\0') {
-        return std::string(pi_dir);
-    }
-
-#ifdef _WIN32
-    const char* home = std::getenv("USERPROFILE");
-#else
-    const char* home = std::getenv("HOME");
-#endif
-    if (!home || home[0] == '\0') {
-        return "";
-    }
-    return (fs::path(home) / ".pi" / "agent").string();
+std::string agent_dir_or_default(const std::string& agent_dir) {
+    return agent_dir.empty() ? resolve_pi_agent_dir() : agent_dir;
 }
 
-std::string resolve_pi_models_path() {
-    const std::string dir = resolve_pi_agent_dir();
+std::string resolve_pi_models_path(const std::string& agent_dir) {
+    const std::string dir = agent_dir_or_default(agent_dir);
     if (dir.empty()) {
         return "";
     }
-    return (fs::path(dir) / "models.json").string();
+    return (lemon::utils::path_from_utf8(dir) / "models.json").string();
 }
 
-std::string resolve_pi_mcp_path() {
-    const std::string dir = resolve_pi_agent_dir();
+std::string resolve_pi_mcp_path(const std::string& agent_dir) {
+    const std::string dir = agent_dir_or_default(agent_dir);
     if (dir.empty()) {
         return "";
     }
-    return (fs::path(dir) / "mcp.json").string();
+    return (lemon::utils::path_from_utf8(dir) / "mcp.json").string();
 }
 
-std::string resolve_pi_settings_path() {
-    const std::string dir = resolve_pi_agent_dir();
+std::string resolve_pi_settings_path(const std::string& agent_dir) {
+    const std::string dir = agent_dir_or_default(agent_dir);
     if (dir.empty()) {
         return "";
     }
-    return (fs::path(dir) / "settings.json").string();
+    return (lemon::utils::path_from_utf8(dir) / "settings.json").string();
 }
 
 bool has_label(const AgentModelEntry& model, const std::string& label) {
@@ -231,22 +240,21 @@ std::string pi_api_key_value(const std::string& api_key) {
     return api_key.empty() ? kPiPlaceholderApiKey : "${LEMONADE_API_KEY}";
 }
 
-const AgentConfigProfile& pi_profile() {
-    static const AgentConfigProfile profile = {
+AgentConfigProfile pi_profile(const std::string& agent_dir) {
+    return {
         "Pi",
-        resolve_pi_models_path,
+        [agent_dir] { return resolve_pi_models_path(agent_dir); },
         build_pi_provider_block,
         "providers",
         nlohmann::json::object(),
     };
-
-    return profile;
 }
 
 bool sync_pi_settings_file(const std::string& provider_name,
                            const std::string& default_model,
-                           std::string& error_out) {
-    const std::string settings_path = resolve_pi_settings_path();
+                           std::string& error_out,
+                           const std::string& agent_dir) {
+    const std::string settings_path = resolve_pi_settings_path(agent_dir);
     if (settings_path.empty()) {
         error_out = "Could not resolve pi settings path";
         return false;
@@ -263,8 +271,8 @@ bool sync_pi_settings_file(const std::string& provider_name,
     return write_json_atomic(settings_path, settings, error_out);
 }
 
-bool pi_has_mcp_server() {
-    const std::string mcp_path = resolve_pi_mcp_path();
+bool pi_has_mcp_server(const std::string& agent_dir) {
+    const std::string mcp_path = resolve_pi_mcp_path(agent_dir);
     if (mcp_path.empty()) {
         return false;
     }
@@ -289,8 +297,8 @@ bool parse_pi_version(const std::string& output, int& major, int& minor) {
     return true;
 }
 
-bool pi_mcp_config_readable(std::string& error_out) {
-    const std::string mcp_path = resolve_pi_mcp_path();
+bool pi_mcp_config_readable(std::string& error_out, const std::string& agent_dir) {
+    const std::string mcp_path = resolve_pi_mcp_path(agent_dir);
     if (mcp_path.empty()) {
         return true;
     }
@@ -300,8 +308,9 @@ bool pi_mcp_config_readable(std::string& error_out) {
 
 bool sync_pi_mcp_server(const std::string& server_origin,
                         bool has_api_key,
-                        std::string& error_out) {
-    const std::string mcp_path = resolve_pi_mcp_path();
+                        std::string& error_out,
+                        const std::string& agent_dir) {
+    const std::string mcp_path = resolve_pi_mcp_path(agent_dir);
     if (mcp_path.empty()) {
         error_out = "Could not resolve pi mcp.json path";
         return false;
@@ -373,8 +382,8 @@ bool sync_pi_mcp_server(const std::string& server_origin,
     return write_json_atomic(mcp_path, mcp, error_out);
 }
 
-bool remove_pi_mcp_server(std::string& error_out) {
-    const std::string mcp_path = resolve_pi_mcp_path();
+bool remove_pi_mcp_server(std::string& error_out, const std::string& agent_dir) {
+    const std::string mcp_path = resolve_pi_mcp_path(agent_dir);
     if (mcp_path.empty() || !fs::exists(mcp_path)) {
         return true;
     }
@@ -392,8 +401,8 @@ bool remove_pi_mcp_server(std::string& error_out) {
     return write_json_atomic(mcp_path, mcp, error_out);
 }
 
-bool pi_has_default_config() {
-    const std::string settings_path = resolve_pi_settings_path();
+bool pi_has_default_config(const std::string& agent_dir) {
+    const std::string settings_path = resolve_pi_settings_path(agent_dir);
     if (settings_path.empty() || !fs::exists(settings_path)) {
         return false;
     }
