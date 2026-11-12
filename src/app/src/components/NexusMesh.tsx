@@ -17,8 +17,8 @@ const STATE_TONES: Record<NexusMeshState, Tone> = { off: 'faint', locked: 'faint
 const tagTone = (tag: string): Tone => tag === 'This device' || tag === 'Admin' ? 'accent'
   : tag === 'Server' || tag === 'Joined network' ? 'info' : tag === 'Member' ? 'warn' : 'muted';
 
-function Dot({ tone, pulse = false }: { tone: Tone; pulse?: boolean }) {
-  return <span className={`nexus-mesh-dot nexus-mesh-dot--${tone}${pulse ? ' nexus-mesh-dot--pulse' : ''}`} aria-hidden="true" />;
+function Dot({ tone }: { tone: Tone }) {
+  return <span className={`nexus-mesh-dot nexus-mesh-dot--${tone}`} aria-hidden="true" />;
 }
 
 export function NexusPill({ label, tone, connection = false }: { label: string; tone: Tone; connection?: boolean }) {
@@ -43,10 +43,8 @@ export function NexusDeviceRows({ status, devices }: { status: NexusStatus | nul
   if (!devices.length) return <p className="nexus-mesh__empty">{t('No devices listed yet.')}</p>;
   return <ul className="nexus-devices nexus-mesh-list">
     {devices.map(device => {
-      const self = Boolean(status && device.node_id === status.node_id);
       const connection = nexusDeviceConnection(status, device);
       return <li key={`${device.group_id || 'home'}:${device.node_id}`} className="nexus-mesh-row">
-        <Dot tone={self ? 'good' : connection ? CONNECTION_TONES[connection] : 'faint'} pulse={self || Boolean(connection && connection !== 'offline')} />
         <span className="nexus-mesh-row__body">
           <span className="nexus-mesh-row__name">{device.device_name || t('Unnamed device')}</span>
           {device.tunnel_ip && <span className="nexus-mesh-row__sub">{device.tunnel_ip.split('/')[0]}</span>}
@@ -66,15 +64,13 @@ function ServerChoice({ selected, title, subtitle, connection, disabled, onChoos
   selected: boolean; title: string; subtitle?: string; connection?: NexusConnection; disabled: boolean; onChoose: () => void; onInfo: () => void;
 }) {
   const { t } = useI18n();
-  const tone = connection ? CONNECTION_TONES[connection] : 'good';
   return <div className="nexus-mesh-choice">
     <button type="button" className={`nexus-mesh-row nexus-mesh-row--choice${selected ? ' is-selected' : ''}`} aria-pressed={selected} disabled={disabled} onClick={onChoose}>
-      <Dot tone={tone} pulse={connection !== 'offline'} />
       <span className="nexus-mesh-row__body">
         <span className="nexus-mesh-row__name">{title}</span>
         {subtitle && <span className="nexus-mesh-row__sub">{subtitle}</span>}
       </span>
-      {connection && <NexusPill label={NEXUS_CONNECTION_LABELS[connection]} tone={tone} connection />}
+      {connection && <NexusPill label={NEXUS_CONNECTION_LABELS[connection]} tone={CONNECTION_TONES[connection]} connection />}
       {selected && <Icon name="check" size={16} className="nexus-mesh-row__check" />}
     </button>
     <WorkspaceActionButton iconOnly icon="info" appearance="quiet" aria-label={t('How to use {name} from other apps', { name: title })} onClick={onInfo} />
@@ -119,7 +115,7 @@ function ServerInfoDialog({ status, nodeId, onClose }: { status: NexusStatus; no
   const example = base && `curl ${base}/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{"model":"<model id>","messages":[{"role":"user","content":"Hello"}]}'`;
   return <div className="nexus-account-dialog-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <div ref={ref} className="nexus-account-dialog nexus-server-info" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}>
-      <div className="nexus-account-dialog__header"><span className="nexus-tree-detail__icon"><Icon name="router" size={23} /></span><div><h2 id={`${id}-title`}>{name}</h2><p>{t('Use this server from pi, curl or any OpenAI-compatible client.')}</p></div><WorkspaceActionButton iconOnly icon="x" size="small" appearance="quiet" aria-label={t('Close server details')} onClick={onClose} /></div>
+      <div className="nexus-account-dialog__header"><div><h2 id={`${id}-title`}>{name}</h2><p>{t('Use this server from pi, curl or any OpenAI-compatible client.')}</p></div><WorkspaceActionButton iconOnly icon="x" size="small" appearance="quiet" aria-label={t('Close server details')} onClick={onClose} /></div>
       <div className="nexus-server-info__section">
         <p className="nexus-mesh__label">{t('Hostname (mesh port on this computer)')}</p>
         {meshUrl ? <>
@@ -205,16 +201,11 @@ export function NexusMeshPanel() {
     catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   };
-  const subtitle = [status?.device_name, status?.tunnel_ip?.split('/')[0]].filter(Boolean).join(' · ');
   return <section className="nexus-mesh" aria-labelledby={id}>
     <div className="nexus-mesh__header">
-      <span className="nexus-mesh__icon"><Icon name="router" size={20} /></span>
-      <div className="nexus-mesh__title">
-        <strong id={id}>{t('Mesh network')}</strong>
-        <span>{subtitle || t('Your Lemonade devices, connected over an encrypted mesh.')}</span>
-      </div>
+      <strong id={id} className="nexus-mesh__title">{t('Mesh')}</strong>
       <span className="nexus-mesh__state" role="status">
-        <Dot tone={STATE_TONES[summary.state]} pulse={summary.state === 'connected' || summary.state === 'connecting'} />
+        <Dot tone={STATE_TONES[summary.state]} />
         {t(summary.label, summary.count === undefined ? undefined : { count: summary.count })}
       </span>
     </div>
@@ -243,7 +234,7 @@ export function NexusMeshPanel() {
             onChoose={() => void choose(device.node_id)} onInfo={() => setInfo(device.node_id)} />;
         })}
         {info && <ServerInfoDialog status={status} nodeId={info} onClose={() => setInfo(undefined)} />}
-        {!servers.length && <p className="nexus-mesh__empty">{t('No other Lemonade servers in this mesh yet. Invite a computer running Lemonade.')}</p>}
+        {!servers.length && <p className="nexus-mesh__empty">{t('No other Lemonade servers in this mesh yet.')}</p>}
         {selected !== 'local' && <form className="nexus-mesh__key" onSubmit={event => { event.preventDefault(); void choose(selected, key); }}>
           <label className="sr-only" htmlFor={`${id}-key`}>{t('API key (only if that computer sets one)')}</label>
           <input id={`${id}-key`} className="input" type="password" autoComplete="off" placeholder={t('API key (only if that computer sets one)')}
@@ -260,7 +251,6 @@ export function NexusMeshPanel() {
         <p className="nexus-mesh__label">{t('Networks')}</p>
         <ul className="nexus-mesh-list">
           {memberships.map(group => <li key={group.node_id} className="nexus-mesh-row">
-            <Dot tone={group.role === 'home' ? 'accent' : 'info'} />
             <span className="nexus-mesh-row__body">
               <span className="nexus-mesh-row__name">{group.hostname || t('Unnamed network')}</span>
               <span className="nexus-mesh-row__pills"><NexusPill label={group.role === 'home' ? 'Home' : 'Joined network'} tone={group.role === 'home' ? 'accent' : 'info'} /></span>
