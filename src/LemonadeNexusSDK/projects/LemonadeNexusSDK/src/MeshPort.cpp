@@ -1552,7 +1552,7 @@ nlohmann::json MeshPort::local_models(const std::string& authorization) {
     if (!host.empty()) {
         httplib::Client client(host, port);
         set_timeouts(client, std::chrono::seconds(5), std::chrono::seconds(5));
-        if (auto listing = get_json(client, "/api/v1/models", authorization); listing.body && listing.body->is_object()) {
+        if (auto listing = get_json(client, "/v1/models", authorization); listing.body && listing.body->is_object()) {
             return std::move(*listing.body);
         }
     }
@@ -1712,12 +1712,12 @@ std::vector<MeshPortPeerModels> MeshPort::peer_models(const std::vector<MeshPort
             models.device_name = member.device_name;
             models.latency_ms = member.latency_ms;
             if (const auto client = entry.probe.open(backend_, options_, state_mutex_, egress_ips_)) {
-                const auto health = get_json(*client, "/api/v1/health", peer_authorization);
+                const auto health = get_json(*client, "/v1/health", peer_authorization);
                 if (health.body && health.body->is_object() && health.body->contains("all_models_loaded")) {
                     models.loaded = (*health.body)["all_models_loaded"];
                 }
                 if (!entry.probe.is_cancelled()) {
-                    const auto listing = get_json(*client, "/api/v1/models", peer_authorization);
+                    const auto listing = get_json(*client, "/v1/models", peer_authorization);
                     models.models_status = listing.status;
                     if (listing.body) models.available = model_ids(*listing.body);
                 }

@@ -1471,7 +1471,7 @@ ln_error_t ln_mesh_port_set_selection(ln_client_t* client, const char* target,
  *  probe; 0 when the device has not answered yet, 404 when its SDK has no
  *  catalog). A device that reports no catalog shows empty strings.
  *  models_count and loaded_count are the models its last model probe listed
- *  (/api/v1/models) and reported loaded (/api/v1/health all_models_loaded);
+ *  (/v1/models) and reported loaded (/v1/health all_models_loaded);
  *  both are 0 before the first probe. The `auto` model listing marks each
  *  "<device>/<model>" entry with "loaded": true or false from the same
  *  probe. `catalog`

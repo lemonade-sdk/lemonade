@@ -76,7 +76,7 @@ struct MeshPortPeerCatalog {
     std::vector<std::string> families;     ///< family names
 };
 
-/// What an inference device offers, as read from its /api/v1/health and /api/v1/models.
+/// What an inference device offers, as read from its /v1/health and /v1/models.
 struct MeshPortPeerModels {
     std::string              node_id;
     std::string              device_name;
@@ -270,7 +270,7 @@ public:
         /// How long cached model lists stay fresh for the auto router and the merged
         /// model listing. A peer is probed at most once per interval and per peer key.
         std::chrono::milliseconds models_ttl{std::chrono::seconds(5)};
-        /// Connect timeout of one request to a peer's /api/v1/health or /api/v1/models.
+        /// Connect timeout of one request to a peer's /v1/health or /v1/models.
         std::chrono::milliseconds peer_probe_connect_timeout{std::chrono::seconds(1)};
         /// Deadline of one round of peer probes. The peers are probed concurrently;
         /// a peer that has not answered by the deadline counts as offering no models
