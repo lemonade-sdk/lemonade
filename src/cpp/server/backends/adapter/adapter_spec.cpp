@@ -190,6 +190,19 @@ std::vector<std::pair<std::string, std::string>> build_env(
     return result;
 }
 
+std::string launch_env_value(const std::string& name, const std::string& value) {
+    if (name != "LD_LIBRARY_PATH") return value;
+    std::string out;
+    std::istringstream iss(value);
+    std::string part;
+    while (std::getline(iss, part, ':')) {
+        if (part.empty()) continue;
+        if (!out.empty()) out += ':';
+        out += part;
+    }
+    return out;
+}
+
 DeviceChoice choose_device(const std::string& requested, const std::string& spec_default, const std::vector<Gpu>& inventory) {
     // Helper to trim leading/trailing whitespace
     auto trim = [](std::string s) -> std::string {
@@ -207,7 +220,7 @@ DeviceChoice choose_device(const std::string& requested, const std::string& spec
     if (req.empty()) req = "0";
 
     // Check if input is a decimal index
-    bool is_digit = std::all_of(req.begin(), req.end(), ::isdigit);
+    bool is_digit = std::all_of(req.begin(), req.end(), [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
     if (is_digit) {
         // Use from_chars to safely parse and detect overflow
         int idx = 0;
@@ -227,11 +240,11 @@ DeviceChoice choose_device(const std::string& requested, const std::string& spec
 
     // Check if input is a UUID (case-insensitive match)
     std::string lower_req = req;
-    std::transform(lower_req.begin(), lower_req.end(), lower_req.begin(), ::tolower);
+    std::transform(lower_req.begin(), lower_req.end(), lower_req.begin(), [](char c) { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); });
 
     for (const auto& g : inventory) {
         std::string lower_guuid = g.uuid;
-        std::transform(lower_guuid.begin(), lower_guuid.end(), lower_guuid.begin(), ::tolower);
+        std::transform(lower_guuid.begin(), lower_guuid.end(), lower_guuid.begin(), [](char c) { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); });
         if (lower_req == lower_guuid) {
             return DeviceChoice{g.index, g.uuid};
         }

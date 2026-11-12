@@ -34,6 +34,11 @@ static int body() {
     THROWS(build_env(json{{"LD_LIBRARY_PATH", "/opt/engine2/lib"}}, vals, dirs), "/opt/engine2/lib");  // prefix, not a dir
     THROWS(build_env(json{{"LD_LIBRARY_PATH", "/opt/eng/../../tmp"}}, vals, dirs), "..");
     THROWS(build_env(json{{"LD_LIBRARY_PATH", "lib"}}, vals, dirs), "lib");
+    // what the engine gets: no empty entries (an empty entry means the current directory to ld.so)
+    CHECK(launch_env_value("LD_LIBRARY_PATH", "/opt/eng/lib::") == "/opt/eng/lib");
+    CHECK(launch_env_value("LD_LIBRARY_PATH", ":/opt/eng::/opt/eng/lib:") == "/opt/eng:/opt/eng/lib");
+    CHECK(launch_env_value("LD_LIBRARY_PATH", "/opt/eng/lib") == "/opt/eng/lib");
+    CHECK(launch_env_value("TZ", "UTC::") == "UTC::");
 
     // wrong shapes
     THROWS(build_env(json::array({"CUDA_VISIBLE_DEVICES=0"}), vals, dirs), "env");

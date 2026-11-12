@@ -72,6 +72,12 @@ inline const std::vector<std::string> kEnvNames = {"LD_LIBRARY_PATH", "TZ"};
 std::vector<std::pair<std::string, std::string>> build_env(
     const json& env, const std::map<std::string, std::string>& values, const std::vector<std::string>& allowed_dirs);
 
+// LD_LIBRARY_PATH as handed to the engine: empty entries removed (including leading, trailing and
+// repeated ':'). An empty entry makes the dynamic loader search the current working directory, which
+// a spec does not control. Other values are returned as given. Applied where the launch environment
+// is assembled, so build_env keeps returning the filled string as given.
+std::string launch_env_value(const std::string& name, const std::string& value);
+
 // ---- which card (R11) ----
 
 struct Gpu {

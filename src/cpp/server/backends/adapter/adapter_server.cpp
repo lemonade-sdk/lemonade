@@ -209,7 +209,7 @@ void AdapterServer::load(const std::string& model_name, const ModelInfo& model_i
     }
     try {
         for (auto& [k, v] : adapter::specs::build_env(env, subs, allowed_dirs)) {
-            command.env.emplace_back(k, v);
+            command.env.emplace_back(k, adapter::specs::launch_env_value(k, v));
         }
     } catch (const adapter::specs::SpecError& e) {
         throw std::runtime_error("adapter " + name + ": " + std::string(e.what()));
@@ -221,7 +221,7 @@ void AdapterServer::load(const std::string& model_name, const ModelInfo& model_i
         const json tenv = telemetry.value("env", json::object());
         try {
             for (auto& [k, v] : adapter::specs::build_env(tenv, subs, allowed_dirs)) {
-                command.env.emplace_back(k, v);
+                command.env.emplace_back(k, adapter::specs::launch_env_value(k, v));
             }
         } catch (const adapter::specs::SpecError& e) {
             throw std::runtime_error("adapter " + name + ": " + std::string(e.what()));

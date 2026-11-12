@@ -58,6 +58,8 @@ def extract(hook: dict) -> str | None:
         hook.get("kind") == "paren"
     ):  # from the anchor to the parenthesis that closes it (CMake)
         open_at = text.find("(", m.start())
+        if open_at < 0:  # the anchor matched but no "(" follows it
+            return None
         depth = 0
         for i in range(open_at, len(text)):
             if text[i] == "(":
