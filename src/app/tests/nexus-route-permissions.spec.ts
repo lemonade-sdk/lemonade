@@ -51,7 +51,7 @@ test('role route lists use server data and preserve templates and aliases withou
   await panel.getByText('Run inference', { exact: true }).click();
   await expect(panel.locator('code', { hasText: '/api/v1/models/{id}' })).toBeVisible();
   await expect(panel.getByText('Use MCP tools', { exact: true })).toHaveCount(0);
-  await expect(panel.locator('code', { hasText: '/v1/chat/completions' })).toBeVisible();
+  await expect(panel.getByText('/v1/chat/completions', { exact: true })).toBeVisible();
   await expect(panel.getByText('/api/v1/chat/completions', { exact: true })).toBeHidden();
   await panel.locator('.nexus-route-aliases > summary').click();
   await expect(panel.getByText('/api/v1/chat/completions', { exact: true })).toBeVisible();
