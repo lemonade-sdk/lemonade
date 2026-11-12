@@ -87,7 +87,7 @@ for (const desktop of [true, false]) {
           });
         }
       }
-      await page.getByRole('button', { name: 'User: Mesh disabled', exact: true }).click();
+      await page.getByRole('button', { name: 'Mesh disabled', exact: true }).click();
       await expect(page.getByRole('dialog', { name: 'Lemonade Account', exact: true })).toBeVisible();
       await page.keyboard.press('Escape');
       await page.getByRole('button', { name: 'App controls', exact: true }).click();

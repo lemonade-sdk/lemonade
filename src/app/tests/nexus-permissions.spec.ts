@@ -5,7 +5,7 @@ async function openLocalAccount(page: Page) {
   await page.setViewportSize({ width: 1440, height: 1100 });
   const fixture = await setupNexusAccount(page, { apiKey: '', deviceKey: true });
   await resumedNexusMesh(page);
-  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
   return fixture;
 }
 

@@ -62,7 +62,7 @@ test('Enable Mesh by invitation on a registered device reports the membership in
   expect(fixture.calls.find(call => call.path.endsWith('/key/unlock'))?.body).toEqual({ defer_join: true });
   expect(fixture.calls.find(call => call.path.endsWith('/join'))?.body).toEqual({ code: '12345678' });
   await page.getByRole('button', { name: 'Done', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
 });
 
 test('Chat runs on selects a mesh server through the home server and keeps its key out of storage', async ({ page }) => {
@@ -93,7 +93,7 @@ test('deleting the account needs the device name, calls account/delete and signs
   await expect(submit).toBeDisabled();
   await dialog.getByRole('textbox').fill('My laptop');
   await submit.click();
-  await expect(page.getByRole('button', { name: 'User: Mesh disabled', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh disabled', exact: true })).toBeVisible();
   await expect(page.getByText('Your account was deleted.', { exact: false })).toBeVisible();
   await expect(page.locator('.nexus-devices')).toHaveCount(0);
   expect(fixture.calls.find(call => call.path.endsWith('/account/delete'))?.body).toEqual({ account_id: 'group', member_id: 'fixture-identity', device_node_id: 'self', confirm: 'delete' });
@@ -109,7 +109,7 @@ test('a pending deletion keeps the device signed in', async ({ page }) => {
   await dialog.getByRole('button', { name: 'Delete account permanently', exact: true }).click();
   await expect(dialog).toContainText('has not confirmed the deletion yet');
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
 });
 
 for (const action of ['create', 'join'] as const) {
@@ -125,7 +125,7 @@ for (const action of ['create', 'join'] as const) {
       await dialog.getByRole('textbox', { name: 'Invitation code or token' }).fill('12345678');
     }
     await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
     const unlocks = fixture.calls.filter(call => call.path.endsWith('/key/unlock'));
     expect(unlocks.map(call => call.body)).toEqual(action === 'create' ? [{ defer_join: false }] : []);
     expect(fixture.calls.filter(call => call.path.endsWith('/join')).map(call => call.body)).toEqual(action === 'join' ? [{ code: '12345678' }] : []);

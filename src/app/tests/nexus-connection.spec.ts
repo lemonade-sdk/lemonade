@@ -31,7 +31,7 @@ test('connection labels follow live path changes and stay hidden for unverified 
   await expect(deviceRow('My laptop').locator('.nexus-pill').first()).toHaveText('This device');
   await expect(page.locator('.nexus-mesh__state')).toHaveText('No servers yet');
   await page.locator('.nexus-page').screenshot({ path: testInfo.outputPath('nexus-connection-compact.png') });
-  await page.getByRole('button', { name: 'User: My laptop', exact: true }).click();
+  await page.getByRole('button', { name: 'Mesh: My laptop', exact: true }).click();
   const menu = page.getByRole('dialog', { name: 'Lemonade Account', exact: true });
   await expect(menu.locator('.nexus-device-disclosure')).toHaveAttribute('open', '');
   await expect(menu.locator('.nexus-devices li').filter({ hasText: 'Kitchen PC' }).locator('.nexus-pill--connection')).toHaveText('P2P');

@@ -223,7 +223,7 @@ export function NexusDeleteAccountDialog({ service, session, onClose, onDeleted 
     document.addEventListener('keydown', escape);
     return () => document.removeEventListener('keydown', escape);
   }, [busy, onClose]);
-  const expected = session.account.displayName.trim();
+  const expected = session.account.deviceName.trim();
   const confirmed = confirmation.trim() === expected;
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -243,7 +243,7 @@ export function NexusDeleteAccountDialog({ service, session, onClose, onDeleted 
       <div className="nexus-group-actions"><WorkspaceActionButton onClick={onClose}>{t('Close')}</WorkspaceActionButton></div>
     </> : <form onSubmit={event => void submit(event)}>
       <p>{t('This permanently deletes the account, its network and every device in it from Nexus. Devices that joined other networks lose that access. This cannot be undone.')}</p>
-      <label htmlFor={`${id}-confirm`}>{t('Type {name} to confirm', { name: expected })}</label>
+      <label htmlFor={`${id}-confirm`}>{t('To confirm, type this device’s name: {name}', { name: expected })}</label>
       <input autoFocus id={`${id}-confirm`} className="input" autoComplete="off" spellCheck={false} value={confirmation} disabled={busy} onChange={event => setConfirmation(event.target.value)} />
       {error && <p className="nexus-error" role="alert">{t(error)}</p>}
       <WorkspaceActionButton type="submit" appearance="danger" disabled={busy || !confirmed}>{busy ? t('Deleting…') : t('Delete account permanently')}</WorkspaceActionButton>

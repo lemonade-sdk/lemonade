@@ -4,7 +4,7 @@ import { enableNexusMesh, resumedNexusMesh, setupNexusAccount } from './nexusAcc
 for (const action of ['create', 'join'] as const) {
   test(`an unregistered device with a saved label can ${action} an account`, async ({ page }, testInfo) => {
     const fixture = await setupNexusAccount(page, { joined: false, registered: false, deviceKey: true });
-    const previous = { id: 'previous-group', displayName: 'Previous account' };
+    const previous = { id: 'previous-group', deviceName: 'Previous account' };
     await page.evaluate(value => localStorage.setItem('lemonade_nexus_account_labels', JSON.stringify({
       'http://127.0.0.1:13305': value,
     })), previous);
@@ -21,7 +21,7 @@ for (const action of ['create', 'join'] as const) {
     }
     await page.screenshot({ path: testInfo.outputPath('unregistered-setup.png') });
     await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
     expect(fixture.calls.find(call => call.path.endsWith('/key/unlock'))?.body).toEqual({ defer_join: action === 'join' });
     expect(fixture.calls.filter(call => call.path.endsWith('/join'))).toHaveLength(action === 'join' ? 1 : 0);
   });
@@ -48,7 +48,7 @@ for (const registered of [false, true]) {
     await dialog.getByRole('button', { name: 'Check again', exact: true }).click();
     await expect(dialog).toContainText('After setup, manage it through the authenticated Nexus mesh.');
     expect(fixture.calls.some(call => call.method === 'POST' || call.path.includes('/passkey/'))).toBe(false);
-    await expect(page.getByRole('button', { name: 'User: Mesh disabled', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Mesh disabled', exact: true })).toBeVisible();
   });
 }
 
@@ -60,7 +60,7 @@ test('Accounts content fills the pane without a page header', async ({ page }) =
   const paneBounds = await pane.boundingBox();
   expect(contentBounds!.height).toBeGreaterThan(paneBounds!.height - 2);
   await expect(page.getByRole('button', { name: 'Enable Mesh', exact: true }).first()).toBeInViewport();
-  await page.getByRole('button', { name: 'User: Mesh disabled', exact: true }).click();
+  await page.getByRole('button', { name: 'Mesh disabled', exact: true }).click();
   const menu = page.getByRole('dialog', { name: 'Lemonade Account', exact: true });
   await expect(menu.locator('.nexus-account-menu__header .nexus-account-summary')).toBeVisible();
   await expect(menu.locator('h2')).not.toBeInViewport();
@@ -134,21 +134,21 @@ test('a late image-save response cannot restore a signed-out account', async ({ 
   await page.getByRole('button', {name: 'Disable Mesh', exact: true}).click();
   release();
   await response;
-  await expect(page.getByRole('button', {name: 'User: Mesh disabled', exact: true})).toBeVisible();
+  await expect(page.getByRole('button', {name: 'Mesh disabled', exact: true})).toBeVisible();
   await expect(page.locator('.nexus-account-trigger img')).toHaveCount(0);
 });
 
 test('an unlocked mesh does not enable the account automatically', async ({ page }) => {
   const fixture = await setupNexusAccount(page);
-  await expect(page.getByRole('button', { name: 'User: Mesh disabled' })).toBeVisible();
-  await expect(page.getByText('Lemonade account', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh disabled' })).toBeVisible();
+  await expect(page.locator('.nexus-account-summary').getByText('Mesh disabled', { exact: true })).toBeVisible();
   await expect(page.locator('.nexus-devices')).toHaveCount(0);
   expect(fixture.calls.some(call => call.path.endsWith('/account') || call.path.endsWith('/enable'))).toBe(false);
 });
 
 test('the account dropdown opens Enable Mesh and restores focus when cancelled', async ({ page }) => {
   await setupNexusAccount(page);
-  const trigger = page.getByRole('button', { name: 'User: Mesh disabled' });
+  const trigger = page.getByRole('button', { name: 'Mesh disabled' });
   await trigger.click();
   const menu = page.getByRole('dialog', { name: 'Lemonade Account' });
   await menu.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
@@ -172,7 +172,7 @@ test('browser Enable Mesh moves a registered passkey device to its device key', 
   await expect(dialog.getByRole('radio', { name: 'Use this device’s key' })).toBeChecked();
   expect(fixture.calls.some(call => call.method === 'POST')).toBe(false);
   await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
   expect(fixture.calls.filter(call => call.path.endsWith('/key/unlock')).map(call => call.body)).toEqual([{ defer_join: false, replace_passkey: true }]);
   expect(fixture.calls.some(call => call.path.includes('/passkey/'))).toBe(false);
   expect(fixture.state.unlock).toBe('device_key');
@@ -191,7 +191,7 @@ test('a browser sets up a packaged server with its system identity key', async (
   await expect(dialog.getByRole('radio', { name: 'Create account' })).toBeChecked();
   await expect(dialog.getByRole('radio', { name: 'Join by invitation' })).toBeVisible();
   await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
   expect(fixture.calls.filter(call => call.path.endsWith('/key/unlock')).map(call => call.body)).toEqual([{ defer_join: false }]);
   expect(fixture.calls.some(call => call.path.includes('/passkey/'))).toBe(false);
 });
@@ -203,7 +203,7 @@ test('a browser enables a device-key device without the desktop app', async ({ p
   await expect(dialog).not.toContainText('desktop app');
   await expect(dialog.getByRole('radio', { name: 'Use this device’s key' })).toBeChecked();
   await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
   expect(fixture.calls.filter(call => call.path.endsWith('/key/unlock')).map(call => call.body)).toEqual([{ defer_join: false }]);
   expect(fixture.calls.some(call => call.path.includes('/passkey/'))).toBe(false);
 });
@@ -215,7 +215,7 @@ test('a browser on the local network manages a device-key server through its pub
   await expect(dialog).not.toContainText('local controller or SSH forwarding');
   await expect(dialog.getByRole('radio', { name: 'Use this device’s key' })).toBeChecked();
   await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'User: Inference server', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: Inference server', exact: true })).toBeVisible();
   expect(fixture.calls.filter(call => call.path.endsWith('/key/unlock')).map(call => call.body)).toEqual([{ defer_join: false }]);
   expect(fixture.calls.some(call => call.path.includes('/passkey/'))).toBe(false);
   expect(fixture.calls.every(call => call.origin === 'http://192.168.10.20:13305')).toBe(true);
@@ -233,7 +233,7 @@ test('creating an account registers and verifies before showing its role', async
   await device.fill(''); await expect(submit).toBeDisabled();
   await device.fill('Studio PC');
   await submit.click();
-  await expect(page.getByRole('button', { name: 'User: Studio PC', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: Studio PC', exact: true })).toBeVisible();
   await expect(page.locator('.nexus-role')).toHaveText('Admin');
   const paths = fixture.calls.map(call => call.path);
   expect(fixture.calls.find(call => call.path.endsWith('/device'))?.body).toEqual({ device_name: 'Studio PC' });
@@ -295,7 +295,7 @@ test('Chat runs on offers only servers this device has a path to', async ({ page
   await expect(choice('Office PC').locator('.nexus-pill--connection')).toHaveText('Connecting');
   await expect(choice('Travel laptop')).toBeDisabled();
   await expect(choice('Travel laptop').locator('.nexus-pill--connection')).toHaveText('Offline');
-  await page.getByRole('button', { name: 'User: My laptop', exact: true }).click();
+  await page.getByRole('button', { name: 'Mesh: My laptop', exact: true }).click();
   const menu = page.getByRole('dialog', { name: 'Lemonade Account', exact: true });
   await expect(menu.locator('.nexus-chat-host').filter({ hasText: 'GPU box' })).toBeEnabled();
   await expect(menu.locator('.nexus-chat-host').filter({ hasText: 'Travel laptop' })).toBeDisabled();
@@ -312,7 +312,7 @@ test('a device-key device re-enables through key/unlock without a passkey', asyn
   await expect(dialog.getByRole('radio', { name: 'Use this device’s key' })).toBeChecked();
   await expect(dialog).not.toContainText('passkey');
   await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
   expect(keyUnlocks(fixture)).toEqual([{ defer_join: false }]);
   expect(passkeyCalls(fixture)).toEqual([]);
   expect(fixture.calls.some(call => call.path.endsWith('/join'))).toBe(false);
@@ -334,7 +334,7 @@ test('a device-key device creates the account with its key', async ({ page }) =>
   await expect(dialog.getByRole('radio', { name: 'Create account' })).toBeChecked();
   await expect(dialog).not.toContainText('passkey');
   await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
   await expect(page.locator('.nexus-role')).toHaveText('Admin');
   expect(keyUnlocks(fixture)).toEqual([{ defer_join: false }]);
   expect(passkeyCalls(fixture)).toEqual([]);
@@ -348,7 +348,7 @@ test('a device-key device joins by invitation after a deferred key unlock', asyn
   await dialog.getByRole('radio', { name: 'Join by invitation' }).check();
   await dialog.getByRole('textbox', { name: 'Invitation code or token' }).fill('12345678');
   await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
   expect(keyUnlocks(fixture)).toEqual([{ defer_join: true }]);
   expect(passkeyCalls(fixture)).toEqual([]);
   const paths = fixture.calls.map(call => call.path);
@@ -363,11 +363,11 @@ test('an unreachable network during key unlock is a retryable error', async ({ p
   const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
   await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('No network server found for mesh.example. The network could not be reached. Try again shortly.');
-  await expect(page.getByRole('button', { name: 'User: Mesh disabled' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh disabled' })).toBeVisible();
   expect(fixture.calls.some(call => call.path.endsWith('/account'))).toBe(false);
   fixture.unlockUnreachable = false;
   await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
   expect(keyUnlocks(fixture)).toEqual([{ defer_join: false }, { defer_join: false }]);
   expect(passkeyCalls(fixture)).toEqual([]);
 });
@@ -380,7 +380,7 @@ test('cancelled passkey verification keeps the draft and signed-out state', asyn
   await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('cancelled');
   await expect(dialog.getByRole('textbox', { name: 'Device name', exact: true })).toHaveValue('Studio PC');
-  await expect(page.getByRole('button', { name: 'User: Mesh disabled' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh disabled' })).toBeVisible();
   expect(fixture.calls.some(call => call.path.endsWith('/account'))).toBe(false);
 });
 
@@ -395,7 +395,7 @@ test('joining validates both invitation formats and keeps the member role', asyn
   await invitation.fill(`lnk_${'a'.repeat(64)}`); await expect(submit).toBeEnabled();
   await invitation.fill(`lnk_${'z'.repeat(64)}`); await expect(submit).toBeDisabled();
   await invitation.fill('12345678'); await submit.click();
-  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
   await expect(page.locator('.nexus-role')).toHaveCount(0);
   expect(fixture.calls.find(call => call.path.endsWith('/join'))?.body).toEqual({ code: '12345678' });
 });
@@ -405,7 +405,7 @@ test('disconnect clears account devices and locks the server', async ({ page }) 
   await enableNexusMesh(page);
   await expect(page.locator('.nexus-devices')).toContainText('Kitchen PC');
   await page.getByRole('button', { name: 'Disable Mesh', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'User: Mesh disabled' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh disabled' })).toBeVisible();
   await expect(page.locator('.nexus-devices')).toHaveCount(0);
   expect(fixture.calls.some(call => /\/(lock|disable)$/.test(call.path))).toBe(true);
 });
@@ -415,7 +415,7 @@ test('a reload keeps a passkey device signed out and stores no account state', a
   await enableNexusMesh(page);
   const reads = fixture.calls.filter(call => call.path.endsWith('/account')).length;
   await page.reload();
-  await expect(page.getByRole('button', { name: 'User: Mesh disabled' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh disabled' })).toBeVisible();
   await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
   await expect(dialog.getByRole('radio', { name: 'Use this device’s key' })).toBeChecked();
@@ -576,7 +576,7 @@ test('lost account access clears the signed-in identity', async ({ page }) => {
   const fixture = await setupNexusAccount(page);
   await enableNexusMesh(page);
   fixture.accountError = true;
-  await expect(page.getByRole('button', { name: 'User: Mesh disabled' })).toBeVisible({ timeout: 22000 });
+  await expect(page.getByRole('button', { name: 'Mesh disabled' })).toBeVisible({ timeout: 22000 });
   await expect(page.getByText('Account access ended. Enable Mesh again to continue.')).toBeVisible();
 });
 
@@ -587,10 +587,10 @@ test('rate limiting preserves the verified account and recovers without another 
   await enableNexusMesh(page);
   fixture.accountUnavailable = true;
   await expect(page.getByText('The network is temporarily unavailable. Reconnecting…')).toBeVisible({ timeout: 25000 });
-  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
   fixture.accountUnavailable = false;
   await expect(page.getByText('The network is temporarily unavailable. Reconnecting…')).toHaveCount(0, { timeout: 20000 });
-  await expect(page.getByRole('button', { name: 'User: My laptop', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
   expect(fixture.calls.filter(call => call.path.endsWith('/passkey/unlock'))).toHaveLength(1);
 });
 

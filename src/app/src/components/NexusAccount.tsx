@@ -11,15 +11,15 @@ import { NexusNetwork } from './NexusNetwork';
 import { NexusDeviceRows, NexusMeshPanel, nexusListedDevices } from './NexusMesh';
 import '../styles/nexus.css';
 
+// The account's profile image, shared by its devices. Without one the mark is generic: the
+// account has no name, and a device name's initial would present the device as a person.
 function AccountAvatar({ small = false }: { small?: boolean }) {
-  const { account, avatarUrl } = useNexusAccount();
+  const { avatarUrl } = useNexusAccount();
   const [failedUrl, setFailedUrl] = useState<string>();
   return <span className={`nexus-avatar${small ? ' nexus-avatar--small' : ''}`} aria-hidden="true">
     {avatarUrl && failedUrl !== avatarUrl
       ? <img src={avatarUrl} alt="" onError={() => setFailedUrl(avatarUrl)} />
-      : account?.displayName.trim()
-        ? Array.from(account.displayName.trim())[0].toLocaleUpperCase()
-        : <Icon name="user-round" size={small ? 16 : 27} />}
+      : <Icon name="user-round" size={small ? 16 : 27} />}
   </span>;
 }
 
@@ -106,13 +106,14 @@ function AccountSummary() {
     <div className="nexus-account-summary">
       {account ? <AvatarPicker key={account.id} errorId={errorId} onError={setError} /> : <AccountAvatar />}
       <div className="nexus-account-summary__details">
-        <div className="nexus-account-summary__name">
-          <strong>{account?.displayName || t('Lemonade account')}</strong>
-          {account?.role && account.role !== 'user' && <span className="nexus-role">{t(account.role === 'admin' ? 'Admin' : 'Moderator')}</span>}
-        </div>
-        <span className={`nexus-account-status${account ? ' nexus-account-status--signed-in' : ''}`}>
-          {account && <Icon name="check" size={14} />}{account ? t('Mesh enabled') : t('Mesh disabled')}
-        </span>
+        {account ? <>
+          <span className="nexus-account-summary__kind">{t('This device')}</span>
+          <div className="nexus-account-summary__name">
+            <strong>{account.deviceName}</strong>
+            {account.role && account.role !== 'user' && <span className="nexus-role">{t(account.role === 'admin' ? 'Admin' : 'Moderator')}</span>}
+          </div>
+          <span className="nexus-account-status nexus-account-status--signed-in"><Icon name="check" size={14} />{t('Mesh enabled')}</span>
+        </> : <div className="nexus-account-summary__name"><strong>{t('Mesh disabled')}</strong></div>}
         {account && avatarNotice && <p className="nexus-hint" role="status">{t(avatarNotice === 'unsupported'
           ? 'This mesh needs a Nexus server update to sync profile images.' : avatarNotice === 'pending'
             ? 'Connect a device with this profile image to download it.' : avatarNotice === 'readonly'
@@ -283,10 +284,10 @@ export function NexusAccountMenu({ open, onOpenChange, onOpenPage }: {
 
   return <>
     <button ref={triggerRef} type="button" className="nexus-account-trigger" data-tauri-drag-region="false"
-      aria-label={account ? t('User: {name}', { name: account.displayName }) : t('User: Mesh disabled')}
+      aria-label={account ? t('Mesh: {device}', { device: account.deviceName }) : t('Mesh disabled')}
       aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined}
       onClick={() => onOpenChange(!open)}>
-      <AccountAvatar small /><span className="nexus-account-trigger__label">{account ? t('User: {name}', { name: account.displayName }) : t('User')}</span><Icon name="chevron-down" size={13} />
+      <AccountAvatar small /><span className="nexus-account-trigger__label">{account ? account.deviceName : t('Mesh')}</span><Icon name="chevron-down" size={13} />
     </button>
     {open && createPortal(<div ref={panelRef} id={panelId} className="nexus-account-menu" role="dialog" aria-labelledby={titleId}>
       <div className="nexus-account-menu__header">

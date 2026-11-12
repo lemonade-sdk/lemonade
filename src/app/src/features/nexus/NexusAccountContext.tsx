@@ -6,9 +6,12 @@ import { nexusAccountService, type NexusAccountService, type VerifiedNexusAccoun
 import { clearNexusNetwork, NexusRequestError, refreshNexus, useNexusNetwork, type NexusMembership } from './nexus';
 import type { NexusRole } from './routePermissions';
 
+// The verified account: lemond reports its id (the account's group node), this device's
+// membership role and the shared profile image. It reports no account name; `deviceName` is
+// the name of this device in the mesh and is shown as the device, never as a user.
 export interface NexusAccount {
   id: string;
-  displayName: string;
+  deviceName: string;
   role?: NexusRole;
   avatarUrl?: string;
 }

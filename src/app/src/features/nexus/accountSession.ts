@@ -67,7 +67,7 @@ export function verifyAvatarReply(value: unknown): NexusAvatarState {
 }
 
 interface AccountReply { id: string; member_id: string; device_node_id: string; role: NonNullable<NexusAccount['role']>; devices: NetworkDevice[]; avatar?: unknown }
-// lemond reports no account name, so the label is this device's name from the membership
+// lemond reports no account name. `deviceName` is this device's name from the membership
 // reply; `fallbackName` covers a reply without one (the name the user entered). `expectedId`
 // is the account of a running session: lemond replaces the device key, and with it the
 // account, when the network revokes it, so a changed id ends that session.
@@ -88,8 +88,8 @@ export function verifyAccountReply(value: unknown, source: string, expectedId?: 
   }));
   let avatar: NexusAvatarState;
   try { avatar = verifyAvatarReply(reply.avatar); } catch { avatar = { state: 'unavailable' }; }
-  const displayName = [self.device_name, fallbackName].map(name => (typeof name === 'string' ? name : '').trim()).find(boundedName) || 'Lemonade device';
-  return { account: { id: reply.id, displayName, role: reply.role, avatarUrl: avatar.state === 'ready' ? avatar.image ?? undefined : undefined },
+  const deviceName = [self.device_name, fallbackName].map(name => (typeof name === 'string' ? name : '').trim()).find(boundedName) || 'Lemonade device';
+  return { account: { id: reply.id, deviceName, role: reply.role, avatarUrl: avatar.state === 'ready' ? avatar.image ?? undefined : undefined },
     devices, memberId: reply.member_id, deviceNodeId: reply.device_node_id, source, avatar,
     canInvite: Boolean(self.permissions?.includes('admin') || self.permissions?.includes('add_child')) };
 }
@@ -188,7 +188,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
     },
     async refresh(session) {
       const controller = await requireController(session.source);
-      const next = verifyAccountReply(await controller.request('account'), session.source, session.account.id, session.account.displayName);
+      const next = verifyAccountReply(await controller.request('account'), session.source, session.account.id, session.account.deviceName);
       if (next.memberId !== session.memberId || next.deviceNodeId !== session.deviceNodeId) throw new Error('The account membership changed. Enable Mesh again.');
       if (next.avatar.state === 'unavailable') next.account.avatarUrl = session.account.avatarUrl;
       return next;
@@ -196,7 +196,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
     async invite(session, deviceName, role) {
       if (!boundedName(deviceName)) throw new Error('Enter the name of the device you are inviting.');
       const controller = await requireController(session.source);
-      const current = verifyAccountReply(await controller.request('account'), session.source, session.account.id, session.account.displayName);
+      const current = verifyAccountReply(await controller.request('account'), session.source, session.account.id, session.account.deviceName);
       if (current.memberId !== session.memberId || current.deviceNodeId !== session.deviceNodeId) throw new Error('The account membership changed. Enable Mesh again.');
       const invite = await controller.request<NexusInvite>('invites', { device_name: deviceName.trim(), ttl_sec: 600, ...(role ? { role } : {}) });
       if (!invite || !validNexusInvitation(invite.code || invite.link_token || '') || !Number.isFinite(invite.expires_at)) {

@@ -50,11 +50,12 @@ While a set-up server is joining its network or out of reach, the network panel
 shows a connecting or offline state with the server's error instead of the
 create or unlock form.
 
-The account name is a client-local label chosen by the user, separate from the
-device name. `lemonade_nexus_account_labels` retains only the verified account ID
-and label, indexed by controller source. It never retains roles, authenticated
-state, invitation tokens, PINs or private keys. A saved label pre-fills the next
-sign-in; it does not bypass verification.
+lemond reports no account name: the account reply carries the account ID (the
+group node), the member ID, this device's node ID and its role. The UI therefore
+shows the account through its role and profile image only. The name beside them
+is this device's `device_name`, labelled **This device**; the title-bar control
+is named `Mesh: <device name>`. A device name is never presented as a user or
+account name. The app stores no account label.
 
 Profile images belong to the verified account group. Account devices keep the
 image bytes in a local SDK cache, scoped to the device identity and account.
@@ -268,8 +269,8 @@ discovery and restart, API-key isolation, remote management requests, relay
 credentials, failed-switch rollback and session-only peer credentials. This test
 is also discovered by `npm run test:runtime`, which the app CI workflow runs.
 `tests/nexus-account.runtime.cjs` covers create/join/return sequencing, verified
-roles, controller changes, cancellation, invitation validation and label-only
-persistence using a mock transport. `tests/nexus-tree.runtime.cjs` covers tree
+roles, controller changes, cancellation and invitation validation using a mock
+transport. `tests/nexus-tree.runtime.cjs` covers tree
 normalization and malformed-response rejection.
 `tests/nexus-account.spec.ts` contains browser account and recursive-group
 scenarios with mocked passkeys and API responses. `tests/nexus-membership.spec.ts`
