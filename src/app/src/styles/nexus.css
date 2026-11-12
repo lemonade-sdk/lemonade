@@ -189,7 +189,6 @@
 
 .nexus-view-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 32px 0 22px; padding-top: 24px; border-top: 1px solid var(--border-subtle); }
 .nexus-view-heading h3 { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-semibold); }
-.nexus-hierarchy__toolbar p { margin: 0; font-size: var(--text-sm); line-height: 1.6; color: var(--text-tertiary); }
 .nexus-view-mode { display: flex; flex-shrink: 0; gap: 3px; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
 .nexus-view-mode label { display: flex; align-items: center; gap: 7px; padding: 8px 12px; border: 1px solid transparent; border-radius: var(--radius-sm); font-size: var(--text-sm); cursor: pointer; color: var(--text-secondary); }
 .nexus-view-mode label.is-selected { color: var(--text-primary); background: var(--surface-raised); border-color: var(--border); }
@@ -197,7 +196,7 @@
 .nexus-view-mode input { margin: 0; accent-color: var(--accent); width: 13px; height: 13px; }
 .nexus-hierarchy { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; margin-top: 20px; background: var(--surface-1); }
 .nexus-hierarchy__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; }
-.nexus-hierarchy__toolbar strong { display: block; margin-bottom: 4px; font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.nexus-hierarchy__toolbar strong { font-size: var(--text-md); font-weight: var(--weight-semibold); }
 .nexus-hierarchy__search { display: flex; align-items: center; gap: 9px; margin: 0 20px 18px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-tertiary); background: var(--surface-2); }
 .nexus-hierarchy__search:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .nexus-hierarchy__search input { width: 100%; min-width: 0; padding: 0; border: 0; border-radius: 0; outline: none; box-shadow: none; background: transparent; color: var(--text-primary); font-size: var(--text-sm); }
@@ -274,8 +273,7 @@
 .nexus-compact__row strong { display: block; font-size: var(--text-sm); font-weight: var(--weight-medium); }
 .nexus-compact__row small { display: block; margin-top: 4px; color: var(--text-tertiary); font-size: var(--text-xs); }
 .nexus-network-empty { padding: 36px 24px; border: 1px dashed var(--border); border-radius: var(--radius-lg); text-align: center; }
-.nexus-network-empty__icon { display: inline-flex; padding: 14px; border-radius: var(--radius-lg); background: var(--surface-2); color: var(--text-secondary); }
-.nexus-network-empty h4 { font-size: var(--text-lg); margin: 18px 0 10px; font-weight: var(--weight-semibold); }
+.nexus-network-empty h4 { font-size: var(--text-lg); margin: 0 0 10px; font-weight: var(--weight-semibold); }
 .nexus-network-empty > p { max-width: 420px; margin: 0 auto 16px; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.7; }
 .nexus-network-empty form { max-width: 320px; margin: 20px auto 0; }
 .nexus-network-empty form > .input { width: 100%; margin-bottom: 12px; }

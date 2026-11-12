@@ -131,7 +131,7 @@ export function NexusHierarchy({ status, advanced, service = nexusTreeService }:
 
   return <section className="nexus-hierarchy" aria-label={t('Groups and nodes')}>
     <div className="nexus-hierarchy__toolbar">
-      <div><strong>{advanced ? t('Groups and nodes') : t('Connected network')}</strong><p>{advanced ? t('Groups can contain groups or device nodes.') : t('Browse your groups and devices in one compact view.')}</p></div>
+      <strong>{advanced ? t('Groups and nodes') : t('Connected network')}</strong>
       <WorkspaceActionButton icon="rotate-ccw" size="small" disabled={loading.size > 0} onClick={() => { generation.current += 1; inFlight.current = new Set(); void load(undefined, true); }}>{t('Refresh')}</WorkspaceActionButton>
     </div>
     {errors.root && <div className="nexus-tree-message" role="alert"><p>{errors.root}</p><WorkspaceActionButton onClick={() => void load()}>{t('Retry')}</WorkspaceActionButton></div>}
@@ -182,7 +182,6 @@ export function NexusHierarchy({ status, advanced, service = nexusTreeService }:
           </React.Fragment>)}</nav>
           <div className="nexus-tree-detail__heading"><span className="nexus-tree-detail__icon"><Icon name={selected.kind === 'group' ? 'layers' : 'monitor'} size={23} /></span><div><h4>{name(selected)}</h4><p>{selected.kind === 'group' ? t('Group') : selected.is_inference ? t('Inference server') : t('Device node')}</p></div></div>
           {selected.kind === 'group' ? <>
-            <p className="nexus-hint">{t('Organize by person, team or location. Nest groups as your network grows.')}</p>
             {loading.has(selected.id) && <p role="status">{t('Loading group…')}</p>}
             {errors[selected.id] && <div role="alert"><p className="nexus-error">{errors[selected.id]}</p><WorkspaceActionButton size="small" onClick={() => void load(selected.id)}>{t('Retry')}</WorkspaceActionButton></div>}
             {branches[selected.id] && childCounts(selected.id)}
@@ -267,10 +266,10 @@ function GroupManagement({ entry, entries, selfId, service, onSaved }: {
         {editor !== 'permissions' ? <><label htmlFor={`${id}-name`}>{t('Group name')}</label><input autoFocus id={`${id}-name`} className="input" value={name} maxLength={128} onChange={event => setName(event.target.value)} placeholder={t('For example, Design team')} /></> : <>
           <label htmlFor={`${id}-member`}>{t('Device identity')}</label>
           <select id={`${id}-member`} className="input" value={memberId} onChange={event => chooseMember(event.target.value)}><option value="">{t('Choose a device')}</option>{members.map(member => <option key={member.id} value={member.id}>{member.name || member.id}</option>)}</select>
-          <p className="nexus-hint">{t('Choose from discovered devices. Open other groups to find more. These permissions belong to devices, not user accounts.')}</p>
+          <p className="nexus-hint">{t('Permissions belong to the device, not to a person.')}</p>
           {memberId && <>
             <label className="nexus-permission-choice"><input type="checkbox" checked={admin} onChange={event => setAdmin(event.target.checked)} />{t('Group administrator')}</label>
-            <p className="nexus-hint">{admin ? t('Administrators can manage this group and its descendants.') : t('Grant only the access this device needs.')}</p>
+            {admin && <p className="nexus-hint">{t('Administrators can manage this group and its descendants.')}</p>}
             <details className="nexus-service-permissions"><summary>{t('Service access')}</summary>
               <p className="nexus-hint">{t('Nexus checks these permissions when this device calls a service over the mesh.')}</p>
               <div className="nexus-permissions">{NEXUS_SERVICE_PERMISSIONS.map(permission => <label key={permission.name}><input type="checkbox" checked={admin || permissions.includes(permission.name)} disabled={admin} onChange={event => setPermissions(current => event.target.checked ? [...current, permission.name] : current.filter(value => value !== permission.name))} />{t(permission.label)}</label>)}</div>
@@ -339,7 +338,7 @@ function MoveForm({ entry, entries, service, onMoved }: {
           <option value="">{t('Choose a group')}</option>
           {destinations.map(group => <option key={group.id} value={group.id}>{label(group)}</option>)}
         </select>
-        <p className="nexus-hint">{t('Open other groups in the tree to find more destinations. Access set on the moved item travels with it.')}</p>
+        <p className="nexus-hint">{t('Access set on the moved item travels with it.')}</p>
       </fieldset>
       {error && <p className="nexus-error" role="alert">{error}</p>}
       <div className="nexus-group-actions">
