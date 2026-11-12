@@ -150,6 +150,11 @@ void apply_client_socket_options(HttpClient& client) {
 #else
     (void)client;
 #endif
+    // The bundle from set_ca_bundle_path(), when the host gave one; a plain
+    // HTTP client keeps the path unused.
+    if (const auto bundle = ca_bundle_path(); !bundle.empty()) {
+        client.set_ca_cert_path(bundle);
+    }
 }
 
 // The event socket dials the private FQDN at the loopback egress with the
@@ -1485,6 +1490,7 @@ struct LemonadeNexusClient::Impl {
                 httplib::Client cli(base_url(ep));
                 cli.set_connection_timeout(config.connect_timeout_sec);
                 cli.set_read_timeout(config.read_timeout_sec);
+                apply_client_socket_options(cli);
                 auto res = cli.Get("/api/health");
                 ok = res && res->status == 200;
             } catch (...) {
@@ -1718,6 +1724,27 @@ std::string LemonadeNexusClient::node_id() const {
 void LemonadeNexusClient::set_node_id(const std::string& id) {
     std::lock_guard lock(impl_->mutex);
     impl_->node_id = id;
+}
+
+namespace {
+std::mutex& ca_bundle_mutex() {
+    static std::mutex m;
+    return m;
+}
+std::string& ca_bundle_storage() {
+    static std::string path;
+    return path;
+}
+}  // namespace
+
+void set_ca_bundle_path(std::string path) {
+    std::lock_guard lock(ca_bundle_mutex());
+    ca_bundle_storage() = std::move(path);
+}
+
+std::string ca_bundle_path() {
+    std::lock_guard lock(ca_bundle_mutex());
+    return ca_bundle_storage();
 }
 
 std::optional<std::string> invite_format_error(std::string_view invite) {

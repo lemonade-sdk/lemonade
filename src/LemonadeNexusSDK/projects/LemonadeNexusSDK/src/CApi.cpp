@@ -235,6 +235,16 @@ std::shared_ptr<spdlog::logger>& ln_original_logger() {
 
 }  // namespace
 
+ln_error_t ln_set_ca_bundle_path(const char* path) {
+    if (!path) return LN_ERR_NULL_ARG;
+    try {
+        lnsdk::set_ca_bundle_path(path);
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
 ln_error_t ln_set_log_callback(ln_log_fn callback, void* user) {
     try {
         auto& original = ln_original_logger();

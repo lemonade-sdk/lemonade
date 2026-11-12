@@ -32,6 +32,19 @@ namespace lnsdk {
 /// check_device_name, and the C ABI), so a mistyped invite costs no request.
 [[nodiscard]] std::optional<std::string> invite_format_error(std::string_view invite);
 
+/// The root certificates every TLS client the SDK opens verifies servers
+/// against: a PEM bundle at `path`. Process-wide; it applies to clients
+/// opened after the call. An empty path returns to the platform's default
+/// trust (OpenSSL's default paths, the keychain on macOS).
+///
+/// A host whose process has no default trust needs this: iOS and Android
+/// ship no OpenSSL certificate directory, and on Android the process runs
+/// with AT_SECURE set, so OpenSSL also ignores SSL_CERT_FILE there.
+void set_ca_bundle_path(std::string path);
+
+/// The bundle set with set_ca_bundle_path(), or empty for the default trust.
+[[nodiscard]] std::string ca_bundle_path();
+
 /// Standalone C++ client for the Lemonade-Nexus server.
 ///
 /// Uses PIMPL to hide httplib and internal state from the public API.

@@ -1,4 +1,5 @@
 #include <LemonadeNexusSDK/LatencyMonitor.hpp>
+#include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
 
 #include <httplib.h>
 #include <spdlog/spdlog.h>
@@ -54,6 +55,9 @@ struct LatencyMonitor::Impl {
         httplib::Client cli(url);
         cli.set_connection_timeout(0, config.probe_timeout_ms * 1000);  // microseconds
         cli.set_read_timeout(0, config.probe_timeout_ms * 1000);
+        if (const auto bundle = ca_bundle_path(); !bundle.empty()) {
+            cli.set_ca_cert_path(bundle);
+        }
 
         auto start = std::chrono::steady_clock::now();
         auto res = cli.Get("/api/health");

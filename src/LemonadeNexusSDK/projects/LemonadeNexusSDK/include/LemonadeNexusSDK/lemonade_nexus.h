@@ -95,6 +95,19 @@ typedef void (*ln_log_fn)(int level, const char* logger, const char* message, vo
  *  when the logger could not be installed (nothing changed). */
 ln_error_t ln_set_log_callback(ln_log_fn callback, void* user);
 
+/** The root certificates every TLS client the SDK opens verifies servers
+ *  against: `path` is a PEM bundle (UTF-8 file path). Process-wide, not per
+ *  client; it applies to clients opened after the call, so make it before
+ *  the first ln_create_tls. An empty `path` returns to the platform's
+ *  default trust (OpenSSL's default paths, the keychain on macOS).
+ *
+ *  A host whose process has no default trust needs this: iOS and Android
+ *  ship no OpenSSL certificate directory, and on Android the process runs
+ *  with AT_SECURE set, so OpenSSL also ignores SSL_CERT_FILE there. The
+ *  file is read when a client connects, so it must stay in place while
+ *  clients exist. Returns LN_OK, LN_ERR_NULL_ARG for a NULL `path`. */
+ln_error_t ln_set_ca_bundle_path(const char* path);
+
 /** Create a client connecting to host:port (plaintext HTTP). */
 ln_client_t* ln_create(const char* host, uint16_t port);
 
