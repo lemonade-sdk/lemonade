@@ -128,7 +128,7 @@ jobs:
 
           # Only a tag of the same shape is a newer version of the pinned one:
           # rocm-10.0 may move to rocm-10.1 but not to rocm-10.0_20261103T122023
-          # or rocm-10.0-gufo. A tag with no numbers, such as latest, never moves.
+          # or rocm-10.0-rocmfpx. A tag with no numbers, such as latest, never moves.
           def shape(tag):
               return re.sub(r"\d+", "#", tag)
 

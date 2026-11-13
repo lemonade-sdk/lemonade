@@ -17,6 +17,12 @@ namespace utils {
 
 enum class ContainerTool { Podman, Docker };
 
+// The numeric user an image runs as, when it does not run as root.
+struct ContainerUser {
+    unsigned uid = 0;
+    unsigned gid = 0;
+};
+
 struct ContainerMount {
     std::string source;       // path on the host
     std::string destination;  // path inside the container, under /mnt/models
@@ -33,6 +39,7 @@ struct ContainerRunSpec {
     std::string network;
     std::vector<std::string> devices;
     std::vector<std::string> cap_add;
+    std::optional<ContainerUser> user;  // nullopt when the image runs as root
     std::vector<ContainerMount> mounts;
     std::vector<std::pair<std::string, std::string>> env;
     std::string image;                 // <image>@<digest>
@@ -76,8 +83,10 @@ struct ContainerHost {
     // True when this account can read and write /dev/kfd and every /dev/dri
     // render node present on the host.
     std::function<bool()> gpu_devices_accessible;
-    // The group's numeric ID, or "" when the host defines no such group.
-    std::function<std::string(const std::string& group)> group_id;
+    // The numeric IDs of the groups that own these device nodes, each listed
+    // once; a directory such as /dev/dri contributes every device in it.
+    std::function<std::vector<std::string>(const std::vector<std::string>& paths)>
+        device_group_ids;
     // The name of the account this process runs as, or "" when it is unknown.
     std::function<std::string()> account;
     // The environment variable's value, or "" when it is unset.
