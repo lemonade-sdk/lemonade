@@ -1346,6 +1346,16 @@ if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
     add_cpp_ci_test(vllm_arg_resolver CI ON COMMAND test_vllm_arg_resolver)
 endif()
 
+set(VLLM_QUANTIZATION_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_quantization.cpp")
+if(BUILD_TESTING AND EXISTS "${VLLM_QUANTIZATION_TEST_SOURCE}")
+    add_executable(test_vllm_quantization
+        ${VLLM_QUANTIZATION_TEST_SOURCE}
+        src/cpp/server/backends/vllm/vllm_quantization.cpp
+    )
+    target_link_libraries(test_vllm_quantization PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(vllm_quantization CI ON COMMAND test_vllm_quantization)
+endif()
+
 set(LLAMACPP_REQUEST_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_request.cpp")
 if(BUILD_TESTING AND EXISTS "${LLAMACPP_REQUEST_TEST_SOURCE}")
     add_executable(test_llamacpp_request

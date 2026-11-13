@@ -4,6 +4,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/backends/vllm/vllm_arg_resolver.h"
+#include "lemon/backends/vllm/vllm_quantization.h"
 #include "lemon/model_manager.h"
 #include <lemon/models/registry_types.h>
 #include "lemon/runtime_config.h"
@@ -34,22 +35,6 @@ static constexpr int64_t VLLM_MAX_TOKENS_PREFLIGHT_THRESHOLD = 8192;
 static std::string registry_repo_id_from_checkpoint(const std::string& checkpoint) {
     const auto separator = checkpoint.find(':');
     return separator == std::string::npos ? checkpoint : checkpoint.substr(0, separator);
-}
-
-// Parse quantization_config.quant_method from a config.json body.
-static std::string parse_quant_method(const std::string& config_json) {
-    try {
-        json j = json::parse(config_json);
-        if (j.contains("quantization_config")) {
-            const auto& qc = j["quantization_config"];
-            if (qc.contains("quant_method") && qc["quant_method"].is_string()) {
-                return qc["quant_method"].get<std::string>();
-            }
-        }
-    } catch (const std::exception&) {
-        // fall through
-    }
-    return "";
 }
 
 static void copy_if_present(json& target, const json& source, const char* key) {
@@ -130,58 +115,6 @@ static json load_vllm_model_config(const std::string& config_path,
 
 json VLLMServer::prepare_openai_request(const json& request) {
     return JsonUtils::with_legacy_max_tokens_alias(fit_openai_max_tokens_to_context(request));
-}
-
-// Returns quantization_config.quant_method for the model, or empty string.
-// Prefers the active snapshot, then any snapshot of the repository, then the
-// host's resolve URL; a host without one stops at the snapshot.
-static std::string detect_quant_method(const std::string& repo_id,
-                                       const fs::path& local_snapshot,
-                                       RegistryId registry_source,
-                                       const fs::path& cache_root) {
-    if (!local_snapshot.empty()) {
-        fs::path cfg = local_snapshot / "config.json";
-        if (fs::exists(cfg)) {
-            std::ifstream f(cfg);
-            std::stringstream buf;
-            buf << f.rdbuf();
-            std::string result = parse_quant_method(buf.str());
-            if (!result.empty()) return result;
-        }
-    }
-
-    const models::RegistryDescriptor* descriptor = models::descriptor_for(registry_source);
-    if (descriptor == nullptr || descriptor->endpoint_default.empty()) {
-        return "";
-    }
-
-    if (!cache_root.empty()) {
-        fs::path snapshots = cache_root /
-            hf_cache::repo_id_to_cache_dir_name(repo_id, registry_source.str()) / "snapshots";
-        if (fs::exists(snapshots)) {
-            for (const auto& entry : fs::directory_iterator(snapshots)) {
-                if (!entry.is_directory()) continue;
-                fs::path cfg = entry.path() / "config.json";
-                if (!fs::exists(cfg)) continue;
-                std::ifstream f(cfg);
-                std::stringstream buf;
-                buf << f.rdbuf();
-                std::string result = parse_quant_method(buf.str());
-                if (!result.empty()) return result;
-            }
-        }
-    }
-
-    const std::string url = descriptor->endpoint_default + "/" + repo_id + "/resolve/" +
-                            descriptor->default_revision + "/config.json";
-    auto resp = HttpClient::get(url);
-    if (resp.status_code == 200) {
-        return parse_quant_method(resp.body);
-    }
-
-    LOG(DEBUG, "vLLM") << "Could not fetch config.json for " << repo_id
-                       << " (http " << resp.status_code << "); skipping quant detection" << std::endl;
-    return "";
 }
 
 static std::string with_prepended_pythonpath(const fs::path& dir) {
@@ -440,8 +373,28 @@ void VLLMServer::load(const std::string& model_name,
     // GPTQ, etc. and forcing --quantization awq would fail the load.
     // For AWQ specifically we force the 'awq' kernel because vLLM's default
     // awq_marlin is very slow on consumer GPUs (2 tok/s -> 12 tok/s).
-    std::string quant_method = detect_quant_method(
-        registry_repo_id_from_checkpoint(model_id), active_snapshot, registry_source, cache_root);
+    const std::string repo_id = registry_repo_id_from_checkpoint(model_id);
+    const fs::path repo_cache = cache_root.empty() ? fs::path() : cache_root /
+        hf_cache::repo_id_to_cache_dir_name(repo_id, registry_source.str());
+    const fs::path quant_snapshot = active_snapshot.empty() && !repo_cache.empty()
+        ? hf_cache::active_snapshot_path(repo_cache) : active_snapshot;
+    const auto* config = RuntimeConfig::global();
+    std::string quant_method = detect_vllm_quant_method(
+        quant_snapshot, repo_cache, config != nullptr && config->offline(), [&]() {
+            const auto* descriptor = models::descriptor_for(registry_source);
+            if (descriptor == nullptr || descriptor->endpoint_default.empty()) {
+                return std::string();
+            }
+            const std::string url = descriptor->endpoint_default + "/" + repo_id +
+                "/resolve/" + descriptor->default_revision + "/config.json";
+            auto response = HttpClient::get(url);
+            if (response.status_code == 200) {
+                return response.body;
+            }
+            LOG(DEBUG, "vLLM") << "Could not fetch config.json for " << repo_id
+                               << " (http " << response.status_code << ")" << std::endl;
+            return std::string();
+        });
     if (quant_method == "awq" && launch_policy.force_awq_kernel) {
         if (!resolved_vllm_args.has_quantization_arg) {
             LOG(DEBUG, "vLLM") << "Detected AWQ; forcing --quantization awq" << std::endl;
