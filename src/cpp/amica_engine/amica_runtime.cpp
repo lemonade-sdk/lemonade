@@ -360,14 +360,26 @@ ComPtr<ID3D12Resource> Gpu::create_tiled_system_buffer(std::uint64_t size, const
     return reserved;
 }
 
+// An allocator with a command list open on it.
+Gpu::Recording Gpu::create_recording() {
+    Recording recording;
+    check_hr(device_->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COMPUTE, IID_PPV_ARGS(&recording.allocator)),
+             "CreateCommandAllocator");
+    check_hr(device_->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COMPUTE, recording.allocator.Get(), nullptr,
+                                        IID_PPV_ARGS(&recording.list)),
+             "CreateCommandList");
+    return recording;
+}
+
 ID3D12GraphicsCommandList* Gpu::begin_list() {
+    if (sequencing_) {
+        sequence_.push_back(create_recording());
+        current_ = sequence_.back().list.Get();
+        uav_barrier();
+        return current_;
+    }
     if (used_ == lists_.size()) {
-        Recording recording;
-        check_hr(device_->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COMPUTE, IID_PPV_ARGS(&recording.allocator)),
-                 "CreateCommandAllocator");
-        check_hr(device_->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COMPUTE, recording.allocator.Get(), nullptr,
-                                            IID_PPV_ARGS(&recording.list)),
-                 "CreateCommandList");
+        Recording recording = create_recording();
         check_hr(recording.list->Close(), "ID3D12GraphicsCommandList::Close");
         lists_.push_back(std::move(recording));
     }
@@ -377,6 +389,55 @@ ID3D12GraphicsCommandList* Gpu::begin_list() {
     current_ = recording.list.Get();
     uav_barrier();
     return current_;
+}
+
+void Gpu::begin_sequence() {
+    if (sequencing_ || used_ != 0) {
+        throw std::logic_error("a command sequence must start with nothing else recorded");
+    }
+    sequencing_ = true;
+}
+
+Gpu::Sequence Gpu::end_sequence() {
+    for (auto& recording : sequence_) {
+        check_hr(recording.list->Close(), "ID3D12GraphicsCommandList::Close");
+    }
+    sequencing_ = false;
+    current_ = nullptr;
+    return std::exchange(sequence_, {});
+}
+
+void Gpu::execute(const Sequence& sequence) {
+    // Pooled lists recorded but not yet submitted would run after the
+    // sequence although they were recorded before it.
+    if (sequencing_ || used_ != 0) {
+        throw std::logic_error("a command sequence cannot execute while other work is being recorded");
+    }
+    // One submission per list, as submit_and_wait does, so no submission runs
+    // longer than the dispatch limits allow.
+    for (const auto& recording : sequence) {
+        ID3D12CommandList* lists[] = {recording.list.Get()};
+        queue_->ExecuteCommandLists(1, lists);
+    }
+}
+
+void Gpu::execute_and_wait(const Sequence& sequence) {
+    execute(sequence);
+    wait_idle();
+}
+
+void Gpu::abandon() noexcept {
+    // An open list must be closed before begin_list can reset it again.
+    for (std::size_t i = 0; i < used_; ++i) {
+        lists_[i].list->Close();
+    }
+    used_ = 0;
+    current_ = nullptr;
+    try {
+        wait_idle();
+    } catch (...) {
+        // A removed device is reported by the request's own error.
+    }
 }
 
 void Gpu::uav_barrier() {
@@ -417,6 +478,9 @@ void Gpu::read_back(ID3D12Resource* readback, ID3D12Resource* source, std::uint6
 }
 
 void Gpu::submit_and_wait() {
+    if (sequencing_) {
+        throw std::logic_error("submit_and_wait was called while recording a command sequence");
+    }
     for (std::size_t i = 0; i < used_; ++i) {
         check_hr(lists_[i].list->Close(), "ID3D12GraphicsCommandList::Close");
         ID3D12CommandList* lists[] = {lists_[i].list.Get()};
@@ -424,6 +488,10 @@ void Gpu::submit_and_wait() {
     }
     used_ = 0;
     current_ = nullptr;
+    wait_idle();
+}
+
+void Gpu::wait_idle() {
     check_hr(queue_->Signal(fence_.Get(), ++fence_value_), "ID3D12CommandQueue::Signal");
     check_hr(fence_->SetEventOnCompletion(fence_value_, event_), "ID3D12Fence::SetEventOnCompletion");
     WaitForSingleObject(event_, INFINITE);

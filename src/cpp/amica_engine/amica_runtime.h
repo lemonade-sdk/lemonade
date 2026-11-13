@@ -123,9 +123,20 @@ struct Resources {
 };
 
 // A D3D12 device with one compute queue. Work is recorded into a pool of
-// command lists and submitted in order with a single wait at the end.
+// command lists and submitted in order with a single wait at the end, or into
+// a Sequence that is recorded once and executed again for every step.
 class Gpu {
 public:
+    struct Recording {
+        ComPtr<ID3D12CommandAllocator> allocator;
+        ComPtr<ID3D12GraphicsCommandList> list;
+    };
+
+    // Closed command lists that execute in order, any number of times. AMICA's
+    // DirectX encodes record each kernel's arguments into the list itself, so
+    // a sequence replays as long as the buffers it names stay allocated.
+    using Sequence = std::vector<Recording>;
+
     Gpu(const std::string& adapter_selector, const std::string& arch_override);
     ~Gpu();
     Gpu(const Gpu&) = delete;
@@ -168,14 +179,25 @@ public:
     // Executes every list recorded since the last submit, in order, and waits.
     void submit_and_wait();
 
+    // Between these, begin_list starts the lists of a new Sequence instead of
+    // taking them from the pool; submit_and_wait is not allowed.
+    void begin_sequence();
+    Sequence end_sequence();
+
+    // Submits a sequence's lists in order, one submission each. Work recorded
+    // afterwards runs after it; submit_and_wait also waits for it.
+    void execute(const Sequence& sequence);
+    void execute_and_wait(const Sequence& sequence);
+
+    // After a failure part-way through some work: drops the lists recorded
+    // but not submitted and waits for what was submitted. Never throws.
+    void abandon() noexcept;
+
 private:
     ComPtr<ID3D12Resource> create(std::uint64_t size, const D3D12_HEAP_PROPERTIES& properties,
                                   D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state);
-
-    struct Recording {
-        ComPtr<ID3D12CommandAllocator> allocator;
-        ComPtr<ID3D12GraphicsCommandList> list;
-    };
+    Recording create_recording();
+    void wait_idle();
 
     ComPtr<IDXGIAdapter3> adapter_;
     ComPtr<ID3D12Device> device_;
@@ -185,6 +207,8 @@ private:
     std::uint64_t fence_value_ = 0;
     std::vector<Recording> lists_;
     std::size_t used_ = 0;
+    bool sequencing_ = false;
+    Sequence sequence_;
     ID3D12GraphicsCommandList* current_ = nullptr;
     std::string adapter_name_;
     std::string gfx_arch_;

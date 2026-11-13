@@ -92,6 +92,7 @@ struct PrefillVariant {
     Graph graph;
     std::size_t capacity = 0;
     PromptInputs inputs;
+    Gpu::Sequence step;  // uploads the inputs and runs the graph
 };
 
 struct InputNames {
@@ -170,6 +171,8 @@ public:
         allocate_logits_readback();
         allocate_zero_source();
         runtime_.initialize_graphs(graphs());
+        record_decode_step();
+        record_prefill_steps();
 
         load_ms_ = milliseconds_since(started);
     }
@@ -215,18 +218,26 @@ public:
 
         amica_engine::Generation result;
         const auto started = std::chrono::steady_clock::now();
-        std::size_t token = variant ? prefill(*variant, prompt) : prefill_chunked(prompt);
-        result.ttft_ms = milliseconds_since(started);
-        result.ids.push_back(static_cast<std::int64_t>(token));
-        bool keep_going = on_token(static_cast<std::int64_t>(token));
-
-        const auto decode_started = std::chrono::steady_clock::now();
-        while (keep_going && result.ids.size() < max_new_tokens &&
-               stop_ids.count(static_cast<std::int64_t>(token)) == 0) {
-            const auto position = static_cast<std::int64_t>(prompt.size() + result.ids.size() - 1);
-            token = decode(token, position);
+        auto decode_started = started;
+        try {
+            std::size_t token = variant ? prefill(*variant, prompt) : prefill_chunked(prompt);
+            result.ttft_ms = milliseconds_since(started);
             result.ids.push_back(static_cast<std::int64_t>(token));
-            keep_going = on_token(static_cast<std::int64_t>(token));
+            bool keep_going = on_token(static_cast<std::int64_t>(token));
+
+            decode_started = std::chrono::steady_clock::now();
+            while (keep_going && result.ids.size() < max_new_tokens &&
+                   stop_ids.count(static_cast<std::int64_t>(token)) == 0) {
+                const auto position = static_cast<std::int64_t>(prompt.size() + result.ids.size() - 1);
+                token = decode(token, position);
+                result.ids.push_back(static_cast<std::int64_t>(token));
+                keep_going = on_token(static_cast<std::int64_t>(token));
+            }
+        } catch (...) {
+            // The next request must not submit this one's half-recorded
+            // lists, nor rewrite inputs the GPU may still be reading.
+            gpu_.abandon();
+            throw;
         }
         result.decode_ms = result.ids.size() > 1 ? milliseconds_since(decode_started) : 0.0;
         result.tokens_per_second =
@@ -336,6 +347,9 @@ private:
         }
         if (graph_logits_ && decoder_inputs_.token.elements() != 1) {
             throw std::runtime_error("decoder token input must hold one token");
+        }
+        if (graph_logits_) {
+            decoder_inputs_.mask.fill(0);  // decode() writes only what changes
         }
         // State inputs; see allocate_prefill for how prefill hands them over.
         for (std::uint32_t i = 0; i < graph.requirements.num_inputs; ++i) {
@@ -496,8 +510,9 @@ private:
         upload(inputs.sequence);
     }
 
-    // Reads one row of logits from output 0 of graph and returns its argmax.
-    std::size_t argmax_logits(Graph& graph, std::uint64_t row) {
+    // Records the copy of one row of logits from output 0 of graph into the
+    // readback buffer; returns the width of a logit in bytes.
+    std::size_t read_back_logits(Graph& graph, std::uint64_t row) {
         const auto& logits = graph.output(0);
         const std::size_t width = element_bytes(logits.element_type);
         const std::uint64_t row_bytes = vocabulary_ * width;
@@ -505,25 +520,51 @@ private:
             throw std::runtime_error("the logits row is outside " + graph.label + " output 0");
         }
         gpu_.read_back(logits_readback_.Get(), graph.output_buffers[0].Get(), row * row_bytes, row_bytes);
-        gpu_.submit_and_wait();
+        return width;
+    }
 
-        float best = -std::numeric_limits<float>::infinity();
+    // Reads one row of logits from output 0 of graph and returns its argmax.
+    std::size_t argmax_logits(Graph& graph, std::uint64_t row) {
+        const std::size_t width = read_back_logits(graph, row);
+        gpu_.submit_and_wait();
+        return argmax_read_back(width);
+    }
+
+    // The index of the largest finite logit in the readback buffer, the first
+    // of equal ones.
+    std::size_t argmax_read_back(std::size_t width) const {
         std::size_t best_token = 0;
-        for (std::size_t i = 0; i < vocabulary_; ++i) {
-            float value;
-            if (width == 4) {
+        if (width == 4) {
+            float best = -std::numeric_limits<float>::infinity();
+            for (std::size_t i = 0; i < vocabulary_; ++i) {
+                float value;
                 std::memcpy(&value, logits_mapped_ + i * 4, 4);
-            } else {
-                std::uint16_t half;
-                std::memcpy(&half, logits_mapped_ + i * 2, 2);
-                value = half_to_float(half);
+                if (std::isfinite(value) && value > best) {
+                    best = value;
+                    best_token = i;
+                }
             }
-            if (std::isfinite(value) && value > best) {
-                best = value;
+            if (!std::isfinite(best)) {
+                throw std::runtime_error("the logits contain no finite value");
+            }
+            return best_token;
+        }
+        // Finite halves compare as their magnitude bits, negated when the sign
+        // is set (so +0 and -0 tie, as they do as floats), which spares a float
+        // conversion per logit over a vocabulary of a quarter million.
+        int best = (std::numeric_limits<int>::min)();
+        const auto* halves = reinterpret_cast<const std::uint16_t*>(logits_mapped_);
+        for (std::size_t i = 0; i < vocabulary_; ++i) {
+            const std::uint16_t half = halves[i];
+            if ((half & 0x7C00u) == 0x7C00u) continue;  // infinity or NaN
+            const int magnitude = half & 0x7FFF;
+            const int key = (half & 0x8000u) != 0 ? -magnitude : magnitude;
+            if (key > best) {
+                best = key;
                 best_token = i;
             }
         }
-        if (!std::isfinite(best)) {
+        if (best == (std::numeric_limits<int>::min)()) {
             throw std::runtime_error("the logits contain no finite value");
         }
         return best_token;
@@ -611,31 +652,77 @@ private:
         if (inputs.position) inputs.position.write(0, static_cast<std::int64_t>(n) - 1);
         if (inputs.sequence) inputs.sequence.write(0, static_cast<std::int64_t>(n));
 
-        gpu_.begin_list();
         if (past == 0) {
-            for (const auto& [resource, reset] : resets_) {
-                gpu_.copy_into(reset.buffer.Get(), 0, reset.source ? reset.source.Get() : zero_source_.Get(), 0,
-                               reset.size);
-            }
+            gpu_.execute(reset_step_);
         }
-        upload(inputs);
-        gpu_.uav_barrier();
-        encode(variant.graph);
+        gpu_.execute(variant.step);
         if (!last) {
-            gpu_.submit_and_wait();
+            gpu_.submit_and_wait();  // the next chunk rewrites the inputs
             return 0;
         }
 
+        // Which row holds the last prompt token depends on the prompt, so
+        // the readback is recorded per request.
         if (graph_logits_) {
             const std::uint64_t rows = variant.graph.output(0).size_bytes /
                                        (vocabulary_ * element_bytes(variant.graph.output(0).element_type));
-            return argmax_logits(variant.graph, rows == 1 ? 0 : last_prompt_row(rows, n, 0));
+            const std::uint64_t row = rows == 1 ? 0 : last_prompt_row(rows, n, 0);
+            gpu_.begin_list();
+            return argmax_logits(variant.graph, row);
         }
         const std::uint64_t row_bytes = embeddings_->columns() * sizeof(float);
         const std::uint64_t row = last_prompt_row(variant.graph.output(0).size_bytes / row_bytes, n, tail_row_offset_);
+        gpu_.begin_list();
         gpu_.copy_between(lm_input_.Get(), 0, variant.graph.output_buffers[0].Get(), row * row_bytes, row_bytes);
         gpu_.uav_barrier();
         return run_lm_head(lm_input_->GetGPUVirtualAddress());
+    }
+
+    // A decode step binds the same buffers for every token, so its command
+    // lists are recorded once, as amica-driver records its decode replay, and
+    // executed for each token. Encoding the decoder anew per token would keep
+    // the GPU idle while the CPU records thousands of dispatches.
+    void record_decode_step() {
+        gpu_.begin_sequence();
+        gpu_.begin_list();
+        upload(decoder_inputs_);
+        gpu_.uav_barrier();
+        encode(decoder_);
+        if (graph_logits_) {
+            const std::uint64_t rows =
+                decoder_.output(0).size_bytes / (vocabulary_ * element_bytes(decoder_.output(0).element_type));
+            decode_logit_width_ = read_back_logits(decoder_, rows - 1);
+        } else {
+            const std::uint64_t row_bytes = embeddings_->columns() * sizeof(float);
+            const std::uint64_t rows = decoder_.output(0).size_bytes / row_bytes;
+            // Prefill rebinds the LM head's input to lm_input_ for each request.
+            lm_head_.inputs[tail_input_index_] =
+                decoder_.output_buffers[0]->GetGPUVirtualAddress() + (rows - 1) * row_bytes;
+            encode(lm_head_);
+            decode_logit_width_ = read_back_logits(lm_head_, 0);
+        }
+        decode_step_ = gpu_.end_sequence();
+    }
+
+    // Prefill, too, binds the same buffers for every request: each variant's
+    // uploads and graph, and the state reset before a request's first chunk,
+    // are recorded once.
+    void record_prefill_steps() {
+        for (auto& variant : prefill_) {
+            gpu_.begin_sequence();
+            gpu_.begin_list();
+            upload(variant->inputs);
+            gpu_.uav_barrier();
+            encode(variant->graph);
+            variant->step = gpu_.end_sequence();
+        }
+        gpu_.begin_sequence();
+        gpu_.begin_list();
+        for (const auto& [resource, reset] : resets_) {
+            gpu_.copy_into(reset.buffer.Get(), 0, reset.source ? reset.source.Get() : zero_source_.Get(), 0,
+                           reset.size);
+        }
+        reset_step_ = gpu_.end_sequence();
     }
 
     // Feeds `token` at `position` (zero-based; the prompt fills 0..n-1).
@@ -647,29 +734,25 @@ private:
             if (valid > inputs.mask.elements()) {
                 throw std::runtime_error("the sequence exceeds the decoder attention-mask capacity");
             }
-            inputs.mask.fill(0);
-            for (std::size_t i = 0; i < valid; ++i) {
+            // The mask is a run of ones over the visible positions, kept in the
+            // upload buffer between steps: within a request each step adds
+            // one, so only a shorter run (a new request) clears it.
+            if (valid < decoder_mask_ones_) {
+                inputs.mask.fill(0);
+                decoder_mask_ones_ = 0;
+            }
+            for (std::size_t i = decoder_mask_ones_; i < valid; ++i) {
                 inputs.mask.write(i, 1);
             }
+            decoder_mask_ones_ = valid;
         } else {
             embeddings_->write_f32_row(token, reinterpret_cast<float*>(inputs.embedding.mapped));
         }
         if (inputs.position) inputs.position.write(0, position);
         if (inputs.sequence) inputs.sequence.write(0, position + 1);
 
-        gpu_.begin_list();
-        upload(inputs);
-        gpu_.uav_barrier();
-        encode(decoder_);
-
-        if (graph_logits_) {
-            const std::uint64_t rows =
-                decoder_.output(0).size_bytes / (vocabulary_ * element_bytes(decoder_.output(0).element_type));
-            return argmax_logits(decoder_, rows - 1);
-        }
-        const std::uint64_t row_bytes = embeddings_->columns() * sizeof(float);
-        const std::uint64_t rows = decoder_.output(0).size_bytes / row_bytes;
-        return run_lm_head(decoder_.output_buffers[0]->GetGPUVirtualAddress() + (rows - 1) * row_bytes);
+        gpu_.execute_and_wait(decode_step_);
+        return argmax_read_back(decode_logit_width_);
     }
 
     struct Reset {
@@ -701,6 +784,9 @@ private:
     std::map<std::string, std::int64_t> initial_fill_;
 
     PromptInputs decoder_inputs_;
+    std::size_t decoder_mask_ones_ = 0;
+    Gpu::Sequence decode_step_;
+    std::size_t decode_logit_width_ = 0;
     int tail_input_index_ = -1;
     ComPtr<ID3D12Resource> lm_input_;
     ComPtr<ID3D12Resource> logits_readback_;
@@ -709,6 +795,7 @@ private:
     std::map<ID3D12Resource*, Reset> resets_;
     std::uint64_t zero_size_ = 0;
     ComPtr<ID3D12Resource> zero_source_;
+    Gpu::Sequence reset_step_;
     double load_ms_ = 0.0;
 };
 
