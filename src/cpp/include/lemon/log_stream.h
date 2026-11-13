@@ -32,6 +32,9 @@ public:
 
     static LogStreamHub& instance();
 
+    // Read the retained log window without registering a live subscriber.
+    std::vector<LogStreamEntry> snapshot(std::optional<uint64_t> after_seq = std::nullopt) const;
+
     std::string subscribe_with_snapshot(SubscriberCallback callback,
                                         std::optional<uint64_t> after_seq,
                                         std::vector<LogStreamEntry>& out_snapshot);

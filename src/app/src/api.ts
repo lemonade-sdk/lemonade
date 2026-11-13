@@ -1820,6 +1820,42 @@ class LemonadeAPI {
     return [];
   }
 
+  // Invoke the server-owned log snapshot without re-implementing log capture in GUI3.
+  async getServerLogs(args: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+    const reply = await this._json<{
+      error?: { message?: string };
+      result?: { isError?: boolean; content?: Array<{ type?: string; text?: string }> };
+    }>('/mcp', {
+      method: 'POST',
+      body: {
+        jsonrpc: '2.0',
+        id: 'gui-get-logs',
+        method: 'tools/call',
+        params: { name: 'lemonade_get_logs', arguments: args },
+      },
+    });
+    if (reply.error) throw new Error(reply.error.message || 'MCP log query failed.');
+    const message = reply.result?.content?.find(block => block.type === 'text')?.text;
+    if (reply.result?.isError) {
+      if (message?.includes('Unknown tool: lemonade_get_logs')) {
+        throw new Error('The connected Lemonade server does not support get_logs yet. Rebuild and restart lemond with the MCP log patch.');
+      }
+      throw new Error(message || 'Server log query failed.');
+    }
+    if (!message) throw new Error('Server log query returned no data.');
+    let payload: unknown;
+    try {
+      payload = JSON.parse(message);
+    } catch {
+      throw new Error('Server log query returned invalid JSON.');
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+      || !Array.isArray((payload as Record<string, unknown>).entries)) {
+      throw new Error('Server log query returned unexpected data.');
+    }
+    return payload as Record<string, unknown>;
+  }
+
   async callMcpTool(
     serverId: string,
     name: string,
