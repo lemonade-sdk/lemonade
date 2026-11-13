@@ -541,9 +541,9 @@ class SystemOneTests(ServerTestBase):
                 "The answer must list the options in the order they were asked",
             )
             scores.append(probabilities)
-        # Re-sorted options would make the two requests identical. Julia-1 is
-        # deterministic and scores options by position; an order-invariant model
-        # gives equal scores and fails this check.
+        # Re-sorted options would make the two requests identical. The decision
+        # model is deterministic and scores options by position; an
+        # order-invariant model gives equal scores and fails this check.
         self.assertNotEqual(scores[0], scores[1])
         print(f"[OK] option order: {scores[0]} vs {scores[1]}")
 
