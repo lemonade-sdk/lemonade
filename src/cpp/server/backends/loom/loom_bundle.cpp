@@ -244,6 +244,26 @@ ReadinessState parse_readiness(const json& models, const json& status, const std
     return {Readiness::Pending, ""};
 }
 
+std::string startup_failure_detail(const std::vector<std::string>& output_lines) {
+    constexpr std::size_t kMaxLines = 4;
+    constexpr std::size_t kMaxChars = 1000;
+    std::vector<std::string> kept;
+    for (const auto& raw : output_lines) {
+        const auto first = raw.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) continue;
+        const auto last = raw.find_last_not_of(" \t\r\n");
+        kept.push_back(raw.substr(first, last - first + 1));
+        if (kept.size() > kMaxLines) kept.erase(kept.begin());
+    }
+    std::string detail;
+    for (const auto& line : kept) {
+        if (!detail.empty()) detail += "; ";
+        detail += line;
+    }
+    if (detail.size() > kMaxChars) detail = "..." + detail.substr(detail.size() - kMaxChars);
+    return detail;
+}
+
 std::string card_memory_bytes(const json& info) {
     if (!info.is_object()) return "";
     const json card = info.value("card", json::object());

@@ -15,6 +15,7 @@
 #include "lemon/system_info.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
 
 #include <lemon/utils/aixlog.hpp>
 
@@ -25,6 +26,7 @@
 #include <set>
 #include <stdexcept>
 #include <thread>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -290,6 +292,29 @@ void require_strix_halo() {
     }
 }
 
+// The server process does not keep its console output, so a failed start is
+// re-run once with captured output. Startup failures (device, card) are
+// deterministic and happen before loom-serve listens, so the re-run reproduces
+// them within seconds; a re-run that keeps serving is cut off by the timeout.
+std::string diagnose_startup_failure(const ServerCommand& command) {
+    constexpr int kProbeSeconds = 15;
+    std::vector<std::string> lines;
+    try {
+        utils::ProcessManager::run_process_with_output(
+            command.program, command.args,
+            [&lines](const std::string& line) {
+                lines.push_back(line);
+                return true;
+            },
+            "", kProbeSeconds);
+    } catch (const std::exception& error) {
+        LOG(WARNING, "Loom") << "Could not re-run loom-serve to diagnose its startup failure: "
+                             << error.what() << std::endl;
+        return "";
+    }
+    return loom::startup_failure_detail(lines);
+}
+
 json get_loopback_json(int port, const std::string& path) {
     const auto response = utils::HttpClient::get("http://127.0.0.1:" + std::to_string(port) + path,
                                                  {}, 5, utils::HttpSecurityPolicy::TrustedLoopback);
@@ -357,7 +382,14 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
     LOG(INFO, "Loom") << "Starting loom-serve for " << model_name << " (" << served_model_id_
                       << ") on port " << port_ << std::endl;
     const bool inherit_output = (log_level_ == "info") || is_debug();
-    start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, false}), command);
+    try {
+        start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, false}), command);
+    } catch (const std::runtime_error&) {
+        if (load_cancelled()) throw;
+        const std::string detail = diagnose_startup_failure(command);
+        if (detail.empty()) throw;
+        throw std::runtime_error("loom-serve failed to start: " + detail);
+    }
     wait_for_bundle(model_name);
 }
 
@@ -473,8 +505,11 @@ public:
             std::error_code ec;
             if (!fs::is_regular_file(dir / kCardFile, ec)) return;
             const json card = read_json_file(dir / kCardFile);
-            for (const auto& [name, preset] : card.value("presets", json::object()).items()) {
+            const json presets = card.value("presets", json::object());
+            for (const auto& [name, preset] : presets.items()) {
+                if (!preset.is_object()) continue;
                 const json execution = preset.value("execution", json::object());
+                if (!execution.is_object()) continue;
                 if (execution.value("context_capacity", 0) > 0) {
                     info.max_context_window = execution["context_capacity"].get<int64_t>();
                 }

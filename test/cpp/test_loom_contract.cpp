@@ -228,6 +228,19 @@ void check_readiness_contract() {
               loom::Readiness::Pending);
 }
 
+void check_startup_failure_detail() {
+    const std::string device_error =
+        "runtime/src/iree/hal/drivers/amd/driver.c:146: UNIMPLEMENTED; "
+        "[gpu.endpoint_query_info] libamdf API status 0x00000003";
+    check("A device error is reported verbatim",
+          loom::startup_failure_detail({device_error + "\r", ""}) == device_error);
+    check("Only the last four printed lines are kept",
+          loom::startup_failure_detail({"a", "  ", "b", "c", "d", "e"}) == "b; c; d; e");
+    check("Silent exits give no detail", loom::startup_failure_detail({"", " \r"}).empty());
+    check("Long output is cut from the front",
+          loom::startup_failure_detail({std::string(1500, 'x')}).size() == 1003);
+}
+
 void check_card_metadata() {
     const json info = json::parse(R"({"card":{"memory_bytes":57000000000,"features":{
         "image_input":{"status":"yes"},"tool_calling":{"status":"yes"},
@@ -329,6 +342,7 @@ int main() {
         check_launch_contract();
         check_request_contract();
         check_readiness_contract();
+        check_startup_failure_detail();
         check_card_metadata();
         check_installer_contract();
         check_descriptor_contract();

@@ -78,6 +78,10 @@ struct ReadinessState {
 ReadinessState parse_readiness(const json& models, const json& status,
                                const std::string& model_id);
 
+// loom-serve reports device and card errors on its console before it listens,
+// so a failed start is explained by the last lines it printed.
+std::string startup_failure_detail(const std::vector<std::string>& output_lines);
+
 // The pool size a card asks for, in the byte-string form --memory_bytes takes,
 // or "" when the card does not say.
 std::string card_memory_bytes(const json& info);
