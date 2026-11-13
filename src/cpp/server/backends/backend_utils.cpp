@@ -174,9 +174,10 @@ namespace lemon::backends {
         return p == pattern.size();
     }
 
-    // Where pinned backend release files come from: GitHub Releases, or the
-    // ModelScope dataset that mirrors them (see lemon/backends/backend_source.h).
-    static std::string configured_backend_source() {
+    std::string BackendUtils::effective_backend_source() {
+        if (!backend_source::request_override.empty()) {
+            return backend_source::request_override;
+        }
         if (auto* cfg = RuntimeConfig::global()) {
             return cfg->backend_source();
         }
@@ -212,7 +213,7 @@ namespace lemon::backends {
         if (auto* cfg = RuntimeConfig::global()) {
             method = cfg->rocm_install_method();
         }
-        if (method == "auto" && backend_source::is_modelscope(configured_backend_source())) {
+        if (method == "auto" && backend_source::is_modelscope(BackendUtils::effective_backend_source())) {
             return "tarball";
         }
         return method;
@@ -233,7 +234,7 @@ namespace lemon::backends {
             return pattern;
         }
 
-        const std::string source = configured_backend_source();
+        const std::string source = BackendUtils::effective_backend_source();
         if (backend_source::is_modelscope(source)) {
             // The mirror publishes assets.json next to each release's files, so
             // the wildcard resolves without touching the GitHub API.
@@ -735,7 +736,7 @@ namespace lemon::backends {
                 }
             } zip_guard{zip_path};
 
-            const std::string source = configured_backend_source();
+            const std::string source = BackendUtils::effective_backend_source();
             const std::string endpoint = modelscope_endpoint();
             const auto download_headers = backend_download_headers(source);
             auto asset_url = [&](const std::string& name) {
@@ -2159,7 +2160,7 @@ namespace lemon::backends {
         std::string platform = "linux";
 #endif
         std::string filename = "therock-dist-" + platform + "-" + url_variant + "-" + version + ".tar.gz";
-        const std::string source = configured_backend_source();
+        const std::string source = BackendUtils::effective_backend_source();
         std::string url = backend_source::therock_tarball_url(source, modelscope_endpoint(), version, filename);
 
         fs::path cache_dir = get_backend_download_cache_dir();

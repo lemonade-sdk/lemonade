@@ -264,10 +264,7 @@ void uninstall_container_backend(const std::string& recipe, const std::string& b
 
 // Probe the configured backend_source, not always GitHub.
 bool backend_download_service_reachable() {
-    std::string source = backend_source::kGitHub;
-    if (auto* cfg = RuntimeConfig::global()) {
-        source = cfg->backend_source();
-    }
+    const std::string source = backends::BackendUtils::effective_backend_source();
     const char* endpoint = std::getenv("MODELSCOPE_ENDPOINT");
     return utils::HttpClient::is_reachable(
         backend_source::reachability_probe_url(source, endpoint ? endpoint : ""), 2);
@@ -535,7 +532,7 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
         }
         return "";
     }
-    if (cfg && backend_source::is_modelscope(cfg->backend_source())) {
+    if (backend_source::is_modelscope(backends::BackendUtils::effective_backend_source())) {
         // Answering "latest" would need the GitHub API this setting avoids.
         if (throw_on_failure) {
             throw std::runtime_error(
@@ -706,9 +703,12 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     if (!progress_cb && download_manager_ && resolved_backend != "system") {
         const std::string name = recipe + ":" + resolved_backend;
+        // The job runs on a worker thread, which does not see this thread's request source.
+        const std::string source = backend_source::request_override;
         download_manager_->run_tracked("backend:" + name, "backend", name,
-            [this, recipe, resolved_backend, force](DownloadProgressCallback report,
-                                                    utils::CancelToken) {
+            [this, recipe, resolved_backend, force, source](DownloadProgressCallback report,
+                                                            utils::CancelToken) {
+                backend_source::ScopedOverride source_scope(source);
                 install_backend(recipe, resolved_backend, force, report);
             });
         return;

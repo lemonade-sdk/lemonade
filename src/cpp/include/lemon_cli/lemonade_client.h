@@ -96,7 +96,8 @@ public:
     // should pass upgrade=true to force an HF update check.
     int pull_model(const nlohmann::json& model_data, const std::string& display_name = "", bool upgrade = false);
     int delete_model(const std::string& model_name) const;
-    int load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options = false, std::optional<bool> pinned = std::nullopt) const;
+    int load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options = false, std::optional<bool> pinned = std::nullopt,
+                   const std::string& backend_source = "") const;
     int pin_model(const std::string& model_name, bool pinned) const;
     int unload_model(const std::string& model_name) const;
     nlohmann::json get_model_info(const std::string& model_name) const;
@@ -116,7 +117,8 @@ public:
     // Recipe/backend commands
     int list_recipes(bool show_all = false) const;
     int show_backend_info(const std::string& recipe, const std::string& backend) const;
-    int install_backend(const std::string& recipe, const std::string& backend, bool force = false);
+    int install_backend(const std::string& recipe, const std::string& backend, bool force = false,
+                        const std::string& source = "");
     int uninstall_backend(const std::string& recipe, const std::string& backend);
 
     // Cloud provider commands. Each maps to one /v1/cloud/* or /v1/{install,

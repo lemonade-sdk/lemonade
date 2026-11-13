@@ -158,6 +158,7 @@ struct CliConfig {
     std::map<std::string, std::string> checkpoints;
     std::string recipe;
     std::string model_source;  // empty means defer to lemond's default_model_source
+    std::string backend_source;  // empty means defer to lemond's backend_source
     bool model_source_explicit = false;
     std::vector<std::string> labels;
     std::vector<std::string> components;
@@ -563,7 +564,8 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
     }
 
     // Proceed with loading the model
-    return client.load_model(config.model, config.recipe_options, config.save_options, config.pinned);
+    return client.load_model(config.model, config.recipe_options, config.save_options, config.pinned,
+                             config.backend_source);
 }
 
 static int handle_chat_command(lemonade::LemonadeClient& client, const CliConfig& config) {
@@ -611,7 +613,7 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
         int result = 0;
         handle_backend_operation(config.backend_spec, "Install",
             [&client, &config, &result](const std::string& recipe, const std::string& backend) {
-                result = client.install_backend(recipe, backend, config.force);
+                result = client.install_backend(recipe, backend, config.force, config.backend_source);
                 return result;
             });
         return result;
@@ -1602,6 +1604,11 @@ int main(int argc, char* argv[]) {
     // Backend management options
     backends_install_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
     backends_install_cmd->add_flag("--force", config.force, "Bypass hardware filtering when installing a backend");
+    backends_install_cmd->add_option("--source", config.backend_source,
+        "Where to download the backend from: github or modelscope "
+        "(default: the server's configured backend_source)")
+        ->type_name("SOURCE")
+        ->check(CLI::IsMember({"github", "modelscope"}));
     backends_uninstall_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
     backends_info_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
 
@@ -1716,6 +1723,11 @@ int main(int argc, char* argv[]) {
     lemon::RecipeOptions::add_cli_options(*load_cmd, config.recipe_options);
     load_cmd->add_flag("--save-options", config.save_options, "Save model options for future loads");
     load_cmd->add_flag("--pinned", load_pinned_flag, "Pin the model to prevent auto-eviction");
+    load_cmd->add_option("--backend-source", config.backend_source,
+        "If this load installs a backend, download it from github or modelscope "
+        "(default: the server's configured backend_source)")
+        ->type_name("SOURCE")
+        ->check(CLI::IsMember({"github", "modelscope"}));
 
     // Run options (same as load)
     static bool run_pinned_flag = false;
@@ -1723,6 +1735,11 @@ int main(int argc, char* argv[]) {
     lemon::RecipeOptions::add_cli_options(*run_cmd, config.recipe_options);
     run_cmd->add_flag("--save-options", config.save_options, "Save model options for future runs");
     run_cmd->add_flag("--pinned", run_pinned_flag, "Pin the model to prevent auto-eviction");
+    run_cmd->add_option("--backend-source", config.backend_source,
+        "If this run installs a backend, download it from github or modelscope "
+        "(default: the server's configured backend_source)")
+        ->type_name("SOURCE")
+        ->check(CLI::IsMember({"github", "modelscope"}));
     run_cmd->add_flag("--chat-cli", config.chat_cli,
         "After loading, open an interactive chat REPL in the terminal instead of the browser");
 

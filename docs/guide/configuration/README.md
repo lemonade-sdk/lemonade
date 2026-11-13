@@ -250,7 +250,7 @@ lemonade config set backend_source=modelscope
 lemonade config set default_model_source=modelscope
 ```
 
-The same setting is available as the `LEMONADE_BACKEND_SOURCE` environment variable. `MODELSCOPE_ENDPOINT` moves the ModelScope API, as it does for model pulls, and `MODELSCOPE_API_TOKEN` is sent when set. With `backend_source=modelscope`:
+To use ModelScope for one install without changing the config, pass `--source modelscope` to `lemonade backends install` (or `"source": "modelscope"` to `POST /v1/install`), or `--backend-source modelscope` to `lemonade load` and `lemonade run` (`"backend_source"` on `POST /v1/load`) for a backend that a load installs. The same setting is available as the `LEMONADE_BACKEND_SOURCE` environment variable. `MODELSCOPE_ENDPOINT` moves the ModelScope API, as it does for model pulls, and `MODELSCOPE_API_TOKEN` is sent when set. With `backend_source=modelscope`:
 
 - Only pinned versions are available. A `*_bin` value of `latest` fails with a clear error; use `builtin` or a pinned tag.
 - `rocm_install_method=auto` installs the TheRock tarball, because the mirror does not carry AMD's pip wheel index. An explicit `wheel` is still honoured.

@@ -25,6 +25,30 @@ inline bool is_modelscope(const std::string& source) {
     return source == kModelScope;
 }
 
+inline bool is_valid(const std::string& source) {
+    return source == kGitHub || source == kModelScope;
+}
+
+// A request's backend source (install, load and their CLI flags) beats the
+// config for the installs that request starts. Thread-local because the install runs on the
+// thread that opens this scope, which may be a download-manager worker.
+inline thread_local std::string request_override;
+
+class ScopedOverride {
+public:
+    explicit ScopedOverride(const std::string& source) : previous_(request_override) {
+        if (!source.empty()) {
+            request_override = source;
+        }
+    }
+    ~ScopedOverride() { request_override = previous_; }
+    ScopedOverride(const ScopedOverride&) = delete;
+    ScopedOverride& operator=(const ScopedOverride&) = delete;
+
+private:
+    std::string previous_;
+};
+
 inline std::string modelscope_base(const std::string& endpoint) {
     std::string base = endpoint.empty() ? std::string(kModelScopeDefaultEndpoint) : endpoint;
     while (!base.empty() && base.back() == '/') {

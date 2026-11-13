@@ -5,8 +5,10 @@
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <nlohmann/json.hpp>
 #include <lemon/backends/backend_source.h>
+#include <lemon/backends/backend_utils.h>
 #include <lemon/runtime_config.h>
 
 using json = nlohmann::json;
@@ -126,6 +128,31 @@ int main() {
         RuntimeConfig config(json{{"backend_source", "github"}});
         check(config.backend_source() == "modelscope", "LEMONADE_BACKEND_SOURCE overrides the config file");
         set_env("LEMONADE_BACKEND_SOURCE", nullptr);
+    }
+
+    // A request's source applies to its own install only.
+    {
+        using lemon::backends::BackendUtils;
+        check(BackendUtils::effective_backend_source() == "github",
+              "with no request source and no config, the source is github");
+        {
+            bs::ScopedOverride request_scope("modelscope");
+            check(BackendUtils::effective_backend_source() == "modelscope",
+                  "a request source overrides the default");
+            {
+                bs::ScopedOverride no_source("");
+                check(BackendUtils::effective_backend_source() == "modelscope",
+                      "an empty request source keeps the enclosing one");
+            }
+            std::string other_thread;
+            std::thread([&] { other_thread = BackendUtils::effective_backend_source(); }).join();
+            check(other_thread == "github", "a request source does not leak to other threads");
+        }
+        check(BackendUtils::effective_backend_source() == "github",
+              "the request source ends with its scope");
+        check(bs::is_valid("github") && bs::is_valid("modelscope") && !bs::is_valid("gitee") &&
+                  !bs::is_valid(""),
+              "only github and modelscope are valid sources");
     }
 
     std::printf("\n%d passed, %d failed\n", passed, failures);
