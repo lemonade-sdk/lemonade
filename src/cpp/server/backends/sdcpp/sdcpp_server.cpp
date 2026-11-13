@@ -17,6 +17,8 @@
 #include <fstream>
 #include <chrono>
 #include <cstring>
+#include <map>
+#include <mutex>
 #include <random>
 #include <sstream>
 #include <set>
@@ -78,6 +80,149 @@ std::string get_therock_version() {
     // stable-diffusion.cpp release assets include full ROCm runtime version in filenames
     // (for example: rocm-7.12.0), so keep the patch component.
     return trim_version_prefix(config["therock"]["version"].get<std::string>());
+}
+
+struct SdLaunchEnv {
+    std::string program;
+    std::string working_dir;
+    std::vector<std::pair<std::string, std::string>> env;
+};
+
+// The process environment sd-server needs to find its runtime libraries. Shared
+// by load() and the --list-devices probe so both see the same devices.
+SdLaunchEnv sdcpp_launch_env(const std::string& resolved_backend, const std::string& exe_path) {
+    SdLaunchEnv launch;
+    auto& env_vars = launch.env;
+    fs::path exe_dir = fs::path(exe_path).parent_path();
+#ifdef _WIN32
+    fs::path executable_path = fs::absolute(fs::path(exe_path));
+    exe_dir = executable_path.parent_path();
+#endif
+
+#ifndef _WIN32
+    std::string lib_path = exe_dir.string();
+
+    if (resolved_backend == "rocm-stable") {
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        if (!rocm_arch.empty()) {
+            std::string therock_dirs = BackendUtils::join_runtime_dirs(
+                BackendUtils::get_therock_lib_paths(rocm_arch));
+            if (!therock_dirs.empty()) {
+                lib_path = therock_dirs + ":" + lib_path;
+            }
+        }
+    }
+
+    const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+    if (existing_ld_path && strlen(existing_ld_path) > 0) {
+        lib_path = lib_path + ":" + std::string(existing_ld_path);
+    }
+
+    env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+    LOG(DEBUG, "SDServer") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+#else
+    // ROCm builds on Windows require hipblaslt.dll, rocblas.dll, amdhip64.dll, etc.
+    // These DLLs are distributed alongside sd-server.exe but need PATH to be set for loading
+    if (is_rocm_backend(resolved_backend)) {
+        std::string new_path = path_to_utf8(exe_dir);
+
+        if (resolved_backend == "rocm-stable") {
+            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            if (!rocm_arch.empty()) {
+                std::vector<std::string> therock_dirs = BackendUtils::get_therock_lib_paths(rocm_arch);
+                std::string therock_bin = therock_dirs.empty() ? std::string() : therock_dirs.front();
+                if (!therock_bin.empty()) {
+                    for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
+                        new_path = *it + ";" + new_path;
+                    }
+
+                    BackendUtils::stage_therock_hip_runtime(rocm_arch, exe_dir);
+                }
+            }
+        }
+
+        const char* existing_path = std::getenv("PATH");
+        if (existing_path && strlen(existing_path) > 0) {
+            new_path = new_path + ";" + std::string(existing_path);
+        }
+        env_vars.push_back({"PATH", new_path});
+
+        LOG(INFO, "SDServer") << "ROCm backend: added " << path_to_utf8(exe_dir) << " to PATH" << std::endl;
+    } else if (is_cuda_backend(resolved_backend)) {
+        // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
+        // sd-server.exe. Prepend the executable directory to PATH so the loader
+        // resolves them before any system-wide CUDA install.
+        std::string new_path = path_to_utf8(exe_dir);
+
+        const char* existing_path = std::getenv("PATH");
+        if (existing_path && strlen(existing_path) > 0) {
+            new_path += ";" + std::string(existing_path);
+        }
+        env_vars.push_back({"PATH", new_path});
+        LOG(DEBUG, "SDServer") << "Prepending CUDA exe dir to PATH: " << path_to_utf8(exe_dir) << std::endl;
+    }
+#endif
+
+    launch.program = exe_path;
+#ifdef _WIN32
+    launch.program = path_to_utf8(executable_path);
+    launch.working_dir = path_to_utf8(executable_path.parent_path());
+#endif
+    return launch;
+}
+
+using GgmlDevices = std::vector<std::pair<std::string, std::string>>;
+
+struct DeviceProbe {
+    GgmlDevices devices;
+    std::string error;
+};
+
+// A failed probe is cached too, so a broken build is not re-run on every request.
+GgmlDevices probe_sdcpp_devices(const std::string& resolved_backend, const std::string& exe_path) {
+    static std::mutex cache_mutex;
+    static std::map<std::string, DeviceProbe> cache;
+
+    std::error_code ec;
+    const auto mtime = fs::last_write_time(path_from_utf8(exe_path), ec);
+    const std::string key = exe_path + "|" +
+        (ec ? std::string() : std::to_string(mtime.time_since_epoch().count()));
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        auto it = cache.find(key);
+        if (it != cache.end()) {
+            if (!it->second.error.empty()) throw std::runtime_error(it->second.error);
+            return it->second.devices;
+        }
+    }
+
+    DeviceProbe probe;
+    try {
+        const SdLaunchEnv launch = sdcpp_launch_env(resolved_backend, exe_path);
+        std::string output;
+        // stderr carries ggml's init logging; only stdout holds the device table.
+        const int rc = ProcessManager::run_process_with_output(
+            launch.program, {"--list-devices"},
+            [&output](const std::string& line) { output += line + "\n"; return true; },
+            launch.working_dir, 60, /*capture_stderr=*/false, launch.env);
+        if (rc != 0) {
+            probe.error = "sd-server --list-devices failed with exit code " + std::to_string(rc);
+        } else {
+            probe.devices = BackendUtils::parse_ggml_device_list(output);
+        }
+    } catch (const std::exception& e) {
+        probe.error = std::string("sd-server --list-devices failed: ") + e.what();
+    }
+    LOG(DEBUG, "SDServer") << "sd-server (" << resolved_backend << ") reports "
+                           << probe.devices.size() << " device(s)"
+                           << (probe.error.empty() ? "" : ": " + probe.error) << std::endl;
+
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        cache[key] = probe;
+    }
+    if (!probe.error.empty()) throw std::runtime_error(probe.error);
+    return probe.devices;
 }
 
 int generate_random_seed() {
@@ -174,6 +319,11 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
     return params;
 }
 
+std::vector<std::pair<std::string, std::string>> SDServer::list_devices(const std::string& backend) {
+    return probe_sdcpp_devices(resolve_sdcpp_backend(backend),
+                               BackendUtils::get_backend_binary_path(*sdcpp::spec(), backend));
+}
+
 SDServer::SDServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("sd-server", log_level, model_manager, backend_manager) {
     LOG(DEBUG, "SDServer") << "Created with log_level=" << log_level << std::endl;
@@ -261,13 +411,6 @@ void SDServer::load(const std::string& model_name,
         args.push_back("--vae-tiling");
         args.push_back("--diffusion-fa");
     }
-    // sd.cpp names ggml devices with CUDA0/Vulkan0/etc. Vulkan selection is
-    // passed natively; CUDA and ROCm use a per-process visibility mask below.
-    if (resolved_backend == "vulkan" && !selected_device.empty() && selected_device != "auto") {
-        const int index = BackendUtils::parse_gpu_device_index(selected_device, "vulkan");
-        args.push_back("--backend");
-        args.push_back("vulkan" + std::to_string(index));
-    }
     std::set<std::string> reserved_flags = {
         "-m",
         "--model",
@@ -296,95 +439,32 @@ void SDServer::load(const std::string& model_name,
         args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
     }
 
-    std::vector<std::pair<std::string, std::string>> env_vars;
-    fs::path exe_dir = fs::path(exe_path).parent_path();
-#ifdef _WIN32
-    fs::path executable_path = fs::absolute(fs::path(exe_path));
-    exe_dir = executable_path.parent_path();
-#endif
+    const SdLaunchEnv launch = sdcpp_launch_env(resolved_backend, exe_path);
+    std::vector<std::pair<std::string, std::string>> env_vars = launch.env;
+    const std::string& process_exe_path = launch.program;
+    const std::string& working_dir = launch.working_dir;
 
-#ifndef _WIN32
-    std::string lib_path = exe_dir.string();
-
-    if (resolved_backend == "rocm-stable") {
-        std::string rocm_arch = SystemInfo::get_rocm_arch();
-        if (!rocm_arch.empty()) {
-            std::string therock_dirs = BackendUtils::join_runtime_dirs(
-                BackendUtils::get_therock_lib_paths(rocm_arch));
-            if (!therock_dirs.empty()) {
-                lib_path = therock_dirs + ":" + lib_path;
-            }
-        }
-    }
-
-    const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
-    if (existing_ld_path && strlen(existing_ld_path) > 0) {
-        lib_path = lib_path + ":" + std::string(existing_ld_path);
-    }
-
-    env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
-    LOG(DEBUG, "SDServer") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
-#else
-    // ROCm builds on Windows require hipblaslt.dll, rocblas.dll, amdhip64.dll, etc.
-    // These DLLs are distributed alongside sd-server.exe but need PATH to be set for loading
-    if (is_rocm_backend(resolved_backend)) {
-        std::string new_path = path_to_utf8(exe_dir);
-
-        if (resolved_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
-            if (!rocm_arch.empty()) {
-                std::vector<std::string> therock_dirs = BackendUtils::get_therock_lib_paths(rocm_arch);
-                std::string therock_bin = therock_dirs.empty() ? std::string() : therock_dirs.front();
-                if (!therock_bin.empty()) {
-                    for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
-                        new_path = *it + ";" + new_path;
-                    }
-
-                    BackendUtils::stage_therock_hip_runtime(rocm_arch, exe_dir);
-                }
-            }
-        }
-
-        const char* existing_path = std::getenv("PATH");
-        if (existing_path && strlen(existing_path) > 0) {
-            new_path = new_path + ";" + std::string(existing_path);
-        }
-        env_vars.push_back({"PATH", new_path});
-
-        LOG(INFO, "SDServer") << "ROCm backend: added " << path_to_utf8(exe_dir) << " to PATH" << std::endl;
+    const bool explicit_device = !selected_device.empty() && selected_device != "auto";
+    if (explicit_device && (resolved_backend == "vulkan" || is_rocm_backend(resolved_backend))) {
+        // Map the selection through the build's own enumeration: ggml's ROCm
+        // and Vulkan ordinals need not follow SystemInfo's GPU order.
+        const std::string prefix = resolved_backend == "vulkan" ? "vulkan" : "rocm";
+        const std::string device = BackendUtils::ggml_device_for_selection(
+            selected_device, prefix, probe_sdcpp_devices(resolved_backend, exe_path));
+        args.push_back("--backend");
+        args.push_back(device);
+        LOG(INFO, "SDServer") << "Selecting " << device << " via --backend" << std::endl;
     } else if (is_cuda_backend(resolved_backend)) {
-        // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
-        // sd-server.exe. Prepend the executable directory to PATH so the loader
-        // resolves them before any system-wide CUDA install.
-        std::string new_path = path_to_utf8(exe_dir);
-
-        const char* existing_path = std::getenv("PATH");
-        if (existing_path && strlen(existing_path) > 0) {
-            new_path += ";" + std::string(existing_path);
-        }
-        env_vars.push_back({"PATH", new_path});
-        LOG(DEBUG, "SDServer") << "Prepending CUDA exe dir to PATH: " << path_to_utf8(exe_dir) << std::endl;
-    }
-#endif
-
-    if (is_cuda_backend(resolved_backend) || is_rocm_backend(resolved_backend)) {
         BackendUtils::apply_accelerator_device_env_vars(env_vars, "SDServer",
                                                         resolved_backend, selected_device,
-                                                        is_cuda_backend(resolved_backend) ? SystemInfo::get_cuda_arch() : "");
-    } else if (!selected_device.empty() && selected_device != "auto" &&
+                                                        SystemInfo::get_cuda_arch());
+    } else if (explicit_device && !is_rocm_backend(resolved_backend) &&
                resolved_backend != "vulkan" &&
                !(resolved_backend == "metal" && selected_device == "metal") &&
                !(resolved_backend == "cpu" && selected_device == "cpu")) {
         throw std::invalid_argument("Device '" + selected_device +
-                                    "' is incompatible with sd.cpp backend '" + backend + "'");
+                                    "' is incompatible with sd.cpp backend '" + resolved_backend + "'");
     }
-
-    std::string process_exe_path = exe_path;
-    std::string working_dir;
-#ifdef _WIN32
-    process_exe_path = path_to_utf8(executable_path);
-    working_dir = path_to_utf8(executable_path.parent_path());
-#endif
 
     ServerCommand command;
     command.program = process_exe_path;

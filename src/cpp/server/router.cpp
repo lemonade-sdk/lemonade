@@ -24,6 +24,7 @@
 #include <lemon/model_manager.h>
 #include <mutex>
 #include <queue>
+#include <stdexcept>
 #include <thread>
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/global_vram_monitor.h"
@@ -1143,6 +1144,13 @@ void Router::load_model(const std::string& model_name,
             new_server->set_load_duration_ms(std::chrono::duration_cast<std::chrono::milliseconds>(load_end - load_start).count());
             LOG(DEBUG, "Router") << "Backend started successfully in " << new_server->get_load_duration_ms() << "ms" << std::endl;
         } catch (const ConfigurationException& e) {
+            error_message = e.what();
+            load_success = false;
+            unrecoverable_config = true;
+            LOG(ERROR, "Router") << "Backend load failed: " << error_message << std::endl;
+        } catch (const std::invalid_argument& e) {
+            // Rejected load options (a device that does not exist, a bad args
+            // string) fail identically after evicting every other model.
             error_message = e.what();
             load_success = false;
             unrecoverable_config = true;

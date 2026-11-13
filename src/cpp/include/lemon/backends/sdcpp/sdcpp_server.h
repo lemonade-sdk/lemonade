@@ -18,6 +18,10 @@ class SDServer : public WrappedServer, public IImageServer, public IUpscaleServe
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
+    // Devices the installed `backend` build enumerates, as {name, description}
+    // in its runtime order. Probed once per binary; throws if the probe fails.
+    static std::vector<std::pair<std::string, std::string>> list_devices(const std::string& backend);
+
     explicit SDServer(const std::string& log_level,
                       ModelManager* model_manager,
                       BackendManager* backend_manager);

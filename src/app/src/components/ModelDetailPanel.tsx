@@ -432,13 +432,31 @@ function indexed(prefix: string, count: number, fallbackCount = 1): string[] {
   return Array.from({ length: n }, (_, i) => `${prefix}${i}`);
 }
 
-function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefined, selectedBackend: string, model: ModelInfo, info: SystemInfoLike): string[] {
-  const recipe = activeRecipeForModel(model);
+const SINGLE_GPU_RECIPES = ['thenoise', 'sd-cpp', 'acestep', 'trellis', 'thinksound', 'openmoss'];
+
+function deviceBackendFor(recipe: string, selectedBackend: string, info: SystemInfoLike): string {
   const selected = selectedBackend.toLowerCase();
-  const singleGpuRecipe = ['thenoise', 'sd-cpp', 'acestep', 'trellis', 'thinksound', 'openmoss'].includes(recipe);
-  const backend = (selected === 'auto' || !selected) && singleGpuRecipe
+  return (selected === 'auto' || !selected) && SINGLE_GPU_RECIPES.includes(recipe)
     ? (recipeDefaultBackend(info, recipe) || selected)
     : selected;
+}
+
+interface RuntimeDevice { name: string; description: string }
+
+/** Devices an installed build enumerated itself, in its runtime's own order. */
+function runtimeDevicesFor(info: SystemInfoLike, recipe: string, backend: string): RuntimeDevice[] | null {
+  const list = backendMapForRecipe(info, recipe)?.[backend]?.runtime_devices;
+  return Array.isArray(list) ? list.filter((device: any) => typeof device?.name === 'string') : null;
+}
+
+function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefined, selectedBackend: string, model: ModelInfo, info: SystemInfoLike): string[] {
+  const recipe = activeRecipeForModel(model);
+  const singleGpuRecipe = SINGLE_GPU_RECIPES.includes(recipe);
+  const backend = deviceBackendFor(recipe, selectedBackend, info);
+  const runtimeDevices = runtimeDevicesFor(info, recipe, backend);
+  const runtimeOptions = (prefix: string): string[] | null => runtimeDevices
+    ? runtimeDevices.map(device => device.name.toLowerCase()).filter(name => name.startsWith(prefix))
+    : null;
   const devices = availableDeviceCounts(info);
   const nvidiaList = (info as any)?.devices?.nvidia_gpu;
   const detectedCudaOptions: string[] = Array.isArray(nvidiaList)
@@ -456,12 +474,17 @@ function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefin
     if (devices.npu && recipe !== 'llamacpp') base.push('npu0');
   } else if (backend.includes('cpu')) base = ['cpu'];
   else if (backend.includes('cuda')) base = cudaOptions;
-  else if (backend.includes('vulkan')) base = indexed('vulkan', devices.amd + devices.nvidia, 1);
+  else if (backend.includes('vulkan')) base = runtimeOptions('vulkan') ?? indexed('vulkan', devices.amd + devices.nvidia, 1);
   else if (backend.includes('opencl')) base = indexed('opencl', devices.amd + devices.nvidia, 1);
   else if (backend.includes('rocm')) {
     const amdGpus = (info as any)?.devices?.amd_gpu;
     const count = Array.isArray(amdGpus) ? amdGpus.filter((gpu: any) => gpu?.available !== false).length : devices.amd;
-    base = indexed('rocm', count, 1);
+    const hipOptions = hipIndexedAmdGpus(info).map(gpu => `rocm${gpu.hip_index}`);
+    // Without HIP indices, SystemInfo's iGPU-first order may not be HIP's, so
+    // several AMD GPUs cannot be told apart by position.
+    base = runtimeOptions('rocm')
+      ?? (hipOptions.length ? hipOptions
+        : (recipe === 'sd-cpp' || count <= 1 ? indexed('rocm', count, 1) : []));
   }
   else if (backend.includes('metal') && devices.metal) base = ['metal'];
   else if (backend.includes('npu') && devices.npu && recipe !== 'llamacpp') base = ['npu0'];
@@ -479,7 +502,10 @@ function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefin
   return Array.from(new Set(options.filter(Boolean)));
 }
 
-function deviceOptionLabel(option: string, info: SystemInfoLike): string {
+function deviceOptionLabel(option: string, info: SystemInfoLike, runtimeDevices?: RuntimeDevice[] | null): string {
+  const runtime = runtimeDevices?.find(device => device.name.toLowerCase() === option.toLowerCase());
+  if (runtime) return runtime.description ? `${runtime.name} (${runtime.description})` : runtime.name;
+
   const cuda = /^cuda(\d+)$/i.exec(option);
   if (cuda) {
     const gpus = (info as any)?.devices?.nvidia_gpu;
@@ -490,14 +516,27 @@ function deviceOptionLabel(option: string, info: SystemInfoLike): string {
     return gpu?.name ? `${option.toUpperCase()} (${gpu.name})` : option;
   }
 
-  // SystemInfo lists integrated AMD GPUs first, which may differ from HIP's order.
-  // Only the single-GPU case can be labelled unambiguously without a HIP mapping.
   const rocm = /^rocm(\d+)$/i.exec(option);
   const amdGpus = (info as any)?.devices?.amd_gpu;
   if (!rocm || !Array.isArray(amdGpus)) return option;
-  const available = amdGpus.filter((gpu: any) => gpu?.available === true);
-  return available.length === 1 && Number(rocm[1]) === 0 && available[0]?.name
+  const index = Number(rocm[1]);
+  const byHip = hipIndexedAmdGpus(info).find(gpu => gpu.hip_index === index);
+  if (byHip) return `ROCm${index} (${byHip.name})`;
+  // Without HIP indices only a single GPU can be named: SystemInfo lists the iGPU
+  // first, which may differ from HIP's order.
+  const available = amdGpus.filter((gpu: any) => gpu?.available !== false);
+  return available.length === 1 && index === 0 && available[0]?.name
     ? `ROCm0 (${available[0].name})` : option;
+}
+
+/** AMD GPUs lemond could place in HIP's own numbering, in that order. */
+function hipIndexedAmdGpus(info: SystemInfoLike): Array<{ hip_index: number; name: string }> {
+  const amdGpus = (info as any)?.devices?.amd_gpu;
+  if (!Array.isArray(amdGpus)) return [];
+  return amdGpus
+    .filter((gpu: any) => gpu?.available !== false && Number.isInteger(gpu?.hip_index) && gpu.hip_index >= 0)
+    .map((gpu: any) => ({ hip_index: gpu.hip_index as number, name: String(gpu.name || '') }))
+    .sort((a, b) => a.hip_index - b.hip_index);
 }
 
 /** Regex: only attempt HF README fetch when the derived value looks like `owner/repo`. */
@@ -1819,7 +1858,7 @@ const ModelConfigurationTab: React.FC<{
             value={draftValue}
             onChange={e => setRecipeDraft(prev => {
               const next = { ...prev, [String(key)]: e.target.value };
-              if (['thenoise', 'sd-cpp', 'acestep', 'trellis', 'thinksound', 'openmoss'].includes(activeRecipe)) {
+              if (SINGLE_GPU_RECIPES.includes(activeRecipe)) {
                 const defaultBackend = activeBackend.toLowerCase() === 'auto'
                   ? recipeDefaultBackend(info, activeRecipe).toLowerCase()
                   : activeBackend.toLowerCase();
@@ -1847,6 +1886,7 @@ const ModelConfigurationTab: React.FC<{
         : 'auto';
       const activeDevice = optionalDisplayValue(baseValue) || 'auto';
       const options = deviceOptionsForKey(key, draftValue || undefined, selectedBackend, model, info).filter(opt => opt !== activeDevice);
+      const runtimeDevices = runtimeDevicesFor(info, activeRecipe, deviceBackendFor(activeRecipe, selectedBackend, info));
       return (
         <label key={String(key)} className="detail-tuning__field detail-configuration__field" htmlFor={fieldId}>
           <span>{label}</span>
@@ -1858,8 +1898,8 @@ const ModelConfigurationTab: React.FC<{
             value={draftValue}
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           >
-            <option value="">{deviceOptionLabel(activeDevice, info)}</option>
-            {options.map(opt => <option key={opt} value={opt}>{deviceOptionLabel(opt, info)}</option>)}
+            <option value="">{deviceOptionLabel(activeDevice, info, runtimeDevices)}</option>
+            {options.map(opt => <option key={opt} value={opt}>{deviceOptionLabel(opt, info, runtimeDevices)}</option>)}
           </select>
         </label>
       );

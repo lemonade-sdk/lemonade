@@ -21,6 +21,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
@@ -2566,13 +2567,66 @@ namespace lemon::backends {
         throw std::invalid_argument("Selected GPU " + selection + " is not available");
     }
 
-    std::string BackendUtils::rocm_visible_device_for_selection(
-            const std::string& selection, int available_gpu_count) {
+    std::vector<std::pair<std::string, std::string>> BackendUtils::rocm_device_env_for_selection(
+            const std::string& selection,
+            const std::vector<std::pair<int, std::string>>& hip_gpus,
+            int available_gpu_count) {
         const int index = parse_gpu_device_index(selection, "rocm");
-        if (index >= available_gpu_count) {
+        for (const auto& gpu : hip_gpus) {
+            if (gpu.first != index) continue;
+            if (!gpu.second.empty()) {
+                // ROCr applies its mask first; HIP then sees the one GPU as 0.
+                return {{"ROCR_VISIBLE_DEVICES", gpu.second}, {"HIP_VISIBLE_DEVICES", "0"}};
+            }
+            return {{"HIP_VISIBLE_DEVICES", std::to_string(index)}};
+        }
+        if (!hip_gpus.empty() || index >= available_gpu_count) {
             throw std::invalid_argument("Selected GPU " + selection + " is not available");
         }
-        return std::to_string(index);
+        if (available_gpu_count > 1) {
+            throw std::invalid_argument(
+                "Cannot safely select " + selection + ": this host has " +
+                std::to_string(available_gpu_count) +
+                " AMD GPUs and their HIP device order is unknown. Use auto.");
+        }
+        return {{"HIP_VISIBLE_DEVICES", "0"}};
+    }
+
+    std::vector<std::pair<std::string, std::string>> BackendUtils::parse_ggml_device_list(
+            const std::string& output) {
+        std::vector<std::pair<std::string, std::string>> devices;
+        std::istringstream lines(output);
+        std::string line;
+        while (std::getline(lines, line)) {
+            const size_t tab = line.find('\t');
+            if (tab == std::string::npos || tab == 0) continue;
+            std::string description = line.substr(tab + 1);
+            const size_t end = description.find_last_not_of(" \t\r\n");
+            description = end == std::string::npos ? "" : description.substr(0, end + 1);
+            devices.emplace_back(line.substr(0, tab), description);
+        }
+        return devices;
+    }
+
+    std::string BackendUtils::ggml_device_for_selection(
+            const std::string& selection,
+            const std::string& prefix,
+            const std::vector<std::pair<std::string, std::string>>& devices) {
+        const std::string wanted = prefix + std::to_string(parse_gpu_device_index(selection, prefix));
+        std::string found;
+        for (const auto& device : devices) {
+            std::string name = device.first;
+            std::transform(name.begin(), name.end(), name.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (name == wanted) return device.first;
+            if (name.compare(0, prefix.size(), prefix) == 0) {
+                found += (found.empty() ? "" : ", ") + device.first +
+                         (device.second.empty() ? "" : " (" + device.second + ")");
+            }
+        }
+        throw std::invalid_argument("Selected GPU " + selection + " is not available" +
+            (found.empty() ? std::string(": the backend reported no ") + prefix + " devices"
+                           : ". The backend reported: " + found));
     }
 
     void BackendUtils::apply_accelerator_device_env_vars(
@@ -2615,15 +2669,26 @@ namespace lemon::backends {
             if (!automatic) {
                 const json system_info = SystemInfoCache::get_system_info_with_cache();
                 int available_count = 0;
+                std::vector<std::pair<int, std::string>> hip_gpus;
                 if (system_info.contains("devices") && system_info["devices"].contains("amd_gpu") &&
                     system_info["devices"]["amd_gpu"].is_array()) {
                     for (const auto& gpu : system_info["devices"]["amd_gpu"]) {
-                        if (gpu.value("available", false)) ++available_count;
+                        if (!gpu.value("available", false)) continue;
+                        ++available_count;
+                        if (gpu.value("hip_index", -1) >= 0) {
+                            hip_gpus.emplace_back(gpu["hip_index"].get<int>(), gpu.value("uuid", ""));
+                        }
                     }
                 }
-                const std::string index = rocm_visible_device_for_selection(selection, available_count);
-                env_vars.emplace_back("HIP_VISIBLE_DEVICES", index);
-                LOG(INFO, log_tag) << "Selecting ROCm device " << index << std::endl;
+                for (const auto& [name, value] : rocm_device_env_for_selection(selection, hip_gpus, available_count)) {
+                    env_vars.emplace_back(name, value);
+                    LOG(INFO, log_tag) << "Selecting " << selection << " via " << name << "=" << value << std::endl;
+                }
+                // GPU_DEVICE_ORDINAL filters below these masks and would renumber them.
+                if (const char* ordinal = std::getenv("GPU_DEVICE_ORDINAL"); ordinal && *ordinal) {
+                    LOG(WARNING, log_tag) << "GPU_DEVICE_ORDINAL=" << ordinal
+                                          << " is set and may hide the selected GPU" << std::endl;
+                }
             }
             return;
         }

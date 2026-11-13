@@ -328,9 +328,27 @@ namespace lemon::backends {
             const std::string& required_arch,
             const std::vector<std::pair<int, std::string>>& detected_archs);
 
-        // Pure ROCm index validation for deterministic, hardware-free tests.
-        static std::string rocm_visible_device_for_selection(
-            const std::string& selection, int available_gpu_count);
+        // Environment that pins a ROCm subprocess to the GPU HIP numbers N for a
+        // selection like rocmN. `hip_gpus` holds {hip_index, uuid} per detected AMD
+        // GPU. A UUID is used through ROCR_VISIBLE_DEVICES when known, since no
+        // inherited index mask can renumber it. Without HIP indices, only a host
+        // with a single AMD GPU can be pinned (to 0).
+        static std::vector<std::pair<std::string, std::string>> rocm_device_env_for_selection(
+            const std::string& selection,
+            const std::vector<std::pair<int, std::string>>& hip_gpus,
+            int available_gpu_count);
+
+        // Parses ggml `--list-devices` output: one "name<TAB>description" line per
+        // device, in the order the backend's own runtime enumerates them.
+        static std::vector<std::pair<std::string, std::string>> parse_ggml_device_list(
+            const std::string& output);
+
+        // The backend's own device name (e.g. "ROCm1") for a selection like rocm1.
+        // Throws, naming the devices the backend reported, when there is no match.
+        static std::string ggml_device_for_selection(
+            const std::string& selection,
+            const std::string& prefix,
+            const std::vector<std::pair<std::string, std::string>>& devices);
 
         // A single-device selection for CUDA/ROCm subprocesses. For CUDA, an
         // explicit device takes precedence over the inherited CUDA_VISIBLE_DEVICES;

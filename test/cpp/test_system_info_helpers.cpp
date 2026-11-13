@@ -25,8 +25,13 @@ using lemon::system_info_detail::device_matches_constraint;
 using lemon::system_info_detail::gfx_target_version_to_arch;
 using lemon::system_info_detail::gpu_display_name;
 using lemon::system_info_detail::identify_cuda_arch_from_name;
+using lemon::system_info_detail::hip_index_for_pci_bus_id;
 using lemon::system_info_detail::hip_visible_device;
+using lemon::system_info_detail::kfd_gpu_nodes;
 using lemon::system_info_detail::kfd_gpu_properties;
+using lemon::system_info_detail::kfd_pci_bus_id;
+using lemon::system_info_detail::parse_hip_probe_output;
+using lemon::system_info_detail::rocm_uuid;
 using lemon::system_info_detail::nvidia_driver_older_than;
 using lemon::system_info_detail::nvidia_driver_version_from_windows;
 using lemon::system_info_detail::rocm_device_memory_from_sysfs;
@@ -101,6 +106,16 @@ public:
         props << "cpu_cores_count 0\n"
               << "gfx_target_version " << gfx_target_version << "\n"
               << "drm_render_minor " << drm_render_minor << "\n";
+    }
+
+    void add_ids(const std::string& node_id,
+                 const std::string& unique_id,
+                 const std::string& domain,
+                 const std::string& location_id) const {
+        std::ofstream props(kfd_nodes() / node_id / "properties", std::ios::app);
+        props << "unique_id " << unique_id << "\n"
+              << "domain " << domain << "\n"
+              << "location_id " << location_id << "\n";
     }
 
     void add_memory(const std::string& drm_render_minor,
@@ -373,6 +388,43 @@ int main() {
             "the KFD properties are the matching GPU's",
             kfd_gpu_properties(sysfs.kfd_nodes(), "gfx1151"),
             "cpu_cores_count 0\ngfx_target_version 110501\ndrm_render_minor 129\n");
+    }
+
+    {
+        // A dGPU at node 2 and an iGPU at node 10: "10" sorts before "2" as text,
+        // so only a numeric sort gives HIP's order.
+        FakeSysfs sysfs("hip_ids");
+        sysfs.add_node("0", "0", "-1");
+        sysfs.add_node("10", "110500", "129");
+        sysfs.add_ids("10", "0", "0", "49920");
+        sysfs.add_node("2", "110000", "128");
+        sysfs.add_ids("2", "1311768467294899696", "0", "768");
+        const auto gpus = kfd_gpu_nodes(sysfs.kfd_nodes());
+        failures += !expect_bool("KFD lists the two GPU nodes", gpus.size() == 2, true);
+        if (gpus.size() == 2) {
+            failures += !expect_string("node 2 is HIP 0",
+                std::to_string(gpus[0].node_id) + ":" + std::to_string(gpus[0].hip_index), "2:0");
+            failures += !expect_string("node 10 is HIP 1",
+                std::to_string(gpus[1].node_id) + ":" + std::to_string(gpus[1].hip_index), "10:1");
+            failures += !expect_string("the UUID is unique_id in 16 hex digits",
+                rocm_uuid(gpus[0].unique_id), "GPU-1234567890abcdf0");
+            failures += !expect_string("a GPU without unique_id has no UUID",
+                rocm_uuid(gpus[1].unique_id), "");
+            failures += !expect_string("location_id decodes to a PCI address",
+                kfd_pci_bus_id(gpus[1]), "0000:c3:00.0");
+        }
+    }
+
+    {
+        const auto devices = parse_hip_probe_output(
+            "0\t0000:03:00.0\tAMD Radeon RX 7900 XTX\r\n"
+            "1\t0000:c3:00.0\tAMD Radeon(TM) 890M Graphics\n"
+            "not a probe line\n");
+        failures += !expect_bool("the probe output has two devices", devices.size() == 2, true);
+        failures += !expect_string("a PCI address finds its HIP index regardless of domain or case",
+            std::to_string(hip_index_for_pci_bus_id(devices, "0001:C3:00.0")), "1");
+        failures += !expect_string("an unknown PCI address has no HIP index",
+            std::to_string(hip_index_for_pci_bus_id(devices, "0000:04:00.0")), "-1");
     }
 
     failures += !expect_string(

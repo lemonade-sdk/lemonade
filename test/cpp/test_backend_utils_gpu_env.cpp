@@ -155,12 +155,54 @@ int main() {
                 {{0, "sm_89"}, {1, "sm_120"}});
         } catch (const std::invalid_argument&) { rejected = true; }
         check(rejected, "CUDA device incompatible with installed sd.cpp asset is rejected");
-        check(BackendUtils::rocm_visible_device_for_selection("ROCm1", 2) == "1",
-              "ROCm1 maps to HIP_VISIBLE_DEVICES=1");
+        using Env = std::vector<std::pair<std::string, std::string>>;
+        // iGPU first in SystemInfo, but HIP numbers the dGPU 0.
+        const std::vector<std::pair<int, std::string>> linux_gpus = {
+            {1, "GPU-00000000000000aa"}, {0, "GPU-00000000000000bb"}};
+        check(BackendUtils::rocm_device_env_for_selection("ROCm1", linux_gpus, 2) ==
+                  Env{{"ROCR_VISIBLE_DEVICES", "GPU-00000000000000aa"}, {"HIP_VISIBLE_DEVICES", "0"}},
+              "ROCm1 selects the GPU HIP numbers 1 through its ROCr UUID");
+        const std::vector<std::pair<int, std::string>> windows_gpus = {{1, ""}, {0, ""}};
+        check(BackendUtils::rocm_device_env_for_selection("rocm1", windows_gpus, 2) ==
+                  Env{{"HIP_VISIBLE_DEVICES", "1"}},
+              "without a UUID, ROCm1 maps to HIP_VISIBLE_DEVICES=1");
         rejected = false;
-        try { (void)BackendUtils::rocm_visible_device_for_selection("ROCm2", 2); }
+        try { (void)BackendUtils::rocm_device_env_for_selection("ROCm2", windows_gpus, 2); }
         catch (const std::invalid_argument&) { rejected = true; }
-        check(rejected, "nonexistent ROCm device is rejected");
+        check(rejected, "a HIP index no detected GPU has is rejected");
+        check(BackendUtils::rocm_device_env_for_selection("ROCm0", {}, 1) ==
+                  Env{{"HIP_VISIBLE_DEVICES", "0"}},
+              "a single AMD GPU without HIP data maps to HIP_VISIBLE_DEVICES=0");
+        rejected = false;
+        try { (void)BackendUtils::rocm_device_env_for_selection("ROCm1", {}, 2); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "several AMD GPUs without HIP data are not guessed at");
+    }
+
+    // Test 2b2: ggml backends map a selection through their own device list,
+    // so an iGPU-first SystemInfo order cannot shift the index.
+    {
+        const auto devices = BackendUtils::parse_ggml_device_list(
+            "ROCm0\tAMD Radeon RX 7900 XTX\r\n"
+            "ROCm1\tAMD Radeon(TM) 890M Graphics  \r\n"
+            "ggml_cuda_init: found 2 ROCm devices\n"
+            "\n");
+        check(devices.size() == 2 && devices[1].first == "ROCm1" &&
+              devices[1].second == "AMD Radeon(TM) 890M Graphics",
+              "ggml --list-devices output parses name and trimmed description, skipping log lines");
+        check(BackendUtils::ggml_device_for_selection("rocm1", "rocm", devices) == "ROCm1",
+              "rocm1 resolves to the backend's own ROCm1 name");
+        bool rejected = false;
+        std::string message;
+        try { (void)BackendUtils::ggml_device_for_selection("vulkan5", "vulkan",
+                  {{"Vulkan0", "AMD Radeon(TM) 890M Graphics"}}); }
+        catch (const std::invalid_argument& e) { rejected = true; message = e.what(); }
+        check(rejected && message.find("Vulkan0 (AMD Radeon(TM) 890M Graphics)") != std::string::npos,
+              "out-of-range Vulkan device is rejected and names the devices the backend reported");
+        rejected = false;
+        try { (void)BackendUtils::ggml_device_for_selection("rocm0", "rocm", {{"CPU", "x86"}}); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "selection is rejected when the backend reports no device of that kind");
     }
 
     // Test 2c: explicit auto device selection masks any inherited model value.

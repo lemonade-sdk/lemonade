@@ -7,6 +7,7 @@
 
 #include "lemon/backend_manager.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/cloud_provider_registry.h"
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
@@ -114,6 +115,26 @@ json get_model_storage_stats(const std::string& model_storage_path) {
     };
 }
 
+// Probing loads a GPU runtime once per binary, so only installed builds are asked.
+void add_sdcpp_runtime_devices(json& recipes) {
+    if (!recipes.contains("sd-cpp") || !recipes["sd-cpp"].contains("backends")) return;
+    for (auto& [backend_name, backend_info] : recipes["sd-cpp"]["backends"].items()) {
+        if (backend_name != "rocm" && backend_name != "vulkan") continue;
+        const std::string state = backend_info.value("state", "");
+        if (state != "installed" && state != "update_available") continue;
+        try {
+            json devices = json::array();
+            for (const auto& [name, description] : backends::SDServer::list_devices(backend_name)) {
+                devices.push_back({{"name", name}, {"description", description}});
+            }
+            backend_info["runtime_devices"] = std::move(devices);
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Could not list sd.cpp " << backend_name
+                                   << " devices: " << e.what() << std::endl;
+        }
+    }
+}
+
 void enrich_recipes(BackendManager* backend_manager, json& recipes) {
     if (!backend_manager) return;
 
@@ -163,7 +184,7 @@ ordered_json system_info_schema() {
                 "description": "Hardware devices detected on the system (no software/support information)",
                 "properties": {
                     "cpu": {"type": "object", "description": "CPU information (name, cores, threads)"},
-                    "amd_gpu": {"type": "array", "description": "Usable AMD GPUs, both integrated and discrete; empty when there are none."},
+                    "amd_gpu": {"type": "array", "description": "Usable AMD GPUs, both integrated and discrete, integrated first; empty when there are none. Each entry may carry `hip_index`, the number HIP gives the GPU (`ROCm<hip_index>` is what the `*_device` options select), which need not follow this list's order; `pci_bus_id`, such as `0000:c3:00.0`; and, on Linux, `uuid`, the ROCr agent UUID. Each is absent when it could not be determined."},
                     "nvidia_gpu": {"type": "array", "description": "NVIDIA GPUs. When none is found, it holds one entry whose `available` is `false` and whose `error` says why."},
                     "amd_npu": {"type": "object", "description": "The AMD NPU. Always present; `available` is `false` when none is found, and `error` says why."}
                 }
@@ -196,6 +217,7 @@ ordered_json system_info_schema() {
                                 "required": ["devices", "state", "tier", "format"],
                                 "properties": {
                                     "devices": {"type": "array", "items": {"type": "string"}, "description": "Devices **on this system** that support this backend; empty when none do."},
+                                    "runtime_devices": {"type": "array", "items": {"type": "object"}, "description": "`sd-cpp` `rocm` and `vulkan` only, when installed: the GPUs the build itself enumerates, as `{name, description}` in its runtime order. `name` (such as `ROCm1`) is what `sd-cpp_device` selects; that order can differ from `devices.amd_gpu`."},
                                     "state": {"enum": ["unsupported", "installable", "update_required", "update_available", "action_required", "installed"], "description": "Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available`, `action_required` or `installed`."},
                                     "message": {"type": "string", "description": "Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`."},
                                     "action": {"type": "string", "description": "An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL."},
@@ -315,6 +337,7 @@ public:
 
         if (system_info.contains("recipes")) {
             enrich_recipes(ctx_.backend_manager, system_info["recipes"]);
+            add_sdcpp_runtime_devices(system_info["recipes"]);
         }
 
         // Surfaced as a separate host-specific field rather than by pruning
