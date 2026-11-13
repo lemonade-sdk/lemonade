@@ -29,6 +29,7 @@ import {
 } from '../modelConfiguration';
 import { Icon, CapabilityIcon } from './Icon';
 import { modelIsCustom } from './ModelListPanel';
+import { bareModelId, canonicalModelId, inferenceEnginesForModel } from '../features/models/engineOverrides';
 import {
   WorkspaceActionButton,
   WorkspaceActionGroup,
@@ -1428,12 +1429,17 @@ const ModelConfigurationTab: React.FC<{
   isActive: boolean;
   serverDefaultCtxSize: number;
   isLoadingThis?: boolean;
+  onConvertToCustom?: (model: ModelInfo) => Promise<void>;
+  onChangeInferenceEngine?: (model: ModelInfo, recipe: string) => Promise<void>;
+  onRestoreBuiltin?: (model: ModelInfo) => Promise<void>;
+  hasRegisteredOverride?: boolean;
   onReloadModel?: (model: LoadedModel, recipeOptions?: Record<string, unknown>) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
   /** Filled with a getter for the load settings as shown, so the panel's Load
       action can apply them without saving them. */
   loadOptionsRef?: React.MutableRefObject<(() => Record<string, unknown>) | null>;
-}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isLoadingThis, onReloadModel, onDirtyChange, loadOptionsRef }) => {
+}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isLoadingThis, onConvertToCustom,
+        onChangeInferenceEngine, onRestoreBuiltin, hasRegisteredOverride, onReloadModel, onDirtyChange, loadOptionsRef }) => {
   const { t } = useI18n();
   const name = mdName(model);
   const [notice, setNotice] = useState<string | null>(null);
@@ -1445,6 +1451,40 @@ const ModelConfigurationTab: React.FC<{
   currentNameRef.current = name;
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [systemInfoSettled, setSystemInfoSettled] = useState(() => api.systemInfoData !== null);
+  const [engineBusy, setEngineBusy] = useState(false);
+  const [engineError, setEngineError] = useState<string | null>(null);
+  const [hasBuiltin, setHasBuiltin] = useState(false);
+  const engineChoices = useMemo(() => inferenceEnginesForModel(model, systemInfo), [model, systemInfo]);
+  const canonical = canonicalModelId(model);
+  const isCustomModel = modelIsCustom(model);
+  const currentRecipe = activeRecipeForModel(model);
+  const showEngine = !isCollectionModel(model) && !isOnDemandModelInfo(model) &&
+    Boolean(String((model as any).checkpoint || (model as any).checkpoints?.main || '').trim());
+
+  useEffect(() => {
+    setEngineError(null);
+    setHasBuiltin(false);
+    if (!isActive || !canonical.startsWith('user.')) return;
+    let cancelled = false;
+    void api.modelDetail(`builtin.${bareModelId(model)}`)
+      .then(info => {
+        if (!cancelled) setHasBuiltin(canonicalModelId(info).startsWith('builtin.'));
+      })
+      .catch(() => { if (!cancelled) setHasBuiltin(false); });
+    return () => { cancelled = true; };
+  }, [isActive, canonical]);
+
+  const runEngineAction = async (work: () => Promise<void>) => {
+    setEngineBusy(true);
+    setEngineError(null);
+    try {
+      await work();
+    } catch (error) {
+      setEngineError(friendlyErrorMessage(error));
+    } finally {
+      setEngineBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!isActive) return;
@@ -1535,7 +1575,7 @@ const ModelConfigurationTab: React.FC<{
         setNotice(`Could not load saved model options: ${friendlyErrorMessage(error)}`);
       });
     return () => { cancelled = true; };
-  }, [name, systemInfoSettled]);
+  }, [name, activeRecipe, systemInfoSettled]);
 
   const savedLoadSettings = useMemo(
     () => draftFromResolvedOptions(recipeKeys, serverSavedRecipeOptions, serverEffectiveRecipeOptions, offersResolvedValue),
@@ -1936,6 +1976,68 @@ const ModelConfigurationTab: React.FC<{
 
   return (
     <div className="detail-tab-content detail-configuration">
+      {showEngine && (
+        <section className="detail-configuration__engine" aria-label={t('Inference Engine')}>
+          <div className="detail-configuration__engine-row">
+            <label className="detail-tuning__field detail-configuration__engine-field">
+              <span>{t('Inference Engine')}</span>
+              <select
+                className="select detail-configuration__select"
+                aria-label={t('Inference Engine')}
+                value={currentRecipe}
+                disabled={!isCustomModel || Boolean(loadedModel) || isLoadingThis || engineBusy || !onChangeInferenceEngine}
+                onChange={event => {
+                  const next = event.target.value;
+                  if (next === currentRecipe || !onChangeInferenceEngine) return;
+                  if (hasLoadSettingChanges) {
+                    setEngineError(t('Save or discard the current load settings before switching inference engines.'));
+                    return;
+                  }
+                  if (!window.confirm(t('Change the inference engine? The model may be incompatible.'))) return;
+                  void runEngineAction(() => onChangeInferenceEngine(model, next));
+                }}
+              >
+                {engineChoices.map(option => (
+                  <option key={option.recipe} value={option.recipe}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <div className="detail-configuration__engine-actions">
+              {isCustomModel ? (
+                <>
+                  <span className="detail-configuration__engine-status">{t('Custom model')}</span>
+                  {hasBuiltin && onRestoreBuiltin && (
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--sm"
+                      disabled={Boolean(loadedModel) || isLoadingThis || engineBusy}
+                      onClick={() => {
+                        if (!window.confirm(t('Restore Built-in? Custom settings will be removed, but files will be kept.'))) return;
+                        void runEngineAction(() => onRestoreBuiltin(model));
+                      }}
+                    >{t('Restore Built-in')}</button>
+                  )}
+                </>
+              ) : canonical.startsWith('builtin.') && onConvertToCustom && !hasRegisteredOverride ? (
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  disabled={Boolean(loadedModel) || isLoadingThis || engineBusy}
+                  onClick={() => {
+                    if (!window.confirm(t('Convert to Custom? This will override the built-in model name without deleting the original.'))) return;
+                    void runEngineAction(() => onConvertToCustom(model));
+                  }}
+                >{t('Convert to Custom')}</button>
+              ) : hasRegisteredOverride ? (
+                <span className="detail-configuration__engine-status">{t('Custom override exists')}</span>
+              ) : (
+                <span className="detail-configuration__engine-status">{t('Built-in or external model')}</span>
+              )}
+            </div>
+          </div>
+          {engineError && <p className="detail-tuning__notice" role="alert">{engineError}</p>}
+        </section>
+      )}
       <section className="detail-configuration__section" aria-label={t('Load settings')}>
         <div className="detail-configuration__section-head">
           <div>
@@ -2496,6 +2598,9 @@ export interface ModelDetailPanelProps {
   onToggleFavorite?: (name: string) => void;
   /** Open the persistent settings editor for a saved custom Omni collection. */
   onEditCustomCollection?: (model: ModelInfo) => void;
+  onConvertToCustom?: (model: ModelInfo) => Promise<void>;
+  onChangeInferenceEngine?: (model: ModelInfo, recipe: string) => Promise<void>;
+  onRestoreBuiltin?: (model: ModelInfo) => Promise<void>;
   /** Called when the "Back to models" button is clicked (narrow viewports). */
   onBack?: () => void;
   /** Called when the close button is clicked to dismiss the detail panel. */
@@ -2557,6 +2662,9 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   isFavorite = false,
   onToggleFavorite,
   onEditCustomCollection,
+  onConvertToCustom,
+  onChangeInferenceEngine,
+  onRestoreBuiltin,
   onBack,
   onClose,
   noModelsAvailable = false,
@@ -2926,6 +3034,11 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
                         isActive={activeTab === 'config'}
                         serverDefaultCtxSize={serverDefaultCtxSize}
                         isLoadingThis={isLoadingThis}
+                        onConvertToCustom={onConvertToCustom}
+                        onChangeInferenceEngine={onChangeInferenceEngine}
+                        onRestoreBuiltin={onRestoreBuiltin}
+                        hasRegisteredOverride={Boolean(models.some(candidate =>
+                          canonicalModelId(candidate) === `user.${bareModelId(model)}`))}
                         onReloadModel={onReloadModel}
                         onDirtyChange={setConfigHasUnsavedChanges}
                         loadOptionsRef={configLoadOptionsRef}

@@ -1,12 +1,17 @@
 #include "lemon/model_manager.h"
+#include "lemon/models/recipe_options_store.h"
 #include "lemon/utils/path_utils.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <string>
+#include <thread>
 #include "show_all_models.h"
 
 namespace fs = std::filesystem;
@@ -230,6 +235,124 @@ static void test_key_migration() {
     fs::remove_all(seeded.root);
 }
 
+static void test_failed_profile_write_does_not_change_registry() {
+    Fixture fx = create_fixture();
+    use_fixture_dirs(fx);
+    ModelManager manager;
+    const json before = read_json(fx.root / "user_models.json");
+
+    // An existing directory cannot be atomically replaced by the JSON file.
+    // This reliably fails even when the test runs as root.
+    fs::create_directory(fx.options_file);
+    bool rejected = false;
+    try {
+        manager.register_model("user.zz-opts",
+                               json{{"checkpoint", "zzopts/zzrepo:main.gguf"},
+                                    {"recipe", "sd-cpp"}},
+                               /*allow_missing_checkpoint=*/true,
+                               /*replace_existing=*/true);
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+    check("failed engine-profile write rejects registration", rejected);
+    check("failed profile write leaves the original registration unchanged",
+          read_json(fx.root / "user_models.json") == before &&
+          manager.get_model_info("user.zz-opts").recipe == "llamacpp");
+    fs::remove_all(fx.root);
+}
+
+static void test_failed_registration_restores_saved_profiles() {
+    Fixture fx = create_fixture();
+    use_fixture_dirs(fx);
+    ModelManager manager;
+    manager.replace_options("user.zz-opts", json{{"ctx_size", 4096}});
+    const json original_registry = read_json(fx.root / "user_models.json");
+    const json original_options = read_json(fx.options_file);
+
+    std::string failure_reason;
+    try {
+        manager.register_model("user.zz-opts",
+                               json{{"checkpoint", "zzopts/zzrepo:main.gguf"},
+                                    {"recipe", "sd-cpp"},
+                                    // Free-form labels are allowed. "chat" is a real
+                                    // deployment mode that image-only sd-cpp cannot serve.
+                                    {"labels", json::array({"chat"})}},
+                               /*allow_missing_checkpoint=*/true,
+                               /*replace_existing=*/true);
+    } catch (const std::exception& e) {
+        failure_reason = e.what();
+    }
+    check("failed registration rejects the incompatible deployment mode",
+          failure_reason.find("cannot serve 'chat'") != std::string::npos);
+    check("failed registration restores the original registry and engine profile",
+          read_json(fx.root / "user_models.json") == original_registry &&
+          read_json(fx.options_file) == original_options &&
+          manager.options("user.zz-opts")["saved"].value("ctx_size", 0) == 4096);
+    fs::remove_all(fx.root);
+}
+
+// Same-recipe registrations must be ordered against recipe changes. The
+// two requests can finish in either order; neither outcome may mix settings.
+static void test_concurrent_registration_and_recipe_switch() {
+    bool consistent = true;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        Fixture fx = create_fixture();
+        use_fixture_dirs(fx);
+        {
+            ModelManager manager;
+            std::atomic<bool> start{false};
+            std::exception_ptr a_error, b_error;
+            auto run = [&](const std::string& recipe, const json& recipe_options,
+                           std::exception_ptr& error) {
+                while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+                try {
+                    manager.register_model("user.zz-opts",
+                                           json{{"checkpoint", "zzopts/zzrepo:main.gguf"},
+                                                {"recipe", recipe},
+                                                {"recipe_options", recipe_options}},
+                                           /*allow_missing_checkpoint=*/true,
+                                           /*replace_existing=*/true);
+                } catch (...) {
+                    error = std::current_exception();
+                }
+            };
+            std::thread a(run, "llamacpp", json{{"ctx_size", 2304}}, std::ref(a_error));
+            std::thread b(run, "sd-cpp", json{{"steps", 33}}, std::ref(b_error));
+            start.store(true, std::memory_order_release);
+            a.join();
+            b.join();
+
+            if (a_error || b_error) {
+                consistent = false;
+            } else {
+                try {
+                    const std::string recipe = manager.get_model_info("user.zz-opts").recipe;
+                    const json active = manager.options("user.zz-opts")["saved"];
+                    const json disk = read_json(fx.options_file);
+                    const json profiles = disk.value("__lemonade_recipe_profiles_v1", json::object())
+                                              .value("user.zz-opts", json::object());
+                    if (recipe == "llamacpp") {
+                        consistent &= active.value("ctx_size", 0) == 2304 &&
+                                      !active.contains("steps") &&
+                                      profiles.value("sd-cpp", json::object()).value("steps", 0) == 33;
+                    } else if (recipe == "sd-cpp") {
+                        consistent &= active.value("steps", 0) == 33 &&
+                                      !active.contains("ctx_size") &&
+                                      profiles.value("llamacpp", json::object()).value("ctx_size", 0) == 2304;
+                    } else {
+                        consistent = false;
+                    }
+                } catch (const std::exception&) {
+                    consistent = false;
+                }
+            }
+        }
+        fs::remove_all(fx.root);
+        if (!consistent) break;
+    }
+    check("concurrent same-recipe registration and engine switch preserve profiles", consistent);
+}
+
 static void test_corrupt_file_is_not_fatal() {
     Fixture seeded = create_fixture(R"([1, 2, 3])");
     use_fixture_dirs(seeded);
@@ -244,6 +367,33 @@ static void test_corrupt_file_is_not_fatal() {
               read_json(seeded.options_file)["user.zz-opts"].value("ctx_size", 0) == 123);
 
     fs::remove_all(seeded.root);
+}
+
+static void test_saved_options_follow_the_recipe(const Fixture& fx) {
+    const std::string id = "user.zz-opts";
+    lemon::RecipeOptionsStore options(path_to_utf8(fx.options_file));
+    options.replace(id, json{{"sdcpp_args", "--steps 26"}, {"sdcpp_backend", "cuda"}});
+    options.switch_recipe(id, "sd-cpp", "thenoise", options.entry(id));
+    check("switching to a new engine starts with no settings", options.entry(id).empty());
+    check("inactive profiles do not leak into model composition",
+          !options.all().contains("__lemonade_recipe_profiles_v1"));
+
+    options.replace(id, json{{"thenoise_args", "--steps 8"}});
+    options.switch_recipe(id, "thenoise", "sd-cpp", options.entry(id));
+    check("switching back restores sd-cpp options, not TheNoise options",
+          options.entry(id) == json{{"sdcpp_args", "--steps 26"}, {"sdcpp_backend", "cuda"}});
+
+    lemon::RecipeOptionsStore restarted(path_to_utf8(fx.options_file));
+    check("per-engine settings survive a server restart",
+          restarted.entry(id).value("sdcpp_args", std::string()) == "--steps 26");
+    restarted.switch_recipe(id, "sd-cpp", "thenoise", restarted.entry(id));
+    check("switching again restores the TheNoise profile after restart",
+          restarted.entry(id).value("thenoise_args", std::string()) == "--steps 8" &&
+              !restarted.entry(id).contains("sdcpp_args"));
+    restarted.forget_model(id);
+    check("removing a custom definition discards all its engine profiles",
+          !read_json(fx.options_file).contains("__lemonade_recipe_profiles_v1") &&
+              !read_json(fx.options_file).contains(id));
 }
 
 int main() {
@@ -266,7 +416,12 @@ int main() {
     }
 
     test_key_migration();
+    test_failed_profile_write_does_not_change_registry();
+    test_failed_registration_restores_saved_profiles();
+    test_concurrent_registration_and_recipe_switch();
     test_corrupt_file_is_not_fatal();
+    use_fixture_dirs(fx);
+    test_saved_options_follow_the_recipe(fx);
 
     fs::remove_all(fx.root);
 

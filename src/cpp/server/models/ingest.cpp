@@ -1,6 +1,7 @@
 #include <lemon/models/artifact_ref.h>
 #include <lemon/models/ingest.h>
 #include <lemon/models/ingest_collections.h>
+#include <lemon/models/recipe_options_store.h>
 
 #include <lemon/backends/backend_registry.h>
 #include <lemon/routing_policy.h>
@@ -30,6 +31,7 @@
 #include <lemon/utils/safe_fs.h>
 
 #include <algorithm>
+#include <exception>
 #include <filesystem>
 #include <set>
 #include <stdexcept>
@@ -503,9 +505,84 @@ void ModelIngest::register_model(const std::string& model_name,
                                  const json& model_data,
                                  bool allow_missing_checkpoint,
                                  bool replace_existing) {
-    std::set<std::string> visited;
-    pull(model_name, model_data, true, nullptr, visited,
-         true, allow_missing_checkpoint, replace_existing);
+    // A same-recipe replacement and an engine switch must never interleave.
+    // Do not use recipe_options_write_mutex for this outer lock: a normal
+    // definition may save options through the facade and acquire it again.
+    std::lock_guard<std::mutex> registration_lock(registration_mutex_);
+    const auto register_definition = [&](const json& definition) {
+        std::set<std::string> visited;
+        pull(model_name, definition, true, nullptr, visited,
+             true, allow_missing_checkpoint, replace_existing);
+    };
+    const std::string next_recipe = replace_existing && is_user_model_name(model_name) &&
+            model_data.contains("recipe") && model_data["recipe"].is_string()
+        ? model_data["recipe"].get<std::string>() : std::string();
+    if (next_recipe.empty()) {
+        register_definition(model_data);
+        return;
+    }
+
+    // Serialize the entire transition, including the *first* read of the old
+    // registration. Reading before the lock lets two clients mistake B's active
+    // options for A's, overwriting A's archived profile when they both switch.
+    std::unique_lock<std::mutex> lock(*deps_.recipe_options_write_mutex);
+    std::optional<ModelInfo> previous;
+    try {
+        previous = require_info(model_name);
+    } catch (const std::runtime_error&) {
+        // Nothing registered yet: this is an ordinary new definition.
+    }
+    if (!previous || !is_user_model_name(previous->model_name) ||
+        previous->recipe == next_recipe) {
+        lock.unlock();  // Ordinary registration may save options through the facade.
+        register_definition(model_data);
+        return;
+    }
+
+    const auto records = deps_.registries->pin();
+    const std::string bare = strip_user_model_prefix(model_name);
+    const json* row = records.row(RegistryDocument::User, bare);
+    if (!row) throw std::runtime_error("Missing previous user model registration");
+    const json previous_definition = *row;
+    const json saved_state = deps_.recipe_options->snapshot();
+    json previous_saved = deps_.recipe_options->entry(model_name);
+    const json authored = row_recipe_options(previous_definition);
+    if (authored.is_object()) {
+        for (const auto& [key, value] : authored.items()) {
+            if (!previous_saved.contains(key)) previous_saved[key] = value;
+        }
+    }
+    const json next_authored = model_data.contains("recipe_options") &&
+                               model_data["recipe_options"].is_object()
+        ? model_data["recipe_options"] : json::object();
+
+    // Two atomic files are not an atomic pair: write the target profile before
+    // touching registration, and restore the saved options if registration fails.
+    deps_.recipe_options->switch_recipe(model_name, previous->recipe, next_recipe,
+                                        previous_saved, next_authored);
+    json registration = model_data;
+    registration.erase("recipe_options");
+    try {
+        register_definition(registration);
+    } catch (...) {
+        const std::exception_ptr failure = std::current_exception();
+        try {
+            const auto current_records = deps_.registries->pin();
+            const json* current = current_records.row(RegistryDocument::User, bare);
+            if (!current || *current != previous_definition) {
+                register_user_model(model_name, previous_definition);
+            }
+            deps_.recipe_options->restore_snapshot(saved_state);
+            deps_.store->invalidate();
+        } catch (const std::exception& rollback_error) {
+            LOG(ERROR, "ModelIngest") << "Could not roll back recipe change for "
+                                       << model_name << ": " << rollback_error.what() << std::endl;
+            throw std::runtime_error("Inference recipe registration failed and rollback failed: " +
+                                     std::string(rollback_error.what()));
+        }
+        std::rethrow_exception(failure);
+    }
+    deps_.store->invalidate();
 }
 
 void ModelIngest::pull(const std::string& model_name,
@@ -1155,6 +1232,16 @@ void ModelIngest::register_user_model(const std::string& model_name,
     // included — must not trigger one.
     if (is_router_collection_recipe(recipe) || overwrote_router_collection) {
         deps_.notifier->models_changed(deps_.store->current()->generation);
+    }
+}
+
+void ModelIngest::forget_recipe_profiles(const std::string& canonical_model_name) {
+    try {
+        std::lock_guard<std::mutex> lock(*deps_.recipe_options_write_mutex);
+        deps_.recipe_options->forget_model(canonical_model_name);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "ModelIngest") << "Could not clean saved engine options for "
+                                     << canonical_model_name << ": " << e.what() << std::endl;
     }
 }
 

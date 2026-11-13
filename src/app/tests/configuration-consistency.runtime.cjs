@@ -224,7 +224,8 @@ assert.doesNotMatch(detailSource, /const baseValue = serverEffectiveRecipeOption
 // The draft is seeded once, into the fields the recipe's option list names, so
 // the options fetch waits for the system-info that carries that list.
 assert.match(detailSource, /if \(!systemInfoSettled\) return;/);
-assert.match(detailSource, /\}, \[name, systemInfoSettled\]\);/);
+assert.match(detailSource, /const activeRecipe = activeRecipeForModel\(model\);/);
+assert.match(detailSource, /\}, \[name, activeRecipe, systemInfoSettled\]\);/);
 assert.match(detailSource, /\.finally\(\(\) => \{ if \(alive\) setSystemInfoSettled\(true\); \}\);/);
 assert.doesNotMatch(detailSource, /seededRef/,
   'a late option list must not be reconciled into a draft that was seeded without it');

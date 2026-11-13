@@ -1728,6 +1728,8 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
 - `object` - Always `"list"`.
 - `data` - The model objects.
   - `id` - Model identifier for loading and inference requests.
+  - `canonical_model_name` - Explicit user.*, extra.* or builtin.* origin even when id is an unqualified alias.
+  - `custom` - Whether the model definition belongs to the user registry.
   - `created` - Always `1234567890`, for OpenAI compatibility.
   - `object` - Always `"model"`.
   - `owned_by` - Always `"lemonade"`.
@@ -1912,6 +1914,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 ### Response format
 
 - `id` - Model identifier for loading and inference requests.
+- `canonical_model_name` - Explicit user.*, extra.* or builtin.* origin even when id is an unqualified alias.
+- `custom` - Whether the model definition belongs to the user registry.
 - `created` - Always `1234567890`, for OpenAI compatibility.
 - `object` - Always `"model"`.
 - `owned_by` - Always `"lemonade"`.

@@ -3,6 +3,7 @@
 #include "lemon/utils/path_utils.h"
 #include "support/server_wired_manager.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -85,6 +86,8 @@ struct Fixture {
     fs::path pair_aux;
     fs::path adopted_repo;
     fs::path foreign_upload;
+    std::string shadowed_builtin;
+    fs::path shadowed_file;
 };
 
 static Fixture create_fixture() {
@@ -123,6 +126,42 @@ static Fixture create_fixture() {
     // A legacy upload row whose copy ended up outside the models directory.
     fx.foreign_upload = fx.root / "elsewhere" / "zz-foreign.gguf";
     write_file(fx.foreign_upload, "GGUF");
+
+    // Select a shipped GGUF model with no independent model sharing the same
+    // checkpoint. The registry may change without changing this test's name.
+    std::ifstream builtin_file(path_from_utf8(
+        lemon::utils::get_resource_path("resources/server_models.json")));
+    json builtins = json::parse(builtin_file, nullptr, false);
+    std::string shadow_checkpoint;
+    if (builtins.is_object()) {
+        for (auto it = builtins.begin(); it != builtins.end(); ++it) {
+            const auto& entry = it.value();
+            if (!entry.is_object() || entry.value("recipe", "") != "llamacpp" ||
+                entry.contains("checkpoints") || entry.contains("mmproj") ||
+                entry.value("source", "") == "modelscope" ||
+                entry.value("registry_source", "") == "modelscope") continue;
+            const std::string checkpoint = entry.value("checkpoint", "");
+            const auto separator = checkpoint.rfind(':');
+            if (separator == std::string::npos || checkpoint.find('/') == std::string::npos) continue;
+            const std::string variant = checkpoint.substr(separator + 1);
+            if (variant.size() < 5 || variant.substr(variant.size() - 5) != ".gguf" ||
+                variant.find('/') != std::string::npos) continue;
+            const auto count = std::count_if(builtins.begin(), builtins.end(),
+                [&](const json& row) {
+                    return row.is_object() && row.contains("checkpoint") &&
+                           row["checkpoint"].is_string() &&
+                           row["checkpoint"].get<std::string>() == checkpoint;
+                });
+            if (count != 1) continue;
+            fx.shadowed_builtin = it.key();
+            shadow_checkpoint = checkpoint;
+            const fs::path repo = make_hf_repo(
+                fx.models_dir, checkpoint.substr(0, separator), "snap-shadow", {variant});
+            fx.shadowed_file = repo / "snapshots" / "snap-shadow" / variant;
+            write_file(fx.shadowed_file, "GGUF0123456789");
+            break;
+        }
+    }
 
     json user_models = {
         {"zz-hf-single",
@@ -165,6 +204,11 @@ static Fixture create_fixture() {
         {"zz-self-managed",
          json{{"checkpoint", "zz/selfmanaged-model"}, {"recipe", "flm"}}},
     };
+    if (!fx.shadowed_builtin.empty()) {
+        user_models[fx.shadowed_builtin] = {
+            {"checkpoint", shadow_checkpoint}, {"recipe", "llamacpp"}
+        };
+    }
     write_file(fx.user_models_file, user_models.dump(2));
     return fx;
 }
@@ -375,6 +419,28 @@ static void test_shared_checkpoint_delete(ModelManager& manager, const Fixture& 
     check("pair member removed from user_models.json", !still_registered(fx, "zz-pair-a"));
 }
 
+static void test_delete_override_restores_builtin_without_files(ModelManager& manager,
+                                                                 const Fixture& fx) {
+    check("override fixture found a unique built-in checkpoint", !fx.shadowed_builtin.empty());
+    if (fx.shadowed_builtin.empty()) return;
+    const std::string user_name = "user." + fx.shadowed_builtin;
+    check("override initially resolves to its custom registration",
+          manager.resolve_model_name(fx.shadowed_builtin) == user_name);
+    check("override starts downloaded", manager.get_model_info(user_name).downloaded);
+    std::string error;
+    const bool removed = delete_model(manager, user_name, error);
+    if (!removed) std::printf("override delete error: %s\n", error.c_str());
+    check("deleting the override completes", removed);
+    check("deleting an identical override removes managed checkpoint files",
+          !fs::exists(fx.shadowed_file));
+    check("deleting the override removes only the custom registration",
+          !still_registered(fx, fx.shadowed_builtin));
+    check("bare name falls back to the still-registered built-in",
+          manager.resolve_model_name(fx.shadowed_builtin) == fx.shadowed_builtin);
+    check("fallback built-in now needs a download",
+          !manager.get_model_info(fx.shadowed_builtin).downloaded);
+}
+
 int main() {
     ShowAllModels show_all_models;
     Fixture fx = create_fixture();
@@ -402,6 +468,7 @@ int main() {
         test_uploaded_model_delete(manager, fx);
         test_adopted_cache_delete(manager, fx);
         test_shared_checkpoint_delete(manager, fx);
+        test_delete_override_restores_builtin_without_files(manager, fx);
         test_upload_outside_models_dir_delete(manager, fx);
         test_extra_model_delete(manager, fx);
     }

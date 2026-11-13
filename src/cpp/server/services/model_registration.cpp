@@ -236,6 +236,17 @@ std::string register_model_definition(ServerContext& ctx, const std::string& mod
         request_json.contains("models");
     validate_registration_name(model_name, has_definition);
 
+    if (require_definition && is_user_model_name(model_name)) {
+        const std::string bare = strip_user_model_prefix(model_name);
+        const bool changing_recipe = !model_manager.model_exists(model_name) ||
+            model_manager.get_model_info(model_name).recipe != recipe;
+        if (changing_recipe && (ctx.router->is_model_loaded(model_name) ||
+                                ctx.router->is_model_loaded(bare) ||
+                                ctx.router->is_model_loaded("builtin." + bare))) {
+            throw std::invalid_argument("Unload the model before changing its inference recipe");
+        }
+    }
+
     if (request_json.contains("models") && !allow_embedded_models) {
         throw std::invalid_argument(
             "`models` embeds additional model definitions and is not accepted by "
@@ -290,6 +301,19 @@ const RouteError kDeleteFailed{
     "locked after the retries, or a failed unload"};
 
 void delete_model_files(ServerContext& ctx, const std::string& model_name) {
+    const std::string canonical = ctx.model_manager->resolve_model_name(model_name);
+    if (is_user_model_name(canonical)) {
+        const std::string built_in = "builtin." + strip_user_model_prefix(canonical);
+        if (ctx.router->is_model_loaded(built_in) && ctx.model_manager->model_exists(built_in)) {
+            const ModelInfo custom_info = ctx.model_manager->get_model_info(canonical);
+            const ModelInfo built_in_info = ctx.model_manager->get_model_info(built_in);
+            if (custom_info.checkpoints == built_in_info.checkpoints &&
+                registry_source_of(custom_info) == registry_source_of(built_in_info)) {
+                throw std::runtime_error("Unload " + built_in +
+                    " before deleting this override; its checkpoint is still in use");
+            }
+        }
+    }
     if (ctx.router->is_model_loaded(model_name)) {
         LOG(INFO, "Server") << "Model is loaded, unloading before delete: " << model_name << std::endl;
         ctx.router->unload_model(model_name);
