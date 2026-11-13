@@ -1081,7 +1081,7 @@ jobs:
             suites: >-
               [{"name":"whisper","script":"server_whisper.py","extra_args":"--wrapped-server whispercpp","backends":"cpu npu rocm"},
                {"name":"thenoise","script":"server_thenoise.py","extra_args":"--wrapped-server thenoise","backends":"rocm"},
-               {"name":"loom","script":"server_llm.py","extra_args":"--wrapped-server loom","backends":"amdgpu"}]
+               {"name":"loom","script":"server_llm.py","extra_args":"--wrapped-server loom","backends":"rocm"}]
           - name: vulkan-stx-halo
             runner: [Windows, X64, vulkan, stx-halo, lemon-prod]
             suites: >-
@@ -1493,9 +1493,9 @@ jobs:
             script: server_llm.py
             extra_args: "--wrapped-server gufo --backend rocm"
           - name: loom
-            install: "loom:amdgpu"
+            install: "loom:rocm"
             script: server_llm.py
-            extra_args: "--wrapped-server loom --backend amdgpu"
+            extra_args: "--wrapped-server loom --backend rocm"
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}

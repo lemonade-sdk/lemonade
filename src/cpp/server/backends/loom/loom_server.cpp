@@ -33,7 +33,7 @@ namespace backends {
 
 namespace {
 
-constexpr const char* kBackend = "amdgpu";
+constexpr const char* kBackend = "rocm";
 constexpr long kBundleTimeoutSeconds = 3600;
 
 fs::path store_root() {
@@ -285,7 +285,7 @@ void require_strix_halo() {
     } catch (...) {
     }
     if (arch != "gfx1151") {
-        throw std::runtime_error("HRX Loom requires an AMD Strix Halo GPU (gfx1151)" +
+        throw std::runtime_error("Loom requires an AMD Strix Halo GPU (gfx1151)" +
                                  (arch.empty() ? std::string() : ", found " + arch));
     }
 }
@@ -305,7 +305,7 @@ LoomServer::LoomServer(const std::string& log_level, ModelManager* model_manager
 
 InstallParams LoomServer::get_install_params(const std::string& backend, const std::string& version) {
     if (backend != kBackend) {
-        throw std::runtime_error("HRX Loom has no '" + backend + "' backend");
+        throw std::runtime_error("Loom has no '" + backend + "' backend");
     }
     const std::string wheel_version = version.rfind('v', 0) == 0 ? version.substr(1) : version;
     InstallParams params;
@@ -315,7 +315,7 @@ InstallParams LoomServer::get_install_params(const std::string& backend, const s
 #elif defined(__linux__) && (defined(__x86_64__) || defined(__amd64__))
     params.filename = "hrx_loom-" + wheel_version + "-py3-none-manylinux_2_39_x86_64.whl";
 #else
-    throw std::runtime_error("HRX Loom is available on Windows and Linux x86-64 only");
+    throw std::runtime_error("Loom is available on Windows and Linux x86-64 only");
 #endif
     params.archive_subdir = "hrx_loom-" + wheel_version + ".data/scripts";
     return params;

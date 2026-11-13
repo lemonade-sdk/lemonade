@@ -247,11 +247,11 @@ void check_card_metadata() {
 
 void check_installer_contract() {
 #if defined(_WIN32)
-    const auto params = LoomServer::get_install_params("amdgpu", "v0.1.0");
+    const auto params = LoomServer::get_install_params("rocm", "v0.1.0");
     check("Windows installs the win_amd64 wheel",
           params.filename == "hrx_loom-0.1.0-py3-none-win_amd64.whl");
 #elif defined(__linux__) && (defined(__x86_64__) || defined(__amd64__))
-    const auto params = LoomServer::get_install_params("amdgpu", "v0.1.0");
+    const auto params = LoomServer::get_install_params("rocm", "v0.1.0");
     check("Linux installs the manylinux wheel",
           params.filename == "hrx_loom-0.1.0-py3-none-manylinux_2_39_x86_64.whl");
 #endif
@@ -261,7 +261,7 @@ void check_installer_contract() {
           params.archive_subdir == "hrx_loom-0.1.0.data/scripts");
 #endif
     check("Another backend is rejected",
-          throws_exception([] { (void)LoomServer::get_install_params("rocm", "v0.1.0"); }));
+          throws_exception([] { (void)LoomServer::get_install_params("vulkan", "v0.1.0"); }));
 
     const fs::path staging = fs::temp_directory_path() / "lemonade-loom-contract.staging";
     std::error_code ec;
@@ -287,7 +287,7 @@ void check_installer_contract() {
 void check_descriptor_contract() {
     const auto& support = loom::descriptor.support;
     check("Loom has one experimental native variant",
-          support.size() == 1 && support[0].backend == "amdgpu" &&
+          support.size() == 1 && support[0].backend == "rocm" &&
               support[0].tier == lemon::BackendTier::Experimental);
     if (support.size() == 1) {
         const auto gpus = support[0].devices.find("amd_gpu");

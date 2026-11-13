@@ -70,7 +70,7 @@
     "hrx": "hrx-b129"
   },
   "loom": {
-    "amdgpu": "v0.1.0"
+    "rocm": "v0.1.0"
   },
   "whispercpp": {
     "cpu": "v1.8.4",

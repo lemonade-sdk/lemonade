@@ -88,7 +88,7 @@ CAPABILITIES = {
         # loom-serve exposes chat completions only; the bundle's preset fixes
         # the context window, and its Qwen models reason unless told not to.
         "loom": {
-            "backends": ["amdgpu"],
+            "backends": ["rocm"],
             "supports": {
                 "chat_completions": True,
                 "chat_completions_streaming": True,

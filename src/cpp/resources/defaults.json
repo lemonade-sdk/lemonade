@@ -58,7 +58,7 @@
   "log_max_file_size_mb": 10,
   "log_max_files": 5,
   "loom": {
-    "amdgpu_bin": "builtin",
+    "rocm_bin": "builtin",
     "args": ""
   },
   "max_loaded_models": 1,

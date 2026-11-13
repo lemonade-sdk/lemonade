@@ -28,7 +28,7 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
 
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "loom",
-    /*display_name*/    "HRX Loom",
+    /*display_name*/    "Loom",
     /*binary*/          "loom-serve",
     /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,
@@ -45,14 +45,14 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to loom-serve", "Loom Options"},
     },
     /*support*/ {
-        {"amdgpu", BackendTier::Experimental, BackendFormat::Native, {"windows", "linux"},
+        {"rocm", BackendTier::Experimental, BackendFormat::Native, {"windows", "linux"},
          {{"amd_gpu", {"gfx1151"}}},
          "AMD Strix Halo (gfx1151)",
          {{"gfx1151", {/*os*/ {"windows", "linux"}, /*channels*/ {}}}}},
     },
     /*about*/ {
-        {"amdgpu", {"AMD's experimental HRX Loom runtime, serving compiled Loom model bundles.",
-                    "AMD ROCm", "AMD ROCm", "Apache-2.0", "https://github.com/ROCm/hrx-system"}},
+        {"rocm", {"AMD's experimental HRX Loom runtime, serving compiled Loom model bundles.",
+                 "AMD Loom", "AMD Loom", "Apache-2.0", "https://github.com/ROCm/hrx-system"}},
     },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
@@ -65,7 +65,7 @@ inline const BackendDescriptor descriptor = {
     /*self_manages_downloads*/ true,  // a bundle pulls GGUFs from the repos its card pins
     /*takes_args*/      true,
     /*arg_variants*/    {},
-    /*bin_variants*/    {"amdgpu"},
+    /*bin_variants*/    {"rocm"},
     /*config_extra*/    nlohmann::json::object(),
 };
 

@@ -11,6 +11,7 @@ const BACKEND_PRESENTATION: Record<string, { compact: string; label: string; col
   thinksound: { compact: 'ThinkSound', label: 'ThinkSound', color: 'var(--backend-thinksound)' },
   openmoss: { compact: 'OpenMOSS', label: 'OpenMOSS TTS', color: 'var(--backend-openmoss)' },
   trellis: { compact: 'TRELLIS.2', label: 'TRELLIS.2', color: 'var(--backend-trellis)' },
+  loom: { compact: 'Loom', label: 'Loom', color: 'var(--backend-other)' },
   'collection.omni': { compact: 'Omni', label: 'Omni Collection', color: 'var(--backend-collection-omni)' },
   'collection.router': { compact: 'Router', label: 'Router', color: 'var(--backend-collection-router)' },
   collection: { compact: 'Collection', label: 'Collection', color: 'var(--backend-collection)' },
