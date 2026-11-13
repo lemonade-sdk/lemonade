@@ -7371,6 +7371,88 @@
       "count": 177
     }
   },
+  "83a742e4a118aeb6c853af4cfe8894d3ee88c789301abfaf764b7b48612e5a43": {
+    "route": "openai.chat_completions",
+    "format": "EventStream",
+    "request": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "query": {},
+      "json": {
+        "model": "Qwen3.5-4B-FP16-vLLM",
+        "messages": [
+          {
+            "role": "user",
+            "content": "What is 2+2? Reply in one sentence."
+          }
+        ],
+        "max_completion_tokens": 50,
+        "stream": true
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "head": [
+        "data: {\"id\":\"chatcmpl-offline-vllm-stream\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"Qwen3.5-4B-FP16-vLLM\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}",
+        "data: {\"id\":\"chatcmpl-offline-vllm-stream\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"Qwen3.5-4B-FP16-vLLM\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"4.\"},\"finish_reason\":null}]}",
+        "data: {\"id\":\"chatcmpl-offline-vllm-stream\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"Qwen3.5-4B-FP16-vLLM\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+        "data: {\"id\":\"chatcmpl-offline-vllm-stream\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"Qwen3.5-4B-FP16-vLLM\",\"choices\":[],\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":3,\"total_tokens\":20}}",
+        "data: [DONE]"
+      ],
+      "tail": [],
+      "count": 5
+    }
+  },
+  "6ba0d04a4c5e8f539d9eb32e71ff530e715af21cef4f25a6e20f49605c750918": {
+    "route": "openai.chat_completions",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "query": {},
+      "json": {
+        "model": "Qwen3.5-4B-FP16-vLLM",
+        "messages": [
+          {
+            "role": "user",
+            "content": "What is 2+2? Reply in one sentence."
+          }
+        ],
+        "max_completion_tokens": 50,
+        "stream": false
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "id": "chatcmpl-offline-vllm-example",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "Qwen3.5-4B-FP16-vLLM",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "4."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 17,
+          "completion_tokens": 3,
+          "total_tokens": 20
+        }
+      }
+    }
+  },
   "97e6314155061d1a9b3cce50e84da8d432fd2334adee1c732035504a07e5a8b3": {
     "route": "openai.chat_completions",
     "format": "Json",
