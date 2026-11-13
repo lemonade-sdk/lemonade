@@ -182,48 +182,39 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
     check(access::relay_failure(0, "", 30).detail == "no answer from the device", "A failure without a reason still names one");
 }
 
-void check_invite_completion(const std::function<void(bool, const char*)>& check) {
-    const json group = {{"id", "group"}, {"assignments", json::array({
-        {{"management_pubkey", "ed25519:owner"}, {"permissions", {"read", "write", "add_child", "delete_node", "edit_node", "admin"}}},
-        {{"management_pubkey", "ed25519:fresh"}, {"permissions", {"read"}}},
-        {{"management_pubkey", "ed25519:second"}, {"permissions", {"read"}}},
-        {{"management_pubkey", "ed25519:member"}, {"permissions", {"read", "connect_private", "svc:inference"}}}})}};
-    const json children = json::array({
-        {{"type", "endpoint"}, {"id", "server"}, {"mgmt_pubkey", "ed25519:owner"}},
-        {{"type", "endpoint"}, {"id", "phone-b"}, {"mgmt_pubkey", "ed25519:second"}},
-        {{"type", "endpoint"}, {"id", "phone-a"}, {"mgmt_pubkey", "ed25519:fresh"}},
-        {{"type", "endpoint"}, {"id", "laptop"}, {"mgmt_pubkey", "ed25519:member"}},
-        {{"type", "customer"}, {"id", "team"}, {"mgmt_pubkey", "ed25519:fresh"}}});
-    const json user = {"read", "connect_private", "svc:inference"};
-    json invites = json::array({
-        {{"target_node_id", "group"}, {"permissions", user}, {"expires_at", 1000}},
-        {{"target_node_id", "group"}, {"permissions", {"read", "connect_private", "svc:inference", "svc:mcp"}}, {"expires_at", 1000}}});
-    auto grants = access::pending_invite_grants(group, children, invites, "server", 500);
-    check(grants.size() == 2, "Every freshly placed device takes one outstanding invite");
-    check(grants[0].at("management_pubkey") == "ed25519:fresh" && grants[0].at("permissions") == access::role_permissions("user"),
-          "Devices complete in id order and the oldest invite grants the user preset");
-    check(grants[1].at("management_pubkey") == "ed25519:second" && grants[1].at("permissions").size() == 4,
-          "The next device takes the next invite with its own permissions");
-    check(invites.empty(), "Consumed invites are removed");
-    json none = json::array();
-    check(access::pending_invite_grants(group, children, none, "server", 500).empty(), "No invite, no grant");
-    json expired = json::array({{{"target_node_id", "group"}, {"permissions", user}, {"expires_at", 400}}});
-    check(access::pending_invite_grants(group, children, expired, "server", 500).empty() && expired.empty(),
-          "An expired invite grants nothing and is dropped");
-    json one = json::array({{{"target_node_id", "group"}, {"permissions", user}, {"expires_at", 1000}}});
-    const json settled = {{"id", "group"}, {"assignments", json::array({
-        {{"management_pubkey", "ed25519:owner"}, {"permissions", {"read", "admin"}}},
-        {{"management_pubkey", "ed25519:member"}, {"permissions", {"read", "connect_private", "svc:inference"}}},
-        {{"management_pubkey", "ed25519:restricted"}, {"permissions", {"read", "write"}}}})}};
-    const json settled_children = json::array({
-        {{"type", "endpoint"}, {"id", "server"}, {"mgmt_pubkey", "ed25519:owner"}},
-        {{"type", "endpoint"}, {"id", "laptop"}, {"mgmt_pubkey", "ed25519:member"}},
-        {{"type", "endpoint"}, {"id", "desk"}, {"mgmt_pubkey", "ed25519:restricted"}}});
-    check(access::pending_invite_grants(settled, settled_children, one, "server", 500).empty() && one.size() == 1,
-          "Entries set on purpose are left alone and the invite stays outstanding");
-    json read_only = json::array({{{"target_node_id", "group"}, {"permissions", {"read"}}, {"expires_at", 1000}}});
-    check(access::pending_invite_grants(group, children, read_only, "server", 500).empty() && read_only.empty(),
-          "An invite that grants only read changes nothing and is consumed");
+void check_selection_key(const std::function<void(bool, const char*)>& check) {
+    check(access::selection_key_allowed("node-a", "secret") && access::selection_key_allowed("local", "secret"),
+          "A device selection carries its device's key");
+    check(access::selection_key_allowed("auto", "") && access::selection_key_allowed("", "") &&
+          access::selection_key_allowed("auto", std::string()),
+          "Auto routing without a key is allowed");
+    check(!access::selection_key_allowed("auto", "secret"), "Auto routing never carries a peer key");
+}
+
+void check_peer_load_pin(const std::function<void(bool, const char*)>& check) {
+    const json request = {{"pinned", true}, {"ctx_size", 4096}};
+    // A local operator's request is passed through: pin, unpin, or keep.
+    {
+        lemon::RecipeOptions options("llamacpp", request);
+        std::set<std::string> masked;
+        const auto pin = access::load_pin_request(false, request.at("pinned"), options, masked);
+        check(pin.has_value() && *pin && options.has_option("pinned"), "An operator pins the model it loads");
+        check(access::load_pin_request(false, json(false), options, masked) == std::optional<bool>(false),
+              "An operator unpins the model it loads");
+        check(!access::load_pin_request(false, json(nullptr), options, masked).has_value(),
+              "Without pinned an operator's load keeps the current pin");
+    }
+    // A mesh peer gets no say, whether it asks to pin, to unpin, or masks the saved value.
+    for (const json pinned : {json(true), json(false), json(nullptr)}) {
+        lemon::RecipeOptions options("llamacpp", request);
+        std::set<std::string> masked = {"pinned", "ctx_size"};
+        const auto pin = access::load_pin_request(true, pinned, options, masked);
+        check(!pin.has_value(), "A mesh peer's load never changes a loaded model's pin");
+        check(!options.has_option("pinned") && options.has_option("ctx_size"),
+              "A mesh peer's pin leaves the load options and the other options stay");
+        check(masked.count("pinned") == 0 && masked.count("ctx_size") == 1,
+              "A mesh peer cannot mask the host's saved pin");
+    }
 }
 
 void check_relay_stream(const std::function<void(bool, const char*)>& check) {
@@ -1527,7 +1518,8 @@ int main() {
         check_peer_headers(check);
         check_sdk_failures(check);
         check_route_access(check);
-        check_invite_completion(check);
+        check_selection_key(check);
+        check_peer_load_pin(check);
         check_private_management(root, check);
         check_relay_stream(check);
         check_mesh_ingress_routes(check);

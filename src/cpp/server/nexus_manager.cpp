@@ -425,38 +425,19 @@ json invite_permissions(const json& requested) {
     return ordered(result);
 }
 
-json pending_invite_grants(const json& group, const json& children, json& invites,
-                           const std::string& own_node_id, uint64_t now) {
-    json grants = json::array();
-    if (!invites.is_array() || invites.empty() || !children.is_array()) return grants;
-    json live = json::array();
-    for (const auto& invite : invites) {
-        if (invite.is_object() && invite.value("expires_at", uint64_t{0}) > now) live.push_back(invite);
+bool selection_key_allowed(const std::string& target, const std::string& peer_key) {
+    return peer_key.empty() || target != "auto";
+}
+
+std::optional<bool> load_pin_request(bool mesh_peer, const json& pinned, RecipeOptions& options,
+                                     std::set<std::string>& masked_saved_keys) {
+    if (mesh_peer) {
+        options.remove_option("pinned");
+        masked_saved_keys.erase("pinned");
+        return std::nullopt;
     }
-    const auto acl = group.is_object() ? group.value("assignments", json::array()) : json::array();
-    std::vector<const json*> endpoints;
-    for (const auto& child : children) {
-        if (child.is_object() && text(child, "type") == "endpoint" && text(child, "id") != own_node_id &&
-            !text(child, "mgmt_pubkey").empty()) {
-            endpoints.push_back(&child);
-        }
-    }
-    std::sort(endpoints.begin(), endpoints.end(),
-              [](const json* a, const json* b) { return text(*a, "id") < text(*b, "id"); });
-    for (const json* child : endpoints) {
-        if (live.empty()) break;
-        const auto key = text(*child, "mgmt_pubkey");
-        // `read` alone is what the federation writes at placement; any other entry was set
-        // on purpose, by a role, an access change or an earlier completion.
-        if (permissions_for(acl, key) != json::array({"read"})) continue;
-        auto permissions = string_list(live.front().value("permissions", json::array()));
-        if (!contains(permissions, "read")) permissions.push_back("read");
-        live.erase(live.begin());
-        if (permissions.size() == 1) continue;
-        grants.push_back({{"management_pubkey", key}, {"permissions", ordered(permissions)}});
-    }
-    invites = std::move(live);
-    return grants;
+    if (pinned.is_boolean()) return pinned.get<bool>();
+    return std::nullopt;
 }
 
 const unsigned kCatalogRevision = 2;
@@ -1292,11 +1273,6 @@ struct NexusManager::Session {
     bool error_retryable{false};  // `error` is a failure to reach the federation, not a refusal
     bool refounded{false};        // the servers serve another chain under the pinned key
     json devices = json::array();
-    // This device's outstanding invites ({target_node_id, permissions, expires_at}): the
-    // federation places an invited device with `read` alone on the group, and the inviter
-    // completes the entry once the device appears (nexus_access::pending_invite_grants).
-    json pending_invites = json::array();
-    bool completing_invites{false};
     // The last join's invite outcome for a device that already had a node
     // ({status, group_id, error}), or null.
     json join_membership = nullptr;
@@ -1557,7 +1533,6 @@ struct NexusManager::Session {
         ln_set_session_token(client.get(), "");
         ln_set_link_token(client.get(), "");
         devices = json::array();
-        pending_invites = json::array();
         detail = "locked";
         clear_error();
     }
@@ -1783,60 +1758,7 @@ struct NexusManager::Session {
             return ln_invite_create(client.get(), target.empty() ? nullptr : target.c_str(),
                 list.empty() ? nullptr : list.c_str(), static_cast<uint32_t>(ttl), out);
         }, 409);
-        if (result.is_object()) {
-            pending_invites.push_back({{"target_node_id", result.value("target_node_id", target.empty() ? group_id : target)},
-                {"permissions", result.contains("permissions") ? result["permissions"] : (permissions.is_null() ? json::array() : permissions)},
-                {"expires_at", result.value("expires_at", uint64_t{0})}});
-        }
         return result;
-    }
-    // Applies the outstanding invites' permissions to the devices the federation placed
-    // with `read` alone. Returns true when an entry changed. A refusal is logged: the
-    // device is placed and the admin can still set its role.
-    bool complete_invites(const json& group, const json& children) {
-        if (!pending_invites.is_array() || pending_invites.empty() || !group_admin()) return false;
-        const auto now = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-        std::vector<std::string> targets;
-        for (const auto& invite : pending_invites) {
-            const auto target = invite.value("target_node_id", group_id);
-            if (std::find(targets.begin(), targets.end(), target) == targets.end()) targets.push_back(target);
-        }
-        bool changed = false;
-        json kept = json::array();
-        for (const auto& target : targets) {
-            json scoped = json::array();
-            for (const auto& invite : pending_invites) {
-                if (invite.value("target_node_id", group_id) == target) scoped.push_back(invite);
-            }
-            json node = group;
-            json kids = children;
-            if (target != group_id) {
-                try {
-                    node = private_call("GET", "/api/tree/node/" + target);
-                    kids = private_call("GET", "/api/tree/children/" + target);
-                } catch (const std::exception& e) {
-                    LOG(WARNING, "Nexus") << "Cannot read invite target " << target << ": " << e.what() << std::endl;
-                    for (const auto& invite : scoped) kept.push_back(invite);
-                    continue;
-                }
-            }
-            const auto grants = nexus_access::pending_invite_grants(node, kids, scoped, node_id, now);
-            for (const auto& invite : scoped) kept.push_back(invite);
-            for (const auto& grant : grants) {
-                const auto key = grant.at("management_pubkey").get<std::string>();
-                try {
-                    set_assignment(target, key, grant.at("permissions"));
-                    changed = true;
-                    LOG(INFO, "Nexus") << "Invite completed: the new device holds " << grant.at("permissions").dump()
-                                       << " on " << target << std::endl;
-                } catch (const NexusError& e) {
-                    LOG(WARNING, "Nexus") << "Invite completion refused on " << target << ": " << e.what() << std::endl;
-                }
-            }
-        }
-        pending_invites = std::move(kept);
-        return changed;
     }
     // After the federation deletes the account, the local identity has no use. Remove the
     // files the SDK leaves to the caller; preferences.json stays with NexusManager.
@@ -1899,16 +1821,6 @@ struct NexusManager::Session {
             } else ++it;
         }
         devices = std::move(next);
-        if (!completing_invites) {
-            completing_invites = true;
-            try {
-                if (complete_invites(group, children)) refresh_devices();
-            } catch (...) {
-                completing_invites = false;
-                throw;
-            }
-            completing_invites = false;
-        }
     }
     uint16_t relay_port(const std::string& id) {
         if (locked) throw NexusError(423, "Unlock your network first");
@@ -1986,20 +1898,27 @@ struct NexusManager::Session {
         return port;
     }
     // The SDK keeps the catalog with the mesh session, so every join registers it
-    // again. Without a catalog the SDK bridges the port raw; status says so.
-    void register_catalog() {
+    // again, before the service is exposed: without a catalog the SDK would bridge
+    // the port raw, so a missing or refused catalog refuses the join (false, with
+    // catalog_error set) and the port is never exposed.
+    bool register_catalog() {
         catalog_error.clear();
-        if (!catalog.is_object()) return;
+        if (!catalog.is_object()) {
+            catalog_error = "lemond has no route catalog";
+            LOG(WARNING, "Nexus") << catalog_error << std::endl;
+            return false;
+        }
         const auto text = catalog.dump();
         const auto code = ln_mesh_service_set_catalog(client.get(), 13305, text.c_str());
         if (code != LN_OK) {
             catalog_error = "The SDK refused the route catalog (SDK error " + std::to_string(code) + ")";
             LOG(WARNING, "Nexus") << catalog_error << std::endl;
-            return;
+            return false;
         }
         LOG(INFO, "Nexus") << "Registered route catalog version " << catalog.value("version", uint64_t{0})
                            << " with " << catalog.value("families", nlohmann::ordered_json::array()).size()
                            << " families" << std::endl;
+        return true;
     }
     // Local selection traffic has no mesh attribution and uses the local operator policy.
     void start_mesh_port() {
@@ -2023,6 +1942,11 @@ struct NexusManager::Session {
             if (body.contains("peer_key") && !body["peer_key"].is_string()) throw NexusError(400, "Send peer_key as a string");
             const auto target = value.is_string() ? value.get<std::string>() : std::string();
             const auto key = body.value("peer_key", std::string());
+            // A peer key belongs to one device. Auto routing probes and forwards to
+            // whichever device serves the model, so it never carries one.
+            if (!nexus_access::selection_key_allowed(target, key)) {
+                throw NexusError(400, "Auto routing cannot carry a peer_key: select the device the key belongs to");
+            }
             const auto code = ln_mesh_port_set_selection(client.get(), target.empty() ? nullptr : target.c_str(),
                 key.empty() ? nullptr : key.c_str());
             if (code == LN_ERR_NOT_FOUND) throw NexusError(404, "That device is not in your group");
@@ -2058,6 +1982,10 @@ struct NexusManager::Session {
         // A code used by a device that already has a node does not move it: the device
         // stays in its own network and the code makes it a member of the code's group.
         join_membership = joined_result.value("membership", json(nullptr));
+        if (!register_catalog()) {
+            lock();
+            throw NexusError(502, catalog_error);
+        }
         if (ln_mesh_enable(client.get()) != LN_OK || ln_mesh_expose_service(client.get(), 13305,
                 ("tcp:127.0.0.1:" + std::to_string(ingress_port)).c_str()) != LN_OK) {
             lock();
@@ -2072,7 +2000,6 @@ struct NexusManager::Session {
             account["joined"] = true;
             persist();
         }
-        register_catalog();
         start_mesh_port();
         remember_tier1_epoch();
         try {

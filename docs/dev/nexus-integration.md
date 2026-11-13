@@ -314,8 +314,10 @@ release share a catalog version unless the revision changes.
 `route_policy`: `"enforced"` when the SDK accepted the catalog,
 `"unavailable"` when it refused the catalog (`catalog_error` names the SDK
 error) or `lemond` runs without a catalog. `lemond` registers the catalog with
-`ln_mesh_service_set_catalog` on every join and receives refusals through
-`ln_set_ingress_denied_callback`.
+`ln_mesh_service_set_catalog` on every join, before it exposes virtual port
+13305: a missing or refused catalog fails the join with 502 and the port is
+never exposed, so the SDK never bridges it without the route policy. Refusals
+arrive through `ln_set_ingress_denied_callback`.
 
 Each refusal event becomes one log line, `WARNING` for `denied` and `INFO` for
 `unregistered` and `unattributed`:
@@ -418,9 +420,12 @@ Lemonade Nexus desktop app, already owns the port, `lemond` keeps running and
 `GET`/`POST /v1/nexus/selection` with
 `{"target": "local" | "auto" | "<node_id>" | null, "peer_key": "..."}` wraps
 `ln_mesh_port_set_selection`. The management-route rules apply, and mesh
-peers cannot reach it. A missing device answers 404, a device this device may
-not connect to answers 403, and a stopped port or a target that cannot be
-selected answers 409. `status` includes the SDK's `mesh_port` report: port,
+peers cannot reach it. A `peer_key` belongs to one device, so `"auto"` with a
+non-empty `peer_key` answers 400: auto routing probes and forwards to whichever
+device serves the model and never carries a key. A missing device answers 404,
+a device this device may not connect to answers 403, and a stopped port or a
+target that cannot be selected answers 409. `status` includes the SDK's
+`mesh_port` report: port,
 TLS state, selection and the URL of each reachable device.
 
 ### Tier 1 servers and the Genesis key
@@ -502,12 +507,12 @@ this device holds on the target group; a name it lacks is dropped and logged
 rather than failing the invite, because the federation requires the inviter to
 hold what it grants. (The federation's own default is `read` and
 `connect_private`, from before route families, which leaves a new device
-without `svc:inference`.) The federation places a new device that joins with
-the invite with `read` alone on the target group, whatever the invite carries,
-so `lemond` keeps each invite it minted and, as soon as a device with that
-bare entry appears under the target, replaces the entry with the invite's
-permissions (one invite per device, oldest first); an entry set on purpose is
-left alone. Otherwise they are a list
+without `svc:inference`.) The invite token carries the permissions as a signed
+grant, and the federation writes them, with `read`, as the new device's group
+entry at the join itself (Nexus server v2026.11.11.2 and later). `lemond` keeps
+no record of the invites it minted and never completes an entry afterwards: a
+grant reaches only the device that redeemed the invite, and a device that is
+already placed keeps the entry it has. Otherwise they are a list
 from `read`, `write`, `add_child`, `connect_private`, `connect_shared` and the
 `svc:<family>` names, or a `role` that expands to such a list.
 `lemond` refuses `admin` and other names with 400. The reply carries the

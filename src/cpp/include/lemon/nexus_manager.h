@@ -10,10 +10,13 @@
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include "lemon/recipe_options.h"
 
 namespace lemon {
 /// The listener a Nexus route is registered on. Public is lemond's normal port, where a
@@ -62,19 +65,18 @@ nlohmann::json tree_path(const std::string& id, const std::vector<std::string>& 
 nlohmann::json invite_permissions(const nlohmann::json& requested);
 /// True for an 8-digit invite code or a full "lnk_" invite token.
 bool invite_code(const std::string& code);
-/// The group entries an inviter completes after the federation placed the devices it
-/// invited. The federation places a new device with `read` alone on the target group and
-/// leaves the invite's permissions aside; the inviter holds them, so it applies them.
-/// `group` is the target group node (`id`, `assignments`), `children` its tree children
-/// (`type`, `id`, `mgmt_pubkey`), `invites` this device's outstanding invites for that
-/// group ({target_node_id, permissions, expires_at}, in minting order) and `now` Unix
-/// seconds. Each child endpoint other than `own_node_id` whose group entry is exactly
-/// `read` takes the oldest unexpired invite: the result lists {management_pubkey,
-/// permissions} with the invite's permissions plus `read`, and that invite and every
-/// expired one are removed from `invites`. Children in id order, so the pairing is the
-/// same on every call.
-nlohmann::json pending_invite_grants(const nlohmann::json& group, const nlohmann::json& children,
-    nlohmann::json& invites, const std::string& own_node_id, uint64_t now);
+/// True when a mesh port selection may carry `peer_key`: a key belongs to one device,
+/// so "auto", which probes and forwards to whichever device serves the model, takes
+/// none. Every other target, and an empty key, is allowed.
+bool selection_key_allowed(const std::string& target, const std::string& peer_key);
+/// The pin a load request asks for. A local operator's boolean `pinned` is returned as
+/// sent (null when absent, so the router keeps a loaded model's pin). A mesh peer
+/// (`mesh_peer`) never changes the host's pin: it gets null, `pinned` leaves `options`
+/// (where it would otherwise set a fresh load's pin) and `masked_saved_keys` (where a
+/// null would hide the host's saved value), so a loaded model keeps its state and a
+/// fresh load takes the host's saved default.
+std::optional<bool> load_pin_request(bool mesh_peer, const nlohmann::json& pinned, RecipeOptions& options,
+    std::set<std::string>& masked_saved_keys);
 nlohmann::json tree_entry(const nlohmann::json& node, const std::string& self_key,
     bool ancestor_admin = false);
 /// The device list lemond reports: the endpoints among `children` (this device's group),
