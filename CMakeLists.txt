@@ -3661,6 +3661,13 @@ if(BUILD_TESTING AND EXISTS "${_AUTO_TUNE_TEST_SRC}")
     add_cpp_ci_test(AutoTuneTest CI ON COMMAND test_auto_tune)
 endif()
 
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_auto_context_admission.cpp")
+    add_executable(test_auto_context_admission test/cpp/test_auto_context_admission.cpp)
+    target_include_directories(test_auto_context_admission PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    add_cpp_ci_test(AutoContextAdmissionTest CI ON COMMAND test_auto_context_admission)
+endif()
+
 set(_GPU_MEMORY_SELECTION_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gpu_memory_selection.cpp"
 )

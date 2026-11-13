@@ -51,7 +51,7 @@ ordered_json model_options_schema() {
             "saved": {"type": "object", "description": "The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`."},
             "effective": {"type": "object", "description": "The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed."},
             "defaults": {"type": "object", "description": "What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically."},
-            "resolved_ctx_size": {"type": "integer", "description": "The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`."}
+            "resolved_ctx_size": {"type": ["integer", "null"], "description": "The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. `null` means measured capacity is insufficient after considering eligible CPU offload."}
         }
     })");
 }
@@ -93,13 +93,17 @@ void respond_with_model_options(ServerContext& ctx, const std::string& id,
 
         const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
         const json effective_ctx = effective.get_option("ctx_size");
-        int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
-            : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
-        // LlamaCppServer::load caps it there; the Router cannot, because the
-        // stored options must keep matching later requests or every load reloads.
-        if (is_encoder_decision_model(info)) {
+        json resolved_ctx = nullptr;
+        if (auto_ctx != AUTO_CTX_NO_CAPACITY) {
+            resolved_ctx = auto_ctx != -2 ? auto_ctx
+                : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+        }
+
+        // Encoder-only SystemOne models have a fixed trained window.
+        if (is_encoder_decision_model(info) && !resolved_ctx.is_null()) {
             resolved_ctx = backends::llamacpp::encoder_decision_ctx_size(
-                static_cast<int>(std::min<int64_t>(resolved_ctx, std::numeric_limits<int>::max())),
+                static_cast<int>(std::min<int64_t>(resolved_ctx.get<int64_t>(),
+                                                    std::numeric_limits<int>::max())),
                 info.max_context_window);
         }
         if (is_rule_head_router_model(info)) {
