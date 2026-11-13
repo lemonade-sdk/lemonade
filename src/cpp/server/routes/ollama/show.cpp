@@ -46,6 +46,11 @@ json build_ollama_capabilities(const ModelInfo& info) {
         capabilities.push_back("vision");
     }
 
+    // Ollama clients send audio inside `images`; only llama.cpp has been shown to hear it there.
+    if (has_label(info.labels, "chat-transcription") && info.recipe == "llamacpp") {
+        capabilities.push_back("audio");
+    }
+
     if (has_label(info.labels, "reasoning")) {
         capabilities.push_back("thinking");
     }
@@ -77,7 +82,7 @@ public:
                 "parameters": {"type": "string", "description": "`num_ctx` followed by the model's configured context size, which is `-1` when Lemonade sizes the context at load time."},
                 "template": {"type": "string", "description": "Always empty."},
                 "details": {},
-                "capabilities": {"type": "array", "items": {"enum": ["completion", "embedding", "image", "speech", "decision", "tools", "vision", "thinking"]}, "description": "From the model's labels: `completion` for chat models, `embedding` for embedding models, `image` for image generation models, `speech` for text-to-speech models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels. A SystemOne decision model reports only `decision`, plus `vision` when it has that label."},
+                "capabilities": {"type": "array", "items": {"enum": ["completion", "embedding", "image", "speech", "decision", "tools", "vision", "audio", "thinking"]}, "description": "From the model's labels: `completion` for chat models, `embedding` for embedding models, `image` for image generation models, `speech` for text-to-speech models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels, and `audio` for llama.cpp models with the `chat-transcription` label. A SystemOne decision model reports only `decision`, plus `vision` when it has that label."},
                 "model_info": {"type": "object", "description": "`general.architecture` (the recipe) and `<recipe>.context_length` (the context size in `parameters`); the other keys are always `0`."}
             }
         })");

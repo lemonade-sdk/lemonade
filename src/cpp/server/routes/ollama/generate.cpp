@@ -44,6 +44,38 @@ const RouteError kNotGenerateModel{400, "",
                                    "model, such as an embedding, transcription or upscaling model, "
                                    "which is checked before it loads"};
 
+const RouteArg kImages{"images", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}}, false,
+                       Support::Available,
+                       "Base64-encoded images, or WAV audio, for models that take them. A request "
+                       "with `images` runs as a one-message chat, as in Ollama, so the model's chat "
+                       "template applies."};
+
+// Ollama runs a prompt as a user message with its media attached; a text completion has
+// nowhere to put the media.
+json convert_ollama_to_openai_media_chat(ServerContext& ctx, const RouteRequest& req) {
+    json openai_req;
+    openai_req[model_loading::kModel.name] = canonical_model_name(ctx, req.value(gateway::kModel, ""));
+
+    json content = json::array();
+    std::string prompt = req.value(kPrompt, "");
+    if (!prompt.empty()) {
+        content.push_back({{"type", "text"}, {"text", prompt}});
+    }
+    for (const auto& media : req.arg(kImages)) {
+        content.push_back({
+            {"type", "image_url"},
+            {"image_url", {{"url", "data:image/png;base64," + media.get<std::string>()}}}
+        });
+    }
+    openai_req[openai::chat::kMessages.name] = json::array({{{"role", "user"}, {"content", content}}});
+
+    map_ollama_options(req.arg(kOptions), req.body, openai_req);
+
+    openai_req[common::kStream.name] = false;
+
+    return openai_req;
+}
+
 json convert_ollama_to_openai_completion(ServerContext& ctx, const RouteRequest& req) {
     json openai_req;
 
@@ -196,7 +228,7 @@ public:
             "Image generation never streams.",
         };
         s.args = {
-            gateway::kModel, kPrompt, ollama::kStream, kOptions, kWidth, kHeight, kSteps, kCfgScale,
+            gateway::kModel, kPrompt, kImages, ollama::kStream, kOptions, kWidth, kHeight, kSteps, kCfgScale,
             kSeed, ollama::kKeepAlive, model_loading::kCtxSize, kSystem, kFormat
         };
 
@@ -278,8 +310,10 @@ public:
             }
 
             bool stream = req.value(ollama::kStream, true);
+            bool has_media = req.has(kImages) && !req.arg(kImages).empty();
 
-            auto openai_req = convert_ollama_to_openai_completion(ctx_, req);
+            auto openai_req = has_media ? convert_ollama_to_openai_media_chat(ctx_, req)
+                                        : convert_ollama_to_openai_completion(ctx_, req);
 
             if (stream) {
                 LOG(INFO, "OllamaApi") << "POST /api/generate - Streaming (model: " << model << ")" << std::endl;
@@ -287,7 +321,7 @@ public:
                 openai_req[common::kStream.name] = true;
                 req.body = openai_req;
                 Router* router = ctx_.router;
-                stream_response(req, res, [router, model](const std::string& body, httplib::DataSink& sink) {
+                stream_response(req, res, [router, model, has_media](const std::string& body, httplib::DataSink& sink) {
                     stream_sse_to_ndjson(body, sink,
                         [&model](const json& openai_chunk) -> json {
                             json ollama_chunk = {
@@ -298,7 +332,8 @@ public:
                                 const auto& choice = openai_chunk["choices"][0];
                                 if (choice.contains("text"))
                                     ollama_chunk["response"] = choice["text"];
-                                else if (choice.contains("delta") && choice["delta"].contains("content"))
+                                else if (choice.contains("delta") && choice["delta"].contains("content") &&
+                                         choice["delta"]["content"].is_string())
                                     ollama_chunk["response"] = choice["delta"]["content"];
                                 else
                                     ollama_chunk["response"] = "";
@@ -319,14 +354,19 @@ public:
                                 {"eval_count", eval_count}, {"eval_duration", 0}
                             };
                         },
-                        [router](const std::string& openai_body, httplib::DataSink& s) {
-                            router->completion_stream(openai_body, s);
+                        [router, has_media](const std::string& openai_body, httplib::DataSink& s) {
+                            if (has_media) {
+                                router->chat_completion_stream(openai_body, s);
+                            } else {
+                                router->completion_stream(openai_body, s);
+                            }
                         });
                 }, "application/x-ndjson");
             } else {
                 LOG(INFO, "OllamaApi") << "POST /api/generate - Non-streaming (model: " << model << ")" << std::endl;
 
-                auto openai_response = ctx_.router->completion(openai_req);
+                auto openai_response = has_media ? ctx_.router->chat_completion(openai_req)
+                                                 : ctx_.router->completion(openai_req);
 
                 if (write_ollama_backend_error(openai_response, res)) return;
 
@@ -338,7 +378,12 @@ public:
 
                 if (openai_response.contains("choices") && !openai_response["choices"].empty()) {
                     const auto& choice = openai_response["choices"][0];
-                    ollama_res["response"] = choice.value("text", "");
+                    if (choice.contains("message") && choice["message"].contains("content") &&
+                        choice["message"]["content"].is_string()) {
+                        ollama_res["response"] = choice["message"]["content"];
+                    } else {
+                        ollama_res["response"] = choice.value("text", "");
+                    }
                 } else {
                     ollama_res["response"] = "";
                 }
