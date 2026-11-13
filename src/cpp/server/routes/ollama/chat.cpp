@@ -95,8 +95,8 @@ const RouteArg kThink{"think", ArgIn::JsonBody,
                       "`/no_think`."};
 
 const RouteError kNotChatModel{400, "",
-                               "`model` is not an LLM, such as an image or embedding model, which is "
-                               "checked before it loads"};
+                               "`model` is any model other than an LLM, such as an image, embedding "
+                               "or transcription model, which is checked before it loads"};
 
 bool require_chat_model(ModelManager& model_manager, const std::string& model,
                         httplib::Response& res) {

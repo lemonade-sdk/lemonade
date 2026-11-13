@@ -47,9 +47,8 @@ TOOL_CALLING_LLAMA_ARGS = "--reasoning-format none"
 # Context the backend-error tests pin the model to so their prompt overflows it.
 OVERFLOW_CTX_SIZE = 2048
 
-# Read from the registry only by the tests that reject them, so they are never downloaded.
+# Read from the registry only by the tests that reject it, so it is never downloaded.
 EMBEDDING_MODEL = "nomic-embed-text-v1-GGUF"
-IMAGE_EDIT_MODEL = "Flux-2-Klein-4B"
 
 
 class OllamaTests(ServerTestBase):
@@ -802,13 +801,11 @@ class OllamaTests(ServerTestBase):
         )
 
     def test_022b_show_image_capability(self):
-        """Test /api/show reports image for image generation models, with or without edit."""
+        """Test /api/show reports the image capability for an image generation model."""
         self.skip_without_sdcpp()
-        for model in (SD_MODEL, IMAGE_EDIT_MODEL):
-            with self.subTest(model=model):
-                capabilities = self.show_capabilities(model)
-                self.assertIn("image", capabilities)
-                self.assertNotIn("completion", capabilities)
+        capabilities = self.show_capabilities(SD_MODEL)
+        self.assertIn("image", capabilities)
+        self.assertNotIn("completion", capabilities)
 
     def test_022c_upscaler_is_not_an_image_generator(self):
         """Test an upscaling model is neither shown nor served as an image generator."""

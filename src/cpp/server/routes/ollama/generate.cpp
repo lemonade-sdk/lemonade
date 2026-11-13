@@ -40,8 +40,9 @@ const RouteArg kFormat{"format", ArgIn::JsonBody, {{"type", json::array({"string
                        Support::NotAvailable, "Output format constraint. Ignored."};
 
 const RouteError kNotGenerateModel{400, "",
-                                   "`model` is neither an LLM nor an image generation model, such as "
-                                   "an embedding or upscaling model, which is checked before it loads"};
+                                   "`model` is any model other than an LLM or an image generation "
+                                   "model, such as an embedding, transcription or upscaling model, "
+                                   "which is checked before it loads"};
 
 json convert_ollama_to_openai_completion(ServerContext& ctx, const RouteRequest& req) {
     json openai_req;
