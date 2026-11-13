@@ -144,9 +144,10 @@ def classify(item, item_num):
 
     existing = [lbl["name"] for lbl in item.get("labels", [])]
     body = (item.get("body") or "").strip() or "(empty)"
+    is_pr = "/pull/" in item.get("url", "")
     user_msg = (
         f"Item: #{item_num}\n"
-        f"Kind: {'pull request' if '/pull/' in item.get('url', '') else 'issue'}\n"
+        f"Kind: {'pull request' if is_pr else 'issue'}\n"
         f"Title: {item['title']}\n"
         f"Existing labels: {', '.join(existing) if existing else '(none)'}\n\n"
         f"Body:\n{body}"
@@ -158,7 +159,9 @@ def classify(item, item_num):
             "thinking": {"type": "disabled"},
             "system": SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_msg}],
-            "output_config": {"format": {"type": "json_schema", "schema": _schema()}},
+            "output_config": {
+                "format": {"type": "json_schema", "schema": _schema(is_pr)}
+            },
         }
     ).encode()
     req = urllib.request.Request(
@@ -194,15 +197,19 @@ def classify(item, item_num):
     return ", ".join(labels) or "(none)"
 
 
-def _schema():
-    """Structured-output schema: only known labels, and an explicit workgroup."""
+def _schema(is_pr):
+    """Structured-output schema: only known labels, and an explicit workgroup.
+
+    Pull requests must pick a workgroup; the prompt alone wasn't enough to
+    stop Haiku 5.5 from answering "none".
+    """
     wgs = sorted(lbl for lbl in KNOWN_LABELS if lbl.startswith("wg::"))
     others = sorted(lbl for lbl in KNOWN_LABELS if not lbl.startswith("wg::"))
     return {
         "type": "object",
         "properties": {
             "labels": {"type": "array", "items": {"type": "string", "enum": others}},
-            "workgroup": {"type": "string", "enum": wgs + ["none"]},
+            "workgroup": {"type": "string", "enum": wgs if is_pr else wgs + ["none"]},
         },
         "required": ["labels", "workgroup"],
         "additionalProperties": False,
