@@ -157,6 +157,10 @@ A request with tools and streaming runs non-streaming on the backend and answers
 
 #### NDJSON
 
+One JSON object per line.
+
+##### Line
+
 Each line carries the next message piece with `done: false`. When the message ends, a line with `done: true` and the real `done_reason` follows, then a last `done: true` line with the token counts, which are `0` when the backend reports no usage, and `done_reason` `stop`.
 
 - `model` - The model that generated the response.
@@ -173,6 +177,12 @@ Each line carries the next message piece with `done: false`. When the message en
 - `total_duration`, `load_duration` - Always `0`.
 - `prompt_eval_duration` - Prompt processing time in nanoseconds on a request with tools, when the backend reports timings; otherwise `0`.
 - `eval_duration` - Generation time in nanoseconds on a request with tools, when the backend reports timings; otherwise `0`.
+
+##### Error line
+
+Sent in place of the rest of the stream when the backend fails after the stream has started. No `done: true` line follows it, and the status stays `200`.
+
+- `error` - What failed, such as the backend's message.
 
 ### Errors
 
@@ -324,6 +334,10 @@ Image generation never streams.
 
 #### NDJSON
 
+One JSON object per line.
+
+##### Line
+
 Each line carries the next piece of text with `done: false`. When the text ends, a line with `done: true` and the real `done_reason` follows, then a last `done: true` line with the token counts and `done_reason` `stop`.
 
 - `model` - The model that generated the response.
@@ -336,6 +350,12 @@ Each line carries the next piece of text with `done: false`. When the text ends,
 - `prompt_eval_count` - Prompt tokens.
 - `eval_count` - Generated tokens.
 - `total_duration`, `load_duration`, `prompt_eval_duration`, `eval_duration` - Always `0`.
+
+##### Error line
+
+Sent in place of the rest of the stream when the backend fails after the stream has started. No `done: true` line follows it, and the status stays `200`.
+
+- `error` - What failed, such as the backend's message.
 
 ### Errors
 

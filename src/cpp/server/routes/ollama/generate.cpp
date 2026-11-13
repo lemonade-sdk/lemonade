@@ -163,6 +163,7 @@ ordered_json generate_response_schema(bool line) {
         }
     })");
     if (line) {
+        schema["title"] = "Line";
         schema["description"] = "Each line carries the next piece of text with `done: false`. When "
                                 "the text ends, a line with `done: true` and the real `done_reason` "
                                 "follows, then a last `done: true` line with the token counts and "
@@ -202,7 +203,8 @@ public:
 
         RouteResponse stream;
         stream.format = ResponseFormat::JsonLines;
-        stream.schema = generate_response_schema(true);
+        stream.schema = {{"description", "One JSON object per line."}, {"oneOf", ordered_json::array({
+            generate_response_schema(true), ollama_stream_error_schema()})}};
 
         s.responses = {full, stream};
 

@@ -1002,6 +1002,66 @@ class OllamaTests(ServerTestBase):
                 "context", error_payloads[0].get("error", {}).get("message", "")
             )
 
+    def assert_stream_ends_with_error(self, path):
+        """Assert a streamed request whose prompt overflows the context ends with one error line.
+
+        Ollama ends a failed stream with {"error": "<message>"} and no done line,
+        and its clients raise on that line.
+        """
+        self.ensure_model_pulled()
+        overflow_prompt = "The quick brown fox jumps over the lazy dog. " * 600
+        body = {"model": ENDPOINT_TEST_MODEL, "stream": True}
+        if path == "/api/chat":
+            body["messages"] = [{"role": "user", "content": overflow_prompt}]
+        else:
+            body["prompt"] = overflow_prompt
+
+        with model_recipe_options(ENDPOINT_TEST_MODEL, ctx_size=OVERFLOW_CTX_SIZE):
+            response = requests.post(
+                f"{OLLAMA_BASE_URL}{path}",
+                json=body,
+                timeout=TIMEOUT_MODEL_OPERATION,
+                stream=True,
+            )
+            self.assertEqual(response.status_code, 200)
+            lines = [json.loads(raw) for raw in response.iter_lines() if raw]
+
+            self.assertTrue(lines, "the stream should not be empty")
+            self.assertEqual(set(lines[-1]), {"error"}, lines)
+            self.assertIsInstance(lines[-1]["error"], str)
+            self.assertIn("context", lines[-1]["error"])
+            self.assertEqual(sum("error" in line for line in lines), 1, lines)
+            self.assertFalse(any(line.get("done") for line in lines), lines)
+
+            if ollama_lib is not None:
+                client = self.get_ollama_client()
+                with self.assertRaises(ollama_lib.ResponseError) as raised:
+                    if path == "/api/chat":
+                        list(
+                            client.chat(
+                                model=ENDPOINT_TEST_MODEL,
+                                messages=body["messages"],
+                                stream=True,
+                            )
+                        )
+                    else:
+                        list(
+                            client.generate(
+                                model=ENDPOINT_TEST_MODEL,
+                                prompt=overflow_prompt,
+                                stream=True,
+                            )
+                        )
+                self.assertIn("context", str(raised.exception))
+
+    def test_028a_chat_streaming_backend_error(self):
+        """Test a streamed /api/chat backend error ends the stream with an error line."""
+        self.assert_stream_ends_with_error("/api/chat")
+
+    def test_028b_generate_streaming_backend_error(self):
+        """Test a streamed /api/generate backend error ends the stream with an error line."""
+        self.assert_stream_ends_with_error("/api/generate")
+
     # ========================================================================
     # Requests as the official Ollama clients send them
     # ========================================================================
