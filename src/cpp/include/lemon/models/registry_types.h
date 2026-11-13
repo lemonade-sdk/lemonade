@@ -76,6 +76,10 @@ struct RegistrySearchResponse {
     std::uint64_t total = 0;
 };
 
+// Which repositories a search keeps: any, GGUF repositories, or the Loom
+// bundles loom-serve runs (Hugging Face repositories tagged `loom-serve`).
+enum class RegistrySearchFormat { Any, Gguf, Loom };
+
 struct RegistryFile {
     std::string path;
     std::uint64_t size = 0;

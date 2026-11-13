@@ -737,7 +737,7 @@ std::optional<std::string> ModelManager::resolve_alias(const std::string& alias_
 RegistrySearchResponse ModelManager::search_registry(const std::string& source_name,
                                                              const std::string& query,
                                                              std::size_t limit,
-                                                             bool gguf_only) const {
+                                                             RegistrySearchFormat format) const {
     const auto source = parse_remote_registry_source(source_name);
     models::ArtifactRef probe;
     probe.registry = source;
@@ -746,7 +746,7 @@ RegistrySearchResponse ModelManager::search_registry(const std::string& source_n
         throw std::runtime_error(remote_registry_display_name(source) +
                                  " does not support model search");
     }
-    return repository->search(query, limit, gguf_only);
+    return repository->search(query, limit, format);
 }
 
 void ModelManager::delete_model(const std::string& model_name) {

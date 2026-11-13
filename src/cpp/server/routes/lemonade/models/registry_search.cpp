@@ -17,7 +17,7 @@ const RouteError kShortQuery{
 const RouteError kInvalidSearchParam{
     400, "",
     "`source` names an unsupported registry, `limit` is not an integer from 1 to 50, or "
-    "`format` is not `gguf`"};
+    "`format` is not `gguf` or `loom`, or `format=loom` names a registry other than Hugging Face"};
 const RouteError kRateLimited{
     429, "",
     "The upstream registry rate-limits the request; `error.upstream_status_code` is its "
@@ -37,9 +37,10 @@ const RouteArg kSource{"source", ArgIn::Query, {{"type", "string"}}, false, Supp
                        "Defaults to `huggingface`."};
 const RouteArg kLimit{"limit", ArgIn::Query, {{"type", "integer"}}, false, Support::Available,
                       "Maximum number of results, from `1` to `50`. Defaults to `12`."};
-const RouteArg kFormat{"format", ArgIn::Query, {{"enum", json::array({"gguf"})}}, false, Support::Available,
-                       "Only `gguf`, which limits a Hugging Face search to GGUF repositories and favors them "
-                       "in a ModelScope search."};
+const RouteArg kFormat{"format", ArgIn::Query, {{"enum", json::array({"gguf", "loom"})}}, false, Support::Available,
+                       "`gguf` limits a Hugging Face search to GGUF repositories and favors them in a "
+                       "ModelScope search. `loom` limits a Hugging Face search to repositories tagged "
+                       "`loom-serve`, the bundles the `loom` recipe runs."};
 
 class RegistrySearchRoute : public ApiRoute {
 public:
@@ -66,7 +67,7 @@ public:
             "properties": {
                 "source": {"enum": ["huggingface", "modelscope"], "description": "The registry searched, by its canonical name."},
                 "query": {"type": "string", "description": "The query, trimmed."},
-                "format": {"const": "gguf", "description": "Present only when `format=gguf` was requested."},
+                "format": {"enum": ["gguf", "loom"], "description": "Present only when `format` was requested."},
                 "total": {"type": "integer", "description": "Matches the registry reports; can exceed the results returned."},
                 "results": {"type": "array", "description": "Up to `limit` repositories.", "items": {
                     "type": "object",
@@ -134,14 +135,18 @@ public:
                 limit = parsed;
             }
 
-            bool gguf_only = false;
+            std::string format_name;
+            RegistrySearchFormat format = RegistrySearchFormat::Any;
             if (req.has(kFormat)) {
-                const std::string format = req.arg(kFormat).get<std::string>();
-                if (format != "gguf") {
-                    throw std::invalid_argument(
-                        "Unsupported registry search format '" + format + "' (expected 'gguf')");
+                format_name = req.arg(kFormat).get<std::string>();
+                if (format_name == "gguf") {
+                    format = RegistrySearchFormat::Gguf;
+                } else if (format_name == "loom") {
+                    format = RegistrySearchFormat::Loom;
+                } else {
+                    throw std::invalid_argument("Unsupported registry search format '" +
+                                                format_name + "' (expected 'gguf' or 'loom')");
                 }
-                gguf_only = true;
             }
 
             if (ctx_.config->offline()) {
@@ -151,7 +156,7 @@ public:
             }
 
             const auto search = ctx_.model_manager->search_registry(
-                remote_registry_source_name(source), query, limit, gguf_only);
+                remote_registry_source_name(source), query, limit, format);
             json results = json::array();
             for (const auto& model : search.results) {
                 results.push_back({
@@ -173,7 +178,7 @@ public:
                 {"total", search.total},
                 {"results", std::move(results)}
             };
-            if (gguf_only) response["format"] = "gguf";
+            if (!format_name.empty()) response["format"] = format_name;
             res.set_content(response.dump(), "application/json");
         } catch (const RegistrySearchError& e) {
             res.status = e.status_code() == kRateLimited.status ? kRateLimited.status

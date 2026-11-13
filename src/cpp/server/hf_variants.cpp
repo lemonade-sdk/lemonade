@@ -11,6 +11,8 @@
 #include <unordered_map>
 
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/loom/loom.h"
+#include "lemon/backends/loom/loom_bundle.h"
 #include "lemon/llamacpp_architectures_generated.h"
 #include "lemon/model_types.h"
 #include <lemon/models/fetchable_repository.h>
@@ -398,6 +400,56 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
     {
         size_t slash = checkpoint.find_last_of('/');
         if (slash != std::string::npos) suggested_name = checkpoint.substr(slash + 1);
+    }
+
+    // Loom bundle branch: the card and its lock name GGUFs in other repositories,
+    // which the loom recipe pulls itself, so the bundle is one unit.
+    const auto has_file = [&](const char* name) {
+        return std::find(repo_files.begin(), repo_files.end(), name) != repo_files.end();
+    };
+    if (has_file(backends::loom::kCardFile) && has_file(backends::loom::kLockFile)) {
+        if (source != models::huggingface_descriptor().id) {
+            throw std::runtime_error("Loom bundles download from Hugging Face only");
+        }
+        const auto read_bundle_json = [&](const char* name) {
+            const std::string url = source_repository->file_url(
+                models::RepoRef{checkpoint, models::Revision{repository.download_revision, false}, name});
+            const auto response = HttpClient::get(url, headers);
+            if (response.status_code != 200) {
+                throw std::runtime_error(std::string("Failed to read '") + name + "' from repository " +
+                                         checkpoint + " (HTTP " +
+                                         std::to_string(response.status_code) + ")");
+            }
+            return JsonUtils::parse(response.body);
+        };
+        const nlohmann::json card = read_bundle_json(backends::loom::kCardFile);
+        const nlohmann::json lock = read_bundle_json(backends::loom::kLockFile);
+        (void)backends::loom::plan_bundle(card, lock);
+        const nlohmann::json info = has_file(backends::loom::kInfoFile)
+                                        ? read_bundle_json(backends::loom::kInfoFile)
+                                        : nlohmann::json::object();
+        const std::string name = backends::loom::suggested_name(checkpoint, card);
+        const uint64_t size_bytes = total_repo_size + backends::loom::locked_bytes(lock);
+
+        nlohmann::json vj;
+        vj["name"] = "default";
+        vj["primary_file"] = backends::loom::kCardFile;
+        vj["files"] = repo_files;
+        vj["sharded"] = false;
+        vj["size_bytes"] = size_bytes;
+
+        nlohmann::json out;
+        out["checkpoint"] = checkpoint;
+        out["source"] = remote_registry_source_name(source);
+        out["recipe"] = backends::loom::descriptor.recipe;
+        out["repo_kind"] = "loom";
+        out["suggested_name"] = name;
+        out["suggested_labels"] = backends::loom::suggested_labels(info, name);
+        out["mmproj_files"] = nlohmann::json::array();
+        out["draft_files"] = nlohmann::json::array();
+        out["variants"] = nlohmann::json::array({vj});
+        out["size"] = static_cast<double>(size_bytes) / 1e9;
+        return out;
     }
 
     // ONNX RyzenAI branch: synthesize a 1-element variant set.

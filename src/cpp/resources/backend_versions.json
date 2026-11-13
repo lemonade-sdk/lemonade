@@ -47,6 +47,12 @@
         "hrx-b129": {
           "llama-hrx-b129-bin-manylinux-hrx-x64.tar.gz": "sha256:309e124c2c532980c5541cc2857f187a2a3f5cc82b781d01c05ebb498b524058"
         }
+      },
+      "ROCm/hrx-system": {
+        "v0.1.0": {
+          "hrx_loom-0.1.0-py3-none-win_amd64.whl": "sha256:d368cf8be58f00f3e9c765df4031964d2fc07fb086a9b5241830f05e95725f83",
+          "hrx_loom-0.1.0-py3-none-manylinux_2_39_x86_64.whl": "sha256:4d3897b83cc0857723593487a4372a31d203944a1637e5e3143cad1d0583b98b"
+        }
       }
     }
   },
@@ -62,6 +68,9 @@
   },
   "llamacpp-hrx": {
     "hrx": "hrx-b129"
+  },
+  "loom": {
+    "amdgpu": "v0.1.0"
   },
   "whispercpp": {
     "cpu": "v1.8.4",

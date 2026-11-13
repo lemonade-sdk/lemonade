@@ -714,9 +714,13 @@ std::optional<json> fetch_huggingface_compatibility_metadata(
 RegistrySearchResponse search_registry_models(RegistryId source,
                                               const std::string& query,
                                               std::size_t limit,
-                                              bool gguf_only) {
+                                              RegistrySearchFormat format) {
     if (query.empty()) throw std::invalid_argument("Search query must not be empty");
     limit = std::clamp<std::size_t>(limit, 1, 50);
+    const bool gguf_only = format == RegistrySearchFormat::Gguf;
+    if (format == RegistrySearchFormat::Loom && source != models::huggingface_descriptor().id) {
+        throw std::invalid_argument("Loom bundles are searched on Hugging Face only");
+    }
 
     struct SearchRequest {
         std::string url;
@@ -732,6 +736,7 @@ RegistrySearchResponse search_registry_models(RegistryId source,
         std::string url = endpoint + "/api/models?search=" + percent_encode(query) +
                           "&sort=downloads&direction=-1&limit=" + std::to_string(limit);
         if (gguf_only) url += "&filter=gguf";
+        if (format == RegistrySearchFormat::Loom) url += "&filter=loom-serve";
         requests.push_back({std::move(url), gguf_only, false});
     } else {
         endpoint = trim_trailing_slash(env_string("MODELSCOPE_ENDPOINT"));

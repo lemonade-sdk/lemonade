@@ -2389,13 +2389,18 @@ class LemonadeAPI {
     limit = 14,
     signal?: AbortSignal,
   ): Promise<RegistrySearchResponse> {
-    const params = new URLSearchParams({
-      source,
-      query,
-      limit: String(limit),
-      format: 'gguf',
-    });
-    return this._json(`/api/v1/registry/search?${params}`, { signal });
+    const search = (format: 'gguf' | 'loom') => this._json<RegistrySearchResponse>(
+      `/api/v1/registry/search?${new URLSearchParams({ source, query, limit: String(limit), format })}`,
+      { signal },
+    );
+    if (source !== 'huggingface') return search('gguf');
+
+    // Loom bundles are a separate Hugging Face tag; a failure there must not
+    // take the GGUF results down with it.
+    const [gguf, loom] = await Promise.all([search('gguf'), search('loom').catch(() => null)]);
+    const seen = new Set((gguf.results || []).map(result => result.repository_id));
+    const extra = (loom?.results || []).filter(result => !seen.has(result.repository_id));
+    return { ...gguf, results: [...(gguf.results || []), ...extra] };
   }
 
   // ── Model registration / pull ───────────────────────────────────

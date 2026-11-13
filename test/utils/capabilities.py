@@ -85,6 +85,19 @@ CAPABILITIES = {
                 "llm": "Meta-Llama-3.1-8B-Instruct-HRX",
             },
         },
+        # loom-serve exposes chat completions only; the bundle's preset fixes
+        # the context window, and its Qwen models reason unless told not to.
+        "loom": {
+            "backends": ["amdgpu"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+            },
+            "test_models": {
+                "llm": "Qwen3.5-0.8B-Loom",
+            },
+            "chat_extra_body": {"enable_thinking": False},
+        },
         # The fork serves llama-server's surface for chat models only. Its models
         # reason, so thinking is turned off for the run as for ds4 below.
         "rocmfpx": {

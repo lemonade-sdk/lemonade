@@ -158,8 +158,8 @@ class RegistryBackedRepository : public FetchableRepository {
     }
 
     RegistrySearchResponse search(const std::string& query, std::size_t limit,
-                                  bool gguf_only) const override {
-        return search_registry_models(host(), query, limit, gguf_only);
+                                  RegistrySearchFormat format) const override {
+        return search_registry_models(host(), query, limit, format);
     }
 
     Revision active_revision(const LocalRef& local) const override {
