@@ -18,6 +18,19 @@ namespace lemon {
 }
 
 namespace lemon::backends {
+    struct BackendAsset {
+        std::string filename;
+        std::string directory;
+        std::vector<std::string> required_files;
+
+        bool is_complete(const std::string& root) const {
+            for (const auto& file : required_files) {
+                if (!fs::is_regular_file(fs::path(root) / directory / file)) return false;
+            }
+            return !required_files.empty();
+        }
+    };
+
     struct InstallParams {
         std::string repo;      // GitHub "org/repo"
         std::string filename;  // Release asset filename
@@ -36,6 +49,11 @@ namespace lemon::backends {
 
         using InstallParamsFn = InstallParams(*)(const std::string& backend, const std::string& version);
         InstallParamsFn install_params_fn;  // nullptr for backends with no auto-install
+        using AdditionalAssetsFn = std::vector<BackendAsset>(*)(const std::string& backend,
+                                                               const std::string& version);
+        AdditionalAssetsFn additional_assets_fn = nullptr;
+        using AssetHashFn = std::string(*)(const std::string& version, const std::string& filename);
+        AssetHashFn asset_hash_fn = nullptr;
 
         BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr,
                     bool split = false)

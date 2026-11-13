@@ -1,6 +1,7 @@
 #include <lemon/models/host_availability.h>
 
 #include <lemon/backends/backend_descriptor_registry.h>
+#include <lemon/backends/backend_registry.h>
 #include <lemon/models/model_info.h>
 #include <lemon/runtime_config.h>
 #include <lemon/system_info.h>
@@ -211,6 +212,17 @@ BackendAvailability probe_backend_availability(
 
     for (const auto& [name, info] : models) {
         const std::string& recipe = info.recipe;
+        if (const auto* ops = backends::ops_for(recipe)) {
+            const auto backends = ops->model_backends(info);
+            if (backends && backends->empty()) {
+                availability.model_unsupported_reasons[name] =
+                    "This model has no compatible " + recipe + " backend on this machine.";
+            }
+            if (const auto pool = ops->streaming_memory_pool_gb(
+                    info, system_ram_gb, largest_mem_pool_gb)) {
+                availability.model_memory_pools[name] = *pool;
+            }
+        }
         if (availability.recipes.count(recipe)) {
             continue;
         }

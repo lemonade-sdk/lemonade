@@ -44,6 +44,21 @@ int main() {
     const std::string recipe = "llamacpp";
     const std::string backend = "vulkan";
 
+    for (const std::string configured : {"", "builtin", "b9632"}) {
+        r.check(lemon::can_reuse_pinned_backend(configured, "b9632", "b9632"),
+                "matching installed pin can be reused: " + configured);
+    }
+    r.check(!lemon::can_reuse_pinned_backend("", "b9700", "b9632") &&
+            !lemon::can_reuse_pinned_backend("", "b9632", "b9700"),
+            "metadata failure cannot hide an upgrade or downgrade");
+    r.check(!lemon::can_reuse_pinned_backend("", "b9632", "") &&
+            !lemon::can_reuse_pinned_backend("", "", ""),
+            "reuse requires a known installed and pinned version");
+    for (const std::string configured : {"latest", "b9700", "/custom/backend"}) {
+        r.check(!lemon::can_reuse_pinned_backend(configured, "b9632", "b9632"),
+                "metadata failure cannot override a different requested binary: " + configured);
+    }
+
     printf("=== resolve_latest_pin() Unit Tests ===\n\n");
 
     // Online, GitHub lookup succeeds → use the freshly-fetched tag (no fallback).

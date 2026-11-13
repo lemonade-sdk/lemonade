@@ -9,6 +9,9 @@ export type TuningValueSource = 'custom' | 'built_in' | 'generic' | 'optimized';
 
 export interface RecipeOptions {
   ctx_size?: number;
+  strata_backend?: string;
+  strata_parallel?: number;
+  strata_args?: string;
   llamacpp_backend?: string;
   llamacpp_device?: string;
   llamacpp_args?: string;
@@ -183,7 +186,7 @@ function optionalStringValue(value: unknown): string | undefined {
 }
 
 const RECIPE_OPTION_NUMBER_KEYS = new Set<keyof RecipeOptions>([
-  'ctx_size', 'steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed',
+  'ctx_size', 'strata_parallel', 'steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed',
 ]);
 
 export function sanitizeRecipeOptions(options: Partial<RecipeOptions> | null | undefined): RecipeOptions {
@@ -527,6 +530,17 @@ export function modelDefaultRecipeOptions(model: ModelInfo | null | undefined, f
       ['recipe_options', 'flm_args'], ['options', 'flm_args'], ['flm_args'], ['args'],
     ]);
   }
+  if (recipe === 'strata') {
+    out.strata_backend = readStringFromModelOrRecipe(model, [
+      ['recipe_options', 'strata_backend'], ['options', 'strata_backend'], ['strata_backend'],
+    ]) ?? backend;
+    out.strata_parallel = readNumberFromModelOrRecipe(model, [
+      ['recipe_options', 'strata_parallel'], ['options', 'strata_parallel'], ['strata_parallel'],
+    ]);
+    out.strata_args = readStringFromModelOrRecipe(model, [
+      ['recipe_options', 'strata_args'], ['options', 'strata_args'], ['strata_args'], ['args'],
+    ]);
+  }
   if (recipe === 'vllm') {
     out.ctx_size = ctx;
     out.vllm_backend = readStringFromModelOrRecipe(model, [
@@ -699,7 +713,7 @@ export function recipeOptionsForCapability(
     case 'chat':
     case 'vision':
     case 'code':
-      return pickRecipeOptions(options, ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'mmproj_enabled', 'flm_args', 'vllm_backend', 'vllm_args', 'merge_args']);
+      return pickRecipeOptions(options, ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'mmproj_enabled', 'flm_args', 'vllm_backend', 'vllm_args', 'strata_backend', 'strata_parallel', 'strata_args', 'merge_args']);
     case 'all':
     default:
       return { ...options };

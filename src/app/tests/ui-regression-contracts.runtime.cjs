@@ -141,9 +141,9 @@ assert.match(sources.modelManager, /isExtraModelsDirModel\(model\)[\s\S]*?showEx
 assert.match(sources.modelManager, /managed in your external models folder\. Delete it directly from that folder\./);
 assert.doesNotMatch(sources.modelManager, /openExternalModelsFolder|manager__toast-folder-action/);
 assert.match(sources.api, /draft_file\?: string;/);
-assert.match(sources.modelManager, /const draftFile = vdata\?\.variants\.find\(v => v\.name === variantName\)\?\.draft_file;/);
+assert.match(sources.modelManager, /const draftFile = recipe !== 'strata' \? vdata\?\.variants\.find\(v => v\.name === variantName\)\?\.draft_file : undefined;/);
 assert.match(sources.modelManager, /draft: `\$\{modelId\}:\$\{draftFile\}`/);
-assert.match(sources.modelManager, /mmproj: vdata\?\.mmproj_files\?\.\[0\],[\s\S]*?checkpoints,[\s\S]*?labels:/);
+assert.match(sources.modelManager, /mmproj: recipe !== 'strata' \? vdata\?\.mmproj_files\?\.\[0\] : undefined,[\s\S]*?checkpoints,[\s\S]*?labels:/);
 
 assert.match(sources.mcpPanel, /transport: 'streamable-http'/);
 assert.match(sources.mcpPanel, />(?:HTTP endpoint|\{t\('HTTP endpoint'\)\})</);

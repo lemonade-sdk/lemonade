@@ -10,6 +10,7 @@ import DOMPurify from 'dompurify';
 import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow, ModelOptions } from '../api';
 import api, { friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
+import { isStrataGguf } from '../features/models/huggingFaceSearch';
 import {
   recipeBackendOptionName,
   recipeConfigurableOptionNames,
@@ -113,6 +114,7 @@ function recipeDisplayLabel(recipe: string): string {
   const n = String(recipe || '').toLowerCase();
   switch (n) {
     case 'llamacpp': return 'llama.cpp';
+    case 'strata': return 'Strata';
     case 'vllm': return 'vLLM';
     case 'flm': return 'FastFlowLM';
     case 'ryzenai-llm': return 'RyzenAI';
@@ -279,6 +281,9 @@ function draftFieldsEqual(
 
 const TUNING_FIELD_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
   ctx_size: 'Context size',
+  strata_backend: 'Backend',
+  strata_parallel: 'Parallel slots',
+  strata_args: 'Additional backend CLI arguments',
   llamacpp_backend: 'Backend',
   llamacpp_device: 'Device',
   llamacpp_args: 'Additional backend CLI arguments',
@@ -307,6 +312,7 @@ const TUNING_FIELD_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
 
 const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
   ctx_size: 'Runtime context window for this exact model.',
+  strata_args: 'Native Strata engine flags, applied on Load/Reload. Model paths, context and serving mode are managed by Lemonade.',
   llamacpp_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
   vllm_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
   whispercpp_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
@@ -381,6 +387,7 @@ function backendOptionsForKey(key: keyof RecipeOptions, current: string | undefi
   const recipe = activeRecipeForModel(model);
   const fromServer = Object.entries(backendMapForRecipe(info, recipe) || {})
     .filter(([backend, backendInfo]) => backendIsSelectable(recipe, backend, backendInfo) && backendMatchesDetectedHardware(backend, info))
+    .filter(([backend]) => !model.supported_backends || model.supported_backends.includes(backend))
     .map(([backend]) => backend);
   const normalizedCurrent = optionalDisplayValue(current);
   const base = fromServer.length ? ['auto', ...fromServer] : [normalizedCurrent || 'auto'];
@@ -801,27 +808,45 @@ const HfReadmeTab: React.FC<{ hfId: string; isActive: boolean }> = ({ hfId, isAc
 const HfOverviewTab: React.FC<{
   hfModel: HFModelResult;
   hfVariants?: PullVariantsResult;
+  recipeDraft: string;
+  onRecipeChange: (recipe: string) => void;
   onHfPull?: (hfId: string, variantName: string, recipe: string) => void;
   isPulling: boolean;
   isActive: boolean;
-}> = ({ hfModel, hfVariants, onHfPull, isPulling, isActive }) => {
+}> = ({ hfModel, hfVariants, recipeDraft, onRecipeChange, onHfPull, isPulling, isActive }) => {
   const { t } = useI18n();
   const [selectedVariantName, setSelectedVariantName] = useState('');
-  const selectedVariant = hfVariants?.variants.find(v => v.name === selectedVariantName)
-    ?? hfVariants?.variants[0];
+  const strataBackends = Object.entries(backendMapForRecipe(api.systemInfoData, 'strata') || {})
+    .filter(([, backend]) => backend.state !== 'unsupported').map(([backend]) => backend);
+  const strataVariants = hfVariants?.recipe === 'llamacpp'
+    ? hfVariants.variants.filter(v => !v.sharded && isStrataGguf(v.primary_file, api.allModels, strataBackends))
+    : [];
+  const canUseStrata = strataVariants.length > 0;
+  const recipe = recipeDraft === 'strata' && canUseStrata ? 'strata' : hfVariants?.recipe || '';
+  const variants = recipe === 'strata' ? strataVariants : hfVariants?.variants || [];
+  const selectedVariant = variants.find(v => v.name === selectedVariantName) ?? variants[0];
 
   if (!isActive) return null;
   return (
     <div className="detail-tab-content hf-detail__overview">
       {hfVariants ? (
         <>
-          {hfVariants.mmproj_files.length > 0 && (
+          {canUseStrata && (
+            <label className="hf-detail__overview-section">
+              <span className="hf-detail__overview-label">{t('Backend')}</span>
+              <select value={recipe} disabled={isPulling} onChange={event => onRecipeChange(event.target.value)}>
+                <option value="llamacpp">llama.cpp</option>
+                <option value="strata">Strata</option>
+              </select>
+            </label>
+          )}
+          {recipe !== 'strata' && hfVariants.mmproj_files.length > 0 && (
             <div className="hf-detail__overview-section">
               <span className="hf-detail__overview-label">{t('Included components')}</span>
               <div className="hf-detail__overview-value">{t('Vision projector (MMProj)')}</div>
             </div>
           )}
-          {hfVariants.variants.length > 0 ? (
+          {variants.length > 0 ? (
             <div className="hf-detail__overview-section">
               <span className="hf-detail__overview-label">{t('Variants (select one)')}</span>
               {selectedVariant && (
@@ -830,7 +855,7 @@ const HfOverviewTab: React.FC<{
                     appearance="primary"
                     icon="download"
                     disabled={isPulling}
-                    onClick={() => onHfPull?.(hfModel.id, selectedVariant.name, hfVariants.recipe)}
+                    onClick={() => onHfPull?.(hfModel.id, selectedVariant.name, recipe)}
                     aria-label={t('Download {name} from {repo}', { name: selectedVariant.name, repo: hfModel.id })}
                   >
                     {t('Download {name}', { name: selectedVariant.name })}
@@ -838,7 +863,7 @@ const HfOverviewTab: React.FC<{
                 </div>
               )}
               <div className="hf-detail__gguf-list" role="radiogroup" aria-label={`Variants for ${hfModel.id}`}>
-                {hfVariants.variants.map(v => {
+                {variants.map(v => {
                   const isSelected = selectedVariant?.name === v.name;
                   return (
                     <button
@@ -911,6 +936,7 @@ const HfDetailView: React.FC<{
 }> = ({ hfModel, provider, hfVariants, onFetchHfVariants, onHfPull, pullingHf, onCancelHfPull, onBack, onClose }) => {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<HfDetailTab>('overview');
+  const [recipeDraft, setRecipeDraft] = useState('');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);
 
@@ -926,6 +952,7 @@ const HfDetailView: React.FC<{
 
   useEffect(() => {
     setActiveTab('overview');
+    setRecipeDraft('');
     panelHeadingRef.current?.focus();
   }, [repoName]);
 
@@ -964,7 +991,7 @@ const HfDetailView: React.FC<{
             <WorkspaceMetadataChip emphasis="medium" tone="accent" className="model-detail-panel__badge--pipeline">{pipelineTag}</WorkspaceMetadataChip>
           )}
           {hfVariants?.recipe && (
-            <WorkspaceMetadataChip emphasis="medium">{recipeDisplayLabel(hfVariants.recipe)}</WorkspaceMetadataChip>
+            <WorkspaceMetadataChip emphasis="medium">{recipeDisplayLabel(recipeDraft || hfVariants.recipe)}</WorkspaceMetadataChip>
           )}
           <WorkspaceMetadataChip emphasis="low">{fmtDownloads(hfModel.downloads)} downloads</WorkspaceMetadataChip>
           <WorkspaceMetadataChip emphasis="low">{fmtDownloads(hfModel.likes)} likes</WorkspaceMetadataChip>
@@ -1047,6 +1074,8 @@ const HfDetailView: React.FC<{
             <HfOverviewTab
               hfModel={hfModel}
               hfVariants={hfVariants}
+              recipeDraft={recipeDraft}
+              onRecipeChange={setRecipeDraft}
               onHfPull={onHfPull}
               isPulling={isPulling}
               isActive={activeTab === 'overview'}
@@ -1231,13 +1260,14 @@ interface BackendArgsFieldProps {
   specs: ArgFieldSpec[];
   /** What lemond applies when the args key is sent unset. */
   fallbackArgs: string;
+  exampleArgs?: string;
   onChange: (next: string) => void;
 }
 
 /** The args a model loads with, as a field per sampler plus whatever is left.
     Both halves compose back into one string, which is what actually gets sent. */
 const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
-  fieldId, label, value, specs, fallbackArgs, onChange,
+  fieldId, label, value, specs, fallbackArgs, exampleArgs, onChange,
 }) => {
   const { t } = useI18n();
   const split = useMemo(() => splitSamplerArgs(specs, value), [specs, value]);
@@ -1333,7 +1363,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
             }}
           >
             <Icon name="chevron-right" size={12} className="detail-configuration__sampler-caret" aria-hidden="true" />
-            <span className="detail-configuration__sampler-toggle-label">{t('Detailed sampling parameters')}</span>
+            <span className="detail-configuration__sampler-toggle-label">{specs.some(spec => spec.kind === 'boolean') ? t('Engine parameters') : t('Detailed sampling parameters')}</span>
             {!detailsOpen && (
               <span className="detail-configuration__sampler-folded">
                 {foldedFlags || 'All on default'}
@@ -1345,6 +1375,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
               const samplerId = `${fieldId}-${spec.id}`;
               const owned = split.claimedByRest.has(spec.flag);
               const isText = spec.kind === 'text';
+              const isBoolean = spec.kind === 'boolean';
               return (
                 <div
                   key={spec.flag}
@@ -1355,21 +1386,22 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
                     <input
                       id={samplerId}
                       className={isText ? 'input' : 'input detail-configuration__number-input'}
-                      type={isText ? 'text' : 'number'}
+                      type={isBoolean ? 'checkbox' : isText ? 'text' : 'number'}
                       min={spec.min}
                       max={spec.max}
                       step={spec.step}
                       value={split.fields[spec.flag] ?? ''}
+                      checked={isBoolean ? split.fields[spec.flag] === 'true' : undefined}
                       disabled={owned}
                       placeholder={owned ? 'set below' : 'default'}
                       aria-labelledby={`${samplerId}-label`}
-                      onChange={e => setSampler(spec.flag, e.target.value)}
+                      onChange={e => setSampler(spec.flag, isBoolean ? (e.target.checked ? 'true' : '') : e.target.value)}
                       onBlur={() => {
                         const fallback = flagDefaults[spec.flag];
                         if (fallback && !(split.fields[spec.flag] || '').trim()) setSampler(spec.flag, fallback);
                       }}
                     />
-                    {!isText && (
+                    {!isText && !isBoolean && (
                       <span className="detail-configuration__context-stepper">
                         <button
                           type="button"
@@ -1403,7 +1435,7 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
           id={fieldId}
           className="detail-tuning__args"
           value={freeformDraft}
-          placeholder={t('Example: --threads 4')}
+          placeholder={exampleArgs ? t('Example: {args}', { args: exampleArgs }) : t('Example: --threads 4')}
           /* A wrapping label names the field from its text content, which for a
              textarea includes whatever has been typed into it. */
           aria-label={label}
@@ -1855,8 +1887,9 @@ const ModelConfigurationTab: React.FC<{
           fieldId={fieldId}
           label={label}
           value={draftValue}
-          specs={samplerFieldsForRecipe(activeRecipeForModel(model))}
+          specs={samplerFieldsForRecipe(activeRecipeForModel(model), optionalDisplayValue(model.checkpoint))}
           fallbackArgs={optionalDisplayValue(serverDefaultRecipeOptions[key])}
+          exampleArgs={key === 'strata_args' ? '--pool-workers 4' : undefined}
           onChange={next => setRecipeDraft(prev => ({ ...prev, [draftKey]: next }))}
         />
       );
@@ -1899,6 +1932,8 @@ const ModelConfigurationTab: React.FC<{
               id={fieldId}
               className="input detail-configuration__number-input"
               type="number"
+              min={key === 'strata_parallel' ? 1 : undefined}
+              max={key === 'strata_parallel' ? 8 : undefined}
               value={draftValue}
               placeholder={optionalDisplayValue(baseValue) || ''}
               aria-labelledby={`${fieldId}-label`}

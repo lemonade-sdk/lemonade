@@ -10,6 +10,7 @@ import {
   detectHuggingFaceBackend,
   isCompatibleHuggingFaceRecipe,
   isCompatibleHuggingFaceVariantResult,
+  isStrataGguf,
 } from '../features/models/huggingFaceSearch';
 import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
 import { DownloadListItem, activeDownloadForModel, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
@@ -169,6 +170,7 @@ function implicitCustomModelName(displayName: string, checkpoint: string, fallba
 
 const RECIPE_BADGES: Record<string, string> = {
   llamacpp: 'llama.cpp',
+  strata: 'Strata',
   vllm: 'vLLM',
   moonshine: 'Moonshine',
   acestep: 'ACE-Step',
@@ -188,9 +190,13 @@ function supportsVisionProjectorField(capability: CustomModelCapability): boolea
 }
 type CustomRecipeSuggestion = { checkpoint: string; note: string; extraCheckpoints?: CustomCheckpointExample[] };
 
-const CUSTOM_LLM_RECIPE_ORDER = ['llamacpp', 'flm', 'ryzenai-llm', 'vllm'];
+const CUSTOM_LLM_RECIPE_ORDER = ['llamacpp', 'strata', 'flm', 'ryzenai-llm', 'vllm'];
 
 const CUSTOM_RECIPE_SUGGESTIONS: Record<string, CustomRecipeSuggestion> = {
+  strata: {
+    checkpoint: 'unsloth/Qwen3.6-35B-A3B-MTP-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf',
+    note: 'Text-only Qwen3.6-35B-A3B GGUF: UD-Q4_K_XL, UD-Q6_K_XL or Q8_0. Shares weights with llama.cpp.',
+  },
   llamacpp: {
     checkpoint: 'unsloth/Qwen3-8B-GGUF:Q4_K_M',
     note: 'GGUF repo plus quantization suffix; Lemonade can download the selected quantization.',
@@ -292,7 +298,7 @@ const CHAT_RECIPE_OPTIONS: CustomRecipeOption[] = [
 ];
 
 const CUSTOM_RECIPE_OPTIONS: Record<CustomModelCapability, CustomRecipeOption[]> = {
-  chat: CHAT_RECIPE_OPTIONS,
+  chat: [...CHAT_RECIPE_OPTIONS, customRecipeOption('strata', 'Strata', 'Text-only Qwen3.6 GGUF backend')],
   omni: CHAT_RECIPE_OPTIONS,
   classification: [customRecipeOption('onnxruntime', 'ONNX Runtime', 'Text classification through /classify')],
   image: [customRecipeOption('sd-cpp', 'Stable Diffusion', 'Stable Diffusion C++ backend')],
@@ -333,6 +339,7 @@ function dedupeRecipeOptions(options: CustomRecipeOption[]): CustomRecipeOption[
 }
 
 const CUSTOM_RECIPE_CAPABILITIES: Record<string, CustomModelCapability[]> = {
+  strata: ['chat'],
   llamacpp: ['chat', 'omni', 'embedding', 'reranking'],
   vllm: ['chat', 'omni'],
   flm: ['chat', 'omni'],
@@ -495,7 +502,11 @@ const PROVIDER_META: Record<ModelRegistryProvider, { label: string; compactLabel
   },
 };
 
-function remoteVariantCheckpoint(modelId: string, variantName: string, recipe: string): string {
+function remoteVariantCheckpoint(modelId: string, variantName: string, recipe: string, variants?: PullVariantsResult): string {
+  if (recipe === 'strata') {
+    const file = variants?.variants.find(variant => variant.name === variantName)?.primary_file || variantName;
+    return `${modelId}:${file}`;
+  }
   return String(recipe || '').toLowerCase() === 'llamacpp'
     ? `${modelId}:${variantName}`
     : modelId;
@@ -510,6 +521,7 @@ function remoteDefaultModelName(
 ): string {
   const suggested = variants?.suggested_name || modelId.split('/').pop() || modelId;
   const providerScoped = provider === 'modelscope' ? `${suggested}-modelscope` : suggested;
+  if (recipe === 'strata') return `${providerScoped}-${variantName}-Strata`;
   if (String(recipe || '').toLowerCase() !== 'llamacpp' || !variantName) return providerScoped;
   return `${providerScoped}-${variantName}`;
 }
@@ -1559,12 +1571,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     recipe: string,
     variants?: PullVariantsResult,
   ): string => {
-    const checkpoint = remoteVariantCheckpoint(modelId, variantName, recipe);
+    const checkpoint = remoteVariantCheckpoint(modelId, variantName, recipe, variants);
     const defaultName = remoteDefaultModelName(provider, modelId, variants, variantName, recipe);
     const lookup = (bareName: string): ModelInfo | null => (
       findCurrentModel(`user.${bareName}`) || findCurrentModel(bareName)
     );
-    const matchesCheckpoint = (info: ModelInfo | null): boolean => modelCheckpoint(info) === checkpoint;
+    const matchesCheckpoint = (info: ModelInfo | null): boolean =>
+      modelCheckpoint(info) === checkpoint && String(info?.recipe || '').toLowerCase() === recipe.toLowerCase();
 
     const existingDefault = lookup(defaultName);
     if (!existingDefault || matchesCheckpoint(existingDefault)) return `user.${defaultName}`;
@@ -1929,7 +1942,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       await handlePull(registeredModel);
       return;
     }
-    const checkpoint = remoteVariantCheckpoint(modelId, variantName, recipe);
+    const checkpoint = remoteVariantCheckpoint(modelId, variantName, recipe, vdata);
     const targetModelName = resolveRemoteModelName(provider, modelId, variantName, recipe, vdata);
     const ac = new AbortController();
     pullRemoteAbortRef.current[key] = ac;
@@ -1965,9 +1978,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     };
 
     const labels = new Set(vdata?.suggested_labels || []);
-    if (vdata?.mmproj_files?.length) labels.add('vision');
+    if (recipe !== 'strata' && vdata?.mmproj_files?.length) labels.add('vision');
+    if (recipe === 'strata') labels.delete('vision');
 
-    const draftFile = vdata?.variants.find(v => v.name === variantName)?.draft_file;
+    const draftFile = recipe !== 'strata' ? vdata?.variants.find(v => v.name === variantName)?.draft_file : undefined;
     const checkpoints = draftFile
       ? { main: checkpoint, draft: `${modelId}:${draftFile}` }
       : undefined;
@@ -1976,7 +1990,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         checkpoint,
         recipe,
         source: provider,
-        mmproj: vdata?.mmproj_files?.[0],
+        mmproj: recipe !== 'strata' ? vdata?.mmproj_files?.[0] : undefined,
         checkpoints,
         labels: [...labels],
         vision: labels.has('vision'),
@@ -2542,8 +2556,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const filterRemoteResults = useCallback((provider: ModelRegistryProvider, results: HFModelResult[]) => {
     if (!providerEnabled[provider] || searchQuery.trim().length < 2 || primaryFilter !== 'all') return [];
+    const strataBackends = systemRecipeEntries(systemInfo)?.flatMap(
+      ([recipe, raw]) => recipe === 'strata' ? visibleBackendEntries(raw).map(([backend]) => backend) : []) || [];
     return results.filter(result => {
-      if (provider !== 'huggingface' && localRegistryRefs.has(result.id.toLowerCase())) return false;
       const key = providerKey(provider, result.id);
       const variants = remoteVariants[key];
       if (provider === 'huggingface'
@@ -2551,11 +2566,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         && !isCompatibleHuggingFaceRecipe(hfDetectedRecipes[key])) return false;
       const info = remoteResultAsModelInfo(result, variants);
       if (!modelMatchesTasks(info, taskFilters)) return false;
-      if (!modelMatchesBackends(info, backendFilters)) return false;
+      const strataMatch = variants?.recipe === 'llamacpp'
+        && variants.variants.some(variant => !variant.sharded && isStrataGguf(variant.primary_file, allModels, strataBackends))
+        && modelMatchesBackends({ ...info, recipe: 'strata' }, backendFilters);
+      if (provider !== 'huggingface' && localRegistryRefs.has(result.id.toLowerCase())
+        && !(backendFilters.has('strata') && strataMatch)) return false;
+      if (!modelMatchesBackends(info, backendFilters) && !strataMatch) return false;
       if (!modelMatchesTags(info, tagFilters)) return false;
       return true;
     });
-  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, hfDetectedRecipes, taskFilters, backendFilters, tagFilters]);
+  }, [providerEnabled, searchQuery, primaryFilter, localRegistryRefs, remoteVariants, hfDetectedRecipes, taskFilters, backendFilters, tagFilters, systemInfo, allModels]);
 
   const filteredHfResults = useMemo(
     () => filterRemoteResults('huggingface', hfResults),

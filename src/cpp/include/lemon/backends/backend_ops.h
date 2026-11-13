@@ -66,6 +66,11 @@ class BackendOps {
 public:
     virtual ~BackendOps() = default;
 
+    virtual std::string device_family(const std::string& family, const std::string& name) const {
+        (void)name;
+        return family;
+    }
+
     // Populate model-specific metadata (context window, capability labels, …)
     // for a downloaded model. Default: nothing.
     virtual void populate_metadata(ModelInfo& info, const BackendOpsContext& ctx) const {
@@ -152,6 +157,25 @@ public:
     virtual std::string validate_load(const ModelInfo& info) const {
         (void)info;
         return "";
+    }
+
+    virtual std::optional<std::vector<std::string>> model_backends(const ModelInfo& info) const {
+        (void)info;
+        return std::nullopt;
+    }
+
+    virtual std::string checkpoint_revision(const ModelInfo& info, const std::string& type) const {
+        (void)info;
+        (void)type;
+        return "";
+    }
+
+    virtual std::optional<double> streaming_memory_pool_gb(
+        const ModelInfo& info, double system_ram_gb, double device_pool_gb) const {
+        (void)info;
+        (void)system_ram_gb;
+        (void)device_pool_gb;
+        return std::nullopt;
     }
 
     virtual DownloadPolicy plan_download(const ModelInfo& info,

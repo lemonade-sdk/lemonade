@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "lemon/model_manager.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/models/registry_types.h"
 #include "lemon/router.h"
 
@@ -78,6 +79,10 @@ json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int 
         {"components", public_components},
         {"recipe_options", info.recipe_options.to_json()},
     };
+
+    if (const auto supported = backends::ops_for(info.recipe)->model_backends(info)) {
+        model_json["supported_backends"] = *supported;
+    }
 
     json checkpoint_status = json::array();
     for (const auto& status : model_manager_->checkpoint_status(info)) {
@@ -202,6 +207,7 @@ nlohmann::ordered_json ModelJson::schema() {
             "owned_by": {"const": "lemonade", "description": "Always `\"lemonade\"`."},
             "checkpoint": {"type": "string", "description": "The main checkpoint in the model's registry; see `registry_source`."},
             "recipe": {"type": "string", "description": "Recipe used to load the model, e.g. `llamacpp` or `flm`."},
+            "supported_backends": {"type": "array", "items": {"type": "string"}, "description": "Allowed backends for this model; omitted when the recipe has no per-model backend restriction."},
             "size": {"type": "number", "description": "Size in GB; omitted when unknown."},
             "max_context_window": {"type": "integer", "description": "Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models."},
             "context_length": {"type": "integer", "description": "Tokens the model handles in one request: the loaded `ctx_size` while it runs, else the configured `ctx_size`, else `max_context_window`; omitted when none is known."},
