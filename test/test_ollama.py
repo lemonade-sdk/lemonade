@@ -217,6 +217,46 @@ class OllamaTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
 
+    def test_005b_pull_and_delete_refuse_a_latest_alias(self):
+        """Test an alias named "<model>:latest" is refused, not pulled or deleted as <model>."""
+        self.ensure_model_pulled()
+        alias_name = f"{ENDPOINT_TEST_MODEL}:latest"
+        add = requests.post(
+            f"{self.internal_url}/aliases",
+            headers=_auth_headers(),
+            json={"alias": alias_name, "target": TOOL_CALLING_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(add.status_code, 200, add.text)
+
+        try:
+            pull = requests.post(
+                f"{OLLAMA_BASE_URL}/api/pull",
+                json={"model": alias_name, "stream": False},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(pull.status_code, 404, pull.text)
+            delete = requests.delete(
+                f"{OLLAMA_BASE_URL}/api/delete",
+                json={"model": alias_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(delete.status_code, 404, delete.text)
+        finally:
+            requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+        model = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(model.status_code, 200, model.text)
+        self.assertTrue(
+            model.json()["downloaded"], f"{ENDPOINT_TEST_MODEL} was deleted"
+        )
+
     def test_006_ps(self):
         """Test /api/ps returns running models with correct Ollama format."""
         self.ensure_model_pulled()
