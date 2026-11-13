@@ -1,14 +1,20 @@
-# Copies the backend files Lemonade pins in backend_versions.json to the
-# lemonade-sdk/backends dataset on ModelScope, which backend_source=modelscope
-# downloads from. Files already on ModelScope are skipped, so reruns are cheap.
+# Copies the backend files Lemonade pins in backend_versions.json, plus the
+# Lemonade installers, to the lemonade-sdk/backends dataset on ModelScope, which
+# backend_source=modelscope downloads from. Files already on ModelScope are
+# skipped, so reruns are cheap.
+#
+# Releases are created with GITHUB_TOKEN, and events that token causes do not
+# start other workflows, so `release: published` would never fire here. The
+# finished release build (workflow_run) is the trigger instead.
 name: Mirror backends to ModelScope
 
 on:
   push:
     branches: [main]
     paths: [src/cpp/resources/backend_versions.json]
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["C++ Server Build, Test, and Release 🚀"]
+    types: [completed]
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
@@ -22,6 +28,10 @@ on:
         description: "List what would be uploaded, change nothing"
         type: boolean
         default: true
+      lemonade_release:
+        description: "Lemonade release whose installers to mirror (tag, latest or newest)"
+        type: string
+        default: latest
 
 concurrency:
   group: modelscope-mirror
@@ -32,7 +42,15 @@ permissions:
 
 jobs:
   mirror:
-    if: github.repository == 'lemonade-sdk/lemonade'
+    # A workflow_run counts only when it is a successful release build: a push to a
+    # release-v* branch (release candidate) or a v* tag (stable release).
+    if: >-
+      github.repository == 'lemonade-sdk/lemonade' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        (startsWith(github.event.workflow_run.head_branch, 'release-v') ||
+         startsWith(github.event.workflow_run.head_branch, 'v'))))
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
@@ -44,6 +62,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # A release build mirrors the pins of the commit it released, which on a
+          # release-v* branch can differ from main.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           sparse-checkout: |
             src/cpp/resources/backend_versions.json
             tools/modelscope_mirror
@@ -59,12 +80,14 @@ jobs:
         env:
           MODELSCOPE_API_TOKEN: ${{ secrets.MODELSCOPE_API_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
+          LEMONADE_RELEASE: ${{ github.event_name == 'workflow_run' && 'newest' || inputs.lemonade_release || 'latest' }}
         run: >
           python tools/modelscope_mirror/modelscope_mirror.py
           --versions-file src/cpp/resources/backend_versions.json
           --repo lemonade-sdk/backends
           --set ${{ inputs.set || 'core' }}
           --group ${{ matrix.group }}
+          --lemonade-release "$LEMONADE_RELEASE"
           --readme tools/modelscope_mirror/dataset_card.md
           --workdir ${{ runner.temp }}/msmirror
           ${{ inputs.dry_run && '--dry-run' || '' }}

@@ -149,11 +149,21 @@ def head_size(url: str) -> int | None:
 
 
 def github_release(repo: str, tag: str) -> dict:
-    url = f"https://api.github.com/repos/{repo}/releases/" + (
-        "latest" if tag == "latest" else f"tags/{tag}"
-    )
+    # "latest" is the newest stable release; "newest" also counts prereleases
+    # (release candidates), which is what a just-finished release build published.
+    if tag == "newest":
+        url = f"https://api.github.com/repos/{repo}/releases?per_page=1"
+    elif tag == "latest":
+        url = f"https://api.github.com/repos/{repo}/releases/latest"
+    else:
+        url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
     try:
-        return json.loads(http_get(url, "application/vnd.github+json"))
+        body = json.loads(http_get(url, "application/vnd.github+json"))
+        if tag == "newest":
+            if not body:
+                raise RuntimeError(f"{repo} has no releases")
+            return body[0]
+        return body
     except urllib.error.HTTPError as e:
         if e.code == 403:
             sys.exit("GitHub API rate limit hit. Set GITHUB_TOKEN and run again.")
@@ -339,7 +349,8 @@ def main() -> int:
     ap.add_argument(
         "--lemonade-release",
         default="latest",
-        help="Lemonade release whose installers to mirror",
+        help="Lemonade release whose installers to mirror: a tag, 'latest' (newest "
+        "stable) or 'newest' (also counts release candidates)",
     )
     ap.add_argument(
         "--endpoint",
