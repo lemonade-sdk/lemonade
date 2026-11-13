@@ -164,7 +164,7 @@ try {
 
   assert.match(chat, /if \(isRouterRecipe\(currentRecipe\)\) return true;/, 'router chat must accept images so has_images rules are reachable');
   assert.match(chat, /const modeSupportsMcp = modeSupportsChatCompletions;/, 'router chat must retain MCP/Lemonade tool support');
-  assert.match(chat, /streaming\.send\(convoId, requestModelName, chatMessages, toolRuntime, thinkingMode\)/, 'selected tools must reach router chat requests through the current streaming signature');
+  assert.match(chat, /streaming\.send\(convoId, requestModelName, chatMessages, toolRuntime, thinkingMode, interruptible\)/, 'selected tools must reach router chat requests through the current streaming signature');
 
   const tools = fs.readFileSync(path.join(root, 'src/tools/lemonadeTools.ts'), 'utf8');
   const loadCase = tools.slice(tools.indexOf("case 'load_model'"), tools.indexOf("case 'unload_model'"));
