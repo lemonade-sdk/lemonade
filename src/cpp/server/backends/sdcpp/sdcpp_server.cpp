@@ -1,26 +1,26 @@
-#include "lemon/backends/sdcpp/sdcpp_server.h"
-#include "lemon/backends/sdcpp/sdcpp.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/backends/backend_utils.h"
-#include "lemon/backend_manager.h"
-#include "lemon/runtime_config.h"
-#include "lemon/utils/custom_args.h"
-#include "lemon/utils/http_client.h"
-#include "lemon/utils/process_manager.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/utils/path_utils.h"
-#include "lemon/error_types.h"
-#include "lemon/system_info.h"
-#include <httplib.h>
-#include <iostream>
-#include <filesystem>
-#include <fstream>
 #include <chrono>
 #include <cstring>
-#include <random>
-#include <sstream>
-#include <set>
+#include <filesystem>
+#include <fstream>
+#include <httplib.h>
+#include <iostream>
+#include "lemon/backend_manager.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/sdcpp/sdcpp.h"
+#include "lemon/backends/sdcpp/sdcpp_server.h"
+#include "lemon/error_types.h"
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
 #include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/custom_args.h"
+#include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
+#include <random>
+#include <set>
+#include <sstream>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -176,6 +176,7 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 
 SDServer::SDServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("sd-server", log_level, model_manager, backend_manager) {
+    bind_legacy_operations(LegacyOperationProfile::StableDiffusion, *this);
     LOG(DEBUG, "SDServer") << "Created with log_level=" << log_level << std::endl;
 }
 

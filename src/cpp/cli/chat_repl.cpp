@@ -436,7 +436,8 @@ void print_help(const TermUi& ui) {
               << s.reset() << "\n\n";
 }
 
-bool ensure_model_loaded(const TermUi& ui, lemonade::LemonadeClient& client, const std::string& model) {
+bool ensure_model_loaded(const TermUi& ui, lemonade::LemonadeClient& client, const std::string& model,
+                         const json& recipe_options) {
     json info;
     try {
         info = client.get_model_info(model);
@@ -460,8 +461,7 @@ bool ensure_model_loaded(const TermUi& ui, lemonade::LemonadeClient& client, con
         }
     }
 
-    json empty_recipe_options = json::object();
-    if (client.load_model(model, empty_recipe_options, /*save_options=*/false) != 0) {
+    if (client.load_model(model, recipe_options, /*save_options=*/false) != 0) {
         print_error(ui, std::string("failed to load '") + model + "'");
         return false;
     }
@@ -924,7 +924,12 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
         }
     }
 
-    if (!ensure_model_loaded(ui, client, active_model)) {
+    auto load_model = [&](const std::string& model) {
+        return ensure_model_loaded(ui, client, model,
+            model == options.initial_model ? options.initial_model_options : json::object());
+    };
+
+    if (!load_model(active_model)) {
         return 1;
     }
 
@@ -980,7 +985,7 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
                     print_info(ui, "Usage: /model <name>");
                     continue;
                 }
-                if (ensure_model_loaded(ui, client, rest)) {
+                if (load_model(rest)) {
                     active_model = rest;
                     rebuild_messages(messages, system_prompt);
                     print_info(ui, "switched to " + active_model + "; history cleared");
@@ -990,7 +995,7 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
                     print_info(ui, "Usage: /load <name>");
                     continue;
                 }
-                ensure_model_loaded(ui, client, rest);
+                load_model(rest);
             } else if (cmd == "/unload") {
                 try {
                     client.unload_model(rest);

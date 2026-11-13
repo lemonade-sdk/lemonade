@@ -1,0 +1,224 @@
+{
+  "arg_variants": [
+    "rocm",
+    "vulkan",
+    "cpu"
+  ],
+  "bin_variants": [
+    "rocm",
+    "vulkan",
+    "cuda",
+    "cpu"
+  ],
+  "binary": "llama-server.exe",
+  "config_defaults": {
+    "args": "",
+    "backend": "auto",
+    "cpu_args": "",
+    "cpu_bin": "builtin",
+    "cuda_bin": "builtin",
+    "prefer_system": true,
+    "rocm_args": "",
+    "rocm_bin": "builtin",
+    "vulkan_args": "",
+    "vulkan_bin": "builtin"
+  },
+  "config_extra": {
+    "prefer_system": true
+  },
+  "config_section": "",
+  "default_capabilities": [],
+  "default_device": 2,
+  "display_name": "Llama.cpp GPU",
+  "dynamic_models": false,
+  "exposes_prometheus_metrics": true,
+  "options": [
+    {
+      "cli_flag": "--llamacpp",
+      "default_value": "",
+      "group": "Llama.cpp Backend Options",
+      "help": "LlamaCpp backend to use",
+      "name": "llamacpp_backend",
+      "type_name": "BACKEND"
+    },
+    {
+      "cli_flag": "--llamacpp-device",
+      "default_value": "",
+      "group": "Llama.cpp Backend Options",
+      "help": "Comma-separated list of accelerator devices to use (e.g. Vulkan0)",
+      "name": "llamacpp_device",
+      "type_name": "DEVICES"
+    },
+    {
+      "cli_flag": "--llamacpp-args",
+      "default_value": "",
+      "group": "Llama.cpp Backend Options",
+      "help": "Custom arguments to pass to llama-server",
+      "name": "llamacpp_args",
+      "type_name": "ARGS"
+    }
+  ],
+  "recipe": "llamacpp",
+  "required_checkpoints": [
+    "main"
+  ],
+  "rocm_channels": [
+    "stable",
+    "nightly"
+  ],
+  "rocm_requires_cwsr_fix": true,
+  "selectable_backend": true,
+  "self_manages_downloads": false,
+  "slot_policy": 0,
+  "streams_model_from_storage": false,
+  "support": [
+    {
+      "arch_gates": {},
+      "backend": "system",
+      "device_summary": "x86_64/ARM64 CPU, GPU",
+      "devices": {
+        "cpu": [
+          "arm64",
+          "x86_64"
+        ]
+      },
+      "format": 0,
+      "supported_os": [
+        "linux"
+      ],
+      "tier": 0
+    },
+    {
+      "arch_gates": {},
+      "backend": "metal",
+      "device_summary": "Apple Silicon GPU",
+      "devices": {
+        "metal": []
+      },
+      "format": 0,
+      "supported_os": [
+        "macos"
+      ],
+      "tier": 0
+    },
+    {
+      "arch_gates": {},
+      "backend": "cuda",
+      "device_summary": "NVIDIA GPUs (Turing or newer)**",
+      "devices": {
+        "nvidia_gpu": [
+          "sm_100",
+          "sm_120",
+          "sm_121",
+          "sm_75",
+          "sm_80",
+          "sm_86",
+          "sm_89",
+          "sm_90"
+        ]
+      },
+      "format": 0,
+      "supported_os": [
+        "linux",
+        "windows"
+      ],
+      "tier": 0
+    },
+    {
+      "arch_gates": {},
+      "backend": "vulkan",
+      "device_summary": "x86_64 CPU, AMD iGPU, AMD dGPU; ARM64 CPU/GPU (Linux)",
+      "devices": {
+        "amd_gpu": [],
+        "cpu": [
+          "arm64",
+          "x86_64"
+        ]
+      },
+      "format": 0,
+      "supported_os": [
+        "linux",
+        "windows"
+      ],
+      "tier": 0
+    },
+    {
+      "arch_gates": {
+        "gfx908": {
+          "channels": [],
+          "os": [
+            "linux"
+          ]
+        },
+        "gfx90a": {
+          "channels": [],
+          "os": [
+            "linux"
+          ]
+        },
+        "gfx942": {
+          "channels": [],
+          "os": [
+            "linux"
+          ]
+        },
+        "gfx950": {
+          "channels": [
+            "stable"
+          ],
+          "os": [
+            "linux"
+          ]
+        }
+      },
+      "backend": "rocm",
+      "device_summary": "AMD GPUs supported by ROCm",
+      "devices": {
+        "amd_gpu": [
+          "gfx103X",
+          "gfx110X",
+          "gfx1150",
+          "gfx1151",
+          "gfx1152",
+          "gfx120X",
+          "gfx908",
+          "gfx90a",
+          "gfx942",
+          "gfx950"
+        ]
+      },
+      "format": 0,
+      "supported_os": [
+        "linux",
+        "windows"
+      ],
+      "tier": 0
+    },
+    {
+      "arch_gates": {},
+      "backend": "cpu",
+      "device_summary": "x86_64 CPU; ARM64 CPU (Linux)",
+      "devices": {
+        "cpu": [
+          "arm64",
+          "x86_64"
+        ]
+      },
+      "format": 0,
+      "supported_os": [
+        "linux",
+        "windows"
+      ],
+      "tier": 0
+    }
+  ],
+  "supported_modes": [
+    "chat",
+    "embeddings",
+    "reranking"
+  ],
+  "takes_args": true,
+  "uses_ctx_size": true,
+  "version_policy": 0,
+  "web_display_name": "llama.cpp GPU"
+}

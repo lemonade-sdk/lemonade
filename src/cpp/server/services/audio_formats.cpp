@@ -68,7 +68,8 @@ AudioFormat negotiate_speech_format(Router& router, const std::string& model,
         return result;
     }
 
-    const auto metadata = router.audio_speech_format_metadata(model, result.format);
+    const auto metadata = router.audio_speech_format_metadata(model, result.format,
+        streaming ? OperationDelivery::Streaming : OperationDelivery::Buffered);
     result.mime_type = metadata.content_type.empty()
         ? mime_types()[result.format].get<std::string>()
         : metadata.content_type;

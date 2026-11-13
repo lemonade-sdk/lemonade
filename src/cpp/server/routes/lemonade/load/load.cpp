@@ -9,6 +9,9 @@
 #include "lemon/recipe_options.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/configured/backend_definition.h"
 #include "lemon/server/model_loader.h"
 #include "lemon/server/shared_args.h"
 
@@ -65,7 +68,7 @@ const RouteArg kSaveOptions{"save_options", ArgIn::JsonBody, {{"type", "boolean"
                             "use [`POST /v1/models/{id}/options`](openai.md#post-v1modelsidoptions). Defaults to "
                             "`false`."};
 const RouteArg kLlamacppBackend{"llamacpp_backend", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
-                                "`llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, `nathanw`, `halobox`, "
+                                "`llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, "
                                 "or `system` for a `llama-server` already installed where supported."};
 const RouteArg kLlamacppArgs{"llamacpp_args", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
                              "`llamacpp`: extra arguments for `llama-server`. Flags Lemonade sets itself are rejected, "
@@ -220,6 +223,10 @@ public:
             LOG(INFO, "Server") << std::endl;
 
             // Saving keeps the stored value of a nulled key.
+            if (const auto* spec = backends::spec_for(info.recipe)) {
+                if (spec->definition && spec->definition->origin == backends::DefinitionOrigin::External)
+                    ctx_.router->resolve_effective_options(info, options);
+            }
             if (save_options) {
                 json saved_for_write = options.to_json();
                 if (!transient_saved_option_tombstones.empty()) {

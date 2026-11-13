@@ -68,6 +68,7 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
   The filename must look like `libggml-hip*.so*` (versioned sonames such as `libggml-hip.so.0` are accepted). This Linux-only variable is used solely to detect plugin availability; it is not forwarded to the GGML loader, so it does not change where llama.cpp actually loads the plugin from.
 
 ### nathanw
+- **Status**: staged, not active in this build; see [Container Backends](container-backends.md)
 - **Platform**: Linux only
 - **Hardware**: AMD Strix Halo (gfx1151)
 - **Use Case**: The Strix Halo Vulkan performance fork of llama.cpp, running ordinary GGUF models
@@ -76,6 +77,7 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 - **Enable**: `lemonade config set llamacpp.backend=nathanw`, or `--llamacpp nathanw` for one load
 
 ### halobox
+- **Status**: staged, not active in this build; see [Container Backends](container-backends.md)
 - **Platform**: Linux only
 - **Hardware**: AMD Strix Halo (gfx1151)
 - **Use Case**: [halo-box/strix-llama.cpp](https://github.com/halo-box/strix-llama.cpp), the Strix Halo community fork of llama.cpp, on ROCm with ordinary GGUF models

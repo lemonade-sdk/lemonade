@@ -1,0 +1,8 @@
+{
+  "source_depth":64,"effective_depth":64,"source_bytes":1048576,
+  "closure_source_nodes":262144,"effective_nodes":65536,"effective_bytes":1048576,
+  "work_nodes":1048576,"work_bytes":16777216,"pointer_bytes":4096,
+  "snapshot_documents":1024,"snapshot_source_bytes":67108864,
+  "chain_documents":8,"closure_source_bytes":8388608,"edits_per_source":1024,
+  "diagnostics":100,"retained_logical_bytes":134217728
+}

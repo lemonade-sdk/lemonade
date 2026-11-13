@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 #include "lemon/backends/backend_descriptor.h"
@@ -15,6 +16,7 @@ class CloudProviderRegistry;
 
 namespace backends {
 
+struct ConfiguredBackendEntry;
 struct BackendSpec;  // install/download spec, defined in backend_utils.h
 
 // Everything a backend's create() needs to build an instance.
@@ -24,9 +26,10 @@ struct BackendContext {
     BackendManager* backend_manager = nullptr;
     CloudProviderRegistry* cloud_registry = nullptr;
     const ModelInfo* model_info = nullptr;  // for per-create setup (cloud provider, ryzenai model path)
+    std::string backend_selector;
 };
 
-using BackendCreateFn = std::unique_ptr<WrappedServer> (*)(const BackendContext&);
+using BackendCreateFn = std::function<std::unique_ptr<WrappedServer>(const BackendContext&)>;
 
 // Convenience for the common create(): construct a server class from the
 // standard (log_level, model_manager, backend_manager) context fields.
@@ -53,10 +56,18 @@ struct BackendRegistration {
     BackendCreateFn create;
     const BackendSpec* spec;  // install/download spec, or nullptr (e.g. cloud has none)
     const BackendOps* ops;    // stateless model-management behavior (never null)
+    const ConfiguredBackendEntry* configured_entry = nullptr;
+    std::string backend_selector;
 };
 
 // All registered (descriptor, create, spec, ops) entries, in LEMON_BACKENDS order.
+const std::vector<BackendRegistration>& builtin_registrations();
 const std::vector<BackendRegistration>& all_registrations();
+
+// A builtin selector (e.g. a staged container variant of a shared recipe) is
+// inactive when its definition ships but no active registration serves it.
+bool is_inactive_backend_selector(const std::string& recipe, const std::string& backend);
+void require_active_backend_selector(const std::string& recipe, const std::string& backend);
 
 // Install/download spec for a recipe, or nullptr if the recipe has none.
 const BackendSpec* spec_for(const std::string& recipe);

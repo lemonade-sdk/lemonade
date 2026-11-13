@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lemon/backends/container_policy.h"
+
 #include <map>
 #include <string>
 #include <utility>
@@ -38,14 +40,6 @@ enum class VersionPolicy {
     AtLeast   // installed >= expected is acceptable (system-managed packages, e.g. flm)
 };
 
-// A container backend's image, and the device nodes and Linux permissions its
-// container gets.
-struct ContainerPolicy {
-    std::string image;
-    std::vector<std::string> devices;   // device nodes the container can open, e.g. "/dev/dri"
-    std::vector<std::string> cap_add;   // capabilities given back after --cap-drop=all
-};
-
 // What one backend is and where it comes from, shown to people choosing among
 // backends. The author wrote the engine or fork; the publisher builds the
 // artifact Lemonade installs, which is often someone else (llamacpp:rocm is
@@ -63,8 +57,8 @@ inline const char* slot_policy_to_string(SlotPolicy p) {
         case SlotPolicy::Standard:      return "standard";
         case SlotPolicy::ExclusiveNpu:  return "exclusive_npu";
         case SlotPolicy::CoexistByType: return "coexist_by_type";
-        case SlotPolicy::ExclusiveHost: return "exclusive_host";
         case SlotPolicy::Unmetered:     return "unmetered";
+        case SlotPolicy::ExclusiveHost: return "exclusive_host";
     }
     return "standard";
 }
@@ -146,8 +140,6 @@ struct BackendDescriptor {
     // fully resident (ds4 --ssd-streaming); changes how it is size-filtered (see
     // filter_for_host in model_manager.cpp).
     bool streams_model_from_storage = false;
-
-    // The backends in `support` that run from an OCI image, keyed by backend name.
     std::map<std::string, ContainerPolicy> containers;
 
     // {mode, capabilities}: a mode from supported_modes this backend serves only
@@ -181,5 +173,10 @@ struct BackendDescriptor {
         return block;
     }
 };
+
+inline BackendDescriptor with_about(BackendDescriptor descriptor, std::map<std::string, BackendAbout> about) {
+    descriptor.about = std::move(about);
+    return descriptor;
+}
 
 } // namespace lemon

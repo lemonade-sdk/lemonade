@@ -1,0 +1,509 @@
+{
+  "schema_version": 2,
+  "id": "binding-fixture",
+  "recipe": "binding-fixture",
+  "merge": {
+    "kind": "local",
+    "metadata": {
+      "display_name": "Synthetic export",
+      "server_name": "fake-engine",
+      "binary": "fake-engine",
+      "supported_modes": [
+        "chat"
+      ],
+      "options": [
+        {
+          "id": "engine",
+          "name": "fork_engine",
+          "cli_flag": "--fork-engine",
+          "value_type": "string",
+          "default_value": "cpu",
+          "help": "engine"
+        },
+        {
+          "id": "arguments",
+          "name": "fork_args",
+          "value_type": "string",
+          "default_value": ""
+        },
+        {
+          "id": "threads",
+          "name": "fork_threads",
+          "value_type": "integer",
+          "default_value": 4,
+          "minimum": 1,
+          "maximum": 64
+        }
+      ],
+      "support": [
+        {
+          "id": "cpu",
+          "backend": "cpu",
+          "tier": "guest",
+          "format": "native",
+          "supported_os": [
+            "linux"
+          ],
+          "devices": {
+            "cpu": [
+              "x86_64"
+            ]
+          },
+          "device_summary": "CPU"
+        }
+      ],
+      "default_device": "cpu",
+      "rocm_channels": [
+        "stable"
+      ]
+    },
+    "install": {
+      "strategy": "github_release",
+      "default_versions": {
+        "cpu": "v1"
+      },
+      "cases": [
+        {
+          "id": "cpu",
+          "repo": "test/engine",
+          "filename": {
+            "concat": [
+              "engine-",
+              {
+                "ref": "/install/version"
+              },
+              {
+                "ref": "/platform/os"
+              }
+            ]
+          },
+          "backend": [
+            "cpu"
+          ]
+        }
+      ]
+    },
+    "launch": {
+      "prepare_order": [
+        "backend",
+        "hook",
+        "artifacts",
+        "program",
+        "ports"
+      ],
+      "backend": {
+        "fixed": "cpu"
+      },
+      "program": {
+        "source": "managed",
+        "install_policy": "always"
+      },
+      "ports": [
+        {
+          "name": "http",
+          "reject_zero": false,
+          "error": ""
+        }
+      ],
+      "argv": [
+        {
+          "id": "device",
+          "flag": "--device",
+          "aliases": [
+            "-d"
+          ],
+          "value": "cpu",
+          "reserve": "always"
+        },
+        {
+          "id": "context",
+          "flag": "--context",
+          "value": {
+            "ref": "/launch/hook/context_size"
+          }
+        }
+      ],
+      "environment": {
+        "preset": "inherit",
+        "set": [
+          {
+            "name": "GGML_DISABLE_VULKAN",
+            "value": "1"
+          }
+        ]
+      },
+      "working_directory": {
+        "windows": "executable_directory",
+        "linux": "inherit",
+        "macos": "inherit"
+      },
+      "output": {
+        "inherit_levels": [
+          "info",
+          "debug",
+          "trace"
+        ],
+        "filter": true
+      },
+      "readiness": {
+        "port": "http",
+        "path": "/health",
+        "timeout": 600
+      },
+      "watchdog": {
+        "policy": "standard",
+        "port": "http",
+        "path": "/health"
+      },
+      "custom_args": {
+        "option": "arguments",
+        "reserved": [
+          "--device",
+          "-d"
+        ],
+        "error_prefix": "reserved",
+        "defaults": [
+          {
+            "id": "parallel",
+            "args": "--parallel 1",
+            "flag": "--parallel",
+            "stage": "launch",
+            "respect_merge_args": true
+          }
+        ]
+      },
+      "context_floor": {
+        "embedding": 8192
+      }
+    },
+    "operations": [
+      {
+        "id": "chat.buffered",
+        "operation": "chat_completion",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/fake/chat.buffered",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.max_tokens_alias",
+              "params": {}
+            },
+            {
+              "id": "llamacpp.tool_schema_limits",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": [
+            {
+              "id": "llamacpp.client_model",
+              "params": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "completion.buffered",
+        "operation": "completion",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/fake/completion.buffered",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.max_tokens_alias",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": [
+            {
+              "id": "llamacpp.client_model",
+              "params": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "responses.buffered",
+        "operation": "responses",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/fake/responses.buffered",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.tool_schema_limits",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": [
+            {
+              "id": "llamacpp.client_model",
+              "params": {}
+            }
+          ]
+        }
+      },
+      {
+        "id": "chat.streaming",
+        "operation": "chat_completion",
+        "delivery": "streaming",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_sse",
+          "method": "POST",
+          "path": "/fake/chat.streaming",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.max_tokens_alias",
+              "params": {}
+            },
+            {
+              "id": "llamacpp.tool_schema_limits",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": []
+        }
+      },
+      {
+        "id": "completion.streaming",
+        "operation": "completion",
+        "delivery": "streaming",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_sse",
+          "method": "POST",
+          "path": "/fake/completion.streaming",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": []
+        },
+        "response": {
+          "hooks": []
+        }
+      },
+      {
+        "id": "responses.streaming",
+        "operation": "responses",
+        "delivery": "streaming",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_sse",
+          "method": "POST",
+          "path": "/fake/responses.streaming",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": [
+            {
+              "id": "llamacpp.tool_schema_limits",
+              "params": {}
+            }
+          ]
+        },
+        "response": {
+          "hooks": []
+        }
+      },
+      {
+        "id": "embedding.buffered",
+        "operation": "embeddings",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/fake/embedding.buffered",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": []
+        },
+        "response": {
+          "hooks": []
+        }
+      },
+      {
+        "id": "reranking.buffered",
+        "operation": "reranking",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/fake/reranking.buffered",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": []
+        },
+        "response": {
+          "hooks": []
+        }
+      },
+      {
+        "id": "slots.buffered",
+        "operation": "slots",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "GET",
+          "path": "/fake/slots.buffered",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": []
+        },
+        "response": {
+          "hooks": []
+        }
+      },
+      {
+        "id": "slot-action.buffered",
+        "operation": "slot_action",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/fake/slot-action.buffered",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": []
+        },
+        "response": {
+          "hooks": []
+        }
+      },
+      {
+        "id": "tokenize.buffered",
+        "operation": "tokenize",
+        "delivery": "buffered",
+        "model_modes": [
+          "*"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/fake/tokenize.buffered",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity",
+          "hooks": []
+        },
+        "response": {
+          "hooks": []
+        }
+      }
+    ],
+    "hooks": {
+      "backend": {
+        "id": "llamacpp.backend.v1",
+        "params": {}
+      },
+      "install_context": {
+        "id": "llamacpp.install_context.v1",
+        "params": {}
+      },
+      "runtime_options": {
+        "id": "llamacpp.runtime_options.v1",
+        "params": {}
+      },
+      "launch": {
+        "id": "llamacpp.prepare.v1",
+        "params": {}
+      },
+      "environment": {
+        "id": "llamacpp.environment.v1",
+        "params": {}
+      },
+      "system": {
+        "id": "llamacpp.system.v1",
+        "params": {}
+      }
+    },
+    "artifacts": {
+      "main": {
+        "role": "main",
+        "strategy": "hook",
+        "missing_error": "missing model",
+        "hook": {
+          "id": "llamacpp.artifacts.v1",
+          "params": {}
+        }
+      }
+    }
+  }
+}

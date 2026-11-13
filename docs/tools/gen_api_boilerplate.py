@@ -455,6 +455,13 @@ DISTINCT_ARGUMENTS = {
     frozenset(members): reason
     for reason, members in [
         (
+            "A field of the backend definition under validation, not a request to register a model",
+            [
+                "routes/lemonade/backends/catalog.cpp:kDefinitionRecipe",
+                "routes/lemonade/models/register.cpp:kRecipe",
+            ],
+        ),
+        (
             "Anthropic's message format, converted to OpenAI's",
             [
                 "routes/anthropic/messages.cpp:kMessages",

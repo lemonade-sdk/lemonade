@@ -3,12 +3,9 @@
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
-#include "lemon/backends/llamacpp/llamacpp_server.h"
+#include "lemon/backends/configured/backend_builtin_sources.h"
 #include "lemon/backends/fastflowlm/fastflowlm_server.h"
-#include "lemon/backends/ryzenai/ryzenai_server.h"
 #include "lemon/backends/whispercpp/whispercpp_server.h"
-#include "lemon/backends/moonshine/moonshine_server.h"
-#include "lemon/backends/kokoro/kokoro_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/vllm/vllm_server.h"
 #include "lemon/server_capabilities.h"
@@ -658,6 +655,26 @@ void Router::evict_all_npu_servers() {
     }
 }
 
+void Router::enforce_host_exclusivity_locked(SlotPolicy incoming, const std::string& model, ResidencyClass residency) {
+    if (incoming == SlotPolicy::Unmetered) return;
+    std::vector<WrappedServer*> displaced;
+    for (const auto& server : loaded_servers_) {
+        if (!server->is_backend_alive()) continue;
+        const auto policy = server->effective_slot_policy(server->get_recipe_options());
+        if (policy == SlotPolicy::Unmetered ||
+            (incoming != SlotPolicy::ExclusiveHost && policy != SlotPolicy::ExclusiveHost)) continue;
+        if (server->is_busy() || should_reject_residency_displacement(residency, server->get_residency_class()))
+            throw RouterResidencyConflictException(model, server->get_model_name(), "backend requires exclusive host access");
+        displaced.push_back(server.get());
+    }
+    for (auto* server : displaced) {
+        evict_server(server, EVICTION_TIMEOUT);
+        if (std::any_of(loaded_servers_.begin(), loaded_servers_.end(),
+            [server](const auto& item) { return item.get() == server; }))
+            throw std::runtime_error("Host-exclusive admission could not evict resident model");
+    }
+}
+
 void Router::evict_server(WrappedServer* server, int timeout_seconds) {
     if (!server) return;
 
@@ -721,7 +738,7 @@ void Router::simulate_vram_pressure(double pct) {
     }
 }
 
-std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& model_info) {
+std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& model_info, const RecipeOptions* options) {
     std::string log_level = config_->log_level();
 
     backends::BackendContext ctx;
@@ -730,6 +747,10 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     ctx.backend_manager = backend_manager_;
     ctx.cloud_registry = cloud_registry_;
     ctx.model_info = &model_info;
+    if (model_info.recipe == "llamacpp" && options) {
+        const auto backend = options->get_option("llamacpp_backend");
+        if (backend.is_string()) ctx.backend_selector = backend.get<std::string>();
+    }
 
     // The backend registry binds each recipe to its create() (see LEMON_BACKENDS).
     std::unique_ptr<WrappedServer> new_server = backends::create_server(model_info.recipe, ctx);
@@ -739,10 +760,15 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
         return new_server;
     }
 
+    if (backends::builtin_source_declares_recipe(model_info.recipe))
+        throw std::runtime_error("Builtin backend recipe is inactive: " + model_info.recipe);
+
     // Unknown recipe: fall back to llamacpp, preserving the historical default.
     LOG(DEBUG, "Router") << "No registered backend for recipe '" << model_info.recipe
                          << "', defaulting to LlamaCpp" << std::endl;
-    return std::make_unique<backends::LlamaCppServer>(log_level, model_manager_, backend_manager_);
+    auto fallback = backends::create_server("llamacpp", ctx);
+    if (!fallback) throw std::logic_error("Finalized llama.cpp backend unavailable");
+    return fallback;
 }
 
 bool Router::begin_exclusive(std::atomic<bool>* cancel) {
@@ -965,34 +991,7 @@ void Router::load_model(const std::string& model_name,
         ModelType model_type = model_info.type;
         DeviceType device_type = model_info.device;
 
-        // A host-exclusive backend shares the machine with no other local model:
-        // loading it evicts them all, and loading any other local model evicts it.
-        // Cloud models hold no local memory and stay.
-        if (!is_unmetered_recipe(model_info.recipe)) {
-            const bool exclusive_load =
-                slot_policy_for_recipe(model_info.recipe) == SlotPolicy::ExclusiveHost;
-            std::vector<std::pair<WrappedServer*, std::string>> displaced;
-            for (const auto& server : loaded_servers_) {
-                if (!server->is_backend_alive()) continue;
-                const std::string recipe = server->get_recipe_options().get_recipe();
-                const SlotPolicy policy = slot_policy_for_recipe(recipe);
-                if (policy == SlotPolicy::Unmetered) continue;
-                if (!exclusive_load && policy != SlotPolicy::ExclusiveHost) continue;
-                const std::string reason =
-                    (exclusive_load ? model_info.recipe : recipe) + " requires the machine to itself";
-                if (should_reject_residency_displacement(requested_residency_class,
-                                                         server->get_residency_class())) {
-                    throw RouterResidencyConflictException(canonical_model_name,
-                                                           server->get_model_name(), reason);
-                }
-                displaced.emplace_back(server.get(), reason);
-            }
-            for (const auto& [server, reason] : displaced) {
-                LOG(INFO, "Router") << reason << ", evicting: " << server->get_model_name()
-                                    << std::endl;
-                evict_server(server);
-            }
-        }
+        enforce_host_exclusivity_locked(slot_policy_for_recipe(model_info.recipe), canonical_model_name, requested_residency_class);
 
         // NPU EXCLUSIVITY CHECK — driven by the backend's slot policy (descriptor).
         //   ExclusiveNpu (ryzenai-llm, whisper-on-npu): lock the entire NPU,
@@ -1115,7 +1114,7 @@ void Router::load_model(const std::string& model_name,
         LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
 
         // Create new backend server
-        std::unique_ptr<WrappedServer> new_server = create_backend_server(model_info);
+        std::unique_ptr<WrappedServer> new_server = create_backend_server(model_info, &effective_options);
 
         // Set model metadata
         new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
@@ -1251,7 +1250,7 @@ void Router::load_model(const std::string& model_name,
             is_loading_ = true;
 
             // Create new server for retry
-            std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
+            std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info, &effective_options);
             retry_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
             retry_server->set_ctx_size_auto(ctx_size_auto);
             retry_server->set_residency_class(requested_residency_class);
@@ -1619,7 +1618,8 @@ std::string Router::get_streaming_transcription_address(const std::string& model
     if (!server) {
         return "";
     }
-    auto* streaming = dynamic_cast<IStreamingTranscriptionServer*>(server);
+    auto* streaming = operation_adapter<IStreamingTranscriptionServer>(
+        *server, BackendOperation::StreamingTranscription, OperationDelivery::Realtime, server->get_model_type());
     return streaming ? streaming->get_streaming_address() : "";
 }
 
@@ -1886,7 +1886,7 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                 if (request.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request["max_tokens"]);
                 if (request.contains("max_completion_tokens")) span->set_attribute("llm.config.max_completion_tokens", request["max_completion_tokens"]);
             }
-            return server->chat_completion(request);
+            return server->dispatch_completion_operation(BackendOperation::ChatCompletion, request);
         });
 
         if (span) {
@@ -2004,7 +2004,7 @@ json Router::completion(const json& request) {
                 if (request.contains("top_p")) span->set_attribute("llm.config.top_p", request["top_p"]);
                 if (request.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request["max_tokens"]);
             }
-            return server->completion(request);
+            return server->dispatch_completion_operation(BackendOperation::Completion, request);
         });
 
         if (span) {
@@ -2067,7 +2067,12 @@ json Router::embeddings(const json& request) {
                 span->set_attribute("embedding.checkpoint", identity.checkpoint);
                 span->set_attribute("embedding.recipe", identity.recipe);
             }
-            auto embeddings_server = dynamic_cast<IEmbeddingsServer*>(server);
+            auto embeddings_server = operation_adapter<IEmbeddingsServer>(
+                *server, BackendOperation::Embeddings, OperationDelivery::Buffered, server->get_model_type());
+            if (!embeddings_server) {
+                embeddings_server = operation_rejection_adapter<IEmbeddingsServer>(
+                    *server, BackendOperation::Embeddings, OperationDelivery::Buffered, server->get_model_type());
+            }
             if (!embeddings_server) {
                 return ErrorResponse::from_exception(
                     UnsupportedOperationException("Embeddings", device_type_to_string(server->get_device_type()))
@@ -2123,7 +2128,8 @@ json Router::reranking(const json& request) {
                 span->set_attribute("reranker.checkpoint", identity.checkpoint);
                 span->set_attribute("reranker.recipe", identity.recipe);
             }
-            auto reranking_server = dynamic_cast<IRerankingServer*>(server);
+            auto reranking_server = operation_adapter<IRerankingServer>(
+                *server, BackendOperation::Reranking, OperationDelivery::Buffered, server->get_model_type());
             if (!reranking_server) {
                 return ErrorResponse::from_exception(
                     UnsupportedOperationException("Reranking", device_type_to_string(server->get_device_type()))
@@ -2163,7 +2169,8 @@ json Router::reranking(const json& request) {
 json Router::classify(const json& request) {
     return json(classifier_inference(
         request, "classify", false, [&](WrappedServer* server) -> nlohmann::ordered_json {
-        auto classification_server = dynamic_cast<IClassificationServer*>(server);
+        auto classification_server = operation_adapter<IClassificationServer>(
+            *server, BackendOperation::Classification, OperationDelivery::Buffered, server->get_model_type());
         if (!classification_server) {
             return ErrorResponse::from_exception(
                 UnsupportedOperationException("Classification", device_type_to_string(server->get_device_type()))
@@ -2245,7 +2252,8 @@ json Router::get_slots() {
         }
 
         // Check if server supports slots capability
-        slots_server = dynamic_cast<ISlotsServer*>(server);
+        slots_server = operation_adapter<ISlotsServer>(
+            *server, BackendOperation::Slots, OperationDelivery::Buffered, server->get_model_type());
         if (!slots_server) {
             return ErrorResponse::from_exception(
                 UnsupportedOperationException("Slots", device_type_to_string(server->get_device_type()))
@@ -2285,7 +2293,8 @@ json Router::slots_action(int slot_id, const std::string& action, const json& re
         }
 
         // Check if server supports slots capability
-        slots_server = dynamic_cast<ISlotsServer*>(server);
+        slots_server = operation_adapter<ISlotsServer>(
+            *server, BackendOperation::SlotAction, OperationDelivery::Buffered, server->get_model_type());
         if (!slots_server) {
             return ErrorResponse::from_exception(
                 UnsupportedOperationException("Slots", device_type_to_string(server->get_device_type()))
@@ -2325,7 +2334,8 @@ json Router::tokenize(const json& request_body) {
         }
 
         // Check if server supports tokenize capability
-        tokenizer_server = dynamic_cast<ITokenizerServer*>(server);
+        tokenizer_server = operation_adapter<ITokenizerServer>(
+            *server, BackendOperation::Tokenize, OperationDelivery::Buffered, server->get_model_type());
         if (!tokenizer_server) {
             return ErrorResponse::from_exception(
                 UnsupportedOperationException("Tokenization", device_type_to_string(server->get_device_type()))
@@ -2352,13 +2362,18 @@ json Router::tokenize(const json& request_body) {
 
 json Router::responses(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
-        return server->responses(request);
+        return server->dispatch_completion_operation(BackendOperation::Responses, request);
     });
 }
 
 json Router::audio_transcriptions(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
-        auto transcription_server = dynamic_cast<ITranscriptionServer*>(server);
+        auto transcription_server = operation_adapter<ITranscriptionServer>(
+            *server, BackendOperation::Transcription, OperationDelivery::Buffered, server->get_model_type());
+        if (!transcription_server) {
+            transcription_server = operation_rejection_adapter<ITranscriptionServer>(
+                *server, BackendOperation::Transcription, OperationDelivery::Buffered, server->get_model_type());
+        }
         if (!transcription_server) {
             return ErrorResponse::from_exception(
                 UnsupportedOperationException("Audio transcription", device_type_to_string(server->get_device_type()))
@@ -2368,14 +2383,15 @@ json Router::audio_transcriptions(const json& request) {
     });
 }
 
-void Router::audio_speech(const json& request, httplib::DataSink& sink) {
+void Router::audio_speech(const json& request, httplib::DataSink& sink, OperationDelivery delivery) {
     execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
         if (server->get_model_type() != ModelType::TTS) {
             throw InvalidRequestException(
                 "model '" + server->get_model_name() +
                 "' is not a text-to-speech model");
         }
-        auto tts_server = dynamic_cast<ITextToSpeechServer*>(server);
+        auto tts_server = operation_adapter<ITextToSpeechServer>(
+            *server, BackendOperation::TextToSpeech, delivery, server->get_model_type());
         if (!tts_server) {
             throw UnsupportedOperationException("Text to speech", device_type_to_string(server->get_device_type()));
         }
@@ -2385,33 +2401,37 @@ void Router::audio_speech(const json& request, httplib::DataSink& sink) {
 
 std::vector<std::string> Router::audio_speech_supported_formats(const std::string& model_name) {
     std::lock_guard<std::mutex> lock(load_mutex_);
-    auto tts_server = dynamic_cast<ITextToSpeechServer*>(
-        find_server_by_model_name(resolve_model_name(model_name)));
+    auto tts_server = operation_metadata_adapter<ITextToSpeechServer>(
+        find_server_by_model_name(resolve_model_name(model_name)), BackendOperation::TextToSpeech,
+        OperationDelivery::Buffered);
     return tts_server ? tts_server->supported_audio_formats() : std::vector<std::string>{};
 }
 
 std::vector<std::string> Router::audio_speech_supported_streaming_formats(const std::string& model_name) {
     std::lock_guard<std::mutex> lock(load_mutex_);
-    auto tts_server = dynamic_cast<ITextToSpeechServer*>(
-        find_server_by_model_name(resolve_model_name(model_name)));
+    auto tts_server = operation_metadata_adapter<ITextToSpeechServer>(
+        find_server_by_model_name(resolve_model_name(model_name)), BackendOperation::TextToSpeech,
+        OperationDelivery::Streaming);
     return tts_server ? tts_server->supported_streaming_audio_formats() : std::vector<std::string>{};
 }
 
 AudioFormatMetadata Router::audio_speech_format_metadata(
-    const std::string& model_name, const std::string& response_format) {
+    const std::string& model_name, const std::string& response_format, OperationDelivery delivery) {
     std::lock_guard<std::mutex> lock(load_mutex_);
     auto* server = find_server_by_model_name(resolve_model_name(model_name));
     if (!server || server->get_model_type() != ModelType::TTS) {
         return {};
     }
-    auto* tts_server = dynamic_cast<ITextToSpeechServer*>(server);
+    auto* tts_server = operation_adapter<ITextToSpeechServer>(
+        *server, BackendOperation::TextToSpeech, delivery, server->get_model_type());
     return tts_server ? tts_server->audio_format_metadata(response_format)
                       : AudioFormatMetadata{};
 }
 
 json Router::image_generations(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
-        auto image_server = dynamic_cast<IImageServer*>(server);
+        auto image_server = operation_adapter<IImageServer>(
+            *server, BackendOperation::ImageGeneration, OperationDelivery::Buffered, server->get_model_type());
         if (!image_server) {
             return ErrorResponse::from_exception(
                 UnsupportedOperationException("Image generation", device_type_to_string(server->get_device_type()))
@@ -2423,7 +2443,8 @@ json Router::image_generations(const json& request) {
 
 json Router::image_edits(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
-        auto image_server = dynamic_cast<IImageServer*>(server);
+        auto image_server = operation_adapter<IImageServer>(
+            *server, BackendOperation::ImageEdits, OperationDelivery::Buffered, server->get_model_type());
         if (!image_server) {
             return ErrorResponse::from_exception(
                 UnsupportedOperationException("Image editing", device_type_to_string(server->get_device_type()))
@@ -2435,7 +2456,12 @@ json Router::image_edits(const json& request) {
 
 json Router::image_variations(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
-        auto image_server = dynamic_cast<IImageServer*>(server);
+        auto image_server = operation_adapter<IImageServer>(
+            *server, BackendOperation::ImageVariations, OperationDelivery::Buffered, server->get_model_type());
+        if (!image_server) {
+            image_server = operation_rejection_adapter<IImageServer>(
+                *server, BackendOperation::ImageVariations, OperationDelivery::Buffered, server->get_model_type());
+        }
         if (!image_server) {
             return ErrorResponse::from_exception(
                 UnsupportedOperationException("Image variations", device_type_to_string(server->get_device_type()))
@@ -2452,7 +2478,8 @@ void Router::audio_generations(const json& request, httplib::DataSink& sink) {
                 "model '" + server->get_model_name() +
                 "' is not an audio-generation model");
         }
-        auto audio_server = dynamic_cast<IAudioGenerationServer*>(server);
+        auto audio_server = operation_adapter<IAudioGenerationServer>(
+            *server, BackendOperation::AudioGeneration, OperationDelivery::Buffered, server->get_model_type());
         if (!audio_server) {
             throw UnsupportedOperationException("Audio generation", device_type_to_string(server->get_device_type()));
         }
@@ -2462,8 +2489,9 @@ void Router::audio_generations(const json& request, httplib::DataSink& sink) {
 
 std::vector<std::string> Router::audio_generation_supported_formats(const std::string& model_name) {
     std::lock_guard<std::mutex> lock(load_mutex_);
-    auto audio_server = dynamic_cast<IAudioGenerationServer*>(
-        find_server_by_model_name(resolve_model_name(model_name)));
+    auto audio_server = operation_metadata_adapter<IAudioGenerationServer>(
+        find_server_by_model_name(resolve_model_name(model_name)), BackendOperation::AudioGeneration,
+        OperationDelivery::Buffered);
     return audio_server ? audio_server->supported_audio_formats() : std::vector<std::string>{};
 }
 
@@ -2474,14 +2502,16 @@ AudioFormatMetadata Router::audio_generation_format_metadata(
     if (!server || server->get_model_type() != ModelType::AUDIO_GENERATION) {
         return {};
     }
-    auto* audio_server = dynamic_cast<IAudioGenerationServer*>(server);
+    auto* audio_server = operation_adapter<IAudioGenerationServer>(
+        *server, BackendOperation::AudioGeneration, OperationDelivery::Buffered, server->get_model_type());
     return audio_server ? audio_server->audio_format_metadata(response_format)
                         : AudioFormatMetadata{};
 }
 
 void Router::model_3d_generations(const json& request, httplib::DataSink& sink) {
     execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
-        auto model_server = dynamic_cast<IModel3DServer*>(server);
+        auto model_server = operation_adapter<IModel3DServer>(
+            *server, BackendOperation::Model3DGeneration, OperationDelivery::Buffered, server->get_model_type());
         if (!model_server) {
             throw UnsupportedOperationException("3D generation", device_type_to_string(server->get_device_type()));
         }
@@ -2781,7 +2811,7 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
                 if (request_json.contains("max_completion_tokens")) span->set_attribute("llm.config.max_completion_tokens", request_json["max_completion_tokens"]);
             }
 
-            server->forward_streaming_request("/v1/chat/completions", request_body, telemetry_sink, true, 0,
+            server->dispatch_streaming_operation(BackendOperation::ChatCompletion, request_body, telemetry_sink, true, 0,
                 [this, identity, span, accumulated_text, accumulated_reasoning, accumulated_tool_calls, server](
                     const StreamingProxy::TelemetryData& telemetry) {
                     if (!telemetry.error_message.empty()) {
@@ -2907,7 +2937,7 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
                 if (request_json.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request_json["max_tokens"]);
             }
 
-            server->forward_streaming_request("/v1/completions", request_body, telemetry_sink, true, 0,
+            server->dispatch_streaming_operation(BackendOperation::Completion, request_body, telemetry_sink, true, 0,
                 [this, identity, span, accumulated_text, server](
                     const StreamingProxy::TelemetryData& telemetry) {
                     if (!telemetry.error_message.empty()) {
@@ -3019,7 +3049,7 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
                 if (request_json.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request_json["max_tokens"]);
             }
 
-            server->forward_streaming_request("/v1/responses", request_body, telemetry_sink, true, 0,
+            server->dispatch_streaming_operation(BackendOperation::Responses, request_body, telemetry_sink, true, 0,
                 [this, identity, span, accumulated_text, server](
                     const StreamingProxy::TelemetryData& telemetry) {
                     if (!telemetry.error_message.empty()) {

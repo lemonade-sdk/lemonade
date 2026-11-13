@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <mutex>
 #include <string>
 #include <functional>
@@ -12,10 +13,15 @@ namespace lemon {
 using json = nlohmann::json;
 
 class DownloadManager;
+struct ContainerPolicy;
+namespace utils { class ContainerManager; }
 
 class BackendManager {
 public:
-    BackendManager();
+    explicit BackendManager(std::shared_ptr<utils::ContainerManager> containers = {});
+    std::string container_pin(const ContainerPolicy& policy) const;
+    void install_container_image(const std::string& image, bool force = false, DownloadProgressCallback progress = nullptr);
+    bool has_container_image(const std::string& image) const;
 
     // Server-owned auto-installs publish to the same download list as /install.
     void set_download_manager(DownloadManager* downloads) { download_manager_ = downloads; }
@@ -54,6 +60,7 @@ public:
         std::string repo;
         std::string filename;
         std::string version;
+        std::string sha256;
     };
 
     // Unlike the enrichment helpers above, this returns the repo and lets
@@ -82,6 +89,8 @@ private:
 
     // Cached backend_versions.json (loaded once at construction)
     json backend_versions_;
+    std::shared_ptr<utils::ContainerManager> containers_;
+    friend struct BackendManagerTestAccess;
 
     // Cached "latest" GitHub release tags, keyed by repo (e.g. "ggml-org/llama.cpp").
     // Populated lazily on first resolution; never invalidated within a process.

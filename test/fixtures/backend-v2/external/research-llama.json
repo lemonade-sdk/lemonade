@@ -1,0 +1,125 @@
+{
+  "schema_version": 2,
+  "id": "research-llama",
+  "recipe": "research-llama",
+  "extends": {
+    "builtin": "llamacpp",
+    "contract": 1
+  },
+  "merge": {
+    "metadata": {
+      "display_name": "Research Llama CPU",
+      "server_name": "research-llama-server",
+      "log_category": "ResearchLlama",
+      "web_display_name": "Research Llama",
+      "config_section": "research-llama",
+      "default_device": "cpu",
+      "binary": {
+        "windows": "research-llama-server.exe",
+        "linux": "research-llama-server",
+        "macos": "research-llama-server"
+      }
+    },
+    "launch": {
+      "prepare_order": [
+        "backend",
+        "hook",
+        "artifacts",
+        "ports",
+        "program"
+      ],
+      "program": {
+        "source": "external_or_managed",
+        "install_policy": "always"
+      },
+      "environment": {
+        "preset": "inherit"
+      },
+      "direct_stream_policy": "bound_passthrough"
+    }
+  },
+  "edits": [
+    {"op": "remove", "path": "/hooks/install_context"},
+    {"op": "remove", "path": "/hooks/runtime_options"},
+    {"op": "remove", "path": "/hooks/environment"},
+    {"op": "remove", "path": "/hooks/system"},
+    {
+      "op": "replace",
+      "path": "/install",
+      "value": {
+        "strategy": "external_only",
+        "install_recipe": "research-llama",
+        "pin_recipe": "research-llama",
+        "cases": []
+      }
+    },
+    {"op": "replace", "path": "/metadata/options", "match": {"id": "backend"}, "at": "/name", "value": "research_llama_backend"},
+    {"op": "replace", "path": "/metadata/options", "match": {"id": "backend"}, "at": "/help", "value": "Research Llama backend"},
+    {"op": "replace", "path": "/metadata/options", "match": {"id": "backend"}, "at": "/group", "value": "Research Llama Options"},
+    {"op": "remove", "path": "/metadata/options", "match": {"id": "backend"}, "at": "/cli_flag"},
+    {"op": "replace", "path": "/metadata/options", "match": {"id": "device"}, "at": "/name", "value": "research_llama_device"},
+    {"op": "replace", "path": "/metadata/options", "match": {"id": "device"}, "at": "/help", "value": "Research Llama device"},
+    {"op": "replace", "path": "/metadata/options", "match": {"id": "device"}, "at": "/group", "value": "Research Llama Options"},
+    {"op": "remove", "path": "/metadata/options", "match": {"id": "device"}, "at": "/cli_flag"},
+    {"op": "replace", "path": "/metadata/options", "match": {"id": "args"}, "at": "/name", "value": "research_llama_args"},
+    {"op": "replace", "path": "/metadata/options", "match": {"id": "args"}, "at": "/help", "value": "Research Llama args"},
+    {"op": "replace", "path": "/metadata/options", "match": {"id": "args"}, "at": "/group", "value": "Research Llama Options"},
+    {"op": "remove", "path": "/metadata/options", "match": {"id": "args"}, "at": "/cli_flag"},
+    {"op": "clear", "path": "/metadata/support"},
+    {
+      "op": "add",
+      "path": "/metadata/support",
+      "value": {
+        "id": "cpu-linux-x64",
+        "backend": "cpu",
+        "format": "native",
+        "tier": "core",
+        "device_summary": "x86-64 CPU",
+        "devices": {
+          "cpu": [
+            "x86_64"
+          ]
+        },
+        "supported_os": [
+          "linux"
+        ],
+        "arch_gates": {}
+      }
+    },
+    {"op": "clear", "path": "/launch/custom_args/defaults"},
+    {
+      "op": "add",
+      "path": "/launch/custom_args/defaults",
+      "value": {
+        "id": "parallel",
+        "flag": "--parallel",
+        "args": "--parallel 2",
+        "stage": "launch",
+        "respect_merge_args": true
+      }
+    },
+    {
+      "op": "add",
+      "path": "/launch/custom_args/defaults",
+      "value": {
+        "id": "cache-k",
+        "flag": "--cache-type-k",
+        "args": "--cache-type-k q8_0",
+        "stage": "launch",
+        "respect_merge_args": true
+      }
+    },
+    {
+      "op": "add",
+      "path": "/launch/custom_args/defaults",
+      "value": {
+        "id": "cache-v",
+        "flag": "--cache-type-v",
+        "args": "--cache-type-v q8_0",
+        "stage": "launch",
+        "respect_merge_args": true
+      }
+    },
+    {"op": "add", "path": "/launch/environment/set", "value": {"name": "GGML_DISABLE_VULKAN", "value": "1"}}
+  ]
+}

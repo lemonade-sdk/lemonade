@@ -104,25 +104,32 @@ inline AutoContextBudget estimate_auto_context_budget(double free_gib,
                                                        double kv_bytes_per_token,
                                                        bool gpu,
                                                        bool speculative,
-                                                       bool unified_gpu = false) {
+                                                       bool unified_gpu = false,
+                                                       std::optional<double> kv_budget_gib = std::nullopt) {
     AutoContextBudget result;
     if (!std::isfinite(free_gib) || !std::isfinite(weights_gib) ||
         !std::isfinite(kv_bytes_per_token) ||
-        free_gib <= 0.0 || weights_gib <= 0.0 || kv_bytes_per_token <= 0.0) {
+        free_gib <= 0.0 || (!kv_budget_gib && weights_gib <= 0.0) || kv_bytes_per_token <= 0.0) {
         return result;
     }
 
-    result.model_gib = weights_gib;
-    const AutoContextReservePolicy& reserve_policy = !gpu ? AUTO_CTX_HOST_RESERVE
-        : unified_gpu ? AUTO_CTX_UNIFIED_GPU_RESERVE : AUTO_CTX_DISCRETE_GPU_RESERVE;
-    const double memory_headroom_gib = reserve_policy.memory_headroom.estimate(free_gib);
-    const double compute_workspace_gib =
-        reserve_policy.compute_workspace.estimate(result.model_gib);
-    const double speculative_workspace_gib =
-        speculative ? AUTO_CTX_SPECULATIVE_WORKSPACE_GIB : 0.0;
-    result.reserve_gib = memory_headroom_gib + compute_workspace_gib +
-        speculative_workspace_gib;
-    result.kv_gib = (std::max)(0.0, free_gib - result.model_gib - result.reserve_gib);
+    if (kv_budget_gib) {
+        if (!std::isfinite(*kv_budget_gib) || *kv_budget_gib > free_gib) return result;
+        result.kv_gib = (std::max)(0.0, *kv_budget_gib);
+        result.reserve_gib = free_gib - result.kv_gib;
+    } else {
+        result.model_gib = weights_gib;
+        const AutoContextReservePolicy& reserve_policy = !gpu ? AUTO_CTX_HOST_RESERVE
+            : unified_gpu ? AUTO_CTX_UNIFIED_GPU_RESERVE : AUTO_CTX_DISCRETE_GPU_RESERVE;
+        const double memory_headroom_gib = reserve_policy.memory_headroom.estimate(free_gib);
+        const double compute_workspace_gib =
+            reserve_policy.compute_workspace.estimate(result.model_gib);
+        const double speculative_workspace_gib =
+            speculative ? AUTO_CTX_SPECULATIVE_WORKSPACE_GIB : 0.0;
+        result.reserve_gib = memory_headroom_gib + compute_workspace_gib +
+            speculative_workspace_gib;
+        result.kv_gib = (std::max)(0.0, free_gib - result.model_gib - result.reserve_gib);
+    }
 
     constexpr double bytes_per_gib = 1024.0 * 1024.0 * 1024.0;
     const double tokens = std::floor(result.kv_gib * bytes_per_gib / kv_bytes_per_token);

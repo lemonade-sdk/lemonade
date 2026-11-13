@@ -1,0 +1,5 @@
+[
+  {"edit":{"op":"remove","path":"/metadata/display_name"},"code":"required","pointer":"/edits/0","effective_pointer":"/metadata/display_name"},
+  {"edit":{"op":"replace","path":"/metadata/display_name","value":17},"code":"invalid_type","pointer":"/edits/0/value","effective_pointer":"/metadata/display_name"},
+  {"edit":{"op":"replace","path":"/launch/argv/0/flag","value":"--secret"},"code":"array_index_forbidden","pointer":"/edits/0/path"}
+]

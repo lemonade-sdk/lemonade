@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lemon/backends/backend_option_contract.h"
+
 #include <string>
 #include <vector>
 #include "lemon/backends/backend_descriptor.h"
@@ -13,6 +15,7 @@ namespace backends {
 // and is server-only.
 
 // All registered descriptors, in LEMON_BACKENDS order.
+const std::vector<const BackendDescriptor*>& builtin_descriptors();
 const std::vector<const BackendDescriptor*>& all_descriptors();
 
 // Descriptor for a recipe, or nullptr if the recipe has no registered backend.
