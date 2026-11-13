@@ -51,7 +51,8 @@ THEROCK_URL = "https://stable.repo.amd.com/rocm/core/tarball/"
 
 # Client GPU families. Datacenter targets (gfx942, gfx950) are left out on purpose.
 VLLM_FAMILIES = ["gfx110X", "gfx120X", "gfx1150", "gfx1151"]
-THEROCK_FAMILIES = ["gfx103X-all", "gfx110X-all", "gfx1150", "gfx1151", "gfx1152", "gfx1153", "gfx120X-all"]
+# Instinct (datacenter) TheRock targets are left out, like datacenter vLLM above.
+THEROCK_DATACENTER = {"gfx908", "gfx90a", "gfx94X-dcgpu", "gfx950-dcgpu"}
 THEROCK_OS = ["windows", "linux"]
 
 # Where each pinned backend comes from. This copies the repo names hardcoded in
@@ -202,8 +203,14 @@ def build_plan(versions: dict, set_name: str, include_pwilkin: bool, lemonade_ta
     if chosen["therock"] and only_group in (None, "therock"):
         ver = versions["therock"]["version"]
         item = Item(group="therock", folder=f"therock/{ver}", source=THEROCK_URL)
+        # Same arch -> tarball name mapping Lemonade uses in install_therock().
+        mapping = versions["therock"].get("url_mapping", {})
+        families = sorted({mapping.get(a, a) for a in versions["therock"].get("architectures", [])}
+                          | set(mapping.values()))
         for os_name in THEROCK_OS:
-            for fam in THEROCK_FAMILIES:
+            for fam in families:
+                if fam in THEROCK_DATACENTER:
+                    continue
                 name = f"therock-dist-{os_name}-{fam}-{ver}.tar.gz"
                 size = head_size(THEROCK_URL + name)
                 if size is None:
