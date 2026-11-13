@@ -3,7 +3,7 @@
 
 Runs daily. For each open PR matching a notification rule, posts one
 GitHub comment tagging the right maintainer — but only if no triage-notify
-comment has been posted in the last 7 days, to avoid spam.
+comment has been posted in the last 30 days, to avoid spam.
 
 Rules (in priority order):
   1. rfc-blocked       — rfc:required label + 14d+ inactive → @jeremyfowers
@@ -65,7 +65,7 @@ WRITE_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 FIRST_TIME_ASSOCIATIONS = {"FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER"}
 
 SENTINEL = "<!-- triage-notify:"
-DEDUP_DAYS = 7
+DEDUP_DAYS = 30
 MAX_PRS_PER_RUN = 20
 
 
