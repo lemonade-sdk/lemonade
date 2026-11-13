@@ -5,6 +5,7 @@
 #include "lemon/gguf_reader.h"
 #include "lemon/gguf_shard_utils.h"
 #include "lemon/hf_variants.h"
+#include "lemon/llamacpp_architectures_generated.h"
 #include "lemon/models/model_index.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
@@ -18,12 +19,12 @@ namespace fs = std::filesystem;
 namespace lemon {
 namespace models {
 
-ScanCatalog ScanCatalog::for_dir(const std::string& extra_models_dir) {
+ScanCatalog ScanCatalog::for_dir(const std::string& extra_models_dir, bool local_llamacpp) {
     DeviceType device = lemon::get_device_type_from_recipe(extra_model_recipe);
     if (const auto* desc = lemon::backends::descriptor_for(extra_model_recipe)) {
         device = desc->default_device;
     }
-    return ScanCatalog(extra_models_dir, device);
+    return ScanCatalog(extra_models_dir, device, local_llamacpp);
 }
 
 using namespace lemon::utils;
@@ -154,6 +155,57 @@ bool is_draft_gguf_filename(std::string filename) {
     return filename.rfind("mtp-", 0) == 0 ||
            filename.find("-mtp-ud-") != std::string::npos ||
            filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf";
+}
+
+// Empty when llama.cpp can run the file. A header that cannot be read keeps the
+// file: discovery predates this check, and an unreadable file fails at load time
+// with a clearer error than its absence from the list would give.
+std::string llamacpp_unsupported_reason(const fs::path& gguf_path) {
+    lemon::GgufMetadata metadata;
+    if (!lemon::read_gguf_metadata(metadata, path_to_utf8(gguf_path))) return {};
+    if (metadata.architecture.empty()) return "it declares no architecture";
+    if (!lemon::llamacpp_architecture_is_supported_by_all_backends(metadata.architecture)) {
+        return "llama.cpp does not support its architecture '" + metadata.architecture + "'";
+    }
+    return {};
+}
+
+// Only the first shard of a split GGUF carries its architecture, so it decides
+// for the whole set. mmproj files are attached by name and never checked.
+void drop_unrunnable(std::vector<fs::path>& files, bool keep_unknown) {
+    if (keep_unknown) return;
+    std::sort(files.begin(), files.end(), [](const fs::path& lhs, const fs::path& rhs) {
+        return lhs.generic_string() < rhs.generic_string();
+    });
+    std::map<std::pair<std::string, int>, bool> shard_verdicts;
+    std::vector<fs::path> kept;
+    for (const auto& file : files) {
+        const std::string filename = file.filename().string();
+        if (gguf_reader_detail::contains_ignore_case(filename, "mmproj")) {
+            kept.push_back(file);
+            continue;
+        }
+        std::string shard_base;
+        int shard_total = 0;
+        const bool sharded = is_gguf_shard_filename(filename, &shard_base, &shard_total);
+        const auto key = std::make_pair(shard_base, shard_total);
+        if (sharded) {
+            auto it = shard_verdicts.find(key);
+            if (it != shard_verdicts.end()) {
+                if (it->second) kept.push_back(file);
+                continue;
+            }
+        }
+        const std::string reason = llamacpp_unsupported_reason(file);
+        if (sharded) shard_verdicts[key] = reason.empty();
+        if (reason.empty()) {
+            kept.push_back(file);
+        } else {
+            LOG(INFO, "ModelManager") << "Skipping " << path_to_utf8(file) << ": " << reason
+                                      << std::endl;
+        }
+    }
+    files = std::move(kept);
 }
 
 }  // namespace
@@ -341,6 +393,15 @@ std::map<std::string, ModelInfo> ScanCatalog::enumerate(
         return logical_models;
     };
 
+    drop_unrunnable(standalone_files, false);
+    for (auto& [category_path, files] : category_files) {
+        drop_unrunnable(files, local_llamacpp_);
+    }
+    for (auto& [dir_path, gguf_files] : dirs_with_gguf) {
+        drop_unrunnable(gguf_files,
+                        local_llamacpp_ && !extra_model_deployment_label(dir_path, search_path).empty());
+    }
+
     // Root files claim their short id first, so adding a reserved directory
     // never renames an extra model that already exists.
     std::vector<fs::path> root_mmproj_files;
@@ -349,6 +410,7 @@ std::map<std::string, ModelInfo> ScanCatalog::enumerate(
     }
 
     for (const auto& [category_path, files] : category_files) {
+        if (files.empty()) continue;
         std::vector<fs::path> mmproj_files;
         const auto logical_models = group_logical_models(files, mmproj_files);
 
