@@ -8,6 +8,7 @@
 #include "platform/nvidia_metrics.h"
 #include "system_info_utils.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -393,8 +394,7 @@ int main() {
         "neither half available yields an empty name",
         gpu_display_name("", ""), "");
 
-    // The largest GPU-accessible memory pool is the stable primary, not the
-    // GPU with the highest instantaneous utilization or VRAM usage.
+    // Enumeration order, not memory capacity or activity, sets the primary GPU.
     {
         lemon::GpuMetricsTracker tracker;
         std::vector<lemon::GpuDeviceMetrics> devices = {
@@ -403,7 +403,7 @@ int main() {
             {"amd:0000:01:00.0", "amd", "small dGPU", "dedicated", 100.0, 2.0, 1.0}
         };
         auto stats = tracker.update(devices);
-        failures += !expect_string("Strix Halo ranks first by capacity",
+        failures += !expect_string("first discovered GPU remains primary",
                                    stats.primary_gpu_id, "amd:0000:c1:00.0");
         failures += !expect_double("primary utilization belongs to Strix Halo",
                                    stats.gpu_percent, 25.0);
@@ -437,16 +437,53 @@ int main() {
     }
     {
         lemon::GpuMetricsTracker tracker;
-        const auto stats = tracker.update({
-            {"nvidia:GPU-a", "nvidia", "GPU A", "dedicated", 90.0, 8.0, 1.0},
-            {"nvidia:GPU-b", "nvidia", "GPU B", "dedicated", 3.0, 24.0, 20.0}
-        });
-        failures += !expect_string("NVIDIA multi GPU selects capacity, not activity",
-                                   stats.primary_gpu_id, "nvidia:GPU-b");
+        const lemon::GpuDeviceMetrics a =
+            {"nvidia:GPU-a", "nvidia", "GPU A", "dedicated", 90.0, 8.0, 1.0};
+        auto b = lemon::GpuDeviceMetrics{
+            "nvidia:GPU-b", "nvidia", "GPU B", "dedicated", 3.0, 24.0, 20.0};
+        auto stats = tracker.update({a, b});
+        failures += !expect_string("NVIDIA first enumerated device is primary",
+                                   stats.primary_gpu_id, "nvidia:GPU-a");
         failures += !expect_double("paired utilization comes from selected GPU",
-                                   stats.gpu_percent, 3.0);
+                                   stats.gpu_percent, 90.0);
         failures += !expect_double("paired memory comes from selected GPU",
-                                   stats.vram_used_gb, 20.0);
+                                   stats.vram_used_gb, 1.0);
+        b.memory_total_gb = 48.0;
+        stats = tracker.update({b, a});
+        failures += !expect_string("reordered samples and changing capacity preserve GPU zero",
+                                   stats.gpus.at(0).id, a.id);
+        failures += !expect_string("primary follows stable discovery order",
+                                   stats.primary_gpu_id, a.id);
+        failures += !expect_double("primary live reading stays paired",
+                                   stats.gpu_percent, 90.0);
+        failures += !expect_double("primary memory stays paired",
+                                   stats.vram_used_gb, a.memory_used_gb);
+    }
+    {
+        lemon::GpuMetricsTracker tracker;
+        const auto start = std::chrono::steady_clock::now();
+        const lemon::GpuDeviceMetrics first =
+            {"nvidia:GPU-first", "nvidia", "First", "dedicated", 11.0, 8.0, 2.0};
+        const lemon::GpuDeviceMetrics second =
+            {"nvidia:GPU-second", "nvidia", "Second", "dedicated", 22.0, 16.0, 4.0};
+        tracker.update({first, second}, start);
+        auto stats = tracker.update({second, first}, start + std::chrono::minutes(6));
+        failures += !expect_string("reappearing sampled GPU keeps its original position",
+                                   stats.primary_gpu_id, first.id);
+        failures += !expect_double("reappearing GPU utilization remains paired",
+                                   stats.gpu_percent, first.gpu_percent);
+        failures += !expect_double("reappearing GPU memory remains paired",
+                                   stats.vram_used_gb, first.memory_used_gb);
+
+        stats = tracker.update({second}, start + std::chrono::minutes(12));
+        failures += !expect_string("expired absent GPU is removed from primary slot",
+                                   stats.primary_gpu_id, second.id);
+        failures += !expect_bool("expired absent GPU leaves the device list",
+                                 stats.gpus.size() == 1, true);
+        stats = tracker.update({first, second}, start + std::chrono::minutes(12)
+                                                + std::chrono::seconds(1));
+        failures += !expect_string("previously expired GPU is appended on return",
+                                   stats.gpus.at(1).id, first.id);
     }
     {
         lemon::GpuMetricsTracker tracker;
@@ -455,9 +492,11 @@ int main() {
             {"amd:card0", "amd", "dGPU", "dedicated", 0.0, 2.0, 0.0}
         });
         failures += !expect_string("unknown capacity is not assumed zero",
-                                   stats.gpus.back().id, "nvidia:GPU-unknown");
-        failures += !expect_double("valid zero GPU memory is preserved",
-                                   stats.vram_used_gb, 0.0);
+                                   stats.gpus.front().id, "nvidia:GPU-unknown");
+        failures += !expect_double("unknown primary memory stays unknown",
+                                   stats.vram_used_gb, -1.0);
+        failures += !expect_double("valid zero memory on another GPU is preserved",
+                                   stats.gpus.at(1).memory_used_gb, 0.0);
     }
     {
         lemon::NvidiaNvmlDevice gpu;

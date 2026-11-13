@@ -29,29 +29,21 @@ struct SystemGpuMetrics {
     std::vector<GpuDeviceMetrics> gpus;
 };
 
-// A device's position is determined by memory capacity, never by activity.
-// Remember metadata across failed polls but NEVER retain stale live usage.
+// Preserve the device discovery order (NVML index order for NVIDIA), independent
+// of memory capacity or activity. Remember metadata, but never stale live usage.
 class GpuMetricsTracker {
 public:
-    SystemGpuMetrics update(const std::vector<GpuDeviceMetrics>& samples) {
+    SystemGpuMetrics update(
+        const std::vector<GpuDeviceMetrics>& samples,
+        std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now()) {
         std::lock_guard<std::mutex> lock(mutex_);
-        const auto now = std::chrono::steady_clock::now();
-        // Keep missing devices for short driver hiccups, but not forever after
-        // unplug. Unavailable live readings are cleared on every poll.
-        for (auto it = known_.begin(); it != known_.end();) {
-            if (now - last_seen_.at(it->first) > std::chrono::minutes(5)) {
-                last_seen_.erase(it->first);
-                it = known_.erase(it);
-            } else {
-                ++it;
-            }
-        }
         for (auto& [id, device] : known_) {
             device.gpu_percent = -1.0;
             device.memory_used_gb = -1.0;
         }
         for (const auto& sample : samples) {
             if (sample.id.empty()) continue;
+            if (known_.find(sample.id) == known_.end()) order_.push_back(sample.id);
             last_seen_[sample.id] = now;
             auto& device = known_[sample.id];
             device.id = sample.id;
@@ -67,15 +59,20 @@ public:
             if (std::isfinite(sample.memory_used_gb) && sample.memory_used_gb >= 0.0)
                 device.memory_used_gb = sample.memory_used_gb;
         }
+        // Process current samples before expiry so returning GPUs keep their slot.
+        for (auto it = known_.begin(); it != known_.end();) {
+            if (now - last_seen_.at(it->first) > std::chrono::minutes(5)) {
+                last_seen_.erase(it->first);
+                it = known_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        order_.erase(std::remove_if(order_.begin(), order_.end(),
+            [this](const std::string& id) { return known_.find(id) == known_.end(); }),
+            order_.end());
         SystemGpuMetrics result;
-        for (const auto& entry : known_) result.gpus.push_back(entry.second);
-        std::sort(result.gpus.begin(), result.gpus.end(),
-                  [](const GpuDeviceMetrics& a, const GpuDeviceMetrics& b) {
-                      // Unknown capacities sort last; a valid zero sorts normally.
-                      if (a.memory_total_gb != b.memory_total_gb)
-                          return a.memory_total_gb > b.memory_total_gb;
-                      return a.id < b.id;
-                  });
+        for (const auto& id : order_) result.gpus.push_back(known_.at(id));
         if (!result.gpus.empty()) {
             const auto& primary = result.gpus.front();
             result.primary_gpu_id = primary.id;
@@ -88,6 +85,7 @@ public:
 private:
     std::mutex mutex_;
     std::map<std::string, GpuDeviceMetrics> known_;
+    std::vector<std::string> order_;
     std::map<std::string, std::chrono::steady_clock::time_point> last_seen_;
 };
 
