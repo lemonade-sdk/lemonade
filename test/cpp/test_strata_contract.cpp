@@ -35,6 +35,28 @@ int main() {
                               strata::ops()->device_family("gfx120X", "AMD Radeon RX 9070 XT"),
                               release_assets) ==
               "strata-engine-9.8.7-windows-x86_64-hip-rx9070.tar.gz");
+    lemon::json cuda_assets = lemon::json::object();
+    for (const std::string filename : {
+            "strata-engine-9.8.7-windows-x86_64-cuda-cuda12.tar.gz",
+            "strata-engine-9.8.7-windows-x86_64-cuda-cuda13.tar.gz",
+            "strata-engine-9.8.7-linux-x86_64-cuda-cuda12.tar.gz",
+            "strata-engine-9.8.7-linux-x86_64-cuda-cuda13.tar.gz",
+            "strata-engine-9.8.7-linux-aarch64-cuda-cuda13.tar.gz"}) {
+        cuda_assets[filename] = "sha256:" + std::string(64, 'a');
+    }
+    for (const std::string target : {"windows-x86_64", "linux-x86_64"}) {
+        for (const std::string arch : {"sm_75", "sm_86", "sm_89"}) {
+            check("RTX 20/30/40 select CUDA 12 on x86-64",
+                  strata::engine_asset(target, "cuda", arch, cuda_assets) ==
+                      "strata-engine-9.8.7-" + target + "-cuda-cuda12.tar.gz");
+        }
+        check("Blackwell retains CUDA 13 on x86-64",
+              strata::engine_asset(target, "cuda", "sm_120", cuda_assets) ==
+                  "strata-engine-9.8.7-" + target + "-cuda-cuda13.tar.gz");
+    }
+    check("ARM64 GB10 retains its CUDA 13 bundle",
+          strata::engine_asset("linux-aarch64", "cuda", "sm_121", cuda_assets) ==
+              "strata-engine-9.8.7-linux-aarch64-cuda-cuda13.tar.gz");
     try {
         strata::engine_asset("windows-x86_64", "cuda", "", release_assets);
         check("Missing Strata release assets fail explicitly", false);

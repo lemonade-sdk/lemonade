@@ -271,7 +271,7 @@ std::string engine_asset(const std::string& target, const std::string& backend,
     } else if (target != "windows-x86_64" && target != "linux-x86_64") {
         throw std::invalid_argument("Unsupported Strata platform/backend: " + target + "/" + backend);
     } else if (backend == "cuda") {
-        variant = "cuda-cuda13";
+        variant = arch == "sm_120" || arch == "sm_121" ? "cuda-cuda13" : "cuda-cuda12";
     } else if (backend == "sycl" && target == "linux-x86_64") {
         variant = "sycl";
     } else if (backend == "rocm") {
@@ -374,7 +374,9 @@ InstallParams StrataServer::get_install_params(const std::string& backend, const
         throw std::invalid_argument("Strata " + backend + " is not supported on this platform");
     }
     std::string arch;
-    if (backend == "rocm") {
+    if (backend == "cuda") {
+        arch = SystemInfo::get_cuda_arch();
+    } else if (backend == "rocm") {
         arch = SystemInfo::get_rocm_arch();
         if (arch == "gfx110X" || arch == "gfx120X") {
             auto devices = SystemInfoCache::get_system_info_with_cache().at("devices").at("amd_gpu");
