@@ -2,6 +2,7 @@
 
 #include <exception>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -63,6 +64,16 @@ extern const RouteError kOllamaModelNotFound;
 // Writes kOllamaModelNotFound and returns false when name is not in the registry.
 bool ollama_model_registered(ModelManager& model_manager, const std::string& name,
                              httplib::Response& res);
+
+// What a model can answer on /api/chat and /api/generate.
+// Upscaling models carry the image label but generate Nothing.
+enum class OllamaOutput { Text, Image, Nothing };
+OllamaOutput ollama_output(const std::vector<std::string>& labels);
+
+// Ollama checks a model's capabilities before loading it.
+// Empty when name is not in the registry, which leaves loading to report it.
+std::optional<OllamaOutput> ollama_registered_output(ModelManager& model_manager,
+                                                     const std::string& name);
 
 extern const RouteError kOllamaBackendError;
 

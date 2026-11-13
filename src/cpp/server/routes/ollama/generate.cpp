@@ -3,7 +3,6 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/model_manager.h"
-#include "lemon/model_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
@@ -39,6 +38,11 @@ const RouteArg kSystem{"system", ArgIn::JsonBody, {{"type", "string"}}, false, S
                        "System prompt. Ignored."};
 const RouteArg kFormat{"format", ArgIn::JsonBody, {{"type", json::array({"string", "object"})}}, false,
                        Support::NotAvailable, "Output format constraint. Ignored."};
+
+const RouteError kNotGenerateModel{400, "",
+                                   "`model` is any model other than an LLM or an image generation "
+                                   "model, such as an embedding, transcription or upscaling model, "
+                                   "which is checked before it loads"};
 
 json convert_ollama_to_openai_completion(ServerContext& ctx, const RouteRequest& req) {
     json openai_req;
@@ -227,7 +231,7 @@ public:
         })");
 
         s.examples = {full_example, stream_example};
-        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid}, gateway_load_errors(),
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNotGenerateModel}, gateway_load_errors(),
                                 {kOllamaBackendError, ApiRoute::kUnexpectedException}});
         s.request_format = RequestFormat::Json;
         return s;
@@ -256,16 +260,19 @@ public:
                 return;
             }
 
+            auto output = ollama_registered_output(*ctx_.model_manager, model);
+            if (output == OllamaOutput::Nothing) {
+                write_plain_error(res, kNotGenerateModel, "\"" + model + "\" does not support generate");
+                return;
+            }
+
             if (!gateway_ensure_loaded(*ctx_.model_loader, model,
                                        gateway_load_options(req.arg(kOptions), req.arg(model_loading::kCtxSize)),
                                        ErrorFormat::Plain, res)) {
                 return;
             }
 
-            auto model_info = ctx_.model_manager->get_model_info(model);
-            ModelType model_type = get_model_type_from_labels(model_info.labels);
-
-            if (model_type == ModelType::IMAGE) {
+            if (output == OllamaOutput::Image) {
                 generate_image(*ctx_.router, req, res, model);
                 return;
             }
