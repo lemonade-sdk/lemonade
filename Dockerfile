@@ -57,6 +57,25 @@ RUN apt-get update && apt-get install -y \
     libreadline8 \
     && rm -rf /var/lib/apt/lists/*
 
+# Container backends run beside this container on the host's Podman, which
+# lemond reaches through the socket the user mounts at /run/podman/podman.sock.
+# See docs/guide/install/docker.md.
+ARG TARGETARCH
+ARG PODMAN_VERSION=5.7.0
+RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" && \
+    case "$arch" in \
+      amd64) sum=0d1759e3fc42b0e3a4496176dabc7b65f0f334a0ab2b22eaed7c36afeece8b0c ;; \
+      arm64) sum=fecff7e133313220e66d3108e64439555ad1fc95b212de8c38ff68089df971fd ;; \
+      *) echo "no podman-remote for $arch" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL -o /tmp/podman-remote.tar.gz \
+      "https://github.com/containers/podman/releases/download/v${PODMAN_VERSION}/podman-remote-static-linux_${arch}.tar.gz" && \
+    echo "$sum  /tmp/podman-remote.tar.gz" | sha256sum -c - && \
+    tar -xzf /tmp/podman-remote.tar.gz -C /tmp && \
+    install -m 0755 "/tmp/bin/podman-remote-static-linux_${arch}" /usr/local/bin/podman && \
+    rm -rf /tmp/podman-remote.tar.gz /tmp/bin
+ENV CONTAINER_HOST=unix:///run/podman/podman.sock
+
 # Run as an unprivileged user; lemond never needs root at runtime.
 RUN useradd -r -u 10001 -s /usr/sbin/nologin lemonade
 

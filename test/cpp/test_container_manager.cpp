@@ -61,6 +61,9 @@ struct FakeHost {
         "time=\"2026-10-17T00:57:31Z\" level=warning msg=\"Falling back to --cgroup-manager=cgroupfs\"\n";
     std::map<std::string, std::string> files = {{"/etc/os-release", "ID=ubuntu\nID_LIKE=debian\n"}};
     std::map<std::string, std::string> env;
+    std::set<std::string> paths;  // what exists() finds
+    // `inspect` answers for these names, as {{.Id}}|{{json .Mounts}}.
+    std::map<std::string, std::string> containers;
     bool root = false;
     // How many commands the manager has run on the host.
     mutable int commands = 0;
@@ -69,6 +72,7 @@ struct FakeHost {
     ContainerHost host() const {
         ContainerHost h;
         h.on_path = [this](const std::string& name) { return tools.count(name) > 0; };
+        h.exists = [this](const std::string& path) { return paths.count(path) > 0; };
         h.gpu_devices_accessible = [this]() { return gpu_access; };
         h.account = [this]() { return account; };
         h.group_id = [](const std::string& group) {
@@ -92,6 +96,10 @@ struct FakeHost {
                 result.output = podman_rootless + " " + network_backend + " " + oci_runtime + "\n";
             } else if (argv.size() > 1 && argv[1] == "network") {
                 result.exit_code = 0;
+            } else if (argv.size() > 1 && argv[1] == "inspect") {
+                const auto it = containers.find(argv.back());
+                result.exit_code = it == containers.end() ? 1 : 0;
+                if (it != containers.end()) result.output = it->second + "\n";
             } else if (argv.front() == "getsubids") {
                 const auto it = subids.find(join({argv.begin() + 1, argv.end()}));
                 result.exit_code = it == subids.end() ? 1 : 0;
@@ -491,16 +499,16 @@ void test_oci_runtime() {
 
 void test_helpers() {
     check("characters a container name rejects are escaped as _ plus hex",
-          ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.My Model:Q4/x") ==
+          ContainerManager::container_name("13305", "llamacpp", "nathanw", "user.My Model:Q4/x") ==
               "lemonade-13305-llamacpp-nathanw-user.My_20Model_3aQ4_2fx");
     check("names that differ only in rejected characters keep distinct containers",
-          ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.foo/bar") !=
-                  ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.foo-bar") &&
-              ContainerManager::container_name(13305, "llamacpp", "nathanw", "user.foo_2fbar") ==
+          ContainerManager::container_name("13305", "llamacpp", "nathanw", "user.foo/bar") !=
+                  ContainerManager::container_name("13305", "llamacpp", "nathanw", "user.foo-bar") &&
+              ContainerManager::container_name("13305", "llamacpp", "nathanw", "user.foo_2fbar") ==
                   "lemonade-13305-llamacpp-nathanw-user.foo__2fbar");
     check("two lemond instances loading the same model get distinct containers",
-          ContainerManager::container_name(13305, "llamacpp", "nathanw", "Qwen3-4B-GGUF") !=
-              ContainerManager::container_name(13306, "llamacpp", "nathanw", "Qwen3-4B-GGUF"));
+          ContainerManager::container_name("13305", "llamacpp", "nathanw", "Qwen3-4B-GGUF") !=
+              ContainerManager::container_name("13306", "llamacpp", "nathanw", "Qwen3-4B-GGUF"));
 
     FakeHost ubuntu;
     check("a host without SELinux passes the SELinux check",
@@ -679,6 +687,97 @@ void test_descriptors_and_pins() {
 
 }  // namespace
 
+// lemond in the Lemonade image, driving the host account's Podman through its
+// socket mounted at /run/podman/podman.sock.
+FakeHost contained_host() {
+    FakeHost host;
+    host.tools = {"podman"};
+    host.account = "lemonade";
+    host.env = {{"CONTAINER_HOST", "unix:///run/podman/podman.sock"},
+                {"XDG_RUNTIME_DIR", "/run/lemonade"}};
+    host.paths = {"/run/.containerenv"};
+    const std::string id(64, 'a');
+    host.files["/proc/self/mountinfo"] =
+        "1 2 0:1 /home/user/.local/share/containers/storage/overlay-containers/" + id +
+        "/userdata/hostname /etc/hostname rw - ext4 /dev/x rw\n";
+    host.files["/etc/hostname"] = "lemonade-box\n";
+    host.containers[id] =
+        id + "|[{\"Type\":\"volume\",\"Name\":\"lemonade-cache\","
+             "\"Source\":\"/home/user/.local/share/containers/storage/volumes/lemonade-cache/_data\","
+             "\"Destination\":\"/opt/lemonade/.cache/huggingface\"},"
+             "{\"Type\":\"bind\",\"Source\":\"/srv/models\",\"Destination\":\"/models\"},"
+             "{\"Type\":\"bind\",\"Source\":\"/run/user/1000/podman/podman.sock\","
+             "\"Destination\":\"/run/podman/podman.sock\"}]";
+    return host;
+}
+
+void test_in_container() {
+    const std::string id(64, 'a');
+    FakeHost host = contained_host();
+    const ContainerManager manager(host.host());
+    check("lemond finds its own container through the mounted socket",
+          manager.in_container() && manager.own_container() == id);
+    check("a path in a named volume maps to the volume's directory on the host",
+          manager.host_path("/opt/lemonade/.cache/huggingface/hub/blobs/x") ==
+              "/home/user/.local/share/containers/storage/volumes/lemonade-cache/_data/hub/blobs/x");
+    check("a path in a bind mount maps to the bind's source",
+          manager.host_path("/models/a.gguf") == "/srv/models/a.gguf");
+    bool refused = false;
+    try {
+        manager.host_path("/opt/lemonade/llama/a.gguf");
+    } catch (const std::runtime_error&) {
+        refused = true;
+    }
+    check("a path on no mount of lemond's container is refused", refused);
+    check("a sibling mount's name prefix does not count as holding a path", [&] {
+        try {
+            manager.host_path("/modelsx/a.gguf");
+        } catch (const std::runtime_error&) {
+            return true;
+        }
+        return false;
+    }());
+
+    ContainerRunSpec spec = example_spec();
+    spec.network = "container:" + id;
+    spec.mounts = {{"/opt/lemonade/.cache/huggingface/hub/blobs/x",
+                    "/mnt/models/Qwen3-4B-Q4_K_M.gguf"}};
+    const std::string command = join(manager.run_command(spec));
+    check("a backend shares lemond's network, publishes no port and mounts host paths",
+          command.find(" --network=container:" + id + " ") != std::string::npos &&
+              command.find(" -p ") == std::string::npos &&
+              command.find(" -v /home/user/.local/share/containers/storage/volumes/"
+                           "lemonade-cache/_data/hub/blobs/x:/mnt/models/") != std::string::npos &&
+              command.find(" --annotation run.oci.keep_original_groups=1") != std::string::npos);
+
+    check("in a container, the setup checks pass once the host's tool finds it",
+          manager.check_host().empty() && !manager.check_podman());
+
+    FakeHost hostname_only = contained_host();
+    hostname_only.files.erase("/proc/self/mountinfo");
+    hostname_only.containers = {{"lemonade-box", "bbbb|[]"}};
+    check("lemond falls back to its hostname to find its container",
+          ContainerManager(hostname_only.host()).own_container() == "bbbb");
+
+    FakeHost no_socket = contained_host();
+    no_socket.containers.clear();
+    no_socket.podman_info_exit = 125;
+    const auto failures = ContainerManager(no_socket.host()).check_host();
+    check("with no socket mounted, the one failure says to mount it",
+          failures.size() == 1 && failures[0].id == "own_container" &&
+              failures[0].steps[0].find("docker/#container-backends") != std::string::npos);
+
+    FakeHost on_host;
+    on_host.tools = {"podman"};
+    const ContainerManager host_manager(on_host.host());
+    check("on the host, lemond is in no container and runs no inspect",
+          !host_manager.in_container() && host_manager.own_container().empty() &&
+              on_host.commands == 0);
+    check("container names take lemond's container ID as the instance",
+          ContainerManager::container_name("aaaaaaaaaaaa", "llamacpp", "nathanw", "m") ==
+              "lemonade-aaaaaaaaaaaa-llamacpp-nathanw-m");
+}
+
 int main() {
     test_run_command();
     test_tool_choice_and_setup();
@@ -689,6 +788,7 @@ int main() {
     test_install_commands();
     test_oci_runtime();
     test_helpers();
+    test_in_container();
 #ifndef _WIN32
     test_model_mounts();
 #endif

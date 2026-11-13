@@ -73,6 +73,7 @@ struct CommandResult {
 // Each host read, defaulting to the real host so tests can fake every branch.
 struct ContainerHost {
     std::function<bool(const std::string& name)> on_path;
+    std::function<bool(const std::string& path)> exists;
     // True when this account can read and write /dev/kfd and every /dev/dri
     // render node present on the host.
     std::function<bool()> gpu_devices_accessible;
@@ -119,6 +120,19 @@ public:
 
     std::vector<std::string> run_command(const ContainerRunSpec& spec) const;
 
+    // True when lemond itself runs in a container, from the marker file Docker
+    // or Podman puts in every container.
+    bool in_container() const;
+    // The ID of the container lemond runs in, as the tool behind CONTAINER_HOST
+    // or DOCKER_HOST knows it, or "" when lemond is not in a container or that
+    // tool cannot find it. Backends then run beside lemond's container on the
+    // same host tool, share its network, and mount model files by their host
+    // paths.
+    std::string own_container() const;
+    // The path on the host for `path` inside lemond's container, through the
+    // bind mount or volume that holds it. Throws when no mount holds it.
+    std::string host_path(const std::string& path) const;
+
     bool has_image(const std::string& image) const;
     void pull(const std::string& image, const DownloadProgressCallback& progress) const;
     void remove_image(const std::string& image) const;
@@ -135,9 +149,10 @@ public:
 
     // lemonade-<instance>-<recipe>-<backend>-<model>, reduced to the
     // characters a container name accepts. `instance` is the port the owning
-    // lemond listens on, so two lemond instances sharing a container daemon
-    // never claim each other's containers.
-    static std::string container_name(int instance, const std::string& recipe,
+    // lemond listens on, or the short ID of the container it runs in, so two
+    // lemond instances sharing a container daemon never claim each other's
+    // containers. Every lemond in a container listens on the same port.
+    static std::string container_name(const std::string& instance, const std::string& recipe,
                                       const std::string& backend, const std::string& model);
     // The command that installs `package` on the distribution `os_release`
     // describes, matched on ID, then each word of ID_LIKE. `name` is how the
@@ -165,6 +180,13 @@ private:
     bool expect_rootless() const;
     bool own_podman_socket() const;
     static bool needs_crun(bool rootless, const std::string& runtime);
+    // IDs the container lemond runs in may go by, most specific first.
+    std::vector<std::string> own_container_candidates() const;
+
+    struct OwnMount {
+        std::string destination;
+        std::string source;
+    };
 
     ContainerHost host_;
     mutable std::mutex podman_mode_mutex_;
@@ -173,6 +195,10 @@ private:
     mutable std::string podman_network_backend_;
     // Podman's OCI runtime, such as "crun" or "runc", from the same answer.
     mutable std::string podman_oci_runtime_;
+    // lemond's own container and its mounts, once the tool has found it.
+    mutable std::mutex own_container_mutex_;
+    mutable std::string own_container_;
+    mutable std::vector<OwnMount> own_mounts_;
 };
 
 }  // namespace utils

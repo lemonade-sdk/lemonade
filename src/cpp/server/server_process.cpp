@@ -119,7 +119,10 @@ std::string ContainerProcess::start(const ServerCommand& command) {
                                  ", which is not one Lemonade runs container backends from");
     }
     const RuntimeConfig* config = RuntimeConfig::global();
-    const int instance = config ? config->port() : 0;
+    const std::string own_container = manager.own_container();
+    const std::string instance = own_container.empty()
+                                     ? std::to_string(config ? config->port() : 0)
+                                     : own_container.substr(0, 12);
     name_ = ContainerManager::container_name(instance, recipe_, backend_, model_);
     manager.remove_container(name_);
 
@@ -171,15 +174,21 @@ std::string ContainerProcess::start(const ServerCommand& command) {
         spec.command.push_back(rewrite(arg));
     }
 
-    manager.create_network(name_);
-    spec.network = name_;
+    // From inside its own container, lemond can reach neither a port the host
+    // publishes nor a network it is not on, so the backend joins lemond's.
+    if (own_container.empty()) {
+        manager.create_network(name_);
+        spec.network = name_;
+    } else {
+        spec.network = "container:" + own_container;
+    }
 
     std::vector<std::string> command_line = manager.run_command(spec);
     LOG(INFO, "ContainerProcess") << "Starting " << name_ << ": "
                                   << join_command_line(command_line) << std::endl;
     spawn(std::move(command_line), "", {});
 
-    if (manager.rootless_podman()) {
+    if (!own_container.empty() || manager.rootless_podman()) {
         return "127.0.0.1";
     }
     // The tool attaches the container's address asynchronously after `run` starts.
