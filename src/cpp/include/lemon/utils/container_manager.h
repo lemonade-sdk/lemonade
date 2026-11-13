@@ -77,6 +77,9 @@ struct ContainerHost {
     // True when this account can read and write /dev/kfd and every /dev/dri
     // render node present on the host.
     std::function<bool()> gpu_devices_accessible;
+    // The numeric group that owns /dev/kfd or the first /dev/dri render node,
+    // or "" when neither is present.
+    std::function<std::string()> gpu_device_group;
     // The group's numeric ID, or "" when the host defines no such group.
     std::function<std::string(const std::string& group)> group_id;
     // The name of the account this process runs as, or "" when it is unknown.
@@ -103,7 +106,8 @@ public:
 
     static ContainerManager& global();
 
-    // Podman when it is on PATH, Docker otherwise, nullopt when neither is.
+    // Podman when it is on PATH, Docker otherwise, nullopt when neither is. In
+    // a container, the tool whose host socket is mounted.
     std::optional<ContainerTool> tool() const;
     // Only rootless Podman publishes a port from an --internal network; under
     // rootful Podman or Docker, lemond connects at the container's address.
@@ -180,6 +184,10 @@ private:
     bool expect_rootless() const;
     bool own_podman_socket() const;
     static bool needs_crun(bool rootless, const std::string& runtime);
+    // The host's render group ID, for a tool that adds it by number. In a
+    // container, LEMONADE_RENDER_GID, then the GPU device nodes' owner, since
+    // the image's /etc/group says nothing about the host.
+    std::string render_group_id() const;
     // IDs the container lemond runs in may go by, most specific first.
     std::vector<std::string> own_container_candidates() const;
 

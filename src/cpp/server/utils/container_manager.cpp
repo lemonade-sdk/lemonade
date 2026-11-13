@@ -23,6 +23,7 @@
 #ifndef _WIN32
 #include <grp.h>
 #include <pwd.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -89,6 +90,26 @@ bool account_opens_gpu_devices() {
         if (fs::exists(node, ec) && ::access(node.c_str(), R_OK | W_OK) != 0) return false;
     }
     return true;
+}
+
+std::string gpu_node_group() {
+    std::vector<fs::path> nodes = {"/dev/kfd"};
+    std::error_code ec;
+    std::vector<fs::path> render;
+    for (const auto& entry : fs::directory_iterator("/dev/dri", ec)) {
+        if (entry.path().filename().string().rfind("renderD", 0) == 0) {
+            render.push_back(entry.path());
+        }
+    }
+    std::sort(render.begin(), render.end());
+    nodes.insert(nodes.end(), render.begin(), render.end());
+    for (const auto& node : nodes) {
+        struct stat info = {};
+        if (::stat(node.c_str(), &info) == 0) {
+            return std::to_string(static_cast<unsigned long>(info.st_gid));
+        }
+    }
+    return "";
 }
 
 std::string process_account() {
@@ -163,10 +184,12 @@ ContainerHost ContainerHost::real() {
     };
 #ifdef _WIN32
     host.gpu_devices_accessible = []() { return false; };
+    host.gpu_device_group = []() { return std::string(); };
     host.account = []() { return std::string(); };
     host.group_id = [](const std::string&) { return std::string(); };
 #else
     host.gpu_devices_accessible = account_opens_gpu_devices;
+    host.gpu_device_group = gpu_node_group;
     host.account = process_account;
     host.group_id = host_group_id;
 #endif
@@ -192,6 +215,22 @@ ContainerManager& ContainerManager::global() {
 }
 
 std::optional<ContainerTool> ContainerManager::tool() const {
+    // The image carries both clients; only the mounted socket says which host
+    // tool there is.
+    if (in_container()) {
+        const auto given = [this](const std::string& url, const std::string& fallback) {
+            if (url.empty()) return host_.exists(fallback);
+            if (url.rfind("unix://", 0) != 0) return true;
+            return host_.exists(url.substr(7));
+        };
+        if (host_.on_path("podman") && !host_.env("CONTAINER_HOST").empty() &&
+            given(host_.env("CONTAINER_HOST"), "")) {
+            return ContainerTool::Podman;
+        }
+        if (host_.on_path("docker") && given(host_.env("DOCKER_HOST"), "/var/run/docker.sock")) {
+            return ContainerTool::Docker;
+        }
+    }
     if (host_.on_path("podman")) return ContainerTool::Podman;
     if (host_.on_path("docker")) return ContainerTool::Docker;
     return std::nullopt;
@@ -257,8 +296,16 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
         failures.push_back(
             {"own_container",
              "lemond runs in a container that no Podman or Docker socket mounted into it can find",
-             {"Start lemond's container with the host's Podman socket mounted, as "
+             {"Start lemond's container with the host's Podman or Docker socket mounted, as "
               "https://lemonade-server.ai/docs/guide/install/docker/#container-backends shows"},
+             ""});
+        return failures;
+    }
+    // Docker and rootful Podman add the render group by number (see run_command).
+    if (contained && !rootless_podman() && render_group_id().empty()) {
+        failures.push_back(
+            {"render_group", "lemond cannot tell the host's render group ID from inside its container",
+             {"Start lemond's container with -e LEMONADE_RENDER_GID=$(getent group render | cut -d: -f3)"},
              ""});
         return failures;
     }
@@ -461,7 +508,7 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         } else {
             // Docker resolves a group name in the image's /etc/group, where it
             // may be missing or numbered differently from the device nodes.
-            const std::string gid = host_.group_id("render");
+            const std::string gid = render_group_id();
             if (!gid.empty()) {
                 argv.push_back("--group-add");
                 argv.push_back(gid);
@@ -662,6 +709,13 @@ std::string ContainerManager::address(const std::string& name) const {
 
 bool ContainerManager::in_container() const {
     return host_.exists && (host_.exists("/run/.containerenv") || host_.exists("/.dockerenv"));
+}
+
+std::string ContainerManager::render_group_id() const {
+    if (!in_container()) return host_.group_id("render");
+    const std::string given = trim(host_.env("LEMONADE_RENDER_GID"));
+    if (!given.empty()) return given;
+    return host_.gpu_device_group ? host_.gpu_device_group() : "";
 }
 
 std::vector<std::string> ContainerManager::own_container_candidates() const {

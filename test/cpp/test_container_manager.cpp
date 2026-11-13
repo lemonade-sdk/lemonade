@@ -62,6 +62,7 @@ struct FakeHost {
     std::map<std::string, std::string> files = {{"/etc/os-release", "ID=ubuntu\nID_LIKE=debian\n"}};
     std::map<std::string, std::string> env;
     std::set<std::string> paths;  // what exists() finds
+    std::string gpu_group;        // owner of the GPU device nodes
     // `inspect` answers for these names, as {{.Id}}|{{json .Mounts}}.
     std::map<std::string, std::string> containers;
     bool root = false;
@@ -74,6 +75,7 @@ struct FakeHost {
         h.on_path = [this](const std::string& name) { return tools.count(name) > 0; };
         h.exists = [this](const std::string& path) { return paths.count(path) > 0; };
         h.gpu_devices_accessible = [this]() { return gpu_access; };
+        h.gpu_device_group = [this]() { return gpu_group; };
         h.account = [this]() { return account; };
         h.group_id = [](const std::string& group) {
             return group == "render" ? std::string("990") : std::string();
@@ -695,7 +697,7 @@ FakeHost contained_host() {
     host.account = "lemonade";
     host.env = {{"CONTAINER_HOST", "unix:///run/podman/podman.sock"},
                 {"XDG_RUNTIME_DIR", "/run/lemonade"}};
-    host.paths = {"/run/.containerenv"};
+    host.paths = {"/run/.containerenv", "/run/podman/podman.sock"};
     const std::string id(64, 'a');
     host.files["/proc/self/mountinfo"] =
         "1 2 0:1 /home/user/.local/share/containers/storage/overlay-containers/" + id +
@@ -778,6 +780,55 @@ void test_in_container() {
               "lemonade-aaaaaaaaaaaa-llamacpp-nathanw-m");
 }
 
+// lemond in the Lemonade image, driving the host's Docker through
+// /var/run/docker.sock. The image carries both clients and sets CONTAINER_HOST.
+void test_in_container_docker() {
+    const std::string id(64, 'd');
+    FakeHost host;
+    host.tools = {"podman", "docker"};
+    host.account = "lemonade";
+    host.env = {{"CONTAINER_HOST", "unix:///run/podman/podman.sock"}};
+    host.paths = {"/.dockerenv", "/var/run/docker.sock"};
+    host.files["/proc/self/mountinfo"] =
+        "1 2 0:1 /var/lib/docker/containers/" + id + "/hostname /etc/hostname rw - ext4 /dev/x rw\n";
+    host.containers[id] =
+        id + "|[{\"Type\":\"volume\",\"Name\":\"lemonade-cache\","
+             "\"Source\":\"/var/lib/docker/volumes/lemonade-cache/_data\","
+             "\"Destination\":\"/opt/lemonade/.cache/huggingface\"}]";
+    const ContainerManager manager(host.host());
+    check("in a container, the tool is the one whose socket is mounted",
+          manager.tool() == lemon::utils::ContainerTool::Docker && manager.own_container() == id);
+
+    const auto failures = manager.check_host();
+    check("Docker in a container needs the host's render group ID",
+          failures.size() == 1 && failures[0].id == "render_group");
+
+    FakeHost from_env = host;
+    from_env.env["LEMONADE_RENDER_GID"] = "990";
+    const ContainerManager env_manager(from_env.host());
+    ContainerRunSpec spec = example_spec();
+    spec.network = "container:" + id;
+    spec.mounts = {{"/opt/lemonade/.cache/huggingface/m.gguf", "/mnt/models/m.gguf"}};
+    const std::string command = join(env_manager.run_command(spec));
+    check("docker run takes LEMONADE_RENDER_GID, not the image's render group",
+          env_manager.check_host().empty() && command.find(" --group-add 990 ") != std::string::npos &&
+              command.find(" -v /var/lib/docker/volumes/lemonade-cache/_data/m.gguf:") !=
+                  std::string::npos &&
+              command.rfind("docker run ", 0) == 0);
+
+    FakeHost from_device = host;
+    from_device.gpu_group = "992";
+    check("without LEMONADE_RENDER_GID, the GPU device nodes' owner is the render group",
+          ContainerManager(from_device.host()).check_host().empty() &&
+              join(ContainerManager(from_device.host()).run_command(spec)).find(" --group-add 992 ") !=
+                  std::string::npos);
+
+    FakeHost neither = host;
+    neither.paths = {"/.dockerenv"};
+    check("with no socket mounted in a container, Podman stays the default",
+          ContainerManager(neither.host()).tool() == lemon::utils::ContainerTool::Podman);
+}
+
 int main() {
     test_run_command();
     test_tool_choice_and_setup();
@@ -789,6 +840,7 @@ int main() {
     test_oci_runtime();
     test_helpers();
     test_in_container();
+    test_in_container_docker();
 #ifndef _WIN32
     test_model_mounts();
 #endif

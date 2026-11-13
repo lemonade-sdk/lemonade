@@ -57,11 +57,13 @@ RUN apt-get update && apt-get install -y \
     libreadline8 \
     && rm -rf /var/lib/apt/lists/*
 
-# Container backends run beside this container on the host's Podman, which
-# lemond reaches through the socket the user mounts at /run/podman/podman.sock.
-# See docs/guide/install/docker.md.
+# Container backends run beside this container on the host's Podman or Docker,
+# which lemond reaches through the socket the user mounts at
+# /run/podman/podman.sock or /var/run/docker.sock. See
+# docs/guide/install/docker.md.
 ARG TARGETARCH
 ARG PODMAN_VERSION=5.7.0
+ARG DOCKER_VERSION=29.9.3
 RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" && \
     case "$arch" in \
       amd64) sum=0d1759e3fc42b0e3a4496176dabc7b65f0f334a0ab2b22eaed7c36afeece8b0c ;; \
@@ -74,6 +76,20 @@ RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" && \
     tar -xzf /tmp/podman-remote.tar.gz -C /tmp && \
     install -m 0755 "/tmp/bin/podman-remote-static-linux_${arch}" /usr/local/bin/podman && \
     rm -rf /tmp/podman-remote.tar.gz /tmp/bin
+# Docker publishes no checksums for its static builds; these are of the
+# tarballs as downloaded when the version was pinned.
+RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" && \
+    case "$arch" in \
+      amd64) darch=x86_64; sum=3fb5d1f13014c18cc54945bc177c58a9056a482dada031e17d12cf2e6922c973 ;; \
+      arm64) darch=aarch64; sum=1b27fd739378ef938401e81ce5afb73b7ad7432d4f598814a9ff5f826bb464d2 ;; \
+      *) echo "no docker client for $arch" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL -o /tmp/docker.tgz \
+      "https://download.docker.com/linux/static/stable/${darch}/docker-${DOCKER_VERSION}.tgz" && \
+    echo "$sum  /tmp/docker.tgz" | sha256sum -c - && \
+    tar -xzf /tmp/docker.tgz -C /tmp docker/docker && \
+    install -m 0755 /tmp/docker/docker /usr/local/bin/docker && \
+    rm -rf /tmp/docker.tgz /tmp/docker
 ENV CONTAINER_HOST=unix:///run/podman/podman.sock
 
 # Run as an unprivileged user; lemond never needs root at runtime.
