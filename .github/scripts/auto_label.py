@@ -64,7 +64,7 @@ Runtime — apply AT MOST ONE total. Same hard rule. Skip if the item is not spe
 - runtime::metal  — Apple Metal path (macOS)
 - runtime::cpu    — CPU-only execution path (only when the issue is specifically about CPU fallback / CPU-only behavior, not when CPU is just one of many devices mentioned)
 
-Workgroup — apply AT MOST ONE. Only apply when clearly scoped to one active WG charter. Skip if cross-cutting or unclear:
+Workgroup — apply AT MOST ONE. For a pull request (Kind: pull request), ALWAYS apply exactly one: pick the charter that owns most of the change, and use wg::platform-core when nothing else fits (server, backends, model catalog, docs for server features). For an issue, apply one only when it is clearly scoped to a single charter:
 - wg::platform-core     — server infrastructure: router, model manager, wrapped_server, API handlers, build system, packaging. CLI fixes go here (NOT GUI App). Desktop tray goes here. Example: "fix(cli): distinguish a closed connection" → wg::platform-core
 - wg::enterprise-grade  — systematic testing, CI quality, build automation, observability. CI/test infrastructure goes here (NOT GUI App). Example: "fix(ci): make llama.cpp auto-update" → wg::enterprise-grade
 - wg::cloud-hybrid      — routing between local and cloud models
@@ -146,6 +146,7 @@ def classify(item, item_num):
     body = (item.get("body") or "").strip() or "(empty)"
     user_msg = (
         f"Item: #{item_num}\n"
+        f"Kind: {'pull request' if '/pull/' in item.get('url', '') else 'issue'}\n"
         f"Title: {item['title']}\n"
         f"Existing labels: {', '.join(existing) if existing else '(none)'}\n\n"
         f"Body:\n{body}"
