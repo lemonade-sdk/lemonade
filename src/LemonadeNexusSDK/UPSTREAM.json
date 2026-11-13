@@ -72,5 +72,7 @@
   "exclude": [
     "projects/LemonadeNexusSDK/src/main.cpp"
   ],
-  "patches": []
+  "patches": [
+    "0001-netstack-turn-off-Nagle-and-delayed-ACK-on-mesh-TCP-.patch"
+  ]
 }

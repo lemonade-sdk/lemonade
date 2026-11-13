@@ -255,6 +255,12 @@ impl Stack {
         let tx = tcp::SocketBuffer::new(vec![0u8; self.tcp_buffer]);
         let mut socket = tcp::Socket::new(rx, tx);
         socket.set_congestion_control(tcp::CongestionControl::Cubic);
+        // The mesh carries request/response traffic (API calls, streamed tokens), where smoltcp's
+        // defaults cost a round trip each: Nagle holds a short write until the previous one is
+        // acknowledged, and the peer delays that acknowledgement by 10 ms. Measured through the
+        // lemond peer relay between two servers: 30.5 ms -> 13.3 ms per request, bulk unchanged.
+        socket.set_nagle_enabled(false);
+        socket.set_ack_delay(None);
         socket
     }
 
