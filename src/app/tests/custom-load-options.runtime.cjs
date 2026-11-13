@@ -140,6 +140,15 @@ async function bundleStore() {
     assert.equal(customImagePurpose('thenoise', ['EDIT']), 'edit');
     assert.equal(customImagePurpose('sd-cpp', ['edit']), 'edit');
     assert.equal(customImagePurpose('thenoise', ['edit', 'upscaling']), 'upscaling');
+    for (const alias of ['image-edit', 'image-editing']) {
+      assert.equal(customImagePurpose('sd-cpp', [alias]), 'edit', `${alias} must select image editing`);
+      assert.deepEqual(customImageLabelsForPurpose(['other', alias], 'image'), ['other'],
+        `${alias} must be removed when switching to image generation`);
+      assert.deepEqual(customImageLabelsForPurpose(['other', alias], 'edit'), ['other', 'edit'],
+        `${alias} must normalize to edit instead of keeping an alias`);
+    }
+    assert.equal(customImagePurpose('thenoise', ['IMAGE-EDITING', 'upscaling']), 'upscaling');
+    assert.deepEqual(customImageLabelsForPurpose([' IMAGE-EDIT ', 'other', 'upscaling'], 'image'), ['other']);
     assert.deepEqual(customImageLabelsForPurpose(['tool-calling', 'EDIT'], 'upscaling'),
       ['tool-calling', 'upscaling']);
     assert.deepEqual(customImageLabelsForPurpose(['upscaling', 'edit', 'custom-tag'], 'image'),
