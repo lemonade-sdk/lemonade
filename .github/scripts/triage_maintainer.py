@@ -21,6 +21,7 @@ import json
 import re
 import subprocess
 import sys
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -109,6 +110,106 @@ def gh_api_pages(path):
     ).stdout
     pages = json.loads(out)
     return [item for page in pages for item in page]
+
+
+def gh_graphql(query, **variables):
+    cmd = ["gh", "api", "graphql", "-f", f"query={query}"]
+    for key, value in variables.items():
+        if value is not None:
+            cmd += ["-F", f"{key}={value}"]
+    out = subprocess.run(
+        cmd, check=True, capture_output=True, text=True, encoding="utf-8"
+    ).stdout
+    return json.loads(out)["data"]
+
+
+def search_count(repo, query):
+    q = urllib.parse.quote(f"repo:{repo} {query}")
+    return gh_api(f"/search/issues?q={q}&per_page=1")["total_count"]
+
+
+def search_items(repo, query):
+    """All issues/PRs matching a search query. The search API caps at 1000."""
+    q = urllib.parse.quote(f"repo:{repo} {query}")
+    items, page = [], 1
+    while True:
+        res = gh_api(f"/search/issues?q={q}&per_page=100&page={page}")
+        items.extend(res["items"])
+        if len(items) >= res["total_count"] or len(res["items"]) < 100:
+            break
+        if page == 10:
+            print(f"  [warn] '{query}' exceeds 1000 results", file=sys.stderr)
+            break
+        page += 1
+    return items
+
+
+def parse_ts(s):
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
+# Bots relabel PRs constantly, which bumps updated_at; only these timeline
+# events count as activity, and only when a human (or a pushed commit) did it.
+_PR_ACTIVITY_QUERY = """
+query($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 50, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number createdAt author { login }
+        timelineItems(last: 40, itemTypes: [ISSUE_COMMENT, PULL_REQUEST_REVIEW,
+            PULL_REQUEST_COMMIT, HEAD_REF_FORCE_PUSHED_EVENT, REOPENED_EVENT,
+            READY_FOR_REVIEW_EVENT]) {
+          nodes {
+            __typename
+            ... on IssueComment { createdAt author { login __typename } }
+            ... on PullRequestReview { createdAt author { login __typename } }
+            ... on PullRequestCommit { commit { committedDate } }
+            ... on HeadRefForcePushedEvent { createdAt actor { __typename } }
+            ... on ReopenedEvent { createdAt actor { __typename } }
+            ... on ReadyForReviewEvent { createdAt actor { __typename } }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+
+def fetch_pr_activity(repo):
+    """Return {pr_number: {"last_activity": datetime, "engagement": int}}.
+
+    engagement counts human comments and reviews by someone other than the
+    author, so reviewed PRs aren't reported as unanswered.
+    """
+    owner, name = repo.split("/", 1)
+    result, cursor = {}, None
+    while True:
+        conn = gh_graphql(_PR_ACTIVITY_QUERY, owner=owner, name=name, cursor=cursor)[
+            "repository"
+        ]["pullRequests"]
+        for pr in conn["nodes"]:
+            author = (pr.get("author") or {}).get("login")
+            last = parse_ts(pr["createdAt"])
+            engagement = 0
+            for item in pr["timelineItems"]["nodes"]:
+                kind = item["__typename"]
+                if kind == "PullRequestCommit":
+                    last = max(last, parse_ts(item["commit"]["committedDate"]))
+                    continue
+                who = item.get("author") or item.get("actor") or {}
+                if who.get("__typename") == "Bot":
+                    continue
+                last = max(last, parse_ts(item["createdAt"]))
+                if kind in ("IssueComment", "PullRequestReview") and (
+                    who.get("login") != author
+                ):
+                    engagement += 1
+            result[pr["number"]] = {"last_activity": last, "engagement": engagement}
+        if not conn["pageInfo"]["hasNextPage"]:
+            return result
+        cursor = conn["pageInfo"]["endCursor"]
 
 
 def fetch_top_contributors(repo, top_n=50):
@@ -205,6 +306,7 @@ def fetch_prs(repo, top_contributors, wg_predictions):
         ]
         for p in raw_pulls
     }
+    activity = fetch_pr_activity(repo)
     raw = gh_api_pages(f"/repos/{repo}/issues?state=open&per_page=100")
     prs = []
     for it in raw:
@@ -212,14 +314,15 @@ def fetch_prs(repo, top_contributors, wg_predictions):
             continue
         if it.get("draft"):
             continue
-        updated = datetime.fromisoformat(it["updated_at"].replace("Z", "+00:00"))
+        act = activity.get(it["number"])
+        last_activity = act["last_activity"] if act else parse_ts(it["created_at"])
         created = datetime.fromisoformat(it["created_at"].replace("Z", "+00:00"))
         login = (it.get("user") or {}).get("login", "?")
         assoc = it.get("author_association", "NONE")
         is_maint = assoc in WRITE_ASSOCIATIONS or login in ADMIN_MAINTAINERS
         body = it.get("body") or ""
         labels = [lbl["name"] for lbl in it.get("labels", [])]
-        days_stale = (now - updated).days
+        days_stale = (now - last_activity).days
         wg, wg_source, wg_reason = resolve_wg(
             labels, body, wg_predictions.get(it["number"])
         )
@@ -235,8 +338,10 @@ def fetch_prs(repo, top_contributors, wg_predictions):
                 ],
                 "review_requested": requested_reviewers.get(it["number"], []),
                 "comments": it.get("comments", 0),
+                "engagement": act["engagement"] if act else 0,
                 "created_at": it["created_at"],
                 "updated_at": it["updated_at"],
+                "last_activity": last_activity.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "days_stale": days_stale,
                 "days_old": (now - created).days,
                 "wg": wg,
@@ -255,109 +360,38 @@ def fetch_prs(repo, top_contributors, wg_predictions):
 
 
 def fetch_activity(repo, days=30):
-    """Fetch closed PRs from the last N days to build daily activity data.
+    """Daily opened / merged / closed-unmerged PR counts and the open count.
 
-    Returns a list of dicts with date, opened, merged, closed_not_merged counts
-    for each day in the window, plus the running open count reconstructed from
-    today backwards.
+    Uses created:/closed: searches so the window isn't skewed by how recently
+    a PR was last touched. The open count is rebuilt backwards from today.
     """
-    now = datetime.now(timezone.utc)
-    cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    window_start = cutoff - timedelta(days=days - 1)
+    today = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    start = today - timedelta(days=days - 1)
+    since = start.strftime("%Y-%m-%d")
+    day_keys = [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days)]
+    opened = dict.fromkeys(day_keys, 0)
+    merged = dict.fromkeys(day_keys, 0)
+    closed_nm = dict.fromkeys(day_keys, 0)
 
-    # Paginate closed PRs until we go past the window
-    closed_prs = []
-    page = 1
-    while True:
-        cmd = [
-            "gh",
-            "api",
-            f"/repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100&page={page}",
-        ]
-        try:
-            out = subprocess.run(
-                cmd, check=True, capture_output=True, text=True, encoding="utf-8"
-            ).stdout
-            batch = json.loads(out)
-        except Exception:
-            break
-        if not batch:
-            break
-        for pr in batch:
-            closed = pr.get("closed_at") or ""
-            if closed:
-                closed_dt = datetime.fromisoformat(closed.replace("Z", "+00:00"))
-                if closed_dt < window_start:
-                    # Past the window — stop paginating
-                    closed_prs_sorted = True
-                    break
-                closed_prs.append(pr)
-        else:
-            page += 1
+    for pr in search_items(repo, f"is:pr created:>={since}"):
+        d = pr["created_at"][:10]
+        if d in opened:
+            opened[d] += 1
+    for pr in search_items(repo, f"is:pr closed:>={since}"):
+        d = (pr.get("closed_at") or "")[:10]
+        if d not in merged:
             continue
-        break  # inner break triggered
+        if (pr.get("pull_request") or {}).get("merged_at"):
+            merged[d] += 1
+        else:
+            closed_nm[d] += 1
 
-    # Also get open PRs created in the window (already fetched but re-fetch
-    # created_at dates here to count opens per day)
-    open_prs = []
-    try:
-        cmd = [
-            "gh",
-            "api",
-            "--paginate",
-            "--slurp",
-            f"/repos/{repo}/pulls?state=open&sort=created&direction=desc&per_page=100",
-        ]
-        out = subprocess.run(
-            cmd, check=True, capture_output=True, text=True, encoding="utf-8"
-        ).stdout
-        pages = json.loads(out)
-        open_prs = [pr for page in pages for pr in page]
-    except Exception:
-        pass
-
-    # Build per-day buckets
-    days_list = [window_start + timedelta(days=i) for i in range(days)]
-    day_keys = [d.strftime("%Y-%m-%d") for d in days_list]
-    opened = {k: 0 for k in day_keys}
-    merged = {k: 0 for k in day_keys}
-    closed_nm = {k: 0 for k in day_keys}
-
-    for pr in open_prs:
-        created = pr.get("created_at", "")
-        if created:
-            d = created[:10]
-            if d in opened:
-                opened[d] += 1
-
-    for pr in closed_prs:
-        created = pr.get("created_at", "")
-        if created:
-            d = created[:10]
-            if d in opened:
-                opened[d] += 1
-        closed = pr.get("closed_at", "")
-        if closed:
-            d = closed[:10]
-            if d in merged:
-                if pr.get("merged_at"):
-                    merged[d] += 1
-                else:
-                    closed_nm[d] += 1
-
-    # Reconstruct running open count: start from today's known open count,
-    # go backwards subtracting opens and adding closes each day.
-    # We don't have exact daily snapshots, so we approximate from events.
-    # running_open[i] = open count at END of day i
-    total_open_now = len([pr for pr in open_prs if not pr.get("draft")])
-    running = {}
-    current = total_open_now
+    running, current = {}, search_count(repo, "is:pr is:open")
     for d in reversed(day_keys):
         running[d] = current
-        # Going backwards: undo today's events
-        current = current - opened.get(d, 0) + merged.get(d, 0) + closed_nm.get(d, 0)
-        current = max(current, 0)
-
+        current = max(current - opened[d] + merged[d] + closed_nm[d], 0)
     return [
         {
             "date": d,
@@ -436,101 +470,105 @@ def compute_priority_score(pr):
     return score
 
 
-def fetch_rfcs(repo, prs):
-    """Return RFC discussions sorted stalest-first, cross-referenced with PR labels."""
+_RFC_QUERY = """
+query($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    discussions(first: 100, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number title url closed createdAt author { login }
+        category { name }
+        labels(first: 20) { nodes { name } }
+        comments(last: 20) {
+          totalCount
+          nodes { createdAt replies(last: 1) { nodes { createdAt } } }
+        }
+      }
+    }
+  }
+}
+"""
+
+RFC_STATUS_LABELS = ("rfc:on-roadmap", "rfc:not-planned", "rfc:open-for-comment")
+
+
+def fetch_rfcs(repo):
+    """Open RFC discussions, stalest first, with status from their rfc:* label."""
     now = datetime.now(timezone.utc)
-    pr_rfc_map = {}
-    for pr in prs:
-        if pr.get("rfc_status"):
-            body = pr.get("body") or ""
-            for m in re.finditer(r"discussions/(\d+)", body, re.I):
-                pr_rfc_map[int(m.group(1))] = pr["rfc_status"]
-    try:
-        raw = gh_api_pages(f"/repos/{repo}/discussions?per_page=100")
-    except Exception as exc:
-        print(f"  [warn] discussions API failed ({exc})", file=sys.stderr)
-        return []
-    out = []
-    for d in raw:
-        cat = (d.get("category") or {}).get("name", "")
-        if cat != "Request for Comment (RFC)":
-            continue
-        created_str = d.get("created_at") or d.get("createdAt") or ""
-        updated_str = d.get("updated_at") or d.get("updatedAt") or created_str
-        try:
-            created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
-            updated_dt = datetime.fromisoformat(updated_str.replace("Z", "+00:00"))
-        except Exception:
-            continue
-        num = d.get("number") or 0
-        out.append(
-            {
-                "number": num,
-                "title": d.get("title") or "",
-                "url": d.get("html_url") or d.get("url") or "",
-                "author": (d.get("user") or d.get("author") or {}).get("login") or "?",
-                "comments": d.get("comments") or 0,
-                "days_open": (now - created_dt).days,
-                "days_quiet": (now - updated_dt).days,
-                "rfc_status": pr_rfc_map.get(num, "open"),
-            }
-        )
+    owner, name = repo.split("/", 1)
+    out, cursor = [], None
+    while True:
+        conn = gh_graphql(_RFC_QUERY, owner=owner, name=name, cursor=cursor)[
+            "repository"
+        ]["discussions"]
+        for d in conn["nodes"]:
+            if d["closed"] or d["category"]["name"] != "Request for Comment (RFC)":
+                continue
+            labels = {lbl["name"] for lbl in d["labels"]["nodes"]}
+            status = next(
+                (lbl[4:] for lbl in RFC_STATUS_LABELS if lbl in labels), "unlabeled"
+            )
+            last = parse_ts(d["createdAt"])
+            for c in d["comments"]["nodes"]:
+                last = max(last, parse_ts(c["createdAt"]))
+                for r in c["replies"]["nodes"]:
+                    last = max(last, parse_ts(r["createdAt"]))
+            out.append(
+                {
+                    "number": d["number"],
+                    "title": d["title"],
+                    "url": d["url"],
+                    "author": (d.get("author") or {}).get("login") or "?",
+                    "comments": d["comments"]["totalCount"],
+                    "days_open": (now - parse_ts(d["createdAt"])).days,
+                    "days_quiet": (now - last).days,
+                    "rfc_status": status,
+                }
+            )
+        if not conn["pageInfo"]["hasNextPage"]:
+            break
+        cursor = conn["pageInfo"]["endCursor"]
     out.sort(key=lambda x: x["days_quiet"], reverse=True)
     return out
 
 
 def fetch_issue_trend(repo, days=90):
-    """Return [{date, open_issues, open_prs}] over the last N days."""
-    now = datetime.now(timezone.utc)
-    cutoff = (now - timedelta(days=days)).replace(
+    """Return [{date, open_issues, open_prs}] for each day in the window.
+
+    Rebuilt backwards from today's open counts using created:/closed: searches;
+    a since= listing would drop items that were open but untouched.
+    """
+    today = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
-    cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
-    try:
-        raw = gh_api_pages(
-            f"/repos/{repo}/issues?state=all&per_page=100&since={cutoff_str}"
-        )
-    except Exception as exc:
-        print(f"  [warn] issue trend API failed ({exc})", file=sys.stderr)
-        return []
-    items = []
-    for it in raw:
-        created_str = it.get("created_at") or ""
-        closed_str = it.get("closed_at")
-        try:
-            created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
-        except Exception:
-            continue
-        closed_dt = None
-        if closed_str:
-            try:
-                closed_dt = datetime.fromisoformat(closed_str.replace("Z", "+00:00"))
-            except Exception:
-                pass
-        is_pr = bool(it.get("pull_request"))
-        items.append((created_dt, closed_dt, is_pr))
-    day_list = [cutoff + timedelta(days=i) for i in range(days + 1)]
-    result = []
-    for day in day_list:
-        day_end = day + timedelta(days=1)
-        open_issues = sum(
-            1
-            for created, closed, is_pr in items
-            if not is_pr and created < day_end and (closed is None or closed >= day)
-        )
-        open_prs = sum(
-            1
-            for created, closed, is_pr in items
-            if is_pr and created < day_end and (closed is None or closed >= day)
-        )
-        result.append(
-            {
-                "date": day.strftime("%Y-%m-%d"),
-                "open_issues": open_issues,
-                "open_prs": open_prs,
-            }
-        )
-    return result
+    start = today - timedelta(days=days)
+    since = start.strftime("%Y-%m-%d")
+    day_list = [start + timedelta(days=i) for i in range(days + 1)]
+    series = {}
+    for kind in ("issue", "pr"):
+        created = [
+            parse_ts(i["created_at"])
+            for i in search_items(repo, f"is:{kind} created:>={since}")
+        ]
+        closed = [
+            parse_ts(i["closed_at"])
+            for i in search_items(repo, f"is:{kind} closed:>={since}")
+        ]
+        open_now = search_count(repo, f"is:{kind} is:open")
+        series[kind] = [
+            open_now
+            - sum(c >= day + timedelta(days=1) for c in created)
+            + sum(c >= day + timedelta(days=1) for c in closed)
+            for day in day_list
+        ]
+    return [
+        {
+            "date": day.strftime("%Y-%m-%d"),
+            "open_issues": series["issue"][i],
+            "open_prs": series["pr"][i],
+        }
+        for i, day in enumerate(day_list)
+    ]
 
 
 def fetch_weekly_pulse(repo, wg_predictions):
@@ -1090,7 +1128,7 @@ function prCard(pr) {
         <span>by <strong><a href="https://github.com/${esc(pr.author)}"
           target="_blank" rel="noopener">${esc(pr.author)}</a></strong></span>
         <span>opened ${ageText(pr.days_old)} ago</span>
-        <span class="${ageC}">updated ${ageText(pr.days_stale)} ago</span>
+        <span class="${ageC}" title="Last human comment, review, or push; bot label changes are ignored">active ${ageText(pr.days_stale)} ago</span>
         <span>${pr.comments} comment${pr.comments===1?"":"s"}</span>
         <span>→ ${assignees}</span>
         ${pr.suggested_reviewers.length ? `<span class="suggest">suggested: ${pr.suggested_reviewers
@@ -1362,8 +1400,8 @@ function renderRFCPanel() {
     body.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:10px 0">No open RFCs found</div>';
     return;
   }
-  const STATUS_COLOR = {"required":"var(--hot)","on-roadmap":"var(--first)","open-for-comment":"var(--link)","open":"var(--muted)","not-required":"var(--muted)"};
-  const STATUS_LABEL = {"required":"RFC required","on-roadmap":"on roadmap","open-for-comment":"open for comment","open":"open","not-required":"not required"};
+  const STATUS_COLOR = {"on-roadmap":"var(--first)","open-for-comment":"var(--link)","not-planned":"var(--hot)","unlabeled":"var(--muted)"};
+  const STATUS_LABEL = {"on-roadmap":"on roadmap","open-for-comment":"open for comment","not-planned":"not planned","unlabeled":"no status label"};
   let html = `<table class="rfc-table"><thead><tr>
     <th>Title</th><th>Author</th><th>Days open</th><th>Last activity</th><th>Comments</th><th>Status</th>
   </tr></thead><tbody>`;
@@ -1728,7 +1766,7 @@ def main():
     rfcs = []
     if args.include_rfcs:
         print("Fetching RFCs…", file=sys.stderr)
-        rfcs = fetch_rfcs(args.repo, prs)
+        rfcs = fetch_rfcs(args.repo)
         print(f"  found {len(rfcs)} open RFCs", file=sys.stderr)
 
     print("Building weekly pulse…", file=sys.stderr)

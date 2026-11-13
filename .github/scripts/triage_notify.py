@@ -6,10 +6,13 @@ GitHub comment tagging the right maintainer — but only if no triage-notify
 comment has been posted in the last 7 days, to avoid spam.
 
 Rules (in priority order):
-  1. rfc-blocked       — rfc:required label + 14d+ no update → @jeremyfowers
-  2. wg-stale          — WG declared in body + 21d+ no update → WG lead
-  3. first-timer       — FIRST_TIME_CONTRIBUTOR/FIRST_TIMER + 5d+, no comments
-  4. stale-unassigned  — 45d+ no update + unassigned → @jeremyfowers
+  1. rfc-blocked       — rfc:required label + 14d+ inactive → @jeremyfowers
+  2. wg-stale          — wg:: label or declared WG + 21d+ inactive → WG lead
+  3. first-timer       — first-time author, 5d+ old, no comment or review
+  4. stale-unassigned  — 45d+ inactive + unassigned → @jeremyfowers
+
+"Inactive" means no human comment, review, or push; bot label changes
+don't count, since they bump GitHub's updated_at on every PR.
 
 Usage:
     python .github/scripts/triage_notify.py [--repo OWNER/REPO] [--dry-run]
@@ -21,10 +24,18 @@ Requirements:
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from triage_maintainer import (  # noqa: E402
+    declared_wg,
+    fetch_pr_activity,
+    label_wg,
+    parse_ts,
+)
 
 ADMIN_MAINTAINERS = {
     "jeremyfowers",
@@ -36,7 +47,7 @@ ADMIN_MAINTAINERS = {
     "Geramy",
 }
 
-# Maps canonical WG display names (from parse_wg) to their lead's GitHub login.
+# Maps canonical WG display names to their lead's GitHub login.
 WG_LEADS = {
     "Auto-Tune": "bitgamma",
     "Cross-Vendor Support": "kenvandine",
@@ -47,21 +58,6 @@ WG_LEADS = {
     "Platform Core": "superm1",
 }
 
-CANONICAL_WGS = {
-    "auto-tune": "Auto-Tune",
-    "autotune": "Auto-Tune",
-    "auto tune": "Auto-Tune",
-    "cross-vendor support": "Cross-Vendor Support",
-    "cross-vendor": "Cross-Vendor Support",
-    "cross vendor support": "Cross-Vendor Support",
-    "cross vendor": "Cross-Vendor Support",
-    "cloud hybrid": "Cloud Hybrid",
-    "remote use": "Remote Use",
-    "gui app": "GUI App",
-    "enterprise grade": "Enterprise Grade",
-    "platform-core": "Platform Core",
-    "platform core": "Platform Core",
-}
 
 WRITE_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 # GitHub assigns exactly one of these; FIRST_TIMER means no prior GitHub
@@ -71,19 +67,6 @@ FIRST_TIME_ASSOCIATIONS = {"FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER"}
 SENTINEL = "<!-- triage-notify:"
 DEDUP_DAYS = 7
 MAX_PRS_PER_RUN = 20
-
-
-def parse_wg(body):
-    if not body:
-        return None
-    m = re.search(r"scope of WG:\s*([^\n\r<]{1,60})", body, re.IGNORECASE)
-    if m:
-        return CANONICAL_WGS.get(m.group(1).strip().lower())
-    body_lower = body.lower()
-    for key in sorted(CANONICAL_WGS, key=len, reverse=True):
-        if key in body_lower:
-            return CANONICAL_WGS[key]
-    return None
 
 
 def run(cmd):
@@ -104,6 +87,7 @@ def gh_api_pages(path):
 
 def fetch_open_prs(repo):
     now = datetime.now(timezone.utc)
+    activity = fetch_pr_activity(repo)
     raw = gh_api_pages(f"/repos/{repo}/issues?state=open&per_page=100")
     prs = []
     for it in raw:
@@ -114,10 +98,9 @@ def fetch_open_prs(repo):
         login = (it.get("user") or {}).get("login", "")
         if login in ADMIN_MAINTAINERS:
             continue
-        updated = datetime.fromisoformat(it["updated_at"].replace("Z", "+00:00"))
-        created = datetime.fromisoformat(it["created_at"].replace("Z", "+00:00"))
+        created = parse_ts(it["created_at"])
+        act = activity.get(it["number"], {"last_activity": created, "engagement": 0})
         labels = [lbl["name"] for lbl in it.get("labels", [])]
-        body = it.get("body") or ""
         prs.append(
             {
                 "number": it["number"],
@@ -127,10 +110,10 @@ def fetch_open_prs(repo):
                 "author_association": it.get("author_association", "NONE"),
                 "labels": labels,
                 "assignees": [a["login"] for a in it.get("assignees", []) if a],
-                "days_stale": (now - updated).days,
+                "days_stale": (now - act["last_activity"]).days,
                 "days_old": (now - created).days,
-                "comments": it.get("comments", 0),
-                "wg": parse_wg(body),
+                "engagement": act["engagement"],
+                "wg": label_wg(labels) or declared_wg(it.get("body") or ""),
             }
         )
     return prs
@@ -166,7 +149,7 @@ def classify_pr(pr):
     if "rfc:required" in labels and pr["days_stale"] >= 14:
         return ("rfc-blocked", "jeremyfowers")
 
-    # Rule 2: WG declared in body but quiet
+    # Rule 2: in a workgroup but quiet
     if pr.get("wg") and pr["days_stale"] >= 21:
         lead = WG_LEADS.get(pr["wg"], "jeremyfowers")
         return ("wg-stale", lead)
@@ -175,7 +158,7 @@ def classify_pr(pr):
     if (
         pr["author_association"] in FIRST_TIME_ASSOCIATIONS
         and pr["days_old"] >= 5
-        and pr["comments"] == 0
+        and pr["engagement"] == 0
     ):
         return ("first-timer", "jeremyfowers")
 
@@ -193,12 +176,12 @@ def build_comment(pr, rule, ping_login):
             "It looks like it needs an RFC decision before it can move forward."
         ),
         "wg-stale": (
-            f"This PR has been quiet for {pr['days_stale']}d and carries a workgroup "
-            f"declaration ({pr.get('wg', '')}) that falls under your charter."
+            f"This PR has been quiet for {pr['days_stale']}d and is in the "
+            f"{pr.get('wg', '')} workgroup, which falls under your charter."
         ),
         "first-timer": (
             f"This is @{pr['author']}'s first contribution and it's been open "
-            f"{pr['days_old']}d with no review yet."
+            f"{pr['days_old']}d with no comment or review yet."
         ),
         "stale-unassigned": (
             f"This PR has had no activity for {pr['days_stale']}d and has no assignee."
