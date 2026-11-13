@@ -44,8 +44,8 @@
         }
       },
       "ROCm/ggml-staging-automation": {
-        "hrx-b99": {
-          "llama-hrx-b99-bin-manylinux-hrx-x64.tar.gz": "sha256:02c88d96d39c607aefbb982e8b4f630785ec43c4416583834912ceaa63fd7624"
+        "hrx-b129": {
+          "llama-hrx-b129-bin-manylinux-hrx-x64.tar.gz": "sha256:309e124c2c532980c5541cc2857f187a2a3f5cc82b781d01c05ebb498b524058"
         }
       }
     }
@@ -58,10 +58,10 @@
     "metal": "b12109",
     "cpu": "b12109",
     "nathanw": "vulkan-radv-performance@sha256:41018261e61b7e32fb38e4985ba569d0837804e727dcc62689c2fb1d73ec8f15",
-    "halobox": "rocm-10.0-strix-llama@sha256:7d3844524fda1865a2ae60cc73eb232589626ccca245cc3c7bd2afb153bd9bd6"
+    "halobox": "rocm-10.0-strix-llama@sha256:015fddafc28bfdb1653a99905010e83a9327f072206cb1f882f1f9f922069f48"
   },
   "llamacpp-hrx": {
-    "hrx": "hrx-b99"
+    "hrx": "hrx-b129"
   },
   "whispercpp": {
     "cpu": "v1.8.4",
@@ -81,13 +81,13 @@
     "rocm": "rocm-10.0-rocmfpx@sha256:4df326e907a469f4acc6091fa7fb68fb275c2d5a7136bacd8e47e7339a5c49f7"
   },
   "halogen": {
-    "rocm": "0.18.22@sha256:273714ccb64dabb7fac0418ee1b6dd83eb57d2fd44cf286eb68a7c694a27c203"
+    "rocm": "0.19.1@sha256:7ab5c3dfd77acb2387603f1807069cac3494e678f413c0670745ba2df74c0f0e"
   },
   "gufo": {
-    "rocm": "rocm-10.0-gufo@sha256:67aa0b040993fedfd4e300242c5cb48f8add5874454a7486993668e74185e7a9"
+    "rocm": "rocm-10.0-gufo@sha256:2d7e9995ff2dfd7035f610a419b4f38d5d1604c0c7ab7f3b81415ad6f3e8db8b"
   },
   "ds4": {
-    "rocm": "rocm-10.0@sha256:31b4e7e3584684768ee060e3dfeb62c1d716219da468090f3483977fdf6dfb47"
+    "rocm": "rocm-10.0@sha256:e14ad3edb88c9c2e80b1c1464ef9307bcc56c935f31c4df9fa8e980974f68c47"
   },
   "therock": {
     "version": "10.1.0",

@@ -31,6 +31,8 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 dirs = "5"
 url = "2"
+# Share the beacon port (SO_REUSEADDR / SO_REUSEPORT); already in the tree via tokio.
+socket2 = { version = "0.6", features = ["all"] }
 log = "0.4"
 env_logger = "0.11"
 

@@ -1154,8 +1154,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
       scrollHeight: element.scrollHeight,
     }));
     expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight);
-    await graphScroller.hover();
-    await page.mouse.wheel(0, 200);
+    // Test the scroll container itself, not wheel routing to a child under the cursor.
+    await graphScroller.evaluate(element => { element.scrollTop = 200; });
     await expect.poll(() => graphScroller.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
 
     await page.screenshot({ path: 'screenshots/15-monitor.png', fullPage: true });

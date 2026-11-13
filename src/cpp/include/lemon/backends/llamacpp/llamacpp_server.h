@@ -4,8 +4,12 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/llamacpp/llamacpp_rulehead.h"
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace lemon {
 namespace backends {
@@ -44,8 +48,7 @@ public:
     // IRerankingServer implementation
     json reranking(const json& request) override;
 
-    // IClassificationServer implementation: zero-shot labels, answered through
-    // /v1/systemone. Only a model labelled `systemone` serves it.
+    // IClassificationServer implementation
     json classify(const json& request) override;
 
     nlohmann::ordered_json systemone(const nlohmann::ordered_json& request) override;
@@ -72,6 +75,13 @@ private:
     // of `body`, or they cannot be counted; empty when it reads them whole.
     std::optional<json> laya_cut_error(const nlohmann::ordered_json& body);
 
+    json classify_with_rule_head(const json& request);
+
+    std::shared_ptr<const llamacpp::RuleHead> rule_head_;
+    // {special tokens around an empty input, tokens in the elision marker}: fixed
+    // for a loaded model, so counted once by the first rule-head request.
+    std::mutex rule_head_counts_mutex_;
+    std::optional<std::pair<size_t, size_t>> rule_head_counts_;
     bool decision_model_ = false;
     std::string decision_type_;
     int64_t decision_max_head_tokens_ = 0;

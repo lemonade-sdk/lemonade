@@ -429,16 +429,20 @@ std::vector<ModelFileInfo> ModelArtifactStore::list_files(const ModelInfo& info)
             continue;
         }
 
-        fs::path path = utils::path_from_utf8(resolved_path);
-        const bool path_exists = safe_exists(path);
+        auto checkpoint_files = gguf_files(resolved_path);
+        std::sort(checkpoint_files.begin(), checkpoint_files.end());
+        for (const auto& file_path : checkpoint_files) {
+            fs::path path = utils::path_from_utf8(file_path);
+            const bool path_exists = safe_exists(path);
 
-        ModelFileInfo file;
-        file.name = utils::path_to_utf8(path.filename());
-        file.path = resolved_path;
-        file.role = role;
-        file.exists = path_exists;
-        file.size_bytes = path_exists ? size_bytes(path) : 0;
-        files.push_back(std::move(file));
+            ModelFileInfo file;
+            file.name = utils::path_to_utf8(path.filename());
+            file.path = file_path;
+            file.role = role;
+            file.exists = path_exists;
+            file.size_bytes = path_exists ? size_bytes(path) : 0;
+            files.push_back(std::move(file));
+        }
     }
 
     return files;

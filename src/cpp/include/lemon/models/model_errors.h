@@ -1,6 +1,8 @@
 #pragma once
 
 #include <stdexcept>
+#include <string>
+#include <utility>
 
 namespace lemon {
 
@@ -20,6 +22,16 @@ public:
     using std::runtime_error::runtime_error;
 };
 constexpr const char* kUnknownModelErrorCode = "unknown_model";
+
+// Thrown by a pull when a model's additional checkpoint is not in its repository.
+// It names the checkpoint's role, so a backend can explain which file is missing
+// without reading the message.
+class MissingCheckpointError : public std::runtime_error {
+public:
+    MissingCheckpointError(const std::string& message, std::string checkpoint_type)
+        : std::runtime_error(message), checkpoint_type(std::move(checkpoint_type)) {}
+    std::string checkpoint_type;
+};
 
 // Thrown when a definition names a deployment mode its recipe's backend cannot
 // serve. Registering it would list the model as something it is not and then
