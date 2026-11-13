@@ -867,6 +867,32 @@ class OllamaTests(ServerTestBase):
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertEqual(response.json()["done_reason"], "unload")
 
+    def test_022g_show_speech_decision_capabilities(self):
+        """Test /api/show reports speech and decision the way Ollama does."""
+        cases = {
+            # A text-to-speech model.
+            "kokoro-v1": ["speech"],
+            # A SystemOne decision model reports nothing else, as in Ollama.
+            "Laya-GGUF": ["decision"],
+            # /api/generate drops audio sent in `images`, so audio input is not reported.
+            "Qwen2.5-Omni-3B-GGUF": ["completion", "vision"],
+        }
+        for model, expected in cases.items():
+            with self.subTest(model=model):
+                response = requests.post(
+                    f"{OLLAMA_BASE_URL}/api/show",
+                    json={"name": model},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                if response.status_code == 404:
+                    self.skipTest(f"{model} is not offered on this host")
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["capabilities"], expected)
+
+        capabilities = self.show_capabilities(ENDPOINT_TEST_MODEL)
+        for capability in ("speech", "decision", "audio"):
+            self.assertNotIn(capability, capabilities)
+
     def test_023_ollama_lib_chat_streaming(self):
         """Test ollama.chat() streaming via Python library."""
         client = self.get_ollama_client()

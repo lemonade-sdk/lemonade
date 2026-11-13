@@ -234,6 +234,32 @@ class TextToSpeechTests(ServerTestBase):
 
         print(f"[OK] Unstreamable format rejected")
 
+    def test_008_tts_empty_voice_uses_default(self):
+        """An empty voice, as the Ollama CLI sends it, speaks in the default voice."""
+        payload = {
+            "model": TTS_MODEL,
+            "voice": "",
+            "input": "Lemonade can speak",
+            "response_format": "wav",
+        }
+
+        response = requests.post(
+            f"{self.base_url}/audio/speech",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Speech with an empty voice failed with status {response.status_code}: "
+            f"{response.text[:300]}",
+        )
+        self.assertEqual(response.content[:4], b"RIFF")
+        self.assertEqual(response.content[8:12], b"WAVE")
+
+        print(f"[OK] Empty voice spoke in the default voice")
+
 
 if __name__ == "__main__":
     run_server_tests(TextToSpeechTests, "TTS TESTS")
