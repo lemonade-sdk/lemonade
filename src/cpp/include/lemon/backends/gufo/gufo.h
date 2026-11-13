@@ -69,6 +69,7 @@ inline const BackendDescriptor descriptor = {
             /*image*/   "ghcr.io/gufo-org/toolboxes/gufo-runtime",
             /*devices*/ {"/dev/dri", "/dev/kfd"},
             /*cap_add*/ {},
+            /*user*/    lemon::utils::ContainerUser{1000, 1000},
         }},
     },
 };
