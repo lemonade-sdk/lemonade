@@ -12,6 +12,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/server/model_loader.h"
 #include "lemon/server/shared_args.h"
+#include "lemon/streaming_proxy.h"
 
 namespace lemon {
 
@@ -308,7 +309,9 @@ void stream_sse_to_ndjson(const std::string& openai_body, httplib::DataSink& cli
                 if (openai_chunk.is_object() && openai_chunk.contains("error") &&
                     !openai_chunk["error"].is_null()) {
                     LOG(ERROR, "OllamaApi") << "Backend error in stream: "
-                                            << openai_chunk["error"].dump() << std::endl;
+                                            << openai_chunk["error"].dump().substr(
+                                                   0, StreamingProxy::kMaxErrorBodyBytes)
+                                            << std::endl;
                     sent_error = true;
                     std::string ndjson =
                         json{{"error", ollama_stream_error_message(openai_chunk["error"])}}.dump() + "\n";

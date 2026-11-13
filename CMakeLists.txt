@@ -3957,6 +3957,13 @@ if(BUILD_TESTING AND EXISTS "${_STREAMING_SILENT_STREAM_TEST_SRC}")
     add_cpp_ci_test(StreamingSilentStreamTest CI ON COMMAND test_streaming_silent_stream)
 endif()
 
+set(_OLLAMA_STREAM_ERROR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ollama_stream_error.cpp")
+if(BUILD_TESTING AND EXISTS "${_OLLAMA_STREAM_ERROR_TEST_SRC}")
+    add_executable(test_ollama_stream_error test/cpp/test_ollama_stream_error.cpp)
+    target_link_libraries(test_ollama_stream_error PRIVATE lemonade-server-core)
+    add_cpp_ci_test(OllamaStreamErrorTest CI ON COMMAND test_ollama_stream_error)
+endif()
+
 set(_CLOUD_DISCOVERY_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_discovery_policy.cpp")
 if(BUILD_TESTING AND EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
     add_executable(test_cloud_discovery_policy test/cpp/test_cloud_discovery_policy.cpp)
