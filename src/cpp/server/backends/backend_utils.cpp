@@ -557,7 +557,7 @@ namespace lemon::backends {
             exe_path = find_executable_in_install_dir(install_dir, spec.binary);
             needs_install = exe_path.empty();
             if (!needs_install && spec.additional_assets_fn) {
-                for (const auto& asset : spec.additional_assets_fn(backend)) {
+                for (const auto& asset : spec.additional_assets_fn(backend, expected_version)) {
                     if (!asset.is_complete(install_dir)) {
                         needs_install = true;
                         break;
@@ -595,7 +595,7 @@ namespace lemon::backends {
 
         if (needs_install) {
             const auto additional_assets = spec.additional_assets_fn
-                ? spec.additional_assets_fn(backend) : std::vector<BackendAsset>{};
+                ? spec.additional_assets_fn(backend, expected_version) : std::vector<BackendAsset>{};
             const int asset_count = 1 + static_cast<int>(additional_assets.size());
             LOG(INFO, spec.log_name()) << "Installing " << spec.binary << " (version: "
                     << expected_version << ")" << std::endl;
@@ -749,6 +749,9 @@ namespace lemon::backends {
                 utils::DownloadOptions archive_download_opts;
                 archive_download_opts.expected_hash = lookup_expected_asset_hash(
                     spec.recipe, backend, expected_version, repo, filename);
+                if (archive_download_opts.expected_hash.empty() && spec.asset_hash_fn) {
+                    archive_download_opts.expected_hash = spec.asset_hash_fn(expected_version, filename);
+                }
                 archive_download_opts.resume_partial = false;
 
                 auto download_result = utils::HttpClient::download_file(
@@ -871,6 +874,9 @@ namespace lemon::backends {
                 utils::DownloadOptions opts;
                 opts.expected_hash = lookup_expected_asset_hash(
                     spec.recipe, backend, expected_version, repo, name);
+                if (opts.expected_hash.empty() && spec.asset_hash_fn) {
+                    opts.expected_hash = spec.asset_hash_fn(expected_version, name);
+                }
                 const auto result = utils::HttpClient::download_file(
                     "https://github.com/" + repo + "/releases/download/" +
                         expected_version + "/" + name,

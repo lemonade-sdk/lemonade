@@ -283,6 +283,8 @@ Lemonade launches `llama-server` with `--parallel 1` and leaves the upstream `--
 
 Experimental; maintained by Julian Xhokaxhiu. Runs supported Qwen models using shared weights and Strata's bundled Python preparation tools/server. Engine and Control follow `backend_versions.json`; models are registered in `server_models.json`. Flash MTP (~5.2 GB on first load, `--mtp off` to disable), KV streaming and slot telemetry use upstream support. Memory filtering uses system RAM for integrated AMD GPUs and Apple Silicon, and the device memory pool otherwise.
 
+To upgrade Strata, bump its release pins. Exact asset names and hashes come from that release's checksum and Control install manifests, cached in memory without GitHub API lookups.
+
 ### Backend auto-selection
 
 When a recipe's backend is not pinned in `config.json` (the `backend` key is absent or `"auto"`), the default backend reported in `system-info` — and used by `RecipeOptions` when resolving `*_backend` options — is chosen as follows: the first supported backend in `RECIPE_DEFS` preference order wins, unless a later supported backend is already locally installed (state `installed`, `update_available`, or `update_required`) while the earlier candidates are merely installable. In that case the first installed one wins. This makes explicitly installing a variant (e.g. the Vulkan build of a GPU backend) an effective override: auto-selection uses what is on disk instead of downloading the preference-order winner. An explicit `backend` value in `config.json` always takes precedence over both rules. The llamacpp `system` variant is never auto-selected unless `prefer_system` is set.

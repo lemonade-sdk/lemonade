@@ -8,6 +8,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/custom_args.h"
+#include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
@@ -19,9 +20,11 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <mutex>
 #include <random>
 #include <regex>
+#include <sstream>
 #include <stdexcept>
 
 namespace fs = std::filesystem;
@@ -64,6 +67,76 @@ bool platform_supports_backend(const std::string& backend) {
 #else
     return false;
 #endif
+}
+
+const std::vector<std::string>& control_files() {
+    static const std::vector<std::string> files{
+        python_binary(), "serve/server.py", "setup.py", "tools/strata_tokenizer.py", "tools/iq_pack.py"};
+    return files;
+}
+
+json release_assets(const std::string& version) {
+    if (!utils::is_safe_path_component(version)) {
+        throw std::invalid_argument("Invalid Strata release tag: " + version);
+    }
+    static std::mutex mutex;
+    static std::map<std::string, json> cache;
+    std::lock_guard<std::mutex> lock(mutex);
+    if (const auto it = cache.find(version); it != cache.end()) return it->second;
+    const auto fetch = [&](const std::string& filename) {
+        const std::string url = "https://github.com/Niko1221/Strata/releases/download/" + version + "/" + filename;
+        const auto response = utils::HttpClient::get(
+            url, {}, 30, utils::HttpSecurityPolicy::ExternalHttpsOnly, 256 * 1024);
+        if (response.status_code < 200 || response.status_code >= 300) {
+            throw std::runtime_error("Strata release metadata returned HTTP " +
+                                     std::to_string(response.status_code) + ": " + url);
+        }
+        return response.body;
+    };
+    json assets = json::object();
+    for (const std::string filename : {"SHA256SUMS.txt", "install-manifest.txt"}) {
+        std::istringstream manifest(fetch(filename));
+        std::string line;
+        while (std::getline(manifest, line)) {
+            if (line.empty()) continue;
+            std::istringstream row(line);
+            std::string name, hash;
+            if (filename == "install-manifest.txt") {
+                std::string target, component_version;
+                row >> target >> component_version >> name >> hash;
+            } else {
+                row >> hash >> name;
+                if (name.rfind("strata-engine-", 0) != 0) continue;
+            }
+            if (!row || !utils::is_safe_path_component(name) ||
+                !std::regex_match(hash, std::regex("[0-9a-f]{64}")) || assets.contains(name)) {
+                throw std::invalid_argument("Invalid or duplicate Strata release asset in " + filename + ": " + name);
+            }
+            assets[name] = "sha256:" + hash;
+        }
+    }
+    cache.emplace(version, assets);
+    return assets;
+}
+
+std::string select_asset(const json& assets, const std::string& prefix, const std::string& suffix) {
+    std::string result;
+    for (const auto& [name, hash] : assets.items()) {
+        if (name.compare(0, prefix.size(), prefix) != 0 || name.size() < suffix.size() ||
+            name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) continue;
+        if (!result.empty()) {
+            throw std::invalid_argument("Multiple Strata release assets for " + prefix + suffix);
+        }
+        result = name;
+    }
+    if (result.empty()) {
+        throw std::invalid_argument("Missing Strata release asset for " + prefix + suffix);
+    }
+    return result;
+}
+
+std::string asset_hash(const std::string& version, const std::string& filename) {
+    return release_assets(version).at(filename).get<std::string>();
 }
 
 class StrataOps : public BackendOps {
@@ -155,9 +228,9 @@ public:
             return {false, "Strata " + backend + " is not supported on this platform"};
         }
         const auto root = BackendUtils::get_install_directory("strata", backend);
-        const auto assets = strata::additional_assets(backend);
-        const bool complete = binary_found && std::all_of(assets.begin(), assets.end(),
-            [&](const BackendAsset& asset) { return asset.is_complete(root); });
+        const auto& files = control_files();
+        const bool complete = binary_found && std::all_of(files.begin(), files.end(),
+            [&](const std::string& file) { return fs::is_regular_file(fs::path(root) / "control" / file); });
         return {complete, complete ? "" : "Strata engine or bundled Python server is missing"};
     }
 
@@ -189,7 +262,7 @@ double streaming_memory_pool_gb(const json& devices, double system_ram_gb, doubl
 }
 
 std::string engine_asset(const std::string& target, const std::string& backend,
-                         const std::string& arch) {
+                         const std::string& arch, const json& assets) {
     std::string variant;
     if (target == "macos-arm64" && backend == "metal") {
         variant = "metal";
@@ -213,15 +286,14 @@ std::string engine_asset(const std::string& target, const std::string& backend,
     } else {
         throw std::invalid_argument("Unsupported Strata backend: " + backend);
     }
-    return "strata-engine-*-" + target + "-" + variant + ".tar.gz";
+    return select_asset(assets, "strata-engine-", "-" + target + "-" + variant + ".tar.gz");
 }
 
-std::vector<BackendAsset> additional_assets(const std::string&) {
+std::vector<BackendAsset> additional_assets(const std::string&, const std::string& version) {
     const auto target = platform();
-    std::vector<BackendAsset> assets{{"strata-control-*-" + target +
-             (target == "windows-x86_64" ? ".zip" : ".tar.gz"), "control",
-             {python_binary(), "serve/server.py", "setup.py", "tools/strata_tokenizer.py",
-              "tools/iq_pack.py"}}};
+    std::vector<BackendAsset> assets{{select_asset(release_assets(version), "strata-control-", "-" + target +
+             (target == "windows-x86_64" ? ".zip" : ".tar.gz")), "control",
+             control_files()}};
     return assets;
 }
 
@@ -281,6 +353,7 @@ const BackendSpec* spec() {
     static const BackendSpec spec = [] {
         BackendSpec result(descriptor.recipe, descriptor.binary, StrataServer::get_install_params);
         result.additional_assets_fn = additional_assets;
+        result.asset_hash_fn = asset_hash;
         return result;
     }();
     return &spec;
@@ -296,7 +369,7 @@ StrataServer::StrataServer(const std::string& log_level, ModelManager* model_man
 
 StrataServer::~StrataServer() { unload(); }
 
-InstallParams StrataServer::get_install_params(const std::string& backend, const std::string&) {
+InstallParams StrataServer::get_install_params(const std::string& backend, const std::string& version) {
     if (!platform_supports_backend(backend)) {
         throw std::invalid_argument("Strata " + backend + " is not supported on this platform");
     }
@@ -312,7 +385,7 @@ InstallParams StrataServer::get_install_params(const std::string& backend, const
             arch = SystemInfo::select_rocm_arch(devices);
         }
     }
-    return {"Niko1221/Strata", strata::engine_asset(platform(), backend, arch), ""};
+    return {"Niko1221/Strata", strata::engine_asset(platform(), backend, arch, release_assets(version)), ""};
 }
 
 void StrataServer::load(const std::string& model_name, const ModelInfo& model_info,

@@ -49,8 +49,11 @@ namespace lemon::backends {
 
         using InstallParamsFn = InstallParams(*)(const std::string& backend, const std::string& version);
         InstallParamsFn install_params_fn;  // nullptr for backends with no auto-install
-        using AdditionalAssetsFn = std::vector<BackendAsset>(*)(const std::string& backend);
+        using AdditionalAssetsFn = std::vector<BackendAsset>(*)(const std::string& backend,
+                                                               const std::string& version);
         AdditionalAssetsFn additional_assets_fn = nullptr;
+        using AssetHashFn = std::string(*)(const std::string& version, const std::string& filename);
+        AssetHashFn asset_hash_fn = nullptr;
 
         BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr,
                     bool split = false)

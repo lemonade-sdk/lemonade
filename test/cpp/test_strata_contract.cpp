@@ -28,10 +28,27 @@ int main() {
     const auto state = strata::ops()->classify_unavailable(unsupported_backend, install.error, "install");
     check("Unsupported Strata platforms remain unavailable even with a binary on disk",
           !install.installed && state && state->state == "unsupported" && !state->message.empty());
+    const lemon::json release_assets = {
+        {"strata-engine-9.8.7-windows-x86_64-hip-rx9070.tar.gz", "sha256:" + std::string(64, 'a')}};
     check("Windows name detection selects the qualified RDNA4 archive",
           strata::engine_asset("windows-x86_64", "rocm",
-                              strata::ops()->device_family("gfx120X", "AMD Radeon RX 9070 XT")) ==
-              "strata-engine-*-windows-x86_64-hip-rx9070.tar.gz");
+                              strata::ops()->device_family("gfx120X", "AMD Radeon RX 9070 XT"),
+                              release_assets) ==
+              "strata-engine-9.8.7-windows-x86_64-hip-rx9070.tar.gz");
+    try {
+        strata::engine_asset("windows-x86_64", "cuda", "", release_assets);
+        check("Missing Strata release assets fail explicitly", false);
+    } catch (const std::invalid_argument&) {
+        check("Missing Strata release assets fail explicitly", true);
+    }
+    auto ambiguous_assets = release_assets;
+    ambiguous_assets["strata-engine-9.8.8-windows-x86_64-hip-rx9070.tar.gz"] = "sha256:" + std::string(64, 'b');
+    try {
+        strata::engine_asset("windows-x86_64", "rocm", "gfx1201", ambiguous_assets);
+        check("Ambiguous Strata release assets fail explicitly", false);
+    } catch (const std::invalid_argument&) {
+        check("Ambiguous Strata release assets fail explicitly", true);
+    }
     const std::string flash_checkpoint =
         "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:Q2_0/"
         "Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-00001-of-00002.gguf";
