@@ -3001,7 +3001,10 @@
             "classification",
             "systemone"
         ],
-        "size": 0.17
+        "size": 0.17,
+        "recipe_options": {
+            "llamacpp_args": "--override-kv tokenizer.ggml.metaspace.prepend_scheme=str:never"
+        }
     },
     "Laya-GGUF": {
         "checkpoint": "ggml-org/Laya-GGUF:Q8_0",
