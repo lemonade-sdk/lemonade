@@ -166,6 +166,69 @@ class LLMTests(ServerTestBase):
         )
 
     @skip_if_unsupported("chat_completions")
+    def test_001a_adaptive_prompts_server(self):
+        """Opt-in manual selection is traceable; malformed selectors return 400."""
+        model = self.get_test_model("llm")
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        library = requests.get(
+            f"{self.base_url}/adaptive-prompts",
+            headers=headers,
+            timeout=TIMEOUT_DEFAULT,
+        )
+        library.raise_for_status()
+        content = library.json()
+        self.assertEqual(content["count"], len(content["modules"]))
+        if content["source"] == "built-in":
+            self.assertGreaterEqual(content["count"], 200)
+            self.assertTrue(any(m["id"] == "reviewer" for m in content["modules"]))
+            self.assertTrue(any(m["id"] == "tribology" for m in content["modules"]))
+        if not content["modules"]:
+            self.skipTest("No adaptive modules configured")
+        selected_id = next(
+            (m["id"] for m in content["modules"] if m["type"] == "role"),
+            content["modules"][0]["id"],
+        )
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "Keep responses concise."},
+                {"role": "user", "content": "Say OK."},
+            ],
+            "max_tokens": 12,
+            "stream": True,
+            "adaptive_prompt": {"mode": "manual", "ids": [selected_id], "trace": True},
+            **get_extra_body("chat"),
+        }
+        with requests.post(
+            f"{self.base_url}/chat/completions",
+            json=payload,
+            headers=headers,
+            stream=True,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        ) as response:
+            response.raise_for_status()
+            self.assertEqual(
+                response.headers.get("X-Lemonade-Adaptive-Modules"), selected_id
+            )
+            events = list(response.iter_lines())
+            self.assertTrue(any(line.startswith(b"data:") for line in events))
+
+        for option in (
+            {"mode": "invalid"},
+            {"mode": "manual", "ids": ["not-a-registered-module"]},
+        ):
+            invalid = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={**payload, "stream": False, "adaptive_prompt": option},
+                headers=headers,
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(invalid.status_code, 400)
+
+    @skip_if_unsupported("chat_completions")
     def test_001b_chat_completions_concurrent_requests(self):
         """Test simultaneous non-streaming chat completion requests."""
         model = self.get_test_model("llm")

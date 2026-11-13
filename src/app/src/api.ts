@@ -5,6 +5,7 @@
  */
 
 import type { RecipeOptions } from './modelConfiguration';
+import type { AdaptivePromptCatalogResponse } from './features/adaptivePrompts/adaptivePromptSettings';
 import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageConfig';
 
 function detectDefaultBaseUrl(): string {
@@ -363,6 +364,7 @@ export interface ChatCompletionCallbacks {
   onStats?: (stats: LiveStreamStats) => void;
   onDone?: (stats: ChatCompletionStats) => void;
   onToolCalls?: (toolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>) => void;
+  onAdaptiveModules?: (ids: string[]) => void;
   onError?: (err: Error) => void;
   params?: Record<string, unknown>;
   tools?: Array<Record<string, unknown>>;
@@ -2540,6 +2542,10 @@ class LemonadeAPI {
     }
   }
 
+  async listAdaptivePrompts(): Promise<AdaptivePromptCatalogResponse> {
+    return this._json<AdaptivePromptCatalogResponse>('/api/v1/adaptive-prompts');
+  }
+
   // ── SSE: Chat completions ───────────────────────────────────────
 
   async chatCompletion(
@@ -2619,6 +2625,10 @@ class LemonadeAPI {
         signal,
         includeSessionHeaders: true,
       });
+      const selectedModules = resp.headers.get('X-Lemonade-Adaptive-Modules');
+      if (selectedModules !== null) {
+        callbacks.onAdaptiveModules?.(selectedModules === 'none' ? [] : selectedModules.split(',').filter(Boolean));
+      }
 
       const reader = resp.body!.getReader();
       const dec = new TextDecoder();

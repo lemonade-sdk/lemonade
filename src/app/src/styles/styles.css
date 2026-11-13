@@ -14293,6 +14293,28 @@ a.backend-card__author:focus-visible {
   border-radius: var(--radius-lg);
   background: var(--surface-1);
 }
+.adaptive-prompt-list {
+  max-height: 360px;
+  overflow-y: auto;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.adaptive-prompt-list__entry {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-wrap: anywhere;
+}
+.adaptive-prompt-list__heading { display: flex; align-items: center; gap: var(--space-2); }
+.adaptive-prompt-list__heading strong { color: var(--text-primary); }
+.adaptive-prompt-list__heading small,
+.adaptive-prompt-list__entry > small { color: var(--text-secondary); }
+.adaptive-prompt-list__entry details summary { cursor: pointer; }
+.adaptive-prompt-list__instruction { white-space: pre-wrap; margin: var(--space-2) 0; }
 .global-settings-card__head,
 .global-settings-card__head > div,
 .global-settings-update-action,

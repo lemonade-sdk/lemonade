@@ -3,6 +3,7 @@ import type { ChatMessage, LiveStreamStats, ChatCompletionStats } from '../api';
 import type { ToolCall, ToolResult } from '../tools/lemonadeTools';
 import { ToolLoopDetector } from './toolLoopDetector';
 import { directImageFollowupContent } from '../features/images/directImageAnalysis';
+import { adaptivePromptRequest, loadAdaptivePromptSettings, recordAdaptivePromptSelection } from '../features/adaptivePrompts/adaptivePromptSettings';
 
 export type { ToolCall } from '../tools/lemonadeTools';
 
@@ -130,6 +131,8 @@ export function useChatStreaming(
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
 
   const controllersRef = useRef<Map<string, AbortController>>(new Map());
+  // Scoped to this Chat view and conversation; never a global server selection.
+  const adaptiveSelectionsRef = useRef<Map<string, { model: string; ids: string[] }>>(new Map());
   const tokenBufferRef = useRef<Record<string, StreamState>>({});
   const flushTimerRef = useRef<number | null>(null);
 
@@ -206,6 +209,21 @@ export function useChatStreaming(
       && messages[0].content === runtime.systemPrompt
       ? messages.slice(1) : messages;
     let retriedWithoutTools = false;
+    // Freeze the selection across server-side tool follow-ups in this response.
+    // The real user intent is no longer the last user role after a tool call.
+    const adaptivePreference = adaptivePromptRequest(loadAdaptivePromptSettings());
+    const priorSelection = adaptiveSelectionsRef.current.get(convoId);
+    const hasPriorTurn = messages.filter(message => message.role === 'user').length > 1;
+    const previousIds = hasPriorTurn && priorSelection && priorSelection.model === model ? priorSelection.ids : [];
+    if (!adaptivePreference || adaptivePreference.mode === 'manual' || !hasPriorTurn ||
+        (priorSelection && priorSelection.model !== model)) {
+      adaptiveSelectionsRef.current.delete(convoId);
+    }
+    // The server validates/canonicalizes these IDs, then merges them with the
+    // current request's selection. The injected system text stays server-owned.
+    const adaptiveWithHistory = adaptivePreference && adaptivePreference.mode !== 'manual' && previousIds.length
+      ? { ...adaptivePreference, previous_ids: previousIds } : adaptivePreference;
+    let selectedAdaptiveIds: string[] | null = null;
     const hasImageInput = messages.some(message => Array.isArray(message.content)
       && message.content.some(part => part.type === 'image_url'));
 
@@ -220,8 +238,20 @@ export function useChatStreaming(
         const withoutToolSystemPrompt = toolsDisabled && runtime?.systemPrompt
           && fullMessages[0]?.role === 'system' && fullMessages[0].content === runtime.systemPrompt
           ? fullMessages.slice(1) : fullMessages;
+        const adaptive = retriedWithoutTools ? null
+          : selectedAdaptiveIds === null ? adaptiveWithHistory
+          : selectedAdaptiveIds.length > 0
+            ? { mode: 'manual', ids: selectedAdaptiveIds, trace: true } : false;
         api.chatCompletion(model, retriedWithoutTools ? withoutToolPrompt : withoutToolSystemPrompt, {
-          params: chatThinkingParams(thinkingMode),
+          params: {
+            ...chatThinkingParams(thinkingMode),
+            ...(adaptive !== null ? { adaptive_prompt: adaptive } : {}),
+          },
+          onAdaptiveModules: ids => {
+            if (!ownsConversation()) return;
+            selectedAdaptiveIds = ids;
+            recordAdaptivePromptSelection(ids);
+          },
           tools: !toolsDisabled && !retriedWithoutTools && runtime?.tools?.length ? runtime.tools : undefined,
           onReasoning: (_token, fullReasoning) => {
             if (!ownsConversation()) return;
@@ -449,6 +479,10 @@ Some tool calls were skipped after repeated identical failures. Other tools rema
             } else if (!stats.content.trim() && allToolCalls.length === 0) {
               onError(convoId, 'The model returned no visible answer (reasoning-only or empty completion). Its context may be full; increase context size or disable tools.');
             } else {
+              if (!retriedWithoutTools && adaptivePreference && adaptivePreference.mode !== 'manual'
+                  && selectedAdaptiveIds !== null) {
+                adaptiveSelectionsRef.current.set(convoId, { model, ids: selectedAdaptiveIds });
+              }
               onDone(convoId, stats, allToolCalls.length > 0 ? [...allToolCalls] : undefined);
             }
 

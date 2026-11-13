@@ -1,6 +1,12 @@
 #include <lemon/utils/aixlog.hpp>
 
+#include <algorithm>
+#include <chrono>
+
+#include "lemon/model_types.h"
+#include "lemon/models/model_info.h"
 #include "lemon/router.h"
+#include "lemon/server/adaptive_prompt.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
 #include "lemon/server/omni_collection.h"
@@ -135,6 +141,12 @@ const RouteArg kMaxCompletionTokens{"max_completion_tokens", ArgIn::JsonBody, {{
 const RouteArg kEnableThinking{"enable_thinking", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                                "Lemonade extension: `false` turns off reasoning on models that think. `thinking: "
                                "false` does the same, and `enable_thinking` wins when both are sent."};
+const RouteArg kAdaptivePrompt{"adaptive_prompt", ArgIn::JsonBody,
+                               {{"type", json::array({"boolean", "object"})}}, false, Support::Available,
+                               "Lemonade extension: opt-in task instruction selection. `true` uses rules; "
+                               "`{\"mode\":\"llm\"}` asks a chat LLM or zero-shot classifier to select trusted modules; "
+                               "`{\"mode\":\"manual\",\"ids\":[...]}` selects specific modules. "
+                               "See Adaptive Prompts for details."};
 
 } // namespace openai::chat
 
@@ -160,6 +172,8 @@ public:
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; see "
             "[Router API](./router.md).",
+            "Adaptive prompt instructions are opt-in via `adaptive_prompt`. See "
+            "[Adaptive Prompts](../dev/adaptive-prompts.md).",
             "### Server-Side Tools\n"
             "\n"
             "Omni collection orchestration is a Lemonade extension to the Chat Completions API; "
@@ -193,7 +207,7 @@ public:
             generation::kTemperature, openai::text::kRepeatPenalty, openai::text::kFrequencyPenalty,
             openai::text::kSeed, generation::kTopK, generation::kTopP, generation::kTools,
             kToolChoice, kResponseFormat, openai::text::kMaxTokens, kMaxCompletionTokens,
-            kEnableThinking, openai::text::kRouteTrace, model_loading::kCtxSize
+            kEnableThinking, kAdaptivePrompt, openai::text::kRouteTrace, model_loading::kCtxSize
         };
 
         RouteResponse completion;
@@ -278,12 +292,16 @@ protected:
         // An Omni collection has no backend of its own: its orchestrator loads each
         // component, so it answers before ModelRoute's auto-load.
         if (is_omni_collection(ctx_, req.model)) {
+            if (!prepare_adaptive_prompt(req, res, false)) return false;
             run_omni_collection(ctx_, req, res);
             return false;
         }
         req.route_decision = router_dispatch(ctx_, req.model, req.value(openai::text::kRouteTrace, false),
                                              req.body);
-        return true;
+        // Select and load the helper BEFORE the normal route loads the target
+        // model. With one LLM slot, the helper may evict an existing chat LLM;
+        // ModelRoute::handle then re-ensures the requested chat model.
+        return prepare_adaptive_prompt(req, res, true);
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
@@ -336,6 +354,143 @@ protected:
     }
 
     LoadSpan load_span() const override { return {"LLM", "chat.completions"}; }
+
+private:
+    bool prepare_adaptive_prompt(RouteRequest& req, httplib::Response& res, bool allow_llm) {
+        if (!req.has(kAdaptivePrompt)) return true;
+
+        adaptive_prompt::Options options;
+        try {
+            options = adaptive_prompt::parse_options(req.arg(kAdaptivePrompt));
+        } catch (const std::invalid_argument& error) {
+            write_openai_error(res, kArgInvalid, error.what());
+            return false;
+        }
+        if (options.mode == adaptive_prompt::Mode::Off) {
+            req.body.erase(kAdaptivePrompt.name);
+            return true;
+        }
+        if (!allow_llm && options.mode == adaptive_prompt::Mode::Llm) {
+            write_openai_error(res, kArgInvalid,
+                "adaptive_prompt.mode=llm is not supported for Omni collections");
+            return false;
+        }
+
+        const auto selection_start = std::chrono::steady_clock::now();
+        const char* mode = options.mode == adaptive_prompt::Mode::Llm ? "llm"
+            : options.mode == adaptive_prompt::Mode::Manual ? "manual" : "rules";
+        std::string decision_model = "none";
+        const char* decision_backend = "none";
+        const char* status = "ok";
+        bool decision_called = false;
+        bool helper_autoloaded = false;
+        try {
+            const auto& modules = adaptive_prompt::catalog();
+            const std::string user_text = adaptive_prompt::last_user_text(req.body);
+            std::vector<std::string> ids;
+            if (options.mode == adaptive_prompt::Mode::Manual) {
+                ids = adaptive_prompt::constrain_ids(options.ids, modules);
+                if (ids != options.ids) {
+                    write_openai_error(res, kArgInvalid,
+                        "adaptive_prompt.ids must refer to existing compatible modules");
+                    return false;
+                }
+            } else if (options.mode == adaptive_prompt::Mode::Llm && !user_text.empty()) {
+                const std::string helper = options.decision_model.empty()
+                    ? req.model : canonical_model_name(ctx_, options.decision_model);
+                decision_model = helper;
+                const auto helper_info = ctx_.router->try_get_model_info(helper);
+                if (!helper_info) {
+                    write_openai_error(res, kArgInvalid,
+                        "Unknown adaptive_prompt.decision_model: " + helper);
+                    return false;
+                }
+                const bool classifier = helper_info->type == ModelType::CLASSIFICATION;
+                const auto has_label = [&](const char* label) {
+                    const auto& labels = helper_info->labels;
+                    return std::find(labels.begin(), labels.end(), label) != labels.end();
+                };
+                if ((!classifier && helper_info->type != ModelType::LLM) ||
+                    (classifier && !has_label("systemone") && !has_label("zero-shot"))) {
+                    write_openai_error(res, kArgInvalid,
+                        "adaptive_prompt.decision_model must be a chat LLM or a zero-shot "
+                        "classification model (such as d3-lite-FLM)");
+                    return false;
+                }
+                if (!options.decision_model.empty() && !helper_info->downloaded &&
+                    !ctx_.router->is_model_loaded(helper)) {
+                    write_openai_error(res, kArgInvalid,
+                        "adaptive_prompt.decision_model must be downloaded before use");
+                    return false;
+                }
+                decision_backend = classifier ? "classify" : "chat";
+                try {
+                    auto cancel = cancel_on_disconnect(req);
+                    if (!ctx_.router->is_model_loaded(helper)) {
+                        ctx_.model_loader->ensure_loaded(helper);
+                        helper_autoloaded = true;
+                    }
+                    if (classifier) {
+                        ids = adaptive_prompt::decide_with_classifier(user_text, modules, helper,
+                            [this, &decision_called](const json& decision_request) {
+                                decision_called = true;
+                                return ctx_.router->classify(decision_request);
+                            }, adaptive_prompt::previous_user_text(req.body));
+                    } else {
+                        ids = adaptive_prompt::decide_with_model(user_text, modules, helper,
+                            [this, &decision_called](const json& decision_request) {
+                                decision_called = true;
+                                json payload = decision_request;
+                                normalize_thinking_controls(payload);
+                                return ctx_.router->chat_completion(payload);
+                            }, adaptive_prompt::previous_user_text(req.body));
+                    }
+                    status = decision_called ? "decision_ok" : "skipped_no_candidates";
+                } catch (const std::exception& error) {
+                    status = "fallback_rules";
+                    LOG(WARNING, "Server") << "Adaptive prompt decision failed for " << helper
+                                           << "; using rules: " << error.what() << std::endl;
+                    ids = adaptive_prompt::select_ids(user_text, modules);
+                }
+            } else if (options.mode == adaptive_prompt::Mode::Rules) {
+                ids = adaptive_prompt::select_ids(user_text, modules);
+            } else if (options.mode == adaptive_prompt::Mode::Llm) {
+                // No text to classify; make the skipped decision explicit in logs.
+                decision_model = options.decision_model.empty() ? req.model : options.decision_model;
+                status = "skipped_no_user_text";
+            }
+
+            // The caller carries only trusted module IDs, scoped to its chat;
+            // the server remains stateless across concurrent conversations.
+            const auto chosen = adaptive_prompt::apply_ids(req.body, modules,
+                options.mode == adaptive_prompt::Mode::Manual ? ids :
+                adaptive_prompt::merge_ids(options.previous_ids, ids, modules));
+            if (options.trace) {
+                res.set_header("X-Lemonade-Adaptive-Modules",
+                               adaptive_prompt::join_ids(chosen));
+                // Cross-origin GUI3 requests need this explicit exposed header.
+                res.set_header("Access-Control-Expose-Headers", "X-Lemonade-Adaptive-Modules");
+            }
+            const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - selection_start).count();
+            LOG(INFO, "Server") << "Adaptive prompts: mode=" << mode
+                                 << ", chat_model=" << req.model
+                                 << ", decision_model=" << decision_model
+                                 << ", decision_backend=" << decision_backend
+                                 << ", helper_autoloaded=" << (helper_autoloaded ? "yes" : "no")
+                                 << ", decision_called=" << (decision_called ? "yes" : "no")
+                                 << ", status=" << status
+                                 << ", selected=" << adaptive_prompt::join_ids(chosen)
+                                 << ", selection_ms=" << elapsed_ms << std::endl;
+            return true;
+        } catch (const std::exception& error) {
+            LOG(ERROR, "Server") << "Adaptive prompt configuration error: "
+                                 << error.what() << std::endl;
+            write_openai_error(res, kUnexpectedException,
+                               std::string("Adaptive prompt configuration failed: ") + error.what());
+            return false;
+        }
+    }
 };
 
 } // namespace
