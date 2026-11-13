@@ -1730,6 +1730,7 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
   - `owned_by` - Always `"lemonade"`.
   - `checkpoint` - The main checkpoint in the model's registry; see `registry_source`.
   - `recipe` - Recipe used to load the model, e.g. `llamacpp` or `flm`.
+  - `supported_backends` - Allowed backends for this model; omitted when the recipe has no per-model backend restriction.
   - `size` - Size in GB; omitted when unknown.
   - `max_context_window` - Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models.
   - `context_length` - Tokens the model handles in one request: the loaded `ctx_size` while it runs, else the configured `ctx_size`, else `max_context_window`; omitted when none is known.
@@ -1914,6 +1915,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `owned_by` - Always `"lemonade"`.
 - `checkpoint` - The main checkpoint in the model's registry; see `registry_source`.
 - `recipe` - Recipe used to load the model, e.g. `llamacpp` or `flm`.
+- `supported_backends` - Allowed backends for this model; omitted when the recipe has no per-model backend restriction.
 - `size` - Size in GB; omitted when unknown.
 - `max_context_window` - Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models.
 - `context_length` - Tokens the model handles in one request: the loaded `ctx_size` while it runs, else the configured `ctx_size`, else `max_context_window`; omitted when none is known.
