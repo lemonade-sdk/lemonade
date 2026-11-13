@@ -4,7 +4,7 @@ import { copyTextToClipboard } from '../clipboard';
 import { capabilityFromModelInfo, modelCapabilityTags, modelSupportsChatImageInput } from '../modelCapabilities';
 import { Icon } from './Icon';
 import { storageKey } from '../storage';
-import { CUSTOM_CAPABILITIES, CustomModelCapability, generatedLabelsFor, buildCustomModelRecord, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, customImageCompanionCheckpoints, isStandaloneImageUpscaler, exportCustomModelsPayload, parseCustomModelsImport, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
+import { CUSTOM_CAPABILITIES, CustomModelCapability, generatedLabelsFor, buildCustomModelRecord, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, customImageCompanionCheckpoints, customImagePurpose, customImageLabelsForPurpose, type CustomImagePurpose, exportCustomModelsPayload, parseCustomModelsImport, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
 import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import {
   detectHuggingFaceBackend,
@@ -2725,7 +2725,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const customRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
   const selectedCustomRecipe = customRecipeOptions.find(option => option.value === customDraft.recipe) || customRecipeOptions[0];
   const selectedCustomRecipeName = selectedCustomRecipe?.recipe || optionRecipe(customDraft.recipe);
-  const isStandaloneUpscaler = isStandaloneImageUpscaler(selectedCustomRecipeName, customDraft.labels.split(','));
+  const imagePurpose = customImagePurpose(selectedCustomRecipeName, customDraft.labels.split(','));
+  const isStandaloneUpscaler = imagePurpose === 'upscaling';
   const requiresTheNoiseCompanions = selectedCustomRecipeName === 'thenoise' && !isStandaloneUpscaler;
   const missingTheNoiseCompanions = Boolean(customError?.startsWith('TheNoise requires a text encoder and VAE checkpoint'));
   const selectedCustomRecipeSuggestion: CustomRecipeSuggestion | undefined = isStandaloneUpscaler
@@ -2745,10 +2746,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     && supportsVisionProjectorField(customDraft.capability);
   const showImageExtraCheckpointFields = !isCustomOmniCollectionDraft
     && ['sd-cpp', 'thenoise'].includes(selectedCustomRecipeName) && !isStandaloneUpscaler;
-  const updateImagePurpose = (purpose: string) => {
-    const labels = customDraft.labels.split(',').map(label => label.trim())
-      .filter(label => label && label.toLowerCase() !== 'upscaling');
-    if (purpose === 'upscaling') labels.push('upscaling');
+  const updateImagePurpose = (purpose: CustomImagePurpose) => {
+    const labels = customImageLabelsForPurpose(customDraft.labels.split(','), purpose);
     handleCustomDraftChange({ labels: labels.join(', ') });
   };
   const updateOmniComponent = (role: OmniComponentRole, value: string) => {
@@ -3073,7 +3072,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                 />
               </label>
               <label className="custom-model-form__field">Extra labels
-                <input className="input" value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder={t('tool-calling, reasoning')} />
+                <input className="input" value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder={customDraft.capability === 'image' ? 'edit' : t('tool-calling, reasoning')} />
               </label>
 
               {!isCustomOmniCollectionDraft && (
@@ -3099,8 +3098,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                   </label>
                   {['sd-cpp', 'thenoise'].includes(selectedCustomRecipeName) && (
                     <label className="custom-model-form__field">{t('Model purpose')}
-                      <select className="select" value={isStandaloneUpscaler ? 'upscaling' : 'image'} onChange={e => updateImagePurpose(e.target.value)}>
-                        <option value="image">{t('Image generation / editing')}</option>
+                      <select className="select" value={imagePurpose} onChange={e => updateImagePurpose(e.target.value as CustomImagePurpose)}>
+                        <option value="image">{t('Image generation')}</option>
+                        <option value="edit">{t('Image editing')}</option>
                         <option value="upscaling">{t('Standalone upscaling')}</option>
                       </select>
                     </label>

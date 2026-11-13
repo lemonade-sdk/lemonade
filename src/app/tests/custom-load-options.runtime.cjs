@@ -30,6 +30,7 @@ async function bundleStore() {
   try {
     const {
       customLoadOptions, isStandaloneImageUpscaler, customImageCompanionCheckpoints,
+      customImagePurpose, customImageLabelsForPurpose,
       buildCustomModelRecord, customModelToModelInfo, customRegistrationOptions,
     } = require(modulePath);
     const base = { custom: true, type: 'embedding', max_context_window: 40960 };
@@ -133,6 +134,32 @@ async function bundleStore() {
     assert.deepEqual(sdRegistration.labels, ['image', 'upscaling']);
     assert.equal(sdRegistration.checkpoint, 'amd/realesrgan-x4plus:RealESRGAN_x4plus.pth');
     assert.equal(sdRegistration.checkpoints, undefined);
+
+    // Image purpose adds/removes only the feature label; the deployment remains `image`.
+    assert.equal(customImagePurpose('sd-cpp', []), 'image');
+    assert.equal(customImagePurpose('thenoise', ['EDIT']), 'edit');
+    assert.equal(customImagePurpose('sd-cpp', ['edit']), 'edit');
+    assert.equal(customImagePurpose('thenoise', ['edit', 'upscaling']), 'upscaling');
+    assert.deepEqual(customImageLabelsForPurpose(['tool-calling', 'EDIT'], 'upscaling'),
+      ['tool-calling', 'upscaling']);
+    assert.deepEqual(customImageLabelsForPurpose(['upscaling', 'edit', 'custom-tag'], 'image'),
+      ['custom-tag']);
+    assert.deepEqual(customImageLabelsForPurpose(['custom-tag', 'edit'], 'edit'),
+      ['custom-tag', 'edit'], 'switching to Edit must not duplicate its label');
+
+    const editModel = buildCustomModelRecord({
+      name: 'Custom-Image-Edit',
+      displayName: 'Custom image editor',
+      checkpoint: 'my-org/image-edit:model.safetensors',
+      recipe: 'thenoise',
+      capability: 'image',
+      labels: customImageLabelsForPurpose([], 'edit'),
+    });
+    const editRegistration = customRegistrationOptions(customModelToModelInfo(editModel));
+    assert.deepEqual(editRegistration.labels, ['image', 'edit']);
+    assert.equal(editRegistration.recipe, 'thenoise');
+    assert.deepEqual(customImageCompanionCheckpoints('thenoise', editModel.labels, 'text', 'vae'),
+      { text_encoder: 'text', vae: 'vae' }, 'image editing retains TheNoise diffusion checkpoints');
 
     console.log('Lemonade App custom load options regression checks passed.');
   } finally {

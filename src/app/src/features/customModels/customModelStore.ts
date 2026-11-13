@@ -181,6 +181,21 @@ export function isStandaloneImageUpscaler(recipe: string, labels: readonly strin
     && labels.some(label => label.trim().toLowerCase() === 'upscaling');
 }
 
+// Image editing is an image deployment with an additional `edit` label.
+export type CustomImagePurpose = 'image' | 'edit' | 'upscaling';
+
+export function customImagePurpose(recipe: string, labels: readonly string[]): CustomImagePurpose {
+  if (isStandaloneImageUpscaler(recipe, labels)) return 'upscaling';
+  return labels.some(label => label.trim().toLowerCase() === 'edit') ? 'edit' : 'image';
+}
+
+export function customImageLabelsForPurpose(labels: readonly string[], purpose: CustomImagePurpose): string[] {
+  const next = labels.map(label => label.trim())
+    .filter(label => label && !['edit', 'upscaling'].includes(label.toLowerCase()));
+  if (purpose !== 'image') next.push(purpose);
+  return next;
+}
+
 export function customImageCompanionCheckpoints(
   recipe: string, labels: readonly string[], textEncoder: string, vae: string,
 ): Record<string, string> {
