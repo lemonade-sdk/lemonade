@@ -202,6 +202,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | No | Text to continue, or the image to generate for an image model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `images` | No | Base64-encoded images, or WAV audio, for models that take them. A request with `images` runs as a one-message chat, as in Ollama, so the model's chat template applies. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | `true` streams the response as newline-delimited JSON; `false` sends one response once complete. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | Sampling options: `temperature`, `top_p`, `stop`, `num_predict` (maximum generated tokens), `repeat_penalty`, which is sent as OpenAI's `frequency_penalty`, and the `seed`, `width`, `height`, `steps` and `cfg_scale` documented below. A key given at the top level wins. `num_ctx` sets the context size when this request loads the model, unless `ctx_size` is sent. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `width` | No | Image models only: image width in pixels. Defaults to `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -498,7 +499,7 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `families` - A list holding only `family`.
   - `parameter_size` - From the model name, e.g. `0.6B`; empty when the name has none.
   - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
-- `capabilities` - From the model's labels: `completion` for chat models, `embedding` for embedding models, `image` for image generation models, `speech` for text-to-speech models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels. A SystemOne decision model reports only `decision`, plus `vision` when it has that label.
+- `capabilities` - From the model's labels: `completion` for chat models, `embedding` for embedding models, `image` for image generation models, `speech` for text-to-speech models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels, and `audio` for llama.cpp models with the `chat-transcription` label. A SystemOne decision model reports only `decision`, plus `vision` when it has that label.
 - `model_info` - `general.architecture` (the recipe) and `<recipe>.context_length` (the context size in `parameters`); the other keys are always `0`.
 
 ### Errors
