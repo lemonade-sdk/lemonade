@@ -3,6 +3,7 @@
 namespace lemon {
 
 std::unique_ptr<ApiRoute> make_live_route(ServerContext& ctx);
+std::unique_ptr<ApiRoute> make_adaptive_prompts_route(ServerContext& ctx);
 std::unique_ptr<ApiRoute> make_metrics_route(ServerContext& ctx);
 std::unique_ptr<ApiRoute> make_health_route(ServerContext& ctx);
 std::unique_ptr<ApiRoute> make_docs_route(ServerContext& ctx);
@@ -13,6 +14,7 @@ std::unique_ptr<ApiRoute> make_system_info_route(ServerContext& ctx);
 
 void register_lemonade_system_routes(RouteRegistry& registry, ServerContext& ctx) {
     registry.add(make_live_route(ctx));
+    registry.add(make_adaptive_prompts_route(ctx));
     registry.add(make_metrics_route(ctx));
     registry.add(make_health_route(ctx));
     registry.add(make_docs_route(ctx));

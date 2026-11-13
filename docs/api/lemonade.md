@@ -26,6 +26,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/v1/docs`](#get-v1docs) | List the API reference pages bundled with the running server |
 | `GET` | [`/v1/docs/{page}`](#get-v1docspage) | Read one bundled API reference page |
 | `GET` | [`/v1/health`](#get-v1health) | Check the server's status and loaded models |
+| `GET` | [`/v1/adaptive-prompts`](#get-v1adaptive-prompts) | Browse available adaptive system prompt modules |
 | `GET` | [`/v1/stats`](#get-v1stats) | Read performance statistics from the last request |
 | `GET` | [`/v1/system-stats`](#get-v1system-stats) | Read the host's resource usage |
 | `GET` | [`/metrics`](#get-metrics) | Serve metrics for Prometheus to scrape |
@@ -1780,6 +1781,33 @@ This endpoint does not take any parameters.
 - `pinned_helper_models` - Loaded pinned routing-helper models, counted per model type.
   - How many pinned routing-helper models of this type are loaded.
 <!-- END GENERATED: lemonade.health -->
+
+<!-- BEGIN GENERATED: lemonade.adaptive_prompts -->
+## `GET /v1/adaptive-prompts`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Lists the trusted server-side adaptive prompt catalog, including the instructions that an opted-in chat request may select. The catalog is read-only through this API.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+This endpoint does not take any parameters.
+
+### Examples
+
+### Response format
+
+- `source` - Where the catalog was loaded from.
+- `count` - Number of available instruction modules.
+- `modules` - Trusted modules available for selection.
+  - `id` - Module identifier.
+  - `type` - Exclusive primary role or combinable skill.
+  - `group` - Optional exclusivity group.
+  - `description` - Task description used for module selection.
+  - `prompt` - Actual trusted system instructions.
+  - `keywords` - Rule-selection keywords.
+<!-- END GENERATED: lemonade.adaptive_prompts -->
 
 <!-- BEGIN GENERATED: lemonade.stats -->
 ## `GET /v1/stats`

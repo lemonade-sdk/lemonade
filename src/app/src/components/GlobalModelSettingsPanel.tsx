@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api, friendlyErrorMessage, type LoadedModel, type ModelInfo } from '../api';
 import { capabilityFromModelInfo } from '../modelCapabilities';
+import AdaptivePromptSettingsPanel from './AdaptivePromptSettingsPanel';
+import { DEFAULT_ADAPTIVE_PROMPT_SETTINGS, loadAdaptivePromptSettings, saveAdaptivePromptSettings } from '../features/adaptivePrompts/adaptivePromptSettings';
 import { loadChatHistoryPreference, saveChatHistoryPreference } from '../features/chatHistory/historySettings';
 import {
   DEFAULT_GLOBAL_MODEL_SETTINGS,
@@ -53,6 +55,7 @@ const READ_MODES: Array<{ value: TtsReadMode; title: string; description: string
 const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ section, models, loadedModels, connected }) => {
   const { t } = useI18n();
   const [draft, setDraft] = useState<GlobalModelSettings>(() => loadGlobalModelSettings());
+  const [adaptiveDraft, setAdaptiveDraft] = useState(() => loadAdaptivePromptSettings());
   const [memoryDraft, setMemoryDraft] = useState<MemoryRuntimeSettings | null>(null);
   const [autoCheckModelUpdates, setAutoCheckModelUpdates] = useState<boolean | null>(null);
   const [persistHistory, setPersistHistory] = useState(() => loadChatHistoryPreference());
@@ -65,6 +68,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
 
   useEffect(() => {
     setDraft(loadGlobalModelSettings());
+    setAdaptiveDraft(loadAdaptivePromptSettings());
     setPersistHistory(loadChatHistoryPreference());
     const speech = loadTtsPlaybackSettings();
     setTtsModel(speech.modelName);
@@ -150,6 +154,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
       const savedSettings = saveGlobalModelSettings({ collapseThinkingByDefault: draft.collapseThinkingByDefault });
       setDraft(savedSettings);
       saveChatHistoryPreference(persistHistory);
+      saveAdaptivePromptSettings(adaptiveDraft);
       saveActiveTtsModel(ttsModel);
       saveTtsReadMode(ttsReadMode);
       setSaved(true);
@@ -195,6 +200,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
     if (section === 'chat') {
       setDraft(current => ({ ...current, collapseThinkingByDefault: DEFAULT_GLOBAL_MODEL_SETTINGS.collapseThinkingByDefault }));
       setPersistHistory(true);
+      setAdaptiveDraft({ ...DEFAULT_ADAPTIVE_PROMPT_SETTINGS, manualIds: [] });
       setTtsModel(null);
       setTtsReadMode('on-demand');
       return;
@@ -235,6 +241,10 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
               <span><strong>{t('Collapse thinking by default')}</strong><small>{t('Reasoning remains available in an expandable section on every assistant message.')}</small></span>
             </label>
           </section>
+
+          <AdaptivePromptSettingsPanel value={adaptiveDraft}
+            onChange={next => { setAdaptiveDraft(next); setSaved(false); }}
+            connected={connected} models={models} loadedModels={loadedModels} />
 
           <section className="global-settings-card">
             <div className="global-settings-card__head"><div><Icon name="tts" size={18} /><h3>{t('Chat speech')}</h3></div></div>

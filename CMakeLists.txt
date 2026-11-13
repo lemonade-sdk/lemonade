@@ -2945,6 +2945,22 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_LLM_ROUTER_TEST_SRC}")
     add_cpp_ci_test(RoutingPolicyLlmRouterTest CI ON COMMAND test_routing_policy_llm_router)
 endif()
 
+# Server-side adaptive prompt selection (pure logic, no inference backend required).
+set(_ADAPTIVE_PROMPT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_adaptive_prompt.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ADAPTIVE_PROMPT_TEST_SRC}")
+    add_executable(test_adaptive_prompt
+        test/cpp/test_adaptive_prompt.cpp
+        src/cpp/server/services/adaptive_prompt.cpp
+    )
+    target_include_directories(test_adaptive_prompt PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    target_link_libraries(test_adaptive_prompt PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(AdaptivePromptTest CI ON COMMAND test_adaptive_prompt)
+endif()
+
 # Routing deterministic leaf conditions (issue #2380): keywords/regex/min_chars/
 # max_chars/has_*/metadata conditions and their leaf-factory map.
 set(_ROUTING_DETERMINISTIC_TEST_SRC
