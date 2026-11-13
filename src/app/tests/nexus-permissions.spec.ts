@@ -64,7 +64,7 @@ test('moderator invitations delegate their preset to the server and display deni
   const dialog = page.getByRole('dialog', { name: 'Connect another device', exact: true });
   await dialog.getByRole('textbox', { name: 'Device name', exact: true }).fill('Lab workstation');
   await dialog.getByLabel('Role', { exact: true }).selectOption('moderator');
-  await expect(dialog).toContainText('Administrator access can only be granted after joining.');
+  await expect(dialog).toContainText('Run inference, use MCP tools, manage models and jobs, and invite devices.');
   await page.screenshot({ path: testInfo.outputPath('mesh-moderator-invitation.png') });
   fixture.rejectWrites = true;
   await dialog.getByRole('button', { name: 'Create invitation', exact: true }).click();
