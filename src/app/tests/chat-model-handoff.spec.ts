@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { mockCompletedModelLoadJobs } from './modelLoadJobs.mock';
 
 const oldModel = 'handoff-old-model';
 const newModel = 'handoff-new-model';
@@ -26,6 +27,7 @@ const sse = (content: string) => [
 async function mockRestartedServer(page: Page) {
   const loaded = new Set<string>();
   const loadRequests: string[] = [];
+  const directLoadRequests: string[] = [];
   const pullRequests: string[] = [];
   const completionModels: string[] = [];
 
@@ -84,10 +86,16 @@ async function mockRestartedServer(page: Page) {
   });
   await page.route(/\/api\/v1\/load$/, route => {
     const name = String((route.request().postDataJSON() as Record<string, unknown>).model_name);
-    loadRequests.push(name);
+    directLoadRequests.push(name);
     loaded.clear();
     loaded.add(name);
     return route.fulfill({ json: { status: 'success', model_name: name } });
+  });
+  await mockCompletedModelLoadJobs(page, params => {
+    const name = String(params.model);
+    loadRequests.push(name);
+    loaded.clear();
+    loaded.add(name);
   });
   await page.route(/\/api\/v1\/pull$/, route => {
     pullRequests.push(String((route.request().postDataJSON() as Record<string, unknown>).model_name));
@@ -98,7 +106,7 @@ async function mockRestartedServer(page: Page) {
     return route.fulfill({ status: 200, contentType: 'text/event-stream', body: sse('Answered by the new model.') });
   });
 
-  return { loadRequests, pullRequests, completionModels };
+  return { loadRequests, directLoadRequests, pullRequests, completionModels };
 }
 
 test('a model loaded from Models replaces the restored conversation model in chat', async ({ page }) => {
@@ -122,6 +130,7 @@ test('a model loaded from Models replaces the restored conversation model in cha
 
   expect(server.completionModels).toEqual([newModel]);
   expect(server.loadRequests).toEqual([newModel]);
+  expect(server.directLoadRequests).toEqual([]);
   expect(server.pullRequests).toEqual([]);
 
   // Reopening a conversation by hand still brings back the model it was using.

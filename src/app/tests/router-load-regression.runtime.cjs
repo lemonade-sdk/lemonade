@@ -144,11 +144,13 @@ try {
   const handleLoadStart = manager.indexOf('const handleLoad = async');
   const handleUnloadStart = manager.indexOf('const handleUnload = async', handleLoadStart);
   const handleLoadSource = manager.slice(handleLoadStart, handleUnloadStart);
-  assert.match(handleLoadSource, /await loadModelRuntime\(model, new Set<string>\(\), overrideOptions\)/,
-    'Use Router click must use server-fresh Router readiness via the shared runtime loader');
+  assert.match(manager.slice(runtimeStart, handleLoadStart), /await ensureServerRouterReady\(name\)/,
+    'Router readiness must still be checked through the shared runtime loader');
   assert.doesNotMatch(handleLoadSource, /registerModelDefinition/, 'Use Router click must never write a stale local Router definition');
-  assert.match(manager.slice(runtimeStart, handleLoadStart), /await api\.loadModel\(name, options, info\)/,
+  assert.match(manager.slice(runtimeStart, handleLoadStart), /targets\.push\(\{ name, recipeOptions, info \}\)/,
     'ordinary model loads must still forward the resolved recipe options');
+  assert.match(manager.slice(runtimeStart, handleLoadStart), /api\.createModelLoadJob\(name, targets(?:,|\))/,
+    'Models GUI loads must be cancellable server-side jobs');
 
   const saveStart = manager.indexOf('const handleRegisterRouter = async');
   const saveEnd = manager.indexOf('const handleRouterSaved', saveStart);
