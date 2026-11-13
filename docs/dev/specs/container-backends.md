@@ -30,6 +30,7 @@ Lemonade follows [Ramalama](https://github.com/containers/ramalama)'s container 
 - **Image sources.**
   - Donato's [Docker Hub account](https://hub.docker.com/u/kyuz0) for rocmfpx, nathanw, and ds4.
   - Peonist's [ghcr.io account](https://github.com/orgs/peonist-ai/packages) for Halogen.
+  - Gufo's [ghcr.io account](https://github.com/orgs/gufo-org/packages) for Gufo, built by [gufo-org/toolboxes](https://github.com/gufo-org/toolboxes).
 - **Models.** Downloaded by Lemonade and mounted read-only. Mounts and privileges are Lemonade's to set.
 - **Packaging.**
   - The PPA, the GitHub release .deb and .rpm, source builds and the embedded SDK tarball will natively support the container backends.
@@ -100,7 +101,7 @@ Each `BackendDescriptor` contains the information needed to install and launch t
 
 | Field | Required | Meaning | Adds to the run command |
 | --- | --- | --- | --- |
-| `image` | Yes | Where the image is published. Only `docker.io/kyuz0/*` and `ghcr.io/peonist-ai/*` are allowed. | The image reference (see [Image](#image)) |
+| `image` | Yes | Where the image is published. Only `docker.io/kyuz0/*`, `ghcr.io/peonist-ai/*` and `ghcr.io/gufo-org/*` are allowed. | The image reference (see [Image](#image)) |
 | `devices` | Yes | Device nodes the container can open, such as `{"/dev/dri"}`. | One `--device` per node, and `--group-add` (see [Run Options](#run-options)) |
 | `cap_add` | No | Linux capabilities to give back after `--cap-drop=all`, such as `{"SYS_PTRACE"}`. | One `--cap-add` per capability |
 
@@ -407,7 +408,7 @@ A container backend whose `devices` include `/dev/kfd` runs one more check befor
 
 A new workflow, `.github/workflows/validate_containers.yml`, keeps every container backend on the newest image upstream publishes. It runs weekly, every Sunday at 18:00 UTC, and on every pull request that changes a pin or a backend descriptor, where it only checks that each pin can still be resolved.
 
-A pin whose tag carries version numbers moves to the highest-numbered tag of the same shape: `0.18.22` moves to `0.18.23`, and `rocm-10.0-gufo` to `rocm-10.1-gufo`, but never to a timestamped build such as `rocm-10.0-gufo_20261103T122023`. A tag with no numbers, such as `vulkan-radv-performance`, keeps its name. Every pin then moves to its tag's newest digest. The workflow then opens one pull request with the new pins, the same way `validate_llamacpp.yml` does, and `test-container-backends` validates them on Devlab Dispatch's Strix Halo 128 GB Linux runners. Each starting tag is the one AI Toolbox Cockpit runs for the same engine on the same GPU, such as `vulkan-radv-performance` for `llamacpp:nathanw`. Halogen pins its release tag, such as `0.18.22`, because AI Cockpit's `latest` names no version.
+A pin whose tag carries version numbers moves to the highest-numbered tag of the same shape: `0.18.22` moves to `0.18.23`, and `rocm-10.0-rocmfpx` to `rocm-10.1-rocmfpx`, but never to a timestamped build such as `rocm-10.0-rocmfpx_20261103T122023`. A tag with no numbers, such as `vulkan-radv-performance`, keeps its name. Every pin then moves to its tag's newest digest. The workflow then opens one pull request with the new pins, the same way `validate_llamacpp.yml` does, and `test-container-backends` validates them on Devlab Dispatch's Strix Halo 128 GB Linux runners. Each starting tag for a kyuz0 image is the one AI Toolbox Cockpit runs for the same engine on the same GPU, such as `vulkan-radv-performance` for `llamacpp:nathanw`. Halogen pins its release tag, such as `0.18.22`, because AI Cockpit's `latest` names no version. Gufo pins the `X.Y.Z` tag that [gufo-org/toolboxes](https://github.com/gufo-org/toolboxes) publishes for each stable Gufo release, such as `0.34.0`, so a bump names the new Gufo version.
 
 ## Appendix A: Ramalama and AI Cockpit Conventions, and Where Lemonade Differs
 

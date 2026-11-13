@@ -48,7 +48,7 @@ inline const BackendDescriptor descriptor = {
     },
     /*about*/ {
         {"rocm", {"Open-source engine with model-specific Strix Halo kernels, for a handful of top models.",
-                  "Gufo (gufo-org)", "Donato Capitella (kyuz0)", "MIT", "https://github.com/gufo-org/gufo"}},
+                  "Gufo (gufo-org)", "Gufo (gufo-org)", "MIT", "https://github.com/gufo-org/gufo"}},
     },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
@@ -66,7 +66,7 @@ inline const BackendDescriptor descriptor = {
     /*streams_model_from_storage*/ false,
     /*containers*/ {
         {"rocm", {
-            /*image*/   "docker.io/kyuz0/amd-strix-halo-toolboxes",
+            /*image*/   "ghcr.io/gufo-org/toolboxes/gufo-runtime",
             /*devices*/ {"/dev/dri", "/dev/kfd"},
             /*cap_add*/ {},
         }},
