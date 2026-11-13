@@ -21,6 +21,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -123,9 +124,21 @@ def gh_graphql(query, **variables):
     return json.loads(out)["data"]
 
 
+def _search(path, attempts=3):
+    # Search allows 30 requests/minute; one dashboard run makes about that many.
+    for i in range(attempts):
+        try:
+            return gh_api(path)
+        except subprocess.CalledProcessError as exc:
+            if i == attempts - 1 or "rate limit" not in (exc.stderr or "").lower():
+                raise
+            print("  [wait] search rate limit, retrying in 60s", file=sys.stderr)
+            time.sleep(60)
+
+
 def search_count(repo, query):
     q = urllib.parse.quote(f"repo:{repo} {query}")
-    return gh_api(f"/search/issues?q={q}&per_page=1")["total_count"]
+    return _search(f"/search/issues?q={q}&per_page=1")["total_count"]
 
 
 def search_items(repo, query):
@@ -133,7 +146,7 @@ def search_items(repo, query):
     q = urllib.parse.quote(f"repo:{repo} {query}")
     items, page = [], 1
     while True:
-        res = gh_api(f"/search/issues?q={q}&per_page=100&page={page}")
+        res = _search(f"/search/issues?q={q}&per_page=100&page={page}")
         items.extend(res["items"])
         if len(items) >= res["total_count"] or len(res["items"]) < 100:
             break
@@ -572,54 +585,16 @@ def fetch_issue_trend(repo, days=90):
 
 
 def fetch_weekly_pulse(repo, wg_predictions):
-    """Return a quantitative summary of the past 7 days of activity."""
+    """Return a quantitative summary of the past 7 days of activity.
+
+    Counts come from created:/merged: searches so items opened and closed
+    within the week are included, not just the ones still open.
+    """
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=7)
-
-    def parse(s):
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
-
-    # Merged PRs last 7 days — walk backwards through closed PRs
-    merged_raw = []
-    page = 1
-    while True:
-        cmd = [
-            "gh",
-            "api",
-            f"repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100&page={page}",
-        ]
-        try:
-            batch = json.loads(
-                subprocess.run(
-                    cmd, check=True, capture_output=True, encoding="utf-8"
-                ).stdout
-            )
-        except Exception:
-            break
-        if not batch:
-            break
-        merged_raw.extend(
-            p for p in batch if p.get("merged_at") and parse(p["merged_at"]) >= cutoff
-        )
-        oldest = min((parse(p["updated_at"]) for p in batch), default=now)
-        if oldest < cutoff:
-            break
-        page += 1
-
-    # Open issues and open PRs (single paginated call each)
-    issues_raw = gh_api_pages(
-        f"/repos/{repo}/issues?state=open&sort=created&direction=desc&per_page=100"
-    )
-    all_open_issues = [i for i in issues_raw if not i.get("pull_request")]
-    new_issues = [i for i in all_open_issues if parse(i["created_at"]) >= cutoff]
-    new_bugs = [
-        i for i in new_issues if any(l["name"] == "bug" for l in i.get("labels", []))
-    ]
-
-    open_prs_raw = gh_api_pages(
-        f"/repos/{repo}/pulls?state=open&sort=created&direction=desc&per_page=100"
-    )
-    new_prs = [p for p in open_prs_raw if parse(p["created_at"]) >= cutoff]
+    since = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    merged_raw = search_items(repo, f"is:pr is:merged merged:>={since}")
+    for p in merged_raw:
+        p["merged_at"] = p["pull_request"]["merged_at"]
 
     # WG breakdown of merged
     from collections import Counter
@@ -655,11 +630,11 @@ def fetch_weekly_pulse(repo, wg_predictions):
                 merged_raw, key=lambda p: p["merged_at"] or "", reverse=True
             )
         ],
-        "new_prs_count": len(new_prs),
-        "open_prs_total": len(open_prs_raw),
-        "new_issues_count": len(new_issues),
-        "new_bugs_count": len(new_bugs),
-        "open_issues_total": len(all_open_issues),
+        "new_prs_count": search_count(repo, f"is:pr created:>={since}"),
+        "open_prs_total": search_count(repo, "is:pr is:open"),
+        "new_issues_count": search_count(repo, f"is:issue created:>={since}"),
+        "new_bugs_count": search_count(repo, f"is:issue label:bug created:>={since}"),
+        "open_issues_total": search_count(repo, "is:issue is:open"),
         "wg_merged": dict(wg_merged),
         "top_contributors": top_contributors,
     }
