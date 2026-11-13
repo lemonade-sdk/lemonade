@@ -5,6 +5,7 @@
 #include "lemon/backends/strata/strata.h"
 #include "lemon/error_types.h"
 #include "lemon/gguf_reader.h"
+#include "lemon/models/host_availability.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/custom_args.h"
@@ -85,13 +86,17 @@ json release_assets(const std::string& version) {
     if (const auto it = cache.find(version); it != cache.end()) return it->second;
     const auto fetch = [&](const std::string& filename) {
         const std::string url = "https://github.com/Niko1221/Strata/releases/download/" + version + "/" + filename;
-        const auto response = utils::HttpClient::get(
-            url, {}, 30, utils::HttpSecurityPolicy::ExternalHttpsOnly, 256 * 1024);
-        if (response.status_code < 200 || response.status_code >= 300) {
-            throw std::runtime_error("Strata release metadata returned HTTP " +
-                                     std::to_string(response.status_code) + ": " + url);
+        try {
+            const auto response = utils::HttpClient::get(
+                url, {}, 30, utils::HttpSecurityPolicy::ExternalHttpsOnly, 256 * 1024);
+            if (response.status_code < 200 || response.status_code >= 300) {
+                throw NetworkException("Strata release metadata returned HTTP " +
+                                       std::to_string(response.status_code) + ": " + url);
+            }
+            return response.body;
+        } catch (const std::runtime_error& e) {
+            throw NetworkException("Failed to fetch Strata release metadata from " + url + ": " + e.what());
         }
-        return response.body;
     };
     json assets = json::object();
     for (const std::string filename : {"SHA256SUMS.txt", "install-manifest.txt"}) {
@@ -211,10 +216,11 @@ public:
     }
 
     std::optional<double> streaming_memory_pool_gb(
-        const ModelInfo&, double system_ram_gb, double device_pool_gb) const override {
+        const ModelInfo& info, double system_ram_gb, double) const override {
+        const auto* config = RuntimeConfig::global();
         return strata::streaming_memory_pool_gb(
             SystemInfoCache::get_system_info_with_cache().at("devices"),
-            system_ram_gb, device_pool_gb);
+            model_backends(info).value(), system_ram_gb, config && config->enable_dgpu_gtt());
     }
 
     std::string checkpoint_revision(const ModelInfo& info, const std::string& type) const override {
@@ -248,17 +254,32 @@ public:
 
 namespace strata {
 
-double streaming_memory_pool_gb(const json& devices, double system_ram_gb, double device_pool_gb) {
-    if (devices.contains("metal") && devices.at("metal").value("available", false)) {
+double streaming_memory_pool_gb(const json& devices, const std::vector<std::string>& backends,
+                                double system_ram_gb, bool assume_dgpu_gtt) {
+    const auto allowed = [&](const std::string& backend) {
+        return std::find(backends.begin(), backends.end(), backend) != backends.end();
+    };
+    if (allowed("metal") && devices.contains("metal") && devices.at("metal").value("available", false)) {
         return system_ram_gb;
     }
     bool integrated = false;
-    for (const auto& gpu : devices.value("amd_gpu", json::array())) {
-        if (!gpu.value("available", false)) continue;
-        if (!gpu.value("integrated", false)) return device_pool_gb;
-        integrated = true;
+    bool discrete = false;
+    double device_pool_gb = 0.0;
+    for (const auto& [backend, device_type] : std::map<std::string, std::string>{
+            {"cuda", "nvidia_gpu"}, {"rocm", "amd_gpu"}, {"sycl", "intel_gpu"}}) {
+        if (!allowed(backend)) continue;
+        for (const auto& gpu : devices.value(device_type, json::array())) {
+            if (!gpu.value("available", false)) continue;
+            if (backend == "rocm" && gpu.value("integrated", false)) {
+                integrated = true;
+            } else {
+                discrete = true;
+                device_pool_gb = std::max(device_pool_gb,
+                    models::device_memory_pool_gb(device_type, gpu, assume_dgpu_gtt));
+            }
+        }
     }
-    return integrated ? system_ram_gb : device_pool_gb;
+    return integrated && !discrete ? system_ram_gb : device_pool_gb;
 }
 
 std::string engine_asset(const std::string& target, const std::string& backend,
@@ -412,9 +433,31 @@ void StrataServer::load(const std::string& model_name, const ModelInfo& model_in
         throw std::invalid_argument("Strata " + backend + " does not support this model on this machine");
     }
     RuntimeConfig::validate_backend_choice("strata", backend);
-    backend_manager_->install_backend("strata", backend);
-    const std::string executable = BackendUtils::get_backend_binary_path(*strata::spec(), backend);
     const fs::path install = utils::path_from_utf8(BackendUtils::get_install_directory("strata", backend));
+    const auto pinned = BackendUtils::get_backend_version("strata", backend);
+    const auto configured = BackendUtils::get_bin_config_value("strata", backend);
+    const auto* config = RuntimeConfig::global();
+    std::ifstream installed_version_file(utils::path_from_utf8(
+        BackendUtils::get_installed_version_file(*strata::spec(), backend)));
+    std::string installed_version;
+    bool reuse_installed = false;
+    if ((!config || (!config->offline() && !config->no_fetch_executables())) &&
+        (configured.empty() || configured == "builtin" || configured == pinned) &&
+        std::getline(installed_version_file, installed_version) && installed_version == pinned &&
+        strata::ops()->check_install(backend,
+            !BackendUtils::find_executable_in_install_dir(
+                utils::path_to_utf8(install), strata::spec()->binary).empty()).installed) {
+        try {
+            release_assets(pinned);
+        } catch (const NetworkException& e) {
+            LOG(WARNING, "Strata") << "Release metadata is unavailable (" << e.what()
+                << "); using complete installed " << backend << " version " << pinned << std::endl;
+            reuse_installed = true;
+        }
+    }
+    installed_version_file.close();
+    if (!reuse_installed) backend_manager_->install_backend("strata", backend);
+    const std::string executable = BackendUtils::get_backend_binary_path(*strata::spec(), backend);
     const fs::path control = install / "control";
     const std::string python = utils::path_to_utf8(control / python_binary());
     if (!fs::is_regular_file(utils::path_from_utf8(python))) {
