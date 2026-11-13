@@ -5442,7 +5442,7 @@ optgroup {
 .custom-model-form__grid .textarea { min-height: 192px; font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--leading-relaxed); }
 .custom-model-form__wide, .custom-model-form__error, .custom-model-form__actions, .custom-model-form__hint, .custom-model-form__prompt-actions { grid-column: 1 / -1; }
 .custom-model-form__hint { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); color: var(--text-secondary); background: var(--surface-2); border: 1px solid var(--border-subtle); font-size: var(--text-sm); }
-.custom-model-form__error { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); color: var(--danger); background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent); font-size: var(--text-sm); }
+.custom-model-form__error { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); color: var(--danger); background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent); font-size: var(--text-sm); white-space: pre-line; overflow-wrap: anywhere; }
 .custom-model-form__textarea-field { grid-template-rows: auto minmax(192px, auto) minmax(16px, auto); }
 .custom-model-form__prompt-actions span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -15270,6 +15270,12 @@ button.workspace-metadata-chip:hover {
 
 .recipes > .scrim { display: none; }
 /* Shared creation-editor grammar */
+/* The form body, not the pane wrapper, owns scrolling on desktop and mobile. */
+.manager__detail-form-panel--custom { overflow: hidden; }
+@media (max-width: 768px) {
+  .manager--detail.manager--detail-mobile-open .manager__detail-form-panel--custom { overflow: hidden; }
+}
+
 .custom-model-editor__title {
   margin: 0;
   font-size: var(--detail-type-title);
@@ -15284,11 +15290,12 @@ button.workspace-metadata-chip:hover {
 
 .custom-model-form__body {
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: var(--space-3) var(--detail-gutter) var(--detail-section-space);
   scrollbar-gutter: stable;
 }
@@ -15300,6 +15307,7 @@ button.workspace-metadata-chip:hover {
 }
 
 .custom-model-form__body .custom-model-form__grid {
+  flex: 0 0 auto;
   padding: 0;
 }
 
