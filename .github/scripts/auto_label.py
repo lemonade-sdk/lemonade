@@ -36,7 +36,7 @@ ANTHROPIC_VERSION = "2023-06-01"
 
 SYSTEM_PROMPT = """You auto-label GitHub issues and PRs for the lemonade-sdk/lemonade repository.
 
-You will receive an item's title, body, and existing labels. Decide which labels from the list below to ADD. Output ONLY a comma-separated list of label names to add, or the literal string `(none)` if no labels apply. Do NOT include labels the item already has. Do NOT include any explanation, prose, code fences, or formatting — only the bare label list or `(none)`.
+You will receive an item's kind, title, body, and existing labels. Decide which labels from the list below to ADD. Answer in the required JSON shape: `labels` holds every label to add except the workgroup, and `workgroup` holds the one wg:: label for the item, or "none". Do NOT include labels the item already has.
 
 Available labels:
 
@@ -158,6 +158,7 @@ def classify(item, item_num):
             "thinking": {"type": "disabled"},
             "system": SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_msg}],
+            "output_config": {"format": {"type": "json_schema", "schema": _schema()}},
         }
     ).encode()
     req = urllib.request.Request(
@@ -178,12 +179,34 @@ def classify(item, item_num):
             f"Anthropic API error {exc.code}: {exc.read().decode(errors='replace')}"
         )
 
+    if data.get("stop_reason") == "refusal":
+        print(f"  [warn] #{item_num}: model declined to classify", file=sys.stderr)
+        return "(none)"
     text_blocks = [
         block["text"] for block in data["content"] if block["type"] == "text"
     ]
     if not text_blocks:
         raise ValueError("Anthropic response did not contain a text block")
-    return "".join(text_blocks).strip()
+    answer = json.loads("".join(text_blocks))
+    labels = list(answer["labels"])
+    if answer["workgroup"] != "none":
+        labels.append(answer["workgroup"])
+    return ", ".join(labels) or "(none)"
+
+
+def _schema():
+    """Structured-output schema: only known labels, and an explicit workgroup."""
+    wgs = sorted(lbl for lbl in KNOWN_LABELS if lbl.startswith("wg::"))
+    others = sorted(lbl for lbl in KNOWN_LABELS if not lbl.startswith("wg::"))
+    return {
+        "type": "object",
+        "properties": {
+            "labels": {"type": "array", "items": {"type": "string", "enum": others}},
+            "workgroup": {"type": "string", "enum": wgs + ["none"]},
+        },
+        "required": ["labels", "workgroup"],
+        "additionalProperties": False,
+    }
 
 
 KNOWN_LABELS = {
