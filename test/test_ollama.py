@@ -47,8 +47,9 @@ TOOL_CALLING_LLAMA_ARGS = "--reasoning-format none"
 # Context the backend-error tests pin the model to so their prompt overflows it.
 OVERFLOW_CTX_SIZE = 2048
 
-# Read from the registry only by the tests that reject it, so it is never downloaded.
+# Read from the registry only by the tests that reject them, so they are never downloaded.
 EMBEDDING_MODEL = "nomic-embed-text-v1-GGUF"
+CLASSIFICATION_MODEL = "Laya-GGUF"
 
 
 class OllamaTests(ServerTestBase):
@@ -830,24 +831,26 @@ class OllamaTests(ServerTestBase):
         )
 
     def test_022d_chat_rejects_embedding_model(self):
-        """Test /api/chat rejects an embedding model before loading it."""
-        self.assert_rejected_before_load(
-            "/api/chat",
-            EMBEDDING_MODEL,
-            {"messages": [{"role": "user", "content": "hi"}]},
-            "does not support chat",
-            "",
-        )
+        """Test /api/chat rejects embedding and classification models before loading them."""
+        for model in (EMBEDDING_MODEL, CLASSIFICATION_MODEL):
+            self.assert_rejected_before_load(
+                "/api/chat",
+                model,
+                {"messages": [{"role": "user", "content": "hi"}]},
+                "does not support chat",
+                "",
+            )
 
     def test_022e_generate_rejects_embedding_model(self):
-        """Test /api/generate rejects an embedding model before loading it."""
-        self.assert_rejected_before_load(
-            "/api/generate",
-            EMBEDDING_MODEL,
-            {"prompt": "hi"},
-            "does not support generate",
-            "",
-        )
+        """Test /api/generate rejects embedding and classification models before loading them."""
+        for model in (EMBEDDING_MODEL, CLASSIFICATION_MODEL):
+            self.assert_rejected_before_load(
+                "/api/generate",
+                model,
+                {"prompt": "hi"},
+                "does not support generate",
+                "",
+            )
 
     def test_022f_unload_non_llm_via_keep_alive(self):
         """Test keep_alive=0 still unloads a model that can neither chat nor generate."""
