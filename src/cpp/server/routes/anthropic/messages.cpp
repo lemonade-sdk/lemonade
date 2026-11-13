@@ -327,7 +327,9 @@ void forward_anthropic_upstream(AnthropicUpstream upstream,
     if (!stream) {
         try {
             auto response = utils::HttpClient::post(
-                upstream.url, upstream.body, upstream.headers, 0, upstream.policy);
+                upstream.url, upstream.body, upstream.headers,
+                utils::HttpClient::kNoTimeout, upstream.policy,
+                WrappedServer::current_request_cancel_context());
             res.status = response.status_code;
             relay_response_headers(response.headers, res);
             res.set_content(response.body, "application/json");
@@ -373,7 +375,7 @@ void forward_anthropic_upstream(AnthropicUpstream upstream,
                         }
                         return sink.write(data, length);
                     },
-                    upstream.headers, 0,
+                    upstream.headers, utils::HttpClient::kNoTimeout,
                     [&upstream_status](int status) { upstream_status = status; },
                     upstream.policy,
                     [&sink]() { return sink.is_writable && !sink.is_writable(); },

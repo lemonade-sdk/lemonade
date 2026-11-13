@@ -29,9 +29,8 @@ namespace {
 constexpr const char* kBackend = "rocm";
 constexpr int kNativeContext = 262144;
 
-// Registering a 62 GiB checkpoint with the GPU is bounded by storage
-// bandwidth, not by anything global_timeout describes, so it gets its own
-// floor; a larger global_timeout still raises it.
+// Registering a 62 GiB checkpoint with the GPU can take longer than
+// the generic backend startup deadline.
 constexpr long kStartupTimeoutSeconds = 1800;
 
 class HalogenOps : public BackendOps {
@@ -153,7 +152,7 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
                      model_name, *halogen::descriptor.container_for(kBackend),
                      BackendUtils::get_backend_image(halogen::descriptor.recipe, kBackend)),
                  command,
-                 (std::max)(kStartupTimeoutSeconds, utils::HttpClient::get_default_timeout()));
+                 kStartupTimeoutSeconds);
 }
 
 void HalogenServer::unload() {

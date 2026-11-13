@@ -260,8 +260,9 @@ json MoonshineServer::forward_multipart_audio_data(const std::string& audio_data
     auto res = utils::HttpClient::post_multipart(
         url,
         fields,
-        0,
-        utils::HttpSecurityPolicy::TrustedLoopback);
+        utils::HttpClient::kNoTimeout,
+        utils::HttpSecurityPolicy::TrustedLoopback,
+        current_request_cancel_context());
 
     LOG(DEBUG, "MoonshineServer") << "Response status: " << res.status_code << std::endl;
 
