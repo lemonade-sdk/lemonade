@@ -93,7 +93,7 @@ json normalize_messages(const json& messages) {
 }
 
 // If `model` exists in the raw registry but was filtered out on this system
-// (e.g. a `*-Hybrid` (ryzenai-llm) model on Linux/Docker, or a `*-FLM` model
+// (e.g. a `*-NPU` (ryzenai-llm) model on Linux/Docker, or a `*-FLM` model
 // on a machine without an AMD Ryzen AI NPU), return a tool-call error JSON
 // naming the reason and suggesting a portable alternative. Returns nullopt
 // when the model is supported here, or when it's not in the registry at all

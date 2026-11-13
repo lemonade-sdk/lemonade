@@ -288,6 +288,5 @@ MULTI_REPO_SHARED_CACHE_DIR = "models--mradermacher--SmolLM2-135M-Instruct-GGUF"
 # Models that should be pre-downloaded for offline testing
 MODELS_FOR_OFFLINE_CACHE = [
     "Qwen3-0.6B-GGUF",
-    "Qwen2.5-0.5B-Instruct-CPU",
-    "Llama-3.2-1B-Instruct-CPU",
+    "Llama-3.2-1B-Instruct-NPU",
 ]

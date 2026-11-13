@@ -507,21 +507,21 @@ static void test_filtered_classifier_bare_name_resolves_through_alias(ModelManag
 // builtin (ryzenai-llm, which the declared machine cannot run) so no
 // registration is needed to test it.
 static void test_filtered_classifier_builtin_prefixed_alias_resolves(ModelManager& manager) {
-    check("Qwen2.5-0.5B-Instruct-CPU is hardware-filtered (test machine has no NPU)",
-          !manager.model_exists("Qwen2.5-0.5B-Instruct-CPU"));
+    check("Qwen2.5-0.5B-Instruct-NPU is hardware-filtered (test machine has no NPU)",
+          !manager.model_exists("Qwen2.5-0.5B-Instruct-NPU"));
 
     json doc = {
         {"model_name", "user.RouterFilteredBuiltin"},
         {"version", "1"},
         {"recipe", "collection.router"},
-        {"components", {"local", "remote", "Qwen2.5-0.5B-Instruct-CPU"}},
+        {"components", {"local", "remote", "Qwen2.5-0.5B-Instruct-NPU"}},
         {"routing", {
             {"candidates", {"local", "remote"}},
             {"default_model", "local"},
             {"classifiers", {{
                 {"id", "clf"},
                 {"type", "classifier"},
-                {"model", "builtin.Qwen2.5-0.5B-Instruct-CPU"},
+                {"model", "builtin.Qwen2.5-0.5B-Instruct-NPU"},
                 {"labels", {"A", "B"}},
                 {"default_label", "A"},
             }}},

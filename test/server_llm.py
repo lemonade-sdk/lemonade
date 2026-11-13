@@ -13,8 +13,6 @@ not supported by the current wrapped server.
 Usage:
     python server_llm.py --wrapped-server llamacpp --backend vulkan
     python server_llm.py --wrapped-server llamacpp --backend rocm
-    python server_llm.py --wrapped-server ryzenai --backend cpu
-    python server_llm.py --wrapped-server ryzenai --backend hybrid
     python server_llm.py --wrapped-server ryzenai --backend npu
     python server_llm.py --wrapped-server flm
 """

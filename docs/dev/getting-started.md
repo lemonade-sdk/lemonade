@@ -668,16 +668,16 @@ The `lemonade` executable is the command-line interface for terminal users:
 ./lemonade list
 
 # Pull a model
-./lemonade pull Llama-3.2-1B-Instruct-CPU
+./lemonade pull Qwen3-0.6B-GGUF
 
 # Delete a model
-./lemonade delete Llama-3.2-1B-Instruct-CPU
+./lemonade delete Qwen3-0.6B-GGUF
 
 # Check server status
 ./lemonade status
 
 # Run a model (loads model and opens browser)
-./lemonade run Llama-3.2-1B-Instruct-CPU
+./lemonade run Qwen3-0.6B-GGUF
 
 # View server logs
 ./lemonade logs

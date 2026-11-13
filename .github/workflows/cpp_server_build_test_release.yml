@@ -1072,7 +1072,7 @@ jobs:
           - name: xdna2
             runner: [Windows, X64, xdna2, lemon-prod]
             suites: >-
-              [{"name":"ryzenai","script":"server_llm.py","extra_args":"--wrapped-server ryzenai","backends":"cpu hybrid npu"},
+              [{"name":"ryzenai","script":"server_llm.py","extra_args":"--wrapped-server ryzenai","backends":"npu"},
                {"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"},
                {"name":"flm-whisper","script":"server_whisper.py","extra_args":"--wrapped-server flm","backends":"npu"},
                {"name":"systemone-flm","script":"server_systemone.py","extra_args":"--wrapped-server flm","backends":"npu"}]

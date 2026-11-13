@@ -101,7 +101,7 @@ def parse_args(additional_args=None, modality=None):
     parser.add_argument(
         "--backend",
         type=str,
-        help="Backend for the wrapped server (vulkan, rocm, cpu, hybrid, npu, etc.)",
+        help="Backend for the wrapped server (vulkan, rocm, cpu, npu, etc.)",
     )
 
     # Use parse_known_args to ignore unittest arguments

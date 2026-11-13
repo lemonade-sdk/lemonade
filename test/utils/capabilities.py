@@ -185,7 +185,7 @@ CAPABILITIES = {
             "responses_extra_body": {"reasoning": {"effort": "none"}},
         },
         "ryzenai": {
-            "backends": ["cpu", "hybrid", "npu"],
+            "backends": ["npu"],
             "supports": {
                 "chat_completions": True,
                 "chat_completions_streaming": True,
@@ -208,9 +208,8 @@ CAPABILITIES = {
                 "static_max_context_window": False,
             },
             "test_models": {
-                "llm_cpu": "Qwen2.5-0.5B-Instruct-CPU",
-                "llm_hybrid": "Qwen-2.5-1.5B-Instruct-NPU",
-                "llm_npu": "Qwen2.5-3B-Instruct-NPU",
+                "llm": "Llama-3.2-1B-Instruct-NPU",
+                "llm_npu": "Llama-3.2-1B-Instruct-NPU",
             },
         },
         "flm": {
@@ -529,7 +528,7 @@ def get_test_model(
     caps = get_capabilities(wrapped_server, modality)
     test_models = caps.get("test_models", {})
 
-    # Try backend-specific model first (e.g., llm_cpu, llm_hybrid)
+    # Try backend-specific model first (e.g., llm_npu)
     if backend:
         backend_specific_key = f"{model_type}_{backend}"
         if backend_specific_key in test_models:
