@@ -1267,56 +1267,7 @@ namespace lemon::backends {
         }
     }  // namespace
 
-    void BackendUtils::cleanup_old_therock_versions() {
-        const json& config = backend_versions_config();
-
-        if (!config.contains("therock") || !config["therock"].is_object() ||
-            !config["therock"].contains("version") || !config["therock"]["version"].is_string()) {
-            return;
-        }
-
-        std::string version = config["therock"]["version"].get<std::string>();
-#ifdef __linux__
-        fs::path therock_base = fs::path(utils::get_downloaded_bin_dir()) / "therock";
-
-        if (!fs::exists(therock_base)) {
-            return;
-        }
-
-        try {
-            for (const auto& entry : fs::directory_iterator(therock_base)) {
-                if (entry.is_directory()) {
-                    std::string dir_name = entry.path().filename().string();
-                    size_t dash_pos = dir_name.rfind('-');
-                    if (dash_pos != std::string::npos) {
-                        std::string dir_version = dir_name.substr(dash_pos + 1);
-                        if (dir_version != version) {
-                            LOG(DEBUG, "BackendUtils") << "Cleaning up old TheRock version: " << dir_name << std::endl;
-                            fs::remove_all(entry.path());
-                        }
-                    }
-                }
-            }
-        } catch (const std::exception& e) {
-            LOG(WARNING, "BackendUtils")
-                << "Failed to cleanup old TheRock versions: " << e.what() << std::endl;
-        }
-#else
-        (void)version;
-#endif
-    }
-
     namespace {
-#ifdef _WIN32
-        // Windows resolves a full path against MAX_PATH (260) including the
-        // terminator, so 259 usable characters.
-        constexpr size_t kMaxPathChars = 259;
-
-        // Depth of the longest rocBLAS path below the ROCm install directory.
-        // Stored relative, not absolute.
-        constexpr const char* kRocblasDepthFile = "rocblas_path_depth.txt";
-#endif
-
         // The \\?\ prefix below turns off Win32 path normalization, so a "." or
         // ".." component left in the path makes every call against it fail.
         // fs::absolute() does not remove them; lexically_normal() does.
@@ -1327,23 +1278,6 @@ namespace lemon::backends {
                 absolute = p;
             }
             return absolute.lexically_normal().make_preferred();
-        }
-
-#ifdef _WIN32
-        std::string resolved_cache_dir(const std::string& cache_dir) {
-            const std::string raw = cache_dir.empty() ? utils::get_cache_dir() : cache_dir;
-            return utils::path_to_utf8(normalized_absolute(utils::path_from_utf8(raw)));
-        }
-#endif
-
-        // Normalized here rather than at each use: the depth measured below is
-        // relative to this root, so both sides of that subtraction have to agree
-        // on the spelling.
-        fs::path therock_root(const std::string& arch, const std::string& version,
-                              bool wheel_layout) {
-            return normalized_absolute(utils::path_from_utf8(
-                wheel_layout ? BackendUtils::get_therock_wheel_dir(arch, version)
-                             : BackendUtils::get_therock_install_dir(arch, version)));
         }
 
         // MSVC's std::filesystem never applies the Win32 long-path prefix, so
@@ -1370,6 +1304,77 @@ namespace lemon::backends {
         void remove_rocm_tree(const fs::path& dir, std::error_code& ec) {
             ec.clear();
             fs::remove_all(long_path(dir), ec);
+        }
+    }  // namespace
+
+    void BackendUtils::cleanup_old_therock_versions() {
+        const json& config = backend_versions_config();
+
+        if (!config.contains("therock") || !config["therock"].is_object() ||
+            !config["therock"].contains("version") || !config["therock"]["version"].is_string()) {
+            return;
+        }
+
+        std::string version = config["therock"]["version"].get<std::string>();
+
+        for (const char* subdir : {"therock", "therock-wheels"}) {
+            fs::path base = fs::path(utils::get_downloaded_bin_dir()) / subdir;
+
+            try {
+                if (!fs::exists(base)) {
+                    continue;
+                }
+                for (const auto& entry : fs::directory_iterator(base)) {
+                    if (!entry.is_directory()) {
+                        continue;
+                    }
+                    std::string dir_name = entry.path().filename().string();
+                    size_t dash_pos = dir_name.rfind('-');
+                    if (dash_pos != std::string::npos && dir_name.substr(dash_pos + 1) != version) {
+                        LOG(DEBUG, "BackendUtils") << "Cleaning up old TheRock version: "
+                                                   << subdir << "/" << dir_name << std::endl;
+                        std::error_code ec;
+                        remove_rocm_tree(entry.path(), ec);
+                        if (ec) {
+                            LOG(WARNING, "BackendUtils")
+                                << "Failed to remove old TheRock directory "
+                                << utils::path_to_utf8(entry.path()) << ": " << ec.message() << std::endl;
+                        }
+                    }
+                }
+            } catch (const std::exception& e) {
+                LOG(WARNING, "BackendUtils")
+                    << "Failed to cleanup old TheRock versions in " << subdir << ": " << e.what() << std::endl;
+            }
+        }
+    }
+
+    namespace {
+#ifdef _WIN32
+        // Windows resolves a full path against MAX_PATH (260) including the
+        // terminator, so 259 usable characters.
+        constexpr size_t kMaxPathChars = 259;
+
+        // Depth of the longest rocBLAS path below the ROCm install directory.
+        // Stored relative, not absolute.
+        constexpr const char* kRocblasDepthFile = "rocblas_path_depth.txt";
+#endif
+
+#ifdef _WIN32
+        std::string resolved_cache_dir(const std::string& cache_dir) {
+            const std::string raw = cache_dir.empty() ? utils::get_cache_dir() : cache_dir;
+            return utils::path_to_utf8(normalized_absolute(utils::path_from_utf8(raw)));
+        }
+#endif
+
+        // Normalized here rather than at each use: the depth measured below is
+        // relative to this root, so both sides of that subtraction have to agree
+        // on the spelling.
+        fs::path therock_root(const std::string& arch, const std::string& version,
+                              bool wheel_layout) {
+            return normalized_absolute(utils::path_from_utf8(
+                wheel_layout ? BackendUtils::get_therock_wheel_dir(arch, version)
+                             : BackendUtils::get_therock_install_dir(arch, version)));
         }
 
 #ifdef _WIN32
@@ -1797,6 +1802,7 @@ namespace lemon::backends {
                 LOG(DEBUG, "BackendUtils")
                     << "ROCm wheels " << arch << "-" << version
                     << " already installed" << std::endl;
+                cleanup_old_therock_versions();
                 return true;
             }
         }
@@ -2017,6 +2023,8 @@ namespace lemon::backends {
         cleanup_stale_version_dirs(
             fs::path(utils::get_downloaded_bin_dir()) / "therock-wheels",
             fs::path(wheel_dir).filename().string());
+        // Also drop leftover tarball installs from older pinned versions.
+        cleanup_old_therock_versions();
 
         if (progress_cb) {
             DownloadProgress p;
