@@ -95,6 +95,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "log_level": "info",
   "log_max_file_size_mb": 10,
   "log_max_files": 5,
+  "loom": {
+    "args": "",
+    "rocm_bin": "builtin"
+  },
   "max_loaded_models": 1,
   "model_catalogs": [],
   "models_dir": "auto",

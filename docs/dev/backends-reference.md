@@ -17,6 +17,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, halobox, metal, nathanw, rocm, system, vulkan |
 | `llamacpp-hrx` | HRX GPU | no | yes | hrx |
+| `loom` | Loom | no | no | rocm |
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, vulkan |
@@ -55,6 +56,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `llamacpp` | nathanw | guest | container | linux | amd_gpu (gfx1151) |
 | `llamacpp` | halobox | guest | container | linux | amd_gpu (gfx1151) |
 | `llamacpp-hrx` | hrx | experimental | native | linux | amd_gpu (gfx1100, gfx1151) |
+| `loom` | rocm | experimental | native | linux, windows | amd_gpu (gfx1151) |
 | `moonshine` | cpu | core | python | windows | cpu (x86_64) |
 | `moonshine` | cpu | core | python | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | core | python | macos | cpu (arm64) |
@@ -139,6 +141,14 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 |--------|----------|------|---------|-------------|
 | `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
 | `hrx_args` | `--hrx-args` | ARGS | "" | Custom arguments to pass to the HRX llama-server |
+
+#### `loom` — Loom
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `loom_device` | `--loom-device` | URI | amdgpu:// | HAL device URI loom-serve runs the bundle on |
+| `loom_memory_bytes` | `--loom-memory-bytes` | BYTES | "" | Device pool size, e.g. 16gib; empty uses the bundle's card |
+| `loom_args` | `--loom-args` | ARGS | "" | Custom arguments to pass to loom-serve |
 
 #### `moonshine` — Moonshine
 

@@ -12,6 +12,7 @@ const RECIPE_PRIORITY = [
   'llamacpp-hrx',
   'kokoro',
   'llamacpp',
+  'loom',
   'moonshine',
   'onnxruntime',
   'openmoss',

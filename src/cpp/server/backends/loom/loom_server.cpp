@@ -28,6 +28,10 @@
 #include <thread>
 #include <vector>
 
+#ifdef _WIN32
+    #include <windows.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace lemon {
@@ -315,6 +319,18 @@ std::string diagnose_startup_failure(const ServerCommand& command) {
     return loom::startup_failure_detail(lines);
 }
 
+// libamdf opens the GPU through the kernel graphics interface, which a Remote
+// Desktop session does not expose; the same machine works from its console.
+std::string remote_session_hint() {
+#ifdef _WIN32
+    if (GetSystemMetrics(SM_REMOTESESSION) != 0) {
+        return " (Loom cannot reach the GPU from a Remote Desktop session; run Lemonade from "
+               "the machine's local console)";
+    }
+#endif
+    return "";
+}
+
 json get_loopback_json(int port, const std::string& path) {
     const auto response = utils::HttpClient::get("http://127.0.0.1:" + std::to_string(port) + path,
                                                  {}, 5, utils::HttpSecurityPolicy::TrustedLoopback);
@@ -387,8 +403,10 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
     } catch (const std::runtime_error&) {
         if (load_cancelled()) throw;
         const std::string detail = diagnose_startup_failure(command);
-        if (detail.empty()) throw;
-        throw std::runtime_error("loom-serve failed to start: " + detail);
+        const std::string hint = remote_session_hint();
+        if (detail.empty() && hint.empty()) throw;
+        throw std::runtime_error("loom-serve failed to start" +
+                                 (detail.empty() ? std::string() : ": " + detail) + hint);
     }
     wait_for_bundle(model_name);
 }

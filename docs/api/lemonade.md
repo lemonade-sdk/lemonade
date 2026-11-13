@@ -858,7 +858,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `query` or `q` (query) | Yes | Search text, minimum 3 characters after trimming. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `source` (query) | No | Registry to search: `huggingface` or `modelscope`, also accepted as `hf` and `ms`. Defaults to `huggingface`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `limit` (query) | No | Maximum number of results, from `1` to `50`. Defaults to `12`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `format` (query) | No | Only `gguf`, which limits a Hugging Face search to GGUF repositories and favors them in a ModelScope search. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `format` (query) | No | `gguf` limits a Hugging Face search to GGUF repositories and favors them in a ModelScope search. `loom` limits a Hugging Face search to repositories tagged `loom-serve`, the bundles the `loom` recipe runs. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -918,7 +918,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 - `source` - The registry searched, by its canonical name.
 - `query` - The query, trimmed.
-- `format` - Present only when `format=gguf` was requested.
+- `format` - Present only when `format` was requested.
 - `total` - Matches the registry reports; can exceed the results returned.
 - `results` - Up to `limit` repositories.
   - `repository_id` - Repository id, such as `unsloth/Qwen3-8B-GGUF`.
@@ -937,7 +937,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Status | Code | When |
 |--------|------|------|
 | `400` |  | `query` (or `q`) is shorter than 3 characters after trimming |
-| `400` |  | `source` names an unsupported registry, `limit` is not an integer from 1 to 50, or `format` is not `gguf` |
+| `400` |  | `source` names an unsupported registry, `limit` is not an integer from 1 to 50, or `format` is not `gguf` or `loom`, or `format=loom` names a registry other than Hugging Face |
 | `400` | `lemond_offline` | `offline` is set to `true` |
 | `429` |  | The upstream registry rate-limits the request; `error.upstream_status_code` is its status |
 | `502` |  | The upstream registry answers with another error; `error.upstream_status_code` is its status |

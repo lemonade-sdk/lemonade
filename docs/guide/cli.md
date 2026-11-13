@@ -388,6 +388,14 @@ The following options are available depending on the recipe being used:
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--hrx-args ARGS` | Custom arguments to pass to the HRX llama-server | `""` |
 
+#### Loom (`loom` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--loom-device URI` | HAL device URI loom-serve runs the bundle on | `amdgpu://` |
+| `--loom-memory-bytes BYTES` | Device pool size, e.g. 16gib; empty uses the bundle's card | `""` |
+| `--loom-args ARGS` | Custom arguments to pass to loom-serve | `""` |
+
 #### Whisper.cpp (`whispercpp` recipe)
 
 | Option | Description | Default |
