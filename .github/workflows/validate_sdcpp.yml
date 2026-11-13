@@ -452,10 +452,8 @@ jobs:
         with:
           cache-dir: ${{ env.LEMONADE_CI_CACHE_DIR }}
 
-      - name: Record the API examples these pins invalidate
-        # The update PR carries examples recorded with the new backend, so the API
-        # reference keeps showing what lemond returns. When this fails, the PR's API
-        # docs check reports the stale examples instead.
+      - name: Record and verify API examples for candidate pins
+        id: record_api_examples
         if: matrix.label == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         continue-on-error: true
         shell: PowerShell
@@ -464,15 +462,30 @@ jobs:
           Copy-Item build\resources\backend_versions.json src\cpp\resources\backend_versions.json -Force
           & .\.venv\Scripts\python.exe docs\tools\gen_api_boilerplate.py --lemond build\Release\lemond.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & .\.venv\Scripts\python.exe docs\tools\gen_api_boilerplate.py --lemond build\Release\lemond.exe --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Upload recorded API examples
-        if: matrix.label == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      - name: Record API documentation status
+        if: always() && matrix.label == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        shell: PowerShell
+        env:
+          RECORD_OUTCOME: ${{ steps.record_api_examples.outcome }}
+        run: |
+          $status = if ($env:RECORD_OUTCOME -eq 'success') { 'passed' } else { 'failed' }
+          Set-Content docs\tools\api_examples_status.txt -Value $status -Encoding ascii -NoNewline
+          if ($status -ne 'passed') {
+            Write-Warning 'API documentation recording/check failed; candidate requires a draft PR.'
+          }
+
+      - name: Upload API examples and verification status
+        if: always() && matrix.label == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: api-examples
           path: |
             docs/tools/api_examples_cache.json
+            docs/tools/api_examples_status.txt
             docs/api/
           retention-days: 7
 
@@ -564,30 +577,127 @@ jobs:
 
   create-pr:
     name: Create update PR
-    needs: [discover-release, validate, verify-cuda-assets]
+    needs: [discover-release, build, validate, verify-cuda-assets, gpu-offload-gate, validation-gate]
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
     if: >-
+      always() &&
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.validate.result == 'success' &&
-      needs.verify-cuda-assets.result == 'success'
+      needs.discover-release.result == 'success' &&
+      needs.build.result == 'success' &&
+      needs.verify-cuda-assets.result == 'success' &&
+      (needs.validate.result == 'success' || needs.validate.result == 'failure') &&
+      needs.gpu-offload-gate.result != 'cancelled'
     steps:
       - uses: actions/checkout@v5
 
       - name: Download recorded API examples
+        id: download_api_examples
         continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           name: api-examples
-          path: docs
+          path: api-examples-artifact
+
+      - name: Check and install verified API documentation
+        id: api_docs
+        shell: bash
+        env:
+          DOWNLOAD_OUTCOME: ${{ steps.download_api_examples.outcome }}
+        run: |
+          set -euo pipefail
+          status_file=api-examples-artifact/tools/api_examples_status.txt
+          reason=''
+          if [[ "$DOWNLOAD_OUTCOME" != success ]]; then
+            reason='API documentation artifact download failed.'
+          elif [[ ! -f "$status_file" || "$(cat "$status_file")" != passed ]]; then
+            reason='API documentation recording/check failed or status is missing.'
+          elif [[ ! -s api-examples-artifact/tools/api_examples_cache.json ]]; then
+            reason='API examples cache is missing or empty.'
+          else
+            for page in docs/api/*.md; do
+              if [[ ! -s "api-examples-artifact/api/${page##*/}" ]]; then
+                reason="API documentation artifact is missing ${page##*/}."
+                break
+              fi
+            done
+            if [[ -z "$reason" ]]; then
+              if cp api-examples-artifact/tools/api_examples_cache.json docs/tools/ &&
+                 cp -R api-examples-artifact/api/. docs/api/ &&
+                 python3 - <<'PYDOC'
+          from pathlib import Path
+          for path in Path('docs/api').glob('*.md'):
+              data = path.read_bytes()
+              normalized = data.replace(b'\r\n', b'\n')
+              if data != normalized:
+                  path.write_bytes(normalized)
+          PYDOC
+              then
+                :
+              else
+                reason='Unable to install or normalize verified API documentation.'
+              fi
+            fi
+          fi
+          echo "ok=$([[ -z "$reason" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "reason=$reason" >> "$GITHUB_OUTPUT"
+          if [[ -n "$reason" ]]; then
+            echo "::warning::$reason Candidate requires a draft PR."
+            echo "API documentation verification: $reason" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          rm -rf api-examples-artifact
 
       - name: Download validation evidence
+        id: download_validation
+        continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           pattern: sdcpp-validation-*
           merge-multiple: true
+
+      - name: Classify backend validation
+        id: backend_validation
+        shell: bash
+        env:
+          INFERENCE_RESULT: ${{ needs.validate.result }}
+          GPU_GATE_RESULT: ${{ needs.gpu-offload-gate.result }}
+          VALIDATION_GATE_RESULT: ${{ needs.validation-gate.result }}
+          ARTIFACT_OUTCOME: ${{ steps.download_validation.outcome }}
+        run: |
+          set -euo pipefail
+          reason=''
+          if [[ "$INFERENCE_RESULT" != success ]]; then
+            reason="Inference validation: $INFERENCE_RESULT."
+          elif [[ "$GPU_GATE_RESULT" != success ]]; then
+            reason="GPU offload gate: $GPU_GATE_RESULT."
+          elif [[ "$VALIDATION_GATE_RESULT" != success ]]; then
+            reason="sd-cpp validation gate: $VALIDATION_GATE_RESULT."
+          elif [[ "$ARTIFACT_OUTCOME" != success ]]; then
+            reason='Validation evidence artifact download failed.'
+          elif ! python3 - <<'PYGPU'
+          import json
+          from pathlib import Path
+          for backend in ('vulkan', 'rocm-stable'):
+              path = Path(f'sdcpp_validation_{backend}.json')
+              if not path.is_file():
+                  raise SystemExit(f'Missing GPU result file: {path}')
+              rows = json.loads(path.read_text(encoding='utf-8'))
+              if not isinstance(rows, list) or not rows or any(
+                  not isinstance(row, dict) or row.get('gpu') != 'PASS' for row in rows
+              ):
+                  raise SystemExit(f'Incomplete GPU offload confirmation in {path}')
+          PYGPU
+          then
+            reason='GPU offload evidence is missing or incomplete.'
+          fi
+          echo "ok=$([[ -z "$reason" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "reason=$reason" >> "$GITHUB_OUTPUT"
+          if [[ -n "$reason" ]]; then
+            echo "::warning::$reason Candidate requires a draft PR."
+            echo "Backend validation: $reason" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Update backend_versions.json
         run: |
@@ -611,7 +721,9 @@ jobs:
           fi
 
       - name: Normalize validation evidence and generate PR body
-        if: steps.update-diff.outputs.has_update == 'true'
+        id: render_evidence
+        if: steps.update-diff.outputs.has_update == 'true' && steps.backend_validation.outputs.ok == 'true'
+        continue-on-error: true
         shell: bash
         env:
           BASE_RELEASE: ${{ needs.discover-release.outputs.base_release }}
@@ -649,7 +761,9 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Publish validation images
-        if: steps.update-diff.outputs.has_update == 'true'
+        id: publish_evidence
+        if: steps.update-diff.outputs.has_update == 'true' && steps.render_evidence.outcome == 'success'
+        continue-on-error: true
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -734,6 +848,51 @@ jobs:
             git push origin "HEAD:refs/heads/$EVIDENCE_BRANCH"
           fi
 
+      - name: Add validation verdict to PR body
+        if: steps.update-diff.outputs.has_update == 'true'
+        shell: bash
+        env:
+          API_DOCS_OK: ${{ steps.api_docs.outputs.ok }}
+          API_DOCS_REASON: ${{ steps.api_docs.outputs.reason }}
+          BACKEND_OK: ${{ steps.backend_validation.outputs.ok }}
+          BACKEND_REASON: ${{ steps.backend_validation.outputs.reason }}
+          EVIDENCE_OUTCOME: ${{ steps.render_evidence.outcome }}
+          PUBLISH_OUTCOME: ${{ steps.publish_evidence.outcome }}
+          BASE_RELEASE: ${{ needs.discover-release.outputs.base_release }}
+          CUDA_RELEASE: ${{ needs.discover-release.outputs.cuda_release }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [[ "$BACKEND_OK" == true && "$EVIDENCE_OUTCOME" == success && "$PUBLISH_OUTCOME" == success && "$API_DOCS_OK" == true ]]; then
+            exit 0
+          fi
+          if [[ ! -s pr_body.md ]]; then
+            cat > pr_body.md <<EOF
+          This candidate updates sd-cpp base pins to \`${BASE_RELEASE}\` and CUDA pins to \`${CUDA_RELEASE}\`.
+
+          Validation did not complete; check the linked workflow run for available results.
+          EOF
+          fi
+          {
+            echo '> [!CAUTION]'
+            echo '> **This auto-update is not fully validated and must remain a draft.**'
+            if [[ "$BACKEND_OK" != true ]]; then
+              echo "> Backend: ${BACKEND_REASON:-inference or GPU validation incomplete.}"
+            elif [[ "$EVIDENCE_OUTCOME" != success ]]; then
+              echo '> Backend: validation image evidence is missing or incomplete.'
+            elif [[ "$PUBLISH_OUTCOME" != success ]]; then
+              echo '> Evidence: validation images could not be published.'
+            fi
+            if [[ "$API_DOCS_OK" != true ]]; then
+              echo "> API docs: ${API_DOCS_REASON:-recording/check unavailable.}"
+            fi
+            echo "> Workflow: ${RUN_URL}"
+            echo '> Do not merge until all validations pass.'
+            echo
+            cat pr_body.md
+          } > pr_body_checked.md
+          mv pr_body_checked.md pr_body.md
+
       - name: Create or update Pull Request
         if: steps.update-diff.outputs.has_update == 'true'
         shell: bash
@@ -741,33 +900,93 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_RELEASE: ${{ needs.discover-release.outputs.base_release }}
           CUDA_RELEASE: ${{ needs.discover-release.outputs.cuda_release }}
+          BACKEND_OK: ${{ steps.backend_validation.outputs.ok }}
+          API_DOCS_OK: ${{ steps.api_docs.outputs.ok }}
+          EVIDENCE_OUTCOME: ${{ steps.render_evidence.outcome }}
+          PUBLISH_OUTCOME: ${{ steps.publish_evidence.outcome }}
         run: |
           set -euo pipefail
-          BRANCH="$UPDATE_BRANCH"
+          BRANCH="auto/sdcpp-update-${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
           TITLE="Update stable-diffusion.cpp to ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git checkout -B "$BRANCH"
-          git add src/cpp/resources/backend_versions.json docs/tools/api_examples_cache.json docs/api
-          git commit -m "Update stable-diffusion.cpp pins to ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}"
-
-          REMOTE_SHA=$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')
-          if [ -n "$REMOTE_SHA" ]; then
-            git push --force-with-lease="refs/heads/$BRANCH:$REMOTE_SHA" origin "$BRANCH"
+          VALIDATED=false
+          if [[ "$BACKEND_OK" == true && "$EVIDENCE_OUTCOME" == success && "$PUBLISH_OUTCOME" == success && "$API_DOCS_OK" == true ]]; then
+            VALIDATED=true
+          elif [[ "$BACKEND_OK" != true || "$EVIDENCE_OUTCOME" != success || "$PUBLISH_OUTCOME" != success ]]; then
+            TITLE="[Backend review required] $TITLE"
           else
-            git push origin "$BRANCH"
+            TITLE="[Docs review required] $TITLE"
           fi
 
-          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
-          if [ -n "$EXISTING_PR" ]; then
-            gh pr edit "$EXISTING_PR" \
-              --title "$TITLE" \
-              --body-file pr_body.md \
-              --base main
+          # Reuse only open bot-owned PRs for this release pair, including retry branches.
+          EXISTING_ROW=$(gh pr list --state open --limit 200 --json number,headRefName,author |
+            BRANCH_PREFIX="$BRANCH" python3 -c 'import json,os,sys; p=os.environ["BRANCH_PREFIX"]; prs=[r for r in json.load(sys.stdin) if (r.get("author") or {}).get("login") in ("app/github-actions","github-actions[bot]")]; row=next((r for r in prs if r["headRefName"]==p),None) or next((r for r in prs if r["headRefName"].startswith(p+"-")),None); print(str(row["number"])+" "+row["headRefName"] if row else "")')
+          EXISTING_PR=''
+          if [[ -n "$EXISTING_ROW" ]]; then
+            EXISTING_PR="${EXISTING_ROW%% *}"
+            BRANCH="${EXISTING_ROW#* }"
+            was_draft=$(gh pr view "$EXISTING_PR" --json isDraft --jq .isDraft)
+            old_title=$(gh pr view "$EXISTING_PR" --json title --jq .title)
+            if [[ "$was_draft" == true && "$old_title" != '[Backend review required] '* &&
+                  "$old_title" != '[Docs review required] '* ]]; then
+              echo "PR #$EXISTING_PR is a manually held draft; leaving it unchanged."
+              exit 0
+            fi
+          elif git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null 2>&1; then
+            # A previously closed PR may still own the old branch; do not overwrite it.
+            BRANCH="${BRANCH}-${GITHUB_RUN_ID}"
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+          WORKTREE=$(mktemp -d)
+          trap 'git worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true; rm -rf "$WORKTREE"' EXIT
+          if [[ -n "$EXISTING_PR" ]]; then
+            git fetch --no-tags origin "$BRANCH"
+            git worktree add --detach "$WORKTREE" FETCH_HEAD
           else
-            gh pr create \
+            git worktree add --detach "$WORKTREE" HEAD
+          fi
+
+          # Change only the sd-cpp pins; preserve unrelated backend updates on an
+          # existing bot PR branch rather than copying main's entire JSON file.
+          python3 .github/scripts/update_sdcpp_versions.py \
+            --path "$WORKTREE/src/cpp/resources/backend_versions.json" \
+            --release "$BASE_RELEASE" --backends "$SDCPP_BASE_UPDATE_BACKENDS"
+          python3 .github/scripts/update_sdcpp_versions.py \
+            --path "$WORKTREE/src/cpp/resources/backend_versions.json" \
+            --release "$CUDA_RELEASE" --backends "$SDCPP_CUDA_UPDATE_BACKENDS"
+          if [[ "$VALIDATED" == true ]]; then
+            # Never commit partial docs when recording/check or inference fails.
+            cp docs/tools/api_examples_cache.json "$WORKTREE/docs/tools/"
+            # Replace the whole directory: reused bot branches can retain removed pages.
+            rm -rf -- "$WORKTREE/docs/api"
+            cp -R -- docs/api "$WORKTREE/docs/"
+          fi
+          git -C "$WORKTREE" add -- src/cpp/resources/backend_versions.json
+          if [[ "$VALIDATED" == true ]]; then
+            git -C "$WORKTREE" add -- docs/tools/api_examples_cache.json docs/api
+          fi
+          if ! git -C "$WORKTREE" diff --cached --quiet; then
+            git -C "$WORKTREE" commit -m "Update stable-diffusion.cpp pins to ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}"
+            git -C "$WORKTREE" push origin "HEAD:refs/heads/$BRANCH"
+          elif [[ -z "$EXISTING_PR" ]]; then
+            echo 'No changes to commit on a new update branch.' >&2
+            exit 1
+          fi
+
+          if [[ -n "$EXISTING_PR" ]]; then
+            if [[ "$VALIDATED" != true && "$was_draft" != true ]]; then
+              gh pr ready "$EXISTING_PR" --undo
+            fi
+            gh pr edit "$EXISTING_PR" --title "$TITLE" --body-file pr_body.md --base main
+            if [[ "$VALIDATED" == true && "$was_draft" == true ]]; then
+              gh pr ready "$EXISTING_PR"
+            fi
+          else
+            pr_args=()
+            if [[ "$VALIDATED" != true ]]; then pr_args+=(--draft); fi
+            gh pr create "${pr_args[@]}" \
               --title "$TITLE" \
               --body-file pr_body.md \
               --base main \
