@@ -218,6 +218,11 @@ int main() {
                    gaps[2] == std::vector<std::pair<size_t, size_t>>{{10, 12}, {15, 18}},
                "a text cut by the elision marker pools as two runs");
 
+        RouterTokenGroups shared = gapped;
+        shared.labels[1].push_back(10);
+        expect(router_pool_groups(shared).empty(),
+               "a token in two groups sends no pool groups, so lemond pools the tokens itself");
+
         // The means llama-server returns for those groups score as the token rows do.
         json means = json::array();
         auto mean = [&](const std::vector<size_t>& tokens) {

@@ -874,9 +874,14 @@ json LlamaCppServer::classify_with_rule_head(const json& request) {
         const llamacpp::RouterTokenGroups groups =
             llamacpp::group_router_tokens(fit.input, tokens.spans, labels);
 
-        json embedded = forward_request(
-            "/embedding",
-            json{{"content", tokens.ids}, {"pool_groups", llamacpp::router_pool_groups(groups)}});
+        json embed_request = {{"content", tokens.ids}};
+        if (const llamacpp::RouterPoolGroups pool = llamacpp::router_pool_groups(groups);
+            !pool.empty()) {
+            embed_request["pool_groups"] = pool;
+            // The head projects with a bias, so it needs the means as they are.
+            embed_request["embd_normalize"] = -1;
+        }
+        json embedded = forward_request("/embedding", embed_request);
         if (embedded.is_object() && embedded.contains("error")) {
             return encoder_max_input_tokens_ > 0
                        ? llamacpp::map_encoder_overflow_error(std::move(embedded),

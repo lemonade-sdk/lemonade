@@ -122,6 +122,8 @@ std::vector<double> score_router_labels(const RuleHead& head, const nlohmann::js
                                         size_t n_tokens, const RouterTokenGroups& groups);
 
 using RouterPoolGroups = std::vector<std::vector<std::pair<size_t, size_t>>>;
+// Empty when a token is in two groups: llama-server refuses shared tokens, so
+// lemond then pools the token vectors itself.
 RouterPoolGroups router_pool_groups(const RouterTokenGroups& groups);
 
 // Scores from the n_labels + 1 means llama-server returns for router_pool_groups().

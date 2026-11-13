@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <set>
 #include <stdexcept>
 
 namespace lemon {
@@ -449,9 +450,20 @@ RouterPoolGroups router_pool_groups(const RouterTokenGroups& groups) {
         }
         return out;
     };
+    std::set<size_t> seen;
+    auto disjoint = [&](const std::vector<size_t>& tokens) {
+        for (const size_t token : tokens) {
+            if (!seen.insert(token).second) return false;
+        }
+        return true;
+    };
     RouterPoolGroups out;
     out.reserve(groups.labels.size() + 1);
-    for (const auto& label : groups.labels) out.push_back(runs(label));
+    for (const auto& label : groups.labels) {
+        if (!disjoint(label)) return {};
+        out.push_back(runs(label));
+    }
+    if (!disjoint(groups.text)) return {};
     out.push_back(runs(groups.text));
     return out;
 }
