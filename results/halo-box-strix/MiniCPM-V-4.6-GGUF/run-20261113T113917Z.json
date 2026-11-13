@@ -1,0 +1,211 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM-V-4.6-gguf:MiniCPM-V-4_6-Q4_K_M.gguf",
+        "mmproj": "OpenBMB/MiniCPM-V-4.6-gguf:mmproj-model-f16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM-V-4.6-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 451.301531,
+                "mean": 443.851022,
+                "min": 437.877841,
+                "p50": 442.373694,
+                "p95": 450.4087473
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 6.7,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 9874.121309400087,
+              "tps": {
+                "max": 175.47910413299468,
+                "mean": 173.00037324430537,
+                "min": 168.2145355065471,
+                "p50": 175.3074800933743,
+                "p95": 175.46194172903262
+              },
+              "ttft_ms": {
+                "max": 329.586,
+                "mean": 325.13100000000003,
+                "min": 320.892,
+                "p50": 324.915,
+                "p95": 329.1189
+              },
+              "vram_peak_gb": 2.0658645629882812
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 3698.084811,
+                "mean": 3667.9196023333334,
+                "min": 3652.443066,
+                "p50": 3653.23093,
+                "p95": 3693.5994229000003
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 7.2,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 7113.701287336736,
+              "tps": {
+                "max": 140.02196133919952,
+                "mean": 138.8504436122879,
+                "min": 137.24951962668132,
+                "p50": 139.27984987098287,
+                "p95": 139.94775019237787
+              },
+              "ttft_ms": {
+                "max": 3490.315,
+                "mean": 3484.8323333333333,
+                "min": 3477.759,
+                "p50": 3486.423,
+                "p95": 3489.9258
+              },
+              "vram_peak_gb": 2.4213333129882812
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-13T12:15:40Z",
+      "accuracy": {
+        "passed": 31,
+        "total": 45,
+        "score": 0.6889,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-widgets",
+            "response": " widgets, which is 1 widget per machine per minute).\n\nNow, we need to find out how long it takes for 100 machines to make 100 widgets.\n\nSince each machine makes 1 widget per minute, 100 machines would make 100 widgets in 100 minutes.\n\nTherefore, the time required is 100 minutes.\n\nAnswer: 100 minutes",
+            "cut_off": false
+          },
+          {
+            "id": "reason-batball",
+            "response": " cents).\n\nThe total cost is $1.10, which is 110 cents. So, we have the equation:\n\n\\[ b + (b + 10) = 110 \\]\n\nSimplify the equation:\n\n\\[ 2b + 10 = 110 \\]\n\nSubtract 10 from both sides:\n\n\\[ 2b = 100 \\]\n\nDivide both sides by 2:\n\n\\[ b = 50 \\]\n\nSo, the ball costs 50 cents.\n\nAnswer: The ball costs 50 cents.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-sisters",
+            "response": "so, are there any other sisters? Since Alice is the only sister, each brother has 1 sister (Alice).\n\nBut typically, in such questions, we consider the number of sisters, including the sister Alice. So, each brother has 1 sister (Alice).\n\nAnswer: Each of Alice's brothers has 1 sister, which is Alice.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "We know that adding 10 days to a Monday brings us to Friday, because Monday is the 1st, Tuesday the 2nd, ..., and 10 days later is a Friday. So, the day of the week 10 days after a Monday is a Friday.\n\nAnswer: Friday",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "To convert Fahrenheit to Celsius, we use the formula:  \n\u00b0C = (\u00b0F - 32) \u00d7 5/9  \n\nPlug in 100\u00b0F:  \n\u00b0C = (100 - 32) \u00d7 5/9  \n\u00b0C = 68 \u00d7 5/9  \n\u00b0C = 350/9 \u2248 38.888...  \n\nRounded to the nearest whole number, that's 39.  \n\nAnswer: 39",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-backwards",
+            "response": "The word \"banana\" is spelled as b-a-n-a-n-a. To spell it backwards, we reverse the order of the letters, which gives us a-n-a-ba-n.\n\nAnswer: n-a-n-a-ba-n",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-count-r",
+            "response": "'. \n\nLooking at the word: s-t-r-a-w-b-e-r-r-y.\n\nNow, let's count: \n- The letter 'r' appears after 'str', then again after 'b e r r y'. \n\nSo, we have 'r' at positions: 3, and then again after 'r' and 'r' in \"berry\". \n\nThat's two times.\n\nAnswer: The letter 'r' appears 2 times in the word \"strawberry\".",
+            "cut_off": false
+          },
+          {
+            "id": "json-primes",
+            "response": "[\"2\", \"3\", \"5\", \"7\", \"11\"]",
+            "cut_off": false
+          },
+          {
+            "id": "json-extract",
+            "response": "{\n  \"name\": \"Lopez\",\n  \"age\": 34\n}",
+            "cut_off": false
+          },
+          {
+            "id": "turn-uppercase",
+            "response": "Let's analyze the question. THE CAPITAL OF FRANCE IS PARIS. NOW, I'll provide the final answer.\n\nAnswer: THE CAPITAL OF FRANCE IS PARIS.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "Based on the information provided, your flight leaves at 3pm, but it's actually two hours later.\n\nAnswer: Your flight leaves at 3pm, which is two hours later.",
+            "cut_off": false
+          },
+          {
+            "id": "py-palindrome",
+            "response": "```python\ndef is_palindrome(s):\n    cleaned = ''.join(char for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    # Remove spaces and convert to lower case\n    cleaned_a = a.replace(\" \", \"\").lower()\n    cleaned_b = b.replace(\" \", \"\").lower()\n    # Check if the cleaned strings are equal\n    return cleaned_a == cleaned_b\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": "t of a larger numeral\n        if i > 0 and roman_map[s[i-1]] >= roman_map[s[i]]:\n            # Add the difference in value\n            integer += roman_map[s[i-1]] * 10\n        else:\n            # Add the value of the current numeral\n            integer += roman_map[s[i]]\n    \n    return integer\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-13T12:15:40Z",
+  "fork_id": "halo-box-strix",
+  "fork_label": "llama.cpp Halo-box",
+  "fork_repo": "halo-box/strix-llama.cpp",
+  "fork_version": "b1055",
+  "rocm_version": "10.1.0a20260910",
+  "fork_backend": "halo-box-strix",
+  "experimental": true,
+  "run_id": "43388677952",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/43388677952",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d07-131763161850"
+}

@@ -1,0 +1,146 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3.6-35B-A3B-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        "mmproj": "unsloth/Qwen3.6-35B-A3B-GGUF:mmproj-F16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3.6-35B-A3B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 2063.644671,
+                "mean": 2028.86974,
+                "min": 2006.291097,
+                "p50": 2016.673452,
+                "p95": 2058.9475491
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 27.4,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 1957.2385708103147,
+              "tps": {
+                "max": 50.61119679497937,
+                "mean": 50.14032009906015,
+                "min": 49.81542075677489,
+                "p50": 49.994342745426174,
+                "p95": 50.54951139002405
+              },
+              "ttft_ms": {
+                "max": 1673.272,
+                "mean": 1640.3933333333332,
+                "min": 1622.173,
+                "p50": 1625.735,
+                "p95": 1668.5183
+              },
+              "vram_peak_gb": 22.16698455810547
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 15077.615175,
+                "mean": 15040.204548,
+                "min": 15005.553419,
+                "p50": 15037.44505,
+                "p95": 15073.5981625
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 27.8,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 1702.3594762256696,
+              "tps": {
+                "max": 43.79181830544102,
+                "mean": 43.064958915209694,
+                "min": 42.635502358416474,
+                "p50": 42.767556081771566,
+                "p95": 43.689392083074075
+              },
+              "ttft_ms": {
+                "max": 14600.774,
+                "mean": 14562.213666666665,
+                "min": 14521.593,
+                "p50": 14564.274,
+                "p95": 14597.123999999998
+              },
+              "vram_peak_gb": 22.739803314208984
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-13T12:22:20Z",
+      "accuracy": {
+        "passed": 44,
+        "total": 45,
+        "score": 0.9778,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-sisters",
+            "response": "rothers and 1 sister. This means there are 4 girls in total in the family: Alice herself and her 1 sister.\n\nFrom the perspective of any one of Alice's brothers, his sisters are all the female siblings in the family. Since there are 4 girls (Alice + her sister), each brother has 4 sisters.\n\nAnswer: 4",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-13T12:22:20Z",
+  "fork_id": "halo-box-strix",
+  "fork_label": "llama.cpp Halo-box",
+  "fork_repo": "halo-box/strix-llama.cpp",
+  "fork_version": "b1055",
+  "rocm_version": "10.1.0a20260910",
+  "fork_backend": "halo-box-strix",
+  "experimental": true,
+  "run_id": "43388677952",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/43388677952",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d07-131763161850"
+}

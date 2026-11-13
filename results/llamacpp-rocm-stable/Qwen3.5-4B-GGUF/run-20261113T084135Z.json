@@ -1,0 +1,146 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3.5-4B-GGUF:Qwen3.5-4B-UD-Q4_K_XL.gguf",
+        "mmproj": "unsloth/Qwen3.5-4B-GGUF:mmproj-F16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3.5-4B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 2007.865063,
+                "mean": 1995.9186286666666,
+                "min": 1982.973928,
+                "p50": 1996.916895,
+                "p95": 2006.7702462
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 7.8,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 1948.486600567204,
+              "tps": {
+                "max": 56.311145753991426,
+                "mean": 56.231993810935116,
+                "min": 56.16333480146261,
+                "p50": 56.22150087735132,
+                "p95": 56.302181266327416
+              },
+              "ttft_ms": {
+                "max": 1656.359,
+                "mean": 1647.4743333333336,
+                "min": 1636.386,
+                "p50": 1649.678,
+                "p95": 1655.6908999999998
+              },
+              "vram_peak_gb": 4.3271484375
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 18700.8298,
+                "mean": 18550.39608933333,
+                "min": 18410.018742,
+                "p50": 18540.339726,
+                "p95": 18684.7807926
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 8.6,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 1369.933776936634,
+              "tps": {
+                "max": 46.22623606522279,
+                "mean": 45.644076303121686,
+                "min": 45.23034146527262,
+                "p50": 45.47565137886962,
+                "p95": 46.15117759658747
+              },
+              "ttft_ms": {
+                "max": 18251.646,
+                "mean": 18096.601333333336,
+                "min": 17950.643,
+                "p50": 18087.515,
+                "p95": 18235.232900000003
+              },
+              "vram_peak_gb": 5.2295684814453125
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-13T08:47:59Z",
+      "accuracy": {
+        "passed": 44,
+        "total": 45,
+        "score": 0.9778,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    def normalize(s):\n        return ''.join(ch.lower() for ch in s if ch.isalpha())\n    \n    return normalize(a) == normalize(b)\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-13T08:47:59Z",
+  "fork_id": "llamacpp-rocm-stable",
+  "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+  "fork_repo": "lemonade-sdk/llama.cpp",
+  "fork_version": "b12352",
+  "rocm_version": "10.1.0",
+  "fork_backend": "rocm-stable",
+  "experimental": false,
+  "run_id": "43388677952",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/43388677952",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d06-131763162004"
+}

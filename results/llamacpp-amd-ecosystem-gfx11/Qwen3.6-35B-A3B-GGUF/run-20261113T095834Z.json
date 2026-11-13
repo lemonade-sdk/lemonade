@@ -1,0 +1,146 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3.6-35B-A3B-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        "mmproj": "unsloth/Qwen3.6-35B-A3B-GGUF:mmproj-F16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3.6-35B-A3B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 2357.14115,
+                "mean": 2344.0103779999995,
+                "min": 2330.991966,
+                "p50": 2343.898018,
+                "p95": 2355.8168367999997
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 27.7,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 1650.0144208513768,
+              "tps": {
+                "max": 48.906300675936556,
+                "mean": 48.71292437348422,
+                "min": 48.5361249268765,
+                "p50": 48.696347517639616,
+                "p95": 48.88530536010686
+              },
+              "ttft_ms": {
+                "max": 1955.999,
+                "mean": 1945.4823333333334,
+                "min": 1933.325,
+                "p50": 1947.123,
+                "p95": 1955.1114
+              },
+              "vram_peak_gb": 22.11804962158203
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 20394.535682,
+                "mean": 20227.416126333334,
+                "min": 20124.449153,
+                "p50": 20163.263544,
+                "p95": 20371.408468200003
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 28.0,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 1255.7486088750138,
+              "tps": {
+                "max": 44.8500356439757,
+                "mean": 43.94999452717581,
+                "min": 42.92010309860555,
+                "p50": 44.079844838946165,
+                "p95": 44.77301656347275
+              },
+              "ttft_ms": {
+                "max": 19867.588,
+                "mean": 19741.64,
+                "min": 19650.461,
+                "p50": 19706.871,
+                "p95": 19851.5163
+              },
+              "vram_peak_gb": 22.692337036132812
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-13T10:40:14Z",
+      "accuracy": {
+        "passed": 44,
+        "total": 45,
+        "score": 0.9778,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-sisters",
+            "response": "rothers and 1 sister. This means there are 4 girls in total in the family: Alice herself and her 1 sister.\n\nFrom the perspective of any one of Alice's brothers, his sisters are all the female siblings in the family. Since there are 4 girls (Alice + her sister), each brother has 4 sisters.\n\nAnswer: 4",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-13T10:40:14Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20261112",
+  "rocm_version": "10.1.0a20260822",
+  "fork_backend": "rocm-gfx11",
+  "experimental": false,
+  "run_id": "43388677952",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/43388677952",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d07-131763161850"
+}

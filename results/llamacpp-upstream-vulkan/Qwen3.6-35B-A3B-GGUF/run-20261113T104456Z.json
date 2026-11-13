@@ -1,0 +1,146 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/vulkan": "b11393"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3.6-35B-A3B-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        "mmproj": "unsloth/Qwen3.6-35B-A3B-GGUF:mmproj-F16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3.6-35B-A3B-GGUF",
+      "results": [
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 2934.60227,
+                "mean": 2930.609923,
+                "min": 2925.695373,
+                "p50": 2931.532126,
+                "p95": 2934.2952556
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 26.5,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 1249.3606207162331,
+              "tps": {
+                "max": 55.241550950154675,
+                "mean": 53.88740056822084,
+                "min": 53.15086733823254,
+                "p50": 53.269783416275324,
+                "p95": 55.04437419676674
+              },
+              "ttft_ms": {
+                "max": 2573.233,
+                "mean": 2569.318333333333,
+                "min": 2565.267,
+                "p50": 2569.455,
+                "p95": 2572.8552
+              },
+              "vram_peak_gb": 22.47104263305664
+            }
+          ]
+        },
+        {
+          "backend": "vulkan",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 25353.870782,
+                "mean": 25338.100928666667,
+                "min": 25324.367298,
+                "p50": 25336.064706,
+                "p95": 25352.090174400004
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 27.0,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 996.3366829924147,
+              "tps": {
+                "max": 46.54740730941287,
+                "mean": 45.26192105276116,
+                "min": 44.35759693885889,
+                "p50": 44.880758910011714,
+                "p95": 46.38074246947275
+              },
+              "ttft_ms": {
+                "max": 24887.275,
+                "mean": 24881.148333333334,
+                "min": 24876.744,
+                "p50": 24879.426,
+                "p95": 24886.490100000003
+              },
+              "vram_peak_gb": 23.113628387451172
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-13T11:30:39Z",
+      "accuracy": {
+        "passed": 44,
+        "total": 45,
+        "score": 0.9778,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-sisters",
+            "response": "rothers and 1 sister. This means there are 4 girls in total in the family: Alice herself and her 1 sister.\n\nFrom the perspective of any one of Alice's brothers, his sisters are all the female siblings in the family. Since there are 4 girls (Alice + her sister), each brother has 4 sisters.\n\nAnswer: 4",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-13T11:30:39Z",
+  "fork_id": "llamacpp-upstream-vulkan",
+  "fork_label": "llama.cpp Vulkan (upstream reference)",
+  "fork_repo": "ggml-org/llama.cpp",
+  "fork_version": "b12345",
+  "rocm_version": null,
+  "fork_backend": "vulkan",
+  "experimental": false,
+  "run_id": "43388677952",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/43388677952",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d07-131763161850"
+}
