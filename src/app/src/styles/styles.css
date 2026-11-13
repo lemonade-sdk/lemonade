@@ -11484,6 +11484,17 @@ optgroup {
 
 .connect__section-head--search { justify-content: flex-start; }
 
+/* #1221: Lemonade servers found on this network, under the server form. */
+.connect__section--lan-servers { margin-top: var(--space-6); }
+.connect__lan-note { display: block; margin-top: var(--space-1); font-size: var(--text-sm); color: var(--text-secondary); }
+.connect__lan-note--joined { color: var(--success, #1a7f37); }
+.connect__lan-note--failed { color: var(--danger, #cf222e); }
+.connect__lan-head h3 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-md, 1rem);
+  color: var(--text-primary);
+}
+
 .connect__form,
 .connect__directory-grid,
 .connect__hint {

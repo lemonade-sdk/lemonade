@@ -18,6 +18,7 @@ type NavData = { view?: string; model?: string };
 const EVT_SETTINGS_UPDATED = 'settings-updated';
 const EVT_CONNECTION_SETTINGS_UPDATED = 'connection-settings-updated';
 const EVT_SERVER_PORT_UPDATED = 'server-port-updated';
+const EVT_LAN_SERVERS_UPDATED = 'lan-servers-updated';
 const EVT_MAXIMIZE_CHANGE = 'maximize-change';
 const EVT_NAVIGATE = 'navigate';
 
@@ -148,6 +149,13 @@ async function installTauriApi(): Promise<void> {
     getServerAPIKey: () => invoke<string>('get_server_api_key'),
     onServerPortUpdated: (callback: (port: number) => void) =>
       on<number>(EVT_SERVER_PORT_UPDATED, callback),
+
+    // Lemonade servers heard on the local network (#1221); see LanServersPanel.
+    listLanServers: () => invoke<unknown[]>('list_lan_servers'),
+    setLanServerState: (id: string, state: string, url?: string) =>
+      invoke<void>('set_lan_server_state', { id, state, url: url ?? null }),
+    onLanServersUpdated: (callback: () => void) =>
+      on<null>(EVT_LAN_SERVERS_UPDATED, () => callback()),
     onConnectionSettingsUpdated: (
       callback: (baseURL: string, apiKey: string) => void,
     ) =>
