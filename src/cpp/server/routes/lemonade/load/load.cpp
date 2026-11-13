@@ -4,6 +4,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/backends/backend_source.h"
 #include "lemon/model_manager.h"
 #include "lemon/model_types.h"
 #include "lemon/recipe_options.h"
@@ -85,6 +86,10 @@ const RouteArg kWidth{"width", ArgIn::JsonBody, {{"type", json::array({"integer"
                       "`sd-cpp`: image width in pixels. Defaults to the model's own, else `512`."};
 const RouteArg kHeight{"height", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
                        "`sd-cpp`: image height in pixels. Defaults to the model's own, else `512`."};
+const RouteArg kBackendSource{"backend_source", ArgIn::JsonBody, {{"enum", json::array({"github", "modelscope"})}},
+                              false, Support::Available,
+                              "Where to download the model's backend from if this load installs it, `github` or "
+                              "`modelscope`, for this load only. Defaults to the server's `backend_source`."};
 const RouteArg kMergeArgs{"merge_args", ArgIn::JsonBody, {{"type", json::array({"boolean", "null"})}}, false, Support::Available,
                           "If `true`, server-wide `*_args` still apply when the request sends `*_args`. If "
                           "`false`, the request's `*_args` are the only arguments passed: server-wide, saved "
@@ -147,7 +152,7 @@ public:
         s.args = {
             kModelName, kPinned, kSaveOptions, model_options::kCtxSize, kLlamacppBackend,
             kLlamacppArgs, kWhispercppBackend, kWhispercppArgs, kSteps, kCfgScale, kWidth, kHeight,
-            kMergeArgs
+            kMergeArgs, kBackendSource
         };
 
         RouteResponse response;
@@ -181,6 +186,16 @@ public:
             canonical_model_name(ctx_, req.arg(kModelName).get<std::string>(), /*strip_latest=*/false);
         const std::string model_name = req.arg(kModelName).get<std::string>();
         json& request_json = req.body;
+
+        const std::string backend_source_choice = req.value(kBackendSource, "");
+        if (!backend_source_choice.empty() && !backend_source::is_valid(backend_source_choice)) {
+            res.status = 400;
+            res.set_content(
+                json{{"error", "'backend_source' must be either 'github', or 'modelscope'"}}.dump(),
+                "application/json");
+            return;
+        }
+        backend_source::ScopedOverride source_scope(backend_source_choice);
 
         try {
             // Cloud models are registered at cache build, cloud auth and install, so an

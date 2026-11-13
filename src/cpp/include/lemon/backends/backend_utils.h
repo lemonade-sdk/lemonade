@@ -219,6 +219,15 @@ namespace lemon::backends {
                                             std::string& filename,
                                             size_t& bytes_total);
 
+        /** rocm_install_method as it applies right now: "auto", "wheel" or "tarball".
+         *  Under backend_source=modelscope, "auto" becomes "tarball" because the
+         *  mirror carries the TheRock tarballs but not AMD's pip wheel index. */
+        static std::string effective_rocm_install_method();
+
+        /** The backend source in effect on this thread: a request's `source`, else
+         *  LEMONADE_BACKEND_SOURCE, else the `backend_source` config key. */
+        static std::string effective_backend_source();
+
         /** Download and install TheRock ROCm tarball for the specified architecture (Linux only) */
         static void install_therock(const std::string& arch, const std::string& version,
                                    DownloadProgressCallback progress_cb = nullptr);

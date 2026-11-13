@@ -49,6 +49,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "auto_evict": false,
   "auto_evict_threshold_pct": 0.9,
   "auto_update_models": false,
+  "backend_source": "github",
   "broadcast": true,
   "cloud_providers": [],
   "config_version": 2,
@@ -226,6 +227,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
 | `default_model_source` | string | "huggingface" | Remote registry used to pull checkpoints when a request does not name one (`huggingface` or `modelscope`). Explicit `--source`, a `source`/`registry_source` field, or a provider URL always overrides it. |
+| `backend_source` | string | "github" | Where backend binaries are downloaded from: `github` (GitHub Releases) or `modelscope` (the [`lemonade-sdk/backends`](https://modelscope.cn/datasets/lemonade-sdk/backends) mirror on ModelScope, for networks that cannot reach GitHub reliably). See [Downloading backends from ModelScope](#downloading-backends-from-modelscope). |
 | `download_rate_limit` | string | "" | Caps model/backend download speed. Byte rate with curl-style suffixes: `512`, `100K`, `10M`, etc. Use `""` for unlimited download speed. A non-empty value also serializes concurrent transfers. |
 | `offline` | bool | false | Skip model downloads |
 | `auto_check_model_updates` | bool | true | Check downloaded Hugging Face-backed models for updates during server startup. Set to `false` to check only with `lemonade check-updates` or `POST /v1/models/check-updates`. Manual downloads and updates remain enabled. |
@@ -238,6 +240,21 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `rocm_install_method` | string | "auto" | How to install the bundled ROCm runtime: "auto" (pip wheels, tarball fallback), "wheel" (wheels only), or "tarball" (no Python/pip). See [llama.cpp Backend](./llamacpp.md#choosing-the-rocm-install-method) for details |
 
 FLM manages its own model storage, so it does not persist a registry source with each model. An FLM pull follows the current `default_model_source` unless that request supplies an explicit `--source`; changing the default therefore changes the registry used by later FLM pulls and upgrades.
+
+### Downloading backends from ModelScope
+
+On networks where GitHub is slow or unreachable, for example in mainland China, set `backend_source` to `modelscope`. Lemonade then downloads backend binaries and the ROCm runtime from the [`lemonade-sdk/backends`](https://modelscope.cn/datasets/lemonade-sdk/backends) dataset on ModelScope instead of GitHub Releases. The dataset mirrors every release file that Lemonade pins in `backend_versions.json`, with the same file names, and is kept in sync by `tools/modelscope_mirror/modelscope_mirror.py`. Pair it with `default_model_source` so models come from ModelScope too:
+
+```bash
+lemonade config set backend_source=modelscope
+lemonade config set default_model_source=modelscope
+```
+
+To use ModelScope for one install without changing the config, pass `--source modelscope` to `lemonade backends install` (or `"source": "modelscope"` to `POST /v1/install`), or `--backend-source modelscope` to `lemonade load` and `lemonade run` (`"backend_source"` on `POST /v1/load`) for a backend that a load installs. The same setting is available as the `LEMONADE_BACKEND_SOURCE` environment variable. `MODELSCOPE_ENDPOINT` moves the ModelScope API, as it does for model pulls, and `MODELSCOPE_API_TOKEN` is sent when set. With `backend_source=modelscope`:
+
+- Only pinned versions are available. A `*_bin` value of `latest` fails with a clear error; use `builtin` or a pinned tag.
+- `rocm_install_method=auto` installs the TheRock tarball, because the mirror does not carry AMD's pip wheel index. An explicit `wheel` is still honoured.
+- Container backends still pull their images from their own registries.
 
 Both `models_dir` and `extra_models_dir` can be changed at runtime through [`POST /internal/set`](../../api/internal.md#post-internalset). Existing `extra_models_dir` paths are preflighted as directories and must be enumerable by the `lemond` process. Nonexistent paths are accepted so the directory watcher can observe them if they are created later.
 

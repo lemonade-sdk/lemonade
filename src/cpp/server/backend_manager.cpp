@@ -2,6 +2,7 @@
 #include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_source.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/server/download_manager.h"
@@ -13,6 +14,7 @@
 #include "lemon/utils/path_utils.h"
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -260,8 +262,12 @@ void uninstall_container_backend(const std::string& recipe, const std::string& b
     }
 }
 
-bool github_download_service_reachable() {
-    return utils::HttpClient::is_reachable("https://github.com/", 2);
+// Probe the configured backend_source, not always GitHub.
+bool backend_download_service_reachable() {
+    const std::string source = backends::BackendUtils::effective_backend_source();
+    const char* endpoint = std::getenv("MODELSCOPE_ENDPOINT");
+    return utils::HttpClient::is_reachable(
+        backend_source::reachability_probe_url(source, endpoint ? endpoint : ""), 2);
 }
 
 bool has_matching_system_rocm_runtime(const fs::path& rocm_root, bool resolved_explicitly,
@@ -377,8 +383,7 @@ bool is_therock_installed_for_current_arch(const json& backend_versions) {
     }
 
     {
-        auto* cfg = RuntimeConfig::global();
-        std::string requested = cfg ? cfg->rocm_install_method() : "auto";
+        const std::string requested = backends::BackendUtils::effective_rocm_install_method();
         if (requested != "auto") {
             const fs::path wheel_method =
                 fs::path(backends::BackendUtils::get_therock_wheel_dir(rocm_arch, version)) / "method.txt";
@@ -524,6 +529,16 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
         if (throw_on_failure) {
             throw std::runtime_error(
                 "Cannot resolve 'latest' release for " + repo + ": offline mode");
+        }
+        return "";
+    }
+    if (backend_source::is_modelscope(backends::BackendUtils::effective_backend_source())) {
+        // Answering "latest" would need the GitHub API this setting avoids.
+        if (throw_on_failure) {
+            throw std::runtime_error(
+                "Cannot resolve 'latest' release for " + repo +
+                ": backend_source=modelscope mirrors only pinned versions. "
+                "Use 'builtin' or a pinned version tag.");
         }
         return "";
     }
@@ -688,9 +703,12 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     if (!progress_cb && download_manager_ && resolved_backend != "system") {
         const std::string name = recipe + ":" + resolved_backend;
+        // The job runs on a worker thread, which does not see this thread's request source.
+        const std::string source = backend_source::request_override;
         download_manager_->run_tracked("backend:" + name, "backend", name,
-            [this, recipe, resolved_backend, force](DownloadProgressCallback report,
-                                                    utils::CancelToken) {
+            [this, recipe, resolved_backend, force, source](DownloadProgressCallback report,
+                                                            utils::CancelToken) {
+                backend_source::ScopedOverride source_scope(source);
                 install_backend(recipe, resolved_backend, force, report);
             });
         return;
@@ -746,13 +764,13 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         }
     }
 
-    if (!force && has_existing_backend && !github_download_service_reachable()) {
+    if (!force && has_existing_backend && !backend_download_service_reachable()) {
         // enter install_from_github() when GitHub is reachable, so available
         // backend updates are applied before the model starts. Only skip the
         // update path when the machine is effectively offline and a usable
         // backend binary is already present.
         LOG(WARNING, "BackendManager")
-            << "GitHub is not reachable; using installed " << recipe << ":"
+            << "The backend download service is not reachable; using installed " << recipe << ":"
             << resolved_backend << " backend at " << existing_backend_binary
             << " and deferring update" << std::endl;
         report_backend_ready(recipe, resolved_backend, progress_cb);
