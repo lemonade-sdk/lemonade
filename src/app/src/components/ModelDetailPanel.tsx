@@ -480,14 +480,24 @@ function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefin
 }
 
 function deviceOptionLabel(option: string, info: SystemInfoLike): string {
-  const match = /^cuda(\d+)$/i.exec(option);
-  if (!match) return option;
-  const gpus = (info as any)?.devices?.nvidia_gpu;
-  if (!Array.isArray(gpus)) return option;
-  const index = Number(match[1]);
-  const gpu = gpus.find((value: any, ordinal: number) => value?.available !== false
-    && (Number.isInteger(value?.index) ? value.index : ordinal) === index);
-  return gpu?.name ? `${option.toUpperCase()} (${gpu.name})` : option;
+  const cuda = /^cuda(\d+)$/i.exec(option);
+  if (cuda) {
+    const gpus = (info as any)?.devices?.nvidia_gpu;
+    if (!Array.isArray(gpus)) return option;
+    const index = Number(cuda[1]);
+    const gpu = gpus.find((value: any, ordinal: number) => value?.available !== false
+      && (Number.isInteger(value?.index) ? value.index : ordinal) === index);
+    return gpu?.name ? `${option.toUpperCase()} (${gpu.name})` : option;
+  }
+
+  // SystemInfo lists integrated AMD GPUs first, which may differ from HIP's order.
+  // Only the single-GPU case can be labelled unambiguously without a HIP mapping.
+  const rocm = /^rocm(\d+)$/i.exec(option);
+  const amdGpus = (info as any)?.devices?.amd_gpu;
+  if (!rocm || !Array.isArray(amdGpus)) return option;
+  const available = amdGpus.filter((gpu: any) => gpu?.available === true);
+  return available.length === 1 && Number(rocm[1]) === 0 && available[0]?.name
+    ? `ROCm0 (${available[0].name})` : option;
 }
 
 /** Regex: only attempt HF README fetch when the derived value looks like `owner/repo`. */
@@ -1587,8 +1597,8 @@ const ModelConfigurationTab: React.FC<{
   }, [hasLoadSettingChanges, onDirtyChange]);
 
   useEffect(() => {
-    if (hasLoadSettingChanges && notice === 'Saved for future loads') setNotice(null);
-  }, [hasLoadSettingChanges, notice]);
+    if (hasLoadSettingChanges && notice === t('Saved for future loads')) setNotice(null);
+  }, [hasLoadSettingChanges, notice, t]);
 
   const ctxSizeId = `config-${name}-ctx_size`.replace(/[^a-zA-Z0-9_-]/g, '-');
   const ctxSliderId = `${ctxSizeId}-slider`;
@@ -1712,14 +1722,14 @@ const ModelConfigurationTab: React.FC<{
     }
 
     if (Object.keys(patch).length === 0) {
-      if (showNotice) setNotice('Saved for future loads');
+      if (showNotice) setNotice(t('Saved for future loads'));
       return true;
     }
     try {
       // The draft is what was just sent, so only the server layers move. Syncing
       // it back would also undo anything typed while the save was in flight.
       applyServerOptions(await api.saveModelOptions(name, patch), false);
-      if (showNotice) setNotice('Saved for future loads');
+      if (showNotice) setNotice(t('Saved for future loads'));
       return true;
     } catch (error) {
       setNotice(`Could not save model options: ${friendlyErrorMessage(error)}`);
@@ -1739,7 +1749,7 @@ const ModelConfigurationTab: React.FC<{
   const discardConfig = () => {
     applyDraft(savedLoadSettings);
     onDirtyChange?.(false);
-    setNotice('Reverted to your saved load settings.');
+    setNotice(t('Reverted to your saved load settings.'));
   };
 
   // Every option the panel shows is stated outright: the value on screen, or
@@ -1777,7 +1787,7 @@ const ModelConfigurationTab: React.FC<{
       await onReloadModel(loadedModel, buildLoadOptions());
       if (currentNameRef.current === reloadName) setNotice(successNotice);
     } catch {
-      if (currentNameRef.current === reloadName) setNotice('Reload failed. Check the server logs.');
+      if (currentNameRef.current === reloadName) setNotice(t('Reload failed. Check the server logs.'));
     } finally {
       setReloadingNames(prev => {
         const next = new Set(prev);
@@ -2019,7 +2029,7 @@ const ModelConfigurationTab: React.FC<{
                   type="checkbox"
                   checked={isAutoTuning}
                   onChange={e => {
-                    setNotice(current => current === 'Saved for future loads' ? null : current);
+                    setNotice(current => current === t('Saved for future loads') ? null : current);
                     setCtxSizeDraft(e.target.checked ? '-1' : String(currentCtxSize));
                   }}
                 />
