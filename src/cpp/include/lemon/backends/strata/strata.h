@@ -26,24 +26,18 @@ inline const BackendDescriptor descriptor = {
          "Strata Options"},
     },
     /*support*/ {
-#if (defined(__linux__) || defined(_WIN32)) && (defined(__x86_64__) || defined(_M_X64))
         {"cuda", BackendTier::Experimental, BackendFormat::Python, {"linux", "windows"},
          {{"nvidia_gpu", {"sm_75", "sm_86", "sm_89", "sm_120"}}},
          "NVIDIA Turing and newer"},
         {"rocm", BackendTier::Experimental, BackendFormat::Python, {"linux", "windows"},
          {{"amd_gpu", {"gfx1100", "gfx1101", "gfx1102", "gfx1151", "gfx1200", "gfx1201"}}},
          "AMD RX 7000/9000, AI PRO R9700, Strix Halo"},
-#endif
-#if defined(__linux__) && defined(__x86_64__)
         {"sycl", BackendTier::Experimental, BackendFormat::Python, {"linux"},
          {{"intel_gpu", {"arc"}}}, "Intel Arc A/B"},
-#elif defined(__linux__) && defined(__aarch64__)
         {"cuda", BackendTier::Experimental, BackendFormat::Python, {"linux"},
          {{"nvidia_gpu", {"sm_121"}}}, "NVIDIA GB10"},
-#elif defined(__APPLE__) && defined(__aarch64__)
         {"metal", BackendTier::Experimental, BackendFormat::Python, {"macos"},
          {{"metal", {}}}, "Apple Silicon"},
-#endif
     },
     /*about*/ {
         {"cuda", {"Strata's Qwen inference engine with its bundled Python HTTP server.",

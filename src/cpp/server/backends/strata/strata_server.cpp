@@ -52,6 +52,20 @@ std::string python_binary() {
 #endif
 }
 
+bool platform_supports_backend(const std::string& backend) {
+#if defined(_WIN32) && defined(_M_X64)
+    return backend == "cuda" || backend == "rocm";
+#elif defined(__linux__) && defined(__x86_64__)
+    return backend == "cuda" || backend == "rocm" || backend == "sycl";
+#elif defined(__linux__) && defined(__aarch64__)
+    return backend == "cuda";
+#elif defined(__APPLE__) && defined(__aarch64__)
+    return backend == "metal";
+#else
+    return false;
+#endif
+}
+
 class StrataOps : public BackendOps {
 public:
     std::string device_family(const std::string& family, const std::string& name) const override {
@@ -135,11 +149,23 @@ public:
     }
 
     InstallCheck check_install(const std::string& backend, bool binary_found) const override {
+        if (!platform_supports_backend(backend)) {
+            return {false, "Strata " + backend + " is not supported on this platform"};
+        }
         const auto root = BackendUtils::get_install_directory("strata", backend);
         const auto assets = strata::additional_assets(backend);
         const bool complete = binary_found && std::all_of(assets.begin(), assets.end(),
             [&](const BackendAsset& asset) { return asset.is_complete(root); });
         return {complete, complete ? "" : "Strata engine or bundled Python server is missing"};
+    }
+
+    std::optional<UnavailableState> classify_unavailable(
+        const std::string& backend, const std::string& install_error,
+        const std::string&) const override {
+        if (!platform_supports_backend(backend)) {
+            return UnavailableState{"unsupported", install_error, ""};
+        }
+        return std::nullopt;
     }
 };
 
@@ -256,6 +282,9 @@ StrataServer::StrataServer(const std::string& log_level, ModelManager* model_man
 StrataServer::~StrataServer() { unload(); }
 
 InstallParams StrataServer::get_install_params(const std::string& backend, const std::string&) {
+    if (!platform_supports_backend(backend)) {
+        throw std::invalid_argument("Strata " + backend + " is not supported on this platform");
+    }
     std::string arch;
     if (backend == "rocm") {
         arch = SystemInfo::get_rocm_arch();
@@ -324,7 +353,8 @@ void StrataServer::load(const std::string& model_name, const ModelInfo& model_in
     const fs::path cache = utils::path_from_utf8(utils::get_cache_dir()) / "strata" / backend / version /
         std::to_string(std::hash<std::string>{}(gguf + (fs::is_regular_file(utils::path_from_utf8(gguf))
             ? std::to_string(fs::file_size(utils::path_from_utf8(gguf))) +
-              std::to_string(fs::last_write_time(utils::path_from_utf8(gguf)).time_since_epoch().count())
+              std::to_string(static_cast<long long>(
+                  fs::last_write_time(utils::path_from_utf8(gguf)).time_since_epoch().count()))
             : "")));
     const fs::path request_path = runtime / "prepare.json";
     utils::JsonUtils::save_to_file({

@@ -16,6 +16,17 @@ void check(const char* message, bool ok) {
 
 int main() {
     namespace strata = lemon::backends::strata;
+#if defined(_WIN32) || (defined(__linux__) && defined(__aarch64__))
+    const std::string unsupported_backend = "sycl";
+#elif defined(__APPLE__)
+    const std::string unsupported_backend = "cuda";
+#else
+    const std::string unsupported_backend = "metal";
+#endif
+    const auto install = strata::ops()->check_install(unsupported_backend, true);
+    const auto state = strata::ops()->classify_unavailable(unsupported_backend, install.error, "install");
+    check("Unsupported Strata platforms remain unavailable even with a binary on disk",
+          !install.installed && state && state->state == "unsupported" && !state->message.empty());
     check("Windows name detection selects the qualified RDNA4 archive",
           strata::engine_asset("windows-x86_64", "rocm",
                               strata::ops()->device_family("gfx120X", "AMD Radeon RX 9070 XT")) ==
