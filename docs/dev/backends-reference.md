@@ -283,7 +283,7 @@ Lemonade launches `llama-server` with `--parallel 1` and leaves the upstream `--
 
 Experimental; maintained by Julian Xhokaxhiu. Runs supported Qwen models using shared weights and Strata's bundled Python preparation tools/server. Engine and Control follow `backend_versions.json`; models are registered in `server_models.json`. Flash MTP (~5.2 GB on first load, `--mtp off` to disable), KV streaming and slot telemetry use upstream support. Memory filtering uses model-compatible devices, with system RAM for integrated AMD GPUs and Apple Silicon and the device memory pool otherwise.
 
-To upgrade Strata, bump its release pins. Exact asset names and hashes come from that release's checksum and Control install manifests, cached in memory without GitHub API lookups. Model loading can reuse a complete pinned install if metadata is unreachable; explicit installs still report metadata errors.
+To upgrade Strata, bump its release pins. Exact asset names and hashes come from that release's checksum and Control install manifests, cached in memory without GitHub API lookups. A complete pinned install can be reused on metadata fetch failure unless installation is forced.
 
 ### Backend auto-selection
 

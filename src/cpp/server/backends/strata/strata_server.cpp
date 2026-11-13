@@ -433,31 +433,9 @@ void StrataServer::load(const std::string& model_name, const ModelInfo& model_in
         throw std::invalid_argument("Strata " + backend + " does not support this model on this machine");
     }
     RuntimeConfig::validate_backend_choice("strata", backend);
-    const fs::path install = utils::path_from_utf8(BackendUtils::get_install_directory("strata", backend));
-    const auto pinned = BackendUtils::get_backend_version("strata", backend);
-    const auto configured = BackendUtils::get_bin_config_value("strata", backend);
-    const auto* config = RuntimeConfig::global();
-    std::ifstream installed_version_file(utils::path_from_utf8(
-        BackendUtils::get_installed_version_file(*strata::spec(), backend)));
-    std::string installed_version;
-    bool reuse_installed = false;
-    if ((!config || (!config->offline() && !config->no_fetch_executables())) &&
-        (configured.empty() || configured == "builtin" || configured == pinned) &&
-        std::getline(installed_version_file, installed_version) && installed_version == pinned &&
-        strata::ops()->check_install(backend,
-            !BackendUtils::find_executable_in_install_dir(
-                utils::path_to_utf8(install), strata::spec()->binary).empty()).installed) {
-        try {
-            release_assets(pinned);
-        } catch (const NetworkException& e) {
-            LOG(WARNING, "Strata") << "Release metadata is unavailable (" << e.what()
-                << "); using complete installed " << backend << " version " << pinned << std::endl;
-            reuse_installed = true;
-        }
-    }
-    installed_version_file.close();
-    if (!reuse_installed) backend_manager_->install_backend("strata", backend);
+    backend_manager_->install_backend("strata", backend);
     const std::string executable = BackendUtils::get_backend_binary_path(*strata::spec(), backend);
+    const fs::path install = utils::path_from_utf8(BackendUtils::get_install_directory("strata", backend));
     const fs::path control = install / "control";
     const std::string python = utils::path_to_utf8(control / python_binary());
     if (!fs::is_regular_file(utils::path_from_utf8(python))) {
