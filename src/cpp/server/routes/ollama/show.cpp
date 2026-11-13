@@ -79,7 +79,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            std::string name = strip_latest_tag(req.arg(ollama::management::kModel).get<std::string>());
+            std::string name = canonical_model_name(ctx_, req.arg(ollama::management::kModel).get<std::string>());
             if (!ollama_model_registered(*ctx_.model_manager, name, res)) {
                 return;
             }

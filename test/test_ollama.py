@@ -23,6 +23,7 @@ except ImportError:
 
 from utils.server_base import (
     ServerTestBase,
+    _auth_headers,
     model_recipe_options,
     pull_model_with_retry,
     run_server_tests,
@@ -166,6 +167,95 @@ class OllamaTests(ServerTestBase):
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 404)
+
+    def test_005a_show_resolves_alias(self):
+        """Test /api/show describes an alias's target, and pull and delete refuse the alias."""
+        alias_name = "test-ollama-show-alias"
+        target = requests.post(
+            f"{OLLAMA_BASE_URL}/api/show",
+            json={"name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(target.status_code, 200, target.text)
+
+        add = requests.post(
+            f"{self.internal_url}/aliases",
+            headers=_auth_headers(),
+            json={"alias": alias_name, "target": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(add.status_code, 200, add.text)
+
+        try:
+            for name in (alias_name, f"{alias_name}:latest"):
+                with self.subTest(name=name):
+                    response = requests.post(
+                        f"{OLLAMA_BASE_URL}/api/show",
+                        json={"name": name},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                    self.assertEqual(response.status_code, 200, response.text)
+                    self.assertEqual(response.json(), target.json())
+
+            # Resolving an alias here would download or delete its target's files.
+            pull = requests.post(
+                f"{OLLAMA_BASE_URL}/api/pull",
+                json={"model": alias_name, "stream": False},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(pull.status_code, 404, pull.text)
+            delete = requests.delete(
+                f"{OLLAMA_BASE_URL}/api/delete",
+                json={"model": alias_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(delete.status_code, 404, delete.text)
+        finally:
+            requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+    def test_005b_pull_and_delete_refuse_a_latest_alias(self):
+        """Test an alias named "<model>:latest" is refused, not pulled or deleted as <model>."""
+        self.ensure_model_pulled()
+        alias_name = f"{ENDPOINT_TEST_MODEL}:latest"
+        add = requests.post(
+            f"{self.internal_url}/aliases",
+            headers=_auth_headers(),
+            json={"alias": alias_name, "target": TOOL_CALLING_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(add.status_code, 200, add.text)
+
+        try:
+            pull = requests.post(
+                f"{OLLAMA_BASE_URL}/api/pull",
+                json={"model": alias_name, "stream": False},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(pull.status_code, 404, pull.text)
+            delete = requests.delete(
+                f"{OLLAMA_BASE_URL}/api/delete",
+                json={"model": alias_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(delete.status_code, 404, delete.text)
+        finally:
+            requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+        model = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(model.status_code, 200, model.text)
+        self.assertTrue(
+            model.json()["downloaded"], f"{ENDPOINT_TEST_MODEL} was deleted"
+        )
 
     def test_006_ps(self):
         """Test /api/ps returns running models with correct Ollama format."""
