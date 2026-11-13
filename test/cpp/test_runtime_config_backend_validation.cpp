@@ -145,6 +145,25 @@ int main() {
     expect_accepted("thenoise", "rocm_bin", "builtin");
     expect_accepted("thenoise", "cuda_bin", "builtin");
 
+    // A container backend's _bin names an image tag or pin, never a path.
+    const std::string digest = "sha256:" + std::string(64, 'a');
+    expect_accepted("gufo", "rocm_bin", "builtin");
+    expect_accepted("gufo", "rocm_bin", "latest");
+    expect_accepted("gufo", "rocm_bin", "rocm-10.0-gufo_20261107T063533");
+    expect_accepted("gufo", "rocm_bin", "rocm-10.0-gufo@" + digest);
+    expect_accepted("halogen", "rocm_bin", "0.20.0");
+    expect_accepted("ds4", "rocm_bin", "rocm-10.0");
+    expect_accepted("rocmfpx", "rocm_bin", "latest");
+    expect_accepted("llamacpp", "halobox_bin", "rocm-10.0-strix-llama");
+    expect_accepted("llamacpp", "nathanw_bin", "vulkan-radv-performance@" + digest);
+    const std::string container_bin = "must be \"builtin\", \"latest\", an image tag, or";
+    expect_rejected("gufo", "rocm_bin", "/opt/gufo", "'gufo.rocm_bin' " + container_bin);
+    expect_rejected("halogen", "rocm_bin", "0.19.1@sha256:abc", "'halogen.rocm_bin' " + container_bin);
+    expect_rejected("ds4", "rocm_bin", "rocm 10.0", "'ds4.rocm_bin' " + container_bin);
+    expect_rejected("rocmfpx", "rocm_bin", "-rocmfpx", "'rocmfpx.rocm_bin' " + container_bin);
+    expect_rejected("llamacpp", "halobox_bin", "docker.io/kyuz0/x:tag",
+                    "'llamacpp.halobox_bin' " + container_bin);
+
 #if defined(__linux__) && defined(__x86_64__)
     try {
         const auto cuda = lemon::backends::TheNoiseServer::get_install_params("cuda", "test-tag");

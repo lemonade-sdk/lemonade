@@ -197,6 +197,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `flm` | No | `flm` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `global_timeout` | No | Defaults to `600`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `gufo` | No | `gufo` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `halogen` | No | `halogen` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `host` | No | Defaults to `"localhost"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `hrx` | No | `hrx` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `inhibit_suspend` | No | Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

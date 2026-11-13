@@ -43,7 +43,7 @@ inline const BackendDescriptor descriptor = {
     /*self_manages_downloads*/ false,
     /*takes_args*/      false,
     /*arg_variants*/    {},
-    /*bin_variants*/    {},
+    /*bin_variants*/    {"rocm"},
     /*config_extra*/    nlohmann::json::object(),
     // The HGN checkpoint is mapped read-only and registered with the GPU in
     // place, so what must fit in the GPU's pool is each model's
@@ -54,6 +54,8 @@ inline const BackendDescriptor descriptor = {
             /*image*/   "ghcr.io/peonist-ai/halogen-flash-server",
             /*devices*/ {"/dev/dri", "/dev/kfd"},
             /*cap_add*/ {},
+            // Its tags are releases; "latest" names the newest.
+            /*latest_tag*/ "latest",
         }},
     },
 };

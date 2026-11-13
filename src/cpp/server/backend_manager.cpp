@@ -7,6 +7,7 @@
 #include "lemon/server/download_manager.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/container_manager.h"
+#include "lemon/utils/container_registry.h"
 #include "lemon/utils/github_api.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
@@ -161,8 +162,9 @@ fs::path container_version_file(const std::string& recipe, const std::string& ba
     return fs::path(backends::BackendUtils::get_install_directory(recipe, backend)) / "version.txt";
 }
 
-void install_container_backend(const std::string& recipe, const std::string& backend,
-                               bool force, DownloadProgressCallback progress_cb) {
+void install_container_backend(BackendManager& backend_manager, const std::string& recipe,
+                               const std::string& backend, bool force,
+                               DownloadProgressCallback progress_cb) {
     if (get_current_os() != "linux") {
         throw std::runtime_error(recipe + ":" + backend + " is a container backend, which runs on Linux");
     }
@@ -179,8 +181,13 @@ void install_container_backend(const std::string& recipe, const std::string& bac
                                  ", which is not one Lemonade pulls container backends from");
     }
 
-    const std::string pin = backends::BackendUtils::get_backend_version(recipe, backend);
-    const std::string image = backends::BackendUtils::get_backend_image(recipe, backend);
+    const std::string pin = backend_manager.resolve_container_pin(recipe, backend);
+    const auto parsed_pin = backends::parse_container_pin(pin);
+    if (!parsed_pin) {
+        throw std::runtime_error(recipe + ":" + backend + " is pinned to '" + pin +
+                                 "', which is not <tag>@sha256:<digest>");
+    }
+    const std::string image = policy->image + "@" + parsed_pin->digest;
     const fs::path version_file = container_version_file(recipe, backend);
     const std::string installed_pin = read_version_file(version_file);
 
@@ -654,6 +661,88 @@ std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
     }
 }
 
+std::string BackendManager::lookup_container_digest(const std::string& image,
+                                                    const std::string& tag) {
+    const std::string key = image + ":" + tag;
+    {
+        std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
+        const auto it = container_digest_cache_.find(key);
+        if (it != container_digest_cache_.end()) return it->second;
+        const auto failed = container_lookup_failures_.find(key);
+        if (failed != container_lookup_failures_.end() &&
+            std::chrono::steady_clock::now() - failed->second.first < kContainerLookupRetry) {
+            throw std::runtime_error(failed->second.second);
+        }
+    }
+
+    auto* cfg = RuntimeConfig::global();
+    if (cfg && cfg->offline()) {
+        throw std::runtime_error("Cannot look up " + key + ": offline mode");
+    }
+    if (cfg && cfg->no_fetch_executables()) {
+        throw std::runtime_error("Cannot look up " + key + ": no_fetch_executables is true");
+    }
+    try {
+        const std::string digest = utils::resolve_registry_digest(image, tag, registry_request_);
+        {
+            std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
+            container_digest_cache_[key] = digest;
+            container_lookup_failures_.erase(key);
+        }
+        LOG(INFO, "BackendManager") << "Resolved " << key << " -> " << digest << std::endl;
+        return digest;
+    } catch (const std::exception& e) {
+        {
+            std::lock_guard<std::mutex> lock(container_digest_cache_mutex_);
+            container_lookup_failures_[key] = {std::chrono::steady_clock::now(), e.what()};
+        }
+        LOG(WARNING, "BackendManager") << e.what() << std::endl;
+        throw;
+    }
+}
+
+std::string BackendManager::resolve_container_pin(const std::string& recipe,
+                                                  const std::string& backend) {
+    const ContainerPolicy* policy = backends::BackendUtils::get_container_policy(recipe, backend);
+    if (!policy) {
+        throw std::runtime_error(recipe + ":" + backend + " is not a container backend");
+    }
+    const auto selection = backends::BackendUtils::get_container_selection(recipe, backend);
+    if (!selection.pin.empty()) return selection.pin;
+
+    const std::string installed = read_version_file(container_version_file(recipe, backend));
+    const auto installed_pin = backends::parse_container_pin(installed);
+    const bool installed_tag = installed_pin && installed_pin->tag == selection.tag;
+
+    // Without fetching, the installed image of the tag runs even when a newer
+    // digest was looked up earlier: install could not pull that one.
+    auto* cfg = RuntimeConfig::global();
+    if (cfg && (cfg->offline() || cfg->no_fetch_executables()) && installed_tag) {
+        return installed;
+    }
+    try {
+        return selection.tag + "@" + lookup_container_digest(policy->image, selection.tag);
+    } catch (const std::exception& e) {
+        if (!installed_tag) throw;
+        LOG(INFO, "BackendManager") << "Using the installed " << backends::short_container_pin(installed)
+                                    << " (" << e.what() << ")" << std::endl;
+        return installed;
+    }
+}
+
+std::string BackendManager::get_or_resolve_latest_container_pin(const std::string& recipe,
+                                                                const std::string& backend) {
+    try {
+        const ContainerPolicy* policy = backends::BackendUtils::get_container_policy(recipe, backend);
+        if (!policy) return "";
+        const std::string tag = backends::BackendUtils::get_container_latest_tag(recipe, backend);
+        return tag + "@" + lookup_container_digest(policy->image, tag);
+    } catch (const std::exception& e) {
+        LOG(DEBUG, "BackendManager") << e.what() << std::endl;
+        return "";
+    }
+}
+
 BackendManager::InstallParams BackendManager::get_install_params(const std::string& recipe, const std::string& backend) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
 
@@ -713,7 +802,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     } invalidate_backend_status_on_exit;
 
     if (backends::BackendUtils::get_container_policy(recipe, resolved_backend)) {
-        install_container_backend(recipe, resolved_backend, force, progress_cb);
+        install_container_backend(*this, recipe, resolved_backend, force, progress_cb);
         return;
     }
 
@@ -1078,11 +1167,20 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
         if (const ContainerPolicy* policy = backends::BackendUtils::get_container_policy(recipe, resolved_backend)) {
-            result.version = backends::short_container_pin(
-                backends::BackendUtils::get_backend_version(recipe, resolved_backend));
-            result.download_filename =
-                backends::BackendUtils::get_backend_image(recipe, resolved_backend);
             result.release_url = container_registry_url(policy->image);
+            // Only install asks the registry what a tag names.
+            const auto selection =
+                backends::BackendUtils::get_container_selection(recipe, resolved_backend);
+            std::string pin = selection.pin;
+            if (pin.empty()) {
+                const std::string installed =
+                    read_version_file(container_version_file(recipe, resolved_backend));
+                const auto installed_pin = backends::parse_container_pin(installed);
+                if (installed_pin && installed_pin->tag == selection.tag) pin = installed;
+            }
+            const auto parsed = backends::parse_container_pin(pin);
+            result.version = parsed ? backends::short_container_pin(pin) : selection.tag;
+            result.download_filename = parsed ? policy->image + "@" + parsed->digest : "";
             return result;
         }
         // All standard recipes (including ryzenai-llm): one get_install_params() call gives us everything

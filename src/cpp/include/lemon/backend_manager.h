@@ -1,11 +1,13 @@
 #pragma once
 
+#include <chrono>
 #include <mutex>
 #include <string>
 #include <functional>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
 #include <lemon/models/download_progress.h>
+#include <lemon/utils/container_registry.h>
 
 namespace lemon {
 
@@ -68,6 +70,16 @@ public:
     std::string get_or_resolve_latest_tag(const std::string& recipe,
                                           const std::string& backend);
 
+    // The pin to install, per BackendUtils::get_container_selection(). A tag is
+    // looked up once per process; offline or on failure, an installed image of
+    // the same tag stands in. Throws when neither answers.
+    std::string resolve_container_pin(const std::string& recipe, const std::string& backend);
+    // "" when the registry cannot be asked or does not answer.
+    std::string get_or_resolve_latest_container_pin(const std::string& recipe,
+                                                    const std::string& backend);
+    // Replaces how registry lookups reach the network.
+    void set_registry_request(utils::RegistryRequest request) { registry_request_ = std::move(request); }
+
     /// Set/get the global BackendManager instance. Mirrors RuntimeConfig::global()
     /// so non-Server contexts (status helpers in system_info.cpp) can reach it.
     /// Set once from Server's constructor; null until then.
@@ -88,6 +100,19 @@ private:
     // Restart `lemond` to re-resolve.
     std::unordered_map<std::string, std::string> latest_version_cache_;
     std::mutex latest_version_cache_mutex_;
+
+    // Registry digests keyed by "<image>:<tag>", cached like the releases above.
+    std::unordered_map<std::string, std::string> container_digest_cache_;
+    // Failed lookups, with when they failed and why, so status refreshes do not
+    // wait on an unreachable or rate-limited registry each time.
+    static constexpr std::chrono::minutes kContainerLookupRetry{5};
+    std::unordered_map<std::string, std::pair<std::chrono::steady_clock::time_point, std::string>>
+        container_lookup_failures_;
+    std::mutex container_digest_cache_mutex_;
+    utils::RegistryRequest registry_request_;
+    // The digest `tag` names in `image`'s registry, from the caches above when
+    // they have it. Throws when offline, fetching is off, or the lookup fails.
+    std::string lookup_container_digest(const std::string& image, const std::string& tag);
 
     // Get version for a recipe/backend from the cached config
     std::string get_version_from_config(const std::string& recipe, const std::string& backend);

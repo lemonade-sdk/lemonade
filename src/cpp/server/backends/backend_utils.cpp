@@ -367,14 +367,18 @@ namespace lemon::backends {
         return bin_value;
     }
 
+    static std::string bin_env_name(const std::string& section, const std::string& bin_key) {
+        std::string env_name = "LEMONADE_" + section + "_" + bin_key;
+        std::transform(env_name.begin(), env_name.end(), env_name.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+        return env_name;
+    }
+
     std::string BackendUtils::get_bin_config_value(const std::string& recipe, const std::string& backend) {
         std::string section, bin_key;
         build_bin_config_key(recipe, backend, section, bin_key);
 
-        std::string env_name = "LEMONADE_" + section + "_" + bin_key;
-        std::transform(env_name.begin(), env_name.end(), env_name.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-
+        const std::string env_name = bin_env_name(section, bin_key);
         std::string bin_value = utils::get_environment_variable_utf8(env_name);
         if (!bin_value.empty()) return bin_value;
 
@@ -474,10 +478,86 @@ namespace lemon::backends {
         return parsed ? parsed->tag + "@" + parsed->digest.substr(7, 12) : pin;
     }
 
+    bool is_container_bin_value(const std::string& value) {
+        if (value.empty() || value == "builtin" || value == "latest") return true;
+        const auto at = value.find('@');
+        const std::string tag = value.substr(0, at);
+        // The OCI distribution spec's tag grammar.
+        const bool valid_tag =
+            !tag.empty() && tag.size() <= 128 && tag[0] != '.' && tag[0] != '-' &&
+            std::all_of(tag.begin(), tag.end(), [](unsigned char c) {
+                return std::isalnum(c) || c == '_' || c == '.' || c == '-';
+            });
+        return valid_tag && (at == std::string::npos || parse_container_pin(value));
+    }
+
     const ContainerPolicy* BackendUtils::get_container_policy(const std::string& recipe,
                                                               const std::string& backend) {
         const BackendDescriptor* descriptor = descriptor_for(recipe);
         return descriptor ? descriptor->container_for(backend) : nullptr;
+    }
+
+    static std::optional<ContainerPin> installed_container_pin(const std::string& recipe,
+                                                               const std::string& backend) {
+        std::ifstream file(fs::path(BackendUtils::get_install_directory(recipe, backend)) / "version.txt");
+        std::string pin;
+        std::getline(file, pin);
+        return parse_container_pin(pin.substr(0, pin.find_last_not_of(" \t\r\n") + 1));
+    }
+
+    std::string BackendUtils::get_container_latest_tag(const std::string& recipe,
+                                                        const std::string& backend) {
+        const ContainerPolicy* policy = get_container_policy(recipe, backend);
+        if (policy && !policy->latest_tag.empty()) return policy->latest_tag;
+        const auto builtin = parse_container_pin(get_backend_version(recipe, backend));
+        if (!builtin) {
+            throw std::runtime_error("backend_versions.json pin for " + recipe + ":" + backend +
+                                     " names no tag for \"latest\" to follow");
+        }
+        return builtin->tag;
+    }
+
+    ContainerSelection BackendUtils::get_container_selection(const std::string& recipe,
+                                                             const std::string& backend) {
+        const std::string value = get_bin_config_value(recipe, backend);
+        if (value.empty() || value == "builtin") {
+            const std::string pin = get_backend_version(recipe, backend);
+            if (!parse_container_pin(pin)) {
+                throw std::runtime_error("backend_versions.json pins " + recipe + ":" + backend +
+                                         " to '" + pin + "', which is not <tag>@sha256:<digest>");
+            }
+            return {pin, "", false};
+        }
+        if (!is_container_bin_value(value)) {
+            std::string section, bin_key;
+            build_bin_config_key(recipe, backend, section, bin_key);
+            // The environment overrides config.json and skips its validation.
+            const std::string env_name = bin_env_name(section, bin_key);
+            const std::string source =
+                utils::get_environment_variable_utf8(env_name).empty() ? section + "." + bin_key : env_name;
+            throw std::runtime_error(source + " is '" + value +
+                                     "', which is not \"builtin\", \"latest\", an image tag, or "
+                                     "<tag>@sha256:<digest>");
+        }
+        if (parse_container_pin(value)) return {value, "", false};
+        if (value == "latest") return {"", get_container_latest_tag(recipe, backend), true};
+        return {"", value, false};
+    }
+
+    ContainerStatus container_status(const ContainerSelection& selection,
+                                     const std::string& installed,
+                                     const std::string& latest) {
+        ContainerStatus status;
+        const auto installed_pin = parse_container_pin(installed);
+        status.update_required = selection.tag.empty()
+                                     ? installed != selection.pin
+                                     : !installed_pin || installed_pin->tag != selection.tag;
+        if (status.update_required || !selection.latest) return status;
+        const auto latest_pin = parse_container_pin(latest);
+        if (latest_pin && latest_pin->digest != installed_pin->digest) {
+            status.update_available = latest;
+        }
+        return status;
     }
 
     std::string BackendUtils::get_backend_image(const std::string& recipe, const std::string& backend) {
@@ -485,13 +565,17 @@ namespace lemon::backends {
         if (!policy) {
             throw std::runtime_error(recipe + ":" + backend + " is not a container backend");
         }
-        const std::string pin = get_backend_version(recipe, backend);
-        const auto parsed = parse_container_pin(pin);
-        if (!parsed) {
-            throw std::runtime_error("backend_versions.json pins " + recipe + ":" + backend +
-                                     " to '" + pin + "', which is not <tag>@sha256:<digest>");
+        const ContainerSelection selection = get_container_selection(recipe, backend);
+        if (!selection.pin.empty()) {
+            return policy->image + "@" + parse_container_pin(selection.pin)->digest;
         }
-        return policy->image + "@" + parsed->digest;
+        // The registry gave install the digest; launch runs what it pulled.
+        const auto installed = installed_container_pin(recipe, backend);
+        if (!installed || installed->tag != selection.tag) {
+            throw std::runtime_error(recipe + ":" + backend + " follows the tag '" + selection.tag +
+                                     "', which is not installed");
+        }
+        return policy->image + "@" + installed->digest;
     }
 
     std::string BackendUtils::get_installed_backend_image(const std::string& recipe,
@@ -500,10 +584,7 @@ namespace lemon::backends {
         if (!policy) {
             return "";
         }
-        std::ifstream file(fs::path(get_install_directory(recipe, backend)) / "version.txt");
-        std::string pin;
-        std::getline(file, pin);
-        const auto parsed = parse_container_pin(pin.substr(0, pin.find_last_not_of(" \t\r\n") + 1));
+        const auto parsed = installed_container_pin(recipe, backend);
         return parsed ? policy->image + "@" + parsed->digest : "";
     }
 
