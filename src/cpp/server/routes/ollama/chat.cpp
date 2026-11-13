@@ -304,6 +304,7 @@ ordered_json chat_response_schema(bool line) {
         }
     })");
     if (line) {
+        schema["title"] = "Line";
         schema["description"] = "Each line carries the next message piece with `done: false`. When "
                                 "the message ends, a line with `done: true` and the real "
                                 "`done_reason` follows, then a last `done: true` line with the token "
@@ -348,7 +349,8 @@ public:
 
         RouteResponse stream;
         stream.format = ResponseFormat::JsonLines;
-        stream.schema = chat_response_schema(true);
+        stream.schema = {{"description", "One JSON object per line."}, {"oneOf", ordered_json::array({
+            chat_response_schema(true), ollama_stream_error_schema()})}};
 
         s.responses = {full, stream};
 

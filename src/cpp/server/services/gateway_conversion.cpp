@@ -249,6 +249,22 @@ std::string anthropic_stop_reason(const json& choice) {
 }
 
 
+namespace {
+
+// Ollama's clients read a stream's error as a string: the Go client fails to decode an object.
+std::string ollama_stream_error_message(const json& error) {
+    if (error.is_string() && !error.get_ref<const std::string&>().empty()) {
+        return error.get<std::string>();
+    }
+    if (error.is_object() && error.contains("message") && error["message"].is_string() &&
+        !error["message"].get_ref<const std::string&>().empty()) {
+        return error["message"].get<std::string>();
+    }
+    return "backend error";
+}
+
+} // namespace
+
 void stream_sse_to_ndjson(const std::string& openai_body, httplib::DataSink& client_sink,
                           NdjsonChunkConverter convert_chunk, NdjsonDoneBuilder build_done,
                           ApiRoute::StreamFn call_router) {
@@ -256,11 +272,15 @@ void stream_sse_to_ndjson(const std::string& openai_body, httplib::DataSink& cli
     std::string sse_buffer;
     int eval_count = 0;
     int prompt_eval_count = 0;
+    bool sent_error = false;
 
     adapter_sink.is_writable = client_sink.is_writable;
 
-    adapter_sink.write = [&client_sink, &sse_buffer, &eval_count,
-                          &prompt_eval_count, &convert_chunk](const char* data, size_t len) -> bool {
+    adapter_sink.write = [&client_sink, &sse_buffer, &eval_count, &prompt_eval_count,
+                          &convert_chunk, &sent_error](const char* data, size_t len) -> bool {
+        if (sent_error) {
+            return false;
+        }
         sse_buffer.append(data, len);
 
         size_t pos;
@@ -284,6 +304,18 @@ void stream_sse_to_ndjson(const std::string& openai_body, httplib::DataSink& cli
             try {
                 auto openai_chunk = json::parse(json_str);
 
+                // Like Ollama, a failed stream ends with one error line and no done line.
+                if (openai_chunk.is_object() && openai_chunk.contains("error") &&
+                    !openai_chunk["error"].is_null()) {
+                    LOG(ERROR, "OllamaApi") << "Backend error in stream: "
+                                            << openai_chunk["error"].dump() << std::endl;
+                    sent_error = true;
+                    std::string ndjson =
+                        json{{"error", ollama_stream_error_message(openai_chunk["error"])}}.dump() + "\n";
+                    client_sink.write(ndjson.c_str(), ndjson.size());
+                    return false;
+                }
+
                 if (openai_chunk.contains("usage")) {
                     const auto& usage = openai_chunk["usage"];
                     if (usage.contains("prompt_tokens"))
@@ -304,14 +336,30 @@ void stream_sse_to_ndjson(const std::string& openai_body, httplib::DataSink& cli
         return true;
     };
 
-    adapter_sink.done = [&client_sink, &eval_count, &prompt_eval_count, &build_done]() {
-        json done_msg = build_done(prompt_eval_count, eval_count);
-        std::string ndjson = done_msg.dump() + "\n";
-        client_sink.write(ndjson.c_str(), ndjson.size());
+    adapter_sink.done = [&client_sink, &eval_count, &prompt_eval_count, &build_done,
+                         &sent_error]() {
+        if (!sent_error) {
+            json done_msg = build_done(prompt_eval_count, eval_count);
+            std::string ndjson = done_msg.dump() + "\n";
+            client_sink.write(ndjson.c_str(), ndjson.size());
+        }
         client_sink.done();
     };
 
     call_router(openai_body, adapter_sink);
+}
+
+ordered_json ollama_stream_error_schema() {
+    return ordered_json::parse(R"({
+        "type": "object",
+        "title": "Error line",
+        "description": "Sent in place of the rest of the stream when the backend fails after the stream has started. No `done: true` line follows it, and the status stays `200`.",
+        "x-no-example": "Only a backend that fails mid-stream sends it.",
+        "required": ["error"],
+        "properties": {
+            "error": {"type": "string", "description": "What failed, such as the backend's message."}
+        }
+    })");
 }
 
 void stream_openai_sse_to_anthropic_sse(const std::string& openai_body,

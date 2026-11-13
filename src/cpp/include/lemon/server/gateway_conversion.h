@@ -26,6 +26,9 @@ void stream_sse_to_ndjson(const std::string& openai_body, httplib::DataSink& cli
                           NdjsonChunkConverter convert_chunk, NdjsonDoneBuilder build_done,
                           ApiRoute::StreamFn call_router);
 
+// The line stream_sse_to_ndjson ends a stream with when the backend fails.
+nlohmann::ordered_json ollama_stream_error_schema();
+
 void stream_openai_sse_to_anthropic_sse(const std::string& openai_body,
                                         httplib::DataSink& client_sink,
                                         const std::string& model,
