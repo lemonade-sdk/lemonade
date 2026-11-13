@@ -3790,6 +3790,13 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_DEFAULT_SOURCE_TEST_SRC}")
     add_cpp_ci_test(ConfigDefaultSourceTest CI ON COMMAND test_config_default_source)
 endif()
 
+set(_BACKEND_SOURCE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_source.cpp")
+if(BUILD_TESTING AND EXISTS "${_BACKEND_SOURCE_TEST_SRC}")
+    add_executable(test_backend_source test/cpp/test_backend_source.cpp)
+    target_link_libraries(test_backend_source PRIVATE lemonade-server-core)
+    add_cpp_ci_test(BackendSourceTest CI ON COMMAND test_backend_source)
+endif()
+
 set(_CLI_RUNTIME_OVERRIDE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cli_runtime_override.cpp")
 if(BUILD_TESTING AND EXISTS "${_CLI_RUNTIME_OVERRIDE_TEST_SRC}")
     add_executable(test_cli_runtime_override test/cpp/test_cli_runtime_override.cpp)

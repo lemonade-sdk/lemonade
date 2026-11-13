@@ -560,6 +560,10 @@ std::string RuntimeConfig::default_model_source() const {
     return config_.value("default_model_source", std::string("huggingface"));
 }
 
+std::string RuntimeConfig::backend_source() const {
+    return get_string_opt("LEMONADE_BACKEND_SOURCE", {"backend_source"}, "github");
+}
+
 std::string RuntimeConfig::rocm_channel() const {
     std::shared_lock lock(mutex_);
     return config_["rocm_channel"].get<std::string>();
@@ -900,6 +904,15 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (source != "huggingface" && source != "modelscope") {
             throw std::invalid_argument(
                 "'default_model_source' must be either 'huggingface', or 'modelscope'");
+        }
+    } else if (key == "backend_source") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'backend_source' must be a string");
+        }
+        const std::string source = value.get<std::string>();
+        if (source != "github" && source != "modelscope") {
+            throw std::invalid_argument(
+                "'backend_source' must be either 'github', or 'modelscope'");
         }
     } else if (key == "download_rate_limit") {
         if (!value.is_string()) {

@@ -1,0 +1,70 @@
+# Copies the backend files Lemonade pins in backend_versions.json to the
+# lemonade-sdk/backends dataset on ModelScope, which backend_source=modelscope
+# downloads from. Files already on ModelScope are skipped, so reruns are cheap.
+name: Mirror backends to ModelScope
+
+on:
+  push:
+    branches: [main]
+    paths: [src/cpp/resources/backend_versions.json]
+  release:
+    types: [published]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      set:
+        description: "trial = 3 small backends, core = everything Lemonade pins"
+        type: choice
+        options: [trial, core]
+        default: core
+      dry_run:
+        description: "List what would be uploaded, change nothing"
+        type: boolean
+        default: true
+
+concurrency:
+  group: modelscope-mirror
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    if: github.repository == 'lemonade-sdk/lemonade'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        group: [small, npu, whispercpp, llamacpp-upstream, llamacpp-nightly,
+                vllm, sdcpp, llamacpp-lemonade, thenoise, therock]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            src/cpp/resources/backend_versions.json
+            tools/modelscope_mirror
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install modelscope truststore
+
+      - name: Mirror ${{ matrix.group }}
+        env:
+          MODELSCOPE_API_TOKEN: ${{ secrets.MODELSCOPE_API_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >
+          python tools/modelscope_mirror/modelscope_mirror.py
+          --versions-file src/cpp/resources/backend_versions.json
+          --repo lemonade-sdk/backends
+          --set ${{ inputs.set || 'core' }}
+          --group ${{ matrix.group }}
+          --readme tools/modelscope_mirror/dataset_card.md
+          --workdir ${{ runner.temp }}/msmirror
+          ${{ inputs.dry_run && '--dry-run' || '' }}

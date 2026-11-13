@@ -79,6 +79,9 @@ public:
     bool disable_model_filtering() const;
     bool enable_dgpu_gtt() const;
     std::string default_model_source() const;
+    // Where pinned backend release files are downloaded from: "github" (default)
+    // or "modelscope" (the lemonade-sdk/backends dataset that mirrors them).
+    std::string backend_source() const;
     std::string rocm_channel() const;
     std::string rocm_channel_for_recipe(const std::string& recipe) const;
     std::string rocm_install_method() const;
