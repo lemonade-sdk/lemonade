@@ -1,0 +1,13 @@
+{
+  "version": "1",
+  "model_name": "user.Router-Cost",
+  "recipe": "collection.router",
+  "components": ["Cheap-GGUF", "Mid-GGUF", "cloud.expensive"],
+  "routing": {
+    "candidates": ["Cheap-GGUF", "Mid-GGUF", "cloud.expensive"],
+    "default_model": "Mid-GGUF",
+    "router": {
+      "type": "cost_select"
+    }
+  }
+}
