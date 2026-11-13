@@ -21,6 +21,7 @@ Environment:
     MODELSCOPE_API_TOKEN   ModelScope access token (not needed for --dry-run)
     GITHUB_TOKEN           optional, raises the GitHub API rate limit from 60 to 5000 per hour
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,6 +41,7 @@ try:
     # Use the operating system's certificate store. Corporate networks that inspect
     # TLS (Zscaler and similar) otherwise fail with CERTIFICATE_VERIFY_FAILED.
     import truststore
+
     truststore.inject_into_ssl()
 except ImportError:
     pass
@@ -86,11 +88,21 @@ SOURCES: dict[str, dict[str, tuple[str, str]]] = {
 }
 # Container backends need a container registry, not file hosting.
 CONTAINER_RECIPES = {"rocmfpx", "halogen", "gufo", "ds4"}
-NOT_BACKENDS = {"comment", "checksums", "therock", "rocm_asset_families", "clear_bin_if_lemonade_below"}
+NOT_BACKENDS = {
+    "comment",
+    "checksums",
+    "therock",
+    "rocm_asset_families",
+    "clear_bin_if_lemonade_below",
+}
 
 SETS = {
     # Small and fast: three backends, about 0.5 GB. Use this for the first trial.
-    "trial": {"recipes": {"flm", "onnxruntime", "kokoro"}, "therock": False, "lemonade": False},
+    "trial": {
+        "recipes": {"flm", "onnxruntime", "kokoro"},
+        "therock": False,
+        "lemonade": False,
+    },
     "core": {"recipes": None, "therock": True, "lemonade": True},
 }
 
@@ -98,9 +110,9 @@ SETS = {
 @dataclass
 class Item:
     group: str
-    folder: str                       # folder inside the ModelScope repo
-    source: str                       # human-readable source, written to assets.json
-    files: list[dict] = field(default_factory=list)   # name, size, sha256, url
+    folder: str  # folder inside the ModelScope repo
+    source: str  # human-readable source, written to assets.json
+    files: list[dict] = field(default_factory=list)  # name, size, sha256, url
 
 
 def log(msg: str) -> None:
@@ -126,7 +138,9 @@ def http_get(url: str, accept: str | None = None) -> bytes:
 
 
 def head_size(url: str) -> int | None:
-    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "lemonade-modelscope-mirror"})
+    req = urllib.request.Request(
+        url, method="HEAD", headers={"User-Agent": "lemonade-modelscope-mirror"}
+    )
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             return int(r.headers.get("Content-Length", 0)) or None
@@ -135,7 +149,9 @@ def head_size(url: str) -> int | None:
 
 
 def github_release(repo: str, tag: str) -> dict:
-    url = f"https://api.github.com/repos/{repo}/releases/" + ("latest" if tag == "latest" else f"tags/{tag}")
+    url = f"https://api.github.com/repos/{repo}/releases/" + (
+        "latest" if tag == "latest" else f"tags/{tag}"
+    )
     try:
         return json.loads(http_get(url, "application/vnd.github+json"))
     except urllib.error.HTTPError as e:
@@ -152,23 +168,30 @@ def load_versions(path: str | None, ref: str) -> dict:
     return json.loads(http_get(url))
 
 
-def build_plan(versions: dict, set_name: str, include_pwilkin: bool, lemonade_tag: str,
-               only_group: str | None = None) -> list[Item]:
+def build_plan(
+    versions: dict,
+    set_name: str,
+    include_pwilkin: bool,
+    lemonade_tag: str,
+    only_group: str | None = None,
+) -> list[Item]:
     chosen = SETS[set_name]
-    pins: dict[tuple[str, str], str] = {}     # (repo, tag) -> group
+    pins: dict[tuple[str, str], str] = {}  # (repo, tag) -> group
     for recipe, variants in versions.items():
         if recipe in NOT_BACKENDS or recipe in CONTAINER_RECIPES:
             continue
         if recipe not in SOURCES:
-            sys.exit(f"backend_versions.json has a backend this script does not know: '{recipe}'. "
-                     f"Add it to SOURCES (see its get_install_params() in Lemonade).")
+            sys.exit(
+                f"backend_versions.json has a backend this script does not know: '{recipe}'. "
+                f"Add it to SOURCES (see its get_install_params() in Lemonade)."
+            )
         if chosen["recipes"] is not None and recipe not in chosen["recipes"]:
             continue
         for variant, tag in variants.items():
             if variant == "comment" or not isinstance(tag, str):
-                continue                        # comments and vllm.rocm_arch_overrides (datacenter)
+                continue  # comments and vllm.rocm_arch_overrides (datacenter)
             if "@sha256:" in tag:
-                continue                        # container image pin inside a native recipe
+                continue  # container image pin inside a native recipe
             src = SOURCES[recipe].get(variant) or SOURCES[recipe].get("*")
             if src is None:
                 sys.exit(f"Unknown variant '{recipe}.{variant}'. Add it to SOURCES.")
@@ -186,16 +209,26 @@ def build_plan(versions: dict, set_name: str, include_pwilkin: bool, lemonade_ta
     items: list[Item] = []
     for (repo, tag), group in sorted(pins.items()):
         if only_group and group != only_group:
-            continue                            # skip the GitHub API call for other groups
+            continue  # skip the GitHub API call for other groups
         rel = github_release(repo, tag)
         real_tag = rel["tag_name"]
-        item = Item(group=group, folder=f"github/{repo}/{real_tag}",
-                    source=f"https://github.com/{repo}/releases/tag/{real_tag}")
+        item = Item(
+            group=group,
+            folder=f"github/{repo}/{real_tag}",
+            source=f"https://github.com/{repo}/releases/tag/{real_tag}",
+        )
         for a in rel.get("assets", []):
-            digest = (a.get("digest") or "")
-            item.files.append({"name": a["name"], "size": a["size"],
-                               "sha256": digest.split(":", 1)[1] if digest.startswith("sha256:") else "",
-                               "url": a["browser_download_url"]})
+            digest = a.get("digest") or ""
+            item.files.append(
+                {
+                    "name": a["name"],
+                    "size": a["size"],
+                    "sha256": (
+                        digest.split(":", 1)[1] if digest.startswith("sha256:") else ""
+                    ),
+                    "url": a["browser_download_url"],
+                }
+            )
         if not item.files:
             log(f"  warning: {repo}@{real_tag} has no files")
         items.append(item)
@@ -205,8 +238,10 @@ def build_plan(versions: dict, set_name: str, include_pwilkin: bool, lemonade_ta
         item = Item(group="therock", folder=f"therock/{ver}", source=THEROCK_URL)
         # Same arch -> tarball name mapping Lemonade uses in install_therock().
         mapping = versions["therock"].get("url_mapping", {})
-        families = sorted({mapping.get(a, a) for a in versions["therock"].get("architectures", [])}
-                          | set(mapping.values()))
+        families = sorted(
+            {mapping.get(a, a) for a in versions["therock"].get("architectures", [])}
+            | set(mapping.values())
+        )
         for os_name in THEROCK_OS:
             for fam in families:
                 if fam in THEROCK_DATACENTER:
@@ -216,14 +251,23 @@ def build_plan(versions: dict, set_name: str, include_pwilkin: bool, lemonade_ta
                 if size is None:
                     log(f"  skip (not published): {name}")
                     continue
-                item.files.append({"name": name, "size": size, "sha256": "", "url": THEROCK_URL + name})
+                item.files.append(
+                    {
+                        "name": name,
+                        "size": size,
+                        "sha256": "",
+                        "url": THEROCK_URL + name,
+                    }
+                )
         items.append(item)
     return items
 
 
 def download(url: str, dest: Path, expect_sha: str, expect_size: int) -> str:
     h = hashlib.sha256()
-    req = urllib.request.Request(url, headers={"User-Agent": "lemonade-modelscope-mirror"})
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "lemonade-modelscope-mirror"}
+    )
     got = 0
     with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
         while chunk := r.read(8 << 20):
@@ -231,49 +275,95 @@ def download(url: str, dest: Path, expect_sha: str, expect_size: int) -> str:
             h.update(chunk)
             got += len(chunk)
     if got != expect_size:
-        raise RuntimeError(f"size mismatch for {url}: got {got}, expected {expect_size}")
+        raise RuntimeError(
+            f"size mismatch for {url}: got {got}, expected {expect_size}"
+        )
     sha = h.hexdigest()
     if expect_sha and sha != expect_sha:
-        raise RuntimeError(f"SHA-256 mismatch for {url}: got {sha}, GitHub says {expect_sha}")
+        raise RuntimeError(
+            f"SHA-256 mismatch for {url}: got {sha}, GitHub says {expect_sha}"
+        )
     return sha
 
 
-REPO_TYPE = "dataset"   # files live in a ModelScope Datasets repo: modelscope.cn/datasets/<owner>/<name>
+REPO_TYPE = "dataset"  # files live in a ModelScope Datasets repo: modelscope.cn/datasets/<owner>/<name>
 
 
 def file_url(repo: str, path: str, endpoint: str = "https://modelscope.cn") -> str:
     """Direct download URL for one file in the dataset repo (what Lemonade will call)."""
     from urllib.parse import quote
-    return f"{endpoint}/api/v1/datasets/{repo}/repo?Revision=master&FilePath={quote(path)}"
+
+    return (
+        f"{endpoint}/api/v1/datasets/{repo}/repo?Revision=master&FilePath={quote(path)}"
+    )
 
 
 def auth_get(url: str, token: str) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "lemonade-modelscope-mirror",
-                                               "Authorization": f"Bearer {token}",
-                                               "Cookie": f"m_session_id={token}"})
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "lemonade-modelscope-mirror",
+            "Authorization": f"Bearer {token}",
+            "Cookie": f"m_session_id={token}",
+        },
+    )
     with urllib.request.urlopen(req, timeout=60) as r:
         return r.read()
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--repo", default=DEFAULT_REPO, help="ModelScope dataset repo, owner/name")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--repo", default=DEFAULT_REPO, help="ModelScope dataset repo, owner/name"
+    )
     ap.add_argument("--set", choices=sorted(SETS), default="trial")
-    ap.add_argument("--group", help="only this group, for example vllm or therock (used by the workflow matrix)")
-    ap.add_argument("--include-pwilkin", action="store_true", help="also mirror the pwilkin/* backends")
-    ap.add_argument("--versions-file", help="local backend_versions.json instead of fetching it")
-    ap.add_argument("--lemonade-ref", default="main", help="git ref to read backend_versions.json from")
-    ap.add_argument("--lemonade-release", default="latest", help="Lemonade release whose installers to mirror")
-    ap.add_argument("--endpoint", default=os.environ.get("MODELSCOPE_ENDPOINT", "https://modelscope.cn"),
-                    help="https://modelscope.cn (mainland China, the real mirror) or https://www.modelscope.ai")
+    ap.add_argument(
+        "--group",
+        help="only this group, for example vllm or therock (used by the workflow matrix)",
+    )
+    ap.add_argument(
+        "--include-pwilkin",
+        action="store_true",
+        help="also mirror the pwilkin/* backends",
+    )
+    ap.add_argument(
+        "--versions-file", help="local backend_versions.json instead of fetching it"
+    )
+    ap.add_argument(
+        "--lemonade-ref",
+        default="main",
+        help="git ref to read backend_versions.json from",
+    )
+    ap.add_argument(
+        "--lemonade-release",
+        default="latest",
+        help="Lemonade release whose installers to mirror",
+    )
+    ap.add_argument(
+        "--endpoint",
+        default=os.environ.get("MODELSCOPE_ENDPOINT", "https://modelscope.cn"),
+        help="https://modelscope.cn (mainland China, the real mirror) or https://www.modelscope.ai",
+    )
     ap.add_argument("--private", action="store_true", help="create the repo as private")
-    ap.add_argument("--readme", help="upload this file as the repo's README.md (dataset card)")
-    ap.add_argument("--dry-run", action="store_true", help="list what would be uploaded, change nothing")
-    ap.add_argument("--workdir", default=None, help="where to put each file while it uploads")
+    ap.add_argument(
+        "--readme", help="upload this file as the repo's README.md (dataset card)"
+    )
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="list what would be uploaded, change nothing",
+    )
+    ap.add_argument(
+        "--workdir", default=None, help="where to put each file while it uploads"
+    )
     args = ap.parse_args()
 
     versions = load_versions(args.versions_file, args.lemonade_ref)
-    items = build_plan(versions, args.set, args.include_pwilkin, args.lemonade_release, args.group)
+    items = build_plan(
+        versions, args.set, args.include_pwilkin, args.lemonade_release, args.group
+    )
     if args.group:
         items = [i for i in items if i.group == args.group]
         if not items:
@@ -287,22 +377,43 @@ def main() -> int:
         if not token:
             sys.exit("Set MODELSCOPE_API_TOKEN, or use --dry-run.")
         from modelscope_hub.api import HubApi
+
         api = HubApi(token=token, endpoint=args.endpoint)
         if not api.repo_exists(args.repo, REPO_TYPE):
-            api.create_repo(args.repo, REPO_TYPE, visibility="private" if args.private else "public",
-                            description="Official mirror of the backend binaries Lemonade downloads")
+            api.create_repo(
+                args.repo,
+                REPO_TYPE,
+                visibility="private" if args.private else "public",
+                description="Official mirror of the backend binaries Lemonade downloads",
+            )
             log(f"Created dataset repo {args.repo}")
-        existing = {f.path: f.size for f in api.list_repo_files(args.repo, REPO_TYPE, recursive=True)
-                    if getattr(f, "type", "blob") != "tree"}
+        existing = {
+            f.path: f.size
+            for f in api.list_repo_files(args.repo, REPO_TYPE, recursive=True)
+            if getattr(f, "type", "blob") != "tree"
+        }
         log(f"{args.repo}: {len(existing)} files already on ModelScope")
         if args.readme:
-            api.upload_file(args.repo, REPO_TYPE, args.readme, "README.md",
-                            commit_message="Update README.md", disable_tqdm=True)
+            api.upload_file(
+                args.repo,
+                REPO_TYPE,
+                args.readme,
+                "README.md",
+                commit_message="Update README.md",
+                disable_tqdm=True,
+            )
             log("README.md uploaded")
 
     total = sum(f["size"] for i in items for f in i.files)
-    todo = sum(f["size"] for i in items for f in i.files if existing.get(f"{i.folder}/{f['name']}") != f["size"])
-    log(f"\nPlan: {sum(len(i.files) for i in items)} files, {human(total)} pinned, {human(todo)} to upload\n")
+    todo = sum(
+        f["size"]
+        for i in items
+        for f in i.files
+        if existing.get(f"{i.folder}/{f['name']}") != f["size"]
+    )
+    log(
+        f"\nPlan: {sum(len(i.files) for i in items)} files, {human(total)} pinned, {human(todo)} to upload\n"
+    )
 
     workdir = Path(args.workdir or tempfile.mkdtemp(prefix="msmirror-"))
     workdir.mkdir(parents=True, exist_ok=True)
@@ -322,32 +433,59 @@ def main() -> int:
             local = workdir / f["name"]
             t0 = time.time()
             f["sha256"] = download(f["url"], local, f["sha256"], f["size"])
-            api.upload_file(args.repo, REPO_TYPE, str(local), path,
-                            commit_message=f"Mirror {path}", disable_tqdm=True)
+            api.upload_file(
+                args.repo,
+                REPO_TYPE,
+                str(local),
+                path,
+                commit_message=f"Mirror {path}",
+                disable_tqdm=True,
+            )
             local.unlink(missing_ok=True)
             uploaded += 1
             changed = True
-            log(f"    uploaded  {f['name']}  {human(f['size'])}  in {time.time() - t0:.0f}s")
+            log(
+                f"    uploaded  {f['name']}  {human(f['size'])}  in {time.time() - t0:.0f}s"
+            )
         manifest_path = f"{item.folder}/assets.json"
         if not args.dry_run and (changed or manifest_path not in existing):
             if any(not f["sha256"] for f in item.files) and manifest_path in existing:
                 # Files skipped this run with no published SHA-256 (TheRock): keep the
                 # value computed when they were first uploaded.
-                old = json.loads(auth_get(file_url(args.repo, manifest_path, args.endpoint), token))
+                old = json.loads(
+                    auth_get(file_url(args.repo, manifest_path, args.endpoint), token)
+                )
                 known = {o["name"]: o["sha256"] for o in old.get("files", [])}
                 for f in item.files:
                     f["sha256"] = f["sha256"] or known.get(f["name"], "")
-            manifest = {"source": item.source,
-                        "mirrored_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                        "files": [{k: f[k] for k in ("name", "size", "sha256")} for f in item.files]}
-            api.upload_file(args.repo, REPO_TYPE, json.dumps(manifest, indent=2).encode(), manifest_path,
-                            commit_message=f"Update {manifest_path}", disable_tqdm=True)
+            manifest = {
+                "source": item.source,
+                "mirrored_at": datetime.now(timezone.utc).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                ),
+                "files": [
+                    {k: f[k] for k in ("name", "size", "sha256")} for f in item.files
+                ],
+            }
+            api.upload_file(
+                args.repo,
+                REPO_TYPE,
+                json.dumps(manifest, indent=2).encode(),
+                manifest_path,
+                commit_message=f"Update {manifest_path}",
+                disable_tqdm=True,
+            )
 
     log(f"\nDone. uploaded={uploaded} skipped={skipped} dry_run={args.dry_run}")
     first = next((i for i in items if i.files), None)
     if first:
         log("Download URL for one file:")
-        log("  " + file_url(args.repo, f"{first.folder}/{first.files[0]['name']}", args.endpoint))
+        log(
+            "  "
+            + file_url(
+                args.repo, f"{first.folder}/{first.files[0]['name']}", args.endpoint
+            )
+        )
     return 0
 
 
