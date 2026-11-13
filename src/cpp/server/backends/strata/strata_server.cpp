@@ -340,8 +340,11 @@ void StrataServer::load(const std::string& model_name, const ModelInfo& model_in
     {
         static std::mutex preparation_mutex;
         std::lock_guard<std::mutex> lock(preparation_mutex);
+        const fs::path prepare_script = control / "strata_prepare.py";
+        fs::copy_file(utils::path_from_utf8(utils::get_resource_path("resources/strata_prepare.py")),
+                      prepare_script, fs::copy_options::overwrite_existing);
         const int result = utils::ProcessManager::run_process_with_output(
-            python, {"-E", "-s", utils::get_resource_path("resources/strata_prepare.py"),
+            python, {"-E", "-s", utils::path_to_utf8(prepare_script),
                      "--control", utils::path_to_utf8(control), "--request", utils::path_to_utf8(request_path)},
             [](const std::string& line) { LOG(INFO, "Strata") << line << std::endl; return true; },
             control.string(), 3600);
