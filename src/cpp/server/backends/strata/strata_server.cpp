@@ -138,8 +138,10 @@ public:
     }
 
     std::optional<double> streaming_memory_pool_gb(
-        const ModelInfo&, double system_ram_gb, double) const override {
-        return system_ram_gb;
+        const ModelInfo&, double system_ram_gb, double device_pool_gb) const override {
+        return strata::streaming_memory_pool_gb(
+            SystemInfoCache::get_system_info_with_cache().at("devices"),
+            system_ram_gb, device_pool_gb);
     }
 
     std::string checkpoint_revision(const ModelInfo& info, const std::string& type) const override {
@@ -172,6 +174,19 @@ public:
 }  // namespace
 
 namespace strata {
+
+double streaming_memory_pool_gb(const json& devices, double system_ram_gb, double device_pool_gb) {
+    if (devices.contains("metal") && devices.at("metal").value("available", false)) {
+        return system_ram_gb;
+    }
+    bool integrated = false;
+    for (const auto& gpu : devices.value("amd_gpu", json::array())) {
+        if (!gpu.value("available", false)) continue;
+        if (!gpu.value("integrated", false)) return device_pool_gb;
+        integrated = true;
+    }
+    return integrated ? system_ram_gb : device_pool_gb;
+}
 
 std::string engine_asset(const std::string& target, const std::string& backend,
                          const std::string& arch) {

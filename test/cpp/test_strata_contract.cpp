@@ -1,4 +1,5 @@
 #include "lemon/backends/strata/strata_server.h"
+#include "lemon/models/store_builder.h"
 
 #include <cstdio>
 #include <stdexcept>
@@ -40,6 +41,34 @@ int main() {
           !strata::ops()->validate_registration_checkpoint(flash_checkpoint).empty());
     lemon::ModelInfo flash;
     flash.checkpoints["main"] = flash_checkpoint;
+    const lemon::json discrete_gpu = {{"available", true}, {"integrated", false}};
+    const lemon::json apu = {{"available", true}, {"integrated", true}};
+    const lemon::json discrete_devices = {{"amd_gpu", lemon::json::array({discrete_gpu})}};
+    const double discrete_pool = strata::streaming_memory_pool_gb(discrete_devices, 128.0, 24.0);
+    check("A 24 GB discrete GPU cannot fit a 118 GB resident model using host RAM",
+          discrete_pool == 24.0 &&
+          lemon::models::streaming_model_exceeds_pool(
+              lemon::models::streaming_working_set_gb(0.0, 118.0), discrete_pool));
+    check("Discrete GPUs preserve the caller's GTT opt-in pool",
+          strata::streaming_memory_pool_gb(discrete_devices, 128.0, 120.0) == 120.0);
+    const double apu_pool = strata::streaming_memory_pool_gb(
+        {{"amd_gpu", lemon::json::array({apu})}}, 128.0, 24.0);
+    check("Integrated GPUs retain system RAM without architecture identifiers",
+          apu_pool == 128.0 && !lemon::models::streaming_model_exceeds_pool(118.0, apu_pool));
+    check("Hybrid hosts prefer discrete GPUs regardless of detection order",
+          strata::streaming_memory_pool_gb(
+              {{"amd_gpu", lemon::json::array({apu, discrete_gpu})}}, 128.0, 24.0) == 24.0 &&
+          strata::streaming_memory_pool_gb(
+              {{"amd_gpu", lemon::json::array({discrete_gpu, apu})}}, 128.0, 24.0) == 24.0);
+    check("Unavailable or unidentified integrated GPUs do not expose host RAM",
+          strata::streaming_memory_pool_gb(
+              {{"amd_gpu", lemon::json::array({{{"available", false}, {"integrated", true}}})}},
+              128.0, 24.0) == 24.0 &&
+          strata::streaming_memory_pool_gb(
+              {{"amd_gpu", lemon::json::array({{{"available", true}}})}}, 128.0, 24.0) == 24.0);
+    check("Apple Silicon retains its unified system RAM pool",
+          strata::streaming_memory_pool_gb(
+              {{"metal", {{"available", true}}}}, 128.0, 24.0) == 128.0);
     check("Strata downloads retain the upstream model revision",
           strata::ops()->checkpoint_revision(flash, "main").size() == 40 &&
           strata::ops()->checkpoint_revision(flash, "shard_2") ==

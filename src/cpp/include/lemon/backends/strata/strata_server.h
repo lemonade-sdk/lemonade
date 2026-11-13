@@ -30,6 +30,7 @@ std::string engine_asset(const std::string& platform, const std::string& backend
                          const std::string& arch);
 std::vector<BackendAsset> additional_assets(const std::string& backend);
 json checkpoint_selection(const std::string& checkpoint);
+double streaming_memory_pool_gb(const json& devices, double system_ram_gb, double device_pool_gb);
 void validate_options(int ctx_size, const std::string& custom_args, int parallel, bool embedded_mtp);
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
