@@ -872,6 +872,8 @@ class OllamaTests(ServerTestBase):
         cases = {
             # A text-to-speech model.
             "kokoro-v1": ["speech"],
+            # A plain classifier cannot answer /v1/systemone, so it is not a decision model.
+            "Bert-Phishing-ONNX": [],
             # A SystemOne decision model reports nothing else, as in Ollama.
             "Laya-GGUF": ["decision"],
             # /api/generate drops audio sent in `images`, so audio input is not reported.
