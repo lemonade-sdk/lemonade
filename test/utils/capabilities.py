@@ -209,7 +209,7 @@ CAPABILITIES = {
             },
             "test_models": {
                 "llm_cpu": "Qwen2.5-0.5B-Instruct-CPU",
-                "llm_hybrid": "Qwen-2.5-1.5B-Instruct-Hybrid",
+                "llm_hybrid": "Qwen-2.5-1.5B-Instruct-NPU",
                 "llm_npu": "Qwen2.5-3B-Instruct-NPU",
             },
         },
