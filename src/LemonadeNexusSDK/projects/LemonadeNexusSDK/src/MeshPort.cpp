@@ -1216,6 +1216,9 @@ bool MeshPort::activate_tls_locked() {
 
 int MeshPort::set_selection(const std::string& target, const std::string& peer_key) {
     auto selected = target;
+    // A peer key is one device's credential. Auto routing probes every device and
+    // forwards to whichever serves the model, so it never carries one.
+    if (selected == "auto" && !peer_key.empty()) return 400;
     if (!selected.empty() && selected != "local" && selected != "auto") {
         bool known = false;
         {

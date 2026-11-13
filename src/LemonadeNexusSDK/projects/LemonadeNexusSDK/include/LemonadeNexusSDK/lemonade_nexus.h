@@ -1430,13 +1430,17 @@ ln_error_t ln_mesh_port_stop(ln_client_t* client);
  *                   "Bearer <key>", or NULL for none. The key is kept only in
  *                   memory. Every call replaces it, so a new target clears it
  *                   unless the call passes a key again. The string is copied.
+ *                   A key belongs to one device: "auto" with a non-empty key is
+ *                   refused, because auto routing probes every device and
+ *                   forwards to whichever serves the model.
  *
  *  "auto" routes each request by its model. A "<device>/<model>" name goes to
  *  that device with the prefix removed. Then a model of the local service stays
  *  local. Then an idle online Tier 3 device with the model loaded serves it
  *  (lowest mesh latency first). Then a device that lists the model serves it.
  *  A GET of /api/v1/models (also /api/v0/models, /v1/models, /v0/models) returns
- *  the local models plus "<device>/<model>" entries.
+ *  the local models plus "<device>/<model>" entries. A device that needs a key
+ *  refuses the keyless probe and is never chosen.
  *
  *  Without a selection, or when the selected device is offline, requests answer
  *  409. The port never falls back to another device.
@@ -1444,8 +1448,8 @@ ln_error_t ln_mesh_port_stop(ln_client_t* client);
  *  @return LN_OK. LN_ERR_NULL_ARG for a NULL client. LN_ERR_NOT_FOUND for an
  *          unknown device. LN_ERR_AUTH when this device may not connect to it.
  *          LN_ERR_REJECTED when the port is not running, "local" has no local
- *          service, or the device is not Tier 3. An offline Tier 3 device can be
- *          selected. Thread-safe. */
+ *          service, the device is not Tier 3, or "auto" comes with a key. An
+ *          offline Tier 3 device can be selected. Thread-safe. */
 ln_error_t ln_mesh_port_set_selection(ln_client_t* client, const char* target,
                                       const char* peer_key);
 

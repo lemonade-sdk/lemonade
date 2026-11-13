@@ -300,10 +300,12 @@ public:
 
     /// Sets the selection target: "local", "auto", a node ID, or "" to clear it.
     /// `peer_key` is sent as "Bearer <key>" to the selected device's lemond. It is kept
-    /// only in memory and replaced, or cleared, by every call. Returns 0 or an HTTP
-    /// status: 409 when the port is not running, "local" has no local service, or the
-    /// device is not Tier 3; 404 for an unknown device; 403 when this device may not
-    /// connect to it. An offline Tier 3 device can be selected; requests then get 409.
+    /// only in memory and replaced, or cleared, by every call. A key belongs to one
+    /// device, so "auto", which probes and forwards to whichever device serves the
+    /// model, takes none. Returns 0 or an HTTP status: 400 for "auto" with a key; 409
+    /// when the port is not running, "local" has no local service, or the device is
+    /// not Tier 3; 404 for an unknown device; 403 when this device may not connect to
+    /// it. An offline Tier 3 device can be selected; requests then get 409.
     int set_selection(const std::string& target, const std::string& peer_key);
 
     /// Status JSON: {running, port, scheme, local_domain, local_service, error,
