@@ -20,7 +20,7 @@ json build_ollama_capabilities(const ModelInfo& info) {
         capabilities.push_back("completion");
     } else if (model_type == ModelType::EMBEDDING) {
         capabilities.push_back("embedding");
-    } else if (model_type == ModelType::IMAGE) {
+    } else if (ollama_output(info.labels) == OllamaOutput::Image) {
         capabilities.push_back("image");
     }
 

@@ -345,6 +345,7 @@ Each line carries the next piece of text with `done: false`. When the text ends,
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | `model` is neither an LLM nor an image generation model, such as an embedding or upscaling model, which is checked before it loads |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |

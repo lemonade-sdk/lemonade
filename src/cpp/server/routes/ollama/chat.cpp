@@ -4,7 +4,6 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/model_manager.h"
-#include "lemon/model_types.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
@@ -99,19 +98,14 @@ const RouteError kNotChatModel{400, "",
                                "`model` is not an LLM, such as an image or embedding model, which is "
                                "checked before it loads"};
 
-// Checked before loading, as Ollama does: a non-LLM backend has no chat route, so loading
-// it first would spend a whole model load on a request that can only fail.
 bool require_chat_model(ModelManager& model_manager, const std::string& model,
                         httplib::Response& res) {
-    if (!model_manager.model_exists(model)) {
-        return true;
-    }
-    ModelType model_type = get_model_type_from_labels(model_manager.get_model_info(model).labels);
-    if (model_type == ModelType::LLM) {
+    auto output = ollama_registered_output(model_manager, model);
+    if (!output || *output == OllamaOutput::Text) {
         return true;
     }
     std::string message = "\"" + model + "\" does not support chat";
-    if (model_type == ModelType::IMAGE) {
+    if (*output == OllamaOutput::Image) {
         message += "; use /api/generate to generate images";
     }
     write_plain_error(res, kNotChatModel, message);

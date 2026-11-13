@@ -34,6 +34,7 @@ from utils.test_models import (
     TOOL_CALLING_MODEL,
     VISION_MODEL,
     SD_MODEL,
+    ESRGAN_MODEL,
     SAMPLE_TOOL,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
@@ -45,6 +46,10 @@ TOOL_CALLING_LLAMA_ARGS = "--reasoning-format none"
 
 # Context the backend-error tests pin the model to so their prompt overflows it.
 OVERFLOW_CTX_SIZE = 2048
+
+# Read from the registry only by the tests that reject them, so they are never downloaded.
+EMBEDDING_MODEL = "nomic-embed-text-v1-GGUF"
+IMAGE_EDIT_MODEL = "Flux-2-Klein-4B"
 
 
 class OllamaTests(ServerTestBase):
@@ -462,6 +467,19 @@ class OllamaTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 404)
 
+    def test_012a_generate_not_found_model(self):
+        """Test /api/generate returns 404 for non-existent model."""
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={
+                "model": "nonexistent-model-xyz",
+                "prompt": "hello",
+                "stream": False,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 404)
+
     def test_013_chat_with_latest_suffix(self):
         """Test /api/chat strips :latest suffix from model name."""
         self.ensure_model_pulled()
@@ -699,87 +717,155 @@ class OllamaTests(ServerTestBase):
         self.assertIn("message", data)
         self.assertIn("content", data["message"])
 
-    def test_022_generate_image_output(self):
-        """Test /api/generate with an image generation model."""
+    def skip_without_sdcpp(self):
         if sys.platform == "darwin":
             self.skipTest("sd-cpp not supported on macOS")
         if sys.platform == "linux" and platform.machine() == "aarch64":
             self.skipTest("sd-cpp not supported on Linux ARM64")
-        pull_model_with_retry(SD_MODEL)
 
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/generate",
-            json={
-                "model": SD_MODEL,
-                "prompt": "A red circle",
-                "stream": False,
-                "width": 256,
-                "height": 256,
-                "steps": 2,
-            },
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("image", data)
-        self.assertTrue(len(data["image"]) > 0, "image field should not be empty")
-        self.assertTrue(data["done"])
-        self.assertEqual(data["model"], SD_MODEL)
-
-        # Decode base64 and verify PNG magic bytes
-        image_bytes = base64.b64decode(data["image"])
-        self.assertTrue(
-            image_bytes[:4] == b"\x89PNG",
-            "Decoded image should start with PNG magic bytes",
-        )
-
-    def test_022a_chat_rejects_image_model(self):
-        """Test /api/chat rejects an image model with 400 before loading it."""
-        if sys.platform == "darwin":
-            self.skipTest("sd-cpp not supported on macOS")
-        if sys.platform == "linux" and platform.machine() == "aarch64":
-            self.skipTest("sd-cpp not supported on Linux ARM64")
+    def assert_rejected_before_load(self, path, model, body, error, hint):
+        """Assert path rejects model with a 400 in both stream modes, without loading it."""
         unload_all_models()
-
         for stream in (False, True):
-            with self.subTest(stream=stream):
+            with self.subTest(path=path, model=model, stream=stream):
                 response = requests.post(
-                    f"{OLLAMA_BASE_URL}/api/chat",
-                    json={
-                        "model": SD_MODEL,
-                        "messages": [{"role": "user", "content": "A red circle"}],
-                        "stream": stream,
-                    },
+                    f"{OLLAMA_BASE_URL}{path}",
+                    json={"model": model, "stream": stream, **body},
                     timeout=TIMEOUT_DEFAULT,
                 )
                 self.assertEqual(response.status_code, 400, response.text)
-                error = response.json()["error"]
-                self.assertIn("does not support chat", error)
-                self.assertIn("/api/generate", error)
+                message = response.json()["error"]
+                self.assertEqual(message, f'"{model}" {error}' + hint)
 
         ps = requests.get(f"{OLLAMA_BASE_URL}/api/ps", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(ps.status_code, 200)
         loaded_names = [m["name"] for m in ps.json()["models"]]
         self.assertFalse(
-            any(SD_MODEL in n for n in loaded_names),
-            f"{SD_MODEL} should not load for a rejected chat: {loaded_names}",
+            any(n.split(":")[0] == model for n in loaded_names),
+            f"{model} should not load for a rejected request: {loaded_names}",
         )
 
-    def test_022b_show_image_capability(self):
-        """Test /api/show reports the image capability for an image model."""
-        if sys.platform == "darwin":
-            self.skipTest("sd-cpp not supported on macOS")
-        if sys.platform == "linux" and platform.machine() == "aarch64":
-            self.skipTest("sd-cpp not supported on Linux ARM64")
+    def show_capabilities(self, model):
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/show",
-            json={"name": SD_MODEL},
+            json={"name": model},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 200, response.text)
-        capabilities = response.json()["capabilities"]
-        self.assertIn("image", capabilities)
+        return response.json()["capabilities"]
+
+    def test_022_generate_image_output(self):
+        """Test /api/generate with an image generation model, in both stream modes."""
+        self.skip_without_sdcpp()
+        pull_model_with_retry(SD_MODEL)
+
+        # Image generation never streams: stream=true still answers one JSON object.
+        for stream in (False, True):
+            with self.subTest(stream=stream):
+                response = requests.post(
+                    f"{OLLAMA_BASE_URL}/api/generate",
+                    json={
+                        "model": SD_MODEL,
+                        "prompt": "A red circle",
+                        "stream": stream,
+                        "width": 256,
+                        "height": 256,
+                        "steps": 2,
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(response.status_code, 200)
+                data = response.json()
+                self.assertIn("image", data)
+                self.assertTrue(
+                    len(data["image"]) > 0, "image field should not be empty"
+                )
+                self.assertTrue(data["done"])
+                self.assertEqual(data["model"], SD_MODEL)
+
+                # Decode base64 and verify PNG magic bytes
+                image_bytes = base64.b64decode(data["image"])
+                self.assertTrue(
+                    image_bytes[:4] == b"\x89PNG",
+                    "Decoded image should start with PNG magic bytes",
+                )
+
+    def test_022a_chat_rejects_image_model(self):
+        """Test /api/chat rejects an image generation model before loading it."""
+        self.skip_without_sdcpp()
+        self.assert_rejected_before_load(
+            "/api/chat",
+            SD_MODEL,
+            {"messages": [{"role": "user", "content": "A red circle"}]},
+            "does not support chat",
+            "; use /api/generate to generate images",
+        )
+
+    def test_022b_show_image_capability(self):
+        """Test /api/show reports image for image generation models, with or without edit."""
+        self.skip_without_sdcpp()
+        for model in (SD_MODEL, IMAGE_EDIT_MODEL):
+            with self.subTest(model=model):
+                capabilities = self.show_capabilities(model)
+                self.assertIn("image", capabilities)
+                self.assertNotIn("completion", capabilities)
+
+    def test_022c_upscaler_is_not_an_image_generator(self):
+        """Test an upscaling model is neither shown nor served as an image generator."""
+        self.skip_without_sdcpp()
+        capabilities = self.show_capabilities(ESRGAN_MODEL)
+        self.assertNotIn("image", capabilities)
         self.assertNotIn("completion", capabilities)
+
+        self.assert_rejected_before_load(
+            "/api/chat",
+            ESRGAN_MODEL,
+            {"messages": [{"role": "user", "content": "hi"}]},
+            "does not support chat",
+            "",
+        )
+        self.assert_rejected_before_load(
+            "/api/generate",
+            ESRGAN_MODEL,
+            {"prompt": "A red circle"},
+            "does not support generate",
+            "",
+        )
+
+    def test_022d_chat_rejects_embedding_model(self):
+        """Test /api/chat rejects an embedding model before loading it."""
+        self.assert_rejected_before_load(
+            "/api/chat",
+            EMBEDDING_MODEL,
+            {"messages": [{"role": "user", "content": "hi"}]},
+            "does not support chat",
+            "",
+        )
+
+    def test_022e_generate_rejects_embedding_model(self):
+        """Test /api/generate rejects an embedding model before loading it."""
+        self.assert_rejected_before_load(
+            "/api/generate",
+            EMBEDDING_MODEL,
+            {"prompt": "hi"},
+            "does not support generate",
+            "",
+        )
+
+    def test_022f_unload_non_llm_via_keep_alive(self):
+        """Test keep_alive=0 still unloads a model that can neither chat nor generate."""
+        for path, body in (
+            ("/api/chat", {"messages": []}),
+            ("/api/generate", {"prompt": ""}),
+        ):
+            with self.subTest(path=path):
+                response = requests.post(
+                    f"{OLLAMA_BASE_URL}{path}",
+                    json={"model": EMBEDDING_MODEL, "keep_alive": 0, **body},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["done_reason"], "unload")
 
     def test_023_ollama_lib_chat_streaming(self):
         """Test ollama.chat() streaming via Python library."""
