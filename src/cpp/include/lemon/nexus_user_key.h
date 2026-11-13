@@ -10,9 +10,6 @@
 namespace lemon {
 namespace nexus_user_key {
 
-/// True when lemond's `nexus/status` asks a process in the user's session for the
-/// device key: the SDK is available, the mesh is enabled and no identity is active.
-/// A disabled mesh, a build without the SDK and a device with an identity never ask.
 inline bool wants_device_key(const nlohmann::json& status) {
     return status.is_object() && status.value("available", false) && status.value("enabled", false) &&
         status.value("needs_user_key", false);
@@ -25,8 +22,6 @@ inline bool key_revoked(const nlohmann::json& status, const std::string& pubkey)
     return !pubkey.empty() && status.is_object() && status.value("revoked_public_key", std::string()) == pubkey;
 }
 
-/// The loopback port of lemond's local controller from `status.controller_url`
-/// ("http://127.0.0.1:<port>"), or 0 when it is absent or malformed.
 inline int controller_port(const nlohmann::json& status) {
     if (!status.is_object()) return 0;
     const auto url = status.value("controller_url", std::string());
@@ -38,8 +33,6 @@ inline int controller_port(const nlohmann::json& status) {
     return port >= 1 && port <= 65535 ? static_cast<int>(port) : 0;
 }
 
-/// Why ln_identity_user_load or ln_identity_user_create returned no identity, as one
-/// sentence for status text and logs. It names the condition, never the store contents.
 inline std::string store_failure_text(int code) {
     switch (code) {
     case LN_ERR_NOT_FOUND: return "no device key is stored for this user";

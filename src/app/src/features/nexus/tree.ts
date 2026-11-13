@@ -81,7 +81,6 @@ export function readNexusTreeBranch(value: unknown): NexusTreeBranch {
 export const getNexusTreeBranch = async (id?: string) => readNexusTreeBranch(await nexusRequest(id ? `tree/${encodeURIComponent(id)}/children` : 'tree'));
 export const createNexusGroup = (id: string, name: string) => nexusRequest<{ node_id: string }>(`tree/${encodeURIComponent(id)}/groups`, { name });
 export const renameNexusGroup = (id: string, name: string) => nexusRequest(`tree/${encodeURIComponent(id)}/rename`, { name });
-// Moves a device or a group under another group. The server checks add_child on the destination.
 export const moveNexusNode = (id: string, parentId: string) => nexusRequest(`tree/${encodeURIComponent(id)}/move`, { parent_id: parentId });
 export const saveNexusGroupPermissions = (id: string, memberId: string, admin: boolean, permissions: string[]) =>
   nexusRequest<NexusTreeBranch>(`tree/${encodeURIComponent(id)}/permissions`, { member_node_id: memberId, admin, permissions });

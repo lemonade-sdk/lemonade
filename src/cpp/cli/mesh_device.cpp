@@ -13,7 +13,6 @@ std::string lower(std::string value) {
     return value;
 }
 
-// The first host label of a URL such as "https://work-pc.group.lo.example:13306".
 std::string url_label(const std::string& url) {
     auto host = url;
     if (const auto scheme = host.find("://"); scheme != std::string::npos) host.erase(0, scheme + 3);
@@ -53,8 +52,6 @@ bool resolve_mesh_device(const nlohmann::json& status, const std::string& wanted
         error = "The mesh port is not running on this server, so no device can be reached through it.";
         return false;
     }
-    // Without the group's local domain the mesh port has no name for any device: it
-    // lists only itself as http://127.0.0.1:<port>, and that address serves its selection.
     const auto& port = status.at("mesh_port");
     if (text(port, "local_domain").empty()) {
         error = "This server's mesh port has no group domain yet, so it cannot name other devices";
@@ -77,8 +74,6 @@ bool resolve_mesh_device(const nlohmann::json& status, const std::string& wanted
     }
     const auto listed = available.empty() ? std::string("No other device is online and reachable through the mesh right now.")
                                           : "Devices reachable through the mesh: " + available + ".";
-    // A member of the group that the mesh port does not list is offline, not an
-    // inference server, or one this device may not connect to.
     const auto members = status.find("members");
     if (members != status.end() && members->is_array()) {
         for (const auto& member : *members) {

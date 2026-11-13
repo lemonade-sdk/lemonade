@@ -444,9 +444,6 @@ static void test_configure_tcp_keepalive(TestResult& r) {
 }
 
 #ifndef _WIN32
-// The soft descriptor limit a service manager hands lemond (launchd: 256) must rise to
-// the hard limit, or to OPEN_MAX where Darwin caps it, and the function must report the
-// limit that is in effect afterwards.
 static void test_raise_open_file_limit(TestResult& r) {
     struct rlimit original {};
     if (getrlimit(RLIMIT_NOFILE, &original) != 0) {
@@ -464,8 +461,6 @@ static void test_raise_open_file_limit(TestResult& r) {
 
     struct rlimit raised {};
     const bool read_back = getrlimit(RLIMIT_NOFILE, &raised) == 0;
-    // The raise stops at 65536 (and at OPEN_MAX on Apple) even when the hard
-    // limit allows more; see raise_open_file_limit.
     rlim_t expected = original.rlim_max;
     if (expected == RLIM_INFINITY || expected > 65536) {
         expected = 65536;

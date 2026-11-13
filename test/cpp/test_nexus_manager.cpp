@@ -21,8 +21,6 @@
 #include <LemonadeNexusSDK/lemonade_nexus.h>
 
 namespace lemon {
-// Each route folder's registration function, as server.cpp declares them: the test
-// builds the real registry so the catalog check covers every route lemond serves.
 void register_openai_text_routes(RouteRegistry& registry, ServerContext& ctx);
 void register_openai_audio_routes(RouteRegistry& registry, ServerContext& ctx);
 void register_openai_images_routes(RouteRegistry& registry, ServerContext& ctx);
@@ -47,8 +45,7 @@ using nlohmann::json;
 namespace access = lemon::nexus_access;
 
 // Every manager in this test runs as a system service with its own identity file under
-// the temporary root, whatever the host OS: no test reaches an OS keystore. The role is
-// injected through the constructor; the rule itself is tested in check_identity_rules.
+// the temporary root, whatever the host OS: no test reaches an OS keystore.
 const lemon::ProcessRole kSystemRole{lemon::ProcessRole::Os::Linux, false, true};
 const lemon::ProcessRole kUserRole{lemon::ProcessRole::Os::Linux, false, false};
 
@@ -62,7 +59,6 @@ bool throws_logic(const std::function<void()>& action) {
     return false;
 }
 
-// Stands in for Server::route_request_policy: the shared origin check and the API key.
 void listener_policy(httplib::Server& server) {
     server.set_pre_routing_handler([](const httplib::Request& req, httplib::Response& res) {
         if (!lemon::utils::is_origin_allowed(req.get_header_value("Origin"), "", req.get_header_value("Host"))) {
@@ -193,7 +189,6 @@ void check_selection_key(const std::function<void(bool, const char*)>& check) {
 
 void check_peer_load_pin(const std::function<void(bool, const char*)>& check) {
     const json request = {{"pinned", true}, {"ctx_size", 4096}};
-    // A local operator's request is passed through: pin, unpin, or keep.
     {
         lemon::RecipeOptions options("llamacpp", request);
         std::set<std::string> masked;
@@ -204,7 +199,6 @@ void check_peer_load_pin(const std::function<void(bool, const char*)>& check) {
         check(!access::load_pin_request(false, json(nullptr), options, masked).has_value(),
               "Without pinned an operator's load keeps the current pin");
     }
-    // A mesh peer gets no say, whether it asks to pin, to unpin, or masks the saved value.
     for (const json pinned : {json(true), json(false), json(nullptr)}) {
         lemon::RecipeOptions options("llamacpp", request);
         std::set<std::string> masked = {"pinned", "ctx_size"};
@@ -245,7 +239,6 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
         res.set_chunked_content_provider("text/event-stream", [failure](size_t offset, httplib::DataSink& sink) {
             if (offset > 0) { sink.done(); return true; }
             if (failure == "during") {
-                // One event, then the connection closes without the terminating chunk.
                 const char* event = "data: {\"n\":1}\n\n";
                 sink.write(event, std::char_traits<char>::length(event));
                 return false;
@@ -277,7 +270,6 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
     front.Post(R"(/closed(/.*))", [&](const httplib::Request& req, httplib::Response& res) {
         access::relay_http(1, "gpu", req.matches[1].str(), req, res, req.get_header_value(access::kPeerAuthorizationHeader), req.body);
     });
-    // A bridge whose connections are refused (port 1), replaced by one that reaches the peer.
     int reopened = 0;
     const auto revived = [&](const httplib::Request& req, httplib::Response& res) {
         access::relay_http(1, "gpu", req.matches[1].str(), req, res, req.get_header_value(access::kPeerAuthorizationHeader), req.body,
@@ -329,8 +321,6 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
     check(unreachable_stream && unreachable_stream->status == 502 && stream_body.is_object() &&
               !stream_body.value("detail", std::string()).empty(),
           "An unreachable peer's streamed request names the transport failure in detail");
-    // A refused connection never carried the request, so a POST is repeated like a read,
-    // and the last repeat runs over the replaced bridge.
     seen_body.clear();
     auto revived_load = client.Post("/revived/api/v1/load", keys, R"({"model_name":"big"})", "application/json");
     check(revived_load && revived_load->status == 200 && revived_load->body == R"({"status":"success"})" && loads == 1 &&
@@ -347,8 +337,6 @@ void check_relay_stream(const std::function<void(bool, const char*)>& check) {
     peer.stop(); peer_worker.join();
 }
 
-// A route that answers 200 so a test can tell a registered path from a missing one.
-// A {name} in the path gets a string path argument, as a real route declares.
 class StubRoute : public lemon::ApiRoute {
 public:
     StubRoute(lemon::ServerContext& ctx, std::string id, std::string path, lemon::Prefixes prefixes,
@@ -382,8 +370,6 @@ std::unique_ptr<StubRoute> stub(lemon::ServerContext& ctx, const char* id, const
     return std::make_unique<StubRoute>(ctx, id, path, prefixes, std::move(methods));
 }
 
-// The catalog the SDK enforces at the mesh ingress: every registered route, grouped by
-// family, with exact URLs or the prefix before a path parameter.
 void check_service_catalog(const std::function<void(bool, const char*)>& check) {
     check(lemon::valid_route_family("inference") && lemon::valid_route_family("a") && lemon::valid_route_family("a.b-c_d9") &&
           lemon::valid_route_family(std::string(63, 'a')), "Family names follow the SDK grammar");
@@ -430,9 +416,6 @@ void check_service_catalog(const std::function<void(bool, const char*)>& check) 
     untagged[0]["family"] = "";
     check(throws_logic([&] { access::service_catalog(untagged, "2026.46.3"); }), "A catalog refuses a route without a family");
 
-    // The SDK refuses one method and URL listed twice, even within a family. Several
-    // {id} routes under one collection share a prefix, a trailing slash is not another
-    // path, and a path that equals a prefix of the same method is covered by it.
     const auto duplicate_claim = [](const nlohmann::ordered_json& catalog) {
         std::set<std::string> seen;
         for (const auto& family : catalog.at("families")) {
@@ -471,7 +454,6 @@ void check_service_catalog(const std::function<void(bool, const char*)>& check) 
           access::catalog_version("2026.1000.0") == 0, "A version without three numbers packs as 0");
     check(access::kCatalogRevision < 100, "The catalog revision fits its two digits");
 
-    // The registry lemond serves: every route tagged with a known family, no conflicts.
     lemon::RouteRegistry real;
     lemon::register_openai_text_routes(real, ctx);
     lemon::register_openai_audio_routes(real, ctx);
@@ -568,8 +550,6 @@ void check_service_catalog(const std::function<void(bool, const char*)>& check) 
         displayed.count("POST /v1/nexus/members/{node_id}/role") && displayed.count("GET /v1/nexus/route-permissions") &&
         !displayed.count("GET /api/v1/nexus/route-permissions") && !displayed.count("GET /api/nexus/route-permissions"),
         "The route view includes registered inference, MCP and management routes, the Nexus ones under /v1 only");
-    // The vendored SDK validates the catalog the way lemond's Tier 1 registration does;
-    // no mesh is needed, and the closed port is never reached.
     std::unique_ptr<ln_client_t, decltype(&ln_destroy)> sdk(ln_create_tls("127.0.0.1", 9), ln_destroy);
     check(sdk != nullptr && ln_mesh_service_set_catalog(sdk.get(), 13305, live.dump().c_str()) == LN_OK, "The SDK accepts the live catalog");
     auto twice = live;
@@ -620,8 +600,6 @@ void check_role_presets(const std::function<void(bool, const char*)>& check) {
           "Long fields are cut");
 }
 
-// The SDK sets the X-Nexus-* headers on a request it admitted to the mesh ingress
-// listener. Every other listener removes them, so a client cannot pose as a mesh peer.
 void check_peer_headers(const std::function<void(bool, const char*)>& check) {
     const httplib::Headers spoofed = {{"X-Nexus-Peer-Node", "node-a"}, {"X-Nexus-Peer-Key", "ed25519:k"}, {"X-Nexus-Peer-Permissions", "read,svc:inference"},
         {"x-nexus-family", "inference"}, {"X-Nexus-Catalog-Version", "7"}, {"Authorization", "Bearer key"}};
@@ -685,7 +663,6 @@ void check_status_fields(const std::filesystem::path& root, const std::function<
     check(status.at("app") == json({{"name", "lemonade"}, {"version", "2026.46.3"}}), "Status reports the catalog's app");
     check(status.at("route_policy") == (access::route_policy_available() ? "enforced" : "unavailable"),
           "Route policy follows the SDK's catalog interface");
-    // The session fields appear once the mesh is enabled; a new identity has no network.
     std::string enable_error;
     check(manager.enable(enable_error), "The status manager enables");
     check(manager.status().at("has_network") == false, "A new identity has no network until it creates or joins one");
@@ -1056,8 +1033,6 @@ void check_access_rules(const std::function<void(bool, const char*)>& check) {
     check(members[1].at("can_remove") && !members[2].at("can_remove") && !members[0].at("can_remove"), "Removal follows delete_node on the device");
     check(members[1].at("access_known") && !members[2].at("access_known"), "Device access is known only with edit_node on the device");
 
-    // Devices outside the group's children come from ln_list_network_devices: a member
-    // that joined from its own network and a server of a network this identity joined.
     const json network = json::array({
         {{"node_id", "server"}, {"device_name", "Server"}, {"is_self", true}, {"group_role", "home"}},
         {{"node_id", "workstation"}, {"device_name", "Workstation"}, {"can_connect", true}, {"group_role", "home"}},
@@ -1117,7 +1092,6 @@ void check_access_rules(const std::function<void(bool, const char*)>& check) {
     check(error("server unreachable").first == 502 && error("").first == 502, "Transport failures map to 502");
 }
 
-// The identity source follows the process role alone; the account files follow the key.
 void check_identity_rules(const std::function<void(bool, const char*)>& check) {
     using lemon::IdentitySource;
     using Role = lemon::ProcessRole;
@@ -1160,8 +1134,6 @@ void check_identity_rules(const std::function<void(bool, const char*)>& check) {
           restored.at("genesis_pubkey") == "g" && restored.at("public_key") == "ed25519:b" && !restored.contains("credential_id"),
           "An archived account keeps its own fields and gains the missing network facts");
 
-    // The federation's user_id decides whose a stale account is; a key is never refused
-    // for a file that is not recorded as its own.
     using access::AccountMatch;
     check(access::account_match(json::object(), "ed25519:a", "u1") == AccountMatch::Own &&
           access::account_match(json{{"user_id", "u1"}}, "ed25519:a", "u1") == AccountMatch::Own &&
@@ -1177,8 +1149,6 @@ void check_identity_rules(const std::function<void(bool, const char*)>& check) {
           access::stale_account_file(json{{"user_id", "a b"}}) == "account-user-unknown.json",
           "A stale account archives by its key, else by its user");
 
-    // An invite without a role or list grants the user preset, reduced to what the
-    // inviter holds on the target; a name it lacks drops instead of failing the invite.
     const json preset = json::array({"read", "connect_private", "svc:inference"});
     check(access::default_invite_permissions(json::array({"read", "connect_private", "admin"}), true) == std::make_pair(preset, json::array()) &&
           access::default_invite_permissions(json::array(), true) == std::make_pair(preset, json::array()), "An admin grants the whole user preset");
@@ -1207,10 +1177,8 @@ void check_identity_rules(const std::function<void(bool, const char*)>& check) {
           "Store failures have distinct texts");
 }
 
-// The hand-off routes in-process: this test is the user's session (ln_identity_generate
-// stands in for the user store) and the management listener is lemond. The federation
-// is a closed port, so every unlock ends as a retryable outage after the identity took
-// effect; the public key in status shows which identity lemond holds.
+// The federation is a closed port, so every unlock ends as a retryable outage after the
+// identity took effect; the public key in status shows which identity lemond holds.
 void check_handoff(httplib::Client& management, const std::filesystem::path& root, const std::function<void(bool, const char*)>& check) {
     using IdentityPtr = std::unique_ptr<ln_identity_t, decltype(&ln_identity_destroy)>;
     const auto status = [&] {
@@ -1307,10 +1275,6 @@ void check_handoff(httplib::Client& management, const std::filesystem::path& roo
     check(no_secret(delivered.second) && no_secret(swapped.second) && no_secret(returned.second) && no_secret(status()),
           "No reply carries a seed, private key or envelope");
 
-    // An account.json from before public_key was recorded (a device-key enrolment by an
-    // earlier build) belongs to an unknown key. No key adopts it as its own, and a
-    // delivered key is never refused for it: the federation's user_id decides at the
-    // first authentication (nexus_access::account_match), which archives a stale file.
     const auto read_account = [&] {
         std::ifstream input(root / "nexus/account.json");
         return json::parse(input, nullptr, false);
@@ -1339,12 +1303,9 @@ void check_handoff(httplib::Client& management, const std::filesystem::path& roo
 }
 
 #ifdef __linux__
-// User mode fails closed: without a usable keystore lemond has no identity, writes no
-// identity file and refuses a key unlock. Linux only, and only where the SDK reports no
-// keystore for this process: on macOS and Windows even the status call reaches the
-// keychain or DPAPI, and a developer's real keystore is never touched from a test. The
-// probe runs on its own thread with a time bound, so a Secret Service that does not
-// answer cannot stall the test.
+// Linux only, and only where the SDK reports no keystore for this process: on macOS and
+// Windows even the status call reaches the keychain or DPAPI, and a developer's real
+// keystore is never touched from a test.
 void check_user_mode_fails_closed(const std::filesystem::path& root, const std::function<void(bool, const char*)>& check) {
     auto probe = std::make_shared<std::promise<json>>();
     auto answer = probe->get_future();
@@ -1549,7 +1510,6 @@ int main() {
             }
             httplib::Client management("127.0.0.1", control_port);
             if (api_key && *api_key) management.set_default_headers({{"Authorization", std::string("Bearer ") + api_key}});
-            // A loopback operator gets the same answer from the public port as from the management listener.
             const auto served_alike = [&](const std::string& path, const char* body = nullptr) {
                 auto direct = body ? client.Post(path, body, "application/json") : client.Get(path);
                 auto managed = body ? management.Post(path, body, "application/json") : management.Get(path);
@@ -1644,9 +1604,6 @@ int main() {
             auto named = request("device", R"({"device_name":"My laptop"})", 200);
             check(named.at("device_name") == "My laptop", "Device name updated");
             request("lock", "{}", 200);
-            // A device that unlocks with its device key reports itself registered, refuses the
-            // passkey routes, and stays locked after an explicit lock even though the supervisor
-            // would unlock it again by itself.
             request("disable", "{}", 200);
             {
                 std::ifstream saved_input(root / "nexus/account.json");
@@ -1665,10 +1622,6 @@ int main() {
             std::this_thread::sleep_for(std::chrono::seconds(6));
             auto held = management.Get("/v1/nexus/status");
             check(held && held->status == 200 && nlohmann::json::parse(held->body).at("locked") == true, "An explicit lock holds against key unlock");
-            // A device with a registered passkey refuses a plain key unlock. A local operator
-            // without a passkey client (a browser) asks for the device key instead; the
-            // passkey is retired only once the key authenticated, so a network that cannot be
-            // reached keeps it.
             request("disable", "{}", 200);
             {
                 std::ifstream saved_input(root / "nexus/account.json");
@@ -1696,7 +1649,6 @@ int main() {
                 check(reported && reported->status == 200 && (nlohmann::json::parse(reported->body).at("unlock") == "device_key") == switched,
                       "Status reports the device key once the switch is recorded");
             }
-            // Back to the device-key account the checks below expect.
             request("disable", "{}", 200);
             {
                 std::ifstream saved_input(root / "nexus/account.json");
@@ -1710,8 +1662,6 @@ int main() {
             }
             check(request("enable", "{}", 200).at("unlock") == "device_key", "The device-key account is back");
             request("lock", "{}", 200);
-            // Without a configured server, enable discovers one by DNS. A domain that cannot
-            // resolve fails with the region named, and a remembered server needs no network.
             request("disable", "{}", 200);
             set_environment("LEMONADE_NEXUS_SERVER", "");
             set_environment("LEMONADE_NEXUS_DOMAIN", "nexus.invalid");
@@ -1731,9 +1681,6 @@ int main() {
             check(remembered.at("server") == "sn01.us-west.seip.nexus.invalid", "A remembered server skips discovery");
             set_environment("LEMONADE_NEXUS_DOMAIN", "");
             set_environment("LEMONADE_NEXUS_SERVER", "127.0.0.1");
-            // With a pinned Genesis key, the closed port is a federation that cannot be
-            // reached: an outage, not a refusal. The route answers 503 with retryable and
-            // the device state stays as it was.
             request("disable", "{}", 200);
             set_environment("LEMONADE_NEXUS_GENESIS_PUBKEY", std::string(43, 'A') + "=");
             auto pinned = request("enable", "{}", 200);

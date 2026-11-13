@@ -171,8 +171,6 @@ public:
     void start(const std::string& url, const std::string& body, const std::map<std::string, std::string>& headers) {
         worker_ = std::thread([this, url, body, headers] { run(url, body, headers); });
     }
-    // Blocks until the peer answered or the request failed. Returns the peer's status,
-    // or 0 when no answer arrived; `reply` then holds the body of a non-2xx answer.
     int wait_for_status(std::string& reply, std::string& content_type) {
         std::unique_lock<std::mutex> lock(mutex_);
         ready_.wait(lock, [&] { return status_ != 0 || finished_; });
@@ -186,8 +184,6 @@ public:
         // A 2xx whose transport broke before the first byte delivered nothing either.
         return success_locked() ? 0 : status_;
     }
-    // Writes the next chunk to the client; after the peer finished, the error event when
-    // the stream broke, then the end of the stream. Returns false once the client is gone.
     bool pull(httplib::DataSink& sink) {
         std::string next;
         std::string failure;
@@ -215,7 +211,6 @@ public:
         disconnect();
         if (worker_.joinable()) worker_.join();
     }
-    // The transport failure text after wait_for_status returned 0, or empty.
     std::string failure() {
         std::lock_guard<std::mutex> lock(mutex_);
         return failure_;
@@ -462,16 +457,11 @@ uint64_t catalog_version(const std::string& lemond_version) {
 }
 
 namespace {
-// One catalog claim of a registered route: the URL as the SDK compares it. An exact
-// path loses a trailing slash (except "/"); a {parameter} path becomes the prefix
-// before it. `raw` keeps the URL as registered.
 struct CatalogClaim {
     bool exact;
     std::string url;
     std::string raw;
 };
-// Calls `visit(family, id, method, claim)` for every method and URL of every route,
-// after validating the family. Throws std::logic_error for a route without a family.
 void for_each_catalog_claim(const nlohmann::ordered_json& routes,
                             const std::function<void(const std::string&, const std::string&, const std::string&, const CatalogClaim&)>& visit) {
     static const char* const quad_prefixes[] = {"/api/v0/", "/api/v1/", "/v0/", "/v1/"};
@@ -515,8 +505,6 @@ nlohmann::ordered_json service_catalog(const nlohmann::ordered_json& routes, con
     });
     nlohmann::ordered_json families = nlohmann::ordered_json::array();
     std::map<std::string, std::string> claims;  // "METHOD path|prefix url", as the SDK keys them -> family
-    // The methods of one route and URL form one catalog entry, written when the next
-    // URL starts.
     std::string current_family;
     std::string current_key;
     nlohmann::ordered_json current_methods = nlohmann::ordered_json::array();
@@ -1074,8 +1062,6 @@ bool relay_retryable(const std::string& reason) {
 RelayFailure relay_failure(int curl_code, const std::string& reason, long waited_seconds) {
     const auto detail = reason.empty() ? std::string("no answer from the device") : reason;
     if (curl_code == CURLE_OPERATION_TIMEDOUT) {
-        // The connection stood and the device's server took the request; it did not answer
-        // in time, as during a long model load or while that server is busy.
         return {504, "That device's server did not answer within " + std::to_string(waited_seconds) + " seconds", detail};
     }
     return {502, "Cannot reach that device's server through the mesh", detail};
@@ -1129,7 +1115,6 @@ void relay_http(uint16_t port, const std::string& node_id, const std::string& pa
                         res.set_content(reply, type.empty() ? "application/json" : type);
                         return;
                     }
-                    // Like streamed backend responses, writes block on the client socket.
                     res.set_chunked_content_provider(type.empty() ? "text/event-stream" : type,
                         [stream](size_t, httplib::DataSink& sink) { return stream->pull(sink); },
                         [stream](bool) { stream->abandon(); });
@@ -1212,8 +1197,6 @@ std::pair<int, std::string> handoff_failure(int code) {
 }
 }
 namespace {
-// `rejected_status` is the HTTP status for LN_ERR_REJECTED (the federation refused the
-// request as invalid for the current state).
 json sdk_call(const std::function<ln_error_t(char**)>& operation, int rejected_status = 502) {
     char* output = nullptr;
     const auto code = operation(&output);
@@ -1239,7 +1222,6 @@ struct NexusManager::Session {
     IdentityPtr identity{nullptr, ln_identity_destroy};
     std::shared_ptr<ClientSlot> client_slot;
     const IdentitySource source;
-    // The outstanding hand-off request; a new request replaces it, and an open consumes it.
     std::unique_ptr<ln_handoff_t, decltype(&ln_identity_handoff_destroy)> handoff{nullptr, ln_identity_handoff_destroy};
     json identity_store = nullptr;  // the SDK's user store status at the last load attempt (User only)
     std::chrono::steady_clock::time_point store_retry_at{};
@@ -1273,8 +1255,6 @@ struct NexusManager::Session {
     bool error_retryable{false};  // `error` is a failure to reach the federation, not a refusal
     bool refounded{false};        // the servers serve another chain under the pinned key
     json devices = json::array();
-    // The last join's invite outcome for a device that already had a node
-    // ({status, group_id, error}), or null.
     json join_membership = nullptr;
     std::chrono::system_clock::time_point last_poll{std::chrono::system_clock::now()};
     const nlohmann::ordered_json catalog;  // mesh route catalog for vport 13305, or null
@@ -1333,8 +1313,6 @@ struct NexusManager::Session {
             LOG(WARNING, "Nexus") << "The SDK refused the discovery target " << region << ".seip." << domain
                                   << " (SDK error " << code << "); discovery uses the known servers only" << std::endl;
         }
-        // The SDK moves the session when its Tier 1 server leaves; the journal keeps
-        // the record. The callback owns the text and runs on an SDK thread.
         ln_set_session_moved_callback(client.get(), [](char* event_json, void*) {
             std::unique_ptr<char, decltype(&ln_free)> owned(event_json, ln_free);
             LOG(INFO, "Nexus") << "Session moved: " << (event_json ? event_json : "") << std::endl;
@@ -1348,9 +1326,6 @@ struct NexusManager::Session {
             if (event.is_object() && event.value("kind", "") == "denied") LOG(WARNING, "Nexus") << line << std::endl;
             else LOG(INFO, "Nexus") << line << std::endl;
         }, nullptr);
-        // Only a system service keeps an identity file of its own. A desktop identity
-        // belongs to the signed-in OS user: lemond loads it from the SDK's keystore-backed
-        // store when it runs as that user, and otherwise waits for a sealed hand-off.
         load_revoked_key();
         if (source == IdentitySource::System) {
             load_system_identity();
@@ -1375,8 +1350,6 @@ struct NexusManager::Session {
         withdraw_client();
         if (client) ln_mesh_disable(client.get());
     }
-    // status() reads the client's key-check progress through the slot; it must
-    // never see a client this session is about to destroy.
     void publish_client() {
         std::lock_guard<std::mutex> lock(client_slot->mutex);
         client_slot->client = client.get();
@@ -1385,9 +1358,6 @@ struct NexusManager::Session {
         std::lock_guard<std::mutex> lock(client_slot->mutex);
         client_slot->client = nullptr;
     }
-    // Makes `next` the device identity. Another key while one is active ends that
-    // session first (lock, drop), then the new key takes over with its own account; the
-    // same key changes nothing. Nothing is written except the account files.
     void adopt_identity(IdentityPtr next) {
         const auto key = sdk_string(ln_identity_pubkey(next.get()));
         if (key.empty()) throw NexusError(500, "Cannot read the device identity");
@@ -1411,7 +1381,6 @@ struct NexusManager::Session {
         clear_error();
         LOG(INFO, "Nexus") << "Device identity in use: " << pubkey << " (" << nexus_access::identity_source_name(source) << ")" << std::endl;
     }
-    // System mode: the identity file under the data root, created on first use.
     void load_system_identity() {
         const auto path = utils::path_to_utf8(root / "identity.json");
         IdentityPtr loaded(ln_identity_load(path.c_str()), ln_identity_destroy);
@@ -1422,14 +1391,11 @@ struct NexusManager::Session {
         }
         adopt_identity(std::move(loaded));
     }
-    // User mode: the identity comes from the SDK's per-user store, created on first use.
     // A store that is locked, refused or unsupported leaves the device without an
     // identity; there is no plaintext fallback. The next poll tries again with backoff.
     void load_user_identity() {
         ln_error_t code = LN_OK;
         IdentityPtr loaded(ln_identity_user_load(&code), ln_identity_destroy);
-        // The store still holds the key the network revoked: it never authenticates
-        // again, so the store makes a new one.
         if (loaded && !revoked_pubkey.empty() && sdk_string(ln_identity_pubkey(loaded.get())) == revoked_pubkey) {
             loaded.reset();
             code = ln_identity_user_remove() == LN_OK ? LN_ERR_NOT_FOUND : LN_ERR_REJECTED;
@@ -1459,9 +1425,6 @@ struct NexusManager::Session {
         }
         throw NexusError(409, error.empty() ? "This device has no identity yet" : error);
     }
-    // account.json belongs to the identity in use. When another key takes over, the
-    // current account waits as account-<tag>.json and that key's own account, if it was
-    // archived before, comes back; otherwise it starts fresh with the network facts.
     void switch_account(const std::string& key) {
         const auto bound = account.value("public_key", std::string{});
         if (bound == key) return;
@@ -1475,9 +1438,6 @@ struct NexusManager::Session {
         }
         replace_account(nexus_access::stale_account_file(account), key);
     }
-    // Archives the active account as `archive_name` and continues with `key`'s own
-    // account: its archived file when one exists, otherwise a fresh account that keeps
-    // the network and machine facts.
     void replace_account(const std::string& archive_name, const std::string& key) {
         const auto restore_path = root / ("account-" + nexus_access::account_file_tag(key) + ".json");
         json archived;
@@ -1493,8 +1453,6 @@ struct NexusManager::Session {
         std::filesystem::remove(restore_path, ec);
         LOG(INFO, "Nexus") << "Archived the account of another identity as " << archive_name << std::endl;
     }
-    // Until the user names the device, it carries the machine's host name, as
-    // people already know it from their other tools.
     static std::string machine_name() {
         char buffer[256] = {};
         if (gethostname(buffer, sizeof(buffer) - 1) != 0 || buffer[0] == '\0') return "My Lemonade device";
@@ -1545,7 +1503,6 @@ struct NexusManager::Session {
         const auto* failure = dynamic_cast<const NexusError*>(&e);
         error_retryable = failure != nullptr && failure->retryable;
     }
-    // A failure leaves the session as it is; status reports it until the next success.
     void note_failure(const std::exception& e) {
         set_error(e);
         detail = "degraded";
@@ -1554,11 +1511,6 @@ struct NexusManager::Session {
             replace_key("The network revoked this device's key: its account was deleted or the device was removed.");
         }
     }
-    // The device's key is of no further use: the network revoked it, with the account it
-    // deleted or the device an administrator removed. The account files go with the key,
-    // and the device gets a new one: made here (System), by the user store at the next
-    // poll (User), or by the tray, which status asks through revoked_public_key (Handoff).
-    // `why` is reported until the new key is in use; empty after a deletion the user asked for.
     void replace_key(const std::string& why) {
         if (!identity) return;
         const auto revoked = pubkey;
@@ -1625,23 +1577,12 @@ struct NexusManager::Session {
         }
         return result;
     }
-    // A device unlocks with a passkey or with its device key, never both. The device
-    // key is the Ed25519 identity, which already authenticates every federation
-    // session; key unlock removes the user-presence step, so it also unlocks again by
-    // itself after a restart or, on a desktop, after the user's key arrived again.
     bool key_unlock() const { return account.value("unlock", std::string{}) == "device_key"; }
-    // True once this identity created or joined a network. Only then does a key that
-    // arrives or an idle lock end in an automatic join; a new identity waits for the
-    // user to create a network or join one with an invite.
     bool has_network() const { return account.value("joined", false); }
     // Accounts written before `joined` was recorded always joined on their first unlock.
     void note_legacy_join() {
         if (!account.contains("joined") && (key_unlock() || account.contains("credential_id"))) account["joined"] = true;
     }
-    // `replace_passkey`: a local operator without a passkey client (a browser) moves a
-    // device that registered a passkey to its device key. The network keeps the credential
-    // it registered; this device never presents it again. The switch is recorded only after
-    // the key authenticated, so an outage leaves the passkey in place.
     void unlock_with_key(bool defer_join, bool replace_passkey = false) {
         require_identity();
         const bool passkey = account.contains("credential_id");
@@ -1730,15 +1671,11 @@ struct NexusManager::Session {
         }
         return result;
     }
-    // An empty target selects this account's own top-level group.
-    // `held` and `admin` are the inviter's own permissions on the target node.
     json create_invite(const std::string& target, const json& body, const json& held, bool admin) {
         const auto ttl = body.value("ttl_sec", 600);
         if (ttl < 60 || ttl > 600) throw NexusError(400, "Invite lifetime must be 60 to 600 seconds");
         json requested = body.contains("permissions") ? body["permissions"] : json();
         if (body.contains("role")) {
-            // A role expands like members/{id}/role; administrator carries admin, which
-            // invite_permissions refuses.
             if (!requested.is_null()) throw NexusError(400, "Send a role or a list of permissions, not both");
             if (!body["role"].is_string()) throw NexusError(400, "Send role as a string");
             requested = nexus_access::role_permissions(body["role"].get<std::string>());
@@ -1760,8 +1697,6 @@ struct NexusManager::Session {
         }, 409);
         return result;
     }
-    // After the federation deletes the account, the local identity has no use. Remove the
-    // files the SDK leaves to the caller; preferences.json stays with NexusManager.
     void remove_local_account() {
         lock();
         std::error_code ec;
@@ -1834,8 +1769,6 @@ struct NexusManager::Session {
         egress_ips[id] = target.second;
         return port;
     }
-    // Replaces the mesh bridge to the device: the SDK aborts the old bridge's connections
-    // and the next open binds a fresh one. For a bridge whose connections keep failing.
     uint16_t reopen_relay_port(const std::string& id) {
         if (const auto known = egress_ips.find(id); known != egress_ips.end()) {
             ln_mesh_close_egress(client.get(), known->second.c_str(), 13305);
@@ -1863,8 +1796,6 @@ struct NexusManager::Session {
         if (!join_membership.is_null()) result["join_membership"] = join_membership;
         return result;
     }
-    // Receiver side of the SDK hand-off: the request names an ephemeral key that opens
-    // one envelope. A new request replaces an unanswered one.
     json begin_handoff() {
         char* out = nullptr;
         handoff.reset(ln_identity_handoff_begin(&out));
@@ -1885,8 +1816,6 @@ struct NexusManager::Session {
             throw NexusError(failure.first, failure.second);
         }
         adopt_identity(std::move(received));
-        // The user's session delivered the key to unlock with. If the federation cannot
-        // be reached right now, the supervisor retries the key unlock by itself.
         if (!account.contains("credential_id") && !key_unlock()) {
             account["unlock"] = "device_key";
             persist();
@@ -1920,7 +1849,6 @@ struct NexusManager::Session {
                            << " families" << std::endl;
         return true;
     }
-    // Local selection traffic has no mesh attribution and uses the local operator policy.
     void start_mesh_port() {
         mesh_port_error.clear();
         const auto cert_dir = utils::path_to_utf8(root / "certs" / "group-loopback");
@@ -1942,8 +1870,6 @@ struct NexusManager::Session {
             if (body.contains("peer_key") && !body["peer_key"].is_string()) throw NexusError(400, "Send peer_key as a string");
             const auto target = value.is_string() ? value.get<std::string>() : std::string();
             const auto key = body.value("peer_key", std::string());
-            // A peer key belongs to one device. Auto routing probes and forwards to
-            // whichever device serves the model, so it never carries one.
             if (!nexus_access::selection_key_allowed(target, key)) {
                 throw NexusError(400, "Auto routing cannot carry a peer_key: select the device the key belongs to");
             }
@@ -2015,7 +1941,6 @@ struct NexusManager::Session {
             }
         } catch (const std::exception& e) { set_error(e); }
     }
-    // Keeps the verified Tier 1 epoch so a restart refuses an older membership list. The
     // The lowest epoch the SDK accepts, for the chain the device last verified. A floor
     // stored before the chain was recorded (an earlier release) could belong to a network
     // that was since founded again, so it is dropped rather than applied to any chain.
@@ -2267,7 +2192,6 @@ struct NexusManager::Session {
                 body.value("device_node_id", "") != node_id) throw NexusError(409, "The account changed. Sign in again.");
             if (body.value("confirm", "") != "delete") throw NexusError(400, "Send \"confirm\": \"delete\" to delete this account permanently");
             auto result = sdk_call([&](auto out) { return ln_account_delete(client.get(), out); }, 409);
-            // The deletion revoked the key with the account: the files and the key go.
             if (text(result, "status") == "deleted") replace_key("");
             return result;
         }
@@ -2617,8 +2541,6 @@ void NexusManager::disable() {
 }
 std::pair<int, NexusManager::json> NexusManager::control(const std::string& method, const std::string& path, const json& body,
                                                        const std::string& caller_key) {
-    // session_mutex_ serializes SDK work; mutex_ guards only the published state, so status,
-    // events and shutdown do not wait for a slow federation request.
     std::lock_guard<std::mutex> session_lock(session_mutex_);
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -2784,8 +2706,6 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
         else if (operation.rfind("tree/", 0) == 0) path = "/tree/" + req.matches[1].str() + "/" + operation.substr(5);
         else path = "/" + operation;
         auto result = control(req.method, path, body, remote ? req.get_header_value("X-Nexus-Peer-Key") : "");
-        // The federation deleted the account and the session removed its local files, or
-        // the user forgot a network that was founded again.
         if ((operation == "account/delete" && result.first == 200 && result.second.value("status", "") == "deleted") ||
             (operation == "forget" && result.first == 200)) disable();
         std::lock_guard<std::mutex> lock(mutex_);

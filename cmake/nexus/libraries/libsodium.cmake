@@ -1,5 +1,3 @@
-# Distribution builds use the system package; otherwise the vendored Nexus module
-# fetches the pinned source.
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND AND NOT APPLE AND NOT WIN32)
     pkg_check_modules(NEXUS_SODIUM QUIET IMPORTED_TARGET libsodium>=1.0.18)

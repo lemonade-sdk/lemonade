@@ -1,6 +1,3 @@
-# Finds a Cargo that can build the Nexus SDK's Rust transport and sets
-# LEMONADE_CARGO_EXECUTABLE and _nexus_toolchain_found.
-#
 # The locked crates need Rust 1.85: zeroize 1.9 uses edition 2024, and the
 # lockfiles use format version 4. Ubuntu 24.04 ships Cargo 1.75 as `cargo`
 # and newer toolchains as versioned packages (cargo-1.85 installs

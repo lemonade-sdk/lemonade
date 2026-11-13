@@ -288,8 +288,6 @@ function GroupManagement({ entry, entries, selfId, service, onSaved }: {
   </div>;
 }
 
-// The groups `entry` can move into: discovered groups the account may add to, other than
-// the entry itself, its current parent and its own descendants.
 function moveDestinations(entry: NexusTreeEntry, entries: ReadonlyMap<string, NexusTreeEntry>): NexusTreeEntry[] {
   const descendant = (candidate: NexusTreeEntry) => {
     const seen = new Set<string>();
@@ -315,7 +313,6 @@ function MoveForm({ entry, entries, service, onMoved }: {
   const [target, setTarget] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  // The account's own top-level group stays where it is; everything below it can move.
   const movable = entry.kind === 'node' || (Boolean(entry.parent_id) && entry.parent_id !== 'root');
   const destinations = moveDestinations(entry, entries);
   if (!movable) return null;
@@ -349,8 +346,6 @@ function MoveForm({ entry, entries, service, onMoved }: {
   </div>;
 }
 
-// Management of one device from the tree: its role in this account's group, which devices
-// may see and connect to it (lemond devices/{id}/access) and where it sits in the tree.
 function DeviceManagement({ entry, entries, status, service, onSaved }: {
   entry: NexusTreeEntry; entries: ReadonlyMap<string, NexusTreeEntry>; status: NexusStatus;
   service: typeof nexusTreeService; onSaved: (message: string, movedTo?: string) => Promise<void>;
@@ -390,8 +385,6 @@ function DeviceManagement({ entry, entries, status, service, onSaved }: {
   const changeAccess = async (member: NexusAccessEntry, see: boolean, connect: boolean) => {
     if (busy) return;
     setBusy(true); setError(''); setNotice('');
-    // The toggle shows the requested state at once; the server's answer replaces it, and a
-    // refusal restores the list as it was.
     const previous = access;
     setAccess(current => current && { ...current, members: current.members.map(item =>
       item.node_id === member.node_id ? { ...item, see: see || connect, connect } : item) });

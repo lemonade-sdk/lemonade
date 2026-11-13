@@ -1,6 +1,3 @@
-// Checks how `lemonade launch --device` picks a mesh device from lemond's
-// /v1/nexus/status: the device's name, node id or mesh port host label selects
-// the entry in mesh_port.urls, and every miss explains what is available.
 // Build with: cmake --build --preset default --target test_mesh_device
 // Run with: ctest --test-dir build -R '^MeshDeviceTest$' --output-on-failure
 
@@ -98,8 +95,6 @@ int main() {
           !lemon_cli::resolve_mesh_device(alone, "Gaming PC", device, error) &&
               error.find("No other device is online") != std::string::npos);
 
-    // A mesh port without the group's domain names no device: it lists only itself as
-    // a loopback URL, as a server whose certificate is not a group wildcard does.
     auto nameless = status_with_port(true);
     nameless["mesh_port"]["local_domain"] = "";
     nameless["mesh_port"]["scheme"] = "http";

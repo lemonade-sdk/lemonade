@@ -983,11 +983,6 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     return true;
 }
 
-// `launch --device`: the agent and every request launch makes for it (the model list,
-// the load, pi's config) go to that device through this server's mesh port. lemond's
-// mesh port (13306) forwards a request to "<device>.<group>.lo.<base>" over the mesh
-// to that device's own server, so pointing the target at that URL is all it takes.
-// Returns false when the device cannot be used; the reason was printed.
 static bool apply_mesh_device(CliConfig& config) {
     nlohmann::json status;
     try {
@@ -1918,8 +1913,6 @@ int main(int argc, char* argv[]) {
         config.api_key = admin_api_key;
     }
 
-    // The server reached so far is the home server; --device moves the target to a
-    // mesh device the home server's mesh port names.
     if (launch_cmd->count() > 0 && !config.device.empty() && !apply_mesh_device(config)) {
         return 1;
     }

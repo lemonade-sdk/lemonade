@@ -6226,7 +6226,6 @@ optgroup {
   background: var(--danger-soft);
 }
 
-/* The picker's host groups: one collapsible run of rows per Lemonade server. */
 .composer__model-host + .composer__model-host { margin-top: var(--space-2); }
 
 .composer__model-host-head {

@@ -826,9 +826,6 @@ class LemonadeAPI {
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
   private _sessionApiKey = '';
   private _sessionAdminApiKey = '';
-  // Key for a mesh peer reached through this server's Nexus relay, sent only with
-  // requests under _peerRelayBase. The relay forwards it to that peer alone;
-  // Authorization keeps authenticating this server.
   private _peerApiKey = '';
   private _peerRelayBase = '';
   private _apiKeyPersisted = false;

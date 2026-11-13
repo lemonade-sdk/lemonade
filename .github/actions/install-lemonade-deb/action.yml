@@ -76,7 +76,6 @@ runs:
                 fi
             fi
             if [ "$SUDO" = "none" ]; then
-                # Self-hosted runners without sudo cannot install packages.
                 # apt needs no root to refresh package lists into a private
                 # directory and download packages, so unpack each missing
                 # library package (and the libraries it needs in turn) into

@@ -167,7 +167,6 @@ function(apply_tray_deps target_name)
     endif()
 endfunction()
 
-# Helper function: the Nexus client SDK for the device key carrier (macOS/Linux tray).
 # cmake/NexusSDK.cmake defines the imported target after this directory and adds the
 # runtime copy dependency and rpath for every target in its list, lemonade-tray included.
 function(apply_tray_nexus_sdk target_name)

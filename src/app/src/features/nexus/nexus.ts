@@ -16,15 +16,11 @@ export interface NexusDevice {
   is_online?: boolean;
   connection_type?: 'local' | 'p2p' | 'relay' | 'unknown';
   latency_ms?: number;
-  // The device joined this group from its own network through an invite.
   member?: boolean;
-  // `member` when the device belongs to a network this identity joined through an invite.
   group_role?: 'home' | 'member';
   group_id?: string;
   can_connect?: boolean;
 }
-// What an invite did when this device already had its own network: the device stays
-// there and its identity becomes a member of the invite's group instead.
 export interface NexusJoinMembership { status: 'member' | 'pending' | 'refused'; group_id?: string; error?: string }
 export interface NexusMembership {
   node_id: string;
@@ -80,8 +76,6 @@ export function hasNexusPermission(permissions: string[] | undefined, name: stri
 export function nexusTierLabel(device: NexusDevice): string {
   return device.is_inference ? 'Tier 3 · Inference server' : 'Tier 4 · Client';
 }
-// lemond's mesh port: one listener on this computer that names every inference server
-// under the network's local domain and carries each request over the mesh to it.
 export interface NexusMeshPortUrl { device_name: string; node_id: string; self: boolean; url: string }
 export interface NexusMeshPort {
   running: boolean;
@@ -106,34 +100,22 @@ export interface NexusStatus {
   peer_count?: number;
   members: NexusDevice[];
   error?: string;
-  // True while `error` is an outage, not a refusal: the federation could not be reached, so
-  // `status` is `degraded`, the device stays unlocked and joined, and lemond retries by itself.
   error_retryable?: boolean;
   event_sequence?: number;
   remote_management?: boolean;
   identity_source?: 'system' | 'user' | 'handoff';
   unlock?: 'passkey' | 'device_key';
-  // True while lemond has no device identity, for example while the macOS tray delivers the user's key.
   needs_user_key?: boolean;
-  // False for an identity that never created or joined a network: Enable Mesh offers
-  // Create account and Join by invitation, and the unlock defers the join until then.
   has_network?: boolean;
-  // True when the servers serve a network founded again under the same key: this device's
-  // account and node belong to the earlier one. The panel offers to forget the network.
   needs_rejoin?: boolean;
-  // The device key the network revoked (its account was deleted, or the device was removed),
-  // until a new key is in use. lemond reports why in `error`; the tray replaces the key.
   revoked_public_key?: string;
   join_membership?: NexusJoinMembership;
   mesh_port?: NexusMeshPort;
 }
-// The mesh-port URL of a server on this computer, when the port runs and names it.
 export function nexusMeshPortUrl(status: NexusStatus | null | undefined, nodeId: string): string | undefined {
   if (!status?.mesh_port?.running) return undefined;
   return status.mesh_port.urls?.find(entry => entry.node_id === nodeId || (entry.self && nodeId === status.node_id))?.url;
 }
-// How this device reaches another one, as its pill shows it. `connecting` is a device the
-// server reports online while the mesh still builds a path to it.
 export type NexusConnection = 'p2p' | 'relay' | 'connecting' | 'offline';
 export const NEXUS_CONNECTION_LABELS: Record<NexusConnection, string> = { p2p: 'P2P', relay: 'Relay', connecting: 'Connecting', offline: 'Offline' };
 export function nexusDeviceConnection(status: NexusStatus | null | undefined, device: NexusDevice): NexusConnection | undefined {
@@ -142,7 +124,6 @@ export function nexusDeviceConnection(status: NexusStatus | null | undefined, de
   if (device.is_online !== true) return device.can_connect ? 'connecting' : undefined;
   return device.connection_type === 'p2p' ? 'p2p' : device.connection_type === 'relay' ? 'relay' : 'connecting';
 }
-// The labels on a device row before its connection pill, in display order.
 export function nexusDeviceTags(status: NexusStatus | null | undefined, device: NexusDevice): string[] {
   return [
     ...(status && device.node_id === status.node_id ? ['This device'] : []),
@@ -152,22 +133,16 @@ export function nexusDeviceTags(status: NexusStatus | null | undefined, device: 
     ...(device.is_admin ? ['Admin'] : []),
   ];
 }
-// The Lemonade servers chat can run on: every inference device this device may connect to.
 export function nexusInferenceServers(status: NexusStatus | null | undefined): NexusDevice[] {
   if (!status?.mesh_up || status.locked) return [];
   const seen = new Set<string>();
   return status.members.filter(device => device.node_id !== status.node_id && device.is_inference && device.can_connect !== false && seen.size < seen.add(device.node_id).size);
 }
-// Why chat cannot move to a server right now: no path to it yet (`connecting`) or none at
-// all (`offline`). Undefined when a P2P or relay path exists. A listed server the mesh has
-// not reported a state for counts as offline.
 export function nexusServerUnavailable(status: NexusStatus | null | undefined, device: NexusDevice): 'connecting' | 'offline' | undefined {
   const connection = nexusDeviceConnection(status, device);
   return connection === 'p2p' || connection === 'relay' ? undefined : connection ?? 'offline';
 }
 export type NexusMeshState = 'off' | 'locked' | 'connecting' | 'connected' | 'offline';
-// The mesh as one line: how many servers are reachable, else what the mesh is doing.
-// `label` is a translation key; `count` fills its {count}.
 export function nexusMeshSummary(status: NexusStatus | null | undefined, error?: string | null): { state: NexusMeshState; label: string; count?: number } {
   if (!status?.enabled) return { state: 'off', label: 'Not set up' };
   if (status.locked) return { state: 'locked', label: 'Locked' };
@@ -241,11 +216,8 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let pollRunning = false;
 let eventStream: AbortController | undefined;
 interface Controller { mode: NexusManagementMode; source: string; endpoint: string; key: string }
-// The controller found for the current base URL, local or remote, until a request cannot reach it.
 let knownController: Controller | undefined;
 const API_KEY_ERROR = 'The server requires a valid API key. Check it in Settings > Server, then try again.';
-// The server this client connected to before it selected a mesh peer. Relayed requests go to
-// `${home.endpoint}/v1/nexus/peers/<node>`; Nexus management keeps using home itself.
 let home: { endpoint: string; key: string } | undefined;
 export const relayEndpoint = (endpoint: string, nodeId: string) => `${endpoint}/v1/nexus/peers/${encodeURIComponent(nodeId)}`;
 export function isNexusInferencePeer(device: NexusDevice, selfId?: string): boolean {
@@ -290,8 +262,6 @@ async function discoverController(endpoint: string, key: string): Promise<Contro
   if (!loopback && !publicPort) return undefined;
   return { mode: 'local', source: endpoint, endpoint: publicPort ? endpoint : control.origin, key };
 }
-// Remote controllers use the selected server's public listener and authorization policy.
-// Loopback URLs reach the local management listener.
 async function controller(): Promise<Controller> {
   const { default: api } = await import('../../api');
   await api.loadConnectionSettings();
@@ -529,15 +499,11 @@ export function nexusStatusLabel(status: NexusStatus | null): string {
   return 'Mesh offline';
 }
 
-// This device's own server: the one chat started on, whether or not a peer is selected now.
 async function homeServer(): Promise<{ endpoint: string; key: string }> {
   if (home) return home;
   const origin = await controller();
   return { endpoint: origin.source, key: origin.key };
 }
-// A failed host request: `status` is the HTTP status, 0 when nothing answered (the request
-// timed out or the server was not reached), and `code` the reason lemond or the device's SDK
-// named, such as `nexus_permission_denied`.
 export class NexusHostError extends Error {
   constructor(message: string, readonly status: number, readonly code = '') {
     super(message);
@@ -552,8 +518,6 @@ export function nexusHostErrorRetryable(error: unknown): boolean {
   return false;
 }
 const PEER_PERMISSION_ERROR = 'That device does not allow this device to use its models. Ask the network administrator for inference access.';
-// A GET on a chat host's own Lemonade API: this device's server for `local`, else the peer
-// through this device's relay route. A saved peer key travels in the header the relay forwards.
 export async function nexusHostRequest<T>(hostId: string, path: string): Promise<T> {
   const server = await homeServer();
   const peerKey = hostId === 'local' ? '' : peerKeys.get(hostId) ?? '';
@@ -579,8 +543,6 @@ export async function nexusHostRequest<T>(hostId: string, path: string): Promise
   return data as T;
 }
 
-// A peer is reached through this client's own server, which relays the request over the
-// mesh. The selection lives only in this client; other clients of the server are unaffected.
 export async function selectNexusInferenceServer(nodeId: string, suppliedKey?: string): Promise<void> {
   if (state.switchingServer) throw new Error('A server switch is already in progress.');
   const { default: api } = await import('../../api');
@@ -613,7 +575,6 @@ export async function selectNexusInferenceServer(nodeId: string, suppliedKey?: s
 }
 
 export type NexusMemberRole = 'administrator' | 'moderator' | 'user';
-// Replaces the member's entry on this account's group with the preset (lemond members/{id}/role).
 export function setNexusMemberRole(nodeId: string, role: NexusMemberRole): Promise<NexusDevice> {
   return nexusRequest(`members/${encodeURIComponent(nodeId)}/role`, { role });
 }
@@ -626,7 +587,6 @@ export function getNexusDeviceAccess(nodeId: string): Promise<NexusDeviceAccess>
 export function setNexusDeviceAccess(nodeId: string, memberNodeId: string, see: boolean, connect: boolean): Promise<NexusDeviceAccess> {
   return nexusRequest(`devices/${encodeURIComponent(nodeId)}/access`, { member_node_id: memberNodeId, see, connect });
 }
-// A device that already joined accepts an invite into another network: nothing it owns moves.
 export function acceptNexusInvite(code: string, request = nexusRequest): Promise<{ status?: string; group_id?: string; error?: string }> {
   return request('invites/accept', { code: code.trim() });
 }

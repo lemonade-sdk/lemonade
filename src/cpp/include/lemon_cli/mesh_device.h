@@ -24,11 +24,7 @@ struct MeshDevice {
 std::vector<MeshDevice> mesh_devices(const nlohmann::json& status);
 
 /// Finds the device `wanted` names: its device name (case-insensitive), its node id,
-/// or the host label of its mesh port URL. On success sets `device` and returns true.
-/// Otherwise sets `error`: the mesh is off, the mesh port is not running, the mesh port
-/// has no group domain and so names no device (its selection is then the only way
-/// through it), the name fits a group member that is offline or not an inference
-/// server, or no member has that name; the last two list the devices that are available.
+/// or the host label of its mesh port URL.
 bool resolve_mesh_device(const nlohmann::json& status, const std::string& wanted, MeshDevice& device,
                          std::string& error);
 

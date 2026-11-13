@@ -21,7 +21,6 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
   const [checking, setChecking] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  // A join that made this device a member of the invited network instead of moving it.
   const [joined, setJoined] = useState<{ session: VerifiedNexusAccount; message: string; error: boolean }>();
   const request = useRef(0);
   const errorRef = useRef<HTMLParagraphElement>(null);
@@ -48,8 +47,6 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
   const available = inspection?.status.available && inspection.ready;
   const remote = Boolean(inspection && !inspection.local);
   const waitingForKey = Boolean(available && inspection.status.needs_user_key);
-  // A browser cannot verify a passkey: it unlocks with the device key, and a device that
-  // registered a passkey moves to its key (prepareNexus asks lemond to replace it).
   const deviceKey = Boolean(available && (usesNexusDeviceKey(inspection.status) || !inspection.desktop));
   const retiresPasskey = Boolean(available && !inspection.desktop && !usesNexusDeviceKey(inspection.status));
   const nameTooLong = new TextEncoder().encode(deviceName.trim()).length > 128;
@@ -84,7 +81,6 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
         {remote && inspection && <p className="nexus-server-target"><span>{t('Managing server')}</span><strong>{new URL(inspection.source).origin}</strong></p>}
         {inspection && !available && <p className="nexus-hint">{!inspection.status.available ? t('This server does not include Nexus account support.') : t('Set up this server through its local controller or SSH forwarding. After setup, manage it through the authenticated Nexus mesh.')}</p>}
         {waitingForKey && (inspection?.status.identity_source === 'user' ? <>
-          {/* A `user` identity has no carrier: lemond opens the OS keystore itself and reports why it cannot. */}
           <p role="status">{t('The server cannot open this device’s key yet. It tries again by itself.')}</p>
           {inspection.status.error && <p className="nexus-error" role="alert">{inspection.status.error}</p>}
         </> : <p role="status">{t('Waiting for your device key from the Lemonade tray.')}</p>)}
@@ -158,8 +154,6 @@ export function NexusAccountInviteDialog({ service, session, onClose }: {
   </div></div>;
 }
 
-// A device that already has its network accepts an invite into another one. Nothing it
-// owns moves; the invited network's devices join its device list.
 export function NexusJoinNetworkDialog({ service, session, onClose, onJoined }: {
   service: NexusAccountService; session: VerifiedNexusAccount; onClose: () => void; onJoined: () => void;
 }) {
@@ -203,8 +197,6 @@ export function NexusJoinNetworkDialog({ service, session, onClose, onJoined }: 
   </div></div>;
 }
 
-// Deleting the account is irreversible: the user types the device name to confirm. A
-// `pending` answer keeps the device signed in until the network commits the deletion.
 export function NexusDeleteAccountDialog({ service, session, onClose, onDeleted }: {
   service: NexusAccountService; session: VerifiedNexusAccount; onClose: () => void; onDeleted: () => void;
 }) {

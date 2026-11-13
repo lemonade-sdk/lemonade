@@ -15,8 +15,6 @@ export interface VerifiedNexusAccount {
   canInvite: boolean;
   avatar: NexusAvatarState;
 }
-// `ready`: identity operations can run from here, on the local controller. `desktop` says
-// whether this page can verify a passkey; a browser unlocks with the device key instead.
 export interface NexusAccountInspection { status: NexusStatus; source: string; local: boolean; desktop: boolean; ready: boolean }
 export interface NexusSignInInput {
   action: 'create' | 'join' | 'return';
@@ -27,14 +25,10 @@ export interface NexusSignInInput {
 export interface NexusAccountService {
   disconnect: (session: VerifiedNexusAccount) => Promise<void>;
   inspect: () => Promise<NexusAccountInspection>;
-  // The account of a device-key server whose mesh is already up, without the Enable Mesh
-  // dialog. Undefined when this page cannot manage the server, or the server still needs
-  // its setup, an unlock or a passkey.
   resume: () => Promise<VerifiedNexusAccount | undefined>;
   signIn: (input: NexusSignInInput) => Promise<VerifiedNexusAccount>;
   refresh: (session: VerifiedNexusAccount) => Promise<VerifiedNexusAccount>;
   invite: (session: VerifiedNexusAccount, deviceName: string, role?: 'user' | 'moderator') => Promise<NexusInvite>;
-  // Accepts an invite into another network while this device keeps its own.
   joinNetwork: (session: VerifiedNexusAccount, invitation: string) => Promise<NexusJoinMembership>;
   memberships: (session: VerifiedNexusAccount) => Promise<NexusMembership[]>;
   leaveNetwork: (session: VerifiedNexusAccount, groupId: string) => Promise<void>;
@@ -43,7 +37,6 @@ export interface NexusAccountService {
   deleteAccount: (session: VerifiedNexusAccount) => Promise<'deleted' | 'pending'>;
   setAvatar: (session: VerifiedNexusAccount, image: string | null) => Promise<NexusAvatarState & { state: 'ready' }>;
 }
-// What a join with an invite tells the user when the device already had a network of its own.
 export function nexusJoinNotice(membership: NexusJoinMembership | undefined): { message: string; error: boolean } | undefined {
   if (!membership) return undefined;
   if (membership.status === 'refused') {
@@ -103,8 +96,6 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
     if (controller.source !== source) throw new Error('The server connection changed. Close this dialog and enable Mesh again.');
     return controller;
   };
-  // Identity operations need the local controller. The desktop app verifies a passkey;
-  // every other page unlocks with the device key (prepareNexus), so nothing blocks here.
   const requireController = async (source: string) => {
     const controller = await currentController(source);
     if (!controller.local) throw new Error('Set up this server through its local controller or SSH forwarding. After setup, manage it through the authenticated Nexus mesh.');
@@ -146,10 +137,6 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
         if (input.action === 'return' && !current.registered) throw new Error('Create an account or join by invitation before enabling Mesh on this device.');
       }, dependencies.desktop());
       if (input.action === 'join') {
-        // A device whose mesh is already up accepts the invite as a member. Otherwise the
-        // deferred unlock leaves the join to the code: a new identity joins the invite's
-        // group, and one that already has a network becomes a member of the invite's
-        // group while it stays in its own (reported as join_membership).
         const code = input.invitation!.trim();
         if (prepared?.mesh_up) await acceptNexusInvite(code, controller.request);
         else await controller.request('join', { code });

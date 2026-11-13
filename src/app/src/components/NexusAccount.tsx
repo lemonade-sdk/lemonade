@@ -161,7 +161,6 @@ function ChatHostRow({ selected, title, subtitle, connection, disabled, onChoose
   </button>;
 }
 
-// The account menu's chat host: the same choice Settings → Devices & mesh offers, in short rows.
 function ChatRunsOn() {
   const { t } = useI18n();
   const network = useNexusNetwork(false);
@@ -182,7 +181,6 @@ function ChatRunsOn() {
     <p className="nexus-mesh__label">{t('Chat runs on')}</p>
     <ChatHostRow selected={selected === 'local'} title={t('This device')} subtitle={t('Models on this computer')} disabled={disabled} onChoose={() => void choose('local')} />
     {servers.map(device => {
-      // A server without a path cannot serve chat yet; its pill says why (Offline or Connecting).
       const unavailable = nexusServerUnavailable(status, device);
       return <ChatHostRow key={device.node_id} selected={selected === device.node_id} title={device.device_name || t('Unnamed device')}
         subtitle={device.tunnel_ip.split('/')[0]} connection={unavailable ?? nexusDeviceConnection(status, device)} disabled={disabled || Boolean(unavailable)} onChoose={() => void choose(device.node_id)} />;
@@ -191,7 +189,6 @@ function ChatRunsOn() {
   </div>;
 }
 
-// The account menu's device list: open by default, the same rows as the mesh panel.
 function MyDevices() {
   const { t } = useI18n();
   const { account, devices, onConnectDevice } = useNexusAccount();

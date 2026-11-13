@@ -6,9 +6,6 @@ import { nexusAccountService, type NexusAccountService, type VerifiedNexusAccoun
 import { clearNexusNetwork, NexusRequestError, refreshNexus, useNexusNetwork, type NexusMembership } from './nexus';
 import type { NexusRole } from './routePermissions';
 
-// The verified account: lemond reports its id (the account's group node), this device's
-// membership role and the shared profile image. It reports no account name; `deviceName` is
-// the name of this device in the mesh and is shown as the device, never as a user.
 export interface NexusAccount {
   id: string;
   deviceName: string;
@@ -31,7 +28,6 @@ export interface NexusAccountConnection {
   onSignIn?: () => void;
   onSignOut?: () => void;
   onConnectDevice?: () => void;
-  // Joining another network and the groups this identity belongs to, while the mesh is up.
   onJoinNetwork?: () => void;
   memberships?: readonly NexusMembership[];
   onLeaveNetwork?: (groupId: string) => Promise<void>;
@@ -80,8 +76,6 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
   const [avatarSaving, setAvatarSaving] = useState(false);
   const origin = useRef<HTMLElement | null>(null);
   const network = useNexusNetwork(Boolean(session) || dialog === 'signin');
-  // A device-key server whose mesh is already up needs no Enable Mesh click: the page
-  // picks its account up on load, as it would after that click.
   useEffect(() => {
     let stopped = false;
     service.resume().then(found => {

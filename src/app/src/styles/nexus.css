@@ -367,8 +367,6 @@
   .titlebar.titlebar--with-account .titlebar__nav button { width: 28px; }
 }
 
-/* Mesh panel: the mesh state, the server chat runs on, every device with its pills, and
-   the networks this identity joined. Tokens only, so both themes apply. */
 .nexus-mesh { margin-top: 20px; padding: 18px 20px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-1); }
 .nexus-mesh__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .nexus-mesh__title { font-size: var(--text-md); font-weight: var(--weight-semibold); }

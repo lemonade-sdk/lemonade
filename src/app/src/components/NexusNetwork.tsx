@@ -17,12 +17,8 @@ export function NexusNetwork({ advanced, showCompact = true }: { advanced: boole
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const id = useId();
-  // A passkey is verified by the desktop app. A device key needs no verification, and a
-  // browser unlocks with the device key even where a passkey was registered (prepareNexus).
   const deviceKey = Boolean(status && (usesNexusDeviceKey(status) || !isNexusDesktop()));
   const connected = Boolean(status?.mesh_up && !status.locked && !network.error);
-  // Set up and unlocked, but the mesh is not up or the server is out of reach: nothing to
-  // create or unlock here, the network comes back by itself.
   const reconnecting = Boolean(status?.enabled && !status.locked);
   const connecting = reconnecting && !network.error && (status?.status === 'starting' || status?.status === 'joining');
   const prepare = async () => {

@@ -159,8 +159,6 @@ test('the account dropdown opens Enable Mesh and restores focus when cancelled',
   await expect(trigger).toBeFocused();
 });
 
-// Only the desktop app can verify a passkey. A browser moves a device that registered one
-// to its device key, and says so, instead of sending the user to the desktop app.
 test('browser Enable Mesh moves a registered passkey device to its device key', async ({ page }) => {
   const fixture = await setupNexusAccount(page, { desktop: false, joined: false });
   fixture.state.identity_source = 'system';
@@ -178,9 +176,6 @@ test('browser Enable Mesh moves a registered passkey device to its device key', 
   expect(fixture.state.unlock).toBe('device_key');
 });
 
-// A packaged Linux server runs lemond with a system identity and has no desktop app. Until
-// its first key/unlock it reports an unregistered passkey, and the browser sets it up with
-// the device key as it does a user identity.
 test('a browser sets up a packaged server with its system identity key', async ({ page }) => {
   const fixture = await setupNexusAccount(page, { desktop: false, joined: false, registered: false });
   fixture.state.identity_source = 'system';

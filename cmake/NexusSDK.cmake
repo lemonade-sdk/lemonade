@@ -46,8 +46,6 @@ endif()
 add_dependencies(lemonade-nexus-sdk nexus-sdk-build)
 target_link_libraries(lemonade-server-core PUBLIC lemonade-nexus-sdk)
 set(LEMONADE_NEXUS_RUNTIME "${_nexus_runtime}")
-# lemond, LemonadeServer and lemonade-tray (defined in src/cpp/tray) and the tests all
-# build into the top-level output directory, so one copy there serves every executable.
 # The macOS package installs the library into the same bin directory as lemond and
 # lemonade-tray, which both find it through @loader_path.
 set(_nexus_runtime_dir "${CMAKE_BINARY_DIR}")

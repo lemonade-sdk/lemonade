@@ -32,8 +32,6 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# The Nexus client SDK needs Cargo 1.85 or newer. CMake accepts it from PATH or
-# from a versioned Ubuntu package in /usr/lib/rust-1.*/bin, so both are checked.
 nexus_cargo_ok() {
     local cargo version
     for cargo in cargo /usr/lib/rust-1.*/bin/cargo; do

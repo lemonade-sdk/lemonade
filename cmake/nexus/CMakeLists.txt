@@ -5,8 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
-# Builds the vendored Nexus client SDK (src/LemonadeNexusSDK, see UPSTREAM.json) as one
-# shared library. Lemonade's build rules live here so the vendored tree stays upstream.
+# Lemonade's build rules live here so the vendored tree stays upstream.
 set(NEXUS_SDK_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../src/LemonadeNexusSDK" CACHE PATH "Vendored Nexus SDK")
 get_filename_component(NEXUS_SDK_ROOT "${NEXUS_SDK_ROOT}" ABSOLUTE)
 set(NEXUS_SDK_PROJECT "${NEXUS_SDK_ROOT}/projects/LemonadeNexusSDK")

@@ -13,8 +13,6 @@ export async function setupNexusAccount(page: Page, options: {
   remote?: boolean; localNetwork?: boolean; apiKey?: string; apiUnauthorized?: boolean;
   role?: NexusRole;
 } = {}) {
-  // `remote`: a server elsewhere, which omits controller_url. `localNetwork`: a server on the
-  // client's RFC 1918 network, which names its public port as the controller.
   const source = options.remote || options.localNetwork ? 'http://192.168.10.20:13305' : 'http://127.0.0.1:13305';
   const deviceName = options.remote || options.localNetwork ? 'Inference server' : 'My laptop';
   const accountRole = options.role || (options.readOnly ? 'user' : 'admin');
@@ -48,9 +46,6 @@ export async function setupNexusAccount(page: Page, options: {
   const fixture = { state, calls, branches, accountRole, accountError: false, accountUnavailable: false, rejectWrites: false, invalidTree: false, unlockUnreachable: false,
     hasOwnNetwork: false, refuseMembership: false, deletePending: false, joinedNetworks: [] as string[],
     access: {} as Record<string, { see: boolean; connect: boolean }>,
-    // Relayed reads of a mesh host: `peerFailures` requests answer 502 first, as a relay
-    // that found no answer; `peerRefused` answers every one as the device's SDK refusing the
-    // route; `peerModels` is that host's model list.
     peerFailures: 0, peerRefused: false, peerModels: [] as Record<string, unknown>[],
     avatarSaveGate: undefined as Promise<void> | undefined,
     avatar: {state: 'ready', image: null as string | null, revision: 0, can_write: !options.readOnly, pending: false} };
@@ -70,7 +65,6 @@ export async function setupNexusAccount(page: Page, options: {
       },
     } });
   }, { desktop: options.desktop !== false, cancelPasskey: Boolean(options.cancelPasskey), source, key: options.apiKey ?? (options.remote ? '' : 'fixture-server-key') });
-  // The app's own API lives under /api/v1; the Nexus routes under /v1/nexus.
   await page.route(/\/(api\/v1|v1\/nexus)\//, async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -101,14 +95,12 @@ export async function setupNexusAccount(page: Page, options: {
     if (path.endsWith('/passkey/unlock')) { state.locked = false; if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; } }
     if (path.endsWith('/key/unlock')) {
       if (fixture.unlockUnreachable) return route.fulfill({ status: 503, headers, json: { error: 'No network server found for mesh.example.', retryable: true } });
-      // lemond keeps a registered passkey unless the caller asks for the device key instead.
       if (state.registered && state.unlock === 'passkey' && body?.replace_passkey !== true) return route.fulfill({ status: 409, headers, json: { error: 'This device unlocks with its passkey' } });
       state.locked = false; state.registered = true; state.unlock = 'device_key';
       if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; state.has_network = true; }
     }
     if (path.endsWith('/join')) {
       state.mesh_up = true; state.group_node_id = 'group'; state.has_network = true;
-      // A device that already has a node stays in its network; the code makes it a member.
       if (fixture.hasOwnNetwork) { state.join_membership = { status: 'member', group_id: 'studio' }; fixture.joinedNetworks.push('studio'); }
     }
     if (path.endsWith('/invites/accept')) {
@@ -153,8 +145,6 @@ export async function setupNexusAccount(page: Page, options: {
     if (path.endsWith('/invites')) return route.fulfill(fixture.rejectWrites
       ? { status: 403, headers, json: { error: 'Nexus refused this invitation.' } }
       : { headers, json: { ...(options.inviteWithoutCode ? {} : { code: '12345678' }), link_token: `lnk_${'a'.repeat(64)}`, expires_at: Math.floor(Date.now() / 1000) + 600, device_name: body?.device_name } });
-    // Device access rows: every state member other than the device and this device, all
-    // visible and connectable until a write changes them.
     const accessMatch = path.match(/\/devices\/([^/]+)\/access$/);
     if (accessMatch) {
       const target = accessMatch[1];
@@ -233,7 +223,6 @@ export async function enableNexusMesh(page: Page) {
   await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
 }
-// A device-key server whose mesh is up signs the page in on load, with no Enable Mesh click.
 export async function resumedNexusMesh(page: Page) {
   await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Enable Mesh', exact: true })).toHaveCount(0);

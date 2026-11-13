@@ -13,10 +13,7 @@ import { scheduleIdleWork } from '../startupScheduler';
 import { useI18n } from '../i18n';
 import ChatReadinessProgress from './ChatReadinessProgress';
 
-/** A chat model another mesh host reports; the row stays simple until that host serves chat. */
 type HostModel = { name: string; recipe?: string; loaded: boolean; info: ModelInfo };
-/** Empty while the host's list is on its way. */
-// `connecting`: the host's first answers failed and another attempt is scheduled.
 type HostModelList = { models?: HostModel[]; error?: string; connecting?: boolean };
 const hostModelRowId = (hostId: string, name: string) => `host:${hostId}:${name}`;
 // Waits between attempts to read a mesh host's models. The first request after a lemond
@@ -1031,13 +1028,9 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [modelPickerLoading, setModelPickerLoading] = useState<string | null>(null);
   const [modelPickerError, setModelPickerError] = useState<string | null>(null);
   const [modelPickerUnloading, setModelPickerUnloading] = useState<string | null>(null);
-  // The picker groups models by host. The host serving chat (`local` or a mesh peer's
-  // node id) shows the server-backed option list; every other host lists the chat
-  // models its own Lemonade API reports, fetched once per opening of the picker.
   const nexusNetwork = useNexusNetwork(false);
   const chatHostId = nexusNetwork.selectedServerId || 'local';
   const chatHosts = useMemo(() => nexusInferenceServers(nexusNetwork.status), [nexusNetwork.status]);
-  // Hosts chat cannot move to yet, with the reason their rows show (Offline or Connecting).
   const unavailableHosts = useMemo(() => new Map(chatHosts.flatMap(device => {
     const reason = nexusServerUnavailable(nexusNetwork.status, device);
     return reason ? [[device.node_id, reason] as const] : [];
@@ -3661,7 +3654,6 @@ ${index}`;
     })();
   }, [modelPickerUnloading, onRefresh]);
 
-  // Resolves true once chat uses the model; false when it could not be selected or loaded.
   const handleModelPickerSelect = useCallback(async (option: ModelPickerOption): Promise<boolean> => {
     if (option.loaded) {
       setFallbackModelOverride(null);
@@ -3747,8 +3739,6 @@ ${index}`;
     };
     attempt(0);
   }, []);
-  // A host is read again from the start: after its attempts ran out, or when its mesh path
-  // came up after the picker opened.
   const reloadHostModels = useCallback((hostId: string) => {
     const timer = modelPickerHostTimers.current.get(hostId);
     if (timer) { clearTimeout(timer); modelPickerHostTimers.current.delete(hostId); }
@@ -3761,9 +3751,6 @@ ${index}`;
     if (hostId !== chatHostId && !unavailableHosts.has(hostId)) loadHostModels(hostId);
   }, [chatHostId, loadHostModels, unavailableHosts]);
 
-  // An open picker reads every host it can reach, so each device's models show without a
-  // click. A host without a mesh path yet is read once the path comes up; a host whose
-  // path came back after its attempts ran out is read again.
   const modelPickerHostIds = useMemo(() => ['local', ...chatHosts.map(device => device.node_id)], [chatHosts]);
   const modelPickerUnavailableBefore = useRef(new Set<string>());
   useEffect(() => {
@@ -3776,17 +3763,12 @@ ${index}`;
       else loadHostModels(hostId);
     });
   }, [chatHostId, loadHostModels, modelPickerHostIds, modelPickerOpen, reloadHostModels, unavailableHosts]);
-  // Scheduled attempts end with the picker.
   useEffect(() => {
     if (!modelPickerOpen) return undefined;
     const timers = modelPickerHostTimers.current;
     return () => { timers.forEach(clearTimeout); timers.clear(); };
   }, [modelPickerOpen]);
 
-  // A model on another host: chat moves to that host first, through the same switch
-  // Settings → Devices & mesh uses, then the model is chosen as any picker row is. When
-  // that model cannot be used there, chat returns to the host it came from, so the host
-  // and the model name shown never disagree.
   const handleHostModelSelect = useCallback(async (hostId: string, model: HostModel) => {
     if (modelPickerSwitching || modelPickerLoading) return;
     const previousHostId = chatHostId;
@@ -4243,7 +4225,6 @@ ${index}`;
                   className="composer__model-button"
                   onClick={() => {
                     if (!modelPickerOpen) {
-                      // Each opening shows every host open, with fresh host lists.
                       setModelPickerExpandedHosts(modelPickerHostIds);
                       setModelPickerHostModels({});
                       modelPickerHostsRequested.current = new Set();

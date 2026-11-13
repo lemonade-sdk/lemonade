@@ -1,7 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { setupNexusAccount, enableNexusMesh } from './nexusAccountFixture';
 
-// A mesh inference server with a P2P path, as lemond lists it once the mesh is up.
 const gpuBox = { node_id: 'gpu', device_name: 'GPU box', tunnel_ip: '10.8.0.9', management_pubkey: 'gpu-key', permissions: ['read'], permissions_known: true,
   is_admin: false, is_online: true, can_remove: false, is_inference: true, can_connect: true, connection_type: 'p2p' as const };
 const gpuModel = { id: 'Qwen-on-gpu', model_name: 'Qwen-on-gpu', labels: ['chat'], recipe: 'llamacpp', downloaded: true };

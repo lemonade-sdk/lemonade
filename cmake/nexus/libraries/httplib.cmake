@@ -1,6 +1,4 @@
-# A system package new enough for the SDK is used; otherwise the vendored Nexus
-# module builds the pinned source (FETCHCONTENT_SOURCE_DIR_HTTPLIB names a local
-# copy for offline builds). The SDK builds against cpp-httplib 0.26.0 or newer,
+# The SDK builds against cpp-httplib 0.26.0 or newer,
 # the same floor as lemond (Ubuntu ships 0.26.0, Debian 13 backports 0.41.0,
 # Fedora 0.48.0). Its event socket needs the WebSocket client's hostname map of
 # 0.47.0; below that the SDK keeps the peer list long-poll

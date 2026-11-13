@@ -26,8 +26,6 @@ export function NexusPill({ label, tone, connection = false }: { label: string; 
   return <span className={`nexus-pill nexus-pill--${tone}${connection ? ' nexus-pill--connection' : ''}`}>{t(label)}</span>;
 }
 
-// The account's devices stand in for the live list while the mesh is locked or down: the
-// server reports no path, tier or network for them then.
 const placeholderDevice = (device: AccountDevice): NexusDevice => ({
   node_id: device.id, device_name: device.name, tunnel_ip: '', management_pubkey: '', permissions: [], can_remove: false,
   is_online: device.connected ? true : undefined,
@@ -36,8 +34,6 @@ export function nexusListedDevices(status: NexusStatus | null | undefined, accou
   return status?.mesh_up && !status.locked ? status.members : accountDevices.map(placeholderDevice);
 }
 
-// Every device of this identity's networks, in the order lemond lists them: its own network
-// first, then the networks it joined with an invite.
 export function NexusDeviceRows({ status, devices }: { status: NexusStatus | null | undefined; devices: readonly NexusDevice[] }) {
   const { t } = useI18n();
   if (!devices.length) return <p className="nexus-mesh__empty">{t('No devices listed yet.')}</p>;
@@ -85,9 +81,6 @@ function Endpoint({ label, value, copied, onCopy }: { label: string; value: stri
   </div>;
 }
 
-// How other apps (pi, curl, any OpenAI-compatible client) reach one inference server:
-// its mesh-port hostname on this computer, and the local API path that needs none.
-// `nodeId` is `local` for this device's own server.
 function ServerInfoDialog({ status, nodeId, onClose }: { status: NexusStatus; nodeId: string; onClose: () => void }) {
   const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
@@ -157,8 +150,6 @@ function ServerInfoDialog({ status, nodeId, onClose }: { status: NexusStatus; no
   </div>;
 }
 
-// Settings → Devices & mesh: the mesh, the server that serves chat, every device of this
-// identity's networks, the networks it joined, invites and joining another network.
 export function NexusMeshPanel() {
   const { t } = useI18n();
   const network = useNexusNetwork();
@@ -168,7 +159,6 @@ export function NexusMeshPanel() {
   const [error, setError] = useState('');
   const [key, setKey] = useState('');
   const [leaving, setLeaving] = useState<string>();
-  // The server whose "use from other apps" details are open: `local` or a node id.
   const [info, setInfo] = useState<string>();
   const id = useId();
   const summary = nexusMeshSummary(status, network.error);
@@ -191,8 +181,6 @@ export function NexusMeshPanel() {
     catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   };
-  // The servers serve a network founded again: the account here belongs to the earlier
-  // one. Forgetting it clears the local account and floor; the user then joins again.
   const forget = async () => {
     if (busy) return;
     setBusy(true); setError('');
@@ -226,7 +214,6 @@ export function NexusMeshPanel() {
         <p className="nexus-mesh__label">{t('Chat runs on')}</p>
         <ServerChoice selected={selected === 'local'} title={t('This device')} subtitle={t('Models on this computer')} disabled={busy} onChoose={() => void choose('local')} onInfo={() => setInfo('local')} />
         {servers.map(device => {
-          // A server without a path cannot serve chat yet; its pill says why (Offline or Connecting).
           const unavailable = nexusServerUnavailable(status, device);
           return <ServerChoice key={device.node_id} selected={selected === device.node_id} title={device.device_name || t('Unnamed device')}
             subtitle={device.tunnel_ip.split('/')[0]} connection={unavailable ?? nexusDeviceConnection(status, device)} disabled={busy || Boolean(unavailable)}
