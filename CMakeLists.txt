@@ -34,6 +34,12 @@ set(LEMONADE_MSI_VERSION
 message(STATUS "Lemonade version: ${PROJECT_VERSION}")
 
 include(CTest)
+include(${CMAKE_SOURCE_DIR}/cmake/NexusRustToolchain.cmake)
+if(NOT _nexus_toolchain_found)
+    message(FATAL_ERROR "The Nexus client SDK requires Cargo 1.85 or newer, in PATH or as "
+        "/usr/lib/rust-1.*/bin/cargo. Install Rust with rustup or the cargo-1.85 package, "
+        "or set LEMONADE_CARGO_EXECUTABLE.")
+endif()
 
 # Aggregate build target for the C++ tests selected by packaging CI.
 # Platform-specific tests add themselves only inside their existing if() block.
@@ -517,6 +523,10 @@ endif()
 # === httplib ===
 # Defined before httplib is added so its compiled library uses the same value as our code.
 add_compile_definitions(CPPHTTPLIB_THREAD_POOL_COUNT=8)
+# The web app and the desktop app open several connections at once on startup;
+# cpp-httplib's default backlog of 5 lets a burst overflow and the OS resets the
+# extra connections (Windows resets instead of queueing).
+add_compile_definitions(CPPHTTPLIB_LISTEN_BACKLOG=128)
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
@@ -1057,6 +1067,7 @@ file(GLOB_RECURSE HTTP_SERVER_SOURCES CONFIGURE_DEPENDS
 
 set(SOURCES_CORE
     src/cpp/server/server.cpp
+    src/cpp/server/nexus_manager.cpp
     ${HTTP_SERVER_SOURCES}
     src/cpp/server/collection_orchestrator.cpp
     src/cpp/server/jobs/job_ops.cpp
@@ -2326,6 +2337,8 @@ if(UNIX AND NOT APPLE)
     include(CPack)
 endif()
 
+include(cmake/NexusSDK.cmake)
+
 # ============================================================
 # Embeddable Archive Target (Cross-Platform)
 # ============================================================
@@ -2373,6 +2386,8 @@ else()
         "${EMBEDDABLE_DIR_NAME}")
 endif()
 
+set(_embeddable_nexus_runtime COMMAND ${CMAKE_COMMAND} -E copy "${LEMONADE_NEXUS_RUNTIME}" "${EMBEDDABLE_STAGING_DIR}/")
+
 add_custom_target(embeddable
     # Clean and create staging directory
     COMMAND ${CMAKE_COMMAND} -E remove_directory "${EMBEDDABLE_STAGING_DIR}"
@@ -2381,6 +2396,7 @@ add_custom_target(embeddable
     # Copy binaries
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemond>" "${EMBEDDABLE_STAGING_DIR}/"
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemonade>" "${EMBEDDABLE_STAGING_DIR}/"
+    ${_embeddable_nexus_runtime}
 
     # Copy LICENSE
     COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${EMBEDDABLE_STAGING_DIR}/"
@@ -4085,6 +4101,17 @@ if(BUILD_TESTING AND EXISTS "${_LAUNCH_COMMAND_TEST_SRC}")
     add_cpp_ci_test(LaunchCommandTest CI ON COMMAND test_launch_command)
 endif()
 
+set(_MESH_DEVICE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_mesh_device.cpp")
+if(BUILD_TESTING AND EXISTS "${_MESH_DEVICE_TEST_SRC}")
+    add_executable(test_mesh_device
+        test/cpp/test_mesh_device.cpp
+        src/cpp/cli/mesh_device.cpp
+    )
+    target_include_directories(test_mesh_device PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    target_link_libraries(test_mesh_device PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(MeshDeviceTest CI ON COMMAND test_mesh_device)
+endif()
+
 # What `lemonade launch pi` writes into pi's agent directory. The CLI sources
 # are compiled in directly because the CLI is not a library.
 set(_PI_PROFILE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_pi_profile.cpp")
@@ -4107,4 +4134,13 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_SYNC_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelSyncServiceTest CI ON COMMAND test_model_sync_service)
+endif()
+
+set(_NEXUS_MANAGER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_nexus_manager.cpp")
+if(BUILD_TESTING AND EXISTS "${_NEXUS_MANAGER_TEST_SRC}")
+    add_executable(test_nexus_manager test/cpp/test_nexus_manager.cpp)
+    target_link_libraries(test_nexus_manager PRIVATE lemonade-server-core)
+    add_cpp_ci_test(NexusManagerTest CI ON COMMAND test_nexus_manager)
+    set_tests_properties(NexusManagerTest PROPERTIES TIMEOUT 300)
+    add_dependencies(test_nexus_manager nexus-sdk-runtime)
 endif()

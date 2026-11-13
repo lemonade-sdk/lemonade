@@ -107,6 +107,16 @@ image(result.content.find((block) => block.type === "image"));
 
 Download an image model first, for example `lemonade pull SD-Turbo-GGUF`. `--codemode` does not change Pi's settings.
 
+## Use Case 3: Run the model on another device of your mesh
+
+When this machine is on a Lemonade Nexus mesh, Pi can use a model that another device of the group serves, for example a gaming PC with a larger GPU:
+
+```bash
+lemonade launch pi --device "Gaming PC" --model Qwen3.5-35B-A3B-GGUF
+```
+
+`--device` takes the device's name or node id. Launch asks the local server which devices its mesh port can reach, then targets that device's mesh port name, `https://gaming-pc.<group>.lo.<base>:13306`, on this machine. The mesh port forwards every request over the mesh to the device's own server: the model list comes from that device, the model loads there, and Pi's `models.json` gets that URL as the provider's `baseUrl`. If the device is offline, not an inference server, or not one this device may connect to, launch stops and lists the devices that are available.
+
 ## Images and tool calling
 
 - Models labeled `vision` accept images: paste one, or reference it with `@image.png`. Other models get a note that the image was left out.

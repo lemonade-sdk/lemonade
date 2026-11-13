@@ -688,6 +688,7 @@ lemonade launch [AGENT] [--model MODEL_NAME] [options]
 |-----------------|-------------|----------|
 | `AGENT` | Agent name to launch. Supported agents: `claude`, `codex`, `opencode`, `pi`, `junie`. If omitted, you will be prompted to select one. | No |
 | `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
+| `--device DEVICE` | Run the agent on another device of your Lemonade Nexus mesh. `DEVICE` is the device's name or node id. The model list, the model load and the agent's requests go through this server's mesh port (13306) to that device's server, so the model loads and runs there. | No |
 | `--directory DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
 | `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
 | `--agent-args ARGS` | Custom arguments to pass directly to the launched agent process | `""` |
@@ -711,6 +712,7 @@ Pi-only options:
 - `--directory` and `--recipe-file` are only used for remote recipe import at prompt time.
 - For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first, then launch with the imported model id.
 - `--api-key` is propagated to the launched agent process.
+- `--device` reads this server's `GET /v1/nexus/status` and picks the device from the mesh port's URL list, which names this server and every online inference device it may connect to. Launch then targets `https://<device>.<group>.lo.<base>:13306` on this machine; the mesh port forwards every request to that device's server over the mesh. The mesh must be on and the device must be online, an inference server and one this device may connect to; otherwise launch stops and lists the devices that are available. The mesh port does not forward `--api-key` to the device, so the device's server must accept requests from this device without one, or carry the key in the mesh port selection.
 - For `codex`, launch now injects a Lemonade model provider by default so host/port settings are honored.
 - `--provider` is accepted only by `lemonade launch codex` and is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
 - To customize recipe options (e.g. context size) for the launched model, configure them ahead of time with `lemonade load <model> ... --save-options`, or with `lemonade config set`.

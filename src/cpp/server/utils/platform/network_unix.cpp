@@ -7,12 +7,14 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <sys/resource.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 #if defined(__APPLE__)
+#include <sys/syslimits.h>
 #define LEMON_TCP_KEEPIDLE TCP_KEEPALIVE
 #elif defined(TCP_KEEPIDLE)
 #define LEMON_TCP_KEEPIDLE TCP_KEEPIDLE
@@ -132,6 +134,44 @@ bool is_tcp_listener_active(int family, const std::string& host_ip, int port) {
 
     close_sock();
     return has_listener;
+}
+
+std::size_t raise_open_file_limit() {
+    struct rlimit limit {};
+    if (getrlimit(RLIMIT_NOFILE, &limit) != 0) {
+        LOG(DEBUG, "Server") << "getrlimit(RLIMIT_NOFILE) failed: " << std::strerror(errno) << " (" << errno << ")" << std::endl;
+        return 0;
+    }
+    // Child processes inherit the soft limit. A very high one (systemd and the
+    // GitHub runners hand out hard limits in the hundreds of thousands or more)
+    // makes programs that walk the descriptor table, llama-server's loader among
+    // them, slow down or fail, so the raise stops at a ceiling that still covers
+    // every connection lemond opens.
+    constexpr rlim_t kOpenFileCeiling = 65536;
+    rlim_t target = limit.rlim_max;
+    if (target == RLIM_INFINITY || target > kOpenFileCeiling) {
+        target = kOpenFileCeiling;
+    }
+#if defined(__APPLE__)
+    // Darwin refuses a soft limit above OPEN_MAX even when the hard limit is unlimited.
+    if (target > OPEN_MAX) {
+        target = OPEN_MAX;
+    }
+#endif
+    if (limit.rlim_max != RLIM_INFINITY && target > limit.rlim_max) {
+        target = limit.rlim_max;
+    }
+    if (target != RLIM_INFINITY && target > limit.rlim_cur) {
+        limit.rlim_cur = target;
+        if (setrlimit(RLIMIT_NOFILE, &limit) != 0) {
+            LOG(DEBUG, "Server") << "setrlimit(RLIMIT_NOFILE, " << static_cast<unsigned long long>(target)
+                                 << ") failed: " << std::strerror(errno) << " (" << errno << ")" << std::endl;
+        }
+    }
+    if (getrlimit(RLIMIT_NOFILE, &limit) != 0 || limit.rlim_cur == RLIM_INFINITY) {
+        return 0;
+    }
+    return static_cast<std::size_t>(limit.rlim_cur);
 }
 
 } // namespace lemon::utils

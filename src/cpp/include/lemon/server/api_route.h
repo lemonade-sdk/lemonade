@@ -77,6 +77,7 @@ struct RouteSpec {
     ErrorFormat error_format = ErrorFormat::Plain;
     RequestFormat request_format = RequestFormat::Raw;  // Raw: no body parsing, only query argument values are checked; OptionalJson: an empty or null body is {}
     bool quiet_log = false;           // leave out of the access log
+    std::string family;               // route policy family, e.g. "inference"; set by RouteRegistry::add, see docs/dev/nexus-integration.md
 };
 
 nlohmann::ordered_json route_spec_to_json(const RouteSpec& spec);

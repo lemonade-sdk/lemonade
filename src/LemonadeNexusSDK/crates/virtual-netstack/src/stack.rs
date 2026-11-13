@@ -1,0 +1,843 @@
+//! The in-process netstack run loop. Owns the smoltcp interface and bridges
+//! virtual TCP connections to/from real local sockets, driven by a single
+//! dedicated thread and a mio event loop. Virtual UDP ports deliver datagrams
+//! to an in-process callback instead of a socket bridge.
+
+use std::collections::hash_map::RandomState;
+use std::collections::HashMap;
+use std::hash::BuildHasher;
+use std::io;
+use std::rc::Rc;
+use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::Arc;
+use std::time::{Duration, Instant as StdInstant};
+
+use mio::event::Source;
+use mio::net::TcpListener;
+use mio::{Events, Interest, Poll, Token, Waker};
+
+use smoltcp::iface::{Config, Interface, PollResult, SocketHandle, SocketSet};
+use smoltcp::socket::{tcp, udp};
+use smoltcp::time::Instant;
+use smoltcp::phy::ChecksumCapabilities;
+use smoltcp::wire::{
+    IpAddress, IpCidr, IpEndpoint, IpListenEndpoint, IpProtocol, Ipv4Address, Ipv4Packet,
+    UdpPacket, UdpRepr,
+};
+
+use crate::bridge::{Bridge, BridgeTarget};
+use crate::device::VirtDevice;
+
+const WAKER_TOKEN: Token = Token(0);
+const MAX_INNER_ITERS: usize = 32;
+/// Smallest TCP buffer a stack accepts: one unscaled window. smoltcp sets
+/// the window scale from the receive buffer, so a buffer above 64 KiB is
+/// what lets one connection keep more than 64 KiB in flight per round trip.
+pub const MIN_TCP_BUFFER: usize = 65536;
+// Inbound only: bursts of a few hundred datagrams, or a handful of
+// maximum-size ones, wait here until pump_udp hands them over.
+const UDP_QUEUE_DATAGRAMS: usize = 512;
+const UDP_BUF: usize = 512 * 1024;
+const IPV4_HEADER_LEN: usize = 20;
+const UDP_HEADER_LEN: usize = 8;
+/// Smallest MTU every IPv4 link must carry (RFC 791). send_udp fragments to
+/// the MTU, so a smaller value leaves no room for a fragment payload.
+pub const MIN_IPV4_MTU: usize = 68;
+/// How long an egress connection waits for the virtual peer's SYN-ACK. The
+/// loopback accept succeeds at once, so without this bound a request to a
+/// peer whose path is not up stalls until the caller's own read timeout;
+/// smoltcp retransmits the SYN without limit. The bound ends with the
+/// handshake: an established connection keeps smoltcp's default of no
+/// timeout.
+pub const EGRESS_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Receiver for datagrams that arrive on a bound virtual UDP port. Called on
+/// the stack thread with (source, destination, payload).
+pub type UdpDeliver = Box<dyn Fn(IpEndpoint, IpEndpoint, &[u8]) + Send>;
+
+/// Receiver for the lifecycle of connections accepted by an observed ingress
+/// forward. Called on the stack thread with (vport, bridge port, virtual
+/// remote endpoint, opened): once with `opened` true before any byte of the
+/// connection reaches the bridge, and once with `opened` false when the
+/// connection is removed.
+pub type IngressNotify = Arc<dyn Fn(u16, u16, IpEndpoint, bool) + Send + Sync>;
+
+/// Commands sent from FFI callers to the stack thread.
+pub enum Command {
+    AddLocalIp(IpCidr),
+    AddTcpForward {
+        vip: Ipv4Address,
+        vport: u16,
+        target: BridgeTarget,
+        /// Reports each accepted connection's source; None for a plain bridge.
+        observer: Option<IngressNotify>,
+    },
+    /// Real loopback listener -> virtual TCP connect to (dst_ip, dst_port).
+    AddTcpEgress {
+        listener: TcpListener,
+        token: Token,
+        dst: IpEndpoint,
+        src_ip: Ipv4Address,
+    },
+    /// Close every egress listener to `dst` and abort the virtual TCP
+    /// connections already open to it.
+    RemoveTcpEgress(IpEndpoint),
+    /// Bind virtual UDP `local`; each received datagram goes to `deliver`.
+    UdpBind {
+        local: IpEndpoint,
+        deliver: UdpDeliver,
+    },
+    /// Send one datagram from a bound virtual UDP endpoint.
+    UdpSend {
+        src: IpEndpoint,
+        dst: IpEndpoint,
+        data: Vec<u8>,
+    },
+    Shutdown,
+}
+
+struct UdpBinding {
+    local: IpEndpoint,
+    handle: SocketHandle,
+    deliver: UdpDeliver,
+}
+
+struct Listener {
+    endpoint: IpListenEndpoint,
+    target_spec: String,
+    handle: SocketHandle,
+    observer: Option<IngressNotify>,
+}
+
+/// The attribution of an observed ingress connection, reported closed when
+/// the connection is removed.
+struct Observed {
+    notify: IngressNotify,
+    vport: u16,
+    bridge_port: u16,
+    remote: IpEndpoint,
+}
+
+struct EgressListener {
+    listener: TcpListener,
+    dst: IpEndpoint,
+    src_ip: Ipv4Address,
+}
+
+struct Conn {
+    tcp: SocketHandle,
+    bridge: Bridge,
+    // Staging in each direction holds at most `tcp_buffer` bytes. Bytes
+    // beyond that stay in the smoltcp receive buffer, which closes the
+    // window, or in the bridge socket, which the next pump reads again.
+    to_bridge: Vec<u8>,   // decrypted-side bytes waiting to flush to the bridge
+    to_tcp: Vec<u8>,      // bridge-side bytes waiting to flush into smoltcp
+    established: bool,     // virtual socket reached Established at least once
+    bridge_eof: bool,     // bridge read returned 0
+    fin_to_bridge: bool,  // we already half-closed the bridge write side
+    observed: Option<Observed>,
+}
+
+pub struct Stack {
+    iface: Interface,
+    device: VirtDevice,
+    sockets: SocketSet<'static>,
+    poll: Poll,
+    events: Events,
+    listeners: Vec<Listener>,
+    egress: HashMap<Token, EgressListener>,
+    conns: HashMap<Token, Conn>,
+    udp: Vec<UdpBinding>,
+    next_ip_ident: u16,
+    next_token: usize,
+    next_ephemeral: u16,
+    /// Receive and send buffer of every TCP socket, in bytes.
+    tcp_buffer: usize,
+    base: StdInstant,
+    cmd_rx: Receiver<Command>,
+    pkt_rx: Receiver<Vec<u8>>,
+}
+
+/// A value that differs between stacks and between processes. It is a
+/// collision avoider, not a secret: RandomState's keys are random per process
+/// and advance with each instance.
+fn random_u64(salt: u64) -> u64 {
+    RandomState::new().hash_one(salt)
+}
+
+/// The first ephemeral port of a new stack: random in the dynamic range
+/// 49152-65535 (RFC 6056). A stack that replaces another one at the same
+/// tunnel address, as a reconnecting client does, must not reuse the old
+/// stack's 4-tuples: the server may still hold those connections open until
+/// its keep-alive ends, and a SYN on one of them is not a new connection.
+fn initial_ephemeral() -> u16 {
+    const FIRST: u64 = 49152;
+    (FIRST + random_u64(2) % (65536 - FIRST)) as u16
+}
+
+impl Stack {
+    pub fn new(
+        mtu: usize,
+        tcp_buffer: usize,
+        output: Rc<crate::device::OutputFn>,
+        cmd_rx: Receiver<Command>,
+        pkt_rx: Receiver<Vec<u8>>,
+    ) -> io::Result<(Stack, Waker)> {
+        if mtu < MIN_IPV4_MTU {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("mtu {mtu} is below the IPv4 minimum of {MIN_IPV4_MTU}"),
+            ));
+        }
+        if tcp_buffer < MIN_TCP_BUFFER {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("tcp buffer {tcp_buffer} is below the minimum of {MIN_TCP_BUFFER}"),
+            ));
+        }
+        let mut device = VirtDevice::new(mtu, output);
+        let mut config = Config::new(smoltcp::wire::HardwareAddress::Ip);
+        // smoltcp derives TCP initial sequence numbers from this seed; the
+        // default is 0, the same for every stack.
+        config.random_seed = random_u64(1);
+        let now = Instant::from_millis(0);
+        let iface = Interface::new(config, &mut device, now);
+
+        let poll = Poll::new()?;
+        let waker = Waker::new(poll.registry(), WAKER_TOKEN)?;
+
+        Ok((
+            Stack {
+                iface,
+                device,
+                sockets: SocketSet::new(Vec::new()),
+                poll,
+                events: Events::with_capacity(256),
+                listeners: Vec::new(),
+                egress: HashMap::new(),
+                conns: HashMap::new(),
+                udp: Vec::new(),
+                next_ip_ident: 1,
+                next_token: 1,
+                next_ephemeral: initial_ephemeral(),
+                tcp_buffer,
+                base: StdInstant::now(),
+                cmd_rx,
+                pkt_rx,
+            },
+            waker,
+        ))
+    }
+
+    fn now(&self) -> Instant {
+        Instant::from_millis(self.base.elapsed().as_millis() as i64)
+    }
+
+    fn alloc_token(&mut self) -> Token {
+        let t = Token(self.next_token);
+        self.next_token += 1;
+        t
+    }
+
+    fn alloc_ephemeral(&mut self) -> u16 {
+        // Sequential from a random start (RFC 6056, algorithm 1).
+        let p = self.next_ephemeral;
+        self.next_ephemeral = if self.next_ephemeral >= 65535 {
+            49152
+        } else {
+            self.next_ephemeral + 1
+        };
+        p
+    }
+
+    fn make_tcp_socket(&self) -> tcp::Socket<'static> {
+        let rx = tcp::SocketBuffer::new(vec![0u8; self.tcp_buffer]);
+        let tx = tcp::SocketBuffer::new(vec![0u8; self.tcp_buffer]);
+        let mut socket = tcp::Socket::new(rx, tx);
+        socket.set_congestion_control(tcp::CongestionControl::Cubic);
+        socket
+    }
+
+    fn new_listening_socket(&mut self, endpoint: IpListenEndpoint) -> Option<SocketHandle> {
+        let mut socket = self.make_tcp_socket();
+        if socket.listen(endpoint).is_err() {
+            log::error!("virtual-netstack: failed to listen on {:?}", endpoint);
+            return None;
+        }
+        Some(self.sockets.add(socket))
+    }
+
+    fn handle_command(&mut self, cmd: Command) -> bool {
+        match cmd {
+            Command::AddLocalIp(cidr) => {
+                self.iface.update_ip_addrs(|addrs| {
+                    if !addrs.iter().any(|a| *a == cidr) {
+                        let _ = addrs.push(cidr);
+                    }
+                });
+                log::info!("virtual-netstack: now answering for {}", cidr);
+            }
+            Command::AddTcpForward {
+                vip,
+                vport,
+                target,
+                observer,
+            } => {
+                let endpoint = IpListenEndpoint {
+                    addr: Some(IpAddress::Ipv4(vip)),
+                    port: vport,
+                };
+                let spec = match &target {
+                    BridgeTarget::Tcp(a) => format!("tcp:{a}"),
+                    BridgeTarget::Unix(p) => format!("unix:{p}"),
+                };
+                if let Some(listener) = self.listeners.iter_mut().find(|l| l.endpoint == endpoint) {
+                    listener.target_spec = spec;
+                    listener.observer = observer;
+                    return true;
+                }
+                if let Some(handle) = self.new_listening_socket(endpoint) {
+                    self.listeners.push(Listener {
+                        endpoint,
+                        target_spec: spec,
+                        handle,
+                        observer,
+                    });
+                    log::info!("virtual-netstack: ingress {vip}:{vport} -> bridge");
+                }
+            }
+            Command::AddTcpEgress {
+                mut listener,
+                token,
+                dst,
+                src_ip,
+            } => {
+                if listener
+                    .register(self.poll.registry(), token, Interest::READABLE)
+                    .is_ok()
+                {
+                    self.egress.insert(
+                        token,
+                        EgressListener {
+                            listener,
+                            dst,
+                            src_ip,
+                        },
+                    );
+                }
+            }
+            Command::RemoveTcpEgress(dst) => {
+                let listeners: Vec<Token> = self
+                    .egress
+                    .iter()
+                    .filter_map(|(token, eg)| (eg.dst == dst).then_some(*token))
+                    .collect();
+                for token in listeners {
+                    if let Some(mut eg) = self.egress.remove(&token) {
+                        let _ = eg.listener.deregister(self.poll.registry());
+                    }
+                }
+                let connections: Vec<Token> = self
+                    .conns
+                    .iter()
+                    .filter_map(|(token, conn)| {
+                        (self.sockets.get::<tcp::Socket>(conn.tcp).remote_endpoint() == Some(dst))
+                            .then_some(*token)
+                    })
+                    .collect();
+                for token in connections {
+                    if let Some(conn) = self.conns.remove(&token) {
+                        self.sockets.get_mut::<tcp::Socket>(conn.tcp).abort();
+                        self.finish_conn(conn);
+                    }
+                }
+                log::info!("virtual-netstack: egress to {dst} removed");
+            }
+            Command::UdpBind { local, deliver } => {
+                if self.udp.iter().any(|b| b.local == local) {
+                    log::warn!("virtual-netstack: udp {local} already bound");
+                    return true;
+                }
+                let mut socket = Self::make_udp_socket();
+                let endpoint = IpListenEndpoint {
+                    addr: Some(local.addr),
+                    port: local.port,
+                };
+                if socket.bind(endpoint).is_err() {
+                    log::error!("virtual-netstack: failed to bind udp {local}");
+                    return true;
+                }
+                let handle = self.sockets.add(socket);
+                self.udp.push(UdpBinding {
+                    local,
+                    handle,
+                    deliver,
+                });
+                log::info!("virtual-netstack: udp bound on {local}");
+            }
+            Command::UdpSend { src, dst, data } => {
+                if self.udp.iter().any(|b| b.local == src) {
+                    self.send_udp(src, dst, &data);
+                } else {
+                    log::warn!("virtual-netstack: udp send from unbound {src}");
+                }
+            }
+            Command::Shutdown => return false,
+        }
+        true
+    }
+
+    fn make_udp_socket() -> udp::Socket<'static> {
+        let rx = udp::PacketBuffer::new(
+            vec![udp::PacketMetadata::EMPTY; UDP_QUEUE_DATAGRAMS],
+            vec![0u8; UDP_BUF],
+        );
+        // Sends bypass the socket (see send_udp), so its transmit queue stays empty.
+        let tx = udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 1], vec![0u8; 1]);
+        udp::Socket::new(rx, tx)
+    }
+
+    /// Build one UDP datagram and emit it as IPv4 packets no larger than the
+    /// MTU, fragmenting like a kernel UDP socket. Built here rather than by
+    /// the smoltcp socket because smoltcp keeps a single fragmentation
+    /// buffer and overwrites it when a second oversized datagram is
+    /// dispatched before the first finishes; emitting directly lets any
+    /// number of datagrams of any size go out in series, with no send queue.
+    fn send_udp(&mut self, src: IpEndpoint, dst: IpEndpoint, data: &[u8]) {
+        let (IpAddress::Ipv4(src_ip), IpAddress::Ipv4(dst_ip)) = (src.addr, dst.addr);
+        let udp_len = UDP_HEADER_LEN + data.len();
+        if udp_len > u16::MAX as usize - IPV4_HEADER_LEN {
+            log::warn!("virtual-netstack: udp datagram of {} bytes exceeds the IPv4 limit", data.len());
+            return;
+        }
+
+        let mut datagram = vec![0u8; udp_len];
+        UdpRepr { src_port: src.port, dst_port: dst.port }.emit(
+            &mut UdpPacket::new_unchecked(&mut datagram[..]),
+            &src.addr,
+            &dst.addr,
+            data.len(),
+            |payload| payload.copy_from_slice(data),
+            &ChecksumCapabilities::default(),
+        );
+
+        let ident = self.next_ip_ident;
+        self.next_ip_ident = self.next_ip_ident.wrapping_add(1);
+        // Every fragment but the last carries a multiple of 8 payload bytes.
+        let max_chunk = (self.device.mtu() - IPV4_HEADER_LEN) & !7;
+        let mut offset = 0;
+        while offset < datagram.len() {
+            let chunk = (datagram.len() - offset).min(max_chunk);
+            let more = offset + chunk < datagram.len();
+            let mut buf = vec![0u8; IPV4_HEADER_LEN + chunk];
+            let mut ip = Ipv4Packet::new_unchecked(&mut buf[..]);
+            ip.set_version(4);
+            ip.set_header_len(IPV4_HEADER_LEN as u8);
+            ip.set_total_len((IPV4_HEADER_LEN + chunk) as u16);
+            ip.set_ident(ident);
+            ip.set_dont_frag(false);
+            ip.set_more_frags(more);
+            ip.set_frag_offset(offset as u16);
+            ip.set_hop_limit(64);
+            ip.set_next_header(IpProtocol::Udp);
+            ip.set_src_addr(src_ip);
+            ip.set_dst_addr(dst_ip);
+            ip.payload_mut()[..chunk].copy_from_slice(&datagram[offset..offset + chunk]);
+            ip.fill_checksum();
+            self.device.emit(&buf);
+            offset += chunk;
+        }
+    }
+
+    /// Hand every queued datagram on a bound UDP socket to its receiver.
+    /// Returns true if any datagram was delivered.
+    fn pump_udp(&mut self) -> bool {
+        let mut progressed = false;
+        for binding in &self.udp {
+            let socket = self.sockets.get_mut::<udp::Socket>(binding.handle);
+            while socket.can_recv() {
+                match socket.recv() {
+                    Ok((data, meta)) => {
+                        (binding.deliver)(meta.endpoint, binding.local, data);
+                        progressed = true;
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+        progressed
+    }
+
+    /// Promote any listener whose socket accepted a connection, then bring up
+    /// the real bridge for it.
+    fn manage_listeners(&mut self) {
+        struct Promoted {
+            idx: usize,
+            handle: SocketHandle,
+            spec: String,
+            endpoint: IpListenEndpoint,
+            observer: Option<IngressNotify>,
+        }
+        let mut promoted: Vec<Promoted> = Vec::new();
+        for (idx, listener) in self.listeners.iter().enumerate() {
+            let socket = self.sockets.get::<tcp::Socket>(listener.handle);
+            if socket.state() != tcp::State::Listen {
+                promoted.push(Promoted {
+                    idx,
+                    handle: listener.handle,
+                    spec: listener.target_spec.clone(),
+                    endpoint: listener.endpoint,
+                    observer: listener.observer.clone(),
+                });
+            }
+        }
+
+        for Promoted { idx, handle, spec, endpoint, observer } in promoted {
+            // Replace the listening socket so the next connection is accepted.
+            if let Some(new_handle) = self.new_listening_socket(endpoint) {
+                self.listeners[idx].handle = new_handle;
+            }
+
+            let target = match BridgeTarget::parse(&spec) {
+                Some(t) => t,
+                None => {
+                    self.abort_socket(handle);
+                    continue;
+                }
+            };
+            match target.connect() {
+                Ok(mut bridge) => {
+                    let token = self.alloc_token();
+                    if bridge.register(self.poll.registry(), token).is_err() {
+                        self.abort_socket(handle);
+                        continue;
+                    }
+                    // Reported before the connection is pumped, so the bridge
+                    // target can attribute the first byte it reads.
+                    let observed = observer.map(|notify| {
+                        let remote = self
+                            .sockets
+                            .get::<tcp::Socket>(handle)
+                            .remote_endpoint()
+                            .unwrap_or(IpEndpoint {
+                                addr: IpAddress::Ipv4(Ipv4Address::UNSPECIFIED),
+                                port: 0,
+                            });
+                        let bridge_port = bridge.local_port();
+                        notify(endpoint.port, bridge_port, remote, true);
+                        Observed { notify, vport: endpoint.port, bridge_port, remote }
+                    });
+                    self.conns.insert(
+                        token,
+                        Conn {
+                            tcp: handle,
+                            bridge,
+                            to_bridge: Vec::new(),
+                            to_tcp: Vec::new(),
+                            established: false,
+                            bridge_eof: false,
+                            fin_to_bridge: false,
+                            observed,
+                        },
+                    );
+                }
+                Err(e) => {
+                    log::warn!("virtual-netstack: bridge connect failed: {e}");
+                    self.abort_socket(handle);
+                }
+            }
+        }
+    }
+
+    /// Accept real loopback connections on egress listeners and open the paired
+    /// virtual TCP connection.
+    fn manage_egress(&mut self, ready: &[Token]) {
+        let tokens: Vec<Token> = ready
+            .iter()
+            .copied()
+            .filter(|t| self.egress.contains_key(t))
+            .collect();
+        for token in tokens {
+            loop {
+                let accepted = {
+                    let eg = self.egress.get(&token).unwrap();
+                    eg.listener.accept()
+                };
+                let (stream, dst, src_ip) = match accepted {
+                    Ok((stream, _)) => {
+                        let eg = self.egress.get(&token).unwrap();
+                        (stream, eg.dst, eg.src_ip)
+                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
+                    Err(_) => break,
+                };
+
+                let mut socket = self.make_tcp_socket();
+                socket.set_timeout(Some(smoltcp::time::Duration::from_micros(
+                    EGRESS_CONNECT_TIMEOUT.as_micros() as u64,
+                )));
+                let local_port = self.alloc_ephemeral();
+                let local = IpEndpoint {
+                    addr: IpAddress::Ipv4(src_ip),
+                    port: local_port,
+                };
+                let cx = self.iface.context();
+                if socket.connect(cx, dst, local).is_err() {
+                    continue;
+                }
+                let handle = self.sockets.add(socket);
+
+                let mut bridge = Bridge::Tcp(stream);
+                let conn_token = self.alloc_token();
+                if bridge.register(self.poll.registry(), conn_token).is_err() {
+                    self.abort_socket(handle);
+                    continue;
+                }
+                self.conns.insert(
+                    conn_token,
+                    Conn {
+                        tcp: handle,
+                        bridge,
+                        to_bridge: Vec::new(),
+                        to_tcp: Vec::new(),
+                        established: false,
+                        bridge_eof: false,
+                        fin_to_bridge: false,
+                        observed: None,
+                    },
+                );
+            }
+        }
+    }
+
+    fn abort_socket(&mut self, handle: SocketHandle) {
+        self.sockets.get_mut::<tcp::Socket>(handle).abort();
+        self.sockets.remove(handle);
+    }
+
+    /// Release a connection removed from `conns`: deregister its bridge, drop
+    /// its virtual socket, and report an observed connection closed.
+    fn finish_conn(&mut self, mut conn: Conn) {
+        conn.bridge.deregister(self.poll.registry());
+        self.sockets.remove(conn.tcp);
+        if let Some(observed) = conn.observed {
+            (observed.notify)(observed.vport, observed.bridge_port, observed.remote, false);
+        }
+    }
+
+    /// Move bytes between every connection's smoltcp socket and its bridge.
+    /// Returns true if any byte moved (so the caller re-polls smoltcp).
+    fn pump_conns(&mut self) -> bool {
+        let mut progressed = false;
+        let mut finished: Vec<Token> = Vec::new();
+        let tokens: Vec<Token> = self.conns.keys().copied().collect();
+        let mut buf = [0u8; 16384];
+        let staging_limit = self.tcp_buffer;
+
+        for token in tokens {
+            let mut remove = false;
+            {
+                let conn = self.conns.get_mut(&token).unwrap();
+                let socket = self.sockets.get_mut::<tcp::Socket>(conn.tcp);
+
+                if socket.may_send() && !conn.established {
+                    // The handshake is done: the connect bound no longer
+                    // applies, and a quiet established connection must not
+                    // be aborted (see EGRESS_CONNECT_TIMEOUT).
+                    socket.set_timeout(None);
+                    conn.established = true;
+                }
+
+                // smoltcp -> bridge
+                while socket.can_recv() && conn.to_bridge.len() < staging_limit {
+                    match socket.recv_slice(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            conn.to_bridge.extend_from_slice(&buf[..n]);
+                            progressed = true;
+                        }
+                        Err(_) => break,
+                    }
+                }
+                if flush(&mut conn.bridge, &mut conn.to_bridge) {
+                    progressed = true;
+                }
+                // Virtual peer half-closed and we've drained: FIN the bridge.
+                // Only meaningful once established — !may_recv() is also true in
+                // the pre-established SynReceived/SynSent states.
+                if conn.established
+                    && !conn.fin_to_bridge
+                    && conn.to_bridge.is_empty()
+                    && !socket.may_recv()
+                    && socket.recv_queue() == 0
+                {
+                    conn.bridge.shutdown_write();
+                    conn.fin_to_bridge = true;
+                }
+
+                // bridge -> smoltcp. The bridge is edge-triggered, so a read
+                // that stops at the limit leaves no event behind; the next
+                // pump reads again once send_slice made room.
+                if !conn.bridge_eof {
+                    while conn.to_tcp.len() < staging_limit {
+                        match conn.bridge.read(&mut buf) {
+                            Ok(0) => {
+                                conn.bridge_eof = true;
+                                break;
+                            }
+                            Ok(n) => {
+                                conn.to_tcp.extend_from_slice(&buf[..n]);
+                                progressed = true;
+                            }
+                            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
+                            Err(_) => {
+                                conn.bridge_eof = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if socket.can_send() && !conn.to_tcp.is_empty() {
+                    if let Ok(n) = socket.send_slice(&conn.to_tcp) {
+                        if n > 0 {
+                            conn.to_tcp.drain(..n);
+                            progressed = true;
+                        }
+                    }
+                }
+                // Bridge fully drained to the virtual peer: close the virtual side.
+                if conn.established && conn.bridge_eof && conn.to_tcp.is_empty() && socket.may_send() {
+                    socket.close();
+                }
+
+                let tcp_closed = matches!(socket.state(), tcp::State::Closed);
+                if tcp_closed && conn.to_bridge.is_empty() {
+                    remove = true;
+                }
+            }
+            if remove {
+                finished.push(token);
+            }
+        }
+
+        for token in finished {
+            if let Some(conn) = self.conns.remove(&token) {
+                self.finish_conn(conn);
+            }
+        }
+        progressed
+    }
+
+    pub fn run(mut self) {
+        let mut running = true;
+        while running {
+            // Drain control commands.
+            loop {
+                match self.cmd_rx.try_recv() {
+                    Ok(cmd) => {
+                        if !self.handle_command(cmd) {
+                            running = false;
+                        }
+                    }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        running = false;
+                        break;
+                    }
+                }
+            }
+            if !running {
+                break;
+            }
+
+            // Drain inbound IP packets fed by the dataplane.
+            loop {
+                match self.pkt_rx.try_recv() {
+                    Ok(pkt) => self.device.push_inbound(pkt),
+                    Err(_) => break,
+                }
+            }
+
+            // Drive smoltcp and the bridges until no further immediate progress.
+            for _ in 0..MAX_INNER_ITERS {
+                let now = self.now();
+                let polled_changed = matches!(
+                    self.iface.poll(now, &mut self.device, &mut self.sockets),
+                    PollResult::SocketStateChanged
+                );
+                self.manage_listeners();
+                let pumped = self.pump_conns();
+                let delivered = self.pump_udp();
+                if !polled_changed && !pumped && !delivered && !self.device.has_inbound() {
+                    break;
+                }
+            }
+
+            // Sleep until the next smoltcp timer, an inbound packet, a control
+            // command (both via the waker), or bridge-socket readiness.
+            let timeout = self
+                .iface
+                .poll_delay(self.now(), &self.sockets)
+                .map(|d| Duration::from_micros(d.total_micros()))
+                .unwrap_or(Duration::from_millis(1000));
+            let timeout = timeout.min(Duration::from_millis(1000));
+
+            self.events.clear();
+            if let Err(e) = self.poll.poll(&mut self.events, Some(timeout)) {
+                if e.kind() != io::ErrorKind::Interrupted {
+                    log::error!("virtual-netstack: poll error: {e}");
+                }
+            }
+            let ready: Vec<Token> = self.events.iter().map(|e| e.token()).collect();
+            self.manage_egress(&ready);
+        }
+
+        // Teardown: deregister bridges and report observed connections closed.
+        let conns: Vec<Conn> = self.conns.drain().map(|(_, conn)| conn).collect();
+        for conn in conns {
+            self.finish_conn(conn);
+        }
+        for (_, mut eg) in self.egress.drain() {
+            let _ = eg.listener.deregister(self.poll.registry());
+        }
+        log::info!("virtual-netstack: stopped");
+    }
+}
+
+/// Flush as much of `pending` to the bridge as possible. Returns true if any
+/// bytes were written.
+fn flush(bridge: &mut Bridge, pending: &mut Vec<u8>) -> bool {
+    let mut wrote = 0;
+    while !pending.is_empty() {
+        match bridge.write(&pending[wrote..]) {
+            Ok(0) => break,
+            Ok(n) => wrote += n,
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
+            Err(_) => break,
+        }
+        if wrote == pending.len() {
+            break;
+        }
+    }
+    if wrote > 0 {
+        pending.drain(..wrote);
+        true
+    } else {
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_stack_starts_its_ephemeral_ports_at_a_random_place_in_the_dynamic_range() {
+        let starts: Vec<u16> = (0..16).map(|_| initial_ephemeral()).collect();
+        assert!(starts.iter().all(|&p| p >= 49152));
+        assert!(
+            starts.iter().any(|&p| p != starts[0]),
+            "every stack starts at the same port: {starts:?}"
+        );
+    }
+}

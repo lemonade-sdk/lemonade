@@ -18,6 +18,22 @@ export interface LocalIconDefinition {
 // Keeping the geometry local lets distro/Launchpad builds run without npm-only
 // icon packages while preserving the App icon set.
 export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
+  "user-round": {
+    "viewBox": "0 0 24 24",
+    "body": "<circle cx=\"12\" cy=\"8\" r=\"5\" /><path d=\"M20 21a8 8 0 0 0-16 0\" />"
+  },
+  "camera": {
+    "viewBox": "0 0 24 24",
+    "body": "<path d=\"M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z\" /><circle cx=\"12\" cy=\"13\" r=\"3\" />"
+  },
+  "monitor": {
+    "viewBox": "0 0 24 24",
+    "body": "<rect width=\"20\" height=\"14\" x=\"2\" y=\"3\" rx=\"2\" /><line x1=\"8\" x2=\"16\" y1=\"21\" y2=\"21\" /><line x1=\"12\" x2=\"12\" y1=\"17\" y2=\"21\" />"
+  },
+  "smartphone": {
+    "viewBox": "0 0 24 24",
+    "body": "<rect width=\"14\" height=\"20\" x=\"5\" y=\"2\" rx=\"2\" ry=\"2\" /><path d=\"M12 18h.01\" />"
+  },
   "send": {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"m5 12 7-7 7 7\"></path><path d=\"M12 19V5\"></path>"

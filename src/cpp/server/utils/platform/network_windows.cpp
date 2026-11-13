@@ -129,4 +129,9 @@ bool is_tcp_listener_active(int family, const std::string& host_ip, int port) {
     return has_listener;
 }
 
+// Windows sockets are kernel handles with no per-process descriptor limit to raise.
+std::size_t raise_open_file_limit() {
+    return 0;
+}
+
 } // namespace lemon::utils

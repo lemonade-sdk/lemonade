@@ -1,0 +1,200 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const ts = require('typescript');
+require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true }, fileName: filename,
+}).outputText, filename);
+const { createNexusAccountService, verifyAccountReply, verifyAvatarReply } = require('../src/features/nexus/accountSession.ts');
+const storage = new Map();
+global.localStorage = { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) };
+const source = 'http://127.0.0.1:13305';
+const calls = [];
+let currentSource = source;
+let local = true;
+let desktop = true;
+let failPasskey = false;
+let registered = false;
+let unlock = 'passkey';
+let meshUp = false;
+let refuseMembership = false;
+let deletePending = false;
+let avatarError = false;
+let reply = {
+  id: 'cluster', member_id: 'identity', device_node_id: 'this-device', role: 'admin',
+  devices: [{node_id:'this-device',device_name:'Workstation',permissions_known:true,is_admin:true,is_online:true,permissions:['admin']},
+    {node_id:'phone',device_name:'Phone',permissions_known:true,is_admin:false,is_online:false,permissions:['read']}],
+  avatar: {state:'ready', image:null, revision:0, can_write:true},
+};
+const request = async (path, body) => {
+  calls.push({path,body});
+  if (path === 'status') return { available:true,enabled:true,registered,unlock,locked:!meshUp,mesh_up:meshUp,status:meshUp?'running':'locked',members:[] };
+  if (path === 'account') return structuredClone(reply);
+  if (path === 'account/avatar') {
+    if (avatarError) throw new Error('Image service unavailable');
+    assert.equal(body.account_id, reply.id);
+    assert.equal(body.member_id, reply.member_id);
+    assert.equal(body.device_node_id, reply.device_node_id);
+    if (body.revision !== reply.avatar.revision) throw new Error('Profile image changed');
+    reply.avatar = {...reply.avatar, image:body.image, revision:reply.avatar.revision+1};
+    return structuredClone(reply.avatar);
+  }
+  if (path === 'join') return {};
+  if (path === 'invites/accept') return refuseMembership ? {status:'refused',group_id:'studio',error:'expired'} : {status:'member',group_id:'studio'};
+  if (path === 'memberships') return {group_node_id:'cluster',memberships:[{node_id:'cluster',hostname:'Home',role:'home',permissions:['admin']},{node_id:'studio',hostname:'Studio',role:'member',permissions:['read']},{node_id:'bad',role:'owner'}]};
+  if (path === 'memberships/studio/leave') return {left:true,node_id:'studio'};
+  if (path === 'account/delete') {
+    assert.deepEqual(body, {account_id:reply.id, member_id:reply.member_id, device_node_id:reply.device_node_id, confirm:'delete'}, 'deletion names the verified account, member and device');
+    return {status: deletePending ? 'pending' : 'deleted'};
+  }
+  if (path === 'invites') return {code:'12345678',link_token:`lnk_${'a'.repeat(64)}`,device_name:body.device_name,expires_at:Date.now()/1000+600};
+  throw new Error(`Unexpected operation ${path}`);
+};
+const service = createNexusAccountService({
+  controller: async () => ({ source: currentSource, local, request }), desktop: () => desktop,
+  prepare: async (deviceName, joining, pinned, guard, desktopClient) => {
+    calls.push({path:'verify-passkey',joining,desktop:desktopClient});
+    guard(await pinned('status'));
+    if (failPasskey) throw new Error('Security key cancelled');
+  },
+});
+const input = { action:'create',deviceName:'Workstation',source };
+(async () => {
+  const info = await service.inspect();
+  assert.equal(info.source, source);
+  assert.equal(calls.some(call=>call.path==='verify-passkey'),false,'inspection never authenticates automatically');
+  const account = await service.signIn(input);
+  assert.equal(account.account.deviceName,'Workstation','the label is the device name lemond reports');
+  assert.equal(account.account.id,'cluster');
+  assert.equal(account.account.role,'admin');
+  assert.equal(account.devices[0].current,true);
+  assert.equal(account.canInvite,true);
+  assert.ok(calls.findIndex(call=>call.path==='verify-passkey')<calls.findIndex(call=>call.path==='account'),'membership is read only after explicit verification');
+  assert.equal(storage.size,0,'the account session persists nothing locally');
+  const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a6XcAAAAASUVORK5CYII=';
+  let updated = await service.setAvatar(account,image);
+  assert.equal(updated.image,image);
+  let synced = await service.refresh(account);
+  assert.equal(synced.account.avatarUrl,image,'another account read receives the peer-fetched image');
+  assert.equal(synced.avatar.revision,1);
+  await assert.rejects(service.setAvatar(account,null),/changed/,'a stale image write cannot overwrite a newer image');
+  avatarError = true;
+  await assert.rejects(service.setAvatar(synced,null),/unavailable/);
+  assert.equal((await service.refresh(synced)).account.avatarUrl,image,'failed writes preserve the saved image');
+  avatarError = false;
+  updated = await service.setAvatar(synced,null);
+  assert.equal(updated.image,null);
+  synced = await service.refresh(synced);
+  assert.equal(synced.account.avatarUrl,undefined,'removal follows the account');
+  reply.avatar = {...reply.avatar, revision:3, pending:true};
+  const waiting = await service.refresh({...synced, account:{...synced.account, avatarUrl:image}});
+  assert.equal(waiting.avatar.pending,true,'an offline peer is distinguished from a removal');
+  assert.equal(waiting.account.avatarUrl,undefined,'a new reference cannot display an older cached image');
+  reply.avatar = {...reply.avatar, pending:false};
+  assert.throws(()=>verifyAvatarReply({state:'ready',revision:3,image,can_write:true,pending:true}),/invalid profile/);
+  assert.throws(()=>verifyAvatarReply({state:'ready',revision:3,image:null,can_write:true,pending:'yes'}),/invalid profile/);
+  assert.equal(storage.size,0,'images and image revisions never enter local storage');
+  assert.throws(()=>verifyAvatarReply({state:'ready',revision:1,image:'https://tracking.example/photo',can_write:true}),/invalid profile/);
+  assert.throws(()=>verifyAvatarReply({state:'ready',revision:-1,image:null,can_write:true}),/invalid profile/);
+  const unsupported = verifyAccountReply({...reply,avatar:undefined},source);
+  await assert.rejects(service.setAvatar(unsupported,image),/cannot be changed/);
+  const readOnly = verifyAccountReply({...reply,avatar:{...reply.avatar,can_write:false}},source);
+  await assert.rejects(service.setAvatar(readOnly,image),/cannot be changed/);
+  currentSource = 'https://changed.example';
+  await assert.rejects(service.setAvatar(synced,image),/connection changed/);
+  currentSource = source;
+  const other = verifyAccountReply({...reply,id:'another-account',avatar:{state:'ready',revision:0,image:null,can_write:true}},source);
+  assert.equal(other.account.avatarUrl,undefined,'a different account never inherits the photo');
+  failPasskey = true;
+  const reads = calls.filter(call=>call.path==='account').length;
+  await assert.rejects(service.signIn(input),/cancelled/);
+  assert.equal(calls.filter(call=>call.path==='account').length,reads,'a cancelled passkey cannot produce a signed-in account');
+  assert.equal(storage.size,0,'failed authentication stores nothing either');
+  failPasskey = false;
+  await assert.rejects(service.signIn({...input,deviceName:' '}),/device name/);
+  await assert.rejects(service.signIn({...input,action:'join',invitation:'bad'}),/8-digit/);
+  await service.signIn({...input,action:'join',invitation:'12345678'});
+  const join = calls.findIndex(call=>call.path==='join');
+  assert.equal(calls[join-2].path,'verify-passkey');
+  assert.equal(calls[join].body.code,'12345678');
+  // A device whose mesh is already up accepts the invite as a member instead of joining again.
+  meshUp = true;
+  const accepts = calls.filter(call=>call.path==='invites/accept').length;
+  await service.signIn({...input,action:'join',invitation:`lnk_${'b'.repeat(64)}`});
+  assert.equal(calls.filter(call=>call.path==='invites/accept').length,accepts+1,'an enabled mesh accepts the invite');
+  assert.equal(calls.at(-2).path,'invites/accept');
+  assert.equal(calls.at(-2).body.code,`lnk_${'b'.repeat(64)}`);
+  assert.equal(calls.filter(call=>call.path==='join').length,1,'the join route is for a device without a mesh');
+  meshUp = false;
+  const joined = await service.joinNetwork(account,'12345678');
+  assert.deepEqual(joined,{status:'member',group_id:'studio'});
+  await assert.rejects(service.joinNetwork(account,'short'),/8-digit/);
+  refuseMembership = true;
+  assert.equal((await service.joinNetwork(account,'12345678')).status,'refused','a refused membership is reported, not thrown');
+  refuseMembership = false;
+  const groups = await service.memberships(account);
+  assert.deepEqual(groups.map(group=>[group.node_id,group.role]),[['cluster','home'],['studio','member']],'memberships keep home and member groups and drop unknown roles');
+  await service.leaveNetwork(account,'studio');
+  assert.equal(calls.at(-1).path,'memberships/studio/leave');
+  deletePending = true;
+  assert.equal(await service.deleteAccount(account),'pending');
+  deletePending = false;
+  assert.equal(await service.deleteAccount(account),'deleted');
+  registered = true;
+  await assert.rejects(service.signIn(input),/already has a registered key/);
+  await service.signIn({...input,action:'return',expectedId:'cluster'});
+  currentSource = 'https://another-server.example';
+  await assert.rejects(service.signIn(input),/connection changed/);
+  await assert.rejects(service.refresh(account),/connection changed/);
+  currentSource = 'http://192.168.10.20:13305'; local = false;
+  const remoteCalls = calls.length;
+  for (const action of ['create', 'join', 'return']) {
+    await assert.rejects(service.signIn({...input,source:currentSource,action,invitation:'12345678'}),/local controller or SSH forwarding/);
+  }
+  await assert.rejects(service.joinNetwork(account,'12345678'),/connection changed/);
+  await assert.rejects(service.deleteAccount(account),/connection changed/);
+  assert.equal(calls.length,remoteCalls,'remote setup cannot issue identity or lifecycle requests');
+  await assert.rejects(service.refresh(account),/connection changed/,'local sessions cannot mutate the remote server');
+  // A browser cannot verify a passkey. It still signs a passkey device in: prepare learns
+  // it is not the desktop app and asks lemond for the device key instead.
+  currentSource = source; local = true; desktop = false; unlock = 'passkey';
+  const passkeyBrowser = calls.length;
+  assert.equal((await service.signIn({...input,action:'return',expectedId:'cluster'})).account.id,'cluster','a browser signs a passkey device in through lemond');
+  assert.equal(calls.slice(passkeyBrowser).find(call=>call.path==='verify-passkey').desktop,false,'prepare is told the page cannot verify a passkey');
+  assert.ok(!calls.slice(passkeyBrowser).some(call=>call.path.startsWith('passkey/')),'the browser never touches passkey routes');
+  assert.equal((await service.invite(account,'My phone')).code,'12345678','a browser manages a passkey device');
+  unlock = 'device_key';
+  const browserCalls = calls.length;
+  assert.equal((await service.signIn({...input,action:'return',expectedId:'cluster'})).account.id,'cluster','a device-key device signs in from a browser');
+  assert.ok(!calls.slice(browserCalls).some(call => call.path.startsWith('passkey/')),'the browser sign-in never touches passkey routes');
+  assert.equal((await service.invite(account,'My phone')).code,'12345678','a device-key device is managed from a browser');
+  unlock = 'passkey'; desktop = true;
+  const invite = await service.invite(account,'My phone');
+  assert.equal(invite.code,'12345678');
+  assert.throws(()=>verifyAccountReply({...reply,role:'superadmin'},source),/verified account/);
+  const moderator = {...reply,role:'moderator',devices:reply.devices.map(device=>({...device,is_admin:false}))};
+  assert.equal(verifyAccountReply(moderator,source).account.role,'moderator','verified moderator roles survive account refresh');
+  assert.throws(()=>verifyAccountReply({...reply,role:'moderator'},source),/permissions/,'a moderator reply cannot also claim administrator membership');
+  assert.throws(()=>verifyAccountReply({...moderator,devices:moderator.devices.map(device=>({...device,permissions_known:false}))},source),/permissions/);
+  assert.throws(()=>verifyAccountReply({...reply,device_node_id:'not-a-member'},source),/permissions/);
+  assert.throws(()=>verifyAccountReply(reply,source,'different-cluster'),/account on this device changed/);
+  const renamed = {...reply,devices:[{...reply.devices[0],device_name:'Studio'},reply.devices[1]]};
+  assert.equal(verifyAccountReply(renamed,source,'cluster','Workstation').account.deviceName,'Studio','the label follows the device name');
+  const unnamed = {...reply,devices:[{...reply.devices[0],device_name:''},reply.devices[1]]};
+  assert.equal(verifyAccountReply(unnamed,source,'cluster','Workstation').account.deviceName,'Workstation','a missing device name keeps the previous label');
+  assert.equal(verifyAccountReply(unnamed,source).account.deviceName,'Lemonade device');
+  reply = {...reply,member_id:'other-identity'};
+  await assert.rejects(service.refresh(account),/membership changed/);
+  assert.equal(storage.size,0);
+  // Page load: a device-key server whose mesh is up is picked up without the dialog;
+  // a locked server, a passkey device and a server this page cannot manage are not.
+  reply = {...reply,member_id:'identity'};
+  meshUp = true; unlock = 'device_key'; registered = true; calls.length = 0;
+  const resumed = await service.resume();
+  assert.equal(resumed.account.id, 'cluster');
+  assert.deepEqual(calls.map(call => call.path), ['status','account']);
+  meshUp = false; assert.equal(await service.resume(), undefined);
+  meshUp = true; unlock = 'passkey'; assert.equal(await service.resume(), undefined);
+  unlock = 'device_key'; local = false; assert.equal(await service.resume(), undefined);
+  local = true;
+  console.log('Nexus account flow and synced images: verification, create/join/return, membership join/leave, deletion, replace/remove, stale writes, errors, account/source isolation, permissions and non-secret labels passed.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

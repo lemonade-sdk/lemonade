@@ -521,3 +521,484 @@ logging system.
 > LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
+
+## Lemonade Nexus SDK
+
+`src/LemonadeNexusSDK/` is the client SDK of Lemonade Nexus
+(https://github.com/lemonade-sdk/lemonade-nexus), copyright 2025-2026 Geramy
+Loveless, Nathan Adams, and the Lemonade-Nexus authors, MIT. The SDK library
+uses the libraries below. Where the system provides one, the build uses the
+system package; otherwise it builds the named release into the SDK library.
+The MIT License text below applies to each MIT-licensed library with its
+copyright line.
+
+- cpp-httplib 0.61.0: copyright (c) 2017 yhirose, MIT. Linux distribution
+  packages link the system library (0.41.0 or newer) instead.
+- libsodium 1.0.20: copyright (c) 2013-2024 Frank Denis, ISC.
+- nlohmann/json 3.12.0: copyright (c) 2013-2025 Niels Lohmann, MIT.
+- spdlog 1.16.0: copyright (c) 2016 Gabi Melman, MIT.
+- OpenSSL 3: Apache-2.0.
+- The Rust crates listed in the next section.
+
+> MIT License (Lemonade Nexus SDK)
+>
+> Copyright (c) 2025-2026 Geramy Loveless, Nathan Adams, and the Lemonade-Nexus authors
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all
+> copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+> SOFTWARE.
+
+> ISC License (libsodium 1.0.20)
+>
+> Copyright (c) 2013-2024
+> Frank Denis <j at pureftpd dot org>
+>
+> Permission to use, copy, modify, and/or distribute this software for any
+> purpose with or without fee is hereby granted, provided that the above
+> copyright notice and this permission notice appear in all copies.
+>
+> THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+> WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+> MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+> ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+> WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+> ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+> OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+## Lemonade Nexus SDK Rust crates
+
+The SDK library links the Rust crates locked in
+`src/LemonadeNexusSDK/crates/boringtun-ffi/Cargo.lock` and
+`src/LemonadeNexusSDK/crates/virtual-netstack/Cargo.lock`. Debian and Ubuntu
+packages carry their source in `debian/rust-vendor`. Where a crate offers a
+choice of licenses that includes MIT, Lemonade uses it under the MIT License
+above. The other license texts follow the table; the Apache License 2.0 is
+at the top of this file.
+
+| Crate | Version | License | Copyright |
+|---|---|---|---|
+| aead | 0.5.2 | MIT OR Apache-2.0 | Copyright (c) 2019 The RustCrypto Project Developers; Copyright (c) 2019 MobileCoin, LLC |
+| base64 | 0.22.1 | MIT OR Apache-2.0 | Copyright (c) 2015 Alice Maz |
+| bitflags | 1.3.2 | MIT OR Apache-2.0 | Copyright (c) 2014 The Rust Project Developers |
+| bitflags | 2.13.0 | MIT OR Apache-2.0 | Copyright (c) 2014 The Rust Project Developers |
+| blake2 | 0.10.6 | MIT OR Apache-2.0 | Copyright (c) 2015-2016 The blake2-rfc Developers, Cesar Barros; Copyright (c) 2017 Artyom Pavlov |
+| block-buffer | 0.10.4 | MIT OR Apache-2.0 | Copyright (c) 2018-2019 The RustCrypto Project Developers |
+| boringtun | 0.7.1 | BSD-3-Clause | Copyright (c) 2019 Cloudflare, Inc |
+| byteorder | 1.5.0 | Unlicense OR MIT | Copyright (c) 2015 Andrew Gallant |
+| cc | 1.2.65 | MIT OR Apache-2.0 | Copyright (c) 2014 Alex Crichton |
+| cfg-if | 1.0.4 | MIT OR Apache-2.0 | Copyright (c) 2014 Alex Crichton |
+| cfg_aliases | 0.2.2 | MIT | Copyright (c) 2020 Katharos Technology |
+| chacha20 | 0.9.1 | Apache-2.0 OR MIT | Copyright (c) 2019-2023 The RustCrypto Project Developers |
+| chacha20poly1305 | 0.10.1 | Apache-2.0 OR MIT | Copyright (c) 2019 The RustCrypto Project Developers |
+| cipher | 0.4.4 | MIT OR Apache-2.0 | Copyright (c) 2016-2020 RustCrypto Developers |
+| cpufeatures | 0.2.17 | MIT OR Apache-2.0 | Copyright (c) 2020-2025 The RustCrypto Project Developers |
+| crypto-common | 0.1.7 | MIT OR Apache-2.0 | Copyright (c) 2021 RustCrypto Developers |
+| curve25519-dalek | 4.1.3 | BSD-3-Clause | Copyright (c) 2016-2021 isis agora lovecruft. All rights reserved; Copyright (c) 2016-2021 Henry de Valence. All rights reserved; Copyright (c) 2012 The Go Authors. All rights reserved |
+| curve25519-dalek-derive | 0.1.1 | MIT OR Apache-2.0 | Copyright the curve25519-dalek-derive authors |
+| defmt | 0.3.101 | MIT OR Apache-2.0 | Copyright (c) Ferrous Systems |
+| defmt | 1.1.0 | MIT OR Apache-2.0 | Copyright (c) Ferrous Systems |
+| defmt-macros | 1.1.0 | MIT OR Apache-2.0 | Copyright (c) Ferrous Systems |
+| defmt-parser | 1.0.0 | MIT OR Apache-2.0 | Copyright (c) Ferrous Systems |
+| digest | 0.10.7 | MIT OR Apache-2.0 | Copyright (c) 2017 Artyom Pavlov |
+| fiat-crypto | 0.2.9 | MIT OR Apache-2.0 OR BSD-1-Clause | Copyright 2015-2020 the fiat-crypto authors (see the AUTHORS file); Copyright (c) 2015-2020 the fiat-crypto authors (see the AUTHORS file) |
+| find-msvc-tools | 0.1.9 | MIT OR Apache-2.0 | Copyright (c) 2014 Alex Crichton |
+| generic-array | 0.14.7 | MIT | Copyright (c) 2015 Bartłomiej Kamiński |
+| getrandom | 0.2.17 | MIT OR Apache-2.0 | Copyright (c) 2018-2024 The rust-random Project Developers; Copyright (c) 2014 The Rust Project Developers |
+| hash32 | 0.3.1 | MIT OR Apache-2.0 | Copyright (c) 2018 Jorge Aparicio |
+| heapless | 0.8.0 | MIT OR Apache-2.0 | Copyright (c) 2017 Jorge Aparicio |
+| hex | 0.4.3 | MIT OR Apache-2.0 | Copyright (c) 2013-2014 The Rust Project Developers; Copyright (c) 2015-2020 The rust-hex Developers |
+| hmac | 0.12.1 | MIT OR Apache-2.0 | Copyright (c) 2017 Artyom Pavlov |
+| inout | 0.1.4 | MIT OR Apache-2.0 | Copyright (c) 2022 The RustCrypto Project Developers; Copyright (c) 2022 Artyom Pavlov |
+| ip_network | 0.4.1 | BSD-2-Clause | Copyright (c) 2017, Jakub Onderka |
+| ip_network_table | 0.2.0 | BSD-2-Clause | Copyright (c) 2018, Jakub Onderka |
+| ip_network_table-deps-treebitmap | 0.5.0 | MIT | Copyright (c) 2016 Hroi Sigurdsson |
+| lazy_static | 1.5.0 | MIT OR Apache-2.0 | Copyright (c) 2010 The Rust Project Developers |
+| libc | 0.2.186 | MIT OR Apache-2.0 | Copyright (c) The Rust Project Developers |
+| lock_api | 0.4.14 | MIT OR Apache-2.0 | Copyright (c) 2016 The Rust Project Developers |
+| log | 0.4.33 | MIT OR Apache-2.0 | Copyright (c) 2014 The Rust Project Developers |
+| managed | 0.8.0 | 0BSD | Copyright (c) 2017 whitequark@whitequark.org |
+| mio | 1.2.4 | MIT | Copyright (c) 2014 Carl Lerche and other MIO contributors |
+| nix | 0.31.3 | MIT | Copyright (c) 2015 Carl Lerche + nix-rust Authors |
+| nu-ansi-term | 0.50.3 | MIT | Copyright (c) 2014 Benjamin Sago; Copyright (c) 2021-2022 The Nushell Project Developers |
+| once_cell | 1.21.4 | MIT OR Apache-2.0 | Copyright Aleksey Kladov |
+| opaque-debug | 0.3.1 | MIT OR Apache-2.0 | Copyright (c) 2018-2024 The RustCrypto Project Developers |
+| parking_lot | 0.12.5 | MIT OR Apache-2.0 | Copyright (c) 2016 The Rust Project Developers |
+| parking_lot_core | 0.9.12 | MIT OR Apache-2.0 | Copyright (c) 2016 The Rust Project Developers |
+| pin-project-lite | 0.2.17 | Apache-2.0 OR MIT | Copyright the pin-project-lite authors |
+| poly1305 | 0.8.0 | Apache-2.0 OR MIT | Copyright (c) 2015-2019 RustCrypto Developers |
+| portable-atomic | 1.15.0 | Apache-2.0 OR MIT | Copyright the portable-atomic authors |
+| proc-macro-error-attr2 | 2.0.0 | MIT OR Apache-2.0 | Copyright 2019-2020 CreepySkeleton <creepy-skeleton@yandex.ru>; Copyright (c) 2019-2020 CreepySkeleton |
+| proc-macro-error2 | 2.0.1 | MIT OR Apache-2.0 | Copyright 2019-2020 CreepySkeleton <creepy-skeleton@yandex.ru>; Copyright (c) 2019-2020 CreepySkeleton |
+| proc-macro2 | 1.0.106 | MIT OR Apache-2.0 | Copyright David Tolnay, Alex Crichton |
+| quote | 1.0.46 | MIT OR Apache-2.0 | Copyright David Tolnay |
+| rand_core | 0.6.4 | MIT OR Apache-2.0 | Copyrights in the Rand project are retained by their contributors. No; copyright assignment is required to contribute to the Rand project; Copyright 2018 Developers of the Rand project; Copyright (c) 2014 The Rust Project Developers |
+| redox_syscall | 0.5.18 | MIT | Copyright (c) 2017 Redox OS Developers |
+| ring | 0.17.14 | Apache-2.0 AND ISC | Copyright 2015-2025 Brian Smith; the BoringSSL authors (Apache-2.0 parts) |
+| rustc_version | 0.4.1 | MIT OR Apache-2.0 | Copyright (c) 2016 The Rust Project Developers |
+| scopeguard | 1.2.0 | MIT OR Apache-2.0 | Copyright (c) 2016-2019 Ulrik Sverdrup "bluss" and scopeguard developers |
+| semver | 1.0.28 | MIT OR Apache-2.0 | Copyright David Tolnay |
+| serde | 1.0.228 | MIT OR Apache-2.0 | Copyright Erick Tryzelaar, David Tolnay |
+| serde_core | 1.0.228 | MIT OR Apache-2.0 | Copyright Erick Tryzelaar, David Tolnay |
+| serde_derive | 1.0.228 | MIT OR Apache-2.0 | Copyright Erick Tryzelaar, David Tolnay |
+| sharded-slab | 0.1.7 | MIT | Copyright (c) 2019 Eliza Weisman |
+| shlex | 2.0.1 | MIT OR Apache-2.0 | Copyright 2015 Nicholas Allegra (comex); Copyright (c) 2015 Nicholas Allegra (comex) |
+| smallvec | 1.15.2 | MIT OR Apache-2.0 | Copyright (c) 2018 The Servo Project Developers |
+| smoltcp | 0.12.0 | 0BSD | Copyright (c) smoltcp contributors |
+| stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 | Copyright (c) 2017 Robert Grosse |
+| subtle | 2.6.1 | BSD-3-Clause | Copyright (c) 2016-2017 Isis Agora Lovecruft, Henry de Valence. All rights reserved; Copyright (c) 2016-2024 Isis Agora Lovecruft. All rights reserved |
+| syn | 2.0.118 | MIT OR Apache-2.0 | Copyright David Tolnay |
+| thiserror | 2.0.18 | MIT OR Apache-2.0 | Copyright David Tolnay |
+| thiserror-impl | 2.0.18 | MIT OR Apache-2.0 | Copyright David Tolnay |
+| thread_local | 1.1.9 | MIT OR Apache-2.0 | Copyright (c) 2016 The Rust Project Developers |
+| tracing | 0.1.44 | MIT | Copyright (c) 2019 Tokio Contributors |
+| tracing-attributes | 0.1.31 | MIT | Copyright (c) 2019 Tokio Contributors |
+| tracing-core | 0.1.36 | MIT | Copyright (c) 2019 Tokio Contributors |
+| tracing-log | 0.2.0 | MIT | Copyright (c) 2019 Tokio Contributors |
+| tracing-subscriber | 0.3.23 | MIT | Copyright (c) 2019 Tokio Contributors |
+| typenum | 1.20.1 | MIT OR Apache-2.0 | Copyright 2014 Paho Lurie-Gregg; Copyright (c) 2014 Paho Lurie-Gregg |
+| unicode-ident | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | Copyright (c) David Tolnay; Copyright (c) 1991-2023 Unicode, Inc |
+| universal-hash | 0.5.1 | MIT OR Apache-2.0 | Copyright (c) 2019-2020 RustCrypto Developers |
+| untrusted | 0.9.0 | ISC | Copyright 2015-2016 Brian Smith |
+| valuable | 0.1.1 | MIT | Copyright (c) 2021 Tokio Contributors |
+| version_check | 0.9.5 | MIT OR Apache-2.0 | Copyright (c) 2017-2018 Sergio Benitez |
+| wasi | 0.11.1+wasi-snapshot-preview1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | Copyright the WASI contributors |
+| windows-link | 0.2.1 | MIT OR Apache-2.0 | Copyright (c) Microsoft Corporation |
+| windows-sys | 0.52.0 | MIT OR Apache-2.0 | Copyright (c) Microsoft Corporation |
+| windows-sys | 0.61.2 | MIT OR Apache-2.0 | Copyright (c) Microsoft Corporation |
+| windows-targets | 0.52.6 | MIT OR Apache-2.0 | Copyright (c) Microsoft Corporation |
+| windows_aarch64_gnullvm | 0.52.6 | MIT OR Apache-2.0 | Copyright (c) Microsoft Corporation |
+| windows_aarch64_msvc | 0.52.6 | MIT OR Apache-2.0 | Copyright (c) Microsoft Corporation |
+| windows_i686_gnu | 0.52.6 | MIT OR Apache-2.0 | Copyright (c) Microsoft Corporation |
+| windows_i686_gnullvm | 0.52.6 | MIT OR Apache-2.0 | Copyright (c) Microsoft Corporation |
+| windows_i686_msvc | 0.52.6 | MIT OR Apache-2.0 | Copyright (c) Microsoft Corporation |
+| windows_x86_64_gnu | 0.52.6 | MIT OR Apache-2.0 | Copyright (c) Microsoft Corporation |
+| windows_x86_64_gnullvm | 0.52.6 | MIT OR Apache-2.0 | Copyright (c) Microsoft Corporation |
+| windows_x86_64_msvc | 0.52.6 | MIT OR Apache-2.0 | Copyright (c) Microsoft Corporation |
+| x25519-dalek | 2.0.1 | BSD-3-Clause | Copyright (c) 2017-2021 isis agora lovecruft. All rights reserved; Copyright (c) 2019-2021 DebugSteven. All rights reserved |
+| zeroize | 1.9.0 | Apache-2.0 OR MIT | Copyright (c) 2018-2026 The RustCrypto Project Developers |
+| zeroize_derive | 1.5.0 | Apache-2.0 OR MIT | Copyright (c) 2019-2026 The RustCrypto Project Developers |
+
+> BSD 3-Clause License (boringtun 0.7.1)
+>
+> Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
+>
+> Redistribution and use in source and binary forms, with or without
+> modification, are permitted provided that the following conditions are met:
+>
+>     1. Redistributions of source code must retain the above copyright notice,
+>     this list of conditions and the following disclaimer.
+>     2. Redistributions in binary form must reproduce the above copyright
+>     notice, this list of conditions and the following disclaimer in the
+>     documentation and/or other materials provided with the distribution.
+>     3. Neither the name of the copyright holder nor the names of its
+>     contributors may be used to endorse or promote products derived from this
+>     software without specific prior written permission.
+>
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+> AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+> IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+> DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+> FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+> DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+> SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+> CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+> OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+> OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+> BSD 3-Clause License (curve25519-dalek 4.1.3)
+>
+> Copyright (c) 2016-2021 isis agora lovecruft. All rights reserved.
+> Copyright (c) 2016-2021 Henry de Valence. All rights reserved.
+>
+> Redistribution and use in source and binary forms, with or without
+> modification, are permitted provided that the following conditions are
+> met:
+>
+> 1. Redistributions of source code must retain the above copyright
+> notice, this list of conditions and the following disclaimer.
+>
+> 2. Redistributions in binary form must reproduce the above copyright
+> notice, this list of conditions and the following disclaimer in the
+> documentation and/or other materials provided with the distribution.
+>
+> 3. Neither the name of the copyright holder nor the names of its
+> contributors may be used to endorse or promote products derived from
+> this software without specific prior written permission.
+>
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+> IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+> TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+> PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+> HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+> SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+> TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+> PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+> LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+> NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+> SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+>
+> ========================================================================
+>
+> Portions of curve25519-dalek were originally derived from Adam Langley's
+> Go ed25519 implementation, found at <https://github.com/agl/ed25519/>,
+> under the following licence:
+>
+> ========================================================================
+>
+> Copyright (c) 2012 The Go Authors. All rights reserved.
+>
+> Redistribution and use in source and binary forms, with or without
+> modification, are permitted provided that the following conditions are
+> met:
+>
+>    * Redistributions of source code must retain the above copyright
+> notice, this list of conditions and the following disclaimer.
+>    * Redistributions in binary form must reproduce the above
+> copyright notice, this list of conditions and the following disclaimer
+> in the documentation and/or other materials provided with the
+> distribution.
+>    * Neither the name of Google Inc. nor the names of its
+> contributors may be used to endorse or promote products derived from
+> this software without specific prior written permission.
+>
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+> IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+> TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+> PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
+> OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+> EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+> PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+> PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+> LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+> NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+> SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+> BSD 3-Clause License (subtle 2.6.1)
+>
+> Copyright (c) 2016-2017 Isis Agora Lovecruft, Henry de Valence. All rights reserved.
+> Copyright (c) 2016-2024 Isis Agora Lovecruft. All rights reserved.
+>
+> Redistribution and use in source and binary forms, with or without
+> modification, are permitted provided that the following conditions are
+> met:
+>
+> 1. Redistributions of source code must retain the above copyright
+> notice, this list of conditions and the following disclaimer.
+>
+> 2. Redistributions in binary form must reproduce the above copyright
+> notice, this list of conditions and the following disclaimer in the
+> documentation and/or other materials provided with the distribution.
+>
+> 3. Neither the name of the copyright holder nor the names of its
+> contributors may be used to endorse or promote products derived from
+> this software without specific prior written permission.
+>
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+> IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+> TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+> PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+> HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+> SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+> TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+> PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+> LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+> NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+> SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+> BSD 3-Clause License (x25519-dalek 2.0.1)
+>
+> Copyright (c) 2017-2021 isis agora lovecruft. All rights reserved.
+> Copyright (c) 2019-2021 DebugSteven. All rights reserved.
+>
+> Redistribution and use in source and binary forms, with or without
+> modification, are permitted provided that the following conditions are
+> met:
+>
+> 1. Redistributions of source code must retain the above copyright
+> notice, this list of conditions and the following disclaimer.
+>
+> 2. Redistributions in binary form must reproduce the above copyright
+> notice, this list of conditions and the following disclaimer in the
+> documentation and/or other materials provided with the distribution.
+>
+> 3. Neither the name of the copyright holder nor the names of its
+> contributors may be used to endorse or promote products derived from
+> this software without specific prior written permission.
+>
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+> IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+> TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+> PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+> HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+> SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+> TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+> PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+> LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+> NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+> SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+> BSD 2-Clause License (ip_network 0.4.1)
+>
+> Copyright (c) 2017, Jakub Onderka
+>
+> Redistribution and use in source and binary forms, with or without
+> modification, are permitted provided that the following conditions are met:
+>
+> 1. Redistributions of source code must retain the above copyright notice, this
+>    list of conditions and the following disclaimer.
+> 2. Redistributions in binary form must reproduce the above copyright notice,
+>    this list of conditions and the following disclaimer in the documentation
+>    and/or other materials provided with the distribution.
+>
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+> ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+> WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+> DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+> ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+> (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+> LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+> ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+> (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+> SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+> BSD 2-Clause License (ip_network_table 0.2.0)
+>
+> Copyright (c) 2018, Jakub Onderka
+>
+> Redistribution and use in source and binary forms, with or without
+> modification, are permitted provided that the following conditions are met:
+>
+> 1. Redistributions of source code must retain the above copyright notice, this
+>    list of conditions and the following disclaimer.
+> 2. Redistributions in binary form must reproduce the above copyright notice,
+>    this list of conditions and the following disclaimer in the documentation
+>    and/or other materials provided with the distribution.
+>
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+> ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+> WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+> DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+> ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+> (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+> LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+> ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+> (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+> SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+> Zero-Clause BSD License (managed 0.8.0)
+>
+> Copyright (C) 2017 whitequark@whitequark.org
+>
+> Permission to use, copy, modify, and/or distribute this software for
+> any purpose with or without fee is hereby granted.
+>
+> THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+> WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+> MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+> ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+> WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
+> AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
+> OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+> Zero-Clause BSD License (smoltcp 0.12.0)
+>
+> Copyright (C) smoltcp contributors
+>
+> Permission to use, copy, modify, and/or distribute this software for
+> any purpose with or without fee is hereby granted.
+>
+> THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+> WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+> MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+> ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+> WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
+> AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
+> OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+> ISC License (ring 0.17.14)
+>
+> Copyright 2015-2025 Brian Smith.
+>
+> Permission to use, copy, modify, and/or distribute this software for any
+> purpose with or without fee is hereby granted, provided that the above
+> copyright notice and this permission notice appear in all copies.
+>
+> THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+> WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+> MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+> SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+> WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+> OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+> CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+> ISC License (untrusted 0.9.0)
+>
+> Copyright 2015-2016 Brian Smith.
+>
+> Permission to use, copy, modify, and/or distribute this software for any
+> purpose with or without fee is hereby granted, provided that the above
+> copyright notice and this permission notice appear in all copies.
+>
+> THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHORS DISCLAIM ALL WARRANTIES
+> WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+> MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR
+> ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+> WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+> ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+> OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+> Unicode License v3 (unicode-ident 1.0.24)
+>
+> UNICODE LICENSE V3
+>
+> COPYRIGHT AND PERMISSION NOTICE
+>
+> Copyright © 1991-2023 Unicode, Inc.
+>
+> NOTICE TO USER: Carefully read the following legal agreement. BY
+> DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING DATA FILES, AND/OR
+> SOFTWARE, YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+> TERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT
+> DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE THE DATA FILES OR SOFTWARE.
+>
+> Permission is hereby granted, free of charge, to any person obtaining a
+> copy of data files and any associated documentation (the "Data Files") or
+> software and any associated documentation (the "Software") to deal in the
+> Data Files or Software without restriction, including without limitation
+> the rights to use, copy, modify, merge, publish, distribute, and/or sell
+> copies of the Data Files or Software, and to permit persons to whom the
+> Data Files or Software are furnished to do so, provided that either (a)
+> this copyright and permission notice appear with all copies of the Data
+> Files or Software, or (b) this copyright and permission notice appear in
+> associated Documentation.
+>
+> THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+> KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+> MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF
+> THIRD PARTY RIGHTS.
+>
+> IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS NOTICE
+> BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES,
+> OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+> WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+> ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE DATA
+> FILES OR SOFTWARE.
+>
+> Except as contained in this notice, the name of a copyright holder shall
+> not be used in advertising or otherwise to promote the sale, use or other
+> dealings in these Data Files or Software without prior written
+> authorization of the copyright holder.

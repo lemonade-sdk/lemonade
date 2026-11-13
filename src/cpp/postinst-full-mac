@@ -37,6 +37,12 @@ CURRENT_UID=$(stat -f '%u' /dev/console 2>/dev/null)
 if launchctl list | grep -q "$DAEMON_LABEL"; then
     echo "Stopping existing Server Daemon..."
     launchctl bootout system/"$DAEMON_LABEL" 2>/dev/null || launchctl unload "$DAEMON_PLIST" 2>/dev/null || true
+    # bootout returns before the job is gone; a bootstrap that races the
+    # teardown fails with "Input/output error" and leaves no daemon loaded.
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+        launchctl print system/"$DAEMON_LABEL" >/dev/null 2>&1 || break
+        sleep 1
+    done
 fi
 
 # Stop Agent (User-specific)
@@ -175,7 +181,23 @@ fi
 
 # A. Start Server Daemon (System)
 echo "Loading Server Daemon..."
-launchctl bootstrap system "$DAEMON_PLIST" 2>/dev/null || launchctl load -w "$DAEMON_PLIST"
+DAEMON_LOADED=0
+for _ in 1 2 3 4 5; do
+    if launchctl bootstrap system "$DAEMON_PLIST" 2>/dev/null; then
+        DAEMON_LOADED=1
+        break
+    fi
+    # Already loaded counts as loaded; anything else is retried after a pause.
+    if launchctl print system/"$DAEMON_LABEL" >/dev/null 2>&1; then
+        DAEMON_LOADED=1
+        break
+    fi
+    sleep 2
+done
+if [ "$DAEMON_LOADED" -ne 1 ]; then
+    echo "bootstrap failed five times; falling back to launchctl load"
+    launchctl load -w "$DAEMON_PLIST" || echo "Server Daemon did not load; run: sudo launchctl bootstrap system $DAEMON_PLIST"
+fi
 # Kickstart ensures it runs immediately rather than waiting for socket usage
 launchctl kickstart -k system/"$DAEMON_LABEL" 2>/dev/null || true
 
