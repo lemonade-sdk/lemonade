@@ -129,6 +129,28 @@ ordered_json ollama_details_schema() {
     })");
 }
 
+json ollama_generate_chunk(const json& openai_chunk, const std::string& model) {
+    json ollama_chunk = {
+        {"model", model}, {"created_at", "2024-01-01T00:00:00Z"},
+        {"response", ""}, {"done", false}
+    };
+    if (openai_chunk.contains("choices") && openai_chunk["choices"].is_array() &&
+        !openai_chunk["choices"].empty()) {
+        const auto& choice = openai_chunk["choices"][0];
+        if (choice.contains("text") && choice["text"].is_string()) {
+            ollama_chunk["response"] = choice["text"];
+        } else if (choice.contains("delta") && choice["delta"].contains("content") &&
+                   choice["delta"]["content"].is_string()) {
+            ollama_chunk["response"] = choice["delta"]["content"];
+        }
+        if (choice.contains("finish_reason") && !choice["finish_reason"].is_null()) {
+            ollama_chunk["done"] = true;
+            ollama_chunk["done_reason"] = choice["finish_reason"];
+        }
+    }
+    return ollama_chunk;
+}
+
 namespace {
 
 struct OptionMapping { const char* ollama_key; const RouteArg& openai_arg; };

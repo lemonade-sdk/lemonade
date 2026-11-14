@@ -326,25 +326,7 @@ public:
                 stream_response(req, res, [router, model, has_media](const std::string& body, httplib::DataSink& sink) {
                     stream_sse_to_ndjson(body, sink,
                         [&model](const json& openai_chunk) -> json {
-                            json ollama_chunk = {
-                                {"model", model}, {"created_at", "2024-01-01T00:00:00Z"},
-                                {"done", false}
-                            };
-                            if (openai_chunk.contains("choices") && !openai_chunk["choices"].empty()) {
-                                const auto& choice = openai_chunk["choices"][0];
-                                if (choice.contains("text"))
-                                    ollama_chunk["response"] = choice["text"];
-                                else if (choice.contains("delta") && choice["delta"].contains("content") &&
-                                         choice["delta"]["content"].is_string())
-                                    ollama_chunk["response"] = choice["delta"]["content"];
-                                else
-                                    ollama_chunk["response"] = "";
-                                if (choice.contains("finish_reason") && !choice["finish_reason"].is_null()) {
-                                    ollama_chunk["done"] = true;
-                                    ollama_chunk["done_reason"] = choice["finish_reason"];
-                                }
-                            }
-                            return ollama_chunk;
+                            return ollama_generate_chunk(openai_chunk, model);
                         },
                         [&model](int prompt_eval_count, int eval_count) -> json {
                             return {
