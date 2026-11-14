@@ -21,6 +21,8 @@ export interface NexusSignInInput {
   deviceName: string;
   source: string;
   invitation?: string;
+  // A headless server's setup code (status.setup_code_required), read on that server.
+  setupCode?: string;
 }
 export interface NexusAccountService {
   disconnect: (session: VerifiedNexusAccount) => Promise<void>;
@@ -135,7 +137,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
         prepared = current;
         if (input.action === 'create' && current.registered && current.has_network !== false) throw new Error('This device already has a registered key. Choose Use this device’s key to continue.');
         if (input.action === 'return' && !current.registered) throw new Error('Create an account or join by invitation before enabling Mesh on this device.');
-      }, dependencies.desktop());
+      }, dependencies.desktop(), input.setupCode);
       if (input.action === 'join') {
         const code = input.invitation!.trim();
         if (prepared?.mesh_up) await acceptNexusInvite(code, controller.request);

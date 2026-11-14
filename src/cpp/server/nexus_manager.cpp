@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
@@ -887,6 +888,32 @@ bool constant_time_equals(const std::string& candidate, const std::string& expec
         difference |= static_cast<unsigned char>(left ^ static_cast<unsigned char>(expected[i]));
     }
     return difference == 0;
+}
+
+bool setup_code_pending(const json& status) {
+    return status.value("enabled", false) && status.value("identity_source", std::string{}) == "system" &&
+        !status.value("registered", false);
+}
+
+std::string new_setup_code() {
+    static constexpr char alphabet[] = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    std::random_device device;
+    std::uniform_int_distribution<int> pick(0, static_cast<int>(sizeof(alphabet)) - 2);
+    std::string code;
+    for (int i = 0; i < 12; ++i) {
+        if (i > 0 && i % 4 == 0) code += '-';
+        code += alphabet[pick(device)];
+    }
+    return code;
+}
+
+std::string normalize_setup_code(const std::string& code) {
+    std::string normalized;
+    for (const char c : code) {
+        if (c == '-' || c == ' ') continue;
+        normalized += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    return normalized;
 }
 
 bool bearer_matches(const std::string& authorization, const std::string& api_key, const std::string& admin_key) {
@@ -2617,6 +2644,41 @@ void NexusManager::supervise() {
     }
 }
 
+std::string NexusManager::setup_code_file() const {
+    return utils::path_to_utf8(utils::path_from_utf8(data_root_) / "setup-code");
+}
+
+std::string NexusManager::setup_code_locked() {
+    const auto path = utils::path_from_utf8(setup_code_file());
+    if (std::ifstream existing{path}) {
+        std::string code;
+        std::getline(existing, code);
+        if (!code.empty()) return code;
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    const auto code = nexus_access::new_setup_code();
+    auto temporary = path;
+    temporary += ".tmp";
+    {
+        std::ofstream output(temporary, std::ios::trunc);
+        if (!output) throw std::runtime_error("Cannot write the Nexus setup code");
+        output << code << '\n';
+    }
+    std::filesystem::permissions(temporary, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+        std::filesystem::perm_options::replace, ec);
+    if (!utils::atomic_replace_file(temporary, path, ec)) throw std::runtime_error("Cannot save the Nexus setup code: " + ec.message());
+    // The location is logged, never the code.
+    LOG(INFO, "Nexus") << "Headless setup: this server's setup code is in " << setup_code_file() << std::endl;
+    return code;
+}
+
+void NexusManager::drop_setup_code_locked() {
+    std::error_code ec;
+    std::filesystem::remove(utils::path_from_utf8(setup_code_file()), ec);
+    setup_code_failures_ = 0;
+}
+
 void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
                            const std::string& operation, bool remote, const std::string& controller_url) {
     res.set_header("Cache-Control", "no-store");
@@ -2637,9 +2699,34 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
         if (operation == "status" || operation == "join/status") {
             auto current = status();
             if (!controller_url.empty()) current["controller_url"] = controller_url;
+            if (nexus_access::setup_code_pending(current)) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                setup_code_locked();
+                current["setup_code_required"] = true;
+                current["setup_code_file"] = setup_code_file();
+            }
             reply(200, current);
             return;
         }
+        // Headless setup: another machine unlocks a system-identity server with its device key
+        // only with the setup code (see nexus_access::setup_code_pending). A wrong code five times
+        // replaces it, so guessing means reading the new file.
+        if (operation == "key/unlock" && !local_address(req.remote_addr) && nexus_access::setup_code_pending(status())) {
+            const auto given = nexus_access::normalize_setup_code(text(body, "setup_code"));
+            std::lock_guard<std::mutex> lock(mutex_);
+            const auto expected = nexus_access::normalize_setup_code(setup_code_locked());
+            const auto hint = "On the server: sudo cat " + setup_code_file();
+            if (given.empty()) {
+                reply(403, {{"error", "This server needs its setup code to join from another machine. " + hint}, {"setup_code_required", true}, {"setup_code_file", setup_code_file()}});
+                return;
+            }
+            if (!nexus_access::constant_time_equals(given, expected)) {
+                if (++setup_code_failures_ >= 5) drop_setup_code_locked();
+                reply(403, {{"error", "That is not this server's setup code. " + hint}, {"setup_code_required", true}, {"setup_code_file", setup_code_file()}});
+                return;
+            }
+        }
+        body.erase("setup_code");
         if (operation == "route-permissions") {
             if (!route_permissions_.is_object()) { reply_error(res, 503, "Route permissions are unavailable on this server"); return; }
             auto permissions = route_permissions_;
@@ -2710,6 +2797,8 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
             (operation == "forget" && result.first == 200)) disable();
         std::lock_guard<std::mutex> lock(mutex_);
         if (result.first == 200) {
+            // The first device-key unlock registers the device; its setup code is spent.
+            if (operation == "key/unlock") drop_setup_code_locked();
             if (operation == "invites") active_invite_ = result.second;
             if (operation == "invites/cancel" || operation == "lock") active_invite_ = nullptr;
             if (result.second.is_object() && result.second.contains("mesh_up")) update_snapshot_locked(result.second);

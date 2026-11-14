@@ -367,6 +367,8 @@ const ZH_CN: Record<string, string> = {
   'Server offline': '服务器离线',
   'Warning': '警告',
   'Server URL': '服务器 URL',
+  'Setup code': '设置代码',
+  'This server runs without a desktop, so it proves you own it with a one-time setup code. On the server: {command}': '此服务器没有桌面，因此使用一次性设置代码证明您拥有它。在服务器上运行：{command}',
   'Use a full http:// or https:// URL. Connection errors show the exact endpoint.': '请输入完整的 http:// 或 https:// 地址。连接错误会显示具体端点。',
   'API Key (optional)': 'API 密钥（可选）',
   'Remember API key': '记住 API 密钥',

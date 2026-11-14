@@ -93,6 +93,20 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
         return access::route_access(listener, req, operation);
     };
     check(access::constant_time_equals("secret", "secret"), "Equal secrets match");
+    // Headless setup: only an enabled system identity with no passkey and no device-key unlock yet needs the code.
+    check(access::setup_code_pending({{"enabled", true}, {"identity_source", "system"}, {"registered", false}}), "A fresh headless server needs its setup code");
+    check(!access::setup_code_pending({{"enabled", true}, {"identity_source", "system"}, {"registered", true}}), "A registered headless server needs no setup code");
+    check(!access::setup_code_pending({{"enabled", true}, {"identity_source", "user"}, {"registered", false}}), "A user identity needs no setup code");
+    check(!access::setup_code_pending({{"enabled", false}, {"identity_source", "system"}, {"registered", false}}), "A disabled server makes no setup code");
+    {
+        const auto first = access::new_setup_code();
+        const auto second = access::new_setup_code();
+        check(first.size() == 14 && first[4] == '-' && first[9] == '-', "A setup code reads XXXX-XXXX-XXXX");
+        check(first.find_first_of("01ILO") == std::string::npos, "A setup code has no look-alike characters");
+        check(first != second, "Setup codes are random");
+        check(access::normalize_setup_code(" abcd-efgh-jkmn ") == "ABCDEFGHJKMN", "A setup code compares in any case, with or without dashes");
+        check(access::constant_time_equals(access::normalize_setup_code(first), access::normalize_setup_code(first)), "A code matches itself after normalizing");
+    }
     check(!access::constant_time_equals("secre", "secret") && !access::constant_time_equals("secrets", "secret"), "Length differences never match");
     check(!access::bearer_matches("Bearer ", "", ""), "Empty API keys are not credentials");
     for (const auto* address : {"203.0.113.1", "9.255.255.255", "172.32.0.0", "192.169.0.0", "100.64.0.1", "169.254.1.2",

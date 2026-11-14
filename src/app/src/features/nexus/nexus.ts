@@ -110,6 +110,10 @@ export interface NexusStatus {
   needs_rejoin?: boolean;
   revoked_public_key?: string;
   join_membership?: NexusJoinMembership;
+  // A headless server (system identity, no passkey yet) unlocks from another machine only with
+  // its setup code, which lemond keeps in `setup_code_file` on that server.
+  setup_code_required?: boolean;
+  setup_code_file?: string;
   mesh_port?: NexusMeshPort;
 }
 export function nexusMeshPortUrl(status: NexusStatus | null | undefined, nodeId: string): string | undefined {
@@ -176,6 +180,7 @@ export function nexusConnectionLabel(status: NexusStatus | null | undefined, nod
 // passkey keeps that identity on the passkey path.
 export function usesNexusDeviceKey(status: NexusStatus): boolean {
   if (status.registered && status.unlock === 'passkey') return false;
+  if (status.setup_code_required) return true;
   return status.unlock === 'device_key' || status.identity_source === 'user' || status.identity_source === 'handoff'
     || (status.identity_source === 'system' && !status.registered);
 }
@@ -460,7 +465,7 @@ export async function unlockNexus(deferJoin = false, request = nexusRequest): Pr
   } });
 }
 export async function prepareNexus(deviceName: string, joining: boolean, request = nexusRequest,
-  beforeUnlock?: (status: NexusStatus) => void, desktop = isNexusDesktop()) {
+  beforeUnlock?: (status: NexusStatus) => void, desktop = isNexusDesktop(), setupCode?: string) {
   await request('enable', {});
   let status: NexusStatus | undefined;
   for (let attempt = 0; attempt < 20; attempt++) {
@@ -478,7 +483,8 @@ export async function prepareNexus(deviceName: string, joining: boolean, request
     // An unlocked device without a network still needs the unlock call: it is what
     // creates the network. A join leaves that to the invite code.
     if (!status.locked && (status.mesh_up || joining)) return;
-    try { await request('key/unlock', { defer_join: joining, ...(retirePasskey ? { replace_passkey: true } : {}) }); }
+    try { await request('key/unlock', { defer_join: joining, ...(retirePasskey ? { replace_passkey: true } : {}),
+      ...(setupCode?.trim() ? { setup_code: setupCode.trim() } : {}) }); }
     catch (error) {
       if (error instanceof NexusRequestError && error.retryable) {
         const reason = error.message.trim();

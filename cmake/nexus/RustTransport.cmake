@@ -15,6 +15,18 @@ if(NEXUS_CARGO_VENDOR_DIR)
     list(APPEND _cargo_flags --config "${_vendor_config}")
 endif()
 set(_rust_environment)
+# Crates with C parts (ring) compile them with the CFLAGS in the environment. Distribution
+# builds that turn on link-time optimisation (Arch's makepkg: -flto=auto) would leave those
+# objects as LTO bitcode inside a static library that the SDK links without LTO, so every
+# ring symbol comes out undefined. The C parts are built without the LTO flags.
+foreach(_flags_var CFLAGS CXXFLAGS)
+    if(DEFINED ENV{${_flags_var}})
+        string(REGEX REPLACE "(^| )-f(no-)?lto(=[^ ]*)?" " " _flags_value "$ENV{${_flags_var}}")
+        string(REGEX REPLACE "(^| )-f(no-)?fat-lto-objects" " " _flags_value "${_flags_value}")
+        string(STRIP "${_flags_value}" _flags_value)
+        list(APPEND _rust_environment "${_flags_var}=${_flags_value}")
+    endif()
+endforeach()
 # A versioned toolchain such as /usr/lib/rust-1.85/bin keeps its rustc beside cargo,
 # while PATH may hold an older rustc.
 get_filename_component(_cargo_dir "${NEXUS_CARGO_EXECUTABLE}" DIRECTORY)

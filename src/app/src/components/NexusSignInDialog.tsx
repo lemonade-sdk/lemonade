@@ -18,6 +18,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
   const [action, setAction] = useState<NexusSignInInput['action']>('create');
   const [deviceName, setDeviceName] = useState('');
   const [invitation, setInvitation] = useState('');
+  const [setupCode, setSetupCode] = useState('');
   const [checking, setChecking] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -50,13 +51,15 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
   const deviceKey = Boolean(available && (usesNexusDeviceKey(inspection.status) || !inspection.desktop));
   const retiresPasskey = Boolean(available && !inspection.desktop && !usesNexusDeviceKey(inspection.status));
   const nameTooLong = new TextEncoder().encode(deviceName.trim()).length > 128;
+  const needsSetupCode = Boolean(inspection?.status.setup_code_required);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (busy || !available || waitingForKey || !deviceName.trim() || nameTooLong) return;
     setBusy(true); setError('');
     const revision = request.current;
     try {
-      const session = await service.signIn({ action, deviceName, invitation, source: inspection.source });
+      const session = await service.signIn({ action, deviceName, invitation,
+        source: inspection.source, ...(needsSetupCode ? { setupCode } : {}) });
       if (revision !== request.current) return;
       if (action === 'join') {
         const notice = nexusJoinNotice((await service.inspect().catch(() => undefined))?.status.join_membership);
@@ -64,7 +67,13 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
         if (notice) { setJoined({ session, ...notice }); return; }
       }
       onSignedIn(session);
-    } catch (error) { if (revision === request.current) setError(error instanceof Error ? error.message : String(error)); }
+    } catch (error) {
+      if (revision !== request.current) return;
+      setError(error instanceof Error ? error.message : String(error));
+      // A headless server reports that it needs its setup code once Mesh is on: show the field.
+      const fresh = await service.inspect().catch(() => undefined);
+      if (fresh && revision === request.current && fresh.status.setup_code_required) setInspection(fresh);
+    }
     finally { if (revision === request.current) setBusy(false); }
   };
   if (joined) {
@@ -96,9 +105,10 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
             <label htmlFor={`${id}-device`}>{t('Device name')}</label><input autoFocus id={`${id}-device`} className="input" value={deviceName} maxLength={128} onChange={event => setDeviceName(event.target.value)} />
             <p className="nexus-hint">{t('Other devices in the mesh see this computer by this name.')}</p>
             {action === 'join' && <><label htmlFor={`${id}-invite`}>{t('Invitation code or token')}</label><input id={`${id}-invite`} className="input" autoComplete="off" spellCheck={false} maxLength={68} value={invitation} onChange={event => setInvitation(event.target.value.trim())} /><p className="nexus-hint">{t(inspection.status.registered && inspection.status.has_network !== false ? 'This device keeps its own network and joins the invited one as a member.' : 'Create the invitation with Connect another device on a device that is already in the mesh.')}</p></>}
+            {needsSetupCode && <><label htmlFor={`${id}-setup`}>{t('Setup code')}</label><input id={`${id}-setup`} className="input" autoComplete="off" spellCheck={false} maxLength={32} placeholder="XXXX-XXXX-XXXX" value={setupCode} onChange={event => setSetupCode(event.target.value)} /><p className="nexus-hint">{t('This server runs without a desktop, so it proves you own it with a one-time setup code. On the server: {command}', { command: `sudo cat ${inspection?.status.setup_code_file || 'the setup-code file'}` })}</p></>}
           </fieldset>
           {nameTooLong && <p className="nexus-error" role="alert">{t('This name is too long. Try a shorter name.')}</p>}
-          <WorkspaceActionButton type="submit" disabled={busy || !deviceName.trim() || nameTooLong || (action === 'join' && !validNexusInvitation(invitation))}>{busy ? t('Enabling Mesh…') : t('Enable Mesh')}</WorkspaceActionButton>
+          <WorkspaceActionButton type="submit" disabled={busy || !deviceName.trim() || nameTooLong || (action === 'join' && !validNexusInvitation(invitation)) || (needsSetupCode && !setupCode.trim())}>{busy ? t('Enabling Mesh…') : t('Enable Mesh')}</WorkspaceActionButton>
           {!deviceKey && <p className="nexus-hint">{t('Enable Mesh asks for this device’s passkey.')}</p>}
         </form>}
         {error && <p ref={errorRef} className="nexus-error" role="alert" tabIndex={-1}>{t(error)}</p>}
