@@ -1756,8 +1756,10 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
   - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
   - `recipe_options` - The model's own options: those its registry row authors, with what was saved in `recipe_options.json` on top.
   - `cloud_provider` - Cloud models only: the provider that serves the model.
-  - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
-  - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
+  - `cost_tier` - `free`, `low`, `medium` or `high`, when the model's entry sets it.
+  - `cost_input_per_million` - USD per million input tokens: the provider's price for a cloud model, or the model entry's own.
+  - `cost_output_per_million` - USD per million output tokens: the provider's price for a cloud model, or the model entry's own.
+  - `latency_ms_hint` - Expected latency in milliseconds, when the model's entry sets it.
   - `system_prompt` - Omni collections only: the collection's system prompt override.
   - `version` - Router collections only: the policy document's version.
   - `routing` - Router collections only: the routing policy.
@@ -1940,8 +1942,10 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
 - `recipe_options` - The model's own options: those its registry row authors, with what was saved in `recipe_options.json` on top.
 - `cloud_provider` - Cloud models only: the provider that serves the model.
-- `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
-- `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
+- `cost_tier` - `free`, `low`, `medium` or `high`, when the model's entry sets it.
+- `cost_input_per_million` - USD per million input tokens: the provider's price for a cloud model, or the model entry's own.
+- `cost_output_per_million` - USD per million output tokens: the provider's price for a cloud model, or the model entry's own.
+- `latency_ms_hint` - Expected latency in milliseconds, when the model's entry sets it.
 - `system_prompt` - Omni collections only: the collection's system prompt override.
 - `version` - Router collections only: the policy document's version.
 - `routing` - Router collections only: the routing policy.

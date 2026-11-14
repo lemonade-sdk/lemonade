@@ -544,6 +544,10 @@ This file contains a JSON object where each key is a model name and each value d
 | `components` | Yes** | Array | Components for a collection. Required when `recipe: "collection.omni"`. See [Collections](#collections). |
 | `size` | No | Number | Model size in GB. Informational only — displayed in the UI and used for RAM filtering. |
 | `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same registry repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
+| `cost_tier` | No | String | Price band: `free`, `low`, `medium` or `high`. See [Cost metadata](#cost-metadata). |
+| `cost_input_per_million` | No | Number | Price in USD per million input tokens. |
+| `cost_output_per_million` | No | Number | Price in USD per million output tokens. |
+| `latency_ms_hint` | No | Number | Your estimate of the model's latency, in milliseconds. |
 
 \* Either `checkpoint` or `checkpoints` is required, but not both.
 \*\* Required only when `recipe: "collection.omni"`. Collections do not use `checkpoint`/`checkpoints`.
@@ -628,6 +632,39 @@ is omitted; Lemonade preserves the input aspect ratio. Missing or zero falls bac
 
 An entry written by an older version keeps these keys in an `image_defaults` block.
 It is still read, and `recipe_options` wins any key both name.
+
+### Cost metadata
+
+Four optional fields describe what a model costs to run:
+
+```json
+{
+  "Qwen3-8B-GGUF": {
+    "checkpoint": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+    "recipe": "llamacpp",
+    "cost_tier": "free",
+    "cost_input_per_million": 0.0,
+    "cost_output_per_million": 0.0,
+    "latency_ms_hint": 90
+  }
+}
+```
+
+They are reported, not acted on. `GET /v1/models` lists them on the model, and
+when a `collection.router` policy picks the model, the routing decision carries
+them as `outputs.estimated_cost` (see [Router API](../../api/router.md)). The
+figures are yours, not a bill: Lemonade does not meter tokens or measure
+latency, and routing does not choose a candidate by price.
+
+Cloud models get their prices from the provider and need none of this. When a
+cloud model's entry also sets a price, the provider's price wins.
+
+A value Lemonade cannot use, such as a `cost_tier` outside the four bands or a
+price that is negative or not a number, is saved as given, logged as a warning
+when the model is registered, and left out of what is reported.
+
+Registering a model again replaces its whole entry, so a registration that
+leaves these fields out removes them.
 
 ### Model naming
 

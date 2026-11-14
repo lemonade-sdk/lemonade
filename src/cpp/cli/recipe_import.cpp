@@ -1,6 +1,7 @@
 #include "lemon_cli/recipe_import.h"
 
 #include "lemon/canonical_id.h"
+#include "lemon/cost_metadata.h"
 #include "lemon/model_manager.h"
 #include <lemon/models/registry_types.h>
 #include "lemon/utils/github_api.h"
@@ -23,26 +24,30 @@ namespace {
 // Keys kept when a model file is normalized; everything else is dropped.
 // `image_defaults` and `audio_defaults` are retired but still accepted, so
 // older exports import.
-const std::vector<std::string> kKnownKeys = {
-    "checkpoint",
-    "checkpoints",
-    "components",
-    "model_name",
-    "models",
-    "image_defaults",
-    "audio_defaults",
-    "labels",
-    "recipe",
-    "recipe_options",
-    "routing",
-    "source",
-    "registry_source",
-    "size",
-    "system_prompt",
-    // Router collections carry a root schema version the /pull parser
-    // requires; dropping it would make the exported file un-importable.
-    "version"
-};
+const std::vector<std::string> kKnownKeys = [] {
+    std::vector<std::string> keys = {
+        "checkpoint",
+        "checkpoints",
+        "components",
+        "model_name",
+        "models",
+        "image_defaults",
+        "audio_defaults",
+        "labels",
+        "recipe",
+        "recipe_options",
+        "routing",
+        "source",
+        "registry_source",
+        "size",
+        "system_prompt",
+        // Router collections carry a root schema version the /pull parser
+        // requires; dropping it would make the exported file un-importable.
+        "version"
+    };
+    keys.insert(keys.end(), lemon::kCostMetadataKeys.begin(), lemon::kCostMetadataKeys.end());
+    return keys;
+}();
 
 bool is_json_recipe_file(const nlohmann::json& entry) {
     if (!entry.is_object()) {
