@@ -261,20 +261,22 @@ class OllamaTests(ServerTestBase):
         """Test /api/delete of a registered "<model>:latest" deletes that model, not <model>."""
         self.ensure_model_pulled()
         latest_name = f"{ENDPOINT_TEST_MODEL}:latest"
-        register = requests.post(
-            f"{self.base_url}/pull",
-            json={
-                "model_name": f"user.{latest_name}",
-                "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
-                "recipe": "llamacpp",
-                "embedding": True,
-                "stream": False,
-            },
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(register.status_code, 200, register.text)
-
         try:
+            # The registration is saved before the download, so a failed download
+            # still leaves it behind for the cleanup below.
+            register = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": f"user.{latest_name}",
+                    "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
+                    "recipe": "llamacpp",
+                    "embedding": True,
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(register.status_code, 200, register.text)
+
             delete = requests.delete(
                 f"{OLLAMA_BASE_URL}/api/delete",
                 json={"model": latest_name},
@@ -295,10 +297,13 @@ class OllamaTests(ServerTestBase):
                 f"{self.base_url}/models/{requests.utils.quote(f'user.{latest_name}')}",
                 timeout=TIMEOUT_DEFAULT,
             )
-            self.assertTrue(
-                latest.status_code == 404 or not latest.json().get("downloaded"),
-                f"user.{latest_name} was not deleted: {latest.text}",
-            )
+            if latest.status_code != 404:
+                self.assertEqual(latest.status_code, 200, latest.text)
+                self.assertIs(
+                    latest.json()["downloaded"],
+                    False,
+                    f"user.{latest_name} was not deleted",
+                )
         finally:
             requests.post(
                 f"{self.base_url}/delete",
