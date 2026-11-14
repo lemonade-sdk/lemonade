@@ -2,7 +2,6 @@
 #include "lemon/llamacpp_architectures_generated.h"
 
 #include <algorithm>
-#include <cmath>
 #include <limits>
 #include <optional>
 #include <set>
@@ -14,11 +13,6 @@ namespace lemon {
 namespace backends {
 namespace llamacpp {
 namespace {
-
-constexpr const char* QUESTION_ID = "label";
-
-// Decision models need a question; zero-shot labels come without one.
-constexpr const char* CLASSIFY_INSTRUCTIONS = "Which category does this text belong to?";
 
 // An encoder reads each input in one physical batch, whose memory grows faster
 // than its size, so a large context alone must not set it.
@@ -73,38 +67,17 @@ BatchFlag find_batch_flag(const std::vector<std::string>& args, const std::strin
     return flag;
 }
 
-}  // namespace
-
-nlohmann::ordered_json build_systemone_classify_request(const std::string& text,
-                                                        const nlohmann::json& labels) {
-    if (!labels.is_array() || labels.empty()) {
-        throw std::invalid_argument("\"labels\" must be a non-empty array of strings");
+// The last of the two spellings wins, as llama-server reads its arguments in order.
+bool kv_unified(const std::vector<std::string>& args) {
+    bool unified = false;
+    for (const std::string& arg : args) {
+        if (arg == "-kvu" || arg == "--kv-unified") unified = true;
+        if (arg == "-no-kvu" || arg == "--no-kv-unified") unified = false;
     }
-    nlohmann::ordered_json criteria = nlohmann::ordered_json::object();
-    for (const auto& label : labels) {
-        if (!label.is_string()) {
-            throw std::invalid_argument("\"labels\" must be a non-empty array of strings");
-        }
-        const std::string value = label.get<std::string>();
-        if (value.find_first_not_of(" \t\r\n") == std::string::npos) {
-            throw std::invalid_argument("labels must not be empty or whitespace-only");
-        }
-        if (criteria.contains(value)) {
-            throw std::invalid_argument("duplicate label: '" + value + "'");
-        }
-        criteria[value] = nullptr;
-    }
-    return nlohmann::ordered_json{
-        {"state", text},
-        {"questions", {
-            {QUESTION_ID, {
-                {"type", "choice"},
-                {"instructions", CLASSIFY_INSTRUCTIONS},
-                {"criteria", std::move(criteria)},
-            }},
-        }},
-    };
+    return unified;
 }
+
+}  // namespace
 
 std::optional<bool> decision_text_truncated(const std::string& decision_type,
                                             const std::string& text) {
@@ -226,54 +199,6 @@ std::string laya_cut(const LayaQuestionText& text, const std::vector<size_t>& op
     return "";
 }
 
-nlohmann::json systemone_classify_response(const nlohmann::json& response,
-                                           const nlohmann::json& labels,
-                                           int top_k) {
-    const auto unexpected = std::runtime_error(
-        "decision model response did not score the requested labels");
-    if (!response.is_object() || !response.contains("answers") ||
-        !response["answers"].is_object() || !response["answers"].contains(QUESTION_ID)) {
-        throw unexpected;
-    }
-    const nlohmann::json& answer = response["answers"][QUESTION_ID];
-    if (!answer.is_object() || !answer.contains("probabilities") ||
-        !answer["probabilities"].is_object()) {
-        throw unexpected;
-    }
-    const nlohmann::json& probabilities = answer["probabilities"];
-
-    std::set<std::string> requested;
-    for (const auto& label : labels) requested.insert(label.get<std::string>());
-    if (probabilities.size() != requested.size()) {
-        throw unexpected;
-    }
-
-    std::vector<std::pair<std::string, double>> ranked;
-    for (const auto& [label, value] : probabilities.items()) {
-        if (!requested.count(label) || !value.is_number()) {
-            throw unexpected;
-        }
-        const double probability = value.get<double>();
-        if (!std::isfinite(probability) || probability < 0.0 || probability > 1.0) {
-            throw unexpected;
-        }
-        ranked.emplace_back(label, probability);
-    }
-    std::stable_sort(ranked.begin(), ranked.end(),
-                     [](const auto& a, const auto& b) { return a.second > b.second; });
-    if (top_k > 0 && static_cast<size_t>(top_k) < ranked.size()) {
-        ranked.resize(static_cast<size_t>(top_k));
-    }
-
-    nlohmann::json scores = nlohmann::json::object();
-    for (const auto& [label, probability] : ranked) scores[label] = probability;
-    nlohmann::json out = {{"labels", std::move(scores)}};
-    if (answer.contains("truncated") && answer["truncated"].is_boolean()) {
-        out["truncated"] = answer["truncated"];
-    }
-    return out;
-}
-
 int encoder_decision_ctx_size(int requested, int64_t trained_window) {
     if (trained_window <= 0 || trained_window > std::numeric_limits<int>::max()) {
         return requested;
@@ -296,6 +221,12 @@ SingleBatchPlan plan_single_batch(int ctx_size, const std::vector<std::string>& 
     // llama.cpp caps -ub at -b, and an encoder's embedding mode caps -b at -ub.
     plan.max_input_tokens = std::min({ctx_size, batch.value.value_or(plan.batch_size),
                                       ubatch.value.value_or(plan.batch_size)});
+    // Without a unified KV buffer, llama-server splits ctx_size across its slots.
+    // An auto count (-np -1) turns the unified buffer on, so it splits nothing.
+    const BatchFlag parallel = find_batch_flag(user_args, "-np", "--parallel");
+    if (parallel.value && *parallel.value > 1 && !kv_unified(user_args)) {
+        plan.max_input_tokens = std::min(plan.max_input_tokens, ctx_size / *parallel.value);
+    }
     return plan;
 }
 

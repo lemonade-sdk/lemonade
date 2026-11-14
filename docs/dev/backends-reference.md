@@ -13,7 +13,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `ds4` | DwarfStar4 | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `gufo` | Gufo | no | yes | rocm |
-| `halogen` | Halogen Flash | no | yes | rocm |
+| `halogen` | Halogen | no | yes | rocm |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, halobox, metal, nathanw, rocm, system, vulkan |
 | `llamacpp-hrx` | HRX GPU | no | yes | hrx |
@@ -157,6 +157,8 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `openmoss_backend` | `--openmoss` | BACKEND | "" | OpenMOSS TTS backend to use |
+| `pcm_sample_rate` | — | SIZE | 0 | Sample rate of the PCM this model emits, reported as X-MOSS-Sample-Rate (0 omits the header) |
+| `pcm_channels` | — | SIZE | 0 | Channel count of the PCM this model emits, reported as X-MOSS-Channels (0 omits the header) |
 
 #### `rocmfpx` — ROCm FPX
 
@@ -177,6 +179,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `height` | — | SIZE | 512 | Output image height |
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
+| `soft_pixel_cap` | — | SIZE | 0 | Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default) |
 
 #### `thenoise` — TheNoise
 
@@ -193,6 +196,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `film_grain` | — | SIZE | 0.0 | Film grain strength (0.0-10.0) |
 | `sharpening` | — | SIZE | 0.0 | RCAS sharpening strength (0.0-1.0) |
 | `lora_specs` | — | ARGS | "" | Comma-separated LoRA specs, e.g. "style:0.8,sub/detail:0.5" |
+| `soft_pixel_cap` | — | SIZE | 0 | Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default) |
 
 #### `thinksound` — ThinkSound
 

@@ -147,9 +147,23 @@ def _running_lemond(config=None, cache_prefix="lemond_test_", extra_env=None):
             try:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
+                _print_log_tail(log_path, "lemond did not exit within 10s of terminate")
                 proc.kill()
-                proc.wait(timeout=10)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    print(f"WARNING: lemond (pid {proc.pid}) not reaped 10s after kill")
         shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+def _print_log_tail(log_path, reason, lines=40):
+    print(f"WARNING: {reason}; last {lines} lines of {log_path}:")
+    try:
+        with open(log_path, encoding="utf-8", errors="replace") as f:
+            for line in f.readlines()[-lines:]:
+                print(f"    {line.rstrip()}")
+    except OSError as e:
+        print(f"    (could not read log: {e})")
 
 
 def _wait_until_healthy(proc, port, headers, timeout_s=60):
@@ -3464,12 +3478,10 @@ class EndpointTests(ServerTestBase):
         print(f"[OK] Pull (multicheckpoint): model={USER_MODEL_NAME}")
 
     def test_021a_pull_sdcpp_import_preserves_merged_recipe_options(self):
-        """Test /pull keeps image_defaults + recipe_options visible immediately.
+        """Test /pull folds a retired image_defaults block into recipe_options.
 
-        This exercises the import/warm-cache path for user models:
-        add_model_to_cache() builds merged recipe options from image_defaults and
-        JSON recipe_options, and download_model() must not overwrite that merged
-        state with only the import recipe_options payload.
+        A payload naming the same key in both blocks resolves to the
+        recipe_options one, and the persisted row carries only recipe_options.
         """
         if platform.system() == "Darwin":
             self.skipTest("sd-cpp pull tests are skipped on macOS in this suite")
@@ -3486,6 +3498,7 @@ class EndpointTests(ServerTestBase):
             "flow_shift": 1.25,
         }
         recipe_options = {
+            "steps": 40,
             "sd-cpp_backend": "cpu",
             "sdcpp_args": "--diffusion-fa 1 --offload-to-cpu 1",
         }
@@ -3522,12 +3535,19 @@ class EndpointTests(ServerTestBase):
             self.assertIn("recipe_options", model_data)
 
             actual_options = model_data["recipe_options"]
+            self.assertNotIn(
+                "image_defaults",
+                model_data,
+                "A pull should persist only the recipe_options key",
+            )
             for key, value in image_defaults.items():
                 self.assertIn(
                     key,
                     actual_options,
                     f"Expected image_defaults key '{key}' in recipe_options after pull",
                 )
+                if key in recipe_options:
+                    continue
                 self.assertEqual(
                     actual_options[key],
                     value,
@@ -7042,13 +7062,17 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(files_response.status_code, 200)
             files = files_response.json()["files"]
             main_files = [f for f in files if f["role"] == "main"]
-            self.assertEqual(len(main_files), 1)
-            self.assertEqual(main_files[0]["name"], os.path.basename(shard1))
             self.assertEqual(
-                main_files[0]["size_bytes"],
-                shard1_bytes,
-                "/files must report the individual file size, not the shard total",
+                [file["name"] for file in main_files],
+                [os.path.basename(shard1), os.path.basename(shard2)],
             )
+            for file, expected_bytes in zip(main_files, [shard1_bytes, shard2_bytes]):
+                self.assertTrue(file["exists"])
+                self.assertEqual(
+                    file["size_bytes"],
+                    expected_bytes,
+                    "/files must report the individual file size, not the shard total",
+                )
 
             print("[OK] sharded size sums shards while /files stays per-file")
 

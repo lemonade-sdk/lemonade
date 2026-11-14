@@ -823,7 +823,7 @@ jobs:
       matrix:
         include:
           - arch-name: X86_64
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04
             platform: ubuntu-x64
             artifact-suffix: x86_64
             job-suffix: ""
@@ -1074,7 +1074,8 @@ jobs:
             suites: >-
               [{"name":"ryzenai","script":"server_llm.py","extra_args":"--wrapped-server ryzenai","backends":"cpu hybrid npu"},
                {"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"},
-               {"name":"flm-whisper","script":"server_whisper.py","extra_args":"--wrapped-server flm","backends":"npu"}]
+               {"name":"flm-whisper","script":"server_whisper.py","extra_args":"--wrapped-server flm","backends":"npu"},
+               {"name":"systemone-flm","script":"server_systemone.py","extra_args":"--wrapped-server flm","backends":"npu"}]
           - name: stx-halo
             runner: [Windows, X64, stx-halo, lemon-prod]
             suites: >-
@@ -1342,7 +1343,8 @@ jobs:
           - name: xdna2
             runner: [Linux, X64, xdna2, lemon-prod]
             suites: >-
-              [{"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"}]
+              [{"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"},
+               {"name":"systemone-flm","script":"server_systemone.py","extra_args":"--wrapped-server flm","backends":"npu"}]
           - name: generic
             runner: [self-hosted, Linux, X64, lemon-prod]
             suites: >-
@@ -1536,6 +1538,20 @@ jobs:
       - name: Cleanup
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
+
+      # The model cache persists across jobs on the same disk as the runner, and
+      # a full disk kills the next job before any step runs.
+      # Record usage so a disk-full failure can be traced to what filled it.
+      - name: Report disk usage
+        if: always()
+        continue-on-error: true
+        run: |
+          df -h "$GITHUB_WORKSPACE" ${HF_HOME:+"$HF_HOME"} || true
+          if [ -n "${HF_HOME:-}" ] && [ -d "$HF_HOME" ]; then
+            timeout 120 du -sh "$HF_HOME" || true
+            timeout 120 du -sh "$HF_HOME"/hub/models--* 2>/dev/null | sort -h | tail -n 15 || true
+          fi
+          timeout 60 docker system df || true
 
   # llamacpp:nathanw's image runs llama-server on the CPU when it finds no GPU,
   # so hosted runners can drive each container tool end to end on every PR.
@@ -1824,7 +1840,7 @@ jobs:
       matrix:
         include:
           - label: Linux
-            os: ubuntu-latest
+            os: ubuntu-24.04
             platform: ubuntu-x64
             artifact: lemonade-embeddable-linux-x86_64
           - label: Linux ARM64

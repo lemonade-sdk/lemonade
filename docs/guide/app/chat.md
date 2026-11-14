@@ -10,11 +10,11 @@ Select **New chat** in the History rail to start another conversation. Each hist
 
 Type a prompt and press `Enter` to send it; use `Shift+Enter` for a newline. While a response streams, the Send button becomes **Stop**. Message actions include:
 
-- **Edit & resend** on a text user message;
+- **Copy** and **Edit & resend** on a text user message;
 - **Copy** and **Retry** on an assistant response; and
 - **Read aloud** when a compatible TTS model is available.
 
-The assistant response can also show reasoning, tool calls, generated media, throughput, time to first token, and token count.
+The assistant response can also show reasoning, tool calls, generated media, throughput, time to first token, and token count. Each generated or edited image has its own download button.
 
 The **Thinking** menu switches supported chat requests between reasoning and a direct answer. **Logs** opens a resizable live-log pane beside the conversation. The plus menu offers:
 

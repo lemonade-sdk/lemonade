@@ -304,6 +304,10 @@ std::vector<ModelInfo> TrayUI::get_downloaded_models() {
 
         if (models_json.contains("data") && models_json["data"].is_array()) {
             for (const auto& model : models_json["data"]) {
+                const auto labels = model.value("labels", nlohmann::json::array());
+                if (labels.is_array() && std::any_of(labels.begin(), labels.end(), [](const auto& label) {
+                    return label == "on-demand";
+                })) continue;
                 ModelInfo info;
                 info.id = model.value("id", "");
                 info.checkpoint = model.value("checkpoint", "");

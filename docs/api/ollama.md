@@ -92,8 +92,8 @@ A request with tools and streaming runs non-streaming on the backend and answers
   "eval_count": 14,
   "total_duration": 0,
   "load_duration": 0,
-  "prompt_eval_duration": 16594000,
-  "eval_duration": 37498000
+  "prompt_eval_duration": 27064000,
+  "eval_duration": 71276000
 }
 ```
 
@@ -181,6 +181,7 @@ Each line carries the next message piece with `done: false`. When the message en
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | `model` is any model other than an LLM, such as an image, embedding or transcription model, which is checked before it loads |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
@@ -253,7 +254,7 @@ Image generation never streams.
 {
   "model": "Qwen3-0.6B-GGUF",
   "created_at": "2024-01-01T00:00:00Z",
-  "response": " Paris, and the capital of the United States is Washington D.C.  What",
+  "response": " Paris. True or False? Also, what is the capital of France?\n\nThe",
   "done": true,
   "done_reason": "stop",
   "context": [],
@@ -301,7 +302,7 @@ Image generation never streams.
 ```text
 {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " Paris", "done": false}
 {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": ",", "done": false}
-{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " and", "done": false}
+{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " France", "done": false}
 ...
 {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": "", "done": true, "done_reason": "length"}
 {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": "", "done": true, "done_reason": "stop", "context": [], "prompt_eval_count": 5, "eval_count": 16, "total_duration": 0, "load_duration": 0, "prompt_eval_duration": 0, "eval_duration": 0}
@@ -344,6 +345,7 @@ Each line carries the next piece of text with `done: false`. When the text ends,
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | `model` is any model other than an LLM or an image generation model, such as an embedding, transcription or upscaling model, which is checked before it loads |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
@@ -496,7 +498,7 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `families` - A list holding only `family`.
   - `parameter_size` - From the model name, e.g. `0.6B`; empty when the name has none.
   - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
-- `capabilities` - From the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels.
+- `capabilities` - From the model's labels: `completion` for chat models, `embedding` for embedding models, `image` for image generation models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels.
 - `model_info` - `general.architecture` (the recipe) and `<recipe>.context_length` (the context size in `parameters`); the other keys are always `0`.
 
 ### Errors
@@ -706,7 +708,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 {
   "model": "nomic-embed-text-v1-GGUF",
   "embeddings": [
-    [0.028952952474355698, 0.050495732575654984, -0.007421673275530338, -0.01867925561964512, 0.01494091097265482, 0.09040514379739761, -0.017689568921923637, 0.0002559536078479141, ... 760 more]
+    [0.030419785529375076, 0.051205702126026154, -0.007968701422214508, -0.016216253861784935, 0.014430047944188118, 0.09111383557319641, -0.016361059620976448, 0.00019216086366213858, ... 760 more]
   ],
   "total_duration": 0,
   "load_duration": 0,
@@ -775,7 +777,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ```json
 {
   "model": "nomic-embed-text-v1-GGUF",
-  "embedding": [0.028952952474355698, 0.050495732575654984, -0.007421673275530338, -0.01867925561964512, 0.01494091097265482, 0.09040514379739761, -0.017689568921923637, 0.0002559536078479141, ... 760 more]
+  "embedding": [0.030419785529375076, 0.051205702126026154, -0.007968701422214508, -0.016216253861784935, 0.014430047944188118, 0.09111383557319641, -0.016361059620976448, 0.00019216086366213858, ... 760 more]
 }
 ```
 
@@ -846,7 +848,7 @@ This endpoint does not take any parameters.
       "expires_at": "2099-01-01T00:00:00Z",
       "size_vram": 0
     },
-    ... 2 more
+    ... 3 more
   ]
 }
 ```

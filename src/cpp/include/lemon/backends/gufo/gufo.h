@@ -46,6 +46,10 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"rocm", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "AMD Strix Halo"},
     },
+    /*about*/ {
+        {"rocm", {"Open-source engine with model-specific Strix Halo kernels, for a handful of top models.",
+                  "Gufo (gufo-org)", "Donato Capitella (kyuz0)", "MIT", "https://github.com/gufo-org/gufo"}},
+    },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
