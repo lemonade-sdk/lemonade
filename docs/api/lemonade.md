@@ -23,6 +23,10 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `POST` | [`/v1/audio/generations`](#post-v1audiogenerations) | Generate audio (music or sound effects) from a text prompt |
 | `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh from an image |
+| `POST` | [`/v1/videos`](#post-v1videos) | Generate a video from a text prompt |
+| `GET` | [`/v1/videos/{id}`](#get-v1videosid) | Read a video's status |
+| `GET` | [`/v1/videos/{id}/content`](#get-v1videosidcontent) | Download a generated video |
+| `POST` | [`/v1/videos/{id}/cancel`](#post-v1videosidcancel) | Cancel a video |
 | `GET` | [`/v1/docs`](#get-v1docs) | List the API reference pages bundled with the running server |
 | `GET` | [`/v1/docs/{page}`](#get-v1docspage) | Read one bundled API reference page |
 | `GET` | [`/v1/health`](#get-v1health) | Check the server's status and loaded models |
@@ -1503,6 +1507,235 @@ Errors carry a JSON `error` object.
 | `500` | `model_load_error` | Loading the requested model fails for another reason, such as a failed download or a backend that does not start |
 | `502` |  | The backend produces no output, for example after it crashes or runs out of GPU memory |
 <!-- END GENERATED: lemonade.3d_generations -->
+
+<!-- BEGIN GENERATED: lemonade.videos_create -->
+## `POST /v1/videos`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Starts generating a video from a text prompt and returns a handle at once. Generation runs for minutes, so it is a job rather than a held connection: poll [`GET /v1/videos/{id}`](#get-v1videosid), then fetch the clip from [`GET /v1/videos/{id}/content`](#get-v1videosidcontent). It serves [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) video models such as `Wan2.1-T2V-1.3B` and is a Lemonade extension.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `prompt` | Yes | The text description of the video to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `negative_prompt` | No | Text describing what to avoid. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `duration` | No | Length of the clip in seconds. Approximate: it is converted to frames at `fps` and rounded to the nearest count the model takes, which is 4n+1 for Wan. `video_frames` wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `video_frames` | No | Number of frames to generate. Defaults to the model's `video_frames` recipe option, else `33`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `fps` | No | Frames per second of the returned clip. Defaults to the model's `fps` recipe option, else `16`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `width` | No | Output width in pixels. Video models are sensitive to resolutions they were not trained on. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `height` | No | Output height in pixels. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `steps` | No | Number of inference steps; lower is faster, higher can improve quality. Defaults to the model's own setting, else the backend's. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `cfg_scale` | No | Classifier-free guidance scale. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `sampling_method` | No | Sampler name, such as `euler`. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `flow_shift` | No | Flow shift, used by flow-matching models such as Wan. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `seed` | No | Random seed for reproducibility. Defaults to the backend's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `output_format` | No | Container format of the clip: `webm`, `webp` or `avi`. Defaults to `webm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+The model loads when the job starts, not during this request.
+
+The clip is kept on disk under the cache directory. Generating another video deletes the clips of deleted or evicted jobs.
+
+stable-diffusion.cpp generates a single frame when no frame count is given, and video models need a few dozen frames before they animate rather than drift, so Lemonade sends 33 by default.
+
+A video is an ordinary job, so it is also listed under [`GET /v1/jobs`](#get-v1jobs) and accepts the job control routes.
+
+GPU only, in practice. With `Wan2.1-T2V-1.3B` on a Radeon AI PRO R9700, a 33-frame 832x480 clip takes about 140 s and peaks at about 14 GB of VRAM.
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/videos" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model": "Wan2.1-T2V-1.3B",
+          "prompt": "a lovely cat walking through tall grass",
+          "video_frames": 33,
+          "fps": 16
+        }'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/videos \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "Wan2.1-T2V-1.3B",
+          "prompt": "a lovely cat walking through tall grass",
+          "video_frames": 33,
+          "fps": 16
+        }'
+    ```
+
+**Response:** `202 Accepted`
+
+```json
+{
+  "id": "job-20261028-115841-000001",
+  "status": "queued",
+  "model": "Wan2.1-T2V-1.3B",
+  "created_at": "2026-10-28T11:58:41Z"
+}
+```
+
+### Response format
+
+- `id` - The video's id.
+- `status` - The job's state: `queued` or `running`.
+- `model` - The model generating the video.
+- `created_at` - When the job was created, as an ISO 8601 UTC time.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_json` | The body is not a JSON object |
+| `400` | `missing_argument` | A required argument is missing |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `500` |  | The request fails unexpectedly |
+| `503` |  | The server is shutting down |
+<!-- END GENERATED: lemonade.videos_create -->
+
+<!-- BEGIN GENERATED: lemonade.videos_get -->
+## `GET /v1/videos/{id}`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Returns a video's status, and once it completes, the clip's format and length. The clip itself is served by [`GET /v1/videos/{id}/content`](#get-v1videosidcontent).
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `id` (path) | Yes | Video id, from [`POST /v1/videos`](#post-v1videos). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest -Uri "http://localhost:13305/v1/videos/job-20261028-115841-000002"
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/videos/job-20261028-115841-000002
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "id": "job-20261028-115841-000002",
+  "status": "queued",
+  "model": "Wan2.1-T2V-1.3B",
+  "created_at": "2026-10-28T11:58:41Z"
+}
+```
+
+### Response format
+
+- `id` - The video's id.
+- `status` - The video's state: `queued`, `running`, `canceled`, `completed` or `failed`, or `paused` when paused through the job routes.
+- `model` - The model generating the video.
+- `created_at` - When the job was created, as an ISO 8601 UTC time.
+- `started_at` - When generation started, as an ISO 8601 UTC time.
+- `completed_at` - When the video completed, failed or was canceled, as an ISO 8601 UTC time.
+- `error` - Why generation failed, present after a failure, including a server restart during generation.
+- `mime_type` - The clip's media type, present once completed.
+- `output_format` - The clip's container format, present once completed.
+- `frame_count` - Frames in the clip, present once completed.
+- `fps` - The clip's frame rate, present once completed.
+- `duration` - The clip's length in seconds, `frame_count` over `fps`, present once completed.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `404` | `id` names no video, or a deleted one |
+<!-- END GENERATED: lemonade.videos_get -->
+
+<!-- BEGIN GENERATED: lemonade.videos_content -->
+## `GET /v1/videos/{id}/content`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Returns the encoded clip as raw bytes, with its media type, once the video's status is `completed`.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `id` (path) | Yes | Video id, from [`POST /v1/videos`](#post-v1videos). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `404` | `id` names no video, or a deleted one |
+| `409` | the video's status is not yet `completed` |
+| `500` | the video completed without an encoded clip |
+<!-- END GENERATED: lemonade.videos_content -->
+
+<!-- BEGIN GENERATED: lemonade.videos_cancel -->
+## `POST /v1/videos/{id}/cancel`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Stops a queued or running video and keeps its record, which then reports `canceled`.
+
+Requires `LEMONADE_API_KEY` when it is set.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `id` (path) | Yes | Video id, from [`POST /v1/videos`](#post-v1videos). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+A clip still queued is cancelled straight away. stable-diffusion.cpp cannot stop a clip once frames are being produced, so cancelling one stops its backend process; the video reports `canceled` once the process has exited, and the next request reloads the model.
+
+### Example
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/videos/job-20261103-184046-000001/cancel" `
+      -Method POST
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:13305/v1/videos/job-20261103-184046-000001/cancel
+    ```
+
+**Response:** `200 OK`
+
+```json
+{"status": "canceling"}
+```
+
+### Response format
+
+- `status` - Always `canceling`.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `404` | `id` names no video, a deleted one, or one that is not queued or running |
+<!-- END GENERATED: lemonade.videos_cancel -->
 
 <!-- BEGIN GENERATED: lemonade.docs -->
 ## `GET /v1/docs`
@@ -2995,6 +3228,7 @@ A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The step graph is invalid, for example no steps, a duplicate step id or an unknown `op` |
 | `429` |  | All 50 jobs in the store are still active or resumable |
+| `503` |  | The server is shutting down |
 <!-- END GENERATED: lemonade.jobs_create -->
 
 <!-- BEGIN GENERATED: lemonade.jobs_list -->
@@ -3195,6 +3429,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Status | When |
 |--------|------|
 | `404` | `id` names no job, a deleted one, or one that is not paused or interrupted |
+| `503` | The server is shutting down |
 <!-- END GENERATED: lemonade.jobs_resume -->
 
 <!-- BEGIN GENERATED: lemonade.jobs_get -->

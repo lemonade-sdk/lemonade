@@ -618,7 +618,6 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
 }
 
 json WrappedServer::forward_get_request(const std::string& endpoint, long timeout_seconds) {
-    (void)timeout_seconds;
     if (!is_backend_alive()) {
         if (was_watchdog_triggered() || has_backend_process_exited()) {
             if (!was_watchdog_triggered()) {
@@ -635,7 +634,7 @@ json WrappedServer::forward_get_request(const std::string& endpoint, long timeou
     std::map<std::string, std::string> headers;
 
     try {
-        auto response = utils::HttpClient::get(url, headers, 0,
+        auto response = utils::HttpClient::get(url, headers, timeout_seconds,
                                                utils::HttpSecurityPolicy::TrustedLoopback);
         note_backend_activity();
 

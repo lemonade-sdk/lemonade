@@ -97,6 +97,16 @@ void observe_stream_content(LiveThroughput::Request& live, const json& event) {
     }
 }
 
+// sd-server serves both images and videos, so the IImageServer cast alone lets
+// a video model through. Returns an error to send back, or null to go ahead.
+json reject_video_model(const WrappedServer* server) {
+    if (server->get_model_type() != ModelType::VIDEO) {
+        return nullptr;
+    }
+    return ErrorResponse::from_exception(InvalidRequestException(
+        "model '" + server->get_model_name() + "' is a video model, not an image model"));
+}
+
 } // namespace
 
 Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManager* backend_manager)
@@ -2411,6 +2421,10 @@ AudioFormatMetadata Router::audio_speech_format_metadata(
 
 json Router::image_generations(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
+        json rejected = reject_video_model(server);
+        if (!rejected.is_null()) {
+            return rejected;
+        }
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
             return ErrorResponse::from_exception(
@@ -2421,8 +2435,28 @@ json Router::image_generations(const json& request) {
     });
 }
 
+json Router::video_generations(const json& request, std::atomic<bool>* cancel) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        if (server->get_model_type() != ModelType::VIDEO) {
+            return ErrorResponse::from_exception(InvalidRequestException(
+                "model '" + server->get_model_name() + "' is not a video model"));
+        }
+        auto video_server = dynamic_cast<IVideoServer*>(server);
+        if (!video_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Video generation", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return video_server->video_generations(request, cancel);
+    });
+}
+
 json Router::image_edits(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
+        json rejected = reject_video_model(server);
+        if (!rejected.is_null()) {
+            return rejected;
+        }
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
             return ErrorResponse::from_exception(
@@ -2435,6 +2469,10 @@ json Router::image_edits(const json& request) {
 
 json Router::image_variations(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
+        json rejected = reject_video_model(server);
+        if (!rejected.is_null()) {
+            return rejected;
+        }
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
             return ErrorResponse::from_exception(
