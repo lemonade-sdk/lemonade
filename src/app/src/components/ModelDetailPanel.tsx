@@ -1884,7 +1884,9 @@ const ModelConfigurationTab: React.FC<{
       const selectedBackend = backendKey
         ? recipeDraft[String(backendKey)] || activeBackendValue(backendKey, defaultOptionValue(backendKey), model, info)
         : 'auto';
-      const activeDevice = optionalDisplayValue(baseValue) || 'auto';
+      // The blank option clears to lemond's default, so it must not be labeled with
+      // the saved device that baseValue falls back to when that default is empty.
+      const activeDevice = optionalDisplayValue(serverDefaultRecipeOptions[key]) || 'auto';
       const options = deviceOptionsForKey(key, draftValue || undefined, selectedBackend, model, info).filter(opt => opt !== activeDevice);
       const runtimeDevices = runtimeDevicesFor(info, activeRecipe, deviceBackendFor(activeRecipe, selectedBackend, info));
       return (
