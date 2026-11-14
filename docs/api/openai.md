@@ -1782,6 +1782,7 @@ labels that name different modes:
 | `audio-generation` | `/audio/generations` | Text-to-audio generation model (e.g. music, sound effects). |
 | `classification` | `/classify` | Text classification model. Also accepted as `classifier`. |
 | `3d` | `/3d/generations` | Text- or image-to-3D mesh generation model. |
+| `video` | `/videos` | Text-to-video generation model, run as an asynchronous job. |
 
 When a model declares no deployment label at all, it inherits its recipe's
 default: `chat` for `llamacpp`, `flm`, `ryzenai-llm`, `vllm` and `cloud`,

@@ -36,7 +36,7 @@ export function backendColor(recipe: string): string {
 /** Capability targets that carry a --cap-* identity token in both themes. */
 const CAPABILITY_COLOR_TOKENS = new Set([
   'chat', 'omni', 'router', 'vision', 'code', 'embedding', 'reranking',
-  'image', 'image-edit', 'audio', 'audio-generation', 'tts', 'model3d',
+  'image', 'image-edit', 'audio', 'audio-generation', 'tts', 'model3d', 'video',
 ]);
 
 /** Undefined for targets with no identity token, so the glyph stays neutral. */

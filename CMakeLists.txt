@@ -2804,6 +2804,14 @@ if(BUILD_TESTING AND EXISTS "${_JOB_EXPR_TEST_SRC}")
     add_cpp_ci_test(JobExprTest CI ON COMMAND test_job_expr)
 endif()
 
+# Where video clips are kept, and the file names allowed to reach the disk.
+set(_VIDEO_STORE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_video_store.cpp")
+if(BUILD_TESTING AND EXISTS "${_VIDEO_STORE_TEST_SRC}")
+    add_executable(test_video_store test/cpp/test_video_store.cpp)
+    target_link_libraries(test_video_store PRIVATE lemonade-server-core)
+    add_cpp_ci_test(VideoStoreTest CI ON COMMAND test_video_store)
+endif()
+
 set(_JOB_GRAPH_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_graph.cpp")
 if(BUILD_TESTING AND EXISTS "${_JOB_GRAPH_TEST_SRC}")
     add_executable(test_job_graph test/cpp/test_job_graph.cpp)
@@ -3941,6 +3949,13 @@ if(BUILD_TESTING AND EXISTS "${_REQUEST_CANCELLATION_TEST_SRC}")
     add_executable(test_request_cancellation test/cpp/test_request_cancellation.cpp)
     target_link_libraries(test_request_cancellation PRIVATE lemonade-server-core)
     add_cpp_ci_test(RequestCancellationTest CI ON COMMAND test_request_cancellation)
+endif()
+
+set(_SDCPP_VIDEO_POLL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_sdcpp_video_poll.cpp")
+if(BUILD_TESTING AND EXISTS "${_SDCPP_VIDEO_POLL_TEST_SRC}")
+    add_executable(test_sdcpp_video_poll test/cpp/test_sdcpp_video_poll.cpp)
+    target_link_libraries(test_sdcpp_video_poll PRIVATE lemonade-server-core)
+    add_cpp_ci_test(SdcppVideoPollTest CI ON COMMAND test_sdcpp_video_poll)
 endif()
 
 set(_STREAMING_HEARTBEAT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_heartbeat.cpp")

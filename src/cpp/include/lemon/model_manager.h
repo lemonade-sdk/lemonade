@@ -195,7 +195,8 @@ public:
     // Download a model
     void download_registered_model(const ModelInfo& info,
                                 bool do_not_upgrade = false,
-                                DownloadProgressCallback progress_callback = nullptr);
+                                DownloadProgressCallback progress_callback = nullptr,
+                                const utils::CancelToken& cancel = utils::CancelToken());
 
     // Search a remote catalog. Throws std::runtime_error for a source that has
     // no search to give.

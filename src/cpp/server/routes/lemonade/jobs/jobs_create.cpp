@@ -12,6 +12,7 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kInvalidSteps{
     400, "", "The step graph is invalid, for example no steps, a duplicate step id or an unknown `op`"};
 const RouteError kJobLimit{429, "", "All 50 jobs in the store are still active or resumable"};
+const RouteError kShuttingDown{503, "", "The server is shutting down"};
 
 // StepRecord::from_json also reads the fields a stored job carries, such as `status`.
 json step_list_schema() {
@@ -80,7 +81,7 @@ public:
             "steps": [{"id": "wait", "op": "sleep", "params": {"ms": 30000}}]
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgInvalid, kInvalidSteps, kJobLimit};
+        s.errors = {kBodyNotJson, kArgInvalid, kInvalidSteps, kJobLimit, kShuttingDown};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -107,8 +108,10 @@ public:
             res.status = 202;
             res.set_content(lemon::jobs::json{{"id", id}}.dump(), "application/json");
         } catch (const lemon::jobs::JobError& e) {
-            write_plain_error(res, e.status == kJobLimit.status ? kJobLimit : kInvalidSteps,
-                              e.what());
+            const RouteError& error = e.status == kJobLimit.status       ? kJobLimit
+                                      : e.status == kShuttingDown.status ? kShuttingDown
+                                                                         : kInvalidSteps;
+            write_plain_error(res, error, e.what());
         }
     }
 };

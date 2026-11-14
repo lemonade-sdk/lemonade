@@ -295,6 +295,7 @@ const CUSTOM_RECIPE_OPTIONS: Record<CustomModelCapability, CustomRecipeOption[]>
   chat: CHAT_RECIPE_OPTIONS,
   omni: CHAT_RECIPE_OPTIONS,
   classification: [customRecipeOption('onnxruntime', 'ONNX Runtime', 'Text classification through /classify')],
+  video: [customRecipeOption('sd-cpp', 'Stable Diffusion', 'Text-to-video generation through /videos')],
   image: [customRecipeOption('sd-cpp', 'Stable Diffusion', 'Stable Diffusion C++ backend')],
   audio: [
     customRecipeOption('whispercpp', 'Whisper', 'Whisper C++ transcription backend'),

@@ -22,6 +22,10 @@ public:
     JobManager(std::string cache_dir, std::string config_dir, OpRegistry registry);
     ~JobManager();
 
+    // Interrupts the active job and stops the worker. Call it before unloading models:
+    // the active job holds the router's exclusive slot, which an unload waits for.
+    void shutdown();
+
     std::string create(const std::string& name, std::vector<StepRecord> steps, json inputs);
     json list() const;
     std::optional<json> get(const std::string& id) const;
@@ -49,6 +53,8 @@ private:
     OpRegistry registry_;
 
     mutable std::mutex mutex_;
+    // Held for the whole of shutdown(): two callers must not both join worker_.
+    std::mutex shutdown_mutex_;
     std::condition_variable cv_;
     std::map<std::string, Job> jobs_;
     std::map<std::string, std::shared_ptr<Control>> controls_;

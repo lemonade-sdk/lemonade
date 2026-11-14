@@ -56,6 +56,7 @@ const TASK_ITEMS: Array<{ key: FilterTab; label: string; iconName: IconName; col
   { key: 'audio-generation', label: 'Music & SFX', iconName: 'audio', color: 'var(--cap-audio-generation)' },
   { key: 'tts', label: 'TTS', iconName: 'tts', color: 'var(--cap-tts)' },
   { key: 'model3d', label: '3D', iconName: 'box', color: 'var(--cap-model3d)' },
+  { key: 'video', label: 'Video', iconName: 'play', color: 'var(--cap-video)' },
   { key: 'embedding', label: 'Embed', iconName: 'embedding', color: 'var(--cap-embedding)' },
   { key: 'classification', label: 'Classify', iconName: 'search-check', color: 'var(--cap-classification)' },
 ];

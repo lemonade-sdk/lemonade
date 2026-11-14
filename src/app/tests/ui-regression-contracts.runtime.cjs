@@ -158,5 +158,16 @@ assert.match(sources.api, /async testMcpServer\(/);
 assert.doesNotMatch(sources.api, /body: \{ server: \{ \.\.\.server, transport: 'stdio' \} \}/);
 assert.doesNotMatch(sources.api, /\/internal\/mcp/);
 assert.match(sources.mcpRuntime, /return \[LEMONADE_MCP_SERVER\]/);
+assert.match(
+  sources.chat,
+  /const selectionEpoch = modelSelectionEpochRef\.current;[\s\S]{0,80}try \{\s*const video = await start\(/,
+  'the video reload must compare against the epoch from before the job, not after the stop',
+);
+assert.match(
+  sources.chat,
+  /if \(recoverableVideoJobId\(err\) && job\) \{[\s\S]{0,700}videoJob: job,/,
+  'a video job the chat lost track of must stay on the message so it can be resumed',
+);
+assert.match(sources.chat, /api\.resumeVideoGeneration\(job, control\)/);
 
 console.log('UI regression contract checks passed.');
