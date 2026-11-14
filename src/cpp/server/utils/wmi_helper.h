@@ -64,6 +64,11 @@ uint64_t get_property_uint64(IWbemClassObject* pObj, const std::wstring& prop_na
 // Much faster than Win32_PnPSignedDriver WMI queries (~5-50 ms vs ~10 s).
 std::string get_driver_version_setupapi(const std::string& device_name_substr);
 
+// "0000:c3:00.0" for a PCI device's PnP instance id (Win32_VideoController's
+// PNPDeviceID), or "" when the device is not on PCI. Windows reports no PCI
+// domain here, so it is always 0000.
+std::string pci_bus_id_for_pnp_device(const std::string& pnp_device_id);
+
 } // namespace wmi
 } // namespace lemon
 

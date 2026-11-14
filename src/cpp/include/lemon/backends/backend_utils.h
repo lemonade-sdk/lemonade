@@ -308,6 +308,54 @@ namespace lemon::backends {
             const std::string& log_tag,
             bool skip_visible_devices = false);
 
+        // Parse a single physical GPU selection like CUDA1 or ROCm0. Reject lists and
+        // invalid indices: these backends run on a single selected device.
+        static int parse_gpu_device_index(const std::string& selection,
+                                          const std::string& prefix);
+
+        // Pure mapping for deterministic tests. CUDA_VISIBLE_DEVICES accepts UUIDs;
+        // using the detected NVIDIA index directly can select a different CUDA GPU.
+        // Always returns an explicit mask: numeric 0 for the sole GPU (avoids
+        // driver-specific UUID filtering failures), UUID on multi-GPU hosts.
+        static std::string cuda_visible_device_for_selection(
+            const std::string& selection,
+            const std::vector<std::pair<int, std::string>>& detected_gpus);
+
+        // Reject a CUDA device incompatible with an architecture-specific asset.
+        // An empty required_arch skips validation (e.g. TheNoise portable CUDA).
+        static void validate_cuda_device_arch_for_selection(
+            const std::string& selection,
+            const std::string& required_arch,
+            const std::vector<std::pair<int, std::string>>& detected_archs);
+
+        // Environment that pins a ROCm subprocess to the GPU HIP numbers N for a
+        // selection like rocmN. `hip_gpus` holds {hip_index, uuid} per detected AMD
+        // GPU.
+        static std::vector<std::pair<std::string, std::string>> rocm_device_env_for_selection(
+            const std::string& selection,
+            const std::vector<std::pair<int, std::string>>& hip_gpus,
+            int available_gpu_count);
+
+        // Parses ggml `--list-devices` output: one "name<TAB>description" line per
+        // device, in the order the backend's own runtime enumerates them.
+        static std::vector<std::pair<std::string, std::string>> parse_ggml_device_list(
+            const std::string& output);
+
+        static std::string ggml_device_for_selection(
+            const std::string& selection,
+            const std::string& prefix,
+            const std::vector<std::pair<std::string, std::string>>& devices);
+
+        // A single-device selection for CUDA/ROCm subprocesses. For CUDA, an
+        // explicit device takes precedence over the inherited CUDA_VISIBLE_DEVICES;
+        // with no selection, retain the standard architecture-based auto filter.
+        static void apply_accelerator_device_env_vars(
+            std::vector<std::pair<std::string, std::string>>& env_vars,
+            const std::string& log_tag,
+            const std::string& backend,
+            const std::string& selection,
+            const std::string& required_cuda_arch = "");
+
         /**
          * Validates that the device selection string prefix matches the selected backend.
          * Throws std::invalid_argument if a device prefix contradicts the backend choice

@@ -14,6 +14,7 @@
 
 #include <lemon/backends/backend_utils.h>
 #include <lemon/runtime_config.h>
+#include <lemon/recipe_options.h>
 
 #ifdef _WIN32
 #include <process.h>
@@ -114,6 +115,116 @@ int main() {
         }
         check(no_throw_matching,
               "validate_device_backend_match accepts matching pairs and system/auto backends gracefully");
+    }
+
+    // Test 2b: explicit CUDA selection uses the physical GPU UUID, not CUDA
+    // runtime ordinals (which can differ from nvidia-smi on 4090 + 5090 hosts).
+    {
+        const std::vector<std::pair<int, std::string>> gpus = {
+            {0, "GPU-test-4090"}, {1, "GPU-test-5090"}
+        };
+        check(BackendUtils::cuda_visible_device_for_selection("CUDA1", gpus) == "GPU-test-5090",
+              "CUDA1 resolves to the matching NVIDIA GPU UUID");
+        check(BackendUtils::cuda_visible_device_for_selection("cuda0", gpus) == "GPU-test-4090",
+              "CUDA0 resolves to the other NVIDIA GPU UUID");
+        bool rejected = false;
+        try { (void)BackendUtils::cuda_visible_device_for_selection("cuda2", gpus); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "nonexistent CUDA device is rejected");
+        rejected = false;
+        try { (void)BackendUtils::cuda_visible_device_for_selection("cuda0,cuda1", gpus); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "multi-GPU string is rejected for single-device backends");
+        rejected = false;
+        try { (void)BackendUtils::cuda_visible_device_for_selection("cuda1", {{0, "GPU-0"}, {1, ""}}); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "missing UUID is rejected instead of selecting an ambiguous CUDA ordinal");
+        check(BackendUtils::cuda_visible_device_for_selection("CUDA0", {{0, "GPU-one"}}) == "0",
+              "single NVIDIA GPU gets an explicit numeric visibility mask");
+        check(BackendUtils::cuda_visible_device_for_selection("CUDA0", {{0, ""}}) == "0",
+              "sole GPU with no UUID gets an explicit numeric mask");
+        bool valid_arch = true;
+        try {
+            BackendUtils::validate_cuda_device_arch_for_selection("CUDA1", "sm_120",
+                {{0, "sm_89"}, {1, "sm_120"}});
+        } catch (...) { valid_arch = false; }
+        check(valid_arch, "CUDA device matching sd.cpp asset architecture is accepted");
+        rejected = false;
+        try {
+            BackendUtils::validate_cuda_device_arch_for_selection("CUDA0", "sm_120",
+                {{0, "sm_89"}, {1, "sm_120"}});
+        } catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "CUDA device incompatible with installed sd.cpp asset is rejected");
+        using Env = std::vector<std::pair<std::string, std::string>>;
+        // iGPU first in SystemInfo, but HIP numbers the dGPU 0.
+        const std::vector<std::pair<int, std::string>> linux_gpus = {
+            {1, "GPU-00000000000000aa"}, {0, "GPU-00000000000000bb"}};
+        check(BackendUtils::rocm_device_env_for_selection("ROCm1", linux_gpus, 2) ==
+                  Env{{"ROCR_VISIBLE_DEVICES", "GPU-00000000000000aa"}, {"HIP_VISIBLE_DEVICES", "0"}},
+              "ROCm1 selects the GPU HIP numbers 1 through its ROCr UUID");
+        const std::vector<std::pair<int, std::string>> windows_gpus = {{1, ""}, {0, ""}};
+        check(BackendUtils::rocm_device_env_for_selection("rocm1", windows_gpus, 2) ==
+                  Env{{"HIP_VISIBLE_DEVICES", "1"}},
+              "without a UUID, ROCm1 maps to HIP_VISIBLE_DEVICES=1");
+        rejected = false;
+        try { (void)BackendUtils::rocm_device_env_for_selection("ROCm2", windows_gpus, 2); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "a HIP index no detected GPU has is rejected");
+        check(BackendUtils::rocm_device_env_for_selection("ROCm0", {}, 1) ==
+                  Env{{"HIP_VISIBLE_DEVICES", "0"}},
+              "a single AMD GPU without HIP data maps to HIP_VISIBLE_DEVICES=0");
+        rejected = false;
+        try { (void)BackendUtils::rocm_device_env_for_selection("ROCm1", {}, 2); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "several AMD GPUs without HIP data are not guessed at");
+    }
+
+    // Test 2b2: ggml backends map a selection through their own device list,
+    // so an iGPU-first SystemInfo order cannot shift the index.
+    {
+        const auto devices = BackendUtils::parse_ggml_device_list(
+            "ROCm0\tAMD Radeon RX 7900 XTX\r\n"
+            "ROCm1\tAMD Radeon(TM) 890M Graphics  \r\n"
+            "ggml_cuda_init: found 2 ROCm devices\n"
+            "\n");
+        check(devices.size() == 2 && devices[1].first == "ROCm1" &&
+              devices[1].second == "AMD Radeon(TM) 890M Graphics",
+              "ggml --list-devices output parses name and trimmed description, skipping log lines");
+        check(BackendUtils::ggml_device_for_selection("rocm1", "rocm", devices) == "ROCm1",
+              "rocm1 resolves to the backend's own ROCm1 name");
+        bool rejected = false;
+        std::string message;
+        try { (void)BackendUtils::ggml_device_for_selection("vulkan5", "vulkan",
+                  {{"Vulkan0", "AMD Radeon(TM) 890M Graphics"}}); }
+        catch (const std::invalid_argument& e) { rejected = true; message = e.what(); }
+        check(rejected && message.find("Vulkan0 (AMD Radeon(TM) 890M Graphics)") != std::string::npos,
+              "out-of-range Vulkan device is rejected and names the devices the backend reported");
+        rejected = false;
+        try { (void)BackendUtils::ggml_device_for_selection("rocm0", "rocm", {{"CPU", "x86"}}); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "selection is rejected when the backend reports no device of that kind");
+    }
+
+    // Test 2c: explicit auto device selection masks any inherited model value.
+    {
+        const lemon::RecipeOptions thenoise_auto("thenoise", {{"thenoise_device", "auto"}});
+        const lemon::RecipeOptions thenoise_model("thenoise", {{"thenoise_device", "CUDA0"}});
+        check(thenoise_auto.inherit(thenoise_model).get_option("thenoise_device") == "auto",
+              "TheNoise explicit auto clears inherited device");
+
+        const lemon::RecipeOptions sd_auto("sd-cpp", {{"sd-cpp_device", "auto"}});
+        const lemon::RecipeOptions sd_model("sd-cpp", {{"sd-cpp_device", "CUDA0"}});
+        check(sd_auto.inherit(sd_model).get_option("sd-cpp_device") == "auto",
+              "sd.cpp explicit auto clears inherited device");
+    }
+
+    // Test 2d: a backend switch can explicitly suppress an inherited GPU on all single-GPU recipes.
+    for (const std::string& recipe : {"thenoise", "sd-cpp", "acestep", "trellis", "thinksound", "openmoss"}) {
+        const std::string key = recipe == "sd-cpp" ? "sd-cpp_device" : recipe + "_device";
+        const lemon::RecipeOptions requested(recipe, {{key, "auto"}});
+        const lemon::RecipeOptions inherited(recipe, {{key, "CUDA0"}});
+        check(requested.inherit(inherited).get_option(key) == "auto",
+              "explicit auto suppresses inherited GPU selection");
     }
 
     // Test 3: a custom backend binary environment variable takes precedence

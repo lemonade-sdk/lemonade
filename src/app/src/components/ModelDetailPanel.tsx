@@ -317,6 +317,12 @@ const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
   trellis_backend: 'TRELLIS accelerator backend for 3D reconstruction.',
   'sd-cpp_backend': 'Stable Diffusion accelerator backend for this image model. Switching back restores the last draft args for that backend in this browser session.',
   llamacpp_device: 'Optional device selector for the selected backend.',
+  thenoise_device: 'Select the GPU for TheNoise; CUDA device numbers refer to the NVIDIA GPU list.',
+  'sd-cpp_device': 'Select the GPU for sd.cpp. CUDA selection uses GPU UUIDs to avoid index mismatches.',
+  acestep_device: 'Choose the ROCm or CUDA GPU for ACE-Step; auto uses the backend default.',
+  trellis_device: 'Choose the ROCm or CUDA GPU for TRELLIS; auto uses the backend default.',
+  thinksound_device: 'Choose the ROCm or CUDA GPU for ThinkSound; auto uses the backend default.',
+  openmoss_device: 'Choose the ROCm or CUDA GPU for OpenMOSS; auto uses the backend default.',
   llamacpp_args: 'CLI-style flags for llama-server, applied on Load/Reload. E.g. --gpu-layers 35 --threads 8 --batch-size 512. See llama-server --help for all options.',
   sdcpp_args: 'Raw backend args for this image model only.',
   whispercpp_args: 'Raw backend args for this transcription model only.',
@@ -426,31 +432,112 @@ function indexed(prefix: string, count: number, fallbackCount = 1): string[] {
   return Array.from({ length: n }, (_, i) => `${prefix}${i}`);
 }
 
+const SINGLE_GPU_RECIPES = ['thenoise', 'sd-cpp', 'acestep', 'trellis', 'thinksound', 'openmoss'];
+
+function deviceBackendFor(recipe: string, selectedBackend: string, info: SystemInfoLike): string {
+  const selected = selectedBackend.toLowerCase();
+  return (selected === 'auto' || !selected) && SINGLE_GPU_RECIPES.includes(recipe)
+    ? (recipeDefaultBackend(info, recipe) || selected)
+    : selected;
+}
+
+interface RuntimeDevice { name: string; description: string }
+
+/** Devices an installed build enumerated itself, in its runtime's own order. */
+function runtimeDevicesFor(info: SystemInfoLike, recipe: string, backend: string): RuntimeDevice[] | null {
+  const list = backendMapForRecipe(info, recipe)?.[backend]?.runtime_devices;
+  return Array.isArray(list) ? list.filter((device: any) => typeof device?.name === 'string') : null;
+}
+
 function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefined, selectedBackend: string, model: ModelInfo, info: SystemInfoLike): string[] {
   const recipe = activeRecipeForModel(model);
-  const backend = selectedBackend.toLowerCase();
+  const singleGpuRecipe = SINGLE_GPU_RECIPES.includes(recipe);
+  const backend = deviceBackendFor(recipe, selectedBackend, info);
+  const runtimeDevices = runtimeDevicesFor(info, recipe, backend);
+  const runtimeOptions = (prefix: string): string[] | null => runtimeDevices
+    ? runtimeDevices.map(device => device.name.toLowerCase()).filter(name => name.startsWith(prefix))
+    : null;
   const devices = availableDeviceCounts(info);
+  const nvidiaList = (info as any)?.devices?.nvidia_gpu;
+  const detectedCudaOptions: string[] = Array.isArray(nvidiaList)
+    ? nvidiaList.flatMap((gpu: any, ordinal: number) => gpu?.available === false ? []
+      : [`cuda${Number.isInteger(gpu?.index) && gpu.index >= 0 ? gpu.index : ordinal}`])
+    : [];
+  const cudaOptions = detectedCudaOptions.length ? detectedCudaOptions : indexed('cuda', devices.nvidia, 1);
   let base: string[] = [];
 
   if (!backend || backend === 'auto') {
     base = ['cpu'];
-    if (devices.nvidia > 0) base.push(...indexed('cuda', devices.nvidia, 0));
+    if (devices.nvidia > 0) base.push(...cudaOptions);
     if (devices.amd > 0) base.push(...indexed('vulkan', devices.amd, 0));
     if (devices.metal) base.push('metal');
     if (devices.npu && recipe !== 'llamacpp') base.push('npu0');
   } else if (backend.includes('cpu')) base = ['cpu'];
-  else if (backend.includes('cuda')) base = indexed('cuda', devices.nvidia, 1);
-  else if (backend.includes('vulkan')) base = indexed('vulkan', devices.amd + devices.nvidia, 1);
+  else if (backend.includes('cuda')) base = cudaOptions;
+  else if (backend.includes('vulkan')) base = runtimeOptions('vulkan') ?? indexed('vulkan', devices.amd + devices.nvidia, 1);
   else if (backend.includes('opencl')) base = indexed('opencl', devices.amd + devices.nvidia, 1);
-  else if (backend.includes('rocm')) base = indexed('rocm', devices.amd, 1);
+  else if (backend.includes('rocm')) {
+    const amdGpus = (info as any)?.devices?.amd_gpu;
+    const count = Array.isArray(amdGpus) ? amdGpus.filter((gpu: any) => gpu?.available !== false).length : devices.amd;
+    const hipOptions = hipIndexedAmdGpus(info).map(gpu => `rocm${gpu.hip_index}`);
+    // Without HIP indices, SystemInfo's iGPU-first order may not be HIP's, so
+    // several AMD GPUs cannot be told apart by position.
+    base = runtimeOptions('rocm')
+      ?? (hipOptions.length ? hipOptions
+        : (recipe === 'sd-cpp' || count <= 1 ? indexed('rocm', count, 1) : []));
+  }
   else if (backend.includes('metal') && devices.metal) base = ['metal'];
   else if (backend.includes('npu') && devices.npu && recipe !== 'llamacpp') base = ['npu0'];
 
+  // An explicit 'auto' clears inherited per-model GPU selections.
+  if (singleGpuRecipe) {
+    base.unshift('auto');
+    // These servers support CUDA/ROCm visibility masks, not native Vulkan device selection.
+    if (!['thenoise', 'sd-cpp'].includes(recipe)) {
+      base = base.filter(device => device === 'auto' || /^cuda\d+$/i.test(device) || /^rocm\d+$/i.test(device));
+    }
+  }
   const normalizedCurrent = optionalDisplayValue(current);
   const options = normalizedCurrent && !base.includes(normalizedCurrent) ? [normalizedCurrent, ...base] : base;
   return Array.from(new Set(options.filter(Boolean)));
 }
 
+function deviceOptionLabel(option: string, info: SystemInfoLike, runtimeDevices?: RuntimeDevice[] | null): string {
+  const runtime = runtimeDevices?.find(device => device.name.toLowerCase() === option.toLowerCase());
+  if (runtime) return runtime.description ? `${runtime.name} (${runtime.description})` : runtime.name;
+
+  const cuda = /^cuda(\d+)$/i.exec(option);
+  if (cuda) {
+    const gpus = (info as any)?.devices?.nvidia_gpu;
+    if (!Array.isArray(gpus)) return option;
+    const index = Number(cuda[1]);
+    const gpu = gpus.find((value: any, ordinal: number) => value?.available !== false
+      && (Number.isInteger(value?.index) ? value.index : ordinal) === index);
+    return gpu?.name ? `${option.toUpperCase()} (${gpu.name})` : option;
+  }
+
+  const rocm = /^rocm(\d+)$/i.exec(option);
+  const amdGpus = (info as any)?.devices?.amd_gpu;
+  if (!rocm || !Array.isArray(amdGpus)) return option;
+  const index = Number(rocm[1]);
+  const byHip = hipIndexedAmdGpus(info).find(gpu => gpu.hip_index === index);
+  if (byHip) return `ROCm${index} (${byHip.name})`;
+  // Without HIP indices only a single GPU can be named: SystemInfo lists the iGPU
+  // first, which may differ from HIP's order.
+  const available = amdGpus.filter((gpu: any) => gpu?.available !== false);
+  return available.length === 1 && index === 0 && available[0]?.name
+    ? `ROCm0 (${available[0].name})` : option;
+}
+
+/** AMD GPUs lemond could place in HIP's own numbering, in that order. */
+function hipIndexedAmdGpus(info: SystemInfoLike): Array<{ hip_index: number; name: string }> {
+  const amdGpus = (info as any)?.devices?.amd_gpu;
+  if (!Array.isArray(amdGpus)) return [];
+  return amdGpus
+    .filter((gpu: any) => gpu?.available !== false && Number.isInteger(gpu?.hip_index) && gpu.hip_index >= 0)
+    .map((gpu: any) => ({ hip_index: gpu.hip_index as number, name: String(gpu.name || '') }))
+    .sort((a, b) => a.hip_index - b.hip_index);
+}
 
 /** Regex: only attempt HF README fetch when the derived value looks like `owner/repo`. */
 const HF_REPO_RE = /^[\w.-]+\/[\w.-]+$/;
@@ -1549,8 +1636,8 @@ const ModelConfigurationTab: React.FC<{
   }, [hasLoadSettingChanges, onDirtyChange]);
 
   useEffect(() => {
-    if (hasLoadSettingChanges && notice === 'Saved for future loads') setNotice(null);
-  }, [hasLoadSettingChanges, notice]);
+    if (hasLoadSettingChanges && notice === t('Saved for future loads')) setNotice(null);
+  }, [hasLoadSettingChanges, notice, t]);
 
   const ctxSizeId = `config-${name}-ctx_size`.replace(/[^a-zA-Z0-9_-]/g, '-');
   const ctxSliderId = `${ctxSizeId}-slider`;
@@ -1596,6 +1683,9 @@ const ModelConfigurationTab: React.FC<{
   const selectorKeys = recipeKeys.filter(key =>
     recipeOptionIsBackend(systemInfo, activeRecipe, String(key))
     || recipeOptionIsDevice(systemInfo, activeRecipe, String(key))
+  ).sort((a, b) =>
+    Number(recipeOptionIsDevice(systemInfo, activeRecipe, String(a)))
+    - Number(recipeOptionIsDevice(systemInfo, activeRecipe, String(b)))
   );
   const argsKeys = recipeKeys.filter(key => recipeOptionIsArgs(systemInfo, activeRecipe, String(key)));
   const otherRecipeKeys = recipeKeys.filter(key => !selectorKeys.includes(key) && !argsKeys.includes(key));
@@ -1671,14 +1761,14 @@ const ModelConfigurationTab: React.FC<{
     }
 
     if (Object.keys(patch).length === 0) {
-      if (showNotice) setNotice('Saved for future loads');
+      if (showNotice) setNotice(t('Saved for future loads'));
       return true;
     }
     try {
       // The draft is what was just sent, so only the server layers move. Syncing
       // it back would also undo anything typed while the save was in flight.
       applyServerOptions(await api.saveModelOptions(name, patch), false);
-      if (showNotice) setNotice('Saved for future loads');
+      if (showNotice) setNotice(t('Saved for future loads'));
       return true;
     } catch (error) {
       setNotice(`Could not save model options: ${friendlyErrorMessage(error)}`);
@@ -1698,7 +1788,7 @@ const ModelConfigurationTab: React.FC<{
   const discardConfig = () => {
     applyDraft(savedLoadSettings);
     onDirtyChange?.(false);
-    setNotice('Reverted to your saved load settings.');
+    setNotice(t('Reverted to your saved load settings.'));
   };
 
   // Every option the panel shows is stated outright: the value on screen, or
@@ -1736,7 +1826,7 @@ const ModelConfigurationTab: React.FC<{
       await onReloadModel(loadedModel, buildLoadOptions());
       if (currentNameRef.current === reloadName) setNotice(successNotice);
     } catch {
-      if (currentNameRef.current === reloadName) setNotice('Reload failed. Check the server logs.');
+      if (currentNameRef.current === reloadName) setNotice(t('Reload failed. Check the server logs.'));
     } finally {
       setReloadingNames(prev => {
         const next = new Set(prev);
@@ -1763,8 +1853,24 @@ const ModelConfigurationTab: React.FC<{
           <select
             id={fieldId}
             className="select detail-configuration__select"
+            title={hint || undefined}
+            aria-description={hint || undefined}
             value={draftValue}
-            onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
+            onChange={e => setRecipeDraft(prev => {
+              const next = { ...prev, [String(key)]: e.target.value };
+              if (SINGLE_GPU_RECIPES.includes(activeRecipe)) {
+                const defaultBackend = activeBackend.toLowerCase() === 'auto'
+                  ? recipeDefaultBackend(info, activeRecipe).toLowerCase()
+                  : activeBackend.toLowerCase();
+                const effectiveBackend = (value: string) =>
+                  value && value.toLowerCase() !== 'auto' ? value.toLowerCase() : defaultBackend;
+                if (effectiveBackend(prev[String(key)] || '') !== effectiveBackend(e.target.value)) {
+                  const deviceKey = activeRecipe === 'sd-cpp' ? 'sd-cpp_device' : `${activeRecipe}_device`;
+                  next[deviceKey] = 'auto';
+                }
+              }
+              return next;
+            })}
           >
             <option value="">{activeBackend}</option>
             {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -1778,19 +1884,22 @@ const ModelConfigurationTab: React.FC<{
       const selectedBackend = backendKey
         ? recipeDraft[String(backendKey)] || activeBackendValue(backendKey, defaultOptionValue(backendKey), model, info)
         : 'auto';
-      const activeDevice = optionalDisplayValue(baseValue) || 'auto';
+      const activeDevice = optionalDisplayValue(serverDefaultRecipeOptions[key]) || 'auto';
       const options = deviceOptionsForKey(key, draftValue || undefined, selectedBackend, model, info).filter(opt => opt !== activeDevice);
+      const runtimeDevices = runtimeDevicesFor(info, activeRecipe, deviceBackendFor(activeRecipe, selectedBackend, info));
       return (
         <label key={String(key)} className="detail-tuning__field detail-configuration__field" htmlFor={fieldId}>
           <span>{label}</span>
           <select
             id={fieldId}
             className="select detail-configuration__select"
+            title={hint || undefined}
+            aria-description={hint || undefined}
             value={draftValue}
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           >
-            <option value="">{activeDevice}</option>
-            {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            <option value="">{deviceOptionLabel(activeDevice, info, runtimeDevices)}</option>
+            {options.map(opt => <option key={opt} value={opt}>{deviceOptionLabel(opt, info, runtimeDevices)}</option>)}
           </select>
         </label>
       );
@@ -1960,7 +2069,7 @@ const ModelConfigurationTab: React.FC<{
                   type="checkbox"
                   checked={isAutoTuning}
                   onChange={e => {
-                    setNotice(current => current === 'Saved for future loads' ? null : current);
+                    setNotice(current => current === t('Saved for future loads') ? null : current);
                     setCtxSizeDraft(e.target.checked ? '-1' : String(currentCtxSize));
                   }}
                 />
