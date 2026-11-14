@@ -166,6 +166,14 @@ static void test_inline_capability_matches_registration(ModelManager& manager) {
     err = manager.validate_collection_request("user.RouterKit", emb_sem);
     check("legacy embedding:true accepted for semantic_similarity", !err.has_value());
 
+    json inferred_emb_sem = router_with_classifier(
+        "semantic_similarity",
+        json{{"model_name", "retriever"}, {"recipe", "llamacpp"},
+             {"checkpoint", "example/some-embed-model:Q4_K_M"}});
+    err = manager.validate_collection_request("user.RouterKit", inferred_emb_sem);
+    check("embedding checkpoint name is inferred for semantic_similarity",
+          !err.has_value());
+
     // Label-less regular llamacpp still defaults to LLM, valid as a classifier.
     json llm_clf = router_with_classifier(
         "classifier",
@@ -219,6 +227,89 @@ static void test_zero_shot_label_selects_classifier_type(ModelManager& manager) 
           error_contains(manager.validate_collection_request(
                              "user.RouterKit", router_with_classifier("classifier", decision_def)),
                          "use type 'zero_shot'"));
+}
+
+static void test_inferred_deployment_labels(ModelManager& manager) {
+    manager.register_user_model(
+        "user.zembed-1-Q4_K_M-GGUF",
+        json{{"recipe", "llamacpp"},
+             {"checkpoint", "example/plain-checkpoint:Q4_K_M"}});
+    const auto embedding = manager.get_model_info("user.zembed-1-Q4_K_M-GGUF");
+    check("embedding name is registered in embedding mode",
+          embedding.type == lemon::ModelType::EMBEDDING &&
+          lemon::has_label(embedding.labels, "embeddings") &&
+          !lemon::has_label(embedding.labels, "chat"));
+
+    manager.register_user_model(
+        "user.CheckpointOnly",
+        json{{"recipe", "llamacpp"},
+             {"checkpoints", json{{"main", "example/my-reranker-v2:Q8_0"}}}});
+    const auto reranking = manager.get_model_info("user.CheckpointOnly");
+    check("main checkpoint name is registered in reranking mode",
+          reranking.type == lemon::ModelType::RERANKING &&
+          lemon::has_label(reranking.labels, "reranking") &&
+          !lemon::has_label(reranking.labels, "chat"));
+
+    manager.register_user_model(
+        "user.embed-chat",
+        json{{"recipe", "llamacpp"},
+             {"checkpoint", "example/embed-chat:Q4_K_M"},
+             {"labels", {"chat"}}});
+    const auto explicit_chat = manager.get_model_info("user.embed-chat");
+    check("explicit deployment mode takes precedence over name inference",
+          explicit_chat.type == lemon::ModelType::LLM &&
+          lemon::has_label(explicit_chat.labels, "chat") &&
+          !lemon::has_label(explicit_chat.labels, "embeddings"));
+
+    // A name matching two modes must fall back to the default (chat), not
+    // register the illegal embeddings+reranking pair.
+    manager.register_user_model(
+        "user.both-modes",
+        json{{"recipe", "llamacpp"},
+             {"checkpoint", "example/embed-and-rerank:Q4_K_M"}});
+    const auto both_modes = manager.get_model_info("user.both-modes");
+    check("name matching two modes falls back to the default mode",
+          both_modes.type == lemon::ModelType::LLM &&
+          !lemon::has_label(both_modes.labels, "embeddings") &&
+          !lemon::has_label(both_modes.labels, "reranking"));
+
+    // Inference reads the checkpoint the loader would use: checkpoints.main
+    // wins over a conflicting checkpoint field.
+    manager.register_user_model(
+        "user.main-preferred",
+        json{{"recipe", "llamacpp"},
+             {"checkpoint", "example/plain-thing:Q4_K_M"},
+             {"checkpoints", json{{"main", "example/nomic-embed:Q4_K_M"}}}});
+    const auto main_preferred = manager.get_model_info("user.main-preferred");
+    check("checkpoints.main is read over a conflicting checkpoint field",
+          main_preferred.type == lemon::ModelType::EMBEDDING &&
+          lemon::has_label(main_preferred.labels, "embeddings"));
+
+    // A remote collection manifest can carry "checkpoint": null beside a
+    // valid checkpoints.main; value() throws on null, so the legacy field
+    // must be read null-safely. The main checkpoint drives inference.
+    manager.register_user_model(
+        "user.null-checkpoint",
+        json{{"recipe", "llamacpp"},
+             {"checkpoint", nullptr},           // non-string: must not throw
+             {"checkpoints", json{{"main", "example/nomic-embed-main:Q4_K_M"}}}});
+    const auto null_checkpoint = manager.get_model_info("user.null-checkpoint");
+    check("null checkpoint beside valid main registers without throwing",
+          null_checkpoint.type == lemon::ModelType::EMBEDDING &&
+          lemon::has_label(null_checkpoint.labels, "embeddings"));
+
+    // The loader keeps an empty string main as empty - the legacy checkpoint
+    // field must not resurrect a checkpoint the model never loads, even when
+    // its name would infer a label.
+    manager.register_user_model(
+        "user.empty-main",
+        json{{"recipe", "llamacpp"},
+             {"checkpoint", "example/embed-thing:Q4_K_M"},
+             {"checkpoints", json{{"main", ""}}}});
+    const auto empty_main = manager.get_model_info("user.empty-main");
+    check("empty string main does not fall back to the legacy checkpoint name",
+          empty_main.type == lemon::ModelType::LLM &&
+          !lemon::has_label(empty_main.labels, "embeddings"));
 }
 
 // A chat-indicator label (reasoning/vision/…) must not promote a non-chat
@@ -567,6 +658,7 @@ int main() {
     test_accepts_valid_router_policy(manager);
     test_rejects_bad_routing(manager);
     test_inline_capability_matches_registration(manager);
+    test_inferred_deployment_labels(manager);
     test_zero_shot_label_selects_classifier_type(manager);
     test_backend_capability_over_chat_indicator(manager);
     test_filtered_classifier_component_does_not_drop_policy(manager);
