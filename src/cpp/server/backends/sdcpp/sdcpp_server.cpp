@@ -185,7 +185,9 @@ GgmlDevices probe_sdcpp_devices(const std::string& resolved_backend, const std::
     std::error_code ec;
     const auto mtime = fs::last_write_time(path_from_utf8(exe_path), ec);
     const std::string key = exe_path + "|" +
-        (ec ? std::string() : std::to_string(mtime.time_since_epoch().count()));
+        (ec ? std::string() : std::to_string(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                mtime.time_since_epoch()).count()));
     {
         std::lock_guard<std::mutex> lock(cache_mutex);
         auto it = cache.find(key);
