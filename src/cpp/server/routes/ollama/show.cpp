@@ -1,5 +1,6 @@
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/model_manager.h"
 #include "lemon/model_types.h"
 #include "lemon/server/api_route.h"
@@ -16,12 +17,25 @@ json build_ollama_capabilities(const ModelInfo& info) {
     json capabilities = json::array();
     ModelType model_type = get_model_type_from_labels(info.labels);
 
+    // The same check /v1/systemone makes. Like Ollama, a decision model reports only
+    // `decision` and the inputs it takes, which sends the Ollama CLI to /v1/systemone.
+    if (model_type == ModelType::CLASSIFICATION && has_label(info.labels, "systemone") &&
+        backends::recipe_gates_mode_on(info.recipe, "systemone")) {
+        capabilities.push_back("decision");
+        if (has_label(info.labels, "vision")) {
+            capabilities.push_back("vision");
+        }
+        return capabilities;
+    }
+
     if (model_type == ModelType::LLM) {
         capabilities.push_back("completion");
     } else if (model_type == ModelType::EMBEDDING) {
         capabilities.push_back("embedding");
     } else if (ollama_output(info.labels) == OllamaOutput::Image) {
         capabilities.push_back("image");
+    } else if (model_type == ModelType::TTS) {
+        capabilities.push_back("speech");
     }
 
     if (has_label(info.labels, "tool-calling") || has_label(info.labels, "tools")) {
@@ -63,7 +77,7 @@ public:
                 "parameters": {"type": "string", "description": "`num_ctx` followed by the model's configured context size, which is `-1` when Lemonade sizes the context at load time."},
                 "template": {"type": "string", "description": "Always empty."},
                 "details": {},
-                "capabilities": {"type": "array", "items": {"enum": ["completion", "embedding", "image", "tools", "vision", "thinking"]}, "description": "From the model's labels: `completion` for chat models, `embedding` for embedding models, `image` for image generation models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels."},
+                "capabilities": {"type": "array", "items": {"enum": ["completion", "embedding", "image", "speech", "decision", "tools", "vision", "thinking"]}, "description": "From the model's labels: `completion` for chat models, `embedding` for embedding models, `image` for image generation models, `speech` for text-to-speech models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels. A SystemOne decision model reports only `decision`, plus `vision` when it has that label."},
                 "model_info": {"type": "object", "description": "`general.architecture` (the recipe) and `<recipe>.context_length` (the context size in `parameters`); the other keys are always `0`."}
             }
         })");
