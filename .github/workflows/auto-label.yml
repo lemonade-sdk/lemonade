@@ -9,6 +9,11 @@
 #      excluding bots and write-access users). Refreshed on every new
 #      comment (engagement event) and via a daily cron (to pick up
 #      reaction-only changes, which don't fire webhook events).
+#   3. Reviewer suggestions (auto_assign.py) for open PRs with no assignee,
+#      reviewer, or maintainer review, scored from their diffs. Runs on the
+#      daily cron and on manual dispatch. The cron only requests reviewers
+#      when the repo variable AUTO_ASSIGN_APPLY is "true"; otherwise it logs
+#      the suggestions.
 #
 # *** Labels applied by this workflow are ADVISORY ONLY. ***
 # Do not use them as inputs to CI gates, release gates, security
@@ -54,6 +59,11 @@ on:
           - all
           - priority-only
         default: all
+      run_auto_assign:
+        description: "Also suggest reviewers for unrouted PRs (honours dry_run)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -173,4 +183,49 @@ jobs:
             python .github/scripts/auto_label.py $ITEMS --priority-only --dry-run
           else
             python .github/scripts/auto_label.py $ITEMS --priority-only
+          fi
+
+  assign:
+    # After labeling so freshly applied wg:: labels feed the WG-lead signal;
+    # always() so a labeling failure doesn't block reviewer suggestions.
+    needs: label
+    if: >-
+      always() &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' && inputs.run_auto_assign))
+    runs-on: ubuntu-latest
+    concurrency:
+      group: auto-assign
+      cancel-in-progress: false
+    env:
+      # Listing collaborators requires push access, which the default
+      # GITHUB_TOKEN may be refused; prefer a dedicated token if configured.
+      GH_TOKEN: ${{ secrets.TRIAGE_TOKEN || secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Full history needed — file-commit history is the primary reviewer signal.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Suggest (or request) reviewers
+        # Apply mode: schedule only when AUTO_ASSIGN_APPLY repo variable is "true",
+        # or manual dispatch with dry_run unchecked.
+        # Dry-run mode: logs suggestions without touching GitHub (safe default).
+        run: |
+          set -euo pipefail
+          APPLY=false
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ vars.AUTO_ASSIGN_APPLY }}" = "true" ]; then
+            APPLY=true
+          fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "false" ]; then
+            APPLY=true
+          fi
+          if [ "$APPLY" = "true" ]; then
+            python .github/scripts/auto_assign.py --repo "${{ github.repository }}" --apply --max 10
+          else
+            python .github/scripts/auto_assign.py --repo "${{ github.repository }}"
           fi
