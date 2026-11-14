@@ -587,6 +587,25 @@ export function getNexusDeviceAccess(nodeId: string): Promise<NexusDeviceAccess>
 export function setNexusDeviceAccess(nodeId: string, memberNodeId: string, see: boolean, connect: boolean): Promise<NexusDeviceAccess> {
   return nexusRequest(`devices/${encodeURIComponent(nodeId)}/access`, { member_node_id: memberNodeId, see, connect });
 }
+// Requests to another lemond on this local network, through its public port (#1221). A client
+// with an RFC 1918 address is a local operator there and needs no API key; the server decides.
+// Unlike nexusRequest this never touches this app's own controller or mode.
+export function nexusRequestAt(endpoint: string): <T>(path: string, body?: unknown) => Promise<T> {
+  const base = endpoint.replace(/\/+$/, '');
+  return async <T>(path: string, body?: unknown): Promise<T> => {
+    const response = await fetch(`${base}/api/v1/nexus/${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(35000),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401) throw new Error(API_KEY_ERROR);
+    if (!response.ok) throw new NexusRequestError(typeof data?.error === 'string' ? data.error : `Network request failed (${response.status}).`, response.status, data?.retryable === true);
+    return data as T;
+  };
+}
 export function acceptNexusInvite(code: string, request = nexusRequest): Promise<{ status?: string; group_id?: string; error?: string }> {
   return request('invites/accept', { code: code.trim() });
 }

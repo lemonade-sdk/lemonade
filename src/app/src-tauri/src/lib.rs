@@ -3,6 +3,7 @@
 // `src/app/src/renderer/tauriShim.ts`.
 
 pub mod beacon;
+pub mod lan_servers;
 pub mod commands;
 pub mod events;
 pub mod nexus_passkey;
@@ -179,6 +180,8 @@ pub fn run() {
             commands::get_server_api_key,
             commands::get_server_port,
             commands::discover_server_port,
+            commands::list_lan_servers,
+            commands::set_lan_server_state,
             commands::get_platform,
             commands::get_local_marketplace_url,
             commands::renderer_ready,

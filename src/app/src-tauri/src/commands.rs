@@ -221,3 +221,18 @@ pub(crate) fn renderer_ready(app: AppHandle) {
         let _ = app.emit(crate::events::NAVIGATE, data);
     }
 }
+
+// ---------- Lemonade servers on the local network (#1221) ----------
+
+#[tauri::command]
+pub(crate) fn list_lan_servers() -> Vec<crate::lan_servers::LanServer> {
+    crate::lan_servers::list_now()
+}
+
+/// `state`: "accepted" (the user pressed Use), "ignored", or "new" (forget the choice).
+#[tauri::command]
+pub(crate) fn set_lan_server_state(app: AppHandle, id: String, state: String, url: Option<String>) -> Result<(), String> {
+    crate::lan_servers::set_choice(&id, &state, url.as_deref())?;
+    let _ = app.emit(events::LAN_SERVERS_UPDATED, ());
+    Ok(())
+}

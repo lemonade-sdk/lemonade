@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { createPortal } from 'react-dom';
 import { NexusAccountInviteDialog, NexusDeleteAccountDialog, NexusJoinNetworkDialog, NexusSignInDialog } from '../../components/NexusSignInDialog';
 import { NexusPasskeyDialog } from '../../components/NexusPasskeyDialog';
-import { nexusAccountService, type NexusAccountService, type VerifiedNexusAccount } from './accountSession';
+import { nexusAccountService, type FoundServerInvite, type NexusAccountService, type VerifiedNexusAccount } from './accountSession';
 import { clearNexusNetwork, NexusRequestError, refreshNexus, useNexusNetwork, type NexusMembership } from './nexus';
 import type { NexusRole } from './routePermissions';
 
@@ -28,6 +28,8 @@ export interface NexusAccountConnection {
   onSignIn?: () => void;
   onSignOut?: () => void;
   onConnectDevice?: () => void;
+  // Invite a Lemonade server found on this network (#1221) and join it from here.
+  onInviteFoundServer?: (endpoint: string, deviceName: string) => Promise<FoundServerInvite>;
   onJoinNetwork?: () => void;
   memberships?: readonly NexusMembership[];
   onLeaveNetwork?: (groupId: string) => Promise<void>;
@@ -149,6 +151,14 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
     account: session?.account || null, source: session?.source, devices: session?.devices || [], notice,
     onSignIn: () => open('signin'), onSignOut: signOut,
     onConnectDevice: session?.canInvite ? () => open('invite') : undefined,
+    onInviteFoundServer: session?.canInvite ? async (endpoint, deviceName) => {
+      const result = await service.inviteFoundServer(session, endpoint, deviceName);
+      if (result.joined) {
+        void refreshNexus();
+        service.refresh(session).then(setSession).catch(() => undefined);
+      }
+      return result;
+    } : undefined,
     onJoinNetwork: session && meshUp ? () => open('join') : undefined,
     memberships,
     onLeaveNetwork: session && meshUp ? async groupId => {

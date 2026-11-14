@@ -20,7 +20,7 @@ When building from source, configure and build the repository first. Start the b
 - **macOS source build:** start the built `lemond`, then launch the built `lemonade-app.app`. An installed build can instead be opened from Applications.
 - **Linux source build or browser:** start the built `lemond`, then open `http://127.0.0.1:13305`. The GUI is served at `/app`; `/web-app` remains available as a backward-compatible URL.
 
-The desktop app uses a saved endpoint when one exists and can discover a local server through Lemonade's UDP beacon. For a browser build served by `lemond`, use the server origin.
+The desktop app uses a saved endpoint when one exists and can discover a local server through Lemonade's UDP beacon. The beacon listener keeps running when an endpoint is saved, so servers found on the network are still listed; a beacon never changes a saved endpoint. For a browser build served by `lemond`, use the server origin.
 
 The status dot beside the Lemonade name is green when the configured server is reachable. If it is gray, open **Settings > Server** and check the endpoint and API key.
 

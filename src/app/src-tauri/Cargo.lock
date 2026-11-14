@@ -2291,6 +2291,7 @@ dependencies = [
  "block2",
  "dirs 5.0.1",
  "env_logger",
+ "gethostname",
  "glib",
  "log",
  "objc2",

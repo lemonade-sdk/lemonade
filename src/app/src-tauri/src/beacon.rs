@@ -6,6 +6,10 @@
 //! cached port in sync and emits a `server-port-updated` Tauri event whenever
 //! the port actually changes.
 //!
+//! Beacons from other machines are no longer dropped: they go to
+//! `lan_servers` as a list the user chooses from (#1221). Only this machine's
+//! own beacons move the cached port, so nothing switches by itself.
+//!
 //! There is intentionally NO one-shot rebind path. Two `UdpSocket::bind` calls
 //! to the same port in the same process fail with `EADDRINUSE` on Linux unless
 //! `SO_REUSEPORT` is set, so the renderer's `discover_server_port` invoke
@@ -13,13 +17,14 @@
 //! listener. The listener is the single source of truth.
 
 use crate::events;
+use crate::lan_servers;
 use serde::Deserialize;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::OnceLock;
 use tauri::{AppHandle, Emitter};
 use tokio::net::UdpSocket;
-use tokio::time::Duration;
+use tokio::time::{Duration, Instant};
 
 pub(crate) const BEACON_PORT: u16 = 13305;
 
@@ -36,6 +41,8 @@ pub(crate) fn set_cached_port(port: u16) {
 #[derive(Debug, Deserialize)]
 struct BeaconPayload {
     service: String,
+    #[serde(default)]
+    hostname: String,
     url: String,
 }
 
@@ -61,8 +68,17 @@ fn local_outbound_ip() -> Option<IpAddr> {
     })
 }
 
-fn is_local_machine(addr: IpAddr) -> bool {
-    is_loopback(addr) || local_outbound_ip() == Some(addr)
+fn own_hostname() -> &'static str {
+    static CELL: OnceLock<String> = OnceLock::new();
+    CELL.get_or_init(|| gethostname::gethostname().to_string_lossy().trim().to_lowercase())
+}
+
+/// lemond sends one beacon per RFC 1918 interface, so this machine's own beacons
+/// also arrive from its other interfaces' addresses. The hostname catches those.
+fn is_local_machine(addr: IpAddr, hostname: &str) -> bool {
+    is_loopback(addr)
+        || local_outbound_ip() == Some(addr)
+        || (!hostname.trim().is_empty() && hostname.trim().to_lowercase() == own_hostname())
 }
 
 /// Bind the beacon port with address reuse, so the app shares UDP 13305 with
@@ -85,27 +101,46 @@ fn parse_port_from_url(raw: &str) -> Option<u16> {
     url::Url::parse(raw).ok()?.port().filter(|&p| p > 0)
 }
 
-fn parse_beacon_message(bytes: &[u8]) -> Option<u16> {
+fn parse_beacon(bytes: &[u8]) -> Option<BeaconPayload> {
     let payload: BeaconPayload = serde_json::from_slice(bytes).ok()?;
-    if payload.service != "lemonade" {
-        return None;
-    }
-    parse_port_from_url(&payload.url)
+    (payload.service == "lemonade").then_some(payload)
 }
 
-/// Background listener: keeps listening for beacons and emits
-/// `server-port-updated` when the cached port actually changes. Rebinds the
-/// socket after any error and backs off for 10 seconds between retries.
+#[cfg(test)]
+fn parse_beacon_message(bytes: &[u8]) -> Option<u16> {
+    parse_port_from_url(&parse_beacon(bytes)?.url)
+}
+
+/// What the listener does with one beacon.
+#[derive(Debug, PartialEq, Eq)]
+enum BeaconAction {
+    /// This machine's server, no explicit URL: keep the cached port in sync.
+    SyncPort(u16),
+    /// This machine's server, but the user chose a server URL (or the URL has no port).
+    Ignore,
+    /// Another machine's server: goes on the LAN list.
+    RecordLanServer,
+}
+
+/// The listener stays up when an explicit server URL is set, so the LAN list
+/// still fills; the explicit URL only stops local beacons from moving the port.
+fn beacon_action(local: bool, explicit_url: bool, url: &str) -> BeaconAction {
+    if !local {
+        return BeaconAction::RecordLanServer;
+    }
+    if explicit_url {
+        return BeaconAction::Ignore;
+    }
+    parse_port_from_url(url).map_or(BeaconAction::Ignore, BeaconAction::SyncPort)
+}
+
+/// Background listener. This machine's beacons keep the cached port in sync
+/// (emitting `server-port-updated` when it changes, unless an explicit server
+/// URL is configured); other machines' beacons update the LAN server list
+/// (emitting `lan-servers-updated` when a server appears, gains a URL or goes
+/// quiet). Rebinds after any error, backing off 10 seconds.
 pub(crate) async fn run_beacon_listener(app: AppHandle) {
     loop {
-        // Skip if an explicit base URL is configured — no point scraping beacons
-        // when the user has told us exactly where to connect.
-        if crate::settings::get_base_url_from_config().is_some() {
-            log::info!("Beacon listener skipped - explicit server URL configured");
-            tokio::time::sleep(Duration::from_secs(10)).await;
-            continue;
-        }
-
         let socket = match bind_beacon_socket(BEACON_PORT) {
             Ok(s) => s,
             Err(err) => {
@@ -117,24 +152,44 @@ pub(crate) async fn run_beacon_listener(app: AppHandle) {
         log::info!("Beacon listener started on 0.0.0.0:{BEACON_PORT}");
 
         let mut buf = vec![0u8; 2048];
+        let mut tick = tokio::time::interval(Duration::from_secs(5));
         loop {
-            match socket.recv_from(&mut buf).await {
-                Ok((len, addr)) => {
-                    if !is_local_machine(addr.ip()) {
-                        continue;
-                    }
-                    if let Some(port) = parse_beacon_message(&buf[..len]) {
-                        let cached = get_cached_port();
-                        if port != cached {
-                            log::info!("Beacon: server port change {cached} -> {port}");
-                            set_cached_port(port);
-                            let _ = app.emit(events::SERVER_PORT_UPDATED, port);
+            tokio::select! {
+                got = socket.recv_from(&mut buf) => match got {
+                    Ok((len, addr)) => {
+                        let Some(beacon) = parse_beacon(&buf[..len]) else { continue };
+                        let local = is_local_machine(addr.ip(), &beacon.hostname);
+                        let explicit = crate::settings::get_base_url_from_config().is_some();
+                        match beacon_action(local, explicit, &beacon.url) {
+                            BeaconAction::SyncPort(port) => {
+                                let cached = get_cached_port();
+                                if port != cached {
+                                    log::info!("Beacon: server port change {cached} -> {port}");
+                                    set_cached_port(port);
+                                    let _ = app.emit(events::SERVER_PORT_UPDATED, port);
+                                }
+                            }
+                            BeaconAction::Ignore => {}
+                            BeaconAction::RecordLanServer => {
+                                let changed = lan_servers::with_registry(|r| {
+                                    r.record(&beacon.hostname, &beacon.url, addr.ip(), Instant::now().into_std())
+                                });
+                                if changed {
+                                    log::info!("Beacon: Lemonade on the network: {} ({})", beacon.hostname, beacon.url);
+                                    let _ = app.emit(events::LAN_SERVERS_UPDATED, ());
+                                }
+                            }
                         }
                     }
-                }
-                Err(err) => {
-                    log::warn!("Beacon listener recv error: {err}, rebinding in 10s");
-                    break;
+                    Err(err) => {
+                        log::warn!("Beacon listener recv error: {err}, rebinding in 10s");
+                        break;
+                    }
+                },
+                _ = tick.tick() => {
+                    if lan_servers::with_registry(|r| r.expire(Instant::now().into_std())) {
+                        let _ = app.emit(events::LAN_SERVERS_UPDATED, ());
+                    }
                 }
             }
         }
@@ -163,6 +218,36 @@ mod tests {
     fn parse_beacon_message_accepts_lemonade() {
         let msg = br#"{"service":"lemonade","hostname":"h","url":"http://127.0.0.1:13305/api/v1/"}"#;
         assert_eq!(parse_beacon_message(msg), Some(13305));
+    }
+
+    #[test]
+    fn beacon_hostname_is_kept_and_optional() {
+        let b = parse_beacon(br#"{"service":"lemonade","hostname":"c4","url":"http://10.44.0.14:13305/api/v1/"}"#).unwrap();
+        assert_eq!(b.hostname, "c4");
+        let old = parse_beacon(br#"{"service":"lemonade","url":"http://10.44.0.14:13305/api/v1/"}"#).unwrap();
+        assert_eq!(old.hostname, "");
+    }
+
+    #[test]
+    fn this_machines_hostname_counts_as_local() {
+        let me = own_hostname().to_string();
+        let lan: IpAddr = "192.0.2.50".parse().unwrap(); // TEST-NET, never this machine
+        assert!(is_local_machine(lan, &me.to_uppercase()));
+        assert!(!is_local_machine(lan, "some-other-host-1221"));
+        assert!(!is_local_machine(lan, ""));
+        assert!(is_local_machine("127.0.0.1".parse().unwrap(), "anything"));
+    }
+
+    #[test]
+    fn explicit_url_stops_port_sync_but_not_the_lan_list() {
+        let url = "http://192.0.2.50:13305/api/v1/";
+        // another machine's beacon reaches the LAN list with or without an explicit URL
+        assert_eq!(beacon_action(false, true, url), BeaconAction::RecordLanServer);
+        assert_eq!(beacon_action(false, false, url), BeaconAction::RecordLanServer);
+        // this machine's beacon moves the port only when no URL was chosen
+        assert_eq!(beacon_action(true, false, url), BeaconAction::SyncPort(13305));
+        assert_eq!(beacon_action(true, true, url), BeaconAction::Ignore);
+        assert_eq!(beacon_action(true, false, "not a url"), BeaconAction::Ignore);
     }
 
     #[test]

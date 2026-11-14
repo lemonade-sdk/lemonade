@@ -33,6 +33,8 @@ dirs = "5"
 url = "2"
 # Share the beacon port (SO_REUSEADDR / SO_REUSEPORT); already in the tree via tokio.
 socket2 = { version = "0.6", features = ["all"] }
+# Know this machine's own beacons by hostname (the LAN server list).
+gethostname = "1"
 log = "0.4"
 env_logger = "0.11"
 

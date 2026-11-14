@@ -5,5 +5,6 @@
 pub(crate) const SETTINGS_UPDATED: &str = "settings-updated";
 pub(crate) const CONNECTION_SETTINGS_UPDATED: &str = "connection-settings-updated";
 pub(crate) const SERVER_PORT_UPDATED: &str = "server-port-updated";
+pub(crate) const LAN_SERVERS_UPDATED: &str = "lan-servers-updated";
 pub(crate) const MAXIMIZE_CHANGE: &str = "maximize-change";
 pub(crate) const NAVIGATE: &str = "navigate";

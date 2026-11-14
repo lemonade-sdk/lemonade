@@ -1,6 +1,6 @@
 import type { NexusAccount, NexusDevice } from './NexusAccountContext';
 import {
-  acceptNexusInvite, getNexusMemberships, isNexusDesktop, leaveNexusMembership, nexusAccountController, prepareNexus, usesNexusDeviceKey,
+  acceptNexusInvite, getNexusMemberships, isNexusDesktop, leaveNexusMembership, nexusAccountController, nexusRequestAt, prepareNexus, usesNexusDeviceKey,
   type NexusDevice as NetworkDevice, type NexusInvite, type NexusJoinMembership, type NexusMembership, type NexusStatus,
 } from './nexus';
 
@@ -22,6 +22,9 @@ export interface NexusSignInInput {
   source: string;
   invitation?: string;
 }
+// What inviting a Lemonade server found on this network did (#1221). `joined` false keeps the
+// code, so it can still be entered on that device.
+export interface FoundServerInvite { joined: boolean; code: string; expiresAt: number; membership?: NexusJoinMembership; error?: string }
 export interface NexusAccountService {
   disconnect: (session: VerifiedNexusAccount) => Promise<void>;
   inspect: () => Promise<NexusAccountInspection>;
@@ -29,6 +32,9 @@ export interface NexusAccountService {
   signIn: (input: NexusSignInInput) => Promise<VerifiedNexusAccount>;
   refresh: (session: VerifiedNexusAccount) => Promise<VerifiedNexusAccount>;
   invite: (session: VerifiedNexusAccount, deviceName: string, role?: 'user' | 'moderator') => Promise<NexusInvite>;
+  // Invites a server found on this network and joins it from here: the invite is made on this
+  // device, then the other lemond is set up and joins with the code, as Join by invitation would.
+  inviteFoundServer: (session: VerifiedNexusAccount, endpoint: string, deviceName: string) => Promise<FoundServerInvite>;
   joinNetwork: (session: VerifiedNexusAccount, invitation: string) => Promise<NexusJoinMembership>;
   memberships: (session: VerifiedNexusAccount) => Promise<NexusMembership[]>;
   leaveNetwork: (session: VerifiedNexusAccount, groupId: string) => Promise<void>;
@@ -90,7 +96,9 @@ export function verifyAccountReply(value: unknown, source: string, expectedId?: 
 export const validNexusInvitation = (value: string) => /^(?:[0-9]{8}|lnk_[0-9a-f]{64})$/.test(value.trim());
 const boundedName = (name: string) => Boolean(name.trim()) && new TextEncoder().encode(name.trim()).length <= 128;
 
-export function createNexusAccountService(dependencies = { controller: nexusAccountController, desktop: isNexusDesktop, prepare: prepareNexus }): NexusAccountService {
+export function createNexusAccountService(dependencies: {
+  controller: typeof nexusAccountController; desktop: typeof isNexusDesktop; prepare: typeof prepareNexus; requestAt?: typeof nexusRequestAt;
+} = { controller: nexusAccountController, desktop: isNexusDesktop, prepare: prepareNexus, requestAt: nexusRequestAt }): NexusAccountService {
   const currentController = async (source: string) => {
     const controller = await dependencies.controller();
     if (controller.source !== source) throw new Error('The server connection changed. Close this dialog and enable Mesh again.');
@@ -102,7 +110,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
     const status = await controller.request<NexusStatus>('status');
     return { ...controller, status };
   };
-  return {
+  const service: NexusAccountService = {
     async disconnect(session) {
       const controller = await requireController(session.source);
       const status = await controller.request<{ locked: boolean; mesh_up: boolean }>('lock', {});
@@ -191,6 +199,31 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
       }
       return invite;
     },
+    async inviteFoundServer(session, endpoint, deviceName) {
+      const invite = await service.invite(session, deviceName);
+      const code = (invite.code || invite.link_token).trim();
+      const request = (dependencies.requestAt ?? nexusRequestAt)(endpoint);
+      try {
+        let status: NexusStatus;
+        try { status = await request<NexusStatus>('status'); }
+        catch { throw new Error(`${deviceName} runs a Lemonade without network support. Update it, or enter the code there.`); }
+        if (!status.available) throw new Error(`${deviceName} runs a Lemonade without network support. Update it, or enter the code there.`);
+        if (status.registered && !usesNexusDeviceKey(status)) throw new Error(`${deviceName} unlocks with a passkey, so the code has to be entered on that device.`);
+        let prepared: NexusStatus | undefined;
+        await dependencies.prepare(deviceName.trim(), true, request, current => { prepared = current; });
+        if (prepared?.mesh_up) {
+          const reply = await acceptNexusInvite(code, request);
+          const status = reply?.status === 'pending' || reply?.status === 'refused' ? reply.status : 'member';
+          const membership: NexusJoinMembership = { status, ...(reply?.group_id ? { group_id: reply.group_id } : {}), ...(reply?.error ? { error: reply.error } : {}) };
+          if (status === 'refused') return { joined: false, code, expiresAt: invite.expires_at, membership, error: reply?.error || 'The invite was not accepted.' };
+          return { joined: true, code, expiresAt: invite.expires_at, membership };
+        }
+        await request('join', { code });
+        return { joined: true, code, expiresAt: invite.expires_at };
+      } catch (error) {
+        return { joined: false, code, expiresAt: invite.expires_at, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
     async setAvatar(session, image) {
       if (session.avatar.state !== 'ready' || !session.avatar.can_write) throw new Error('Profile images cannot be changed on this account right now.');
       const controller = await requireController(session.source);
@@ -203,6 +236,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
       return next;
     },
   };
+  return service;
 }
 
 export const nexusAccountService = createNexusAccountService();
