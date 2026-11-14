@@ -10,6 +10,7 @@
 #include "lemon/anthropic_error.h"
 #include "lemon/error_types.h"
 #include "lemon/model_manager.h"
+#include "lemon/model_types.h"
 #include "lemon/server/model_loader.h"
 #include "lemon/server/shared_args.h"
 
@@ -217,6 +218,25 @@ bool ollama_model_registered(ModelManager& model_manager, const std::string& nam
     if (model_manager.model_exists(name)) return true;
     write_plain_error(res, kOllamaModelNotFound, "model '" + name + "' not found");
     return false;
+}
+
+OllamaOutput ollama_output(const std::vector<std::string>& labels) {
+    switch (get_model_type_from_labels(labels)) {
+    case ModelType::LLM:
+        return OllamaOutput::Text;
+    case ModelType::IMAGE:
+        return has_label(labels, "upscaling") ? OllamaOutput::Nothing : OllamaOutput::Image;
+    default:
+        return OllamaOutput::Nothing;
+    }
+}
+
+std::optional<OllamaOutput> ollama_registered_output(ModelManager& model_manager,
+                                                     const std::string& name) {
+    if (!model_manager.model_exists(name)) {
+        return std::nullopt;
+    }
+    return ollama_output(model_manager.get_model_info(name).labels);
 }
 
 const RouteError kOllamaBackendError{500, "", "The backend reports an error, whatever its own status"};
