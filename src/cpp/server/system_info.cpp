@@ -117,7 +117,10 @@ constexpr hsa_status_t HSA_STATUS_ERROR_INVALID_ARGUMENT = 0x1001;
 constexpr hsa_agent_info_t HSA_AGENT_INFO_NAME = 0;
 constexpr hsa_agent_info_t HSA_AGENT_INFO_VENDOR_NAME = 1;
 constexpr hsa_agent_info_t HSA_AGENT_INFO_DEVICE = 17;
+constexpr hsa_agent_info_t HSA_AMD_AGENT_INFO_BDFID = 0xA006;
 constexpr hsa_agent_info_t HSA_AMD_AGENT_INFO_PRODUCT_NAME = 0xA009;
+constexpr hsa_agent_info_t HSA_AMD_AGENT_INFO_DOMAIN = 0xA00F;
+constexpr hsa_agent_info_t HSA_AMD_AGENT_INFO_UUID = 0xA011;
 constexpr hsa_agent_info_t HSA_AMD_AGENT_INFO_MEMORY_PROPERTIES = 0xA114;
 
 constexpr hsa_device_type_t HSA_DEVICE_TYPE_CPU = 0;
@@ -143,6 +146,9 @@ struct RocmAgentInfo {
     std::string arch_name;
     bool is_integrated = false;
     double vram_gb = 0.0;
+    int hip_index = -1;
+    std::string uuid;
+    std::string pci_bus_id;
 };
 
 struct HsaRuntimeApi {
@@ -310,6 +316,7 @@ struct HsaAgentQueryContext {
     HsaRuntimeApi* api = nullptr;
     std::vector<RocmAgentInfo>* agents = nullptr;
     std::set<std::string>* seen_agents = nullptr;
+    int next_gpu_index = 0;
 };
 
 hsa_status_t collect_hsa_agent_info(hsa_agent_t agent, void* data) {
@@ -323,6 +330,7 @@ hsa_status_t collect_hsa_agent_info(hsa_agent_t agent, void* data) {
         device_type != HSA_DEVICE_TYPE_GPU) {
         return HSA_STATUS_SUCCESS;
     }
+    const int hip_index = context->next_gpu_index++;
 
     char arch_name[64] = {0};
     char marketing_name[64] = {0};
@@ -363,6 +371,21 @@ hsa_status_t collect_hsa_agent_info(hsa_agent_t agent, void* data) {
             (memory_properties[0] & HSA_AMD_MEMORY_PROPERTY_AGENT_IS_APU) != 0;
     }
     rocm_agent.vram_gb = pool_context.largest_global_pool_gb;
+    rocm_agent.hip_index = hip_index;
+
+    char uuid[32] = {0};
+    if (context->api->agent_get_info(agent, HSA_AMD_AGENT_INFO_UUID, uuid) == HSA_STATUS_SUCCESS &&
+        std::string(uuid) != "GPU-XX") {
+        rocm_agent.uuid = trim_copy(uuid);
+    }
+    uint32_t bdfid = 0;
+    uint32_t domain = 0;
+    if (context->api->agent_get_info(agent, HSA_AMD_AGENT_INFO_BDFID, &bdfid) == HSA_STATUS_SUCCESS) {
+        context->api->agent_get_info(agent, HSA_AMD_AGENT_INFO_DOMAIN, &domain);
+        // BDFID uses the KFD location_id packing: bus << 8 | device << 3 | function.
+        rocm_agent.pci_bus_id = system_info_detail::pci_bus_id(
+            domain, bdfid >> 8, (bdfid >> 3) & 0x1f, bdfid & 0x7);
+    }
 
     // Include the HSA agent handle so two identical GPUs are kept as distinct devices.
     const std::string dedupe_key = rocm_agent.display_name + "|" + rocm_agent.arch_name + "|" + std::to_string(agent.handle);
@@ -418,6 +441,9 @@ std::vector<GPUInfo> query_dxg_amd_gpus(const std::string& gpu_type) {
         gpu.name = agent.display_name;
         gpu.available = true;
         gpu.vram_gb = agent.vram_gb;
+        gpu.hip_index = agent.hip_index;
+        gpu.uuid = agent.uuid;
+        gpu.pci_bus_id = agent.pci_bus_id;
         gpus.push_back(gpu);
     }
 
@@ -915,6 +941,12 @@ json SystemInfo::get_system_info_dict() {
     return info;
 }
 
+static void add_amd_gpu_ids(json& gpu_json, const GPUInfo& gpu) {
+    if (gpu.hip_index >= 0) gpu_json["hip_index"] = gpu.hip_index;
+    if (!gpu.pci_bus_id.empty()) gpu_json["pci_bus_id"] = gpu.pci_bus_id;
+    if (!gpu.uuid.empty()) gpu_json["uuid"] = gpu.uuid;
+}
+
 json SystemInfo::get_device_dict() {
     json devices;
 
@@ -977,6 +1009,7 @@ json SystemInfo::get_device_dict() {
                 gpu_json["virtual_mem_gb"] = amd_igpu.virtual_gb;
             }
             gpu_json["family"] = identify_rocm_arch_from_name(amd_igpu.name);
+            add_amd_gpu_ids(gpu_json, amd_igpu);
             if (!amd_igpu.error.empty()) {
                 gpu_json["error"] = amd_igpu.error;
             }
@@ -1001,6 +1034,7 @@ json SystemInfo::get_device_dict() {
                     gpu_json["driver_version"] = gpu.driver_version;
                 }
                 gpu_json["family"] = identify_rocm_arch_from_name(gpu.name);
+                add_amd_gpu_ids(gpu_json, gpu);
                 if (!gpu.error.empty()) {
                     gpu_json["error"] = gpu.error;
                 }
@@ -2205,6 +2239,12 @@ bool needs_gfx1151_cwsr_fix() {
     return false;
 }
 
+#ifndef _WIN32
+int run_internal_hip_probe() {
+    return 1;
+}
+#endif
+
 std::string hip_visible_device(const std::string& recipe, const std::string& backend) {
     return system_info_detail::hip_visible_device(
         "/sys/class/kfd/kfd/topology/nodes", [&](const std::string& arch) {
@@ -2700,6 +2740,64 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
 
 #ifdef _WIN32
 
+int run_internal_hip_probe() {
+    // The display driver installs the HIP runtime in System32. Loading it only from
+    // there keeps a DLL beside the executable from standing in for it.
+    HMODULE hip = nullptr;
+    for (const wchar_t* dll : {L"amdhip64_7.dll", L"amdhip64_6.dll"}) {
+        hip = LoadLibraryExW(dll, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (hip) break;
+    }
+    if (!hip) return 2;
+
+    using GetDeviceCount = int (*)(int*);
+    using GetDeviceString = int (*)(char*, int, int);
+    auto get_count = reinterpret_cast<GetDeviceCount>(GetProcAddress(hip, "hipGetDeviceCount"));
+    auto get_name = reinterpret_cast<GetDeviceString>(GetProcAddress(hip, "hipDeviceGetName"));
+    auto get_bus = reinterpret_cast<GetDeviceString>(GetProcAddress(hip, "hipDeviceGetPCIBusId"));
+    int count = 0;
+    if (!get_count || !get_name || !get_bus || get_count(&count) != 0) return 3;
+
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    for (int i = 0; i < count; ++i) {
+        char name[256] = {0};
+        char bus[64] = {0};
+        get_name(name, sizeof(name), i);
+        get_bus(bus, sizeof(bus), i);
+        const std::string line = std::to_string(i) + "\t" + bus + "\t" + name + "\n";
+        DWORD written = 0;
+        WriteFile(out, line.data(), static_cast<DWORD>(line.size()), &written, nullptr);
+    }
+    return 0;
+}
+
+// HIP's device order on Windows comes from the driver and is not visible through
+// WMI, so ask HIP itself. It runs in a child process (this same executable) so a
+// driver fault cannot take the server down; the result is fixed per boot.
+static const std::vector<system_info_detail::HipProbeDevice>& hip_probe_devices() {
+    static std::once_flag once;
+    static std::vector<system_info_detail::HipProbeDevice> devices;
+    std::call_once(once, [] {
+        wchar_t path[MAX_PATH] = {0};
+        if (GetModuleFileNameW(nullptr, path, MAX_PATH) == 0) return;
+        std::string output;
+        try {
+            const int rc = utils::ProcessManager::run_process_with_output(
+                utils::path_to_utf8(fs::path(path)), {"--internal-hip-probe"},
+                [&output](const std::string& line) { output += line + "\n"; return true; },
+                "", 30, /*capture_stderr=*/false);
+            if (rc == 0) {
+                devices = system_info_detail::parse_hip_probe_output(output);
+            } else {
+                LOG(DEBUG, "SystemInfo") << "HIP probe exited with " << rc << std::endl;
+            }
+        } catch (const std::exception& e) {
+            LOG(DEBUG, "SystemInfo") << "HIP probe failed: " << e.what() << std::endl;
+        }
+    });
+    return devices;
+}
+
 WindowsSystemInfo::WindowsSystemInfo() {
     // COM initialization handled by WMIConnection
 }
@@ -2937,6 +3035,12 @@ std::vector<GPUInfo> WindowsSystemInfo::detect_amd_gpus(const std::string& gpu_t
                 GPUInfo gpu;
                 gpu.name = name;
                 gpu.available = true;
+                gpu.pci_bus_id = wmi::pci_bus_id_for_pnp_device(
+                    wmi::get_property_string(pObj, L"PNPDeviceID"));
+                if (!gpu.pci_bus_id.empty()) {
+                    gpu.hip_index = system_info_detail::hip_index_for_pci_bus_id(
+                        hip_probe_devices(), gpu.pci_bus_id);
+                }
 
                 // Get driver version
                 gpu.driver_version = get_driver_version("AMD-OpenCL User Mode Driver");
@@ -3605,44 +3709,19 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
         return gpus;
     }
 
-    for (const auto& node_entry : fs::directory_iterator(kfd_path)) {
-        if (!node_entry.is_directory()) continue;
-
-        std::string node_path = node_entry.path().string();
-        std::string properties_file = node_path + "/properties";
-
-        if (!fs::exists(properties_file)) continue;
-
-        std::ifstream props(properties_file);
-        if (!props.is_open()) continue;
-
-        std::string line;
-        std::string drm_render_minor;
-        std::string gfx_target_version;
-
-        bool is_gpu = false;
-
-        while (std::getline(props, line)) {
-            if (line.find("gfx_target_version") == 0) {
-                gfx_target_version = line.substr(line.find(" ") + 1);
-                gfx_target_version.erase(gfx_target_version.find_last_not_of(" \t\n\r") + 1);
-                if (!gfx_target_version.empty() && std::stoi(gfx_target_version) != 0) {
-                    is_gpu = true;
-                }
-            } else if (line.find("drm_render_minor") == 0) {
-                drm_render_minor = line.substr(line.find(" ") + 1);
-                drm_render_minor.erase(drm_render_minor.find_last_not_of(" \t\n\r") + 1);
-            }
-        }
-        props.close();
-
-        if (!is_gpu || drm_render_minor.empty() || drm_render_minor == "-1")
+    for (const auto& node : system_info_detail::kfd_gpu_nodes(kfd_path)) {
+        const std::string& drm_render_minor = node.drm_render_minor;
+        const std::string& gfx_target_version = node.gfx_target_version;
+        if (drm_render_minor.empty() || drm_render_minor == "-1")
             continue;
 
         bool is_integrated = get_amd_is_igpu(drm_render_minor);
         if ((gpu_type == "integrated" && !is_integrated) || (gpu_type == "discrete" && is_integrated)) continue;
 
         GPUInfo gpu;
+        gpu.hip_index = node.hip_index;
+        gpu.uuid = system_info_detail::rocm_uuid(node.unique_id);
+        gpu.pci_bus_id = system_info_detail::kfd_pci_bus_id(node);
         gpu.name = gfx_target_version;
         gpu.display_name = system_info_detail::gpu_display_name(
             query_amdgpu_marketing_name(drm_render_minor),

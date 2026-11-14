@@ -30,6 +30,7 @@
 #include <lemon/logging_config.h>
 #include <lemon/runtime_config.h>
 #include <lemon/server.h>
+#include <lemon/system_info.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/path_utils.h>
 #include <winsock2.h>
@@ -143,6 +144,19 @@ static bool wait_for_server(const std::string& clean_host, int clean_port, bool 
 #ifdef _WIN32
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
+    // The server spawns this executable to read HIP's device order. Answer before
+    // the single-instance check, which would see the running server and exit.
+    {
+        int probe_argc = 0;
+        LPWSTR* probe_argv = CommandLineToArgvW(GetCommandLineW(), &probe_argc);
+        const bool hip_probe = probe_argv && probe_argc == 2 &&
+                               wcscmp(probe_argv[1], L"--internal-hip-probe") == 0;
+        LocalFree(probe_argv);
+        if (hip_probe) {
+            return lemon::run_internal_hip_probe();
+        }
+    }
+
     // Create a job object so that all child processes (llama-server, etc.)
     // are automatically killed when this process exits.
     create_child_process_job();

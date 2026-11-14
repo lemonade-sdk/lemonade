@@ -16,6 +16,7 @@
 #include <chrono>
 #include <csignal>
 #include <iostream>
+#include <string>
 #include <thread>
 
 #if defined(__GLIBC__)
@@ -136,6 +137,10 @@ void signal_handler(int signal) {
 }
 
 int main(int argc, char** argv) {
+    if (argc == 2 && std::string(argv[1]) == "--internal-hip-probe") {
+        return lemon::run_internal_hip_probe();
+    }
+
 #if defined(__GLIBC__)
     // mallopt() is process-wide and MT-Unsafe. Apply it before initializing
     // telemetry or constructing Server, both of which start worker threads.

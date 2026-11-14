@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <spawn.h>
+#include <cstdlib>
 #include <cstring>
 #include <thread>
 #include <chrono>
@@ -75,7 +76,8 @@ public:
         OutputLineCallback on_line,
         const std::string& working_dir,
         int timeout_seconds,
-        bool capture_stderr = true) override;
+        bool capture_stderr = true,
+        const std::vector<std::pair<std::string, std::string>>& env_vars = {}) override;
 
     int find_free_port(int start_port) override;
     int run_command(const std::string& command, std::string& output, int timeout_seconds) override;
@@ -457,7 +459,8 @@ int MacOSProcessPlatform::run_with_output(
     OutputLineCallback on_line,
     const std::string& working_dir,
     int timeout_seconds,
-    bool capture_stderr) {
+    bool capture_stderr,
+    const std::vector<std::pair<std::string, std::string>>& env_vars) {
 
     // For simplicity, reuse fork/exec for run_with_output on macOS
     // (This is a less critical path than spawn)
@@ -485,6 +488,10 @@ int MacOSProcessPlatform::run_with_output(
 
         if (!working_dir.empty()) {
             chdir(working_dir.c_str());
+        }
+
+        for (const auto& env_pair : env_vars) {
+            setenv(env_pair.first.c_str(), env_pair.second.c_str(), 1);
         }
 
         std::vector<char*> argv_ptrs;
