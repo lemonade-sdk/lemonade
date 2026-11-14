@@ -1,23 +1,23 @@
-#include "lemon/backends/cloud/cloud_server.h"
-#include "lemon/backends/backend_registry.h"
-#include "lemon/model_manager.h"
-#include "lemon/cloud_provider_registry.h"
-#include "lemon/error_types.h"
-#include "lemon/runtime_config.h"
-#include "lemon/streaming_proxy.h"
-#include "lemon/utils/http_client.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/utils/session_utils.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <curl/curl.h>
+#include "lemon/backends/backend_registry.h"
+#include "lemon/backends/cloud/cloud_server.h"
+#include "lemon/cloud_provider_registry.h"
+#include "lemon/error_types.h"
+#include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
+#include "lemon/streaming_proxy.h"
+#include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/session_utils.h"
 #include <limits>
 #include <map>
 #include <string_view>
 #include <utility>
-#include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
 namespace backends {
@@ -355,7 +355,9 @@ CloudServer::CloudServer(const std::string& provider,
                          CloudProviderRegistry* registry)
     : WrappedServer("cloud", log_level, model_manager, backend_manager),
       provider_(provider),
-      registry_(registry) {}
+      registry_(registry) {
+    bind_legacy_operations(LegacyOperationProfile::Cloud, *this);
+}
 
 CloudServer::~CloudServer() {
     unload();

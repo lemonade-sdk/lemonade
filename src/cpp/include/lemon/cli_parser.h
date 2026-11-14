@@ -9,6 +9,7 @@ namespace lemon {
 struct ServerConfig {
     std::string cache_dir;     // Positional arg: lemonade cache/data dir (optional, platform default)
     std::string config_dir;    // Positional arg: lemonade config dir (optional, platform default)
+    bool builtin_backends_only = false;
     int port = -1;             // -1 = not specified on CLI, use config.json value
     std::string host;          // Empty = not specified on CLI, use config.json value
     std::optional<bool> broadcast;        // std::nullopt = not specified on CLI, use config.json value

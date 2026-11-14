@@ -1,0 +1,127 @@
+{
+  "schema_version": 2,
+  "id": "source-cache-fixture",
+  "recipe": "source-cache-fixture",
+  "merge": {
+    "kind": "local",
+    "metadata": {
+      "display_name": "Synthetic export",
+      "server_name": "fake-engine",
+      "binary": "fake-engine",
+      "supported_modes": [
+        "chat"
+      ],
+      "support": [
+        {
+          "backend": "cpu",
+          "tier": "core",
+          "format": "native",
+          "supported_os": [
+            "linux",
+            "windows",
+            "macos"
+          ],
+          "devices": {
+            "cpu": []
+          },
+          "device_summary": "Fixture CPU",
+          "arch_gates": {},
+          "id": "cpu"
+        }
+      ],
+      "options": [
+        {
+          "id": "args",
+          "name": "source_cache_args",
+          "cli_flag": "--source-cache-args",
+          "default_value": "",
+          "type_name": "ARGS",
+          "value_type": "string",
+          "help": "Fixture arguments",
+          "group": "Fixture"
+        }
+      ],
+      "config_extra": {
+        "number": 1,
+        "nested": [
+          true,
+          null,
+          1.25
+        ]
+      }
+    },
+    "install": {
+      "strategy": "none"
+    },
+    "artifacts": {},
+    "launch": {
+      "prepare_order": [
+        "backend",
+        "artifacts",
+        "program",
+        "ports"
+      ],
+      "backend": {
+        "fixed": "cpu"
+      },
+      "program": {
+        "source": "managed",
+        "install_policy": "always"
+      },
+      "ports": [
+        {
+          "name": "http",
+          "reject_zero": false,
+          "error": ""
+        }
+      ],
+      "argv": [],
+      "environment": {
+        "preset": "inherit"
+      },
+      "working_directory": {
+        "windows": "executable_directory",
+        "linux": "inherit",
+        "macos": "inherit"
+      },
+      "output": {
+        "inherit_levels": [
+          "info",
+          "debug",
+          "trace"
+        ],
+        "filter": true
+      },
+      "readiness": {
+        "port": "http",
+        "path": "/health",
+        "timeout": 600
+      },
+      "watchdog": {
+        "policy": "standard",
+        "port": "http",
+        "path": "/health"
+      }
+    },
+    "operations": [
+      {
+        "id": "chat.buffered",
+        "operation": "chat_completion",
+        "delivery": "buffered",
+        "model_modes": [
+          "chat"
+        ],
+        "transport": {
+          "kind": "http_json",
+          "method": "POST",
+          "path": "/chat",
+          "port": "http",
+          "timeout": 1
+        },
+        "request": {
+          "base": "identity"
+        }
+      }
+    ]
+  }
+}

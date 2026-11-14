@@ -1,0 +1,863 @@
+{
+  "engine": "rocmfpx",
+  "id": "rocmfpx",
+  "recipe": "rocmfpx",
+  "backend": "rocm",
+  "stack_revision": "e3d734e056d1caada9efc4a2c8b218c23e0016b2",
+  "active": false,
+  "registry_validated": false,
+  "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
+  "pin": "rocm-10.0-rocmfpx@sha256:4df326e907a469f4acc6091fa7fb68fb275c2d5a7136bacd8e47e7339a5c49f7",
+  "owner_digest": "sha256:472e8c5f7d1ce55bf86ee05aff563a23e76c1082fa11e9d7b45c4905112d20c0",
+  "authored_lines": 291,
+  "defaults": {
+    "args": ""
+  },
+  "models": {
+    "Qwen3.8-27B-ROCmFP4-STRIX-MTP": {
+      "checkpoints": {
+        "main": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:Qwen3.8-27B-Q4_0_ROCMFP4_STRIX.gguf",
+        "draft": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:mtp-Qwen3.8-27B-Q4_0.gguf",
+        "mmproj": "kingjones777/Qwen3.8-27B-ROCmFP4-STRIX-MTP-GGUF:mmproj-Qwen3.8-27B-BF16.gguf"
+      },
+      "recipe": "rocmfpx",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling",
+        "vision",
+        "mtp"
+      ],
+      "size": 17.4,
+      "uploaded_by": "kingjones777"
+    },
+    "Gemma-4-26B-A4B-it-ROCmFP4": {
+      "checkpoints": {
+        "main": "kingjones777/Gemma-4-26B-A4B-it-ROCmFP4-GGUF:gemma-4-26B-A4B-it-Q4_0_ROCMFP4_FAST_COHERENT.gguf",
+        "mmproj": "kingjones777/Gemma-4-26B-A4B-it-ROCmFP4-GGUF:mmproj-BF16.gguf"
+      },
+      "recipe": "rocmfpx",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "tool-calling",
+        "vision"
+      ],
+      "size": 14.9,
+      "uploaded_by": "kingjones777"
+    },
+    "Qwen3.6-35B-A3B-ROCmFP4-MTP": {
+      "checkpoints": {
+        "main": "plunderstruck/Qwen3.6-35B-A3B-MTP-ROCmFP4-GGUF:Qwen3.6-35B-A3B-MTP-ROCmFP4-STRIX-embF16-headQ6.gguf",
+        "mmproj": "plunderstruck/Qwen3.6-35B-A3B-MTP-ROCmFP4-GGUF:mmproj-F32.gguf"
+      },
+      "recipe": "rocmfpx",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling",
+        "vision",
+        "mtp"
+      ],
+      "size": 21.7,
+      "uploaded_by": "plunderstruck"
+    }
+  },
+  "metadata": {
+    "display_name": "ROCm FPX",
+    "server_name": "llama-server",
+    "log_category": "RocmFpx",
+    "binary": "llama-server",
+    "default_device": "gpu",
+    "slot_policy": "standard",
+    "selectable_backend": false,
+    "uses_ctx_size": true,
+    "dynamic_models": false,
+    "options": [
+      {
+        "id": "args",
+        "name": "rocmfpx_args",
+        "cli_flag": "--rocmfpx-args",
+        "default_value": "",
+        "type_name": "ARGS",
+        "value_type": "string",
+        "help": "Custom arguments to pass to the ROCm FPX llama-server",
+        "group": "ROCm FPX Options"
+      }
+    ],
+    "support": [
+      {
+        "id": "rocm",
+        "backend": "rocm",
+        "tier": "guest",
+        "format": "container",
+        "supported_os": [
+          "linux"
+        ],
+        "devices": {
+          "amd_gpu": [
+            "gfx1151"
+          ]
+        },
+        "device_summary": "AMD Strix Halo"
+      }
+    ],
+    "supported_modes": [
+      "chat"
+    ],
+    "required_checkpoints": [
+      "main"
+    ],
+    "default_capabilities": [],
+    "web_display_name": "ROCm FPX",
+    "rocm_channels": [],
+    "exposes_prometheus_metrics": true,
+    "rocm_requires_cwsr_fix": true,
+    "version_policy": "exact",
+    "self_manages_downloads": false,
+    "takes_args": true,
+    "arg_variants": [],
+    "bin_variants": [],
+    "config_extra": {},
+    "streams_model_from_storage": false
+  },
+  "diagnostics": [
+    {
+      "id": "loading",
+      "phase": "loading",
+      "level": "info",
+      "category": "RocmFpx",
+      "format": "Loading model: {model:string}",
+      "when": "always"
+    },
+    {
+      "id": "loaded",
+      "phase": "success",
+      "level": "debug",
+      "category": "RocmFpx",
+      "format": "Model loaded on port {loaded_port:integer}",
+      "when": "always"
+    }
+  ],
+  "rewrite_domain": "canonical_path",
+  "c7b_fixture": "c7b.rocmfpx.json",
+  "c7b_fixture_sha256": "49576b93e03ce98c1520b4728499f4faf2e0e01874ea641c97ea598ebb369b66",
+  "production_definition": {
+    "schema_version": 2,
+    "id": "rocmfpx",
+    "recipe": "rocmfpx",
+    "merge": {
+      "kind": "container",
+      "metadata": {
+        "display_name": "ROCm FPX",
+        "server_name": "llama-server",
+        "log_category": "RocmFpx",
+        "binary": "llama-server",
+        "default_device": "gpu",
+        "slot_policy": "standard",
+        "selectable_backend": false,
+        "uses_ctx_size": true,
+        "dynamic_models": false,
+        "options": [
+          {
+            "id": "args",
+            "name": "rocmfpx_args",
+            "cli_flag": "--rocmfpx-args",
+            "default_value": "",
+            "type_name": "ARGS",
+            "value_type": "string",
+            "help": "Custom arguments to pass to the ROCm FPX llama-server",
+            "group": "ROCm FPX Options"
+          }
+        ],
+        "support": [
+          {
+            "id": "rocm",
+            "backend": "rocm",
+            "tier": "guest",
+            "format": "container",
+            "supported_os": [
+              "linux"
+            ],
+            "devices": {
+              "amd_gpu": [
+                "gfx1151"
+              ]
+            },
+            "device_summary": "AMD Strix Halo"
+          }
+        ],
+        "supported_modes": [
+          "chat"
+        ],
+        "required_checkpoints": [
+          "main"
+        ],
+        "default_capabilities": [],
+        "web_display_name": "ROCm FPX",
+        "rocm_channels": [],
+        "exposes_prometheus_metrics": true,
+        "rocm_requires_cwsr_fix": true,
+        "version_policy": "exact",
+        "self_manages_downloads": false,
+        "takes_args": true,
+        "arg_variants": [],
+        "bin_variants": [],
+        "config_extra": {},
+        "streams_model_from_storage": false
+      },
+      "containers": {
+        "rocm": {
+          "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
+          "pin": {
+            "source": "backend_versions",
+            "recipe": "rocmfpx",
+            "backend": "rocm"
+          },
+          "devices": [
+            "/dev/dri",
+            "/dev/kfd"
+          ],
+          "cap_add": [],
+          "policy": "lemonade-isolated-v1",
+          "network": "private_internal",
+          "teardown": "stop_remove_reap",
+          "stop_grace_seconds": 10
+        }
+      },
+      "install": {
+        "strategy": "oci"
+      },
+      "artifacts": {
+        "main": {
+          "role": "main",
+          "strategy": "resolved_path",
+          "missing_error": {
+            "concat": [
+              "GGUF file not found for checkpoint: ",
+              {
+                "ref": "/model/checkpoint"
+              }
+            ]
+          },
+          "hook": {
+            "id": "llamacpp.artifacts.v1",
+            "params": {}
+          },
+          "check": "nonempty"
+        },
+        "mmproj": {
+          "role": "mmproj",
+          "strategy": "resolved_path",
+          "required_when": false,
+          "missing_error": "Optional model file is missing",
+          "hook": {
+            "id": "llamacpp.artifacts.v1",
+            "params": {}
+          },
+          "check": "nonempty"
+        },
+        "draft": {
+          "role": "draft",
+          "strategy": "resolved_path",
+          "required_when": false,
+          "missing_error": "Optional model file is missing",
+          "hook": {
+            "id": "llamacpp.artifacts.v1",
+            "params": {}
+          },
+          "check": "nonempty"
+        }
+      },
+      "launch": {
+        "prepare_order": [
+          "backend",
+          "install",
+          "artifacts",
+          "program",
+          "ports"
+        ],
+        "backend": {
+          "fixed": "rocm"
+        },
+        "execution": {
+          "cases": [
+            {
+              "id": "rocm-container",
+              "backends": [
+                "rocm"
+              ],
+              "kind": "container",
+              "container": "rocm",
+              "program": {
+                "source": "image_command",
+                "name": "llama-server"
+              }
+            }
+          ]
+        },
+        "mounts": [
+          {
+            "id": "main",
+            "artifact": "main",
+            "expand": "gguf_shards",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered"
+          },
+          {
+            "id": "mmproj",
+            "artifact": "mmproj",
+            "expand": "gguf_shards",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered",
+            "when": {
+              "not": {
+                "eq": [
+                  {
+                    "ref": "/artifacts/mmproj"
+                  },
+                  ""
+                ]
+              }
+            }
+          },
+          {
+            "id": "draft",
+            "artifact": "draft",
+            "expand": "gguf_shards",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered",
+            "when": {
+              "not": {
+                "eq": [
+                  {
+                    "ref": "/artifacts/draft"
+                  },
+                  ""
+                ]
+              }
+            }
+          }
+        ],
+        "address": {
+          "source": "process_start"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "reject_zero": true,
+            "error": "No HTTP port available"
+          }
+        ],
+        "argv": [
+          {
+            "id": "model",
+            "flag": "-m",
+            "value": {
+              "ref": "/artifacts/main"
+            }
+          },
+          {
+            "id": "context",
+            "flag": "--ctx-size",
+            "value": {
+              "string": {
+                "ref": "/options/ctx_size"
+              }
+            }
+          },
+          {
+            "id": "port",
+            "flag": "--port",
+            "value": {
+              "string": {
+                "ref": "/launch/ports/http"
+              }
+            }
+          },
+          {
+            "id": "host",
+            "flag": "--host",
+            "value": "0.0.0.0"
+          },
+          {
+            "id": "jinja",
+            "args": [
+              "--jinja"
+            ]
+          },
+          {
+            "id": "metrics",
+            "args": [
+              "--metrics"
+            ]
+          },
+          {
+            "id": "mmproj",
+            "flag": "--mmproj",
+            "value": {
+              "ref": "/artifacts/mmproj"
+            },
+            "when": {
+              "not": {
+                "eq": [
+                  {
+                    "ref": "/artifacts/mmproj"
+                  },
+                  ""
+                ]
+              }
+            }
+          },
+          {
+            "id": "draft",
+            "flag": "--model-draft",
+            "value": {
+              "ref": "/artifacts/draft"
+            },
+            "when": {
+              "not": {
+                "eq": [
+                  {
+                    "ref": "/artifacts/draft"
+                  },
+                  ""
+                ]
+              }
+            }
+          }
+        ],
+        "environment": {
+          "preset": "inherit"
+        },
+        "working_directory": "inherit",
+        "output": {
+          "inherit_levels": [
+            "info",
+            "debug",
+            "trace"
+          ],
+          "filter": true
+        },
+        "readiness": {
+          "port": "http",
+          "path": "/health",
+          "timeout": "global"
+        },
+        "watchdog": {
+          "policy": "standard",
+          "port": "http",
+          "path": "/health"
+        },
+        "custom_args": {
+          "option": "args",
+          "runtime_input": "string_or_empty",
+          "reserved": [
+            "-c",
+            "--ctx-size",
+            "-m",
+            "--model",
+            "-mu",
+            "--model-url",
+            "-hf",
+            "-hfr",
+            "-hff",
+            "-mr",
+            "-mf",
+            "--hf-repo",
+            "--hf-file",
+            "-md",
+            "--model-draft",
+            "--spec-draft-model",
+            "-mm",
+            "--mmproj",
+            "-mmu",
+            "--mmproj-url",
+            "--no-mmproj",
+            "--host",
+            "--port",
+            "--jinja",
+            "--no-jinja",
+            "--metrics"
+          ],
+          "error_prefix": "Invalid custom ROCm FPX llama-server arguments:\n",
+          "defaults": [
+            {
+              "id": "mtp",
+              "args": "--spec-type draft-mtp",
+              "flag": "--spec-type",
+              "aliases": [],
+              "stage": "runtime_options",
+              "respect_merge_args": false,
+              "when": {
+                "ref": "/model/labels/mtp"
+              }
+            },
+            {
+              "id": "parallel",
+              "args": "--parallel 1",
+              "flag": "--parallel",
+              "aliases": [
+                "-np"
+              ],
+              "stage": "runtime_options",
+              "respect_merge_args": false,
+              "when": true
+            },
+            {
+              "id": "batch",
+              "args": "-b 2048",
+              "flag": "-b",
+              "aliases": [
+                "--batch-size"
+              ],
+              "stage": "runtime_options",
+              "respect_merge_args": false,
+              "when": true
+            },
+            {
+              "id": "ubatch",
+              "args": "-ub 2048",
+              "flag": "-ub",
+              "aliases": [
+                "--ubatch-size"
+              ],
+              "stage": "runtime_options",
+              "respect_merge_args": false,
+              "when": true
+            }
+          ]
+        },
+        "diagnostics": [
+          {
+            "id": "loading",
+            "phase": "loading",
+            "level": "info",
+            "category": "RocmFpx",
+            "format": "Loading model: {model:string}",
+            "when": "always"
+          },
+          {
+            "id": "loaded",
+            "phase": "success",
+            "level": "debug",
+            "category": "RocmFpx",
+            "format": "Model loaded on port {loaded_port:integer}",
+            "when": "always"
+          }
+        ],
+        "direct_stream_policy": "builtin_container_legacy",
+        "load_log_policy": "none"
+      },
+      "operations": [
+        {
+          "id": "chat.buffered",
+          "operation": "chat_completion",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.max_tokens_alias",
+                "params": {}
+              },
+              {
+                "id": "llamacpp.tool_schema_limits",
+                "params": {}
+              }
+            ]
+          },
+          "response": {
+            "hooks": [
+              {
+                "id": "llamacpp.client_model",
+                "params": {}
+              }
+            ]
+          }
+        },
+        {
+          "id": "completion.buffered",
+          "operation": "completion",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/completions",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.max_tokens_alias",
+                "params": {}
+              }
+            ]
+          },
+          "response": {
+            "hooks": [
+              {
+                "id": "llamacpp.client_model",
+                "params": {}
+              }
+            ]
+          }
+        },
+        {
+          "id": "responses.buffered",
+          "operation": "responses",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/responses",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.tool_schema_limits",
+                "params": {}
+              }
+            ]
+          },
+          "response": {
+            "hooks": [
+              {
+                "id": "llamacpp.client_model",
+                "params": {}
+              }
+            ]
+          }
+        },
+        {
+          "id": "chat.streaming",
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.max_tokens_alias",
+                "params": {}
+              },
+              {
+                "id": "llamacpp.tool_schema_limits",
+                "params": {}
+              }
+            ]
+          }
+        },
+        {
+          "id": "completion.streaming",
+          "operation": "completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "responses.streaming",
+          "operation": "responses",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/responses",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.tool_schema_limits",
+                "params": {}
+              }
+            ]
+          }
+        },
+        {
+          "id": "embedding.buffered",
+          "operation": "embeddings",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/embeddings",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "reranking.buffered",
+          "operation": "reranking",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/rerank",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "slots.buffered",
+          "operation": "slots",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "GET",
+            "path": "/slots",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "slot-action.buffered",
+          "operation": "slot_action",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/slots/{slot_id}?action={action}",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "tokenize.buffered",
+          "operation": "tokenize",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/tokenize",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        }
+      ],
+      "rationale": [
+        {
+          "subject": "",
+          "text": "Inactive builtin leaf. The independently fixed dormant execution grant is not installed in active policies. Registry/image, real runtime and packaging qualification and a disclosed activation stage remain required.",
+          "source": "container-conversion C8",
+          "tests": [
+            "ContainerProductionParityTest"
+          ]
+        }
+      ]
+    }
+  },
+  "argv": [
+    "-m",
+    "/mnt/models/main.fake",
+    "--ctx-size",
+    "8192",
+    "--port",
+    "@PORT@",
+    "--host",
+    "0.0.0.0",
+    "--jinja",
+    "--metrics",
+    "--fixture",
+    "7",
+    "--parallel",
+    "1",
+    "-b",
+    "2048",
+    "-ub",
+    "2048"
+  ],
+  "mounts": [
+    "/mnt/models/main.fake"
+  ],
+  "capability_mask": 0
+}

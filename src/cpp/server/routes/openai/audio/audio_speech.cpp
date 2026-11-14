@@ -137,13 +137,13 @@ protected:
         if (is_streaming) {
             stream_response(req, res,
                 [router, request_json](const std::string&, httplib::DataSink& sink) {
-                    router->audio_speech(request_json, sink);
+                    router->audio_speech(request_json, sink, OperationDelivery::Streaming);
                 },
                 format.mime_type);
         } else {
             serve_media_or_error(res, format.mime_type,
                 [router, &request_json](httplib::DataSink& sink) {
-                    router->audio_speech(request_json, sink);
+                    router->audio_speech(request_json, sink, OperationDelivery::Buffered);
                 });
         }
     }

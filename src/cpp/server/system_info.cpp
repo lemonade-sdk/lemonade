@@ -1,9 +1,3 @@
-#include "lemon/system_info.h"
-#include "system_info_utils.h"
-#include "platform/amd_gpu_type.h"
-#include "platform/nvidia_metrics.h"
-#include "lemon/runtime_config.h"
-#include "lemon/version.h"
 #include "lemon/backend_manager.h"
 #include "lemon/utils/container_manager.h"
 #include "lemon/utils/path_utils.h"
@@ -14,23 +8,36 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/configured/container_execution.h"
 #include "lemon/recipe_backend_def.h"
-#include <filesystem>
-#include <fstream>
-#include <sstream>
-#include <cstdio>
-#include <cstdlib>
-#include <iostream>
-#include <regex>
-#include <lemon/utils/aixlog.hpp>
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
+#include "lemon/utils/container_manager.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
+#include "lemon/utils/version_utils.h"
+#include "lemon/version.h"
+#include "platform/amd_gpu_type.h"
+#include "platform/nvidia_metrics.h"
+#include "system_info_utils.h"
 #include <algorithm>
 #include <cctype>
-#include <set>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <lemon/utils/aixlog.hpp>
 #include <map>
 #include <mutex>
 #include <optional>
+#include <regex>
+#include <set>
+#include <sstream>
 #include <vector>
-#include <cmath>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -445,11 +452,21 @@ std::vector<GPUInfo> query_dxg_amd_gpus(const std::string& gpu_type) {
 // The recipe/backend support matrix is assembled from every backend descriptor's
 // `support` rows. Concatenated in registry order; within a recipe, row order is
 // the backend preference order.
+static std::vector<BackendSupport> recipe_support(const std::string& recipe) {
+    std::vector<BackendSupport> support;
+    for (const auto& registration : backends::all_registrations()) {
+        if (registration.descriptor->recipe != recipe) continue;
+        const auto& rows = registration.descriptor->support;
+        support.insert(support.end(), rows.begin(), rows.end());
+    }
+    return support;
+}
+
 static const std::vector<RecipeBackendDef>& recipe_defs() {
     static const std::vector<RecipeBackendDef> defs = [] {
         std::vector<RecipeBackendDef> v;
         for (const auto* desc : lemon::backends::all_descriptors()) {
-            for (const auto& row : desc->support) {
+            for (const auto& row : recipe_support(desc->recipe)) {
                 v.push_back({desc->recipe, row.backend, row.tier, row.format, row.supported_os,
                              row.devices, row.device_summary, row.arch_gates});
             }
@@ -745,22 +762,25 @@ static bool is_installed_state(const std::string& state) {
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if the kernel
     // CWSR fix is missing (a per-descriptor flag).
-    const auto* cwsr_desc = backends::descriptor_for(recipe);
+    const auto* cwsr_desc = backends::try_get_descriptor_for_recipe(recipe, backend);
     if (backend == "rocm" && cwsr_desc && cwsr_desc->rocm_requires_cwsr_fix &&
         needs_gfx1151_cwsr_fix()) {
         error_message = "Linux kernel missing support";
         return false;
     }
-    if (cwsr_desc && cwsr_desc->container_for(backend)) {
-        const std::string image = BackendUtils::get_installed_backend_image(recipe, backend);
-        if (image.empty()) return false;
-        return utils::ContainerManager::global().has_image(image);
+    if (const auto* spec = try_get_spec_for_recipe(recipe, backend)) {
+        if (const auto policy = backends::configured_container_policy(*spec, backend)) {
+            try {
+                auto* manager = BackendManager::global();
+                if (!manager) throw std::runtime_error("Container installation manager is unavailable");
+                return manager->has_container_image(utils::container_image(policy->repository, manager->container_pin(*policy)));
+            } catch (const std::exception& error) { error_message = error.what(); return false; }
+        }
     }
-
     // Find the managed binary, then let the backend's ops decide installed-ness
     // (llamacpp "system" also needs the HIP plugin; flm can be a PATH package).
     bool binary_found = false;
-    if (auto* spec = try_get_spec_for_recipe(recipe)) {
+    if (auto* spec = try_get_spec_for_recipe(recipe, backend)) {
         try {
             BackendUtils::get_backend_binary_path(*spec, backend);
             binary_found = true;
@@ -779,8 +799,16 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
     // Read the on-disk version.txt generically, then let the backend's ops
     // override (llamacpp "system" runs llama-server --version; flm queries the
     // CLI when no file is present).
-    auto* spec = try_get_spec_for_recipe(recipe);
+    auto* spec = try_get_spec_for_recipe(recipe, backend);
     std::string file_version;
+    if (spec) {
+        if (const auto policy = backends::configured_container_policy(*spec, backend)) {
+            auto* manager = BackendManager::global();
+            if (!manager) return "";
+            try { return manager->has_container_image(utils::container_image(policy->repository, manager->container_pin(*policy))) ? manager->container_pin(*policy) : ""; }
+            catch (const std::exception&) { return ""; }
+        }
+    }
     if (spec) {
         std::string version_file = BackendUtils::get_installed_version_file(*spec, backend);
         if (!version_file.empty()) {
@@ -1363,7 +1391,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
     // Build recipes from the definition table
     std::optional<std::optional<utils::SetupReport>> container_setup;
     for (const auto& def : recipe_defs()) {
-        const auto* def_desc = backends::descriptor_for(def.recipe);
+        const auto* def_desc = backends::try_get_descriptor_for_recipe(def.recipe, def.backend);
         const bool container_backend = def_desc && def_desc->container_for(def.backend);
         if (container_backend && current_os != "linux") {
             continue;
@@ -1563,7 +1591,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     : "Backend is supported but not installed.";
                 backend["message"] = install_error.empty() ? default_message : install_error;
 
-                const auto* cwsr_desc = backends::descriptor_for(def.recipe);
+                const auto* cwsr_desc = backends::try_get_descriptor_for_recipe(def.recipe, def.backend);
                 bool is_rocm_backend = def.backend == "rocm" && cwsr_desc &&
                                        cwsr_desc->rocm_requires_cwsr_fix;
 
@@ -1623,7 +1651,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
 #if !defined(_WIN32)
             // System-managed packages (e.g. flm on Linux) accept a version newer
             // than the minimum required.
-            const auto* ver_desc = backends::descriptor_for(def.recipe);
+            const auto* ver_desc = backends::try_get_descriptor_for_recipe(def.recipe, def.backend);
             if (ver_desc && ver_desc->version_policy == VersionPolicy::AtLeast) {
                 auto installed_ver = utils::Version::parse(installed_version);
                 auto expected_ver = utils::Version::parse(expected_version);
@@ -1742,7 +1770,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         // Machine-independent support matrix (OS + device families + friendly
         // device summary per backend), straight from the descriptor.
         json support = json::array();
-        for (const auto& row : desc->support) {
+        for (const auto& row : recipe_support(desc->recipe)) {
             json devices = json::array();
             for (const auto& [device, families] : row.devices) {
                 devices.push_back({{"device", device},
@@ -1850,13 +1878,13 @@ bool SystemInfo::refresh_container_setup(json& recipes) {
     bool cleared = false;
     std::optional<std::optional<utils::SetupReport>> container_setup;
     for (auto& [recipe, info] : recipes.items()) {
-        const auto* desc = lemon::backends::descriptor_for(recipe);
-        if (!desc || desc->containers.empty() || !info.contains("backends")) {
+        if (!info.contains("backends")) {
             continue;
         }
         for (auto& [backend, status] : info["backends"].items()) {
             const std::string state = status.value("state", "unsupported");
-            if (!desc->container_for(backend) || state == "unsupported") {
+            const auto* desc = backends::try_get_descriptor_for_recipe(recipe, backend);
+            if (!desc || !desc->container_for(backend) || state == "unsupported") {
                 continue;
             }
             if (!container_setup) container_setup = backends::container_setup_failure();
@@ -1870,7 +1898,7 @@ bool SystemInfo::refresh_container_setup(json& recipes) {
 }
 
 bool SystemInfo::is_backend_installed(const std::string& recipe, const std::string& backend) {
-    const auto* desc = backends::descriptor_for(recipe);
+    const auto* desc = backends::try_get_descriptor_for_recipe(recipe, backend);
     if (!desc) return false;
     const std::string current_os = get_current_os();
     const bool runs_here = std::any_of(desc->support.begin(), desc->support.end(),

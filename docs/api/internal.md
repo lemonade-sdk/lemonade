@@ -196,7 +196,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `extra_models_dir` | No | Defaults to `""`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `flm` | No | `flm` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `global_timeout` | No | Defaults to `600`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `gufo` | No | `gufo` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `host` | No | Defaults to `"localhost"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `hrx` | No | `hrx` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `inhibit_suspend` | No | Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -217,7 +216,6 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `port` | No | Defaults to `13305`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `rocm_channel` | No | Defaults to `"stable"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `rocm_install_method` | No | Defaults to `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `rocmfpx` | No | `rocmfpx` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ryzenai` | No | `ryzenai` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `sdcpp` | No | `sdcpp` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `telemetry` | No | `telemetry` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

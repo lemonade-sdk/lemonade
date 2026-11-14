@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import { api, LoadedModel } from '../api';
 import { capabilityFromLoaded } from '../modelCapabilities';
 import { backendCompactLabel } from '../modelPresentation';
+import { useServerRecipeNames } from '../hooks/useBackendCatalog';
 import { useMonitorData } from '../hooks/useMonitorData';
 import { monitorMemoryTopology } from '../features/monitor/memoryTopology';
 import { percentDigits } from '../features/monitor/throughput';
@@ -197,6 +198,7 @@ const SmoothChart = React.memo<{
  */
 const ModelRow = React.memo<{ model: LoadedModel; onEject: (name: string) => void; ejecting: boolean }>(
   ({ model, onEject, ejecting }) => {
+    useServerRecipeNames();
     const facts = [
       model.recipe && backendCompactLabel(model.recipe),
       model.device,

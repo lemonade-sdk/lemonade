@@ -179,13 +179,13 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td><code>nathanw</code>‡</td>
-      <td>AMD Strix Halo (Vulkan performance fork)</td>
+      <td><code>halobox</code>‡</td>
+      <td>AMD Strix Halo (Halo Box ROCm fork)</td>
       <td>Linux</td>
     </tr>
     <tr>
-      <td><code>halobox</code>‡</td>
-      <td>AMD Strix Halo (Halo Box ROCm fork)</td>
+      <td><code>nathanw</code>‡</td>
+      <td>AMD Strix Halo (Vulkan performance fork)</td>
       <td>Linux</td>
     </tr>
     <tr>
@@ -219,6 +219,12 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Linux</td>
     </tr>
     <tr>
+      <td rowspan="1"><code>gufo</code></td>
+      <td><code>rocm</code>‡</td>
+      <td>AMD Strix Halo</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
       <td rowspan="1"><code>rocmfpx</code></td>
       <td><code>rocm</code>‡</td>
       <td>AMD Strix Halo</td>
@@ -226,12 +232,6 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     </tr>
     <tr>
       <td rowspan="1"><code>halogen</code></td>
-      <td><code>rocm</code>‡</td>
-      <td>AMD Strix Halo</td>
-      <td>Linux</td>
-    </tr>
-    <tr>
-      <td rowspan="1"><code>gufo</code></td>
       <td><code>rocm</code>‡</td>
       <td>AMD Strix Halo</td>
       <td>Linux</td>

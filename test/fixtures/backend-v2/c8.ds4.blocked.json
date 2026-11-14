@@ -1,0 +1,1059 @@
+{
+  "schema_version": 1,
+  "earlier_native_revision": "5df9cbe2de1c77eb7e5b28be2bf6d1d527f77272",
+  "source_revision": "8f8b905a1cf68b60a4d7fdc66a15d846b0cebc78",
+  "quotations": [
+    {
+      "path": "src/cpp/server/backends/ds4/ds4_server.cpp",
+      "lines": [
+        29,
+        43
+      ],
+      "text": "double igpu_pool_gb() {\n    try {\n        const GPUInfo igpu = create_system_info()->get_amd_igpu_device();\n        if (igpu.available) {\n            return (std::max)(igpu.vram_gb, igpu.virtual_gb);\n        }\n    } catch (...) {\n    }\n    return 0.0;\n}\n\ndouble file_gib(const std::string& path) {\n    std::error_code ec;\n    const auto bytes = path.empty() ? 0 : fs::file_size(utils::path_from_utf8(path), ec);\n    return ec ? 0.0 : static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0);"
+    },
+    {
+      "path": "src/cpp/server/backends/ds4/ds4_server.cpp",
+      "lines": [
+        51,
+        68
+      ],
+      "text": "json without_no_think_prefix(json request) {\n    static const std::string kPrefix = \"/no_think\\n\";\n    if (!request.contains(\"messages\") || !request[\"messages\"].is_array()) return request;\n    for (auto& message : request[\"messages\"]) {\n        if (message.is_object() && message.value(\"role\", \"\") == \"user\" &&\n            message.contains(\"content\") && message[\"content\"].is_string()) {\n            const std::string content = message[\"content\"].get<std::string>();\n            if (content.rfind(kPrefix, 0) == 0) message[\"content\"] = content.substr(kPrefix.size());\n        }\n    }\n    return request;\n}\n\n// The weights ds4 holds resident: the model and, when it has one, its DSpark\n// support file.\ndouble weights_gib(const ModelInfo& info) {\n    return file_gib(info.resolved_path(\"main\")) + file_gib(info.resolved_path(\"draft\"));\n}"
+    },
+    {
+      "path": "src/cpp/server/backends/ds4/ds4_server.cpp",
+      "lines": [
+        125,
+        157
+      ],
+      "text": "    const std::string draft_path = model_info.resolved_path(\"draft\");\n    const ds4::MemoryPlan plan = ds4::memory_plan(igpu_pool_gb(), weights_gib(model_info));\n    if (plan.resident) {\n        if (!draft_path.empty()) {\n            args.insert(args.end(), {\"--dspark\", \"--mtp-model\", draft_path});\n        }\n    } else {\n        // A user-supplied later flag (e.g. --ssd-streaming-cache-experts) still\n        // wins since ds4-server parses left-to-right. DSpark needs residency.\n        args.push_back(\"--ssd-streaming\");\n    }\n    // A streaming ds4 grows into the memory free above its reserve, and with\n    // less than its working set there it stalls without ever serving; a\n    // resident one fails mid-load. Failing here instead lets the router evict\n    // the other models and retry at once.\n    const double working_set_gb = plan.resident ? weights_gib(model_info) : model_info.min_resident_gb;\n    if (working_set_gb > 0.0 && plan.free_reserve_gb > 0) {\n        bool memory_known = false;\n        const double free_gb = get_available_memory_gb(\n            DEVICE_GPU, gpu_memory_vendor_for_target(backend, \"\"), \"\", nullptr, &memory_known);\n        const double needed_gb = plan.free_reserve_gb + working_set_gb;\n        if (memory_known && free_gb < needed_gb) {\n            std::ostringstream message;\n            message << std::fixed << std::setprecision(1) << \"ds4 needs \" << needed_gb\n                    << \" GiB of free GPU memory to start, and \" << free_gb << \" GiB is free\";\n            throw std::runtime_error(message.str());\n        }\n    }\n    if (plan.expert_cache_gb > 0) {\n        args.push_back(\"--ssd-streaming-cache-experts\");\n        args.push_back(std::to_string(plan.expert_cache_gb) + \"GB\");\n    }\n"
+    },
+    {
+      "path": "src/cpp/server/backends/ds4/ds4_server.cpp",
+      "lines": [
+        177,
+        185
+      ],
+      "text": "        command.model_files.push_back(draft_path);\n    }\n    if (plan.model_cache_gb > 0) {\n        command.env.push_back({\"DS4_ROCM_STREAM_MODEL_CACHE_GB\", std::to_string(plan.model_cache_gb)});\n    }\n    if (!plan.resident && plan.free_reserve_gb > 0) {\n        command.env.push_back(\n            {\"DS4_ROCM_STREAM_FREE_RESERVE_GB\", std::to_string(plan.free_reserve_gb)});\n    }"
+    },
+    {
+      "path": "src/cpp/server/backends/ds4/ds4_server.cpp",
+      "lines": [
+        199,
+        215
+      ],
+      "text": "json Ds4Server::chat_completion(const json& request) {\n    return forward_request(\"/v1/chat/completions\", without_no_think_prefix(request));\n}\n\nvoid Ds4Server::forward_streaming_request(const std::string& endpoint,\n                                          const std::string& request_body,\n                                          httplib::DataSink& sink, bool sse,\n                                          long timeout_seconds,\n                                          TelemetryCallback telemetry_callback) {\n    std::string body = request_body;\n    if (endpoint.find(\"chat/completions\") != std::string::npos) {\n        const json parsed = json::parse(request_body, nullptr, false);\n        if (!parsed.is_discarded()) body = without_no_think_prefix(parsed).dump();\n    }\n    WrappedServer::forward_streaming_request(endpoint, body, sink, sse, timeout_seconds,\n                                             std::move(telemetry_callback));\n}"
+    },
+    {
+      "path": "src/cpp/include/lemon/backends/ds4/ds4.h",
+      "lines": [
+        39,
+        61
+      ],
+      "text": "struct MemoryPlan {\n    bool resident = false;\n    int expert_cache_gb = 0;  // --ssd-streaming-cache-experts\n    int model_cache_gb = 0;   // DS4_ROCM_STREAM_MODEL_CACHE_GB\n    int free_reserve_gb = 0;  // DS4_ROCM_STREAM_FREE_RESERVE_GB, or what residency leaves free\n};\n\ninline constexpr int kResidentFreeReserveGb = 16;\n\n// `weights_gb` is the model's GGUF plus any DSpark support file it loads.\ninline MemoryPlan memory_plan(double pool_gb, double weights_gb) {\n    MemoryPlan plan;\n    if (pool_gb <= 0.0) return plan;\n    if (weights_gb > 0.0 && pool_gb >= weights_gb + kResidentFreeReserveGb) {\n        plan.resident = true;\n        plan.free_reserve_gb = kResidentFreeReserveGb;\n        return plan;\n    }\n    plan.expert_cache_gb = static_cast<int>(pool_gb * 0.4);\n    plan.model_cache_gb = static_cast<int>(pool_gb * 0.2);\n    plan.free_reserve_gb = static_cast<int>(pool_gb * 0.6);\n    return plan;\n}"
+    },
+    {
+      "path": "src/cpp/server/backends/ds4/ds4_server.cpp",
+      "lines": [
+        244,
+        262
+      ],
+      "text": "    void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {\n        const std::string path = info.resolved_path();\n        std::error_code ec;\n        if (path.empty() || !fs::exists(utils::path_from_utf8(path), ec)) return;\n        GgufMetadata meta;\n        if (!read_gguf_metadata(meta, path)) return;\n        info.max_context_window = meta.context_length;\n        info.gguf = std::move(meta);\n    }\n\n    // The context comes out of what is free above memory_plan's reserve, after\n    // the resident weights or, when streaming, the working set the model needs\n    // to run at speed.\n    std::optional<double> auto_context_kv_budget_gib(const ModelInfo& info,\n                                                     double available_gib) const override {\n        const MemoryPlan plan = memory_plan(igpu_pool_gb(), weights_gib(info));\n        const double working_set_gb = plan.resident ? weights_gib(info) : info.min_resident_gb;\n        if (working_set_gb <= 0.0) return std::nullopt;\n        return available_gib - plan.free_reserve_gb - working_set_gb;"
+    }
+  ],
+  "definition": {
+    "schema_version": 2,
+    "id": "gufo",
+    "recipe": "gufo",
+    "merge": {
+      "kind": "container",
+      "metadata": {
+        "display_name": "Gufo",
+        "server_name": "gufo",
+        "binary": "gufo",
+        "support": [
+          {
+            "id": "rocm",
+            "backend": "rocm",
+            "tier": "experimental",
+            "format": "container",
+            "supported_os": [
+              "linux"
+            ],
+            "devices": {
+              "gpu": [
+                "gfx1151"
+              ]
+            },
+            "device_summary": "Strix Halo"
+          }
+        ],
+        "supported_modes": [
+          "chat"
+        ],
+        "uses_ctx_size": true,
+        "slot_policy": "standard"
+      },
+      "containers": {
+        "rocm": {
+          "repository": "ghcr.io/peonist-ai/gufo",
+          "pin": {
+            "source": "backend_versions",
+            "recipe": "gufo",
+            "backend": "rocm"
+          },
+          "devices": [
+            "/dev/dri",
+            "/dev/kfd"
+          ],
+          "cap_add": [],
+          "policy": "lemonade-isolated-v1",
+          "network": "private_internal",
+          "teardown": "stop_remove_reap",
+          "stop_grace_seconds": 10
+        }
+      },
+      "install": {
+        "strategy": "oci"
+      },
+      "artifacts": {
+        "main": {
+          "role": "main",
+          "strategy": "resolved_path",
+          "missing_error": "GGUF checkpoint is required",
+          "hook": {
+            "id": "llamacpp.artifacts.v1",
+            "params": {}
+          },
+          "absolute_checkpoint_fallback": true
+        },
+        "draft": {
+          "role": "draft",
+          "strategy": "resolved_path",
+          "required_when": false,
+          "missing_error": "Missing draft"
+        }
+      },
+      "launch": {
+        "prepare_order": [
+          "backend",
+          "artifacts",
+          "program",
+          "ports"
+        ],
+        "backend": {
+          "fixed": "rocm"
+        },
+        "execution": {
+          "cases": [
+            {
+              "id": "rocm-container",
+              "backends": [
+                "rocm"
+              ],
+              "kind": "container",
+              "container": "rocm",
+              "program": {
+                "source": "image_command",
+                "name": "ds4-server"
+              },
+              "memory_plan": "ds4_rocm_v1"
+            }
+          ]
+        },
+        "mounts": [
+          {
+            "id": "main",
+            "artifact": "main",
+            "expand": "file",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered"
+          },
+          {
+            "id": "draft",
+            "artifact": "draft",
+            "expand": "file",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered",
+            "when": {
+              "all": [
+                {
+                  "ref": "/memory/resident"
+                },
+                {
+                  "not": {
+                    "eq": [
+                      {
+                        "ref": "/artifacts/draft"
+                      },
+                      ""
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "address": {
+          "source": "process_start"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "reject_zero": true,
+            "error": "No HTTP port available"
+          }
+        ],
+        "argv": [
+          {
+            "id": "model",
+            "flag": "-m",
+            "value": {
+              "ref": "/artifacts/main"
+            }
+          },
+          {
+            "id": "host",
+            "flag": "--host",
+            "value": "0.0.0.0"
+          },
+          {
+            "id": "port",
+            "flag": "--port",
+            "value": {
+              "string": {
+                "ref": "/launch/ports/http"
+              }
+            }
+          },
+          {
+            "id": "ctx",
+            "flag": "-c",
+            "value": {
+              "string": {
+                "ref": "/options/ctx_size"
+              }
+            },
+            "when": {
+              "gt": [
+                {
+                  "ref": "/options/ctx_size"
+                },
+                0
+              ]
+            }
+          },
+          {
+            "id": "prefill",
+            "flag": "--prefill-chunk",
+            "value": "2048"
+          },
+          {
+            "id": "draft",
+            "args": [
+              "--dspark",
+              "--mtp-model",
+              {
+                "ref": "/artifacts/draft"
+              }
+            ],
+            "when": {
+              "all": [
+                {
+                  "ref": "/memory/resident"
+                },
+                {
+                  "not": {
+                    "eq": [
+                      {
+                        "ref": "/artifacts/draft"
+                      },
+                      ""
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "streaming",
+            "args": [
+              "--ssd-streaming"
+            ],
+            "when": {
+              "not": {
+                "ref": "/memory/resident"
+              }
+            }
+          },
+          {
+            "id": "experts",
+            "flag": "--ssd-streaming-cache-experts",
+            "value": {
+              "concat": [
+                {
+                  "string": {
+                    "ref": "/memory/expert_cache_gb"
+                  }
+                },
+                "GB"
+              ]
+            },
+            "when": {
+              "gt": [
+                {
+                  "ref": "/memory/expert_cache_gb"
+                },
+                0
+              ]
+            }
+          }
+        ],
+        "environment": {
+          "preset": "inherit",
+          "set": [
+            {
+              "name": "DS4_ROCM_STREAM_MODEL_CACHE_GB",
+              "value": {
+                "string": {
+                  "ref": "/memory/model_cache_gb"
+                }
+              },
+              "when": {
+                "gt": [
+                  {
+                    "ref": "/memory/model_cache_gb"
+                  },
+                  0
+                ]
+              }
+            },
+            {
+              "name": "DS4_ROCM_STREAM_FREE_RESERVE_GB",
+              "value": {
+                "string": {
+                  "ref": "/memory/free_reserve_gb"
+                }
+              },
+              "when": {
+                "all": [
+                  {
+                    "not": {
+                      "ref": "/memory/resident"
+                    }
+                  },
+                  {
+                    "gt": [
+                      {
+                        "ref": "/memory/free_reserve_gb"
+                      },
+                      0
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "working_directory": "inherit",
+        "output": {
+          "inherit_levels": [
+            "info",
+            "debug",
+            "trace"
+          ],
+          "filter": false
+        },
+        "readiness": {
+          "port": "http",
+          "path": "/v1/models",
+          "timeout": "global"
+        },
+        "watchdog": {
+          "policy": "standard",
+          "port": "http",
+          "path": "/v1/models"
+        },
+        "direct_stream_policy": "bound_passthrough"
+      },
+      "operations": [
+        {
+          "id": "chat.buffered",
+          "operation": "chat_completion",
+          "delivery": "buffered",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global"
+          },
+          "request": {
+            "base": "identity",
+            "content_transform": "ds4_no_think_v1"
+          }
+        },
+        {
+          "id": "chat.streaming",
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global"
+          },
+          "request": {
+            "base": "identity",
+            "content_transform": "ds4_no_think_v1"
+          }
+        },
+        {
+          "id": "completion.buffered",
+          "operation": "completion",
+          "delivery": "buffered",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/completions",
+            "port": "http",
+            "timeout": "global"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "completion.streaming",
+          "operation": "completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/completions",
+            "port": "http",
+            "timeout": "global"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "responses.buffered",
+          "operation": "responses",
+          "delivery": "buffered",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/responses",
+            "port": "http",
+            "timeout": "global"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "responses.streaming",
+          "operation": "responses",
+          "delivery": "streaming",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/responses",
+            "port": "http",
+            "timeout": "global"
+          },
+          "request": {
+            "base": "identity"
+          }
+        }
+      ],
+      "model_contract": "ds4_rocm_v1"
+    }
+  },
+  "memory_cases": [
+    {
+      "name": "resident-at-threshold",
+      "available": true,
+      "vram": 8,
+      "virtual": 80,
+      "main_bytes": 64424509440,
+      "draft_bytes": 4294967296,
+      "min_resident_gb": 8,
+      "free_known": true,
+      "free_gib": 80,
+      "expected": {
+        "resident": true,
+        "expert_cache_gb": 0,
+        "model_cache_gb": 0,
+        "free_reserve_gb": 16,
+        "args": [
+          "-m",
+          "/mnt/models/main.fake",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "1",
+          "-c",
+          "8192",
+          "--prefill-chunk",
+          "2048",
+          "--dspark",
+          "--mtp-model",
+          "/mnt/models/draft.fake"
+        ],
+        "env": [
+          [
+            "HIP_VISIBLE_DEVICES",
+            "1"
+          ]
+        ],
+        "free_queries": 1,
+        "pool_gib": 80,
+        "weights_gib": 64
+      },
+      "error": null
+    },
+    {
+      "name": "draft-counts-for-residency",
+      "available": true,
+      "vram": 8,
+      "virtual": 78,
+      "main_bytes": 64424509440,
+      "draft_bytes": 4294967296,
+      "min_resident_gb": 8,
+      "free_known": true,
+      "free_gib": 100,
+      "expected": {
+        "resident": false,
+        "expert_cache_gb": 31,
+        "model_cache_gb": 15,
+        "free_reserve_gb": 46,
+        "args": [
+          "-m",
+          "/mnt/models/main.fake",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "1",
+          "-c",
+          "8192",
+          "--prefill-chunk",
+          "2048",
+          "--ssd-streaming",
+          "--ssd-streaming-cache-experts",
+          "31GB"
+        ],
+        "env": [
+          [
+            "DS4_ROCM_STREAM_MODEL_CACHE_GB",
+            "15"
+          ],
+          [
+            "DS4_ROCM_STREAM_FREE_RESERVE_GB",
+            "46"
+          ],
+          [
+            "HIP_VISIBLE_DEVICES",
+            "1"
+          ]
+        ],
+        "free_queries": 1,
+        "pool_gib": 78,
+        "weights_gib": 64
+      },
+      "error": null
+    },
+    {
+      "name": "streaming",
+      "available": true,
+      "vram": 8,
+      "virtual": 62,
+      "main_bytes": 64424509440,
+      "draft_bytes": 4294967296,
+      "min_resident_gb": 8,
+      "free_known": true,
+      "free_gib": 45,
+      "expected": {
+        "resident": false,
+        "expert_cache_gb": 24,
+        "model_cache_gb": 12,
+        "free_reserve_gb": 37,
+        "args": [
+          "-m",
+          "/mnt/models/main.fake",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "1",
+          "-c",
+          "8192",
+          "--prefill-chunk",
+          "2048",
+          "--ssd-streaming",
+          "--ssd-streaming-cache-experts",
+          "24GB"
+        ],
+        "env": [
+          [
+            "DS4_ROCM_STREAM_MODEL_CACHE_GB",
+            "12"
+          ],
+          [
+            "DS4_ROCM_STREAM_FREE_RESERVE_GB",
+            "37"
+          ],
+          [
+            "HIP_VISIBLE_DEVICES",
+            "1"
+          ]
+        ],
+        "free_queries": 1,
+        "pool_gib": 62,
+        "weights_gib": 64
+      },
+      "error": null
+    },
+    {
+      "name": "carveout-wins",
+      "available": true,
+      "vram": 64,
+      "virtual": 32,
+      "main_bytes": 64424509440,
+      "draft_bytes": 0,
+      "min_resident_gb": 8,
+      "free_known": true,
+      "free_gib": 100,
+      "expected": {
+        "resident": false,
+        "expert_cache_gb": 25,
+        "model_cache_gb": 12,
+        "free_reserve_gb": 38,
+        "args": [
+          "-m",
+          "/mnt/models/main.fake",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "1",
+          "-c",
+          "8192",
+          "--prefill-chunk",
+          "2048",
+          "--ssd-streaming",
+          "--ssd-streaming-cache-experts",
+          "25GB"
+        ],
+        "env": [
+          [
+            "DS4_ROCM_STREAM_MODEL_CACHE_GB",
+            "12"
+          ],
+          [
+            "DS4_ROCM_STREAM_FREE_RESERVE_GB",
+            "38"
+          ],
+          [
+            "HIP_VISIBLE_DEVICES",
+            "1"
+          ]
+        ],
+        "free_queries": 1,
+        "pool_gib": 64,
+        "weights_gib": 60
+      },
+      "error": null
+    },
+    {
+      "name": "no-integrated-pool",
+      "available": false,
+      "vram": 0,
+      "virtual": 0,
+      "main_bytes": 68719476736,
+      "draft_bytes": 0,
+      "min_resident_gb": 8,
+      "free_known": false,
+      "free_gib": 0,
+      "expected": {
+        "resident": false,
+        "expert_cache_gb": 0,
+        "model_cache_gb": 0,
+        "free_reserve_gb": 0,
+        "args": [
+          "-m",
+          "/mnt/models/main.fake",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "1",
+          "-c",
+          "8192",
+          "--prefill-chunk",
+          "2048",
+          "--ssd-streaming"
+        ],
+        "env": [
+          [
+            "HIP_VISIBLE_DEVICES",
+            "1"
+          ]
+        ],
+        "free_queries": 0,
+        "pool_gib": 0,
+        "weights_gib": 64
+      },
+      "error": null
+    },
+    {
+      "name": "zero-weights",
+      "available": true,
+      "vram": 8,
+      "virtual": 62,
+      "main_bytes": 0,
+      "draft_bytes": 0,
+      "min_resident_gb": 0,
+      "free_known": false,
+      "free_gib": 0,
+      "expected": {
+        "resident": false,
+        "expert_cache_gb": 24,
+        "model_cache_gb": 12,
+        "free_reserve_gb": 37,
+        "args": [
+          "-m",
+          "/mnt/models/main.fake",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "1",
+          "-c",
+          "8192",
+          "--prefill-chunk",
+          "2048",
+          "--ssd-streaming",
+          "--ssd-streaming-cache-experts",
+          "24GB"
+        ],
+        "env": [
+          [
+            "DS4_ROCM_STREAM_MODEL_CACHE_GB",
+            "12"
+          ],
+          [
+            "DS4_ROCM_STREAM_FREE_RESERVE_GB",
+            "37"
+          ],
+          [
+            "HIP_VISIBLE_DEVICES",
+            "1"
+          ]
+        ],
+        "free_queries": 0,
+        "pool_gib": 62,
+        "weights_gib": 0
+      },
+      "error": null
+    },
+    {
+      "name": "unknown-free-memory",
+      "available": true,
+      "vram": 8,
+      "virtual": 62,
+      "main_bytes": 68719476736,
+      "draft_bytes": 0,
+      "min_resident_gb": 8,
+      "free_known": false,
+      "free_gib": 0,
+      "expected": {
+        "resident": false,
+        "expert_cache_gb": 24,
+        "model_cache_gb": 12,
+        "free_reserve_gb": 37,
+        "args": [
+          "-m",
+          "/mnt/models/main.fake",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "1",
+          "-c",
+          "8192",
+          "--prefill-chunk",
+          "2048",
+          "--ssd-streaming",
+          "--ssd-streaming-cache-experts",
+          "24GB"
+        ],
+        "env": [
+          [
+            "DS4_ROCM_STREAM_MODEL_CACHE_GB",
+            "12"
+          ],
+          [
+            "DS4_ROCM_STREAM_FREE_RESERVE_GB",
+            "37"
+          ],
+          [
+            "HIP_VISIBLE_DEVICES",
+            "1"
+          ]
+        ],
+        "free_queries": 1,
+        "pool_gib": 62,
+        "weights_gib": 64
+      },
+      "error": null
+    },
+    {
+      "name": "insufficient-free-memory",
+      "available": true,
+      "vram": 8,
+      "virtual": 62,
+      "main_bytes": 68719476736,
+      "draft_bytes": 0,
+      "min_resident_gb": 8,
+      "free_known": true,
+      "free_gib": 44.9,
+      "expected": {
+        "resident": false,
+        "expert_cache_gb": 24,
+        "model_cache_gb": 12,
+        "free_reserve_gb": 37,
+        "args": [
+          "-m",
+          "/mnt/models/main.fake",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "1",
+          "-c",
+          "8192",
+          "--prefill-chunk",
+          "2048",
+          "--ssd-streaming",
+          "--ssd-streaming-cache-experts",
+          "24GB"
+        ],
+        "env": [
+          [
+            "DS4_ROCM_STREAM_MODEL_CACHE_GB",
+            "12"
+          ],
+          [
+            "DS4_ROCM_STREAM_FREE_RESERVE_GB",
+            "37"
+          ],
+          [
+            "HIP_VISIBLE_DEVICES",
+            "1"
+          ]
+        ],
+        "free_queries": 1,
+        "pool_gib": 62,
+        "weights_gib": 64
+      },
+      "error": "ds4 needs 45.0 GiB of free GPU memory to start, and 44.9 GiB is free"
+    }
+  ],
+  "request": {
+    "model": "caller",
+    "messages": [
+      {
+        "role": "user",
+        "content": "/no_think\nfirst"
+      },
+      {
+        "role": "assistant",
+        "content": "/no_think\nassistant"
+      },
+      {
+        "role": "user",
+        "content": "/no_think\n/no_think\nsecond"
+      },
+      {
+        "role": "system",
+        "content": "/no_think\nsystem"
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "/no_think\npart"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": " /no_think\nspace"
+      },
+      {
+        "role": "user",
+        "content": "/no_think"
+      },
+      {
+        "role": "user",
+        "content": "/no_think\n"
+      },
+      42
+    ]
+  },
+  "expected": {
+    "model": "caller",
+    "messages": [
+      {
+        "role": "user",
+        "content": "first"
+      },
+      {
+        "role": "assistant",
+        "content": "/no_think\nassistant"
+      },
+      {
+        "role": "user",
+        "content": "/no_think\nsecond"
+      },
+      {
+        "role": "system",
+        "content": "/no_think\nsystem"
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "/no_think\npart"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": " /no_think\nspace"
+      },
+      {
+        "role": "user",
+        "content": "/no_think"
+      },
+      {
+        "role": "user",
+        "content": ""
+      },
+      42
+    ]
+  },
+  "malformed": [
+    "{",
+    "{\"messages\": [",
+    "not-json"
+  ],
+  "unchanged": [
+    {},
+    null,
+    [],
+    true,
+    "text",
+    {
+      "messages": {}
+    },
+    {
+      "messages": [
+        {
+          "content": "/no_think\nno role"
+        },
+        {
+          "role": "User",
+          "content": "/no_think\nwrong case"
+        },
+        {
+          "role": "user",
+          "content": 23
+        }
+      ]
+    }
+  ],
+  "budget_cases": [
+    {
+      "name": "resident",
+      "pool": 80,
+      "main_gib": 60,
+      "draft_gib": 4,
+      "working_gib": 8,
+      "available_gib": 100,
+      "budget_gib": 20
+    },
+    {
+      "name": "draft-forces-streaming",
+      "pool": 78,
+      "main_gib": 60,
+      "draft_gib": 4,
+      "working_gib": 8,
+      "available_gib": 60,
+      "budget_gib": 6
+    },
+    {
+      "name": "c7-counterexample",
+      "pool": 62,
+      "main_gib": 64,
+      "draft_gib": 0,
+      "working_gib": 8,
+      "available_gib": 50,
+      "budget_gib": 5
+    },
+    {
+      "name": "draft-accounting",
+      "pool": 62,
+      "main_gib": 60,
+      "draft_gib": 4,
+      "working_gib": 8,
+      "available_gib": 50,
+      "budget_gib": 5
+    },
+    {
+      "name": "no-pool",
+      "pool": 0,
+      "main_gib": 64,
+      "draft_gib": 0,
+      "working_gib": 8,
+      "available_gib": 50,
+      "budget_gib": 42
+    },
+    {
+      "name": "no-working-set",
+      "pool": 62,
+      "main_gib": 0,
+      "draft_gib": 0,
+      "working_gib": 0,
+      "available_gib": 50,
+      "budget_gib": null
+    },
+    {
+      "name": "no-capacity",
+      "pool": 62,
+      "main_gib": 64,
+      "draft_gib": 0,
+      "working_gib": 8,
+      "available_gib": 42,
+      "budget_gib": -3
+    }
+  ],
+  "blocker": "Source accepts an existing absolute checkpoint when resolved main is empty/missing; v2 runner constructor rejects absolute_checkpoint_fallback."
+}

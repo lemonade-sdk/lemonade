@@ -1,0 +1,411 @@
+{
+  "engine": "nathanw",
+  "source_quotations": [
+    {
+      "commit": "d491c946fed2ab079f7387cf02a0eaabb51afce4",
+      "path": "src/cpp/server/backends/llamacpp/llamacpp_server.cpp",
+      "first_line": 284,
+      "last_line": 640,
+      "text": "void LlamaCppServer::load(const std::string& model_name,\n                         const ModelInfo& model_info,\n                         const RecipeOptions& options,\n                         bool do_not_upgrade) {\n    LOG(INFO, \"LlamaCpp\") << \"Loading model: \" << model_name << std::endl;\n\n    LOG(DEBUG, \"LlamaCpp\") << \"Per-model settings: \" << options.to_log_string() << std::endl;\n\n    int ctx_size = options.get_option(\"ctx_size\");\n\n    std::string llamacpp_device = options.get_option(\"llamacpp_device\");\n    std::string llamacpp_backend_option = options.get_option(\"llamacpp_backend\");\n    std::string llamacpp_backend = resolve_llamacpp_backend(llamacpp_backend_option);\n    std::string llamacpp_args = options.get_option(\"llamacpp_args\");\n\n    RuntimeConfig::validate_backend_choice(\"llamacpp\", llamacpp_backend_option);\n\n    LOG(INFO, \"LlamaCpp\") << \"Using LlamaCpp Backend: \" << llamacpp_backend << std::endl;\n\n    bool use_gpu = (llamacpp_backend != \"cpu\");\n\n    // Update device type based on the actual backend selected.\n    device_type_ = use_gpu ? DEVICE_GPU : DEVICE_CPU;\n\n    const ContainerPolicy* container = llamacpp::descriptor.container_for(llamacpp_backend);\n    if (container && model_info.extra<bool>(\"hf_load\", false)) {\n        throw std::runtime_error(\n            \"Model '\" + model_name + \"' has llama-server download its own weights, which llamacpp:\" +\n            llamacpp_backend + \" cannot do from its container's private network. \"\n            \"Load it on a llamacpp backend that runs on the host.\");\n    }\n\n    // Install llama-server if needed (use per-model backend)\n    backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);\n\n    // Use pre-resolved GGUF path. Skipped for hf_load models because llama-server\n    // sources the weights itself via -hf; those models may not have local files.\n    std::string gguf_path = model_info.resolved_path();\n    if (gguf_path.empty() && !model_info.extra<bool>(\"hf_load\", false)) {\n        throw std::runtime_error(\"GGUF file not found for checkpoint: \" + model_info.checkpoint());\n    }\n\n    if (!gguf_path.empty()) {\n        LOG(DEBUG, \"LlamaCpp\") << \"Using GGUF: \" << gguf_path << std::endl;\n    }\n\n    // Get mmproj path for vision models and drafter path for mtp or other drafting strategies\n    std::string mmproj_path = model_info.resolved_path(\"mmproj\");\n    std::string draft_path = model_info.resolved_path(\"draft\");\n\n    port_ = choose_port();\n\n    std::string executable =\n        container ? \"\" : BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);\n\n    bool supports_embeddings = (model_info.type == ModelType::EMBEDDING);\n    bool supports_reranking = (model_info.type == ModelType::RERANKING);\n\n    // For embedding models, use a larger context size to support longer individual\n    // strings. Embedding requests can include multiple strings in a batch, and each\n    // string needs to fit within the context window.\n    if (supports_embeddings && ctx_size < EMBEDDING_CTX_SIZE) {\n        ctx_size = EMBEDDING_CTX_SIZE;\n    }\n\n    // Build command arguments while tracking reserved flags\n    std::vector<std::string> args;\n    std::set<std::string> reserved_flags;\n\n    // hf_load delegates model+mmproj resolution to llama-server's -hf flag. This\n    // is required for models like Qwen2.5-Omni where the manual -m + --mmproj\n    // path rejects audio content parts in /v1/chat/completions \u2014 the -hf path\n    // drives the dual-clip (vision+audio) context correctly.\n    if (model_info.extra<bool>(\"hf_load\", false)) {\n        push_arg(args, reserved_flags, \"-hf\", model_info.checkpoint(),\n                 std::vector<std::string>{\"--hf-repo\", \"-mr\", \"--hf-file\", \"-mf\"});\n    } else {\n        push_arg(args, reserved_flags, \"-m\", gguf_path, std::vector<std::string>{\"--model\"});\n    }\n    push_arg(args, reserved_flags, \"--ctx-size\", std::to_string(ctx_size), std::vector<std::string>{\"-c\"});\n\n    if (!llamacpp_device.empty()) {\n        BackendUtils::validate_device_backend_match(device_api(llamacpp_backend), llamacpp_device);\n        push_arg(args, reserved_flags, \"--device\", llamacpp_device);\n    }\n    push_reserved(reserved_flags, \"--device\", std::vector<std::string>{\"-dev\"});\n\n    push_arg(args, reserved_flags, \"--port\", std::to_string(port_));\n    if (container) {\n        push_arg(args, reserved_flags, \"--host\", \"0.0.0.0\");\n    }\n    push_arg(args, reserved_flags, \"--jinja\", std::vector<std::string>{\"--no-jinja\"});\n    push_arg(args, reserved_flags, \"--metrics\");\n\n    // To detect silent CPU fallback, raise llama-server verbosity in debug so the\n    // device-selection lines (\"llama_prepare_model_devices: using device ...\",\n    // \"offloaded N/N layers to GPU\") are emitted. At the default threshold they are suppressed.\n    if (is_debug()) {\n        args.push_back(\"-lv\");\n        args.push_back(\"4\");\n    }\n\n    LOG(DEBUG, \"LlamaCpp\") << \"Using backend: \" << llamacpp_backend << \"\\n\"\n            << \"[LlamaCpp] Use GPU: \" << (use_gpu ? \"true\" : \"false\") << std::endl;\n\n    // Add mmproj file if present (for vision models). Skip when hf_load is set \u2014\n    // llama-server resolves the mmproj companion itself from the HF repo.\n    if (!mmproj_path.empty() && !model_info.extra<bool>(\"hf_load\", false)) {\n        push_arg(args, reserved_flags, \"--mmproj\", mmproj_path);\n        if (!use_gpu) {\n            LOG(DEBUG, \"LlamaCpp\") << \"Skipping mmproj argument since GPU mode is not enabled\" << std::endl;\n            push_arg(args, reserved_flags, \"--no-mmproj-offload\");\n        }\n    }\n    push_reserved(reserved_flags, \"--mmproj\", std::vector<std::string>{\"-mm\", \"-mmu\", \"--mmproj-url\", \"--no-mmproj\", \"--mmproj-auto\", \"--no-mmproj-auto\"});\n\n    const bool has_dflash_label =\n        std::find(model_info.labels.begin(), model_info.labels.end(), \"dflash\") != model_info.labels.end();\n    const bool is_dflash_draft =\n        !draft_path.empty() && is_dflash_draft_checkpoint(model_info.checkpoint(\"draft\"));\n    const bool use_draft_checkpoint =\n        !draft_path.empty() && (!is_dflash_draft || has_dflash_label);\n\n    if (use_draft_checkpoint) {\n        push_arg(args, reserved_flags, \"--model-draft\", draft_path);\n    }\n    push_reserved(reserved_flags, \"--model-draft\", std::vector<std::string>{\"-md\", \"--spec-draft-model\"});\n\n    // Add embeddings support if the model supports it\n    if (supports_embeddings) {\n        LOG(INFO, \"LlamaCpp\") << \"Model supports embeddings, adding --embeddings flag\" << std::endl;\n        push_arg(args, reserved_flags, \"--embeddings\");\n    }\n    push_reserved(reserved_flags, \"--embeddings\", std::vector<std::string>{\"--embedding\"});\n\n    // Add reranking support if the model supports it\n    if (supports_reranking) {\n        LOG(INFO, \"LlamaCpp\") << \"Model supports reranking, adding --reranking flag\" << std::endl;\n        push_arg(args, reserved_flags, \"--reranking\");\n    }\n    push_reserved(reserved_flags, \"--reranking\", std::vector<std::string>{\"--rerank\"});\n\n    // Validate and append custom arguments\n    if (!llamacpp_args.empty()) {\n        std::string validation_error = validate_custom_args(llamacpp_args, reserved_flags);\n        if (!validation_error.empty()) {\n            throw std::invalid_argument(\n                \"Invalid custom llama-server arguments:\\n\" + validation_error\n            );\n        }\n\n        LOG(DEBUG, \"LlamaCpp\") << \"Adding custom arguments: \" << llamacpp_args << std::endl;\n        std::vector<std::string> custom_args_vec = parse_custom_args(llamacpp_args);\n        args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());\n    }\n\n    LOG(INFO, \"LlamaCpp\") << \"Starting llama-server...\" << std::endl;\n\n    if (container) {\n        ServerCommand command;\n        command.program = llamacpp::descriptor.binary;\n        command.args = std::move(args);\n        for (const std::string& path : {gguf_path, mmproj_path,\n                                        use_draft_checkpoint ? draft_path : std::string()}) {\n            if (!path.empty()) {\n                const auto files = gguf_files(path);\n                command.model_files.insert(command.model_files.end(), files.begin(), files.end());\n            }\n        }\n        command.port = port_;\n\n        const bool inherit_output = (log_level_ == \"info\") || is_debug();\n        start_server(std::make_unique<ContainerProcess>(\n                         ProcessOutput{inherit_output, true}, llamacpp::descriptor.recipe,\n                         llamacpp_backend, model_name, *container,\n                         BackendUtils::get_backend_image(llamacpp::descriptor.recipe,\n                                                         llamacpp_backend)),\n                     command);\n        LOG(DEBUG, \"LlamaCpp\") << \"Model loaded on port \" << get_backend_port() << std::endl;\n        return;\n    }\n\n    // For ROCm on Linux, set LD_LIBRARY_PATH to include the ROCm library directory\n    std::vector<std::pair<std::string, std::string>> env_vars;\n#ifndef _WIN32\n    if (is_llamacpp_rocm_backend(llamacpp_backend)) {\n        // Get the directory containing the executable (where ROCm .so files are)\n        fs::path exe_dir = fs::path(executable).parent_path();\n        std::string lib_path = exe_dir.string();\n\n        if (llamacpp_backend == \"rocm-stable\") {\n            std::string rocm_arch = SystemInfo::get_rocm_arch();\n            if (!rocm_arch.empty()) {\n                std::string therock_dirs = BackendUtils::join_runtime_dirs(\n                    BackendUtils::get_therock_lib_paths(rocm_arch));\n                if (!therock_dirs.empty()) {\n                    lib_path = therock_dirs + \":\" + lib_path;\n                }\n            }\n        }\n\n        // Preserve existing LD_LIBRARY_PATH if it exists\n        const char* existing_ld_path = std::getenv(\"LD_LIBRARY_PATH\");\n        if (existing_ld_path && strlen(existing_ld_path) > 0) {\n            lib_path = lib_path + \":\" + std::string(existing_ld_path);\n        }\n\n        env_vars.push_back({\"LD_LIBRARY_PATH\", lib_path});\n        LOG(DEBUG, \"LlamaCpp\") << \"Setting LD_LIBRARY_PATH=\" << lib_path << std::endl;\n    } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {\n        // The llama.cpp-builds Linux tarballs ship the bundled CUDA runtime\n        // (libcudart.so, libcublas.so, etc.) alongside llama-server, so add the\n        // executable's directory to LD_LIBRARY_PATH like we do for ROCm.\n        fs::path exe_dir = fs::path(executable).parent_path();\n        std::string lib_path = exe_dir.string();\n\n        const char* existing_ld_path = std::getenv(\"LD_LIBRARY_PATH\");\n        if (existing_ld_path && strlen(existing_ld_path) > 0) {\n            lib_path = lib_path + \":\" + std::string(existing_ld_path);\n        }\n\n        env_vars.push_back({\"LD_LIBRARY_PATH\", lib_path});\n        LOG(DEBUG, \"LlamaCpp\") << \"Setting LD_LIBRARY_PATH=\" << lib_path << std::endl;\n    }\n#else\n    // For ROCm on Windows with gfx1151, set OCL_SET_SVMSIZE\n    // This is a patch to enable loading larger models\n    if (is_llamacpp_rocm_backend(llamacpp_backend)) {\n        std::string new_path;\n\n        if (llamacpp_backend == \"rocm-stable\") {\n            std::string rocm_arch = SystemInfo::get_rocm_arch();\n            if (!rocm_arch.empty()) {\n                // Prepend ALL TheRock runtime dirs (not just _rocm_sdk_core/bin) so\n                // HIP + BLAS DLLs resolve; _rocm_sdk_core/bin alone \u2192 STATUS_DLL_NOT_FOUND.\n                std::string therock_dirs = BackendUtils::join_runtime_dirs(\n                    BackendUtils::get_therock_lib_paths(rocm_arch));\n                if (!therock_dirs.empty()) {\n                    new_path = therock_dirs;\n                }\n            }\n        }\n\n        if (!new_path.empty()) {\n            const char* existing_path = std::getenv(\"PATH\");\n            if (existing_path && strlen(existing_path) > 0) {\n                new_path += \";\" + std::string(existing_path);\n            }\n            env_vars.push_back({\"PATH\", new_path});\n        }\n\n        // Windows DLL search order checks System32 BEFORE PATH, so a stale\n        // System32 amdhip64_7.dll shadows the TheRock runtime on PATH. Copying\n        // to the exe directory overrides both.\n        if (llamacpp_backend == \"rocm-stable\") {\n            std::string rocm_arch = SystemInfo::get_rocm_arch();\n            if (!rocm_arch.empty()) {\n                BackendUtils::stage_therock_hip_runtime(\n                    rocm_arch, fs::path(executable).parent_path());\n            }\n        }\n\n        std::string arch = lemon::SystemInfo::get_rocm_arch();\n        if ((arch == \"gfx1151\") || (arch == \"gfx1152\")){\n            env_vars.push_back({\"OCL_SET_SVM_SIZE\", \"262144\"});\n            LOG(DEBUG, \"LlamaCpp\") << \"Setting OCL_SET_SVM_SIZE=262144 for gfx1151/gfx1152 (enables loading larger models)\" << std::endl;\n        }\n    } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {\n        // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to\n        // llama-server.exe. Prepend the executable directory to PATH so the loader\n        // resolves them before any system-wide CUDA install.\n        fs::path exe_dir = fs::absolute(fs::path(executable)).parent_path();\n        std::string new_path = path_to_utf8(exe_dir);\n\n        const char* existing_path = std::getenv(\"PATH\");\n        if (existing_path && strlen(existing_path) > 0) {\n            new_path += \";\" + std::string(existing_path);\n        }\n        env_vars.push_back({\"PATH\", new_path});\n        LOG(DEBUG, \"LlamaCpp\") << \"Prepending CUDA exe dir to PATH: \" << path_to_utf8(exe_dir) << std::endl;\n    }\n#endif\n\n    if (is_llamacpp_cuda_backend(llamacpp_backend)) {\n        std::string existing_llama_device = utils::get_environment_variable_utf8(\"LLAMA_ARG_DEVICE\");\n        const bool has_llama_device_override = !existing_llama_device.empty();\n\n        bool skip_visible_devices = false;\n        if (!llamacpp_device.empty()) {\n            LOG(INFO, \"LlamaCpp\")\n                << \"Using explicit llama.cpp CUDA device selection: \" << llamacpp_device\n                << std::endl;\n            skip_visible_devices = true;\n        } else if (has_llama_device_override) {\n            LOG(INFO, \"LlamaCpp\")\n                << \"Respecting existing LLAMA_ARG_DEVICE=\" << existing_llama_device\n                << std::endl;\n            skip_visible_devices = true;\n        }\n        BackendUtils::apply_cuda_env_vars(env_vars, \"LlamaCpp\", skip_visible_devices);\n    }\n\n#ifdef __APPLE__\n    // Forward GGML_METAL_NO_RESIDENCY to llama-server if set in the parent\n    // environment. Metal residency sets crash on paravirtualized GPUs (e.g.\n    // GitHub Actions macOS runners with MTLGPUFamilyApple5).\n    const char* no_residency = std::getenv(\"GGML_METAL_NO_RESIDENCY\");\n    if (no_residency) {\n        env_vars.push_back({\"GGML_METAL_NO_RESIDENCY\", no_residency});\n        LOG(DEBUG, \"LlamaCpp\") << \"Forwarding GGML_METAL_NO_RESIDENCY=\" << no_residency << std::endl;\n    }\n\n    // Ensure HOME is set in the child. llama.cpp b8884+ (libllama-common's\n    // fs_get_cache_directory / hf_cache::migrate_old_cache_to_hf_cache)\n    // calls getenv(\"HOME\") during CLI arg parsing and passes the result\n    // straight into std::string without a NULL check, segfaulting when\n    // HOME is unset. LaunchDaemons installed at /Library/LaunchDaemons/\n    // get a minimal env from launchd and do not inherit HOME, so llama-server\n    // crashes before the model ever loads. Terminal/sudo spawns preserve\n    // HOME and do not hit this.\n    //\n    // Upstream fix in flight: https://github.com/ggml-org/llama.cpp/pull/22263\n    // Once that PR merges and lemonade's pinned llama.cpp version (in\n    // src/cpp/resources/backend_versions.json) includes it, this HOME\n    // fallback can be deleted.\n    const char* home = std::getenv(\"HOME\");\n    if (!home || home[0] == '\\0') {\n        struct passwd* pw = getpwuid(getuid());\n        std::string fallback_home = (pw && pw->pw_dir) ? pw->pw_dir : \"/var/root\";\n        env_vars.push_back({\"HOME\", fallback_home});\n        LOG(DEBUG, \"LlamaCpp\") << \"Parent HOME unset; setting child HOME=\" << fallback_home << std::endl;\n    }\n#endif\n\n    // Start process (inherit output if debug logging enabled, filter health check spam)\n    // Keep llama-server output visible at info log level.\n    std::string process_executable = executable;\n    std::string working_dir;\n#ifdef _WIN32\n    // Avoid inheriting a protected launcher cwd while keeping Linux/macOS behavior unchanged.\n    fs::path executable_path = fs::absolute(fs::path(executable));\n    process_executable = path_to_utf8(executable_path);\n    working_dir = path_to_utf8(executable_path.parent_path());\n#endif\n\n    ServerCommand command;\n    command.program = process_executable;\n    command.args = std::move(args);\n    command.env = std::move(env_vars);\n    command.port = port_;\n\n    bool inherit_llama_output = (log_level_ == \"info\") || is_debug();\n    start_server(\n        std::make_unique<NativeProcess>(ProcessOutput{inherit_llama_output, true}, working_dir),\n        command);\n}\n\n"
+    },
+    {
+      "commit": "d491c946fed2ab079f7387cf02a0eaabb51afce4",
+      "path": "src/cpp/server/backends/llamacpp/llamacpp_server.cpp",
+      "text": "void LlamaCppServer::forward_streaming_request(const std::string& endpoint,\n                                               const std::string& request_body,\n                                               httplib::DataSink& sink,\n                                               bool sse,\n                                               long timeout_seconds,\n                                               TelemetryCallback telemetry_callback) {\n    std::string body = request_body;\n    if (endpoint == \"/v1/chat/completions\" || endpoint == \"/v1/responses\") {\n        json request = json::parse(request_body, nullptr, false);\n        if (!request.is_discarded()) {\n            if (endpoint == \"/v1/chat/completions\") {\n                JsonUtils::add_legacy_max_tokens_alias(request);\n            }\n            body = llamacpp::sanitize_tool_schema_limits(std::move(request)).dump();\n        }\n    }\n\n    WrappedServer::forward_streaming_request(\n        endpoint, body, sink, sse, timeout_seconds, telemetry_callback);\n}"
+    }
+  ],
+  "definition": {
+    "schema_version": 2,
+    "id": "c7b-nathanw",
+    "recipe": "gufo",
+    "merge": {
+      "kind": "container",
+      "metadata": {
+        "display_name": "Gufo",
+        "server_name": "gufo",
+        "binary": "gufo",
+        "support": [
+          {
+            "id": "nathanw",
+            "backend": "nathanw",
+            "tier": "experimental",
+            "format": "container",
+            "supported_os": [
+              "linux"
+            ],
+            "devices": {
+              "gpu": [
+                "gfx1151"
+              ]
+            },
+            "device_summary": "Strix Halo"
+          }
+        ],
+        "supported_modes": [
+          "chat"
+        ],
+        "options": [
+          {
+            "id": "args",
+            "name": "gufo_args",
+            "value_type": "string",
+            "default_value": ""
+          }
+        ],
+        "log_category": "LlamaCpp"
+      },
+      "containers": {
+        "nathanw": {
+          "repository": "ghcr.io/peonist-ai/gufo",
+          "pin": {
+            "source": "backend_versions",
+            "recipe": "gufo",
+            "backend": "rocm"
+          },
+          "devices": [
+            "/dev/dri",
+            "/dev/kfd"
+          ],
+          "cap_add": [],
+          "policy": "lemonade-isolated-v1",
+          "network": "private_internal",
+          "teardown": "stop_remove_reap",
+          "stop_grace_seconds": 10
+        }
+      },
+      "install": {
+        "strategy": "oci"
+      },
+      "artifacts": {
+        "main": {
+          "role": "main",
+          "strategy": "resolved_path",
+          "missing_error": "GGUF checkpoint is required"
+        }
+      },
+      "launch": {
+        "prepare_order": [
+          "backend",
+          "install",
+          "artifacts",
+          "program",
+          "ports"
+        ],
+        "backend": {
+          "fixed": "nathanw"
+        },
+        "execution": {
+          "cases": [
+            {
+              "id": "rocm-container",
+              "backends": [
+                "nathanw"
+              ],
+              "kind": "container",
+              "container": "nathanw",
+              "program": {
+                "source": "image_command",
+                "name": "gufo"
+              }
+            }
+          ]
+        },
+        "mounts": [
+          {
+            "id": "main",
+            "artifact": "main",
+            "expand": "gguf_shards",
+            "destination": "/mnt/models"
+          }
+        ],
+        "address": {
+          "source": "process_start"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "reject_zero": true,
+            "error": "No HTTP port available"
+          }
+        ],
+        "argv": [
+          {
+            "id": "serve",
+            "args": [
+              "serve",
+              "llm"
+            ]
+          },
+          {
+            "id": "model",
+            "flag": "--model",
+            "value": {
+              "ref": "/artifacts/main"
+            }
+          },
+          {
+            "id": "name",
+            "flag": "--served-model-name",
+            "value": {
+              "ref": "/model/name"
+            }
+          },
+          {
+            "id": "host",
+            "flag": "--host",
+            "value": "0.0.0.0"
+          },
+          {
+            "id": "port",
+            "flag": "--port",
+            "value": {
+              "string": {
+                "ref": "/launch/ports/http"
+              }
+            }
+          }
+        ],
+        "environment": {
+          "preset": "inherit"
+        },
+        "working_directory": "inherit",
+        "output": {
+          "inherit_levels": [
+            "info",
+            "debug",
+            "trace"
+          ],
+          "filter": false
+        },
+        "readiness": {
+          "port": "http",
+          "path": "/ready",
+          "timeout": "global"
+        },
+        "watchdog": {
+          "policy": "standard",
+          "port": "http",
+          "path": "/ready"
+        },
+        "direct_stream_policy": "builtin_container_legacy",
+        "custom_args": {
+          "option": "args",
+          "reserved": [
+            "--model"
+          ],
+          "error_prefix": "Invalid custom arguments: ",
+          "defaults": []
+        },
+        "load_log_policy": "none",
+        "diagnostics": [
+          {
+            "id": "loading",
+            "phase": "loading",
+            "level": "info",
+            "category": "LlamaCpp",
+            "format": "Loading model: {model:string}",
+            "when": "always"
+          },
+          {
+            "id": "settings",
+            "phase": "loading",
+            "level": "debug",
+            "category": "LlamaCpp",
+            "format": "Per-model settings: {settings:options}",
+            "when": "always"
+          },
+          {
+            "id": "backend",
+            "phase": "backend",
+            "level": "info",
+            "category": "LlamaCpp",
+            "format": "Using LlamaCpp Backend: {backend:string}",
+            "when": "always"
+          },
+          {
+            "id": "gguf",
+            "phase": "artifacts",
+            "level": "debug",
+            "category": "LlamaCpp",
+            "format": "Using GGUF: {main:path}",
+            "when": "main_present"
+          },
+          {
+            "id": "gpu",
+            "phase": "arguments",
+            "level": "debug",
+            "category": "LlamaCpp",
+            "format": "Using backend: {backend:string}\n[LlamaCpp] Use GPU: {gpu:boolean}",
+            "when": "always"
+          },
+          {
+            "id": "mmproj",
+            "phase": "arguments",
+            "level": "debug",
+            "category": "LlamaCpp",
+            "format": "Skipping mmproj argument since GPU mode is not enabled",
+            "when": "mmproj_cpu"
+          },
+          {
+            "id": "embedding",
+            "phase": "arguments",
+            "level": "info",
+            "category": "LlamaCpp",
+            "format": "Model supports embeddings, adding --embeddings flag",
+            "when": "embedding"
+          },
+          {
+            "id": "reranking",
+            "phase": "arguments",
+            "level": "info",
+            "category": "LlamaCpp",
+            "format": "Model supports reranking, adding --reranking flag",
+            "when": "reranking"
+          },
+          {
+            "id": "custom",
+            "phase": "custom_args",
+            "level": "debug",
+            "category": "LlamaCpp",
+            "format": "Adding custom arguments: {custom:string}",
+            "when": "custom_present"
+          },
+          {
+            "id": "starting",
+            "phase": "starting",
+            "level": "info",
+            "category": "LlamaCpp",
+            "format": "Starting llama-server...",
+            "when": "always"
+          },
+          {
+            "id": "loaded",
+            "phase": "success",
+            "level": "debug",
+            "category": "LlamaCpp",
+            "format": "Model loaded on port {loaded_port:integer}",
+            "when": "always"
+          }
+        ]
+      },
+      "operations": [
+        {
+          "id": "chat.streaming",
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.max_tokens_alias",
+                "params": {}
+              },
+              {
+                "id": "llamacpp.tool_schema_limits",
+                "params": {}
+              }
+            ]
+          }
+        },
+        {
+          "id": "completion.streaming",
+          "operation": "completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "responses.streaming",
+          "operation": "responses",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/responses",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.tool_schema_limits",
+                "params": {}
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "rewrite_domain": "canonical_path",
+  "expected": [
+    {
+      "level": "info",
+      "category": "LlamaCpp",
+      "line": "Loading model: fixture"
+    },
+    {
+      "level": "debug",
+      "category": "LlamaCpp",
+      "line": "Per-model settings: auto_evict=(none), evict_idle_timeout=300, downsize_idle_timeout=60, evict_weight_factor=1.000000, pinned=false, auto_update=(none)"
+    },
+    {
+      "level": "info",
+      "category": "LlamaCpp",
+      "line": "Using LlamaCpp Backend: nathanw"
+    },
+    {
+      "level": "debug",
+      "category": "LlamaCpp",
+      "line": "Using GGUF: @MAIN@"
+    },
+    {
+      "level": "debug",
+      "category": "LlamaCpp",
+      "line": "Using backend: nathanw\n[LlamaCpp] Use GPU: true"
+    },
+    {
+      "level": "debug",
+      "category": "LlamaCpp",
+      "line": "Adding custom arguments: --fixture 7"
+    },
+    {
+      "level": "info",
+      "category": "LlamaCpp",
+      "line": "Starting llama-server..."
+    },
+    {
+      "level": "debug",
+      "category": "LlamaCpp",
+      "line": "Model loaded on port @PORT@"
+    }
+  ]
+}

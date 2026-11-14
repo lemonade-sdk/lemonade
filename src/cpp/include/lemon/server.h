@@ -63,6 +63,7 @@ public:
     double get_cpu_usage();
 
 private:
+    friend struct MediaResponseTestHook;
     void start_model_cache_warmup();
 
     // Declared so that destruction runs the listeners first and the subsystems last.

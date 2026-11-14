@@ -94,7 +94,8 @@ public:
         })");
         s.examples = {local_example, cloud_example};
         s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kMissingProvider,
-                    kProviderNotInstalled, kMissingRecipe, kUnexpectedException};
+                    kProviderNotInstalled, kMissingRecipe,
+                    kInactiveBackend, kUnexpectedException};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -137,7 +138,7 @@ public:
 
             const std::string recipe = req.value(backend_routes::kRecipe, "");
             const std::string backend = req.value(backend_routes::kBackend, "");
-            if (!require_local_recipe(recipe, res)) {
+            if (!require_local_recipe(recipe, res) || !require_active_backend(recipe, backend, res)) {
                 return;
             }
 

@@ -1,0 +1,59 @@
+{
+  "schema_version": 2,
+  "id": "gufo",
+  "recipe": "gufo",
+  "merge": {
+    "kind": "container",
+    "metadata": {
+      "display_name": "Gufo", "server_name": "gufo", "binary": "gufo",
+      "support": [
+        {"id": "rocm", "backend": "rocm", "tier": "experimental", "format": "container",
+         "supported_os": ["linux"], "devices": {"gpu": ["gfx1151"]}, "device_summary": "Strix Halo"}
+      ],
+      "supported_modes": ["chat"]
+    },
+    "containers": {
+      "rocm": {
+        "repository": "ghcr.io/peonist-ai/gufo",
+        "pin": {"source": "backend_versions", "recipe": "gufo", "backend": "rocm"},
+        "devices": ["/dev/dri", "/dev/kfd"], "cap_add": [],
+        "policy": "lemonade-isolated-v1", "network": "private_internal",
+        "teardown": "stop_remove_reap", "stop_grace_seconds": 10
+      }
+    },
+    "install": {"strategy": "oci"},
+    "artifacts": {
+      "main": {"role": "main", "strategy": "resolved_path", "missing_error": "GGUF checkpoint is required"}
+    },
+    "launch": {
+      "prepare_order": ["backend", "artifacts", "program", "ports"],
+      "backend": {"fixed": "rocm"},
+      "execution": {"cases": [
+        {"id": "rocm-container", "backends": ["rocm"], "kind": "container", "container": "rocm",
+         "program": {"source": "image_command", "name": "gufo"}}
+      ]},
+      "mounts": [{"id": "main", "artifact": "main", "expand": "gguf_shards", "destination": "/mnt/models"}],
+      "address": {"source": "process_start"},
+      "ports": [{"name": "http", "reject_zero": true, "error": "No HTTP port available"}],
+      "argv": [
+        {"id": "serve", "args": ["serve", "llm"]},
+        {"id": "model", "flag": "--model", "value": {"ref": "/artifacts/main"}},
+        {"id": "name", "flag": "--served-model-name", "value": {"ref": "/model/name"}},
+        {"id": "host", "flag": "--host", "value": "0.0.0.0"},
+        {"id": "port", "flag": "--port", "value": {"string": {"ref": "/launch/ports/http"}}}
+      ],
+      "environment": {"preset": "inherit"}, "working_directory": "inherit",
+      "output": {"inherit_levels": ["info", "debug", "trace"], "filter": false},
+      "readiness": {"port": "http", "path": "/ready", "timeout": "global"},
+      "watchdog": {"policy": "standard", "port": "http", "path": "/ready"}
+    },
+    "operations": [
+      {"id": "chat.buffered", "operation": "chat_completion", "delivery": "buffered", "model_modes": ["chat"],
+       "transport": {"kind": "http_json", "method": "POST", "path": "/v1/chat/completions", "port": "http", "timeout": "global"},
+       "request": {"base": "identity"}},
+      {"id": "chat.streaming", "operation": "chat_completion", "delivery": "streaming", "model_modes": ["chat"],
+       "transport": {"kind": "http_sse", "method": "POST", "path": "/v1/chat/completions", "port": "http", "timeout": "global"},
+       "request": {"base": "identity"}}
+    ]
+  }
+}

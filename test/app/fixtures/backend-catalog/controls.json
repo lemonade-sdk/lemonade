@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "control_version": 1,
+  "definition_schema_version": 1,
+  "catalog_id": "controls-v1",
+  "recipes": [{
+    "recipe": "constructor",
+    "source": "external",
+    "display_name": "Unlisted controls",
+    "backend_option": "constructor",
+    "options": [
+      {"name": "constructor", "value_type": "string", "default_value": "", "unset_values": [null, ""], "ui": {"control": "select", "label": "Server backend", "order": 1, "choices": "supported_backends"}},
+      {"name": "text", "value_type": "string", "default_value": "", "unset_values": [null], "ui": {"control": "text", "label": "Text", "order": 2}},
+      {"name": "area", "value_type": "string", "default_value": "hello", "unset_values": [null], "ui": {"control": "textarea", "label": "Long text", "order": 3}},
+      {"name": "integer", "value_type": "integer", "default_value": 0, "minimum": -1, "maximum": 8, "unset_values": [null], "ui": {"control": "number", "label": "Integer", "order": 4}},
+      {"name": "boolean", "value_type": "boolean", "default_value": false, "unset_values": [null], "ui": {"control": "checkbox", "label": "Enabled", "order": 5}},
+      {"name": "enum", "value_type": "boolean", "default_value": false, "enum": [false, true], "unset_values": [null], "ui": {"control": "select", "label": "Typed enum", "order": 6}},
+      {"name": "fraction", "value_type": "number", "default_value": 0.5, "minimum": 0, "maximum": 1, "unset_values": [null]},
+      {"name": "sentinel", "value_type": "integer", "default_value": -1, "minimum": 1, "maximum": 8, "unset_values": [null, -1, "auto"]},
+      {"name": "pinned", "value_type": "boolean", "default_value": false, "unset_values": [null]}
+    ],
+    "support": [{"backend": "cpu", "tier": "core", "device_summary": "Selected server CPU", "supported_os": ["linux"]}]
+  }]
+}

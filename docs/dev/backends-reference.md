@@ -6,6 +6,13 @@ the generator instead. Prose outside the markers is preserved. -->
 
 ## Backends
 
+The tables on this page list active recipes only: the generator reads them from a
+running server's `/system-info`. A definition that is staged without an active
+policy leaf is absent until it is activated. That currently covers the container
+definitions `rocmfpx`, `halogen`, `gufo`, `nathanw`, `halobox` and `ds4_rocm`;
+`ds4:rocm` is listed from its native definition. See
+[container conversion](container-conversion.md).
+
 <!-- BEGIN GENERATED: backends-overview -->
 | Recipe | Name | Selectable backend | Uses ctx_size | Backends |
 |--------|------|--------------------|---------------|----------|
@@ -13,7 +20,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `ds4` | DwarfStar4 | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `gufo` | Gufo | no | yes | rocm |
-| `halogen` | Halogen | no | yes | rocm |
+| `halogen` | Halogen Flash | no | yes | rocm |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, halobox, metal, nathanw, rocm, system, vulkan |
 | `llamacpp-hrx` | HRX GPU | no | yes | hrx |
@@ -52,8 +59,8 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `llamacpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (arm64, x86_64) |
 | `llamacpp` | rocm | core | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950) |
 | `llamacpp` | cpu | core | native | linux, windows | cpu (arm64, x86_64) |
-| `llamacpp` | nathanw | guest | container | linux | amd_gpu (gfx1151) |
 | `llamacpp` | halobox | guest | container | linux | amd_gpu (gfx1151) |
+| `llamacpp` | nathanw | guest | container | linux | amd_gpu (gfx1151) |
 | `llamacpp-hrx` | hrx | experimental | native | linux | amd_gpu (gfx1100, gfx1151) |
 | `moonshine` | cpu | core | python | windows | cpu (x86_64) |
 | `moonshine` | cpu | core | python | linux | cpu (arm64, x86_64) |

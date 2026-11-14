@@ -129,6 +129,7 @@ public:
     // Test-only access to routing-helper reconciliation internals (inject stub
     // servers, seed the needed set, drive prune). Defined in the test binary.
     friend struct RoutingHelperTestHook;
+    friend struct HostExclusivityTestAccess;
     Router(RuntimeConfig* config,
 
            ModelManager* model_manager,
@@ -233,11 +234,13 @@ public:
     json responses(const json& request);
 
     json audio_transcriptions(const json& request);
-    void audio_speech(const json& request, httplib::DataSink& sink);
+    void audio_speech(const json& request, httplib::DataSink& sink,
+                      OperationDelivery delivery = OperationDelivery::Buffered);
     std::vector<std::string> audio_speech_supported_formats(const std::string& model_name);
     std::vector<std::string> audio_speech_supported_streaming_formats(const std::string& model_name);
     AudioFormatMetadata audio_speech_format_metadata(
-        const std::string& model_name, const std::string& response_format);
+        const std::string& model_name, const std::string& response_format,
+        OperationDelivery delivery = OperationDelivery::Buffered);
 
     json image_generations(const json& request);
     json image_edits(const json& request);
@@ -359,6 +362,7 @@ private:
     WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;
     WrappedServer* find_coexisting_server_by_type(ModelType type) const;
     void evict_all_npu_servers();
+    void enforce_host_exclusivity_locked(SlotPolicy incoming, const std::string& model, ResidencyClass residency);
     void evict_server(WrappedServer* server, int timeout_seconds = -1);
     void evict_all_servers();
     // Publish the (already-canonicalized) needed-helper set under load_mutex_,
@@ -403,7 +407,7 @@ private:
     // EVICTING, but only if it has not been rescued by an in-flight request
     // (see WrappedServer::try_commit_eviction). Safe against request races.
     void evict_if_committed(const std::string& model_name);
-    std::unique_ptr<WrappedServer> create_backend_server(const ModelInfo& model_info);
+    std::unique_ptr<WrappedServer> create_backend_server(const ModelInfo& model_info, const RecipeOptions* options = nullptr);
     std::string resolve_model_name(const std::string& model_name) const;
     ModelTelemetryIdentity get_telemetry_identity(WrappedServer* server) const;
     void record_request_telemetry_for_model(const ModelTelemetryIdentity& identity,

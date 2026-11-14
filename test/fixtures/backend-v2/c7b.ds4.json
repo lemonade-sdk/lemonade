@@ -1,0 +1,297 @@
+{
+  "engine": "ds4",
+  "source_quotations": [
+    {
+      "commit": "8f8b905a1cf68b60a4d7fdc66a15d846b0cebc78",
+      "path": "src/cpp/server/backends/ds4/ds4_server.cpp",
+      "first_line": 77,
+      "last_line": 198,
+      "text": "void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,\n                     const RecipeOptions& options, bool do_not_upgrade) {\n    (void)do_not_upgrade;  // install_backend() is a no-op once the pin is present\n\n    std::string ds4_args = options.get_option(\"ds4_args\");\n    int ctx_size = options.get_option(\"ctx_size\");\n\n    // ds4-server only runs its own curated GGUFs. Accept either a\n    // Hugging-Face-resolved local path or an absolute path used directly as\n    // the checkpoint (user_models.json registrations of an existing file).\n    std::string gguf_path = model_info.resolved_path(\"main\");\n    if (gguf_path.empty() || !fs::exists(gguf_path)) {\n        const std::string checkpoint = model_info.checkpoint();\n        if (!checkpoint.empty() && fs::path(checkpoint).is_absolute() && fs::exists(checkpoint)) {\n            gguf_path = checkpoint;\n        }\n    }\n    if (gguf_path.empty() || !fs::exists(gguf_path)) {\n        throw std::runtime_error(\"ds4: no local GGUF found for model '\" + model_name +\n                                 \"' (checkpoint: \" + model_info.checkpoint() + \")\");\n    }\n\n    // rocm is the only published variant, so there is no backend option to\n    // read; ds4_args cannot select one either (see reserved_custom_arg_flags).\n    const std::string backend = \"rocm\";\n    device_type_ = DEVICE_GPU;\n\n    backend_manager_->install_backend(ds4::spec()->recipe, backend);\n    const std::string image = BackendUtils::get_backend_image(ds4::descriptor.recipe, backend);\n\n    port_ = choose_port();\n\n    std::vector<std::string> args;\n    args.push_back(\"-m\");\n    args.push_back(gguf_path);\n    args.push_back(\"--host\");\n    args.push_back(\"0.0.0.0\");\n    args.push_back(\"--port\");\n    args.push_back(std::to_string(port_));\n    if (ctx_size > 0) {\n        args.push_back(\"-c\");\n        args.push_back(std::to_string(ctx_size));\n    }\n\n    // A long prompt's default 4096-token prefill graph faults the GPU in a\n    // quantize kernel and takes the server with it; chunked, it completes.\n    args.push_back(\"--prefill-chunk\");\n    args.push_back(\"2048\");\n    const std::string draft_path = model_info.resolved_path(\"draft\");\n    const ds4::MemoryPlan plan = ds4::memory_plan(igpu_pool_gb(), weights_gib(model_info));\n    if (plan.resident) {\n        if (!draft_path.empty()) {\n            args.insert(args.end(), {\"--dspark\", \"--mtp-model\", draft_path});\n        }\n    } else {\n        // A user-supplied later flag (e.g. --ssd-streaming-cache-experts) still\n        // wins since ds4-server parses left-to-right. DSpark needs residency.\n        args.push_back(\"--ssd-streaming\");\n    }\n    // A streaming ds4 grows into the memory free above its reserve, and with\n    // less than its working set there it stalls without ever serving; a\n    // resident one fails mid-load. Failing here instead lets the router evict\n    // the other models and retry at once.\n    const double working_set_gb = plan.resident ? weights_gib(model_info) : model_info.min_resident_gb;\n    if (working_set_gb > 0.0 && plan.free_reserve_gb > 0) {\n        bool memory_known = false;\n        const double free_gb = get_available_memory_gb(\n            DEVICE_GPU, gpu_memory_vendor_for_target(backend, \"\"), \"\", nullptr, &memory_known);\n        const double needed_gb = plan.free_reserve_gb + working_set_gb;\n        if (memory_known && free_gb < needed_gb) {\n            std::ostringstream message;\n            message << std::fixed << std::setprecision(1) << \"ds4 needs \" << needed_gb\n                    << \" GiB of free GPU memory to start, and \" << free_gb << \" GiB is free\";\n            throw std::runtime_error(message.str());\n        }\n    }\n    if (plan.expert_cache_gb > 0) {\n        args.push_back(\"--ssd-streaming-cache-experts\");\n        args.push_back(std::to_string(plan.expert_cache_gb) + \"GB\");\n    }\n\n    if (!ds4_args.empty()) {\n        const std::string validation_error =\n            validate_custom_args(ds4_args, ds4::reserved_custom_arg_flags());\n        if (!validation_error.empty()) {\n            throw std::invalid_argument(\"Invalid custom ds4-server arguments:\\n\" + validation_error);\n        }\n        LOG(DEBUG, \"DS4\") << \"Adding custom arguments: \" << ds4_args << std::endl;\n        std::vector<std::string> custom_args = parse_custom_args(ds4_args);\n        args.insert(args.end(), custom_args.begin(), custom_args.end());\n    }\n\n    LOG(INFO, \"DS4\") << \"Starting ds4-server (\" << image << \") for \" << gguf_path << \" on port \"\n                     << port_ << std::endl;\n\n    ServerCommand command;\n    command.program = ds4::descriptor.binary;\n    command.args = std::move(args);\n    command.model_files = {gguf_path};\n    if (plan.resident && !draft_path.empty()) {\n        command.model_files.push_back(draft_path);\n    }\n    if (plan.model_cache_gb > 0) {\n        command.env.push_back({\"DS4_ROCM_STREAM_MODEL_CACHE_GB\", std::to_string(plan.model_cache_gb)});\n    }\n    if (!plan.resident && plan.free_reserve_gb > 0) {\n        command.env.push_back(\n            {\"DS4_ROCM_STREAM_FREE_RESERVE_GB\", std::to_string(plan.free_reserve_gb)});\n    }\n    command.port = port_;\n    // ds4-server binds its port only after the model is fully loaded, so first\n    // reachability means ready. There is no /health endpoint; /v1/models is the\n    // cheapest always-on route and doubles as the watchdog probe.\n    command.ready_endpoint = \"/v1/models\";\n\n    const bool inherit_output = (log_level_ == \"info\") || (log_level_ == \"debug\");\n    start_server(std::make_unique<ContainerProcess>(ProcessOutput{inherit_output, true},\n                                                    ds4::descriptor.recipe, backend, model_name,\n                                                    *ds4::descriptor.container_for(backend), image),\n                 command, HttpClient::get_default_timeout());\n}\n\n"
+    },
+    {
+      "commit": "8f8b905a1cf68b60a4d7fdc66a15d846b0cebc78",
+      "path": "src/cpp/server/backends/ds4/ds4_server.cpp",
+      "first_line": 203,
+      "last_line": 216,
+      "text": "void Ds4Server::forward_streaming_request(const std::string& endpoint,\n                                          const std::string& request_body,\n                                          httplib::DataSink& sink, bool sse,\n                                          long timeout_seconds,\n                                          TelemetryCallback telemetry_callback) {\n    std::string body = request_body;\n    if (endpoint.find(\"chat/completions\") != std::string::npos) {\n        const json parsed = json::parse(request_body, nullptr, false);\n        if (!parsed.is_discarded()) body = without_no_think_prefix(parsed).dump();\n    }\n    WrappedServer::forward_streaming_request(endpoint, body, sink, sse, timeout_seconds,\n                                             std::move(telemetry_callback));\n}\n\n"
+    }
+  ],
+  "definition": {
+    "schema_version": 2,
+    "id": "c7b-ds4",
+    "recipe": "gufo",
+    "merge": {
+      "kind": "container",
+      "metadata": {
+        "display_name": "Gufo",
+        "server_name": "gufo",
+        "binary": "gufo",
+        "support": [
+          {
+            "id": "rocm",
+            "backend": "rocm",
+            "tier": "experimental",
+            "format": "container",
+            "supported_os": [
+              "linux"
+            ],
+            "devices": {
+              "gpu": [
+                "gfx1151"
+              ]
+            },
+            "device_summary": "Strix Halo"
+          }
+        ],
+        "supported_modes": [
+          "chat"
+        ],
+        "options": [
+          {
+            "id": "args",
+            "name": "gufo_args",
+            "value_type": "string",
+            "default_value": ""
+          }
+        ],
+        "log_category": "DS4"
+      },
+      "containers": {
+        "rocm": {
+          "repository": "ghcr.io/peonist-ai/gufo",
+          "pin": {
+            "source": "backend_versions",
+            "recipe": "gufo",
+            "backend": "rocm"
+          },
+          "devices": [
+            "/dev/dri",
+            "/dev/kfd"
+          ],
+          "cap_add": [],
+          "policy": "lemonade-isolated-v1",
+          "network": "private_internal",
+          "teardown": "stop_remove_reap",
+          "stop_grace_seconds": 10
+        }
+      },
+      "install": {
+        "strategy": "oci"
+      },
+      "artifacts": {
+        "main": {
+          "role": "main",
+          "strategy": "resolved_path",
+          "missing_error": "GGUF checkpoint is required"
+        }
+      },
+      "launch": {
+        "prepare_order": [
+          "backend",
+          "artifacts",
+          "install",
+          "program",
+          "ports"
+        ],
+        "backend": {
+          "fixed": "rocm"
+        },
+        "execution": {
+          "cases": [
+            {
+              "id": "rocm-container",
+              "backends": [
+                "rocm"
+              ],
+              "kind": "container",
+              "container": "rocm",
+              "program": {
+                "source": "image_command",
+                "name": "gufo"
+              }
+            }
+          ]
+        },
+        "mounts": [
+          {
+            "id": "main",
+            "artifact": "main",
+            "expand": "gguf_shards",
+            "destination": "/mnt/models"
+          }
+        ],
+        "address": {
+          "source": "process_start"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "reject_zero": true,
+            "error": "No HTTP port available"
+          }
+        ],
+        "argv": [
+          {
+            "id": "serve",
+            "args": [
+              "serve",
+              "llm"
+            ]
+          },
+          {
+            "id": "model",
+            "flag": "--model",
+            "value": {
+              "ref": "/artifacts/main"
+            }
+          },
+          {
+            "id": "name",
+            "flag": "--served-model-name",
+            "value": {
+              "ref": "/model/name"
+            }
+          },
+          {
+            "id": "host",
+            "flag": "--host",
+            "value": "0.0.0.0"
+          },
+          {
+            "id": "port",
+            "flag": "--port",
+            "value": {
+              "string": {
+                "ref": "/launch/ports/http"
+              }
+            }
+          }
+        ],
+        "environment": {
+          "preset": "inherit"
+        },
+        "working_directory": "inherit",
+        "output": {
+          "inherit_levels": [
+            "info",
+            "debug",
+            "trace"
+          ],
+          "filter": false
+        },
+        "readiness": {
+          "port": "http",
+          "path": "/ready",
+          "timeout": "global"
+        },
+        "watchdog": {
+          "policy": "standard",
+          "port": "http",
+          "path": "/ready"
+        },
+        "direct_stream_policy": "builtin_container_legacy",
+        "custom_args": {
+          "option": "args",
+          "reserved": [
+            "--model"
+          ],
+          "error_prefix": "Invalid custom arguments: ",
+          "defaults": []
+        },
+        "load_log_policy": "none",
+        "diagnostics": [
+          {
+            "id": "custom",
+            "phase": "custom_args",
+            "level": "debug",
+            "category": "DS4",
+            "format": "Adding custom arguments: {custom:string}",
+            "when": "custom_present"
+          },
+          {
+            "id": "starting",
+            "phase": "starting",
+            "level": "info",
+            "category": "DS4",
+            "format": "Starting ds4-server ({image:string}) for {main:path} on port {port:integer}",
+            "when": "always"
+          }
+        ]
+      },
+      "operations": [
+        {
+          "id": "chat.streaming",
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "content_transform": "ds4_no_think_v1",
+            "rewrite_domain": "chat_completions_substring"
+          }
+        },
+        {
+          "id": "completion.streaming",
+          "operation": "completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "responses.streaming",
+          "operation": "responses",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/responses",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        }
+      ]
+    }
+  },
+  "rewrite_domain": "chat_completions_substring",
+  "expected": [
+    {
+      "level": "debug",
+      "category": "DS4",
+      "line": "Adding custom arguments: --fixture 7"
+    },
+    {
+      "level": "info",
+      "category": "DS4",
+      "line": "Starting ds4-server (ghcr.io/peonist-ai/gufo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) for @MAIN@ on port @PORT@"
+    }
+  ]
+}

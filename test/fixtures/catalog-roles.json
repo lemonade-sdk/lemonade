@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "id": "catalog-roles",
+  "recipe": "catalog-roles",
+  "kind": "local",
+  "metadata": {
+    "display_name": "Catalog Roles",
+    "server_name": "catalog-roles-server",
+    "binary": "fake-catalog-engine",
+    "config_section": "catalog_roles",
+    "default_device": "cpu",
+    "supported_modes": [
+      "chat"
+    ],
+    "required_checkpoints": [
+      "main",
+      "adapter"
+    ],
+    "bin_variants": [
+      "cpu"
+    ],
+    "options": [
+      {
+        "name": "catalog_roles_batch",
+        "value_type": "integer",
+        "default_value": 2,
+        "minimum": 1,
+        "maximum": 8,
+        "help": "Batch size for the role fixture",
+        "group": "Catalog Roles",
+        "ui": {
+          "label": "Batch size",
+          "control": "number",
+          "order": 10
+        }
+      }
+    ]
+  },
+  "install": {
+    "strategy": "external_only"
+  },
+  "artifacts": {
+    "main": {
+      "role": "main",
+      "strategy": "resolved_path",
+      "absolute_checkpoint_fallback": true,
+      "missing_error": {
+        "concat": [
+          "Main fixture not found: ",
+          {
+            "ref": "/model/checkpoint"
+          }
+        ]
+      }
+    },
+    "adapter": {
+      "role": "adapter",
+      "strategy": "resolved_path",
+      "absolute_checkpoint_fallback": true,
+      "missing_error": "Adapter fixture not found"
+    }
+  },
+  "launch": {
+    "prepare_order": [
+      "artifacts",
+      "backend",
+      "program",
+      "ports"
+    ],
+    "backend": {
+      "fixed": "cpu"
+    },
+    "program": {
+      "source": "external_or_managed",
+      "install_policy": "always"
+    },
+    "ports": [
+      {
+        "name": "http",
+        "reject_zero": true,
+        "error": "No fake HTTP port"
+      }
+    ],
+    "argv": [
+      {
+        "args": [
+          "--port",
+          {
+            "string": {
+              "ref": "/launch/ports/http"
+            }
+          },
+          "--batch",
+          {
+            "string": {
+              "ref": "/options/catalog_roles_batch"
+            }
+          },
+          "--tag",
+          "roles",
+          "--model-fixture",
+          {
+            "ref": "/artifacts/main"
+          },
+          "--adapter-fixture",
+          {
+            "ref": "/artifacts/adapter"
+          }
+        ]
+      }
+    ],
+    "environment": {
+      "preset": "inherit",
+      "set": []
+    },
+    "working_directory": "inherit",
+    "output": {
+      "inherit_levels": [
+        "debug"
+      ],
+      "filter": false
+    },
+    "readiness": {
+      "port": "http",
+      "path": "/health",
+      "timeout": 5
+    },
+    "watchdog": {
+      "policy": "none",
+      "port": "http",
+      "path": "/health"
+    }
+  },
+  "operations": [
+    {
+      "operation": "chat_completion",
+      "delivery": "buffered",
+      "model_modes": [
+        "chat"
+      ],
+      "transport": {
+        "kind": "http_json",
+        "method": "POST",
+        "path": "/chat",
+        "port": "http",
+        "timeout": 5,
+        "response_codec": "json.v1"
+      },
+      "request": {
+        "base": "identity"
+      }
+    },
+    {
+      "operation": "chat_completion",
+      "delivery": "streaming",
+      "model_modes": [
+        "chat"
+      ],
+      "transport": {
+        "kind": "http_sse",
+        "method": "POST",
+        "path": "/chat",
+        "port": "http",
+        "timeout": 5,
+        "stream_codec": "openai_sse.v1"
+      },
+      "request": {
+        "base": "identity"
+      }
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "id": "catalog-fourth",
+  "recipe": "catalog-fourth",
+  "kind": "local",
+  "metadata": {
+    "display_name": "Catalog Fourth",
+    "server_name": "catalog-fourth-server",
+    "binary": "fake-catalog-engine",
+    "config_section": "catalog_fourth",
+    "default_device": "cpu",
+    "supported_modes": ["chat"],
+    "required_checkpoints": ["main"],
+    "bin_variants": ["cpu"],
+    "options": [
+      {
+        "name": "catalog_fourth_batch",
+        "value_type": "integer",
+        "default_value": 2,
+        "minimum": 1,
+        "maximum": 8,
+        "help": "Batch size for the external fixture",
+        "group": "Catalog Fourth",
+        "ui": {
+          "label": "Batch size",
+          "control": "number",
+          "order": 10
+        }
+      }
+    ]
+  },
+  "install": {
+    "strategy": "external_only"
+  },
+  "launch": {
+    "prepare_order": ["artifacts", "backend", "program", "ports"],
+    "backend": {
+      "fixed": "cpu"
+    },
+    "program": {
+      "source": "external_or_managed",
+      "install_policy": "always"
+    },
+    "ports": [
+      {
+        "name": "http",
+        "reject_zero": true,
+        "error": "No fake HTTP port"
+      }
+    ],
+    "argv": [
+      {
+        "args": [
+          "--port",
+          {"string": {"ref": "/launch/ports/http"}},
+          "--batch",
+          {"string": {"ref": "/options/catalog_fourth_batch"}},
+          "--tag",
+          "initial",
+          "--model-fixture",
+          {"ref": "/model/checkpoint", "type": "string"}
+        ]
+      }
+    ],
+    "environment": {
+      "preset": "inherit",
+      "set": []
+    },
+    "working_directory": "inherit",
+    "output": {
+      "inherit_levels": ["debug"],
+      "filter": false
+    },
+    "readiness": {
+      "port": "http",
+      "path": "/health",
+      "timeout": 5
+    },
+    "watchdog": {
+      "policy": "none",
+      "port": "http",
+      "path": "/health"
+    }
+  },
+  "operations": [
+    {
+      "operation": "chat_completion",
+      "delivery": "buffered",
+      "model_modes": ["chat"],
+      "transport": {
+        "kind": "http_json",
+        "method": "POST",
+        "path": "/chat",
+        "port": "http",
+        "timeout": 5,
+        "response_codec": "json.v1"
+      },
+      "request": {"base": "identity"}
+    },
+    {
+      "operation": "chat_completion",
+      "delivery": "streaming",
+      "model_modes": ["chat"],
+      "transport": {
+        "kind": "http_sse",
+        "method": "POST",
+        "path": "/chat",
+        "port": "http",
+        "timeout": 5,
+        "stream_codec": "openai_sse.v1"
+      },
+      "request": {"base": "identity"}
+    }
+  ]
+}

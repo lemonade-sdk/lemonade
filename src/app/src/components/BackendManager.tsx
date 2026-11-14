@@ -8,6 +8,8 @@ import { recipeCapability } from '../features/backends/recipeMetadata';
 import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 import { WorkspaceActionButton, WorkspaceActionGroup, WorkspacePaneHeader } from './WorkspacePanels';
 import { useI18n } from '../i18n';
+import { useServerRecipeNames } from '../hooks/useBackendCatalog';
+import { serverRecipeDisplayName } from '../features/backends/catalogState';
 
 /* ── Types matching /api/v1/system-info response ─────────── */
 
@@ -70,7 +72,7 @@ interface SystemInfoData {
 /* ── Constants ─────────────────────────────────────────────── */
 
 /** User-facing labels for recipes */
-const RECIPE_LABELS: Record<string, string> = {
+const CURATED_RECIPE_LABELS: Record<string, string> = {
   llamacpp:       'llama.cpp',
   onnxruntime:    'ONNX Runtime',
   whispercpp:     'whisper.cpp',
@@ -89,6 +91,14 @@ const RECIPE_LABELS: Record<string, string> = {
   ds4:             'DwarfStar4',
   thenoise:        'TheNoise',
 };
+
+// Every lookup goes through the server's own name first; the table above only
+// labels recipes on a server that does not report one.
+const RECIPE_LABELS: Record<string, string> = new Proxy(CURATED_RECIPE_LABELS, {
+  get: (curated, recipe) => typeof recipe !== 'string' ? undefined
+    : serverRecipeDisplayName(recipe)
+      || (Object.prototype.hasOwnProperty.call(curated, recipe) ? curated[recipe] : undefined),
+});
 
 const ENGINE_LOGO_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/engines/';
 
@@ -809,6 +819,7 @@ interface BackendManagerProps {
 }
 
 const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
+  useServerRecipeNames();
   const { t } = useI18n();
   const [sysInfo, setSysInfo] = useState<SystemInfoData | null>(() =>
     api.systemInfoData as unknown as SystemInfoData | null

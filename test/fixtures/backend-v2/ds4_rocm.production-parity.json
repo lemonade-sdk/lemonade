@@ -1,0 +1,792 @@
+{
+  "engine": "ds4",
+  "id": "ds4_rocm",
+  "recipe": "ds4",
+  "backend": "rocm",
+  "stack_revision": "8f8b905a1cf68b60a4d7fdc66a15d846b0cebc78",
+  "active": false,
+  "registry_validated": false,
+  "repository": "docker.io/kyuz0/strix-halo-ds4-toolbox",
+  "pin": "rocm-10.0@sha256:31b4e7e3584684768ee060e3dfeb62c1d716219da468090f3483977fdf6dfb47",
+  "owner_digest": "sha256:4b694ed3713311ea01e98e57177ae6574fff81e8d88e0b5624bfb5a0a463640d",
+  "authored_lines": 221,
+  "defaults": {
+    "args": ""
+  },
+  "models": {
+    "DeepSeek-V4-Flash-IQ2XXS-DS4": {
+      "checkpoints": {
+        "main": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
+        "draft": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-DSpark-support-0731.gguf"
+      },
+      "recipe": "ds4",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling"
+      ],
+      "size": 92.7,
+      "min_resident_gb": 16.0
+    }
+  },
+  "source_models": {
+    "DeepSeek-V4-Flash-IQ2XXS-DS4": {
+      "checkpoints": {
+        "main": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
+        "draft": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-DSpark-support-0731.gguf"
+      },
+      "recipe": "ds4",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling"
+      ],
+      "size": 92.7,
+      "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4-Flash-Hybrid-Q2Q4-DS4": {
+      "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Layers37-42Q4KExperts-OtherExpertLayersIQ2XXSGateUp-Q2KDown-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-fixed-0731.gguf",
+      "recipe": "ds4",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 97.6,
+      "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4-Flash-Q4-DS4": {
+      "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Q4KExperts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-imatrix-0731.gguf",
+      "recipe": "ds4",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 164.6,
+      "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4-Flash-MXFP4-DS4": {
+      "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-MXFP4Experts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-mxfp4-0731.gguf",
+      "recipe": "ds4",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 156.0,
+      "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4-Flash-Vision-IQ2XXS-DS4": {
+      "checkpoints": {
+        "main": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8.gguf",
+        "draft": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-DSpark-support.gguf"
+      },
+      "recipe": "ds4",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "tool-calling",
+        "vision"
+      ],
+      "size": 92.7,
+      "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4-Flash-Vision-Hybrid-Q2Q4-DS4": {
+      "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-Layers37-42Q4KExperts-OtherExpertLayersIQ2XXSGateUp-Q2KDown-AProjQ8-SExpQ8-OutQ8.gguf",
+      "recipe": "ds4",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "vision"
+      ],
+      "size": 97.6,
+      "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4-Flash-Vision-MXFP4-DS4": {
+      "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-MXFP4Experts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out.gguf",
+      "recipe": "ds4",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning",
+        "vision"
+      ],
+      "size": 156.0,
+      "min_resident_gb": 16.0
+    },
+    "GLM-5.3-Flash-Q2-DS4": {
+      "checkpoint": "antirez/glm-5.3-flash-gguf:GLM-5.3-Flash-Q2.gguf",
+      "recipe": "ds4",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 96.5,
+      "min_resident_gb": 16.0
+    },
+    "GLM-5.3-Flash-Q4_K-DS4": {
+      "checkpoint": "antirez/glm-5.3-flash-gguf:GLM-5.3-Flash-Q4_K.gguf",
+      "recipe": "ds4",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 190.9,
+      "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4.1-Flash-Q2-DS4": {
+      "checkpoint": "antirez/deepseek-v4.1-flash-gguf:DeepSeek-V4.1-Flash-Q2.gguf",
+      "recipe": "ds4",
+      "suggested": true,
+      "labels": [
+        "chat",
+        "reasoning"
+      ],
+      "size": 365.7,
+      "min_resident_gb": 16.0
+    }
+  },
+  "inventory_scope": "dormant_container_inventory_shared_native_recipe",
+  "metadata": {
+    "display_name": "DwarfStar4",
+    "server_name": "ds4-server",
+    "log_category": "DS4",
+    "binary": "ds4-server",
+    "default_device": "gpu",
+    "slot_policy": "standard",
+    "selectable_backend": false,
+    "uses_ctx_size": true,
+    "dynamic_models": false,
+    "options": [
+      {
+        "id": "args",
+        "name": "ds4_args",
+        "cli_flag": "--ds4-args",
+        "default_value": "",
+        "type_name": "ARGS",
+        "value_type": "string",
+        "help": "Custom arguments to pass to ds4-server",
+        "group": "DS4 Options"
+      }
+    ],
+    "support": [
+      {
+        "id": "rocm",
+        "backend": "rocm",
+        "tier": "guest",
+        "format": "container",
+        "supported_os": [
+          "linux"
+        ],
+        "devices": {
+          "amd_gpu": [
+            "gfx1151"
+          ]
+        },
+        "device_summary": "Prebuilt ds4 for AMD Strix Halo"
+      }
+    ],
+    "supported_modes": [
+      "chat"
+    ],
+    "required_checkpoints": [
+      "main"
+    ],
+    "default_capabilities": [],
+    "web_display_name": "",
+    "rocm_channels": [],
+    "exposes_prometheus_metrics": false,
+    "rocm_requires_cwsr_fix": true,
+    "version_policy": "exact",
+    "self_manages_downloads": false,
+    "takes_args": true,
+    "arg_variants": [],
+    "bin_variants": [],
+    "config_extra": {},
+    "streams_model_from_storage": true
+  },
+  "diagnostics": [
+    {
+      "id": "custom",
+      "phase": "custom_args",
+      "level": "debug",
+      "category": "DS4",
+      "format": "Adding custom arguments: {custom:string}",
+      "when": "custom_present"
+    },
+    {
+      "id": "starting",
+      "phase": "starting",
+      "level": "info",
+      "category": "DS4",
+      "format": "Starting ds4-server ({image:string}) for {main:path} on port {port:integer}",
+      "when": "always"
+    }
+  ],
+  "rewrite_domain": "chat_completions_substring",
+  "c7b_fixture": "c7b.ds4.json",
+  "c7b_fixture_sha256": "a4bde0addafc24f78b6236fc9f0a88b52353e889e939da915b7d7dd76b781029",
+  "c8a_fixture": "c8a.ds4.json",
+  "c8a_fixture_sha256": "9d585d9759b8e6fd61974191d9dd9fc138bf5523f41586890fd97fefeee1d2d3",
+  "production_definition": {
+    "schema_version": 2,
+    "id": "ds4_rocm",
+    "recipe": "ds4",
+    "merge": {
+      "kind": "container",
+      "metadata": {
+        "display_name": "DwarfStar4",
+        "server_name": "ds4-server",
+        "log_category": "DS4",
+        "binary": "ds4-server",
+        "default_device": "gpu",
+        "slot_policy": "standard",
+        "selectable_backend": false,
+        "uses_ctx_size": true,
+        "dynamic_models": false,
+        "options": [
+          {
+            "id": "args",
+            "name": "ds4_args",
+            "cli_flag": "--ds4-args",
+            "default_value": "",
+            "type_name": "ARGS",
+            "value_type": "string",
+            "help": "Custom arguments to pass to ds4-server",
+            "group": "DS4 Options"
+          }
+        ],
+        "support": [
+          {
+            "id": "rocm",
+            "backend": "rocm",
+            "tier": "guest",
+            "format": "container",
+            "supported_os": [
+              "linux"
+            ],
+            "devices": {
+              "amd_gpu": [
+                "gfx1151"
+              ]
+            },
+            "device_summary": "Prebuilt ds4 for AMD Strix Halo"
+          }
+        ],
+        "supported_modes": [
+          "chat"
+        ],
+        "required_checkpoints": [
+          "main"
+        ],
+        "default_capabilities": [],
+        "web_display_name": "",
+        "rocm_channels": [],
+        "exposes_prometheus_metrics": false,
+        "rocm_requires_cwsr_fix": true,
+        "version_policy": "exact",
+        "self_manages_downloads": false,
+        "takes_args": true,
+        "arg_variants": [],
+        "bin_variants": [],
+        "config_extra": {},
+        "streams_model_from_storage": true
+      },
+      "containers": {
+        "rocm": {
+          "repository": "docker.io/kyuz0/strix-halo-ds4-toolbox",
+          "pin": {
+            "source": "backend_versions",
+            "recipe": "ds4_rocm",
+            "backend": "rocm"
+          },
+          "devices": [
+            "/dev/dri",
+            "/dev/kfd"
+          ],
+          "cap_add": [
+            "SYS_PTRACE"
+          ],
+          "policy": "lemonade-isolated-v1",
+          "network": "private_internal",
+          "teardown": "stop_remove_reap",
+          "stop_grace_seconds": 10
+        }
+      },
+      "install": {
+        "strategy": "oci"
+      },
+      "artifacts": {
+        "main": {
+          "role": "main",
+          "strategy": "resolved_path",
+          "missing_error": {
+            "concat": [
+              "ds4: no local GGUF found for model '",
+              {
+                "ref": "/model/name"
+              },
+              "' (checkpoint: ",
+              {
+                "ref": "/model/checkpoint"
+              },
+              ")"
+            ]
+          },
+          "hook": {
+            "id": "llamacpp.artifacts.v1",
+            "params": {}
+          },
+          "absolute_checkpoint_fallback": true,
+          "checkpoint_consumer": "builtin_container_absolute_v1"
+        },
+        "draft": {
+          "role": "draft",
+          "strategy": "resolved_path",
+          "required_when": false,
+          "missing_error": "Missing draft"
+        }
+      },
+      "launch": {
+        "prepare_order": [
+          "backend",
+          "artifacts",
+          "install",
+          "program",
+          "ports"
+        ],
+        "backend": {
+          "fixed": "rocm"
+        },
+        "execution": {
+          "cases": [
+            {
+              "id": "rocm-container",
+              "backends": [
+                "rocm"
+              ],
+              "kind": "container",
+              "container": "rocm",
+              "program": {
+                "source": "image_command",
+                "name": "ds4-server"
+              },
+              "memory_plan": "ds4_rocm_v1",
+              "memory_phase": "after_ports"
+            }
+          ]
+        },
+        "mounts": [
+          {
+            "id": "main",
+            "artifact": "main",
+            "expand": "file",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered"
+          },
+          {
+            "id": "draft",
+            "artifact": "draft",
+            "expand": "file",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered",
+            "when": {
+              "all": [
+                {
+                  "ref": "/memory/resident"
+                },
+                {
+                  "not": {
+                    "eq": [
+                      {
+                        "ref": "/artifacts/draft"
+                      },
+                      ""
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "address": {
+          "source": "process_start"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "reject_zero": true,
+            "error": "No HTTP port available"
+          }
+        ],
+        "argv": [
+          {
+            "id": "model",
+            "flag": "-m",
+            "value": {
+              "ref": "/artifacts/main"
+            }
+          },
+          {
+            "id": "host",
+            "flag": "--host",
+            "value": "0.0.0.0"
+          },
+          {
+            "id": "port",
+            "flag": "--port",
+            "value": {
+              "string": {
+                "ref": "/launch/ports/http"
+              }
+            }
+          },
+          {
+            "id": "ctx",
+            "flag": "-c",
+            "value": {
+              "string": {
+                "ref": "/options/ctx_size"
+              }
+            },
+            "when": {
+              "gt": [
+                {
+                  "ref": "/options/ctx_size"
+                },
+                0
+              ]
+            }
+          },
+          {
+            "id": "prefill",
+            "flag": "--prefill-chunk",
+            "value": "2048"
+          },
+          {
+            "id": "draft",
+            "args": [
+              "--dspark",
+              "--mtp-model",
+              {
+                "ref": "/artifacts/draft"
+              }
+            ],
+            "when": {
+              "all": [
+                {
+                  "ref": "/memory/resident"
+                },
+                {
+                  "not": {
+                    "eq": [
+                      {
+                        "ref": "/artifacts/draft"
+                      },
+                      ""
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "streaming",
+            "args": [
+              "--ssd-streaming"
+            ],
+            "when": {
+              "not": {
+                "ref": "/memory/resident"
+              }
+            }
+          },
+          {
+            "id": "experts",
+            "flag": "--ssd-streaming-cache-experts",
+            "value": {
+              "concat": [
+                {
+                  "string": {
+                    "ref": "/memory/expert_cache_gb"
+                  }
+                },
+                "GB"
+              ]
+            },
+            "when": {
+              "gt": [
+                {
+                  "ref": "/memory/expert_cache_gb"
+                },
+                0
+              ]
+            }
+          }
+        ],
+        "environment": {
+          "preset": "inherit",
+          "set": [
+            {
+              "name": "DS4_ROCM_STREAM_MODEL_CACHE_GB",
+              "value": {
+                "string": {
+                  "ref": "/memory/model_cache_gb"
+                }
+              },
+              "when": {
+                "gt": [
+                  {
+                    "ref": "/memory/model_cache_gb"
+                  },
+                  0
+                ]
+              }
+            },
+            {
+              "name": "DS4_ROCM_STREAM_FREE_RESERVE_GB",
+              "value": {
+                "string": {
+                  "ref": "/memory/free_reserve_gb"
+                }
+              },
+              "when": {
+                "all": [
+                  {
+                    "not": {
+                      "ref": "/memory/resident"
+                    }
+                  },
+                  {
+                    "gt": [
+                      {
+                        "ref": "/memory/free_reserve_gb"
+                      },
+                      0
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "working_directory": "inherit",
+        "output": {
+          "inherit_levels": [
+            "info",
+            "debug"
+          ],
+          "filter": true
+        },
+        "readiness": {
+          "port": "http",
+          "path": "/v1/models",
+          "timeout": "global"
+        },
+        "watchdog": {
+          "policy": "standard",
+          "port": "http",
+          "path": "/v1/models"
+        },
+        "direct_stream_policy": "builtin_container_legacy",
+        "custom_args": {
+          "option": "args",
+          "reserved": [
+            "-m",
+            "--model",
+            "--host",
+            "--port",
+            "-c",
+            "--ctx",
+            "--backend",
+            "--cpu",
+            "--metal",
+            "--rocm",
+            "--cuda"
+          ],
+          "error_prefix": "Invalid custom ds4-server arguments:\n"
+        },
+        "diagnostics": [
+          {
+            "id": "custom",
+            "phase": "custom_args",
+            "level": "debug",
+            "category": "DS4",
+            "format": "Adding custom arguments: {custom:string}",
+            "when": "custom_present"
+          },
+          {
+            "id": "starting",
+            "phase": "starting",
+            "level": "info",
+            "category": "DS4",
+            "format": "Starting ds4-server ({image:string}) for {main:path} on port {port:integer}",
+            "when": "always"
+          }
+        ],
+        "load_log_policy": "none"
+      },
+      "operations": [
+        {
+          "id": "chat.buffered",
+          "operation": "chat_completion",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity",
+            "content_transform": "ds4_no_think_v1",
+            "rewrite_domain": "chat_completions_substring"
+          }
+        },
+        {
+          "id": "chat.streaming",
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "content_transform": "ds4_no_think_v1",
+            "rewrite_domain": "chat_completions_substring"
+          }
+        },
+        {
+          "id": "completion.buffered",
+          "operation": "completion",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/completions",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "completion.streaming",
+          "operation": "completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "responses.buffered",
+          "operation": "responses",
+          "delivery": "buffered",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/responses",
+            "port": "http",
+            "timeout": "global",
+            "response_codec": "json.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "responses.streaming",
+          "operation": "responses",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/responses",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        }
+      ],
+      "model_contract": "ds4_rocm_v1",
+      "rationale": [
+        {
+          "subject": "",
+          "text": "Inactive builtin leaf. The independently fixed dormant execution grant is not installed in active policies. Registry/image, real runtime and packaging qualification and a disclosed activation stage remain required.",
+          "source": "container-conversion C8",
+          "tests": [
+            "ContainerProductionParityTest"
+          ]
+        }
+      ]
+    }
+  },
+  "argv": [
+    "-m",
+    "/mnt/models/main.fake",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "@PORT@",
+    "-c",
+    "8192",
+    "--prefill-chunk",
+    "2048",
+    "--ssd-streaming",
+    "--ssd-streaming-cache-experts",
+    "24GB",
+    "--fixture",
+    "7"
+  ],
+  "mounts": [
+    "/mnt/models/main.fake"
+  ],
+  "capability_mask": 0,
+  "pin_recipe": "ds4_rocm",
+  "staged_inventory": "src/cpp/resources/container_inventory/ds4_rocm.json"
+}

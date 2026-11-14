@@ -7,6 +7,7 @@
 #include "lemon/model_types.h"
 #include "lemon/runtime_config.h"
 #include "lemon/server/api_route.h"
+#include "lemon/operation_adapters.h"
 #include "lemon/server/image_responses.h"
 #include "lemon/server_capabilities.h"
 
@@ -127,12 +128,12 @@ public:
             context.cloud_registry = ctx_.cloud_registry;
             context.model_info = &info;
             auto server = backends::create_server(info.recipe, context);
-            if (!server || !supports_capability<IUpscaleServer>(server.get())) {
+            if (!server || !server->supports_operation(BackendOperation::Upscale, OperationDelivery::Buffered, info.type)) {
                 write_openai_error(res, kRecipeCannotUpscale,
                                    "Upscale is not supported by recipe: " + info.recipe);
                 return;
             }
-            auto* upscale_server = dynamic_cast<IUpscaleServer*>(server.get());
+            auto* upscale_server = operation_adapter<IUpscaleServer>(*server, BackendOperation::Upscale, OperationDelivery::Buffered, info.type);
             std::string upscaled = upscale_server->upscale_via_cli(
                 b64_image, info.resolved_path("main"), req.value(kUpscaleFactor, 0.0));
 

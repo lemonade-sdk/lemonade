@@ -1,0 +1,20 @@
+#pragma once
+
+#include <cstddef>
+
+#include "backend_definition_resources.h"
+#include "backend_definition_v2_resources.h"
+
+namespace lemon::backends {
+
+struct EmbeddedResourceFile {
+    const char* path;
+    const char* data;
+    std::size_t size;
+};
+
+inline constexpr EmbeddedResourceFile k_embedded_resource_files[] = {
+@LEMON_DEFINITION_RESOURCE_INDEX@    {R"path(@LEMON_BACKEND_DEFINITION_V2_SCHEMA@)path", k_backend_definition_v2_schema, sizeof(k_backend_definition_v2_schema) - 1},
+};
+
+}

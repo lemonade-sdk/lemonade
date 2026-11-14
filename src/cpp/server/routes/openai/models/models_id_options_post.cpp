@@ -5,6 +5,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/recipe_options.h"
 #include "lemon/server/api_route.h"
+#include "lemon/backends/backend_option_contract.h"
 #include "lemon/server/model_options.h"
 #include "lemon/server/shared_args.h"
 
@@ -150,6 +151,15 @@ public:
                         (key != model_options::kCtxSize.name && RecipeOptions::is_default_sentinel(key, value));
                     if (clears) {
                         changes[key] = nullptr;
+                        continue;
+                    }
+                    if (const auto* contract = backends::external_option_contract(info.recipe, key)) {
+                        const auto error = backends::validate_option_contract(*contract, value);
+                        if (!error.empty()) {
+                            write_plain_error(r, kInvalidOptionValue, "Invalid option " + key + ": " + error);
+                            return false;
+                        }
+                        changes[key] = value;
                         continue;
                     }
                     const json expected = unset.get_option(key);

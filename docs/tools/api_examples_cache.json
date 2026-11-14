@@ -989,6 +989,603 @@
       "bytes": 884780
     }
   },
+  "ca604f18dd9599f74b8fb22ad5df4e85c3d3e74af643158e8a8fe37931e1a1ae": {
+    "route": "lemonade.backends_schema",
+    "format": "Json",
+    "request": {
+      "method": "GET",
+      "path": "/v1/backends/schema",
+      "query": {
+        "recipe": "kokoro",
+        "representation": "2"
+      },
+      "json": null,
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "acceptance_stage": "execution_finalization",
+        "accepted_definition_versions": [
+          1,
+          2
+        ],
+        "admission_manifest": {
+          "acceptance_stage": "execution_finalization",
+          "accepted_definition_versions": [
+            1,
+            2
+          ],
+          "authorizer_revision": 1,
+          "bounds": {
+            "definitions": 1024,
+            "diagnostics": 100,
+            "recipe_rows": 1024,
+            "retained_logical_bytes": 134217728,
+            "source_bytes": 67108864
+          },
+          "definition_schema_version": 2,
+          "executable_definition_versions": [
+            1,
+            2
+          ],
+          "export_registry_id": "sha256:d68571eec21471c353dbf19229af776f034c8e7776d65fdbe869aa5698304b96",
+          "grant_policy_revision": 1,
+          "hook_abi_id": "sha256:b80e5f74cf8ddabc833fa81c16c4dadec6fcc376980a1e03322ae82197a24c36",
+          "manifest_version": 1,
+          "resolver_revision": 1,
+          "schema_id": "sha256:923163467f2d30fecaf29a524dc6c38312150bb64b99d035f615cdffec71d0bb"
+        },
+        "authorizer_revision": 1,
+        "catalog_id": "sha256:87f5d447f7c1ee81883ae6131a145135f8b6adacf72cbe5abb3899c25b51cb69",
+        "catalog_v2_id": "sha256:8491329f27e53ae779753647b93ac59c28aa04d93396205d00422065eab5ec90",
+        "control_version": 1,
+        "definition_schema_version": 2,
+        "executable_definition_versions": [
+          1,
+          2
+        ],
+        "export_registry_id": "sha256:d68571eec21471c353dbf19229af776f034c8e7776d65fdbe869aa5698304b96",
+        "feature_manifest_id": "sha256:ca82f53dfa43331f761f109fcf387c0ece045824a478c184b89ae4bc3edb4865",
+        "grant_policy_revision": 1,
+        "legacy_feature_manifest_id": "sha256:a41f76bea185e69fe20f7e9dfe5497da98e661ab36368e38c899c69e995baacf",
+        "recipes": [
+          {
+            "definition_hash": "sha256:b557cb134d365266752db624c80e67f4771fe00883c170f59d2ba37943fc0efb",
+            "definition_id": "kokoro",
+            "display_name": "Kokoro",
+            "input_schema_version": 1,
+            "operations": [
+              {
+                "delivery": "streaming",
+                "model_modes": [
+                  "chat",
+                  "embedding",
+                  "reranking",
+                  "transcription",
+                  "image",
+                  "tts",
+                  "audio-generation",
+                  "classification",
+                  "mesh"
+                ],
+                "operation": "chat_completion",
+                "provenance": "legacy_forwarding"
+              },
+              {
+                "delivery": "streaming",
+                "model_modes": [
+                  "chat",
+                  "embedding",
+                  "reranking",
+                  "transcription",
+                  "image",
+                  "tts",
+                  "audio-generation",
+                  "classification",
+                  "mesh"
+                ],
+                "operation": "completion",
+                "provenance": "legacy_forwarding"
+              },
+              {
+                "delivery": "streaming",
+                "model_modes": [
+                  "chat",
+                  "embedding",
+                  "reranking",
+                  "transcription",
+                  "image",
+                  "tts",
+                  "audio-generation",
+                  "classification",
+                  "mesh"
+                ],
+                "operation": "responses",
+                "provenance": "legacy_forwarding"
+              },
+              {
+                "delivery": "buffered",
+                "model_modes": [
+                  "tts"
+                ],
+                "operation": "text_to_speech",
+                "provenance": "implemented"
+              },
+              {
+                "delivery": "streaming",
+                "model_modes": [
+                  "tts"
+                ],
+                "operation": "text_to_speech",
+                "provenance": "implemented"
+              }
+            ],
+            "operations_complete": true,
+            "options": [
+              {
+                "default_value": true,
+                "name": "merge_args",
+                "unset_values": [
+                  null,
+                  -1,
+                  "",
+                  "auto"
+                ],
+                "value_type": "boolean"
+              },
+              {
+                "default_value": null,
+                "name": "auto_evict",
+                "unset_values": [
+                  null,
+                  -1,
+                  "",
+                  "auto"
+                ],
+                "value_type": "boolean"
+              },
+              {
+                "default_value": 300,
+                "name": "evict_idle_timeout",
+                "unset_values": [
+                  null,
+                  -1,
+                  "",
+                  "auto"
+                ],
+                "value_type": "integer"
+              },
+              {
+                "default_value": 60,
+                "name": "downsize_idle_timeout",
+                "unset_values": [
+                  null,
+                  -1,
+                  "",
+                  "auto"
+                ],
+                "value_type": "integer"
+              },
+              {
+                "default_value": 1.0,
+                "name": "evict_weight_factor",
+                "unset_values": [
+                  null,
+                  -1,
+                  "",
+                  "auto"
+                ],
+                "value_type": "number"
+              },
+              {
+                "default_value": false,
+                "name": "pinned",
+                "unset_values": [
+                  null,
+                  -1,
+                  "",
+                  "auto"
+                ],
+                "value_type": "boolean"
+              },
+              {
+                "default_value": null,
+                "name": "auto_update",
+                "unset_values": [
+                  null,
+                  -1,
+                  "",
+                  "auto"
+                ],
+                "value_type": "boolean"
+              }
+            ],
+            "recipe": "kokoro",
+            "required_checkpoints": [
+              "main"
+            ],
+            "source": "builtin",
+            "support": [
+              {
+                "arch_gates": {},
+                "backend": "metal",
+                "device_summary": "Apple Silicon GPU",
+                "devices": {
+                  "metal": []
+                },
+                "format": "native",
+                "supported_os": [
+                  "macos"
+                ],
+                "tier": "core"
+              },
+              {
+                "arch_gates": {},
+                "backend": "cpu",
+                "device_summary": "x86_64 CPU",
+                "devices": {
+                  "cpu": [
+                    "x86_64"
+                  ]
+                },
+                "format": "native",
+                "supported_os": [
+                  "linux",
+                  "windows"
+                ],
+                "tier": "core"
+              }
+            ],
+            "supported_modes": [
+              "tts"
+            ]
+          }
+        ],
+        "resolver_revision": 1,
+        "schema_version": 2
+      }
+    }
+  },
+  "c865b5570b6c4f7982928513e075eb7e0b6a4733599977a421cd862d6c32705d": {
+    "route": "lemonade.backends_schema",
+    "format": "Json",
+    "request": {
+      "method": "GET",
+      "path": "/v1/backends/schema",
+      "query": {
+        "recipe": "kokoro"
+      },
+      "json": null,
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "catalog_id": "sha256:87f5d447f7c1ee81883ae6131a145135f8b6adacf72cbe5abb3899c25b51cb69",
+        "control_version": 1,
+        "definition_schema_version": 1,
+        "feature_manifest_id": "sha256:a41f76bea185e69fe20f7e9dfe5497da98e661ab36368e38c899c69e995baacf",
+        "recipes": [
+          {
+            "definition_hash": "sha256:b557cb134d365266752db624c80e67f4771fe00883c170f59d2ba37943fc0efb",
+            "definition_id": "kokoro",
+            "display_name": "Kokoro",
+            "operations": [
+              {
+                "delivery": "streaming",
+                "model_modes": [
+                  "chat",
+                  "embedding",
+                  "reranking",
+                  "transcription",
+                  "image",
+                  "tts",
+                  "audio-generation",
+                  "classification",
+                  "mesh"
+                ],
+                "operation": "chat_completion",
+                "provenance": "legacy_forwarding"
+              },
+              {
+                "delivery": "streaming",
+                "model_modes": [
+                  "chat",
+                  "embedding",
+                  "reranking",
+                  "transcription",
+                  "image",
+                  "tts",
+                  "audio-generation",
+                  "classification",
+                  "mesh"
+                ],
+                "operation": "completion",
+                "provenance": "legacy_forwarding"
+              },
+              {
+                "delivery": "streaming",
+                "model_modes": [
+                  "chat",
+                  "embedding",
+                  "reranking",
+                  "transcription",
+                  "image",
+                  "tts",
+                  "audio-generation",
+                  "classification",
+                  "mesh"
+                ],
+                "operation": "responses",
+                "provenance": "legacy_forwarding"
+              },
+              {
+                "delivery": "buffered",
+                "model_modes": [
+                  "tts"
+                ],
+                "operation": "text_to_speech",
+                "provenance": "implemented"
+              },
+              {
+                "delivery": "streaming",
+                "model_modes": [
+                  "tts"
+                ],
+                "operation": "text_to_speech",
+                "provenance": "implemented"
+              }
+            ],
+            "operations_complete": true,
+            "options": [
+              {
+                "default_value": true,
+                "name": "merge_args",
+                "unset_values": [
+                  null,
+                  -1,
+                  "",
+                  "auto"
+                ],
+                "value_type": "boolean"
+              },
+              {
+                "default_value": null,
+                "name": "auto_evict",
+                "unset_values": [
+                  null,
+                  -1,
+                  "",
+                  "auto"
+                ],
+                "value_type": "boolean"
+              },
+              {
+                "default_value": 300,
+                "name": "evict_idle_timeout",
+                "unset_values": [
+                  null,
+                  -1,
+                  "",
+                  "auto"
+                ],
+                "value_type": "integer"
+              },
+              {
+                "default_value": 60,
+                "name": "downsize_idle_timeout",
+                "unset_values": [
+                  null,
+                  -1,
+                  "",
+                  "auto"
+                ],
+                "value_type": "integer"
+              },
+              {
+                "default_value": 1.0,
+                "name": "evict_weight_factor",
+                "unset_values": [
+                  null,
+                  -1,
+                  "",
+                  "auto"
+                ],
+                "value_type": "number"
+              },
+              {
+                "default_value": false,
+                "name": "pinned",
+                "unset_values": [
+                  null,
+                  -1,
+                  "",
+                  "auto"
+                ],
+                "value_type": "boolean"
+              },
+              {
+                "default_value": null,
+                "name": "auto_update",
+                "unset_values": [
+                  null,
+                  -1,
+                  "",
+                  "auto"
+                ],
+                "value_type": "boolean"
+              }
+            ],
+            "recipe": "kokoro",
+            "required_checkpoints": [
+              "main"
+            ],
+            "source": "builtin",
+            "support": [
+              {
+                "arch_gates": {},
+                "backend": "metal",
+                "device_summary": "Apple Silicon GPU",
+                "devices": {
+                  "metal": []
+                },
+                "format": "native",
+                "supported_os": [
+                  "macos"
+                ],
+                "tier": "core"
+              },
+              {
+                "arch_gates": {},
+                "backend": "cpu",
+                "device_summary": "x86_64 CPU",
+                "devices": {
+                  "cpu": [
+                    "x86_64"
+                  ]
+                },
+                "format": "native",
+                "supported_os": [
+                  "linux",
+                  "windows"
+                ],
+                "tier": "core"
+              }
+            ],
+            "supported_modes": [
+              "tts"
+            ]
+          }
+        ],
+        "schema_version": 1
+      }
+    }
+  },
+  "eb6c81b013eb0e73cf597739b65fd84e5c89909a6b07adfe7bc018e233cec6f6": {
+    "route": "lemonade.backends_validate",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/backends/validate",
+      "query": {},
+      "json": {
+        "schema_version": 1,
+        "id": "example",
+        "recipe": "example",
+        "kind": "local",
+        "metadata": {
+          "display_name": "Example",
+          "server_name": "example-server",
+          "binary": "example-server",
+          "default_device": "cpu",
+          "bin_variants": [
+            "cpu"
+          ],
+          "options": [
+            {
+              "name": "example_batch",
+              "value_type": "integer",
+              "default_value": 2,
+              "minimum": -1,
+              "maximum": 8
+            }
+          ]
+        },
+        "install": {
+          "strategy": "external_only"
+        },
+        "launch": {
+          "prepare_order": [
+            "artifacts",
+            "backend",
+            "program",
+            "ports"
+          ],
+          "backend": {
+            "fixed": "cpu"
+          },
+          "program": {
+            "source": "external_or_managed",
+            "install_policy": "always"
+          },
+          "ports": [
+            {
+              "name": "http",
+              "reject_zero": true,
+              "error": "No port"
+            }
+          ],
+          "argv": [
+            {
+              "args": [
+                "--serve"
+              ]
+            }
+          ],
+          "environment": {
+            "preset": "inherit"
+          },
+          "working_directory": "inherit",
+          "readiness": {
+            "port": "http",
+            "path": "/health",
+            "timeout": 5
+          },
+          "watchdog": {
+            "port": "http",
+            "path": "/health",
+            "policy": "none"
+          },
+          "output": {
+            "inherit_levels": [
+              "debug"
+            ],
+            "filter": false
+          }
+        },
+        "operations": [
+          {
+            "operation": "chat_completion",
+            "delivery": "buffered",
+            "model_modes": [
+              "chat"
+            ],
+            "transport": {
+              "kind": "http_json",
+              "method": "POST",
+              "path": "/chat",
+              "port": "http",
+              "timeout": 5,
+              "response_codec": "json.v1"
+            },
+            "request": {
+              "base": "identity"
+            }
+          }
+        ]
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "catalog_id": "sha256:87f5d447f7c1ee81883ae6131a145135f8b6adacf72cbe5abb3899c25b51cb69",
+        "definition_hash": "sha256:6e7c9758d515a21a9e8f97dab35affadaeb976588dae58f8ae844968fda3c14d",
+        "definition_id": "example",
+        "diagnostics": [],
+        "recipe": "example",
+        "valid": true,
+        "validation": "server"
+      }
+    }
+  },
   "5edf6f16fedcea8f06a94123596c9ced6f9d8089ee82d526eb70024df6a63895": {
     "route": "lemonade.classify",
     "format": "Json",

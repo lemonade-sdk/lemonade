@@ -1,5 +1,6 @@
 import type { ModelInfo } from './api';
 import { capabilityFromModelInfo, type ModelCapability } from './modelCapabilities';
+import { resolveBackendOptionName } from './features/backends/catalogState';
 import { storageKey } from './storage';
 
 export type RecipeName = string;
@@ -104,7 +105,8 @@ function recipeOptionFieldFromSystemInfo(
   predicate: (option: Record<string, unknown>) => boolean,
 ): keyof RecipeOptions | undefined {
   const recipes = (systemInfo?.recipes ?? null) as Record<string, { options?: unknown }> | null;
-  const options = recipes?.[String(recipe || '').trim().toLowerCase()]?.options;
+  const key = String(recipe || '').trim().toLowerCase();
+  const options = recipes && Object.prototype.hasOwnProperty.call(recipes, key) ? recipes[key]?.options : undefined;
   if (!Array.isArray(options)) return undefined;
   for (const entry of options) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
@@ -727,7 +729,8 @@ function normalizeBackendValue(value: unknown): string | undefined {
 
 function recipeDefaultBackend(systemInfo: Record<string, unknown> | null | undefined, recipe: string): string | undefined {
   const recipes = (systemInfo?.recipes ?? null) as Record<string, { default_backend?: unknown }> | null;
-  return normalizeBackendValue(recipes?.[recipe]?.default_backend);
+  return normalizeBackendValue(
+    recipes && Object.prototype.hasOwnProperty.call(recipes, recipe) ? recipes[recipe]?.default_backend : undefined);
 }
 
 function backendFieldFromSystemInfo(
@@ -739,12 +742,12 @@ function backendFieldFromSystemInfo(
     recipe,
     option => option.type_name === 'BACKEND',
   );
-  if (explicit) return explicit;
   const recipes = (systemInfo?.recipes ?? null) as Record<string, { selectable_backend?: unknown }> | null;
   const normalizedRecipe = String(recipe || '').trim().toLowerCase();
-  return recipes?.[normalizedRecipe]?.selectable_backend === true
-    ? `${normalizedRecipe}_backend` as keyof RecipeOptions
-    : undefined;
+  const selectable = Boolean(recipes && Object.prototype.hasOwnProperty.call(recipes, normalizedRecipe)
+    && recipes[normalizedRecipe]?.selectable_backend === true);
+  const name = resolveBackendOptionName(normalizedRecipe, explicit, selectable);
+  return name ? name as keyof RecipeOptions : undefined;
 }
 
 function concreteBackendForRecipe(

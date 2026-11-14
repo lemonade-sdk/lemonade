@@ -1,0 +1,312 @@
+{
+  "engine": "halogen",
+  "source_quotations": [
+    {
+      "commit": "cbbeeb5270b19e06cfd9c150233655776392bd38",
+      "path": "src/cpp/server/backends/halogen/halogen_server.cpp",
+      "first_line": 138,
+      "last_line": 202,
+      "text": "void HalogenServer::load(const std::string& model_name, const ModelInfo& model_info,\n                         const RecipeOptions& options, bool do_not_upgrade) {\n    (void)do_not_upgrade;  // install_backend() is a no-op once the pinned image is present\n    backend_manager_->install_backend(halogen::descriptor.recipe, kBackend);\n\n    const std::string checkpoint = model_info.resolved_path(\"main\");\n    if (checkpoint.empty() || !fs::exists(checkpoint)) {\n        throw std::runtime_error(\"halogen: HGN checkpoint not found for model '\" + model_name +\n                                 \"' (checkpoint: \" + model_info.checkpoint() + \")\");\n    }\n\n    // The lookup table, the tokenizer and the optional vision tower sit beside\n    // the checkpoint in the same snapshot.\n    const fs::path bundle = fs::path(checkpoint).parent_path();\n    const std::string table_name = model_info.extra<std::string>(\"halogen_lookup_table\", \"\");\n    if (table_name.empty()) {\n        throw std::runtime_error(\"halogen: model '\" + model_name +\n                                 \"' names no halogen_lookup_table\");\n    }\n    const std::string lookup_table = (bundle / table_name).string();\n    const std::string tokenizer = (bundle / kTokenizerDir).string();\n    const std::string vision_name = model_info.extra<std::string>(\"halogen_vision_tower\", \"\");\n    const std::string vision = vision_name.empty() ? \"\" : (bundle / vision_name).string();\n    for (const auto& required : {lookup_table, tokenizer, vision}) {\n        if (!required.empty() && !fs::exists(required)) {\n            throw std::runtime_error(\"halogen: the bundle for '\" + model_name + \"' is missing \" +\n                                     required);\n        }\n    }\n\n    const json ctx_option = options.get_option(\"ctx_size\");\n    const int ctx_size = ctx_option.is_number_integer() && ctx_option.get<int>() > 0\n                             ? ctx_option.get<int>()\n                             : kNativeContext;\n\n    device_type_ = DEVICE_GPU;\n    port_ = choose_port();\n\n    ServerCommand command;\n    command.model_files = {checkpoint, lookup_table, tokenizer, vision};\n    command.env = {\n        {\"HALOGEN_CHECKPOINT\", checkpoint},\n        {\"HALOGEN_NGRAM_TABLE\", lookup_table},\n        {\"HALOGEN_TOKENIZER\", tokenizer},\n    };\n    if (!vision.empty()) {\n        command.env.push_back({\"HALOGEN_VISION_TOWER\", vision});\n    }\n    command.env.insert(command.env.end(), {\n        {\"HALOGEN_API_PORT\", std::to_string(port_)},\n        {\"HALOGEN_CTX\", std::to_string(ctx_size)},\n    });\n    command.port = port_;\n    command.ready_endpoint = \"/health\";\n\n    LOG(INFO, \"Halogen\") << \"Starting \" << model_name << \" on port \" << port_ << std::endl;\n    const bool inherit_output = (log_level_ == \"info\") || is_debug();\n    start_server(std::make_unique<ContainerProcess>(\n                     ProcessOutput{inherit_output, true}, halogen::descriptor.recipe, kBackend,\n                     model_name, *halogen::descriptor.container_for(kBackend),\n                     BackendUtils::get_backend_image(halogen::descriptor.recipe, kBackend)),\n                 command,\n                 (std::max)(kStartupTimeoutSeconds, utils::HttpClient::get_default_timeout()));\n}\n\n"
+    },
+    {
+      "commit": "cbbeeb5270b19e06cfd9c150233655776392bd38",
+      "path": "src/cpp/server/wrapped_server.cpp",
+      "first_line": 806,
+      "last_line": 907,
+      "text": "void WrappedServer::forward_streaming_request(const std::string& endpoint,\n                                              const std::string& request_body,\n                                              httplib::DataSink& sink,\n                                              bool sse,\n                                              long timeout_seconds,\n                                              TelemetryCallback telemetry_callback) {\n    if (!is_backend_alive()) {\n        if (was_watchdog_triggered() || has_backend_process_exited()) {\n            if (!was_watchdog_triggered()) {\n                request_backend_reset_from_watchdog(\"backend process exited before streaming request\");\n            }\n            throw BackendStreamRetryableReset(get_watchdog_reset_reason());\n        }\n\n        json error = ErrorResponse::from_exception(ModelNotLoadedException(server_name_));\n        std::string error_msg = \"data: \" + error.dump() + \"\\n\\n\";\n        sink.write(error_msg.c_str(), error_msg.size());\n        sink.done();\n        return;\n    }\n\n    BackendRequestScope request_scope(*this, BackendRequestKind::Streaming);\n\n    std::string url = get_base_url() + endpoint;\n    bool streamed_any_bytes = false;\n    auto mark_stream_progress = [this, &streamed_any_bytes]() {\n        if (!streamed_any_bytes) {\n            set_streaming(true);\n        }\n        streamed_any_bytes = true;\n        note_backend_activity();\n    };\n\n    try {\n        if (sse) {\n            // Use StreamingProxy to forward the SSE stream with telemetry callback\n            // Use INFERENCE_TIMEOUT_SECONDS (0 = infinite) as chat completions can take a long time\n            StreamingProxy::forward_sse_stream(url, request_body, sink,\n                [telemetry_callback](const StreamingProxy::TelemetryData& telemetry) {\n                    if (telemetry_callback) {\n                        telemetry_callback(telemetry);\n                    }\n                },\n                timeout_seconds,\n                mark_stream_progress\n            );\n        } else {\n            StreamingProxy::forward_byte_stream(url, request_body, sink, timeout_seconds,\n                mark_stream_progress\n            );\n        }\n    } catch (const std::exception& e) {\n        // Log the error but don't crash the server\n        LOG(ERROR, \"WrappedServer\") << \"Streaming request failed: \" << e.what() << std::endl;\n\n        bool will_retry = (was_watchdog_triggered() || has_backend_process_exited() ||\n                           is_backend_connection_failure(e.what()) ||\n                           is_gpu_hang_or_compute_error(e.what())) && !streamed_any_bytes;\n\n        if (telemetry_callback && !will_retry) {\n            StreamingProxy::TelemetryData error_telemetry;\n            error_telemetry.error_message = e.what();\n            telemetry_callback(error_telemetry);\n        }\n\n        // Try to send error to client if possible\n        try {\n            json error;\n            if (was_watchdog_triggered() || has_backend_process_exited() ||\n                is_backend_connection_failure(e.what()) ||\n                is_gpu_hang_or_compute_error(e.what())) {\n                if (!was_watchdog_triggered()) {\n                    const std::string reset_reason = has_backend_process_exited()\n                        ? \"backend process exited during streaming request\"\n                        : (is_gpu_hang_or_compute_error(e.what())\n                            ? \"gpu hang or compute error during streaming request\"\n                            : \"backend connection failed during streaming request: \" + std::string(e.what()));\n                    request_backend_reset_from_watchdog(reset_reason);\n                }\n\n                // If the backend died before the client received any stream bytes,\n                // let the router reload and replay the streaming request once. Once\n                // bytes have reached the client, replaying could duplicate tokens or\n                // corrupt the SSE protocol, so we only reload for the next request.\n                if (!streamed_any_bytes) {\n                    throw BackendStreamRetryableReset(get_watchdog_reset_reason());\n                }\n\n                error = create_watchdog_reset_response();\n            } else {\n                error = ErrorResponse::create(std::string(e.what()), \"streaming_error\");\n            }\n            std::string error_msg = \"data: \" + error.dump() + \"\\n\\n\";\n            sink.write(error_msg.c_str(), error_msg.size());\n            sink.done();\n        } catch (const BackendStreamRetryableReset&) {\n            throw;\n        } catch (...) {\n            // Sink might be closed, ignore\n        }\n    }\n}\n"
+    }
+  ],
+  "definition": {
+    "schema_version": 2,
+    "id": "c7b-halogen",
+    "recipe": "gufo",
+    "merge": {
+      "kind": "container",
+      "metadata": {
+        "display_name": "Gufo",
+        "server_name": "gufo",
+        "binary": "gufo",
+        "support": [
+          {
+            "id": "rocm",
+            "backend": "rocm",
+            "tier": "experimental",
+            "format": "container",
+            "supported_os": [
+              "linux"
+            ],
+            "devices": {
+              "gpu": [
+                "gfx1151"
+              ]
+            },
+            "device_summary": "Strix Halo"
+          }
+        ],
+        "supported_modes": [
+          "chat"
+        ],
+        "slot_policy": "exclusive_host",
+        "uses_ctx_size": true,
+        "log_category": "Halogen"
+      },
+      "containers": {
+        "rocm": {
+          "repository": "ghcr.io/peonist-ai/gufo",
+          "pin": {
+            "source": "backend_versions",
+            "recipe": "gufo",
+            "backend": "rocm"
+          },
+          "devices": [
+            "/dev/dri",
+            "/dev/kfd"
+          ],
+          "cap_add": [],
+          "policy": "lemonade-isolated-v1",
+          "network": "private_internal",
+          "teardown": "stop_remove_reap",
+          "stop_grace_seconds": 10
+        }
+      },
+      "install": {
+        "strategy": "oci"
+      },
+      "artifacts": {
+        "main": {
+          "role": "main",
+          "strategy": "resolved_path",
+          "missing_error": "Missing main"
+        },
+        "table": {
+          "role": "halogen_lookup_table",
+          "strategy": "resolved_path",
+          "missing_error": "Missing halogen_lookup_table"
+        },
+        "tokenizer": {
+          "role": "halogen_tokenizer",
+          "strategy": "resolved_path",
+          "missing_error": "Missing halogen_tokenizer"
+        },
+        "vision": {
+          "role": "halogen_vision_tower",
+          "strategy": "resolved_path",
+          "missing_error": "Missing halogen_vision_tower",
+          "required_when": false
+        }
+      },
+      "launch": {
+        "prepare_order": [
+          "backend",
+          "artifacts",
+          "program",
+          "ports"
+        ],
+        "backend": {
+          "fixed": "rocm"
+        },
+        "execution": {
+          "cases": [
+            {
+              "id": "rocm-container",
+              "backends": [
+                "rocm"
+              ],
+              "kind": "container",
+              "container": "rocm",
+              "program": {
+                "source": "image_entrypoint"
+              }
+            }
+          ]
+        },
+        "mounts": [
+          {
+            "id": "main",
+            "artifact": "main",
+            "expand": "file",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered"
+          },
+          {
+            "id": "table",
+            "artifact": "table",
+            "expand": "file",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered"
+          },
+          {
+            "id": "tokenizer",
+            "artifact": "tokenizer",
+            "expand": "directory_files",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered"
+          },
+          {
+            "id": "vision",
+            "artifact": "vision",
+            "expand": "file",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered",
+            "when": {
+              "not": {
+                "eq": [
+                  {
+                    "ref": "/artifacts/vision"
+                  },
+                  ""
+                ]
+              }
+            }
+          }
+        ],
+        "address": {
+          "source": "process_start"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "reject_zero": true,
+            "error": "No HTTP port available"
+          }
+        ],
+        "argv": [],
+        "environment": {
+          "preset": "inherit",
+          "set": [
+            {
+              "name": "HALOGEN_CHECKPOINT",
+              "value": {
+                "ref": "/artifacts/main"
+              }
+            },
+            {
+              "name": "HALOGEN_NGRAM_TABLE",
+              "value": {
+                "ref": "/artifacts/table"
+              }
+            },
+            {
+              "name": "HALOGEN_TOKENIZER",
+              "value": {
+                "ref": "/artifacts/tokenizer"
+              }
+            },
+            {
+              "name": "HALOGEN_VISION_TOWER",
+              "value": {
+                "ref": "/artifacts/vision"
+              },
+              "when": {
+                "not": {
+                  "eq": [
+                    {
+                      "ref": "/artifacts/vision"
+                    },
+                    ""
+                  ]
+                }
+              }
+            },
+            {
+              "name": "HALOGEN_API_PORT",
+              "value": {
+                "string": {
+                  "ref": "/launch/ports/http"
+                }
+              }
+            },
+            {
+              "name": "HALOGEN_CTX",
+              "value": {
+                "string": {
+                  "ref": "/options/ctx_size"
+                }
+              }
+            }
+          ]
+        },
+        "working_directory": "inherit",
+        "output": {
+          "inherit_levels": [
+            "info",
+            "debug",
+            "trace"
+          ],
+          "filter": false
+        },
+        "readiness": {
+          "port": "http",
+          "path": "/health",
+          "timeout": {
+            "source": "global",
+            "floor_seconds": 1800
+          }
+        },
+        "watchdog": {
+          "policy": "standard",
+          "port": "http",
+          "path": "/health"
+        },
+        "direct_stream_policy": "builtin_container_legacy",
+        "diagnostics": [
+          {
+            "id": "starting",
+            "phase": "starting",
+            "level": "info",
+            "category": "Halogen",
+            "format": "Starting {model:string} on port {port:integer}",
+            "when": "always"
+          }
+        ]
+      },
+      "operations": [
+        {
+          "id": "chat.buffered",
+          "operation": "chat_completion",
+          "delivery": "buffered",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "chat.streaming",
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global"
+          },
+          "request": {
+            "base": "identity"
+          }
+        }
+      ],
+      "model_contract": "halogen_hgn_v1"
+    }
+  },
+  "rewrite_domain": "canonical_path",
+  "expected": [
+    {
+      "level": "info",
+      "category": "Halogen",
+      "line": "Starting fixture on port @PORT@"
+    }
+  ]
+}

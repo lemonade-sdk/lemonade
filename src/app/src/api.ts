@@ -24,6 +24,16 @@ const DEFAULT_BASE_URL = process.env.LEMONADE_BASE_URL || detectDefaultBaseUrl()
 const LS_BASE_URL = 'lemonade_base_url';
 const LS_API_KEY = 'lemonade_api_key';
 
+export interface ConnectionSnapshot {
+  readonly apiUrl: string;
+  readonly authenticationGeneration: number;
+  readonly generation: number;
+}
+
+export class ObsoleteConnectionError extends Error {
+  constructor() { super('Server connection changed; reopen the model options.'); }
+}
+
 export interface LemonadeRequestError extends Error {
   status?: number;
   url?: string;
@@ -829,6 +839,11 @@ class LemonadeAPI {
   private _apiKeyPersisted = false;
   private _hostBaseUrl: string | null = null;
   private _connectionSettingsPromise: Promise<void> | null = null;
+  private _connectionGeneration = 0;
+  private _authenticationGeneration = 0;
+  private _connectionApiUrl: string | null = null;
+  private _connectionCredential = '';
+  private _connectionListeners = new Set<(snapshot: ConnectionSnapshot) => void>();
   public readonly clientSessionId: string = createSecureClientSessionId();
   public sessionHeadersEnabled = false;
   public onSessionHeadersFailed?: () => void;
@@ -865,6 +880,60 @@ class LemonadeAPI {
     const normalized = normalizeBaseUrl(url);
     this._hostBaseUrl = normalized;
     safeSetLocalStorage(LS_BASE_URL, normalized);
+    this._syncConnection();
+  }
+
+  private _syncConnection(): void {
+    const apiUrl = `${this.baseUrl}/api/v1`;
+    const credential = this._sessionApiKey;
+    const first = this._connectionApiUrl === null;
+    const urlChanged = apiUrl !== this._connectionApiUrl;
+    const credentialChanged = credential !== this._connectionCredential;
+    this._connectionApiUrl = apiUrl;
+    this._connectionCredential = credential;
+    if (first || (!urlChanged && !credentialChanged)) return;
+    if (credentialChanged) this._authenticationGeneration += 1;
+    this._connectionGeneration += 1;
+    this._systemInfoGeneration++;
+    this._systemInfoInFlight = null;
+    this._systemInfoData = null;
+    this._systemInfoFetchedAt = 0;
+    this._modelsRequestInFlight.clear();
+    const snapshot = this.connectionSnapshot();
+    this._connectionListeners.forEach(listener => { try { listener(snapshot); } catch {} });
+  }
+
+  connectionSnapshot(): ConnectionSnapshot {
+    this._syncConnection();
+    return Object.freeze({
+      apiUrl: this._connectionApiUrl as string,
+      authenticationGeneration: this._authenticationGeneration,
+      generation: this._connectionGeneration,
+    });
+  }
+
+  assertCurrentConnection(snapshot: ConnectionSnapshot): void {
+    if (!this.isCurrentConnection(snapshot)) throw new ObsoleteConnectionError();
+  }
+
+  isCurrentConnection(snapshot: ConnectionSnapshot): boolean {
+    const current = this.connectionSnapshot();
+    return snapshot.generation === current.generation && snapshot.apiUrl === current.apiUrl
+      && snapshot.authenticationGeneration === current.authenticationGeneration;
+  }
+
+  onConnectionChange(listener: (snapshot: ConnectionSnapshot) => void): () => void {
+    this._connectionListeners.add(listener);
+    return () => { this._connectionListeners.delete(listener); };
+  }
+
+  async fetchForConnection(snapshot: ConnectionSnapshot, endpoint: string, options?: RequestInit): Promise<Response> {
+    this.assertCurrentConnection(snapshot);
+    const headers = new Headers(options?.headers);
+    if (this.apiKey) headers.set('Authorization', `Bearer ${this.apiKey}`);
+    const response = await fetch(`${snapshot.apiUrl}/${endpoint.replace(/^\/+/, '')}`, { ...options, headers });
+    this.assertCurrentConnection(snapshot);
+    return response;
   }
 
   get apiKey(): string {
@@ -1250,8 +1319,40 @@ class LemonadeAPI {
   }
 
   private async _json<T = unknown>(path: string, opts?: LemonadeRequestInit): Promise<T> {
+    const connection = this.connectionSnapshot();
     const resp = await this._fetch(path, opts);
-    return resp.json() as Promise<T>;
+    const data = await resp.json() as T;
+    this.assertCurrentConnection(connection);
+    return data;
+  }
+
+  private async _blob(path: string, opts?: LemonadeRequestInit): Promise<Blob> {
+    const connection = this.connectionSnapshot();
+    const resp = await this._fetch(path, opts);
+    const blob = await resp.blob();
+    this.assertCurrentConnection(connection);
+    return blob;
+  }
+
+  private async _readForConnection(
+    connection: ConnectionSnapshot,
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+  ): Promise<ReadableStreamReadResult<Uint8Array>> {
+    const chunk = await reader.read();
+    if (!this.isCurrentConnection(connection)) {
+      await reader.cancel().catch(() => undefined);
+      throw new ObsoleteConnectionError();
+    }
+    return chunk;
+  }
+
+  private _bindSocketToConnection(socket: WebSocket, connection: ConnectionSnapshot): () => boolean {
+    const release = this.onConnectionChange(() => {
+      release();
+      socket.close(1000, 'OK');
+    });
+    socket.addEventListener('close', release);
+    return () => this.isCurrentConnection(connection);
   }
 
   private _buildWebSocketUrl(path: string, port?: number, query?: URLSearchParams): string {
@@ -1271,12 +1372,15 @@ class LemonadeAPI {
     wsUrl: string,
     model: string,
     callbacks: RealtimeTranscriptionCallbacks,
+    connection: ConnectionSnapshot,
     timeoutMs = 5000,
   ): Promise<RealtimeTranscriptionHandle> {
     return new Promise((resolve, reject) => {
+      this.assertCurrentConnection(connection);
       let opened = false;
       let settled = false;
       const socket = new WebSocket(wsUrl);
+      const current = this._bindSocketToConnection(socket, connection);
       const send = (msg: object) => {
         if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
       };
@@ -1306,6 +1410,7 @@ class LemonadeAPI {
       });
 
       socket.addEventListener('message', event => {
+        if (!current()) return;
         try {
           const msg = JSON.parse(event.data);
           switch (msg.type) {
@@ -1361,11 +1466,19 @@ class LemonadeAPI {
     });
   }
 
-  private _openLogSocket(wsUrl: string, callbacks: LogStreamCallbacks, afterSeq?: number | null, suppressPreOpenErrors = false): Promise<WebSocket> {
+  private _openLogSocket(
+    wsUrl: string,
+    callbacks: LogStreamCallbacks,
+    connection: ConnectionSnapshot,
+    afterSeq?: number | null,
+    suppressPreOpenErrors = false,
+  ): Promise<WebSocket> {
     return new Promise((resolve, reject) => {
+      this.assertCurrentConnection(connection);
       let opened = false;
       let settled = false;
       const socket = new WebSocket(wsUrl);
+      const current = this._bindSocketToConnection(socket, connection);
       const timer = window.setTimeout(() => {
         if (settled) return;
         settled = true;
@@ -1388,6 +1501,7 @@ class LemonadeAPI {
       });
 
       socket.addEventListener('message', (event) => {
+        if (!current()) return;
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'logs.snapshot') {
@@ -1425,6 +1539,7 @@ class LemonadeAPI {
   // ── Endpoints ───────────────────────────────────────────────────
 
   async health(): Promise<HealthData> {
+    this._syncConnection();
     const data = normalizeHealth(await this._json<unknown>('/api/v1/health'));
     const signature = JSON.stringify(data);
     if (!this._healthData || signature !== this._healthDataSignature) {
@@ -1513,13 +1628,56 @@ class LemonadeAPI {
     return this._json<ModelOptions>(this._modelOptionsPath(modelName));
   }
 
-  async saveModelOptions(modelName: string, changes: Record<string, unknown>): Promise<ModelOptions> {
+  async saveModelOptions(
+    modelName: string,
+    changes: Record<string, unknown>,
+    options: { dryRun?: boolean } = {},
+  ): Promise<ModelOptions> {
+    const connection = this.connectionSnapshot();
     const result = await this._json<ModelOptions>(this._modelOptionsPath(modelName), {
       method: 'POST',
-      body: changes,
+      body: options.dryRun ? { ...changes, dry_run: true } : changes,
     });
-    this._notifyModelsChanged();
+    this.assertCurrentConnection(connection);
+    if (!options.dryRun) this._notifyModelsChanged();
     return result;
+  }
+
+  async validateModelOptions(modelName: string, changes: Record<string, unknown>): Promise<ModelOptions> {
+    return this.saveModelOptions(modelName, changes, { dryRun: true });
+  }
+
+  async loadModelForConnection(
+    connection: ConnectionSnapshot,
+    modelName: string,
+    body: Record<string, unknown>,
+  ): Promise<void> {
+    this.assertCurrentConnection(connection);
+    let stopDownloadWatch: (() => void) | undefined;
+    try {
+      const { downloadStore } = await import(
+        /* webpackChunkName: "download-store" */ './features/downloadManager/downloadStore'
+      );
+      stopDownloadWatch = downloadStore.watchForModelLoad();
+    } catch (error) {
+      console.warn('Could not watch model load progress:', error);
+    }
+    try {
+      const response = await this.fetchForConnection(connection, '/load', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, model_name: modelName, save_options: false }),
+      });
+      if (!response.ok) {
+        const message = serverErrorMessage(await response.text().catch(() => ''));
+        throw new Error(message
+          ? `The selected server rejected the model load: ${message}`
+          : 'The selected server rejected the model load.');
+      }
+      this._notifyModelsChanged();
+    } finally {
+      stopDownloadWatch?.();
+    }
   }
 
   async resetModelOptions(modelName: string): Promise<ModelOptions> {
@@ -1540,10 +1698,25 @@ class LemonadeAPI {
       // never write a possibly stale cached definition back to /models/register here.
       return { model_name: modelName, status: 'ready', mode: 'router', virtual: true };
     }
+    const { catalogRecipe } = await import(
+      /* webpackChunkName: "model-configuration" */ './features/backends/catalogState'
+    );
+    const catalogRow = catalogRecipe(cachedRecipe);
+    if (catalogRow?.source === 'external') {
+      const { loadThroughCatalog } = await import(
+        /* webpackChunkName: "model-configuration" */ './features/backends/catalogLoad'
+      );
+      if (await loadThroughCatalog(modelName, cachedModelInfo, recipeOptions)) {
+        return { model_name: modelName, status: 'success' };
+      }
+    }
     const { recipeOptionsForModel } = await import(
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
     const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
+    const { recipeBackendOptionName } = await import(
+      /* webpackChunkName: "model-configuration" */ './features/backends/recipeMetadata'
+    );
     // A load carries whatever the panel currently shows, saved or not, so it must
     // not write those options back as the model's stored defaults.
     const body: Record<string, unknown> = {
@@ -1552,6 +1725,12 @@ class LemonadeAPI {
       ...recipeOptions,
       save_options: false,
     };
+    if (catalogRow?.source === 'builtin') {
+      const { prepareBuiltinLoad } = await import(
+        /* webpackChunkName: "model-configuration" */ './features/backends/catalogLoad'
+      );
+      await prepareBuiltinLoad(modelName, cachedModelInfo, body);
+    }
     let stopDownloadWatch: (() => void) | undefined;
     try {
       const { downloadStore } = await import(
@@ -1567,16 +1746,22 @@ class LemonadeAPI {
       return result;
     } finally {
       stopDownloadWatch?.();
-      this._refreshBackendStatusAfterLoad(String(body.recipe || cachedRecipe).trim().toLowerCase(), body);
+      const loadedRecipe = String(body.recipe || cachedRecipe).trim().toLowerCase();
+      this._refreshBackendStatusAfterLoad(
+        loadedRecipe, body, recipeBackendOptionName(this._systemInfoData, loadedRecipe));
     }
   }
 
-  private _refreshBackendStatusAfterLoad(recipe: string, options: Record<string, unknown>): void {
+  private _refreshBackendStatusAfterLoad(
+    recipe: string,
+    options: Record<string, unknown>,
+    backendOption: string | null,
+  ): void {
     const recipes = (this._systemInfoData as any)?.recipes;
     if (!isObject(recipes)) return;
-    const recipeInfo = recipes[recipe];
+    const recipeInfo = Object.prototype.hasOwnProperty.call(recipes, recipe) ? recipes[recipe] : undefined;
     if (!isObject(recipeInfo) || !isObject(recipeInfo.backends)) return;
-    const requested = String(options[`${recipe}_backend`] || options.backend || '').trim().toLowerCase();
+    const requested = String((backendOption ? options[backendOption] : '') || options.backend || '').trim().toLowerCase();
     const selected = requested && requested !== 'auto'
       ? requested : String(recipeInfo.default_backend || '').trim().toLowerCase();
     const backendInfo = recipeInfo.backends[selected];
@@ -1659,6 +1844,7 @@ class LemonadeAPI {
       && Date.now() - this._systemInfoFetchedAt < options.maxAgeMs) {
       return this._systemInfoData;
     }
+    this._syncConnection();
     const generation = this._systemInfoGeneration;
     if (options.afterPending && this._systemInfoInFlight) {
       await this._systemInfoInFlight.catch(() => undefined);
@@ -1861,7 +2047,7 @@ class LemonadeAPI {
     prompt: string,
     opts: Record<string, unknown> = {},
   ): Promise<{ url: string; blob: Blob; filename: string }> {
-    const resp = await this._fetch('/api/v1/audio/generations', {
+    const blob = await this._blob('/api/v1/audio/generations', {
       method: 'POST',
       body: {
         ...opts,
@@ -1871,7 +2057,6 @@ class LemonadeAPI {
       },
       includeSessionHeaders: true,
     });
-    const blob = await resp.blob();
     if (blob.size === 0) throw new Error('Audio generation endpoint returned an empty file.');
     return { blob, url: URL.createObjectURL(blob), filename: `${model}.wav` };
   }
@@ -1881,7 +2066,7 @@ class LemonadeAPI {
     image: string,
     opts: Record<string, unknown> = {},
   ): Promise<{ url: string; blob: Blob; filename: string }> {
-    const resp = await this._fetch('/api/v1/3d/generations', {
+    const blob = await this._blob('/api/v1/3d/generations', {
       method: 'POST',
       body: {
         ...opts,
@@ -1891,7 +2076,6 @@ class LemonadeAPI {
       },
       includeSessionHeaders: true,
     });
-    const blob = await resp.blob();
     if (blob.size === 0) throw new Error('3D generation endpoint returned an empty model.');
     return { blob, url: URL.createObjectURL(blob), filename: `${model}.glb` };
   }
@@ -1911,12 +2095,11 @@ class LemonadeAPI {
   async textToSpeech(model: string, input: string, voice = 'alloy', opts: Record<string, unknown> = {}): Promise<{ url: string; blob: Blob }> {
     const body: Record<string, unknown> = { ...opts, model, input };
     if (voice.trim()) body.voice = voice.trim();
-    const resp = await this._fetch('/api/v1/audio/speech', {
+    const blob = await this._blob('/api/v1/audio/speech', {
       method: 'POST',
       body,
       includeSessionHeaders: true,
     });
-    const blob = await resp.blob();
     if (blob.size === 0) throw new Error('Speech endpoint returned an empty audio file.');
     return { blob, url: URL.createObjectURL(blob) };
   }
@@ -2049,8 +2232,13 @@ class LemonadeAPI {
   connectLogStream(callbacks: LogStreamCallbacks, afterSeq?: number | null): LogStreamHandle {
     let closed = false;
     let socket: WebSocket | null = null;
+    const connection = this.connectionSnapshot();
 
     const tryFallback = () => {
+      if (!this.isCurrentConnection(connection)) {
+        if (!closed) callbacks.onDisconnected?.();
+        return;
+      }
       // Fall back to the dedicated websocket_port from /health (legacy port ~9000).
       // This handles stale-binary scenarios where the main port doesn't yet support
       // WebSocket upgrades. /logs/stream is served on both the main port and this port.
@@ -2060,7 +2248,7 @@ class LemonadeAPI {
         return;
       }
       const fallbackUrl = this._buildWebSocketUrl('/logs/stream', fallbackPort);
-      this._openLogSocket(fallbackUrl, callbacks, afterSeq)
+      this._openLogSocket(fallbackUrl, callbacks, connection, afterSeq)
         .then(openedSocket => {
           if (closed) { openedSocket.close(1000, 'OK'); return; }
           socket = openedSocket;
@@ -2071,7 +2259,7 @@ class LemonadeAPI {
     };
 
     const wsUrl = this._buildWebSocketUrl('/logs/stream');
-    this._openLogSocket(wsUrl, callbacks, afterSeq, true)
+    this._openLogSocket(wsUrl, callbacks, connection, afterSeq, true)
       .then(openedSocket => {
         if (closed) {
           openedSocket.close(1000, 'OK');
@@ -2093,14 +2281,17 @@ class LemonadeAPI {
 
   async connectRealtimeTranscription(model: string, callbacks: RealtimeTranscriptionCallbacks = {}): Promise<RealtimeTranscriptionHandle> {
     const query = new URLSearchParams({ model });
+    const connection = this.connectionSnapshot();
     const mainUrl = this._buildWebSocketUrl('/v1/realtime', undefined, query);
     try {
-      return await this._openRealtimeSocket(mainUrl, model, callbacks);
+      return await this._openRealtimeSocket(mainUrl, model, callbacks, connection);
     } catch {
+      this.assertCurrentConnection(connection);
       const health = this._healthData || await this.health();
+      this.assertCurrentConnection(connection);
       if (!health.websocket_port) throw new Error('Server did not advertise a realtime WebSocket port.');
       const legacyUrl = this._buildWebSocketUrl('/realtime', health.websocket_port, query);
-      return this._openRealtimeSocket(legacyUrl, model, callbacks);
+      return this._openRealtimeSocket(legacyUrl, model, callbacks, connection);
     }
   }
 
@@ -2115,6 +2306,7 @@ class LemonadeAPI {
       callbacks?.onComplete?.();
       this._notifyModelsChanged();
     };
+    const connection = this.connectionSnapshot();
 
     try {
       const resp = await this._fetch('/api/v1/install', {
@@ -2122,10 +2314,12 @@ class LemonadeAPI {
         body: { recipe, backend, stream: true, subscribe: false },
         cache: 'no-store',
       });
+      this.assertCurrentConnection(connection);
 
       const contentType = resp.headers.get('content-type') || '';
       if (!contentType.includes('text/event-stream')) {
         const data = await resp.json().catch(() => ({} as Record<string, unknown>)) as Record<string, unknown>;
+        this.assertCurrentConnection(connection);
         const error = downloadPayloadErrorMessage(data);
         if (error) throw new Error(error);
         callbacks?.onProgress?.(data);
@@ -2142,7 +2336,7 @@ class LemonadeAPI {
         let sawTerminal = false;
 
         while (true) {
-          const { done, value } = await reader.read();
+          const { done, value } = await this._readForConnection(connection, reader);
           if (done) break;
           buf += dec.decode(value, { stream: true });
           const lines = buf.split('\n');
@@ -2185,6 +2379,7 @@ class LemonadeAPI {
       const downloadName = `${recipe}:${backend}`;
       const match = (await this.downloads().catch(() => []))
         .find(download => String(download.id || '') === `backend:${downloadName}` || String(download.model_name || download.name || '') === downloadName);
+      this.assertCurrentConnection(connection);
       const matchError = downloadPayloadErrorMessage(match);
       if (matchError) throw new Error(matchError);
       if (match && downloadPayloadCompleted(match) && match.running !== true) {
@@ -2195,7 +2390,7 @@ class LemonadeAPI {
       completeBackendInstall();
     } catch (err) {
       callbacks?.onError?.(err as Error);
-      this._notifyModelsChanged();
+      if (!(err instanceof ObsoleteConnectionError)) this._notifyModelsChanged();
     }
   }
 
@@ -2319,6 +2514,7 @@ class LemonadeAPI {
     signal: AbortSignal | undefined,
     onProgress: PullCallbacks['onProgress'] | undefined,
     initialJobSeen = false,
+    connection: ConnectionSnapshot = this.connectionSnapshot(),
   ): Promise<DownloadProgressEvent | null> {
     const started = performance.now();
     let sawServerJob = initialJobSeen;
@@ -2327,11 +2523,13 @@ class LemonadeAPI {
     const snapshotErrorTimeoutMs = 300_000;
 
     while (!signal?.aborted) {
+      this.assertCurrentConnection(connection);
       let downloads: DownloadProgressEvent[] = [];
       try {
         downloads = await this.downloads();
         snapshotErrorsStartedAt = undefined;
       } catch (error) {
+        this.assertCurrentConnection(connection);
         const timestamp = Date.now();
         snapshotErrorsStartedAt ??= timestamp;
         if (timestamp - snapshotErrorsStartedAt >= snapshotErrorTimeoutMs) {
@@ -2437,6 +2635,7 @@ class LemonadeAPI {
 
   async pullModel(modelName: string, callbacks: PullCallbacks = {}, opts?: Record<string, unknown>): Promise<void> {
     const { onProgress, onComplete, onError, signal } = callbacks;
+    const connection = this.connectionSnapshot();
     try {
       const body: Record<string, unknown> = {
         ...(opts || {}),
@@ -2453,6 +2652,7 @@ class LemonadeAPI {
         signal,
         cache: 'no-store',
       });
+      this.assertCurrentConnection(connection);
 
       const contentType = resp.headers.get('content-type') || '';
       if (contentType.includes('text/event-stream')) {
@@ -2470,7 +2670,7 @@ class LemonadeAPI {
               await reader.cancel();
               return;
             }
-            const { done, value } = await reader.read();
+            const { done, value } = await this._readForConnection(connection, reader);
             if (done) break;
             buf += dec.decode(value, { stream: true });
             const lines = buf.split('\n');
@@ -2506,7 +2706,9 @@ class LemonadeAPI {
           signal,
           onProgress,
           terminalPayload != null,
+          connection,
         ).catch(async error => {
+          if (error instanceof ObsoleteConnectionError) throw error;
           if (terminalPayload && downloadPayloadCompleted(terminalPayload) && terminalPayload.running !== true) {
             return terminalPayload;
           }
@@ -2520,13 +2722,14 @@ class LemonadeAPI {
       }
 
       const startedSnapshot = await resp.json().catch(() => ({} as DownloadProgressEvent)) as DownloadProgressEvent;
+      this.assertCurrentConnection(connection);
       const initialError = downloadPayloadErrorMessage(startedSnapshot);
       if (initialError) throw new Error(initialError);
       onProgress?.(startedSnapshot);
 
       const terminal = downloadPayloadCompleted(startedSnapshot) && startedSnapshot.running !== true
         ? startedSnapshot
-        : await this._waitForModelDownloadTerminal(modelName, signal, onProgress, true);
+        : await this._waitForModelDownloadTerminal(modelName, signal, onProgress, true, connection);
 
       if (terminal) {
         const terminalError = downloadPayloadErrorMessage(terminal);
@@ -2613,12 +2816,14 @@ class LemonadeAPI {
       const body: Record<string, unknown> = { model, messages, stream: true, ...samplingForModel(model, requestModelInfo), ...(params || {}) };
       if (isRouterRequest && body.route_trace === undefined) body.route_trace = true;
       if (tools && tools.length > 0) body.tools = tools;
+      const connection = this.connectionSnapshot();
       const resp = await this._fetch('/api/v1/chat/completions', {
         method: 'POST',
         body,
         signal,
         includeSessionHeaders: true,
       });
+      this.assertCurrentConnection(connection);
 
       const reader = resp.body!.getReader();
       const dec = new TextDecoder();
@@ -2630,6 +2835,10 @@ class LemonadeAPI {
 
       while (true) {
         const { done, value } = await reader.read();
+        if (!this.isCurrentConnection(connection)) {
+          await reader.cancel().catch(() => undefined);
+          throw new ObsoleteConnectionError();
+        }
         if (done) break;
         buf += dec.decode(value, { stream: true });
         const lines = buf.split('\n');
@@ -2785,6 +2994,7 @@ class LemonadeAPI {
       await this.health();
       return true;
     } catch (err) {
+      if (err instanceof ObsoleteConnectionError) return false;
       this._lastConnectionError = friendlyErrorMessage(err);
       this._healthData = null;
       this._healthDataSignature = '';
@@ -2821,7 +3031,7 @@ class LemonadeAPI {
     this._refreshGenerationInFlight = generationAtStart;
     this._setModelStateRefreshing(true);
     const request = (async (): Promise<{ health: HealthData; models: ModelsData } | null> => {
-      try {
+      for (let attempt = 0; ; attempt += 1) try {
         const health = await this.health();
         let models: ModelsData;
         try {
@@ -2829,6 +3039,7 @@ class LemonadeAPI {
             ? this._modelsData
             : await this.models(true);
         } catch (err) {
+          if (err instanceof ObsoleteConnectionError) throw err;
           // Health is the connection source of truth. Some tests and lightweight
           // servers expose health/MCP before the model registry is available; do
           // not flip the whole app back to disconnected merely because /models
@@ -2844,6 +3055,9 @@ class LemonadeAPI {
         }
         return { health, models };
       } catch (err) {
+        // The connection changed under this attempt, so its answer belongs to
+        // the previous server; ask the current one instead of reporting a failure.
+        if (err instanceof ObsoleteConnectionError && attempt < 2) continue;
         this._lastConnectionError = friendlyErrorMessage(err);
         this._healthData = null;
         this._healthDataSignature = '';

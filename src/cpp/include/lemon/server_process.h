@@ -66,31 +66,5 @@ private:
     std::string working_dir_;
 };
 
-// A backend server that runs in a container from a pinned image, through a
-// `podman run` or `docker run` client that is a child of lemond. handle() is
-// that client: when lemond dies it gets SIGTERM and forwards it to the
-// container.
-class ContainerProcess : public ServerProcess {
-public:
-    // `image` is <image>@<digest>; `model` names the container.
-    ContainerProcess(ProcessOutput output, std::string recipe, std::string backend,
-                     std::string model, ContainerPolicy policy, std::string image);
-    ~ContainerProcess() override;
-
-    std::string start(const ServerCommand& command) override;
-    // Stops the container by name first: the client forwards SIGTERM into the
-    // container, but SIGKILL would end only the client. The client then exits
-    // on its own and is reaped quietly; the exit log is for a client that had
-    // already exited before stop().
-    void stop() override;
-
-private:
-    std::string recipe_;
-    std::string backend_;
-    std::string model_;
-    ContainerPolicy policy_;
-    std::string image_;
-    std::string name_;
-};
 
 }  // namespace lemon

@@ -15,4 +15,8 @@ extern const RouteError kMissingRecipe;
 // Returns false after writing kMissingRecipe when recipe is empty.
 bool require_local_recipe(const std::string& recipe, httplib::Response& res);
 
+extern const RouteError kInactiveBackend;
+
+bool require_active_backend(const std::string& recipe, const std::string& backend, httplib::Response& res);
+
 } // namespace lemon

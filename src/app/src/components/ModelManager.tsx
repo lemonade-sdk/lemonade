@@ -30,6 +30,12 @@ import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../fea
 import { useServerModelState } from '../features/models/modelState';
 import { findRegisteredRemoteModel } from '../features/models/registeredRemoteModel';
 import { useI18n } from '../i18n';
+import { loadThroughCatalog } from '../features/backends/catalogLoad';
+import { catalogRecipeCapabilities, externalCheckpointRoles, externalCheckpoints, externalRecipeChoices } from '../features/backends/catalogRecipeOptions';
+import { ExternalCheckpointFields } from './ExternalCheckpointFields';
+import { own } from '../features/backends/backendSchema';
+import { catalogRecipes, serverRecipeDisplayName } from '../features/backends/catalogState';
+import { useBackendCatalog } from '../hooks/useBackendCatalog';
 import {
   ModelDetailPanelPreloaded as ModelDetailPanel,
   RouterEditorPanelPreloaded as RouterEditorPanel,
@@ -348,8 +354,12 @@ const CUSTOM_RECIPE_CAPABILITIES: Record<string, CustomModelCapability[]> = {
 };
 
 function recipeCapabilities(recipe: string, backendNames: string[]): CustomModelCapability[] {
-  const explicit = CUSTOM_RECIPE_CAPABILITIES[recipe];
+  const explicit = Object.prototype.hasOwnProperty.call(CUSTOM_RECIPE_CAPABILITIES, recipe)
+    ? CUSTOM_RECIPE_CAPABILITIES[recipe]
+    : undefined;
   if (explicit) return explicit;
+  const declared = catalogRecipeCapabilities(recipe);
+  if (declared) return declared;
   const key = recipe.toLowerCase();
   if (key.includes('trellis') || key.includes('3d')) return ['model3d'];
   if (key.includes('acestep') || key.includes('ace-step') || key.includes('thinksound') || key.includes('sound-generation') || key.includes('music-generation')) return ['audio-generation'];
@@ -550,6 +560,7 @@ type CustomModelDraftState = {
   mmproj: string;
   imageTextEncoder: string;
   imageVae: string;
+  roleCheckpoints: Record<string, string>;
   recipe: string;
   capability: CustomModelCapability;
   maxContextWindow: string;
@@ -713,6 +724,7 @@ function createEmptyCustomDraft(mode: CustomFormMode = 'model'): CustomModelDraf
     mmproj: '',
     imageTextEncoder: '',
     imageVae: '',
+    roleCheckpoints: {},
     recipe: isOmniCollection ? 'collection.omni' : 'llamacpp',
     capability: isOmniCollection ? 'omni' : 'chat',
     maxContextWindow: '',
@@ -744,6 +756,9 @@ function customDraftFromModel(model: ModelInfo): CustomModelDraftState {
     mmproj: String((model as any).mmproj || checkpoints.mmproj || ''),
     imageTextEncoder: String(checkpoints.text_encoder || ''),
     imageVae: String(checkpoints.vae || ''),
+    roleCheckpoints: Object.fromEntries(Object.entries(checkpoints)
+      .filter(([role, value]) => role !== 'main' && typeof value === 'string')
+      .map(([role, value]) => [role, String(value)])),
     recipe: String((model as any).recipe || (collection ? 'collection.omni' : 'llamacpp')),
     capability,
     maxContextWindow: String((model as any).max_context_window || ''),
@@ -1159,6 +1174,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [externalModelDeleteNotice, setExternalModelDeleteNotice] = useState<ExternalModelDeleteNotice | null>(null);
   const [customDraft, setCustomDraft] = useState<CustomModelDraftState>(() => createEmptyCustomDraft());
   const [dynamicRecipeOptions, setDynamicRecipeOptions] = useState<Partial<Record<CustomModelCapability, CustomRecipeOption[]>>>({});
+  const backendCatalog = useBackendCatalog();
   const [customRecipeAvailabilityLoaded, setCustomRecipeAvailabilityLoaded] = useState(false);
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const pinnedModels = useMemo(
@@ -1672,7 +1688,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     // custom model's own load options, which still supply everything else.
     const custom = info ? customLoadOptions(info) : undefined;
     const options = overrideOptions || custom ? { ...custom, ...overrideOptions } : undefined;
-    await api.loadModel(name, options, info);
+    if (!(await loadThroughCatalog(name, info, overrideOptions, custom))) {
+      await api.loadModel(name, options, info);
+    }
     visited.delete(key);
   };
 
@@ -1733,7 +1751,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const info = allModels.find(m => modelName(m) === name) ?? null;
     markBusy(name);
     try {
-      await api.reloadModel(name, recipeOptions, info);
+      if (catalogRecipes().some(row => row.source === 'external' && row.recipe === String(info?.recipe || ''))) {
+        await api.unloadModel(name);
+        await loadThroughCatalog(name, info, recipeOptions, info ? customLoadOptions(info) : undefined);
+      } else {
+        await api.reloadModel(name, recipeOptions, info);
+      }
     } finally {
       await refresh();
       clearBusy(name);
@@ -2141,7 +2164,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       return recipeOptionsForCustomDraft(capability, omniSource);
     }
 
-    const dynamic = dynamicRecipeOptions[capability] || [];
+    const external = externalRecipeChoices()
+      .filter(choice => choice.capabilities.includes(capability))
+      .map(choice => customRecipeOption(choice.recipe, choice.label, choice.hint));
+    const dynamic = dedupeRecipeOptions([...(dynamicRecipeOptions[capability] || []), ...external]);
     if (dynamic.length > 0) return dynamic;
 
     // Fallback only when /system-info is unavailable. If /system-info.recipes
@@ -2150,7 +2176,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     if (customRecipeAvailabilityLoaded) return [];
 
     return recipeOptionsForCustomDraft(capability, omniSource);
-  }, [customRecipeAvailabilityLoaded, dynamicRecipeOptions]);
+  }, [backendCatalog, customRecipeAvailabilityLoaded, dynamicRecipeOptions]);
 
   const defaultRecipeForCapability = (capability: CustomModelCapability, omniSource: 'single' | 'collection' = customDraft.omniSource) => {
     const options = recipeOptionsForDraft(capability, omniSource);
@@ -2304,9 +2330,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         if (customDraft.imageTextEncoder.trim()) extraCheckpoints.text_encoder = customDraft.imageTextEncoder.trim();
         if (customDraft.imageVae.trim()) extraCheckpoints.vae = customDraft.imageVae.trim();
       }
-      const checkpoints = checkpoint && Object.keys(extraCheckpoints).length > 0
-        ? { main: checkpoint, ...extraCheckpoints }
-        : undefined;
+      const declaredRoles = externalCheckpointRoles(selectedRecipe);
+      const declared = declaredRoles ? externalCheckpoints(selectedRecipe, checkpoint, customDraft.roleCheckpoints) : null;
+      if (declared && declared.missing.length > 0 && !isOmniCollection) {
+        setCustomError(`${backendLabel(selectedRecipe)} needs a checkpoint for: ${declared.missing.join(', ')}.`);
+        return;
+      }
+      const checkpoints = declared
+        ? declared.checkpoints
+        : checkpoint && Object.keys(extraCheckpoints).length > 0
+          ? { main: checkpoint, ...extraCheckpoints }
+          : undefined;
       const saveName = editingCustomModelName || implicitCustomModelName(customDraft.displayName, customDraft.checkpoint, customDraft.capability === 'omni' ? 'omni-model' : 'custom-model');
       const saved = buildCustomModelRecord({
         name: saveName,
@@ -2626,7 +2660,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const remotePull = activeRemotePull(provider, result.id, variants);
     const pullPercent = remotePull?.percent;
     const isPulling = pullPercent !== undefined;
-    const recipeBadge = variants ? (RECIPE_BADGES[variants.recipe] || variants.recipe) : '';
+    const recipeBadge = variants ? (serverRecipeDisplayName(variants.recipe) || own(RECIPE_BADGES, variants.recipe) || variants.recipe) : '';
     const isSelected = selectedRemoteModel?.id === result.id && selectedRemoteProvider === provider;
 
     // Provider identity stays on the zone header, so the row spends its lead
@@ -2704,8 +2738,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const customRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
   const selectedCustomRecipe = customRecipeOptions.find(option => option.value === customDraft.recipe) || customRecipeOptions[0];
   const selectedCustomRecipeName = selectedCustomRecipe?.recipe || optionRecipe(customDraft.recipe);
-  const selectedCustomRecipeSuggestion = CUSTOM_RECIPE_SUGGESTIONS[selectedCustomRecipeName];
-  const primaryCheckpointPlaceholder = selectedCustomRecipeSuggestion?.checkpoint || t('org/model:Q4_K_M.gguf or /path/to/model.gguf');
+  const selectedCustomRecipeSuggestion = own(CUSTOM_RECIPE_SUGGESTIONS, selectedCustomRecipeName);
+  const selectedExternalRoles = isCustomOmniCollectionDraft ? undefined : externalCheckpointRoles(selectedCustomRecipeName);
+  const primaryCheckpointPlaceholder = selectedCustomRecipeSuggestion?.checkpoint
+    || (selectedExternalRoles ? t('Checkpoint accepted by this server recipe') : t('org/model:Q4_K_M.gguf or /path/to/model.gguf'));
   const mmprojCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'mmproj');
   const textEncoderCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'text_encoder');
   const vaeCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'vae');
@@ -3073,6 +3109,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                       placeholder={primaryCheckpointPlaceholder}
                     />
                   </label>
+                  <ExternalCheckpointFields
+                    roles={selectedExternalRoles ?? []}
+                    values={customDraft.roleCheckpoints}
+                    onChange={roleCheckpoints => handleCustomDraftChange({ roleCheckpoints })}
+                  />
                   {showLlamacppMmprojField && (
                     <label className="custom-model-form__field custom-model-form__wide">Vision projector (mmproj)
                       <InlineCheckpointExample

@@ -1,0 +1,460 @@
+{
+  "source": {
+    "revision": "e3d734e056d1caada9efc4a2c8b218c23e0016b2",
+    "file": "src/cpp/server/backends/rocmfpx/rocmfpx_server.cpp",
+    "quotes": [
+      {
+        "lines": "126-128",
+        "text": "has_label(model_info.labels, \"mtp\")"
+      },
+      {
+        "lines": "86-89",
+        "text": "defaults.push_back({\"--spec-type draft-mtp\", \"--spec-type\"});"
+      }
+    ]
+  },
+  "argv": [
+    {
+      "id": "model",
+      "flag": "-m",
+      "value": {
+        "ref": "/artifacts/main"
+      }
+    },
+    {
+      "id": "context",
+      "flag": "--ctx-size",
+      "value": {
+        "string": {
+          "ref": "/options/ctx_size"
+        }
+      }
+    },
+    {
+      "id": "port",
+      "flag": "--port",
+      "value": {
+        "string": {
+          "ref": "/launch/ports/http"
+        }
+      }
+    },
+    {
+      "id": "host",
+      "flag": "--host",
+      "value": "0.0.0.0"
+    },
+    {
+      "id": "jinja",
+      "args": [
+        "--jinja"
+      ]
+    },
+    {
+      "id": "metrics",
+      "args": [
+        "--metrics"
+      ]
+    },
+    {
+      "id": "mmproj",
+      "flag": "--mmproj",
+      "value": {
+        "ref": "/artifacts/mmproj"
+      },
+      "when": {
+        "not": {
+          "eq": [
+            {
+              "ref": "/artifacts/mmproj"
+            },
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "id": "draft",
+      "flag": "--model-draft",
+      "value": {
+        "ref": "/artifacts/draft"
+      },
+      "when": {
+        "not": {
+          "eq": [
+            {
+              "ref": "/artifacts/draft"
+            },
+            ""
+          ]
+        }
+      }
+    }
+  ],
+  "custom_args": {
+    "option": "arguments",
+    "runtime_input": "string_or_empty",
+    "reserved": [
+      "-c",
+      "--ctx-size",
+      "-m",
+      "--model",
+      "-mu",
+      "--model-url",
+      "-hf",
+      "-hfr",
+      "-hff",
+      "-mr",
+      "-mf",
+      "--hf-repo",
+      "--hf-file",
+      "-md",
+      "--model-draft",
+      "--spec-draft-model",
+      "-mm",
+      "--mmproj",
+      "-mmu",
+      "--mmproj-url",
+      "--no-mmproj",
+      "--host",
+      "--port",
+      "--jinja",
+      "--no-jinja",
+      "--metrics"
+    ],
+    "error_prefix": "Invalid custom ROCm FPX llama-server arguments:\n",
+    "defaults": [
+      {
+        "id": "mtp",
+        "args": "--spec-type draft-mtp",
+        "flag": "--spec-type",
+        "aliases": [],
+        "stage": "runtime_options",
+        "respect_merge_args": false,
+        "when": {
+          "ref": "/model/labels/mtp"
+        }
+      },
+      {
+        "id": "parallel",
+        "args": "--parallel 1",
+        "flag": "--parallel",
+        "aliases": [
+          "-np"
+        ],
+        "stage": "runtime_options",
+        "respect_merge_args": false,
+        "when": true
+      },
+      {
+        "id": "batch",
+        "args": "-b 2048",
+        "flag": "-b",
+        "aliases": [
+          "--batch-size"
+        ],
+        "stage": "runtime_options",
+        "respect_merge_args": false,
+        "when": true
+      },
+      {
+        "id": "ubatch",
+        "args": "-ub 2048",
+        "flag": "-ub",
+        "aliases": [
+          "--ubatch-size"
+        ],
+        "stage": "runtime_options",
+        "respect_merge_args": false,
+        "when": true
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "dflash",
+      "labels": [
+        "dflash"
+      ],
+      "draft_checkpoint": "org/repo:dflash.gguf",
+      "custom_args": "",
+      "argv": [
+        "-m",
+        "/fixture/main.fake",
+        "--ctx-size",
+        "4096",
+        "--port",
+        "1",
+        "--host",
+        "0.0.0.0",
+        "--jinja",
+        "--metrics",
+        "--mmproj",
+        "/fixture/vision.fake",
+        "--model-draft",
+        "/fixture/draft.fake",
+        "--parallel",
+        "1",
+        "-b",
+        "2048",
+        "-ub",
+        "2048"
+      ],
+      "raw_mtp": false,
+      "raw_dflash": true,
+      "effective_dflash": true,
+      "effective_mtp": false
+    },
+    {
+      "name": "dflash-mtp",
+      "labels": [
+        "dflash",
+        "mtp"
+      ],
+      "draft_checkpoint": "org/repo:dflash.gguf",
+      "custom_args": "",
+      "argv": [
+        "-m",
+        "/fixture/main.fake",
+        "--ctx-size",
+        "4096",
+        "--port",
+        "1",
+        "--host",
+        "0.0.0.0",
+        "--jinja",
+        "--metrics",
+        "--mmproj",
+        "/fixture/vision.fake",
+        "--model-draft",
+        "/fixture/draft.fake",
+        "--spec-type",
+        "draft-mtp",
+        "--parallel",
+        "1",
+        "-b",
+        "2048",
+        "-ub",
+        "2048"
+      ],
+      "raw_mtp": true,
+      "raw_dflash": true,
+      "effective_dflash": true,
+      "effective_mtp": false
+    },
+    {
+      "name": "mtp",
+      "labels": [
+        "mtp"
+      ],
+      "draft_checkpoint": "org/repo:draft.gguf",
+      "custom_args": "",
+      "argv": [
+        "-m",
+        "/fixture/main.fake",
+        "--ctx-size",
+        "4096",
+        "--port",
+        "1",
+        "--host",
+        "0.0.0.0",
+        "--jinja",
+        "--metrics",
+        "--mmproj",
+        "/fixture/vision.fake",
+        "--model-draft",
+        "/fixture/draft.fake",
+        "--spec-type",
+        "draft-mtp",
+        "--parallel",
+        "1",
+        "-b",
+        "2048",
+        "-ub",
+        "2048"
+      ],
+      "raw_mtp": true,
+      "raw_dflash": false,
+      "effective_dflash": false,
+      "effective_mtp": true
+    },
+    {
+      "name": "none",
+      "labels": [],
+      "draft_checkpoint": "org/repo:dflash.gguf",
+      "custom_args": "",
+      "argv": [
+        "-m",
+        "/fixture/main.fake",
+        "--ctx-size",
+        "4096",
+        "--port",
+        "1",
+        "--host",
+        "0.0.0.0",
+        "--jinja",
+        "--metrics",
+        "--mmproj",
+        "/fixture/vision.fake",
+        "--model-draft",
+        "/fixture/draft.fake",
+        "--parallel",
+        "1",
+        "-b",
+        "2048",
+        "-ub",
+        "2048"
+      ],
+      "raw_mtp": false,
+      "raw_dflash": false,
+      "effective_dflash": false,
+      "effective_mtp": false
+    },
+    {
+      "name": "case-sensitive",
+      "labels": [
+        "MTP",
+        "DFlash"
+      ],
+      "draft_checkpoint": "org/repo:dflash.gguf",
+      "custom_args": "",
+      "argv": [
+        "-m",
+        "/fixture/main.fake",
+        "--ctx-size",
+        "4096",
+        "--port",
+        "1",
+        "--host",
+        "0.0.0.0",
+        "--jinja",
+        "--metrics",
+        "--mmproj",
+        "/fixture/vision.fake",
+        "--model-draft",
+        "/fixture/draft.fake",
+        "--parallel",
+        "1",
+        "-b",
+        "2048",
+        "-ub",
+        "2048"
+      ],
+      "raw_mtp": false,
+      "raw_dflash": false,
+      "effective_dflash": false,
+      "effective_mtp": false
+    },
+    {
+      "name": "duplicates",
+      "labels": [
+        "mtp",
+        "mtp",
+        "dflash"
+      ],
+      "draft_checkpoint": "org/repo:dflash.gguf",
+      "custom_args": "",
+      "argv": [
+        "-m",
+        "/fixture/main.fake",
+        "--ctx-size",
+        "4096",
+        "--port",
+        "1",
+        "--host",
+        "0.0.0.0",
+        "--jinja",
+        "--metrics",
+        "--mmproj",
+        "/fixture/vision.fake",
+        "--model-draft",
+        "/fixture/draft.fake",
+        "--spec-type",
+        "draft-mtp",
+        "--parallel",
+        "1",
+        "-b",
+        "2048",
+        "-ub",
+        "2048"
+      ],
+      "raw_mtp": true,
+      "raw_dflash": true,
+      "effective_dflash": true,
+      "effective_mtp": false
+    },
+    {
+      "name": "overrides",
+      "labels": [
+        "mtp",
+        "dflash"
+      ],
+      "draft_checkpoint": "org/repo:dflash.gguf",
+      "custom_args": "--spec-type none -np 3 --batch-size 64 --ubatch-size 32",
+      "argv": [
+        "-m",
+        "/fixture/main.fake",
+        "--ctx-size",
+        "4096",
+        "--port",
+        "1",
+        "--host",
+        "0.0.0.0",
+        "--jinja",
+        "--metrics",
+        "--mmproj",
+        "/fixture/vision.fake",
+        "--model-draft",
+        "/fixture/draft.fake",
+        "--spec-type",
+        "none",
+        "-np",
+        "3",
+        "--batch-size",
+        "64",
+        "--ubatch-size",
+        "32"
+      ],
+      "raw_mtp": true,
+      "raw_dflash": true,
+      "effective_dflash": true,
+      "effective_mtp": false
+    },
+    {
+      "name": "unrelated",
+      "labels": [
+        "unrelated"
+      ],
+      "draft_checkpoint": "org/repo:dflash.gguf",
+      "custom_args": "--threads 5",
+      "argv": [
+        "-m",
+        "/fixture/main.fake",
+        "--ctx-size",
+        "4096",
+        "--port",
+        "1",
+        "--host",
+        "0.0.0.0",
+        "--jinja",
+        "--metrics",
+        "--mmproj",
+        "/fixture/vision.fake",
+        "--model-draft",
+        "/fixture/draft.fake",
+        "--threads",
+        "5",
+        "--parallel",
+        "1",
+        "-b",
+        "2048",
+        "-ub",
+        "2048"
+      ],
+      "raw_mtp": false,
+      "raw_dflash": false,
+      "effective_dflash": false,
+      "effective_mtp": false
+    }
+  ]
+}

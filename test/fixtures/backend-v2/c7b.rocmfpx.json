@@ -1,0 +1,309 @@
+{
+  "engine": "rocmfpx",
+  "source_quotations": [
+    {
+      "commit": "e3d734e056d1caada9efc4a2c8b218c23e0016b2",
+      "path": "src/cpp/server/backends/rocmfpx/rocmfpx_server.cpp",
+      "first_line": 103,
+      "last_line": 145,
+      "text": "void RocmFpxServer::load(const std::string& model_name,\n                         const ModelInfo& model_info,\n                         const RecipeOptions& options,\n                         bool do_not_upgrade) {\n    (void)do_not_upgrade;  // install_backend() is a no-op once the pinned image is present\n    LOG(INFO, \"RocmFpx\") << \"Loading model: \" << model_name << std::endl;\n\n    backend_manager_->install_backend(rocmfpx::descriptor.recipe, kBackend);\n\n    const std::string gguf_path = model_info.resolved_path();\n    if (gguf_path.empty()) {\n        throw std::runtime_error(\"GGUF file not found for checkpoint: \" + model_info.checkpoint());\n    }\n    const std::string mmproj_path = model_info.resolved_path(\"mmproj\");\n    const std::string draft_path = model_info.resolved_path(\"draft\");\n\n    const int ctx_size = options.get_option(\"ctx_size\");\n    const std::string rocmfpx_args = options.get_option(\"rocmfpx_args\");\n    device_type_ = DEVICE_GPU;\n    port_ = choose_port();\n\n    ServerCommand command;\n    command.program = rocmfpx::descriptor.binary;\n    command.args = rocmfpx::build_server_argv(gguf_path, mmproj_path, draft_path,\n                                              has_label(model_info.labels, \"mtp\"), ctx_size, port_,\n                                              rocmfpx_args);\n    for (const std::string& path : {gguf_path, mmproj_path, draft_path}) {\n        if (!path.empty()) {\n            const auto files = gguf_files(path);\n            command.model_files.insert(command.model_files.end(), files.begin(), files.end());\n        }\n    }\n    command.port = port_;\n\n    const bool inherit_output = (log_level_ == \"info\") || is_debug();\n    start_server(std::make_unique<ContainerProcess>(\n                     ProcessOutput{inherit_output, true}, rocmfpx::descriptor.recipe, kBackend,\n                     model_name, *rocmfpx::descriptor.container_for(kBackend),\n                     BackendUtils::get_backend_image(rocmfpx::descriptor.recipe, kBackend)),\n                 command);\n    LOG(DEBUG, \"RocmFpx\") << \"Model loaded on port \" << get_backend_port() << std::endl;\n}\n\n"
+    },
+    {
+      "commit": "e3d734e056d1caada9efc4a2c8b218c23e0016b2",
+      "path": "src/cpp/server/backends/llamacpp/llamacpp_server.cpp",
+      "text": "void LlamaCppServer::forward_streaming_request(const std::string& endpoint,\n                                               const std::string& request_body,\n                                               httplib::DataSink& sink,\n                                               bool sse,\n                                               long timeout_seconds,\n                                               TelemetryCallback telemetry_callback) {\n    std::string body = request_body;\n    if (endpoint == \"/v1/chat/completions\" || endpoint == \"/v1/responses\") {\n        json request = json::parse(request_body, nullptr, false);\n        if (!request.is_discarded()) {\n            if (endpoint == \"/v1/chat/completions\") {\n                JsonUtils::add_legacy_max_tokens_alias(request);\n            }\n            body = llamacpp::sanitize_tool_schema_limits(std::move(request)).dump();\n        }\n    }\n\n    WrappedServer::forward_streaming_request(\n        endpoint, body, sink, sse, timeout_seconds, telemetry_callback);\n}"
+    }
+  ],
+  "definition": {
+    "schema_version": 2,
+    "id": "c7b-rocmfpx",
+    "recipe": "gufo",
+    "merge": {
+      "kind": "container",
+      "metadata": {
+        "display_name": "Gufo",
+        "server_name": "gufo",
+        "binary": "gufo",
+        "support": [
+          {
+            "id": "rocm",
+            "backend": "rocm",
+            "tier": "experimental",
+            "format": "container",
+            "supported_os": [
+              "linux"
+            ],
+            "devices": {
+              "gpu": [
+                "gfx1151"
+              ]
+            },
+            "device_summary": "Strix Halo"
+          }
+        ],
+        "supported_modes": [
+          "chat"
+        ],
+        "options": [
+          {
+            "id": "args",
+            "name": "gufo_args",
+            "value_type": "string",
+            "default_value": ""
+          }
+        ],
+        "log_category": "RocmFpx"
+      },
+      "containers": {
+        "rocm": {
+          "repository": "ghcr.io/peonist-ai/gufo",
+          "pin": {
+            "source": "backend_versions",
+            "recipe": "gufo",
+            "backend": "rocm"
+          },
+          "devices": [
+            "/dev/dri",
+            "/dev/kfd"
+          ],
+          "cap_add": [],
+          "policy": "lemonade-isolated-v1",
+          "network": "private_internal",
+          "teardown": "stop_remove_reap",
+          "stop_grace_seconds": 10
+        }
+      },
+      "install": {
+        "strategy": "oci"
+      },
+      "artifacts": {
+        "main": {
+          "role": "main",
+          "strategy": "resolved_path",
+          "missing_error": "GGUF checkpoint is required"
+        }
+      },
+      "launch": {
+        "prepare_order": [
+          "backend",
+          "install",
+          "artifacts",
+          "program",
+          "ports"
+        ],
+        "backend": {
+          "fixed": "rocm"
+        },
+        "execution": {
+          "cases": [
+            {
+              "id": "rocm-container",
+              "backends": [
+                "rocm"
+              ],
+              "kind": "container",
+              "container": "rocm",
+              "program": {
+                "source": "image_command",
+                "name": "gufo"
+              }
+            }
+          ]
+        },
+        "mounts": [
+          {
+            "id": "main",
+            "artifact": "main",
+            "expand": "gguf_shards",
+            "destination": "/mnt/models"
+          }
+        ],
+        "address": {
+          "source": "process_start"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "reject_zero": true,
+            "error": "No HTTP port available"
+          }
+        ],
+        "argv": [
+          {
+            "id": "serve",
+            "args": [
+              "serve",
+              "llm"
+            ]
+          },
+          {
+            "id": "model",
+            "flag": "--model",
+            "value": {
+              "ref": "/artifacts/main"
+            }
+          },
+          {
+            "id": "name",
+            "flag": "--served-model-name",
+            "value": {
+              "ref": "/model/name"
+            }
+          },
+          {
+            "id": "host",
+            "flag": "--host",
+            "value": "0.0.0.0"
+          },
+          {
+            "id": "port",
+            "flag": "--port",
+            "value": {
+              "string": {
+                "ref": "/launch/ports/http"
+              }
+            }
+          }
+        ],
+        "environment": {
+          "preset": "inherit"
+        },
+        "working_directory": "inherit",
+        "output": {
+          "inherit_levels": [
+            "info",
+            "debug",
+            "trace"
+          ],
+          "filter": false
+        },
+        "readiness": {
+          "port": "http",
+          "path": "/ready",
+          "timeout": "global"
+        },
+        "watchdog": {
+          "policy": "standard",
+          "port": "http",
+          "path": "/ready"
+        },
+        "direct_stream_policy": "builtin_container_legacy",
+        "custom_args": {
+          "option": "args",
+          "reserved": [
+            "--model"
+          ],
+          "error_prefix": "Invalid custom arguments: ",
+          "defaults": []
+        },
+        "load_log_policy": "none",
+        "diagnostics": [
+          {
+            "id": "loading",
+            "phase": "loading",
+            "level": "info",
+            "category": "RocmFpx",
+            "format": "Loading model: {model:string}",
+            "when": "always"
+          },
+          {
+            "id": "loaded",
+            "phase": "success",
+            "level": "debug",
+            "category": "RocmFpx",
+            "format": "Model loaded on port {loaded_port:integer}",
+            "when": "always"
+          }
+        ]
+      },
+      "operations": [
+        {
+          "id": "chat.streaming",
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.max_tokens_alias",
+                "params": {}
+              },
+              {
+                "id": "llamacpp.tool_schema_limits",
+                "params": {}
+              }
+            ]
+          }
+        },
+        {
+          "id": "completion.streaming",
+          "operation": "completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/completions",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "responses.streaming",
+          "operation": "responses",
+          "delivery": "streaming",
+          "model_modes": [
+            "*"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/responses",
+            "port": "http",
+            "timeout": "global",
+            "stream_codec": "openai_sse.v1"
+          },
+          "request": {
+            "base": "identity",
+            "hooks": [
+              {
+                "id": "llamacpp.tool_schema_limits",
+                "params": {}
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "rewrite_domain": "canonical_path",
+  "expected": [
+    {
+      "level": "info",
+      "category": "RocmFpx",
+      "line": "Loading model: fixture"
+    },
+    {
+      "level": "debug",
+      "category": "RocmFpx",
+      "line": "Model loaded on port @PORT@"
+    }
+  ]
+}

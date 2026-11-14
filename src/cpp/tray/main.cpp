@@ -25,6 +25,7 @@
 
 #ifdef _WIN32
 // Windows embeds the server
+#include <lemon/backends/configured/backend_catalog.h>
 #include <lemon/cli_parser.h>
 #include <lemon/config_file.h>
 #include <lemon/logging_config.h>
@@ -193,6 +194,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     lemon::utils::migrate_legacy_json_files_to_config_dir(cli_config.cache_dir,
                                                           cli_config.config_dir);
 
+    lemon::backends::bootstrap_backend_catalog(cli_config.config_dir, cli_config.builtin_backends_only);
     auto config_json = lemon::ConfigFile::load(cli_config.cache_dir,
                                                cli_config.config_dir);
 

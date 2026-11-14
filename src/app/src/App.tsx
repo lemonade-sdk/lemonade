@@ -556,6 +556,9 @@ const App: React.FC = () => {
           console.warn('Failed to load host connection settings:', error);
         }
         if (!cancelled) {
+          void import(/* webpackChunkName: "api-client" */ './features/backends/backendCatalog')
+            .then(catalog => catalog.startBackendCatalog())
+            .catch(() => undefined);
           void api.connect();
           api.startPolling(15000);
         }

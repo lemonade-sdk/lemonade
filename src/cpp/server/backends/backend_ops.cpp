@@ -144,7 +144,7 @@ const BackendOps* default_backend_ops() {
 }
 
 std::optional<utils::SetupReport> container_setup_failure() {
-    const auto& manager = utils::ContainerManager::global();
+    static const utils::ContainerManager manager;
     // check_podman() first, so check_host() sees Podman's actual rootless mode.
     const std::optional<utils::SetupFailure> podman = manager.check_podman();
     utils::SetupReport report;
@@ -165,7 +165,7 @@ std::optional<utils::SetupReport> container_setup_failure(
     if (report.empty() && policy &&
         std::find(policy->devices.begin(), policy->devices.end(), "/dev/kfd") !=
             policy->devices.end()) {
-        if (auto failure = utils::ContainerManager::global().check_selinux()) {
+        if (auto failure = utils::ContainerManager().check_selinux()) {
             report.failures.push_back(*failure);
         }
     }

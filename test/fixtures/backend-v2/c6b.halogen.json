@@ -1,0 +1,407 @@
+{
+  "schema_version": 1,
+  "source_revision": "cbbeeb5270b19e06cfd9c150233655776392bd38",
+  "quotations": [
+    {
+      "path": "src/cpp/server/backends/halogen/halogen_server.cpp",
+      "lines": [
+        47,
+        61
+      ],
+      "text": "    void populate_metadata(ModelInfo& info, const BackendOpsContext& ctx) const override {\n        (void)ctx;\n        info.max_context_window = kNativeContext;\n    }\n\n    // Halogen sizes its KV pool itself and maps the checkpoint in place, so the\n    // router's automatic context, which charges every .hgn file as resident\n    // weights, would refuse loads that fit. An automatic ctx_size becomes the\n    // native context before the router sees it.\n    void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const override {\n        (void)info;\n        const json ctx_size = options.get_option(\"ctx_size\");\n        if (!ctx_size.is_number_integer() || ctx_size.get<int>() <= 0) {\n            options.set_option(\"ctx_size\", kNativeContext);\n        }"
+    },
+    {
+      "path": "src/cpp/server/backends/halogen/halogen_server.cpp",
+      "lines": [
+        67,
+        83
+      ],
+      "text": "    std::optional<std::vector<std::string>> select_checkpoint_files(\n        const std::string& main_variant, const std::vector<std::string>& repo_files) const override {\n        if (!ends_with(main_variant, \".hgn\")) {\n            return std::nullopt;\n        }\n        std::vector<std::string> selected;\n        for (const auto& file : repo_files) {\n            if (file == main_variant || ends_with(file, kLookupTableSuffix) ||\n                ends_with(file, kVisionTowerSuffix) ||\n                file.rfind(std::string(kTokenizerDir) + \"/\", 0) == 0) {\n                selected.push_back(file);\n            }\n        }\n        if (std::find(selected.begin(), selected.end(), main_variant) == selected.end()) {\n            throw std::runtime_error(\"Halogen checkpoint not found in repository: \" + main_variant);\n        }\n        return selected;"
+    },
+    {
+      "path": "src/cpp/server/backends/halogen/halogen_server.cpp",
+      "lines": [
+        86,
+        92
+      ],
+      "text": "    std::optional<utils::SetupFailure> check_container_host(\n        const std::string& backend) const override {\n        (void)backend;\n        const std::string properties = kfd_gpu_properties(\"gfx1151\");\n        if (properties.empty()) return std::nullopt;\n        return halogen::check_kfd_node(properties);\n    }"
+    },
+    {
+      "path": "src/cpp/server/backends/halogen/halogen_server.cpp",
+      "lines": [
+        110,
+        125
+      ],
+      "text": "std::optional<utils::SetupFailure> check_kfd_node(const std::string& properties) {\n    auto values = parse_kfd_properties(properties);\n    if ((values[\"capability\"] & 0x08000000ULL) == 0) {\n        return utils::SetupFailure{\n            \"kernel_svm\", \"capability & 0x08000000 is 0\",\n            {\"Install Linux 6.18.4 or newer, built with CONFIG_HSA_AMD_SVM\"}, \"\"};\n    }\n    const bool reported = values.count(\"cwsr_size\") && values.count(\"ctl_stack_size\") &&\n                          values.count(\"simd_count\");\n    if (!reported || values[\"cwsr_size\"] !=\n                         values[\"ctl_stack_size\"] + (values[\"simd_count\"] / 2) * 479232ULL) {\n        return utils::SetupFailure{\n            \"kernel_cwsr\", \"cwsr_size is not ctl_stack_size + (simd_count / 2) * 479232\",\n            {\"Install Linux 6.18.4 or newer\"}, \"\"};\n    }\n    return std::nullopt;"
+    },
+    {
+      "path": "src/cpp/server/backends/halogen/halogen_server.cpp",
+      "lines": [
+        144,
+        173
+      ],
+      "text": "    if (checkpoint.empty() || !fs::exists(checkpoint)) {\n        throw std::runtime_error(\"halogen: HGN checkpoint not found for model '\" + model_name +\n                                 \"' (checkpoint: \" + model_info.checkpoint() + \")\");\n    }\n\n    // The lookup table, the tokenizer and the optional vision tower sit beside\n    // the checkpoint in the same snapshot.\n    const fs::path bundle = fs::path(checkpoint).parent_path();\n    const std::string table_name = model_info.extra<std::string>(\"halogen_lookup_table\", \"\");\n    if (table_name.empty()) {\n        throw std::runtime_error(\"halogen: model '\" + model_name +\n                                 \"' names no halogen_lookup_table\");\n    }\n    const std::string lookup_table = (bundle / table_name).string();\n    const std::string tokenizer = (bundle / kTokenizerDir).string();\n    const std::string vision_name = model_info.extra<std::string>(\"halogen_vision_tower\", \"\");\n    const std::string vision = vision_name.empty() ? \"\" : (bundle / vision_name).string();\n    for (const auto& required : {lookup_table, tokenizer, vision}) {\n        if (!required.empty() && !fs::exists(required)) {\n            throw std::runtime_error(\"halogen: the bundle for '\" + model_name + \"' is missing \" +\n                                     required);\n        }\n    }\n\n    const json ctx_option = options.get_option(\"ctx_size\");\n    const int ctx_size = ctx_option.is_number_integer() && ctx_option.get<int>() > 0\n                             ? ctx_option.get<int>()\n                             : kNativeContext;\n\n    device_type_ = DEVICE_GPU;"
+    },
+    {
+      "path": "src/cpp/server/backends/halogen/halogen_server.cpp",
+      "lines": [
+        176,
+        200
+      ],
+      "text": "    ServerCommand command;\n    command.model_files = {checkpoint, lookup_table, tokenizer, vision};\n    command.env = {\n        {\"HALOGEN_CHECKPOINT\", checkpoint},\n        {\"HALOGEN_NGRAM_TABLE\", lookup_table},\n        {\"HALOGEN_TOKENIZER\", tokenizer},\n    };\n    if (!vision.empty()) {\n        command.env.push_back({\"HALOGEN_VISION_TOWER\", vision});\n    }\n    command.env.insert(command.env.end(), {\n        {\"HALOGEN_API_PORT\", std::to_string(port_)},\n        {\"HALOGEN_CTX\", std::to_string(ctx_size)},\n    });\n    command.port = port_;\n    command.ready_endpoint = \"/health\";\n\n    LOG(INFO, \"Halogen\") << \"Starting \" << model_name << \" on port \" << port_ << std::endl;\n    const bool inherit_output = (log_level_ == \"info\") || is_debug();\n    start_server(std::make_unique<ContainerProcess>(\n                     ProcessOutput{inherit_output, true}, halogen::descriptor.recipe, kBackend,\n                     model_name, *halogen::descriptor.container_for(kBackend),\n                     BackendUtils::get_backend_image(halogen::descriptor.recipe, kBackend)),\n                 command,\n                 (std::max)(kStartupTimeoutSeconds, utils::HttpClient::get_default_timeout()));"
+    },
+    {
+      "path": "src/cpp/include/lemon/backends/halogen/halogen.h",
+      "lines": [
+        14,
+        23
+      ],
+      "text": "    /*recipe*/          \"halogen\",\n    /*display_name*/    \"Halogen Flash\",\n    /*binary*/          \"\",  // the image's entrypoint serves the model\n    /*config_section*/  \"\",  // defaults to recipe\n    /*default_device*/  DEVICE_GPU,\n    // Halogen is built to own its machine: it sizes its KV pool from MemTotal,\n    // and the free-memory readings everything else relies on count its pinned\n    // weights as reclaimable cache.\n    /*slot_policy*/     SlotPolicy::ExclusiveHost,\n    /*selectable_backend*/ false,  // rocm is the only backend"
+    },
+    {
+      "path": "src/cpp/server/router.cpp",
+      "lines": [
+        955,
+        982
+      ],
+      "text": "\n        // A host-exclusive backend shares the machine with no other local model:\n        // loading it evicts them all, and loading any other local model evicts it.\n        // Cloud models hold no local memory and stay.\n        if (!is_unmetered_recipe(model_info.recipe)) {\n            const bool exclusive_load =\n                slot_policy_for_recipe(model_info.recipe) == SlotPolicy::ExclusiveHost;\n            std::vector<std::pair<WrappedServer*, std::string>> displaced;\n            for (const auto& server : loaded_servers_) {\n                if (!server->is_backend_alive()) continue;\n                const std::string recipe = server->get_recipe_options().get_recipe();\n                const SlotPolicy policy = slot_policy_for_recipe(recipe);\n                if (policy == SlotPolicy::Unmetered) continue;\n                if (!exclusive_load && policy != SlotPolicy::ExclusiveHost) continue;\n                const std::string reason =\n                    (exclusive_load ? model_info.recipe : recipe) + \" requires the machine to itself\";\n                if (should_reject_residency_displacement(requested_residency_class,\n                                                         server->get_residency_class())) {\n                    throw RouterResidencyConflictException(canonical_model_name,\n                                                           server->get_model_name(), reason);\n                }\n                displaced.emplace_back(server.get(), reason);\n            }\n            for (const auto& [server, reason] : displaced) {\n                LOG(INFO, \"Router\") << reason << \", evicting: \" << server->get_model_name()\n                                    << std::endl;\n                evict_server(server);\n            }"
+    }
+  ],
+  "definition": {
+    "schema_version": 2,
+    "id": "gufo",
+    "recipe": "gufo",
+    "merge": {
+      "kind": "container",
+      "metadata": {
+        "display_name": "Gufo",
+        "server_name": "gufo",
+        "binary": "gufo",
+        "support": [
+          {
+            "id": "rocm",
+            "backend": "rocm",
+            "tier": "experimental",
+            "format": "container",
+            "supported_os": [
+              "linux"
+            ],
+            "devices": {
+              "gpu": [
+                "gfx1151"
+              ]
+            },
+            "device_summary": "Strix Halo"
+          }
+        ],
+        "supported_modes": [
+          "chat"
+        ],
+        "slot_policy": "exclusive_host",
+        "uses_ctx_size": true
+      },
+      "containers": {
+        "rocm": {
+          "repository": "ghcr.io/peonist-ai/gufo",
+          "pin": {
+            "source": "backend_versions",
+            "recipe": "gufo",
+            "backend": "rocm"
+          },
+          "devices": [
+            "/dev/dri",
+            "/dev/kfd"
+          ],
+          "cap_add": [],
+          "policy": "lemonade-isolated-v1",
+          "network": "private_internal",
+          "teardown": "stop_remove_reap",
+          "stop_grace_seconds": 10
+        }
+      },
+      "install": {
+        "strategy": "oci"
+      },
+      "artifacts": {
+        "main": {
+          "role": "main",
+          "strategy": "resolved_path",
+          "missing_error": "Missing main"
+        },
+        "table": {
+          "role": "halogen_lookup_table",
+          "strategy": "resolved_path",
+          "missing_error": "Missing halogen_lookup_table"
+        },
+        "tokenizer": {
+          "role": "halogen_tokenizer",
+          "strategy": "resolved_path",
+          "missing_error": "Missing halogen_tokenizer"
+        },
+        "vision": {
+          "role": "halogen_vision_tower",
+          "strategy": "resolved_path",
+          "missing_error": "Missing halogen_vision_tower",
+          "required_when": false
+        }
+      },
+      "launch": {
+        "prepare_order": [
+          "backend",
+          "artifacts",
+          "program",
+          "ports"
+        ],
+        "backend": {
+          "fixed": "rocm"
+        },
+        "execution": {
+          "cases": [
+            {
+              "id": "rocm-container",
+              "backends": [
+                "rocm"
+              ],
+              "kind": "container",
+              "container": "rocm",
+              "program": {
+                "source": "image_entrypoint"
+              }
+            }
+          ]
+        },
+        "mounts": [
+          {
+            "id": "main",
+            "artifact": "main",
+            "expand": "file",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered"
+          },
+          {
+            "id": "table",
+            "artifact": "table",
+            "expand": "file",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered"
+          },
+          {
+            "id": "tokenizer",
+            "artifact": "tokenizer",
+            "expand": "directory_files",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered"
+          },
+          {
+            "id": "vision",
+            "artifact": "vision",
+            "expand": "file",
+            "destination": "/mnt/models",
+            "layout": "basename_numbered",
+            "when": {
+              "not": {
+                "eq": [
+                  {
+                    "ref": "/artifacts/vision"
+                  },
+                  ""
+                ]
+              }
+            }
+          }
+        ],
+        "address": {
+          "source": "process_start"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "reject_zero": true,
+            "error": "No HTTP port available"
+          }
+        ],
+        "argv": [],
+        "environment": {
+          "preset": "inherit",
+          "set": [
+            {
+              "name": "HALOGEN_CHECKPOINT",
+              "value": {
+                "ref": "/artifacts/main"
+              }
+            },
+            {
+              "name": "HALOGEN_NGRAM_TABLE",
+              "value": {
+                "ref": "/artifacts/table"
+              }
+            },
+            {
+              "name": "HALOGEN_TOKENIZER",
+              "value": {
+                "ref": "/artifacts/tokenizer"
+              }
+            },
+            {
+              "name": "HALOGEN_VISION_TOWER",
+              "value": {
+                "ref": "/artifacts/vision"
+              },
+              "when": {
+                "not": {
+                  "eq": [
+                    {
+                      "ref": "/artifacts/vision"
+                    },
+                    ""
+                  ]
+                }
+              }
+            },
+            {
+              "name": "HALOGEN_API_PORT",
+              "value": {
+                "string": {
+                  "ref": "/launch/ports/http"
+                }
+              }
+            },
+            {
+              "name": "HALOGEN_CTX",
+              "value": {
+                "string": {
+                  "ref": "/options/ctx_size"
+                }
+              }
+            }
+          ]
+        },
+        "working_directory": "inherit",
+        "output": {
+          "inherit_levels": [
+            "info",
+            "debug",
+            "trace"
+          ],
+          "filter": false
+        },
+        "readiness": {
+          "port": "http",
+          "path": "/health",
+          "timeout": {
+            "source": "global",
+            "floor_seconds": 1800
+          }
+        },
+        "watchdog": {
+          "policy": "standard",
+          "port": "http",
+          "path": "/health"
+        }
+      },
+      "operations": [
+        {
+          "id": "chat.buffered",
+          "operation": "chat_completion",
+          "delivery": "buffered",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_json",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global"
+          },
+          "request": {
+            "base": "identity"
+          }
+        },
+        {
+          "id": "chat.streaming",
+          "operation": "chat_completion",
+          "delivery": "streaming",
+          "model_modes": [
+            "chat"
+          ],
+          "transport": {
+            "kind": "http_sse",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "port": "http",
+            "timeout": "global"
+          },
+          "request": {
+            "base": "identity"
+          }
+        }
+      ],
+      "model_contract": "halogen_hgn_v1"
+    }
+  },
+  "selection": {
+    "variant": "weights.hgn",
+    "files": [
+      "other.hgn",
+      "b-vision.hgn",
+      "weights.hgn",
+      "a-ngram.hgn",
+      "tokenizer/tokenizer.json",
+      "tokenizer-not/file",
+      "WEIGHTS.HGN",
+      "nested/tokenizer/file",
+      "b-ngram.hgn"
+    ],
+    "expected": [
+      "b-vision.hgn",
+      "weights.hgn",
+      "a-ngram.hgn",
+      "tokenizer/tokenizer.json",
+      "b-ngram.hgn"
+    ]
+  },
+  "host_cases": [
+    {
+      "name": "svm-missing",
+      "properties": "capability 0\n",
+      "failure": {
+        "id": "kernel_svm",
+        "message": "capability & 0x08000000 is 0",
+        "steps": [
+          "Install Linux 6.18.4 or newer, built with CONFIG_HSA_AMD_SVM"
+        ],
+        "apply": ""
+      }
+    },
+    {
+      "name": "cwsr-missing",
+      "properties": "capability 134217728\n",
+      "failure": {
+        "id": "kernel_cwsr",
+        "message": "cwsr_size is not ctl_stack_size + (simd_count / 2) * 479232",
+        "steps": [
+          "Install Linux 6.18.4 or newer"
+        ],
+        "apply": ""
+      }
+    },
+    {
+      "name": "cwsr-wrong",
+      "properties": "capability 134217728\nctl_stack_size 1024\nsimd_count 5\ncwsr_size 1\n",
+      "failure": {
+        "id": "kernel_cwsr",
+        "message": "cwsr_size is not ctl_stack_size + (simd_count / 2) * 479232",
+        "steps": [
+          "Install Linux 6.18.4 or newer"
+        ],
+        "apply": ""
+      }
+    },
+    {
+      "name": "valid-odd-simd",
+      "properties": "capability 134217728\nctl_stack_size 1024\nsimd_count 5\ncwsr_size 959488\n",
+      "failure": null
+    }
+  ]
+}

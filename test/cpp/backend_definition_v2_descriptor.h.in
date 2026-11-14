@@ -1,0 +1,10 @@
+#pragma once
+
+#include "lemon/backends/configured/backend_definition_descriptor.h"
+
+namespace lemon::backends {
+@LEMON_TEST_V2_SOURCE@
+const ResolvedDefinition& fixture_resolved_definition();
+}
+
+@LEMON_TEST_V2_DESCRIPTOR@

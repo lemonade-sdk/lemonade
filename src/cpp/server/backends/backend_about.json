@@ -1,0 +1,187 @@
+{
+  "llamacpp": {
+    "system": {
+      "description": "The llama-server already installed on this Linux system, from a distribution package or your own build.",
+      "author": "ggml-org",
+      "publisher": "Your system",
+      "license": "MIT",
+      "project_url": "https://github.com/ggml-org/llama.cpp"
+    },
+    "metal": {
+      "description": "Upstream llama.cpp accelerated by Metal on Apple Silicon GPUs.",
+      "author": "ggml-org",
+      "publisher": "ggml-org",
+      "license": "MIT",
+      "project_url": "https://github.com/ggml-org/llama.cpp"
+    },
+    "cuda": {
+      "description": "llama.cpp built for each NVIDIA compute capability, with the CUDA runtime bundled.",
+      "author": "ggml-org",
+      "publisher": "lemonade-sdk",
+      "license": "MIT",
+      "project_url": "https://github.com/ggml-org/llama.cpp"
+    },
+    "vulkan": {
+      "description": "Cross-platform GPU runtime that runs on most AMD, NVIDIA, Intel and ARM GPUs.",
+      "author": "ggml-org",
+      "publisher": "ggml-org",
+      "license": "MIT",
+      "project_url": "https://github.com/ggml-org/llama.cpp"
+    },
+    "rocm": {
+      "description": "GPU runtime specialized for AMD GPUs, built against ROCm from TheRock.",
+      "author": "ggml-org",
+      "publisher": "lemonade-sdk",
+      "license": "MIT",
+      "project_url": "https://github.com/ggml-org/llama.cpp"
+    },
+    "cpu": {
+      "description": "Uses only the CPU for inference.",
+      "author": "ggml-org",
+      "publisher": "ggml-org",
+      "license": "MIT",
+      "project_url": "https://github.com/ggml-org/llama.cpp"
+    }
+  },
+  "llamacpp-hrx": {
+    "hrx": {
+      "description": "Early access for AMD's experimental HRX GPU backend for llama.cpp.",
+      "author": "AMD ROCm",
+      "publisher": "AMD ROCm",
+      "license": "MIT",
+      "project_url": "https://github.com/ROCm/ggml-staging-automation"
+    }
+  },
+  "moonshine": {
+    "cpu": {
+      "description": "Moonshine speech recognition on the CPU, small and fast enough for live transcription.",
+      "author": "Moonshine AI (Useful Sensors)",
+      "publisher": "lemonade-sdk",
+      "license": "MIT",
+      "project_url": "https://github.com/moonshine-ai/moonshine"
+    }
+  },
+  "kokoro": {
+    "metal": {
+      "description": "Kokoros, a Rust runtime for the Kokoro text-to-speech model, on Apple Silicon.",
+      "author": "lucasjinreal (Kokoros)",
+      "publisher": "lemonade-sdk",
+      "license": "Apache-2.0",
+      "project_url": "https://github.com/lucasjinreal/Kokoros"
+    },
+    "cpu": {
+      "description": "Kokoros, a Rust runtime for the Kokoro text-to-speech model, on the CPU.",
+      "author": "lucasjinreal (Kokoros)",
+      "publisher": "lemonade-sdk",
+      "license": "Apache-2.0",
+      "project_url": "https://github.com/lucasjinreal/Kokoros"
+    }
+  },
+  "ryzenai-llm": {
+    "npu": {
+      "description": "AMD's Ryzen AI software stack running ONNX Runtime GenAI LLMs on the NPU.",
+      "author": "AMD",
+      "publisher": "lemonade-sdk",
+      "license": "MIT (server) and AMD EULA (Ryzen AI libraries)",
+      "project_url": "https://github.com/lemonade-sdk/ryzenai-server"
+    }
+  },
+  "ds4": {
+    "rocm": {
+      "description": "DwarfStar, a self-contained DeepSeek V4 engine that streams weights from SSD when they do not fit in memory.",
+      "author": "Salvatore Sanfilippo (antirez)",
+      "publisher": "Donato Capitella (kyuz0)",
+      "license": "MIT",
+      "project_url": "https://github.com/antirez/ds4"
+    }
+  },
+  "thinksound": {
+    "cuda": {
+      "description": "ThinkSound text-to-sound-effect generation, reimplemented in C++/GGML, on NVIDIA GPUs.",
+      "author": "Piotr Wilkin (pwilkin)",
+      "publisher": "Piotr Wilkin (pwilkin)",
+      "license": "",
+      "project_url": "https://github.com/pwilkin/thinksound.cpp"
+    },
+    "vulkan": {
+      "description": "ThinkSound text-to-sound-effect generation, reimplemented in C++/GGML, on Vulkan-capable GPUs.",
+      "author": "Piotr Wilkin (pwilkin)",
+      "publisher": "Piotr Wilkin (pwilkin)",
+      "license": "",
+      "project_url": "https://github.com/pwilkin/thinksound.cpp"
+    },
+    "rocm": {
+      "description": "ThinkSound text-to-sound-effect generation, reimplemented in C++/GGML, specialized for AMD GPUs.",
+      "author": "Piotr Wilkin (pwilkin)",
+      "publisher": "Piotr Wilkin (pwilkin)",
+      "license": "",
+      "project_url": "https://github.com/pwilkin/thinksound.cpp"
+    }
+  },
+  "onnxruntime": {
+    "cpu": {
+      "description": "Microsoft's ONNX Runtime on the CPU, serving the small classifiers the router uses.",
+      "author": "Microsoft",
+      "publisher": "lemonade-sdk",
+      "license": "MIT",
+      "project_url": "https://github.com/microsoft/onnxruntime"
+    }
+  },
+  "trellis": {
+    "cuda12": {
+      "description": "Microsoft's TRELLIS.2 image-to-3D pipeline in C++/GGML, built with CUDA 12 for older NVIDIA GPUs.",
+      "author": "Piotr Wilkin (pwilkin)",
+      "publisher": "Piotr Wilkin (pwilkin)",
+      "license": "MIT",
+      "project_url": "https://github.com/pwilkin/trellis.cpp"
+    },
+    "cuda": {
+      "description": "Microsoft's TRELLIS.2 image-to-3D pipeline in C++/GGML, on NVIDIA GPUs.",
+      "author": "Piotr Wilkin (pwilkin)",
+      "publisher": "Piotr Wilkin (pwilkin)",
+      "license": "MIT",
+      "project_url": "https://github.com/pwilkin/trellis.cpp"
+    },
+    "vulkan": {
+      "description": "Microsoft's TRELLIS.2 image-to-3D pipeline in C++/GGML, on Vulkan-capable GPUs.",
+      "author": "Piotr Wilkin (pwilkin)",
+      "publisher": "Piotr Wilkin (pwilkin)",
+      "license": "MIT",
+      "project_url": "https://github.com/pwilkin/trellis.cpp"
+    },
+    "rocm": {
+      "description": "Microsoft's TRELLIS.2 image-to-3D pipeline in C++/GGML, specialized for AMD GPUs.",
+      "author": "Piotr Wilkin (pwilkin)",
+      "publisher": "Piotr Wilkin (pwilkin)",
+      "license": "MIT",
+      "project_url": "https://github.com/pwilkin/trellis.cpp"
+    }
+  },
+  "gufo": {
+    "rocm": {
+      "description": "Gufo container runtime for AMD Strix Halo.",
+      "author": "Gufo contributors",
+      "publisher": "kyuz0",
+      "license": "See image metadata",
+      "project_url": "https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes"
+    }
+  },
+  "rocmfpx": {
+    "rocm": {
+      "description": "The ROCm FPX llama.cpp fork packaged for AMD Strix Halo.",
+      "author": "ROCm FPX contributors",
+      "publisher": "kyuz0",
+      "license": "See image metadata",
+      "project_url": "https://hub.docker.com/r/kyuz0/amd-strix-halo-toolboxes"
+    }
+  },
+  "halogen": {
+    "rocm": {
+      "description": "Halogen Flash container runtime for its HGN checkpoints on AMD Strix Halo.",
+      "author": "peonist-ai",
+      "publisher": "peonist-ai",
+      "license": "See image metadata",
+      "project_url": "https://github.com/orgs/peonist-ai/packages/container/package/halogen-flash-server"
+    }
+  }
+}

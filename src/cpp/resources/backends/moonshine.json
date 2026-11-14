@@ -1,0 +1,236 @@
+{
+  "schema_version": 1,
+  "id": "moonshine",
+  "recipe": "moonshine",
+  "kind": "local",
+  "metadata": {
+    "display_name": "Moonshine",
+    "server_name": "moonshine-server",
+    "log_category": "MoonshineServer",
+    "log_level_policy": "passthrough",
+    "binary": "moonshine-server",
+    "config_section": "",
+    "default_device": "cpu",
+    "slot_policy": "standard",
+    "selectable_backend": false,
+    "uses_ctx_size": false,
+    "dynamic_models": false,
+    "options": [
+      {
+        "name": "moonshine_args",
+        "cli_flag": "--moonshine-args",
+        "default_value": "",
+        "type_name": "ARGS",
+        "value_type": "string",
+        "help": "Custom arguments to pass to moonshine-server",
+        "group": "Moonshine Options",
+        "unset_values": [null, -1, "", "auto"]
+      }
+    ],
+    "support": [
+      {
+        "backend": "cpu",
+        "tier": "core",
+        "format": "python",
+        "supported_os": ["windows"],
+        "devices": {"cpu": ["x86_64"]},
+        "device_summary": "x86_64/arm64 CPU",
+        "arch_gates": {}
+      },
+      {
+        "backend": "cpu",
+        "tier": "core",
+        "format": "python",
+        "supported_os": ["linux"],
+        "devices": {"cpu": ["x86_64", "arm64"]},
+        "device_summary": "x86_64/arm64 CPU",
+        "arch_gates": {}
+      },
+      {
+        "backend": "cpu",
+        "tier": "core",
+        "format": "python",
+        "supported_os": ["macos"],
+        "devices": {"cpu": ["arm64"]},
+        "device_summary": "x86_64/arm64 CPU",
+        "arch_gates": {}
+      }
+    ],
+    "supported_modes": ["transcription"],
+    "required_checkpoints": ["main"],
+    "default_capabilities": ["realtime-transcription"],
+    "web_display_name": "",
+    "rocm_channels": [],
+    "exposes_prometheus_metrics": false,
+    "rocm_requires_cwsr_fix": false,
+    "version_policy": "exact",
+    "self_manages_downloads": false,
+    "takes_args": true,
+    "arg_variants": ["cpu"],
+    "bin_variants": ["cpu"],
+    "config_extra": {},
+    "streams_model_from_storage": false
+  },
+  "install": {
+    "strategy": "github_release",
+    "install_recipe": "moonshine",
+    "pin_recipe": "moonshine",
+    "supports_split_archive": false,
+    "asset_backend": "identity",
+    "cases": [
+      {
+        "os": ["windows"],
+        "repo": "lemonade-sdk/moonshine-server-rocm",
+        "filename": {
+          "concat": ["moonshine-server-", {"ref": "/install/version"}, "-windows-x64.zip"]
+        }
+      },
+      {
+        "os": ["macos"],
+        "repo": "lemonade-sdk/moonshine-server-rocm",
+        "filename": {
+          "concat": ["moonshine-server-", {"ref": "/install/version"}, "-macos-arm64.tar.gz"]
+        }
+      },
+      {
+        "os": ["linux"],
+        "machine_arch": ["aarch64"],
+        "repo": "lemonade-sdk/moonshine-server-rocm",
+        "filename": {
+          "concat": ["moonshine-server-", {"ref": "/install/version"}, "-linux-arm64.tar.gz"]
+        }
+      },
+      {
+        "os": ["linux"],
+        "machine_arch": ["x86_64", ""],
+        "repo": "lemonade-sdk/moonshine-server-rocm",
+        "filename": {
+          "concat": ["moonshine-server-", {"ref": "/install/version"}, "-linux-x64.tar.gz"]
+        }
+      }
+    ]
+  },
+  "artifacts": {
+    "main": {
+      "role": "main",
+      "strategy": "resolved_path",
+      "cache_resolution": "default",
+      "import_resolution": "default",
+      "files_from": "variant_directory",
+      "files_error": {
+        "concat": ["No Moonshine model files found in folder: ", {"ref": "/model/variant"}]
+      },
+      "missing_error": {
+        "concat": ["Model directory not found for checkpoint: ", {"ref": "/model/checkpoint"}]
+      }
+    }
+  },
+  "launch": {
+    "prepare_order": ["backend", "install", "artifacts", "hook", "program", "ports"],
+    "backend": {"fixed": "cpu"},
+    "program": {"source": "managed", "install_policy": "always"},
+    "ports": [
+      {
+        "name": "http",
+        "strategy": "probe",
+        "span": 3,
+        "attempts": 50,
+        "reject_zero": true,
+        "error": "Failed to find three consecutive available ports"
+      },
+      {
+        "name": "tcp",
+        "strategy": "offset",
+        "base": "http",
+        "offset": 2,
+        "reject_zero": false,
+        "error": ""
+      }
+    ],
+    "argv": [
+      {
+        "args": [
+          "--model-path",
+          {"ref": "/artifacts/main"},
+          "--model-arch",
+          {"string": {"ref": "/launch/hook"}},
+          "--port",
+          {"string": {"ref": "/launch/ports/http"}},
+          "--tcp-port",
+          {"string": {"ref": "/launch/ports/tcp"}}
+        ]
+      }
+    ],
+    "custom_args": {
+      "option": "moonshine_args",
+      "reserved": ["--model-path", "--model-arch", "--port", "--tcp-port"],
+      "error_prefix": "Invalid custom moonshine-server arguments:\n"
+    },
+    "environment": {
+      "preset": "inherit",
+      "set": [{"name": "PYTHONNOUSERSITE", "value": "1"}]
+    },
+    "working_directory": "inherit",
+    "output": {
+      "inherit_levels": ["info", "debug", "trace"],
+      "filter": false
+    },
+    "readiness": {"port": "http", "path": "/health", "timeout": 600},
+    "watchdog": {"policy": "standard", "port": "http", "path": "/health"}
+  },
+  "operations": [
+    {
+      "operation": "transcription",
+      "delivery": "buffered",
+      "model_modes": ["*"],
+      "handler": {"id": "moonshine.transcription", "params": {}},
+      "request": {"base": "identity"}
+    },
+    {
+      "operation": "streaming_transcription",
+      "delivery": "realtime",
+      "model_modes": ["*"],
+      "transport": {
+        "kind": "realtime",
+        "method": "TCP",
+        "path": "/",
+        "port": "tcp",
+        "timeout": "global",
+        "stream_codec": "jsonl.v1"
+      },
+      "request": {"base": "identity"}
+    }
+  ],
+  "unsupported_messages": {
+    "chat_completion": "Moonshine models do not support chat completion. Use audio transcription endpoints instead.",
+    "completion": "Moonshine models do not support text completion. Use audio transcription endpoints instead.",
+    "responses": "Moonshine models do not support responses. Use audio transcription endpoints instead."
+  },
+  "hooks": {"launch": {"id": "moonshine.model_arch", "params": {}}},
+  "rationale": [
+    {
+      "subject": "/launch/ports",
+      "text": "moonshine-server binds three consecutive ports (HTTP, WebSocket at +1, TCP at +2); all three are probed before launching instead of assuming the neighbours are free.",
+      "source": "7fb46ce0e:src/cpp/server/backends/moonshine/moonshine_server.cpp:102",
+      "tests": ["moonshine_consecutive_ports"]
+    },
+    {
+      "subject": "/hooks/launch",
+      "text": "The registry's moonshine_arch field wins; otherwise the architecture is inferred from the checkpoint variant (tiny, small, else medium streaming).",
+      "source": "7fb46ce0e:src/cpp/server/backends/moonshine/moonshine_server.cpp:84",
+      "tests": ["moonshine_model_arch"]
+    },
+    {
+      "subject": "/artifacts/main/files_from",
+      "text": "A Moonshine variant names a directory; every file under it is downloaded.",
+      "source": "7fb46ce0e:src/cpp/server/backends/moonshine/moonshine_server.cpp:342",
+      "tests": ["moonshine_variant_files"]
+    },
+    {
+      "subject": "/launch/environment",
+      "text": "The bundled Python environment must not pick up system or user site packages.",
+      "source": "7fb46ce0e:src/cpp/server/backends/moonshine/moonshine_server.cpp:157",
+      "tests": ["moonshine_environment"]
+    }
+  ]
+}
