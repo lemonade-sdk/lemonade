@@ -257,6 +257,55 @@ class OllamaTests(ServerTestBase):
             model.json()["downloaded"], f"{ENDPOINT_TEST_MODEL} was deleted"
         )
 
+    def test_005c_delete_a_registered_latest_name(self):
+        """Test /api/delete of a registered "<model>:latest" deletes that model, not <model>."""
+        self.ensure_model_pulled()
+        latest_name = f"{ENDPOINT_TEST_MODEL}:latest"
+        register = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": f"user.{latest_name}",
+                "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
+                "recipe": "llamacpp",
+                "embedding": True,
+                "stream": False,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(register.status_code, 200, register.text)
+
+        try:
+            delete = requests.delete(
+                f"{OLLAMA_BASE_URL}/api/delete",
+                json={"model": latest_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(delete.status_code, 200, delete.text)
+
+            model = requests.get(
+                f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(model.status_code, 200, model.text)
+            self.assertTrue(
+                model.json()["downloaded"], f"{ENDPOINT_TEST_MODEL} was deleted"
+            )
+
+            latest = requests.get(
+                f"{self.base_url}/models/{requests.utils.quote(f'user.{latest_name}')}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertTrue(
+                latest.status_code == 404 or not latest.json().get("downloaded"),
+                f"user.{latest_name} was not deleted: {latest.text}",
+            )
+        finally:
+            requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": f"user.{latest_name}"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
     def test_006_ps(self):
         """Test /api/ps returns running models with correct Ollama format."""
         self.ensure_model_pulled()
