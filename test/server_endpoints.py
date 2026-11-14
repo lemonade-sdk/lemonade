@@ -8326,7 +8326,7 @@ class EndpointTests(ServerTestBase):
         checkpoint = "Qwen/Qwen1.5-0.5B-Chat"
         response = requests.get(
             f"{self.base_url}/pull/variants",
-            params={"checkpoint": checkpoint},
+            params={"checkpoint": checkpoint, "source": "huggingface"},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(

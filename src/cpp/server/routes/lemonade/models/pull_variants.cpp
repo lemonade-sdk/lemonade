@@ -20,7 +20,8 @@ const RouteError kMalformedCheckpoint{400, "", "`checkpoint` does not contain `/
 const RouteError kUnsupportedRepo{
     400, "",
     "`source` names an unsupported registry, the repository has no GGUF, ONNX RyzenAI or "
-    "collection files, or the Hugging Face GGUF repository is one llama.cpp cannot run"};
+    "collection files, its collection manifest is invalid or too large, or the Hugging Face "
+    "GGUF repository is one llama.cpp cannot run"};
 const RouteError kCheckpointNotFound{404, "", "The registry has no such checkpoint"};
 const RouteError kVariantsFailed{
     500, "",

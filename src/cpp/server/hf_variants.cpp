@@ -441,7 +441,7 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
         static constexpr uint64_t kMaxManifestBytes = 5ull * 1024 * 1024;
         for (const auto& kv : file_sizes) {
             if (kv.first == manifest_filename && kv.second > kMaxManifestBytes) {
-                throw std::runtime_error(
+                throw std::invalid_argument(
                     "Repository " + checkpoint + " contains '" + manifest_filename +
                     "' but it is too large to be a Lemonade Omni collection manifest");
             }
@@ -469,7 +469,7 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
             !manifest["components"].empty() &&
             manifest.contains("models") && manifest["models"].is_array();
         if (!valid_manifest) {
-            throw std::runtime_error(
+            throw std::invalid_argument(
                 "Repository " + checkpoint + " contains '" + manifest_filename +
                 "' but it is not a Lemonade Omni collection manifest (expected an exported "
                 "collection JSON with recipe \"collection.omni\", a non-empty 'components' "
