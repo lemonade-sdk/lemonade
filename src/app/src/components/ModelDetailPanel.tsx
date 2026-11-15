@@ -1937,6 +1937,7 @@ const ModelConfigurationTab: React.FC<{
             <option value="">{deviceOptionLabel(activeDevice, info, runtimeDevices)}</option>
             {options.map(opt => <option key={opt} value={opt}>{deviceOptionLabel(opt, info, runtimeDevices)}</option>)}
           </select>
+          <small>{t('GPUs on {server}', { server: serverLabel(serverId) })}</small>
         </label>
       );
     }
