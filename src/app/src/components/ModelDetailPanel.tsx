@@ -50,7 +50,7 @@ import {
 } from '../samplerArgs';
 import type { ArgFieldSpec } from '../samplerArgs';
 import { storageKey } from '../storage';
-import { deviceSelectionIsAvailable, isAutomaticDevice, serverLabel } from '../deviceSelection';
+import { deviceSelectionIsAvailable, isAutomaticDevice, matchingDeviceOption, serverLabel } from '../deviceSelection';
 import {
   describeRouterModelConnection,
   providerEndpointNeedsInsecureOptIn,
@@ -499,7 +499,7 @@ function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefin
     }
   }
   const normalizedCurrent = optionalDisplayValue(current);
-  const options = normalizedCurrent && !base.includes(normalizedCurrent) ? [normalizedCurrent, ...base] : base;
+  const options = normalizedCurrent && !matchingDeviceOption(normalizedCurrent, base) ? [normalizedCurrent, ...base] : base;
   return Array.from(new Set(options.filter(Boolean)));
 }
 
@@ -1922,6 +1922,7 @@ const ModelConfigurationTab: React.FC<{
         : 'auto';
       const activeDevice = optionalDisplayValue(serverDefaultRecipeOptions[key]) || 'auto';
       const options = deviceOptionsForKey(key, draftValue || undefined, selectedBackend, model, info).filter(opt => opt !== activeDevice);
+      const selectedDevice = matchingDeviceOption(draftValue, options) ?? draftValue;
       const runtimeDevices = runtimeDevicesFor(info, activeRecipe, deviceBackendFor(activeRecipe, selectedBackend, info));
       return (
         <label key={String(key)} className="detail-tuning__field detail-configuration__field" htmlFor={fieldId}>
@@ -1931,7 +1932,7 @@ const ModelConfigurationTab: React.FC<{
             className="select detail-configuration__select"
             title={hint || undefined}
             aria-description={hint || undefined}
-            value={draftValue}
+            value={selectedDevice}
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           >
             <option value="">{deviceOptionLabel(activeDevice, info, runtimeDevices)}</option>
