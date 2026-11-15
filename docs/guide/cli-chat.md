@@ -59,6 +59,12 @@ Use `/think` to control whether the model reasons at all:
 | `/think off` | Suppress the thinking trace (injects `/no_think` on supported models) |
 | `/think default` | Stop overriding, let the model do whatever it does by default |
 
+### Performance stats
+
+After each reply, the REPL prints one line with the token count, decode speed, time to first token (TTFT), prefill speed and prompt tokens. Use `/stats` to show it again.
+
+Decode speed leaves out the prefill time. Prefill speed shows only when the backend reports it. With `--no-stream`, TTFT is shown only if the backend reports it, and the speed is labelled `(overall)` when it is averaged over the whole request.
+
 ### Key bindings
 
 | Key | Action |

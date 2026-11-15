@@ -1,4 +1,5 @@
 #include "lemon_cli/chat_repl.h"
+#include "lemon_cli/chat_stats.h"
 #include "lemon_cli/model_selection.h"
 
 #include <atomic>
@@ -485,9 +486,7 @@ std::string fetch_currently_loaded_model(lemonade::LemonadeClient& client) {
 struct TurnResult {
     bool ok = false;
     bool interrupted = false;
-    int prompt_tokens = 0;
-    int completion_tokens = 0;
-    double seconds = 0.0;
+    TurnStats stats;
 };
 
 // Non-streaming version: returns the full assistant text via assistant_out.
@@ -553,9 +552,11 @@ TurnResult blocking_chat_turn(const TermUi& ui,
                 std::cout << std::endl;
             }
         }
-        if (response.contains("usage") && response["usage"].is_object()) {
-            result.prompt_tokens = response["usage"].value("prompt_tokens", 0);
-            result.completion_tokens = response["usage"].value("completion_tokens", 0);
+        if (response.contains("usage")) {
+            apply_usage(response["usage"], result.stats);
+        }
+        if (response.contains("timings")) {
+            apply_server_timings(response["timings"], result.stats);
         }
         result.ok = true;
     } catch (const std::exception& e) {
@@ -564,7 +565,8 @@ TurnResult blocking_chat_turn(const TermUi& ui,
     }
     spinner.stop();
     auto end = std::chrono::steady_clock::now();
-    result.seconds = std::chrono::duration<double>(end - start).count();
+    result.stats.total_seconds = std::chrono::duration<double>(end - start).count();
+    finalize_turn_stats(result.stats, /*client_ttft_seconds=*/-1.0);
     result.interrupted = g_interrupted.load();
     return result;
 }
@@ -589,14 +591,20 @@ TurnResult stream_chat_turn_capture(const TermUi& ui,
     bool content_started = false;
     bool reasoning_started = false;
     bool reasoning_closed = false;
-    int prompt_tokens = 0;
-    int completion_tokens = 0;
+    TurnStats stats;
+    double client_ttft_seconds = -1.0;
 
     Style s(ui);
     Spinner spinner;
     spinner.start(ui, "Generating\xe2\x80\xa6");  // "Generating…"
     auto start = std::chrono::steady_clock::now();
 
+    auto note_first_token = [&]() {
+        if (client_ttft_seconds < 0.0) {
+            client_ttft_seconds = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - start).count();
+        }
+    };
     auto write_indented = [](const std::string& piece) {
         for (char c : piece) {
             std::cout << c;
@@ -656,6 +664,7 @@ TurnResult stream_chat_turn_capture(const TermUi& ui,
                     const std::string piece =
                         delta["reasoning_content"].get<std::string>();
                     if (!piece.empty()) {
+                        note_first_token();
                         spinner.stop();
                         if (!reasoning_started) {
                             start_reasoning_block();
@@ -670,6 +679,7 @@ TurnResult stream_chat_turn_capture(const TermUi& ui,
                 if (delta.contains("content") && delta["content"].is_string()) {
                     const std::string piece = delta["content"].get<std::string>();
                     if (!piece.empty()) {
+                        note_first_token();
                         spinner.stop();
                         if (reasoning_started && !reasoning_closed) {
                             close_reasoning_block();
@@ -683,9 +693,11 @@ TurnResult stream_chat_turn_capture(const TermUi& ui,
                     }
                 }
             }
-            if (chunk.contains("usage") && chunk["usage"].is_object()) {
-                prompt_tokens = chunk["usage"].value("prompt_tokens", prompt_tokens);
-                completion_tokens = chunk["usage"].value("completion_tokens", completion_tokens);
+            if (chunk.contains("usage")) {
+                apply_usage(chunk["usage"], stats);
+            }
+            if (chunk.contains("timings")) {
+                apply_server_timings(chunk["timings"], stats);
             }
         } catch (const json::exception&) {
         }
@@ -714,9 +726,9 @@ TurnResult stream_chat_turn_capture(const TermUi& ui,
     }
 
     auto end = std::chrono::steady_clock::now();
-    result.seconds = std::chrono::duration<double>(end - start).count();
-    result.prompt_tokens = prompt_tokens;
-    result.completion_tokens = completion_tokens;
+    stats.total_seconds = std::chrono::duration<double>(end - start).count();
+    finalize_turn_stats(stats, client_ttft_seconds);
+    result.stats = stats;
     result.interrupted = g_interrupted.load();
     result.ok = finished_cleanly && !result.interrupted;
     if (content_started || reasoning_started) {
@@ -726,22 +738,14 @@ TurnResult stream_chat_turn_capture(const TermUi& ui,
 }
 
 void print_stats(const TermUi& ui, const TurnResult& last) {
-    if (last.completion_tokens <= 0 || last.seconds <= 0.0) {
+    if (last.stats.completion_tokens <= 0 || last.stats.total_seconds <= 0.0) {
         return;
     }
-    double tok_per_s = static_cast<double>(last.completion_tokens) / last.seconds;
     Style s(ui);
     const char* dash = ui.unicode ? "\xe2\x80\x94" : "--";  // — (U+2014)
-    const char* sep  = ui.unicode ? " \xc2\xb7 "   : " | ";  // ·
 
-    std::ostringstream oss;
-    oss.setf(std::ios::fixed);
-    oss.precision(1);
-    oss << last.completion_tokens << " tokens" << sep
-        << tok_per_s << " tok/s" << sep
-        << last.prompt_tokens << " prompt";
-
-    std::cout << "  " << s.dim() << dash << " " << oss.str() << " " << dash
+    std::cout << "  " << s.dim() << dash << " "
+              << format_turn_stats(last.stats, ui.unicode) << " " << dash
               << s.reset() << "\n";
 }
 
@@ -1066,7 +1070,7 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
                     print_error(ui, e.what());
                 }
             } else if (cmd == "/stats") {
-                if (last_turn.completion_tokens <= 0) {
+                if (last_turn.stats.completion_tokens <= 0) {
                     print_info(ui, "no completed turn yet");
                 } else {
                     print_stats(ui, last_turn);
