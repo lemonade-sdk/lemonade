@@ -113,6 +113,24 @@ Download an image model first, for example `lemonade pull SD-Turbo-GGUF`. `--cod
 - Launch warns when the model is not labeled `tool-calling`. Pi needs tool calls to read and edit files.
 - Launch also warns when the model name is not on the Lemonade server, for example a typo.
 
+## Experimental Hybrid-Coder-Mode
+
+With a llama.cpp chat model, first enable Hybrid-Coder-Mode in the GUI's load settings or run:
+
+```bash
+lemonade load Qwen3.5-35B-A3B-GGUF --ctx-size 65536 --hybrid-coder-mode --save-options
+lemonade launch pi --model Qwen3.5-35B-A3B-GGUF
+```
+
+**Loading the model does not enable Hybrid in Pi by itself.** Every Hybrid coding
+request must set `hybrid_coder_mode: true` or `X-Lemonade-Hybrid: 1`, ideally with
+a stable `x_lemonade_hybrid_session` / `X-Lemonade-Hybrid-Session`. A blanket
+provider header is unsafe if it also reaches Pi's separate compaction or title
+requests. Normal Pi requests remain normal by default. No current Pi setting
+consumes Lemonade's Orchestrator context telemetry automatically; a future Pi
+adapter/PR can read `x_lemonade_hybrid.context.orchestrator` from the terminal
+SSE chunk and choose client compaction accordingly. See [Hybrid-Coder-Mode](../dev/hybrid-coder-mode.md).
+
 ## How it works
 
 `lemonade launch pi` writes these files in Pi's agent directory, `~/.pi/agent/` (or `$PI_CODING_AGENT_DIR`):

@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <regex>
 #include <system_error>
+#include "lemon/server/hybrid_slot_scope.h"
 #include <utility>
 #include "lemon/auto_tune.h"
 #include "lemon/backend_manager.h"
@@ -132,8 +133,9 @@ static bool is_dflash_draft_checkpoint(std::string checkpoint) {
 static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
                                                  const std::string& backend,
                                                  const std::string& custom_args,
-                                                 bool merge_args) {
-    if (!merge_args) return custom_args;
+                                                 bool merge_args,
+                                                 bool hybrid_coder_mode) {
+    if (!merge_args && !hybrid_coder_mode) return custom_args;
 
     std::vector<RuntimeArgDefault> defaults;
 
@@ -147,25 +149,44 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
         std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") !=
         model_info.labels.end();
 
-    if (is_dflash_draft && has_dflash_label) {
+    if (merge_args && is_dflash_draft && has_dflash_label) {
         defaults.push_back({"--spec-type draft-dflash", "--spec-type"});
-    } else if (uses_mtp) {
+    } else if (merge_args && uses_mtp) {
         defaults.push_back({"--spec-type draft-mtp", "--spec-type"});
     }
 
-    // An auto slot count also enables the unified KV buffer, which advertises the
-    // full ctx_size to every slot instead of dividing it. Pinning the count keeps
-    // ctx_size the context a request actually gets.
-    defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
+    // An explicit slot count prevents unified KV from presenting the whole
+    // context quota to each worker. Exactly two slots for Hybrid.
+    defaults.push_back({hybrid_coder_mode ? "--parallel 2" : "--parallel 1", "--parallel", {"-np"}});
+    // No save path is needed: role KV is rebuilt from authoritative
+    // histories. Never write checkpoint files into the launcher CWD.
 
     // llama-server's 512-token ubatch costs the Strix Halo forks a fifth or more
     // of their prefill; nathanw's author measures, and recommends, 2048.
-    if (backend == "nathanw" || backend == "halobox") {
+    if (merge_args && (backend == "nathanw" || backend == "halobox")) {
         defaults.push_back({"-b 2048", "-b", {"--batch-size"}});
         defaults.push_back({"-ub 2048", "-ub", {"--ubatch-size"}});
     }
 
-    return append_runtime_arg_defaults(custom_args, defaults);
+    const std::string resolved = append_runtime_arg_defaults(custom_args, defaults);
+    if (hybrid_coder_mode) {
+        const auto flags = build_custom_args_map(parse_custom_args(resolved));
+        size_t occurrences = 0;
+        for (const std::string& key : {"--parallel", "-np"}) {
+            auto it = flags.find(key);
+            if (it == flags.end()) continue;
+            occurrences += it->second.size();
+            for (const auto& args : it->second) {
+                if (args.size() != 1 || args[0] != "2") {
+                    throw std::invalid_argument("Hybrid-Coder-Mode requires exactly --parallel 2");
+                }
+            }
+        }
+        if (occurrences != 1) {
+            throw std::invalid_argument("Hybrid-Coder-Mode requires one --parallel 2 option");
+        }
+    }
+    return resolved;
 }
 
 static std::string trim_version_prefix(const std::string& version) {
@@ -300,6 +321,7 @@ void LlamaCppServer::load(const std::string& model_name,
     LOG(INFO, "LlamaCpp") << "Loading model: " << model_name << std::endl;
 
     LOG(DEBUG, "LlamaCpp") << "Per-model settings: " << options.to_log_string() << std::endl;
+    hybrid_coder_slots_ = options.bool_option("hybrid_coder_mode").value_or(false);
 
     int ctx_size = options.get_option("ctx_size");
 
@@ -738,18 +760,45 @@ json LlamaCppServer::normalize_response_model(json response, const json& request
     return response;
 }
 
+// Internal roles specify id_slot 0/1. Normal requests keep their existing
+// slot behavior. The per-model gate serializes inference with explicit erases.
+static json with_protected_hybrid_slot(json request, bool enabled,
+                                        bool is_responses = false) {
+    if (!enabled) return request;
+    request.erase("hybrid_coder_mode");
+    request.erase("x_lemonade_hybrid_session");
+    const int slot = hybrid_slot_scope::resolved_slot();
+    if (slot < 0) return request; // Ordinary client, no forced id_slot.
+    if (is_responses) {
+        if (!request.contains("extra_params") || !request["extra_params"].is_object()) {
+            request["extra_params"] = json::object();
+        }
+        request["extra_params"]["id_slot"] = slot;
+        request.erase("id_slot");
+    } else {
+        request["id_slot"] = slot;
+    }
+    return request;
+}
+
 json LlamaCppServer::chat_completion(const json& request) {
+    hybrid_slot_scope::InferenceGuard model_gate(get_model_name(), hybrid_coder_slots_);
+    hybrid_slot_scope::note_ordinary_inference(get_model_name(), hybrid_coder_slots_);
     return normalize_response_model(
         forward_request("/v1/chat/completions",
                         llamacpp::sanitize_tool_schema_limits(
-                            JsonUtils::with_legacy_max_tokens_alias(request))),
+                            with_protected_hybrid_slot(JsonUtils::with_legacy_max_tokens_alias(request),
+                                                       hybrid_coder_slots_))),
         request);
 }
 
 json LlamaCppServer::completion(const json& request) {
+    hybrid_slot_scope::InferenceGuard model_gate(get_model_name(), hybrid_coder_slots_);
+    hybrid_slot_scope::note_ordinary_inference(get_model_name(), hybrid_coder_slots_);
     return normalize_response_model(
         forward_request("/v1/completions",
-                        JsonUtils::with_legacy_max_tokens_alias(request)),
+                        with_protected_hybrid_slot(JsonUtils::with_legacy_max_tokens_alias(request),
+                                                    hybrid_coder_slots_)),
         request);
 }
 
@@ -989,9 +1038,12 @@ json LlamaCppServer::tokenize(const json& request_body) {
 }
 
 json LlamaCppServer::responses(const json& request) {
+    hybrid_slot_scope::InferenceGuard model_gate(get_model_name(), hybrid_coder_slots_);
+    hybrid_slot_scope::note_ordinary_inference(get_model_name(), hybrid_coder_slots_);
     return normalize_response_model(
         forward_request("/v1/responses",
-                        llamacpp::sanitize_tool_schema_limits(request)),
+                        with_protected_hybrid_slot(llamacpp::sanitize_tool_schema_limits(request),
+                                                    hybrid_coder_slots_, true)),
         request);
 }
 
@@ -1001,14 +1053,19 @@ void LlamaCppServer::forward_streaming_request(const std::string& endpoint,
                                                bool sse,
                                                long timeout_seconds,
                                                TelemetryCallback telemetry_callback) {
+    hybrid_slot_scope::InferenceGuard model_gate(get_model_name(), hybrid_coder_slots_);
+    hybrid_slot_scope::note_ordinary_inference(get_model_name(), hybrid_coder_slots_);
     std::string body = request_body;
-    if (endpoint == "/v1/chat/completions" || endpoint == "/v1/responses") {
+    if (endpoint == "/v1/chat/completions" || endpoint == "/v1/responses" ||
+        endpoint == "/v1/completions") {
         json request = json::parse(request_body, nullptr, false);
         if (!request.is_discarded()) {
             if (endpoint == "/v1/chat/completions") {
                 JsonUtils::add_legacy_max_tokens_alias(request);
             }
-            body = llamacpp::sanitize_tool_schema_limits(std::move(request)).dump();
+            request = llamacpp::sanitize_tool_schema_limits(std::move(request));
+            body = with_protected_hybrid_slot(std::move(request), hybrid_coder_slots_,
+                                               endpoint == "/v1/responses").dump();
         }
     }
 
@@ -1147,9 +1204,10 @@ public:
         const json backend_value = options.get_option("llamacpp_backend");
         const std::string backend =
             backend_value.is_string() ? backend_value.get<std::string>() : "";
+        const bool hybrid = options.get_option("hybrid_coder_mode") == true;
         options.set_option(
             "llamacpp_args",
-            resolve_llamacpp_runtime_args(info, backend, custom_args, merge_args));
+            resolve_llamacpp_runtime_args(info, backend, custom_args, merge_args, hybrid));
     }
 
     void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {

@@ -234,6 +234,7 @@ function fieldValue(value: unknown): string {
 
 interface LoadSettingsDraft {
   ctxSize: string;
+  hybridCoderMode: boolean;
   recipe: Record<string, string>;
 }
 
@@ -251,12 +252,13 @@ function draftFromResolvedOptions(
   const recipe: Record<string, string> = {};
   for (const key of managedKeys) {
     const name = String(key);
-    if (name === 'ctx_size') continue;
+    if (name === 'ctx_size' || name === 'hybrid_coder_mode') continue;
     recipe[name] = fieldValue((offersResolvedValue(key) ? saved : effective)[key]);
   }
   const ctxRaw = effective.ctx_size ?? saved.ctx_size;
   return {
     ctxSize: ctxRaw != null ? String(ctxRaw) : '-1',
+    hybridCoderMode: effective.hybrid_coder_mode === true,
     recipe,
   };
 }
@@ -346,7 +348,7 @@ function tuningKeysForModel(
     if (!keys.includes('speed')) keys.push('speed');
   }
 
-  return keys.filter(key => key !== 'ctx_size' && key !== 'merge_args' && key !== 'mmproj_enabled');
+  return keys.filter(key => key !== 'ctx_size' && key !== 'hybrid_coder_mode' && key !== 'merge_args' && key !== 'mmproj_enabled');
 }
 
 type SystemInfoLike = Record<string, unknown> | null | undefined;
@@ -1478,12 +1480,14 @@ const ModelConfigurationTab: React.FC<{
   const [serverDefaultRecipeOptions, setServerDefaultRecipeOptions] = useState<RecipeOptions>({});
   const [serverOptionsLoaded, setServerOptionsLoaded] = useState(false);
   const [ctxSizeDraft, setCtxSizeDraft] = useState('-1');
+  const [hybridCoderDraft, setHybridCoderDraft] = useState(false);
   const [recipeDraft, setRecipeDraft] = useState<Record<string, string>>({});
   const [customVoiceMode, setCustomVoiceMode] = useState(false);
   const [resolvedCtxSize, setResolvedCtxSize] = useState<number | null>(null);
 
   const applyDraft = useCallback((draft: LoadSettingsDraft) => {
     setCtxSizeDraft(draft.ctxSize);
+    setHybridCoderDraft(draft.hybridCoderMode);
     setRecipeDraft(draft.recipe);
     const storedVoice = draft.recipe.voice || '';
     setCustomVoiceMode(Boolean(storedVoice && !knownVoiceIds.has(storedVoice.toLowerCase())));
@@ -1522,6 +1526,7 @@ const ModelConfigurationTab: React.FC<{
     // has to go with its server state — otherwise it stays on screen, and in the
     // load body, until this fetch resolves.
     setCtxSizeDraft('-1');
+    setHybridCoderDraft(false);
     setRecipeDraft({});
     setCustomVoiceMode(false);
     void api.getModelOptions(name)
@@ -1541,7 +1546,9 @@ const ModelConfigurationTab: React.FC<{
     () => draftFromResolvedOptions(recipeKeys, serverSavedRecipeOptions, serverEffectiveRecipeOptions, offersResolvedValue),
     [offersResolvedValue, recipeKeys, serverEffectiveRecipeOptions, serverSavedRecipeOptions],
   );
+  const canHybridCode = activeRecipe === 'llamacpp' && capabilityFromModelInfo(model) === 'chat';
   const hasLoadSettingChanges = ctxSizeDraft !== savedLoadSettings.ctxSize
+    || (canHybridCode && hybridCoderDraft !== savedLoadSettings.hybridCoderMode)
     || !draftFieldsEqual(recipeKeys, recipeDraft, savedLoadSettings.recipe);
 
   useEffect(() => {
@@ -1605,7 +1612,7 @@ const ModelConfigurationTab: React.FC<{
   // Only the options this panel manages count: a reset here cannot claim to
   // clear a saved key it never shows.
   const hasSavedOptions = Object.keys(serverSavedRecipeOptions)
-    .some(key => key === 'ctx_size' || key === 'merge_args' || recipeKeys.includes(key as keyof RecipeOptions));
+    .some(key => key === 'ctx_size' || key === 'hybrid_coder_mode' || key === 'merge_args' || recipeKeys.includes(key as keyof RecipeOptions));
 
   // Both sides of the comparison drop "auto" and the empty string, and an args
   // string is compared by what it sets rather than by how it was typed.
@@ -1623,7 +1630,8 @@ const ModelConfigurationTab: React.FC<{
     const option = String(key);
     const shown = (recipeDraft[option] || '').trim() || String(defaultOptionValue(key) ?? '');
     return canonicalOptionValue(option, shown) !== canonicalOptionValue(option, runningOptions[option]);
-  }) || (supportsContextSize && runningCtxSize !== undefined && currentCtxSize !== runningCtxSize);
+  }) || (supportsContextSize && runningCtxSize !== undefined && currentCtxSize !== runningCtxSize)
+    || (canHybridCode && hybridCoderDraft !== (runningOptions.hybrid_coder_mode === true));
 
   const buildConfigOptions = (): RecipeOptions => {
     const raw: Partial<RecipeOptions> = {};
@@ -1640,6 +1648,7 @@ const ModelConfigurationTab: React.FC<{
     }
     const ctxNum = parseNumberOrUndefined(ctxSizeDraft);
     if (supportsContextSize && ctxNum !== undefined) (raw as Record<string, unknown>).ctx_size = ctxNum;
+    if (canHybridCode) raw.hybrid_coder_mode = hybridCoderDraft;
     return sanitizeRecipeOptions(raw);
   };
 
@@ -1668,6 +1677,10 @@ const ModelConfigurationTab: React.FC<{
       const ctxDraftValue = nextOptions.ctx_size;
       if (ctxDraftValue === undefined || ctxDraftValue === serverDefaultRecipeOptions.ctx_size) clear('ctx_size');
       else patch.ctx_size = ctxDraftValue;
+    }
+    if (canHybridCode && hybridCoderDraft !== savedLoadSettings.hybridCoderMode) {
+      if (hybridCoderDraft === (serverDefaultRecipeOptions.hybrid_coder_mode === true)) clear('hybrid_coder_mode');
+      else patch.hybrid_coder_mode = hybridCoderDraft;
     }
 
     if (Object.keys(patch).length === 0) {
@@ -1711,6 +1724,7 @@ const ModelConfigurationTab: React.FC<{
       options[key] = Object.prototype.hasOwnProperty.call(configured, key) ? configured[key] : null;
     }
     if (supportsContextSize) options.ctx_size = configured.ctx_size ?? -1;
+    if (canHybridCode) options.hybrid_coder_mode = hybridCoderDraft;
     if (sendsArgs) options.merge_args = false;
     return options;
   };
@@ -2017,6 +2031,21 @@ const ModelConfigurationTab: React.FC<{
                 </div>
               </div>
             </div>
+          )}
+
+          {canHybridCode && (
+            <label
+              className="detail-configuration__autotune"
+              title={t('Divides the context 50:50 between an orchestrator and a resettable worker subagent. Experimental; start a new conversation.')}
+            >
+              <input
+                type="checkbox"
+                checked={hybridCoderDraft}
+                onChange={e => setHybridCoderDraft(e.target.checked)}
+              />
+              <span>{t('Apply Hybrid-Coder-Mode')}</span>
+              <Icon name="info" size={14} aria-hidden="true" />
+            </label>
           )}
 
           {selectorKeys.length > 0 && (

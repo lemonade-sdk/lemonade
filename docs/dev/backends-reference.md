@@ -132,6 +132,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `llamacpp_backend` | `--llamacpp` | BACKEND | "" | LlamaCpp backend to use |
 | `llamacpp_device` | `--llamacpp-device` | DEVICES | "" | Comma-separated list of accelerator devices to use (e.g. Vulkan0) |
 | `llamacpp_args` | `--llamacpp-args` | ARGS | "" | Custom arguments to pass to llama-server |
+| `hybrid_coder_mode` | `--hybrid-coder-mode` | BOOL | false | Isolate an orchestrator and a resettable coding worker in two llama.cpp slots |
 
 #### `llamacpp-hrx` — HRX GPU
 

@@ -380,6 +380,7 @@ The following options are available depending on the recipe being used:
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
 | `--llamacpp-device DEVICES` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | `""` |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server | `""` |
+| `--hybrid-coder-mode BOOL` | Isolate an orchestrator and a resettable coding worker in two llama.cpp slots | `false` |
 
 #### HRX GPU (`llamacpp-hrx` recipe)
 

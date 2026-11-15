@@ -67,6 +67,8 @@ const RouteArg kSaveOptions{"save_options", ArgIn::JsonBody, {{"type", "boolean"
 const RouteArg kLlamacppBackend{"llamacpp_backend", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
                                 "`llamacpp`: the llama.cpp backend: `auto`, `vulkan`, `rocm`, `cuda`, `metal`, `cpu`, `nathanw`, `halobox`, "
                                 "or `system` for a `llama-server` already installed where supported."};
+const RouteArg kHybridCoderMode{"hybrid_coder_mode", ArgIn::JsonBody, {{"type", json::array({"boolean", "null"})}}, false,
+                               Support::Available, "Use two isolated llama.cpp slots for orchestrator and coding worker (experimental)."};
 const RouteArg kLlamacppArgs{"llamacpp_args", ArgIn::JsonBody, {{"type", json::array({"string", "null"})}}, false, Support::Available,
                              "`llamacpp`: extra arguments for `llama-server`. Flags Lemonade sets itself are rejected, "
                              "with their aliases: `-m`, `--port`, `--ctx-size`, `--jinja`, `--device`, `--mmproj`, "
@@ -146,8 +148,8 @@ public:
         };
         s.args = {
             kModelName, kPinned, kSaveOptions, model_options::kCtxSize, kLlamacppBackend,
-            kLlamacppArgs, kWhispercppBackend, kWhispercppArgs, kSteps, kCfgScale, kWidth, kHeight,
-            kMergeArgs
+            kLlamacppArgs, kHybridCoderMode, kWhispercppBackend, kWhispercppArgs, kSteps, kCfgScale,
+            kWidth, kHeight, kMergeArgs
         };
 
         RouteResponse response;

@@ -774,6 +774,8 @@ const ZH_CN: Record<string, string> = {
   'Settings used when this model loads or reloads.': '模型加载或重新加载时使用的设置。',
   'Context size': '上下文大小',
   'Auto tune context size': '自动调整上下文大小',
+  'Apply Hybrid-Coder-Mode': '启用混合编码模式',
+  'Divides the context 50:50 between an orchestrator and a resettable worker subagent. Experimental; start a new conversation.': '将上下文平均分配给协调器与可重置的工作单元。此功能为实验性功能；请开启新对话。',
   'Context size tokens': '上下文大小（令牌数）',
   'Increase context size by {count} tokens': '将上下文大小增加 {count} 个令牌',
   'Decrease context size by {count} tokens': '将上下文大小减少 {count} 个令牌',

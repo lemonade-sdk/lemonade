@@ -35,16 +35,22 @@ int64_t ModelJson::resolve_context_length(const std::string& model_id, const Mod
         return ctx_json.is_number() ? ctx_json.get<int64_t>() : 0;
     };
 
+    const auto exposed_ctx = [&](const RecipeOptions& options) {
+        const int64_t ctx = ctx_size_of(options);
+        return ctx > 0 && options.get_recipe() == "llamacpp" &&
+            options.get_option("hybrid_coder_mode") == true ? ctx / 2 : ctx;
+    };
+
     if (router_) {
         const std::string loaded_name = model_manager_->resolve_alias(model_id).value_or(model_id);
-        const int64_t loaded_ctx = ctx_size_of(router_->get_model_recipe_options(loaded_name));
+        const int64_t loaded_ctx = exposed_ctx(router_->get_model_recipe_options(loaded_name));
         if (loaded_ctx > 0) {
             return loaded_ctx;
         }
 
         const RecipeOptions no_request_options(info.recipe, json::object());
         const int64_t configured_ctx =
-            ctx_size_of(router_->resolve_effective_options(info, no_request_options));
+            exposed_ctx(router_->resolve_effective_options(info, no_request_options));
         if (configured_ctx > 0) {
             return configured_ctx;
         }

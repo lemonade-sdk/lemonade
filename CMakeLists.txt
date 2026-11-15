@@ -1367,6 +1367,46 @@ if(BUILD_TESTING AND EXISTS "${LLAMACPP_SYSTEMONE_TEST_SOURCE}")
     add_cpp_ci_test(llamacpp_systemone CI ON COMMAND test_llamacpp_systemone)
 endif()
 
+# Opt-in Hybrid mode's request-time usage/cache accounting is pure and
+# needs neither a running model nor a GPU.
+set(_HYBRID_USAGE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hybrid_usage.cpp")
+if(BUILD_TESTING AND EXISTS "${_HYBRID_USAGE_TEST_SRC}")
+    add_executable(test_hybrid_usage ${_HYBRID_USAGE_TEST_SRC})
+    target_include_directories(test_hybrid_usage PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    target_link_libraries(test_hybrid_usage PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(HybridUsageTest CI ON COMMAND test_hybrid_usage)
+endif()
+
+# Hybrid Worker single-pass dispatch boundaries are pure C++ (no backend).
+set(_HYBRID_WORKER_POLICY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hybrid_worker_policy.cpp")
+if(BUILD_TESTING AND EXISTS "${_HYBRID_WORKER_POLICY_TEST_SRC}")
+    add_executable(test_hybrid_worker_policy ${_HYBRID_WORKER_POLICY_TEST_SRC})
+    target_include_directories(test_hybrid_worker_policy PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    add_cpp_ci_test(HybridWorkerPolicyTest CI ON COMMAND test_hybrid_worker_policy)
+endif()
+
+
+# Context rollover checks are pure C++ and need no model or network.
+set(_HYBRID_CONTEXT_POLICY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hybrid_context_policy.cpp")
+if(BUILD_TESTING AND EXISTS "${_HYBRID_CONTEXT_POLICY_TEST_SRC}")
+    add_executable(test_hybrid_context_policy ${_HYBRID_CONTEXT_POLICY_TEST_SRC})
+    target_include_directories(test_hybrid_context_policy PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    add_cpp_ci_test(HybridContextPolicyTest CI ON COMMAND test_hybrid_context_policy)
+endif()
+
+set(_HYBRID_SCOPE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hybrid_slot_scope.cpp")
+if(BUILD_TESTING AND EXISTS "${_HYBRID_SCOPE_TEST_SRC}")
+    add_executable(test_hybrid_slot_scope ${_HYBRID_SCOPE_TEST_SRC})
+    target_include_directories(test_hybrid_slot_scope PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    add_cpp_ci_test(HybridSlotScopeTest CI ON COMMAND test_hybrid_slot_scope)
+endif()
+
 set(LLAMACPP_RULEHEAD_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_rulehead.cpp")
 if(BUILD_TESTING AND EXISTS "${LLAMACPP_RULEHEAD_TEST_SOURCE}")
     add_executable(test_llamacpp_rulehead
@@ -2522,6 +2562,15 @@ if(BUILD_TESTING AND EXISTS "${_RECIPE_ARG_RESOLVER_TEST_SRC}")
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
     )
     add_cpp_ci_test(RecipeArgResolutionTest CI ON COMMAND test_recipe_arg_resolution)
+endif()
+
+set(_HYBRID_HISTORY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hybrid_history.cpp")
+if(BUILD_TESTING AND EXISTS "${_HYBRID_HISTORY_TEST_SRC}")
+    add_executable(test_hybrid_history ${_HYBRID_HISTORY_TEST_SRC})
+    target_include_directories(test_hybrid_history PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    target_link_libraries(test_hybrid_history PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(HybridHistoryTest CI ON COMMAND test_hybrid_history)
 endif()
 
 set(_DIR_WATCHER_TEST_SRC

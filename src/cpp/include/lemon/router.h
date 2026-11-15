@@ -229,6 +229,11 @@ public:
     nlohmann::ordered_json systemone(const nlohmann::ordered_json& request);
     json get_slots();
     json slots_action(int slot_id, const std::string& action, const json& request_body);
+    // Internal callers can bind slot operations to their own loaded model.
+    // The existing public routes still target the most-recently-used backend.
+    json get_slots(const std::string& model_name);
+    json slots_action(int slot_id, const std::string& action, const json& request_body,
+                      const std::string& model_name);
     json tokenize(const json& request);
     json responses(const json& request);
 

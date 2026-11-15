@@ -29,6 +29,8 @@ inline const BackendDescriptor descriptor = {
          "Comma-separated list of accelerator devices to use (e.g. Vulkan0)", "Llama.cpp Backend Options"},
         {"llamacpp_args", "--llamacpp-args", "", "ARGS",
          "Custom arguments to pass to llama-server", "Llama.cpp Backend Options"},
+        {"hybrid_coder_mode", "--hybrid-coder-mode", false, "BOOL",
+         "Isolate an orchestrator and a resettable coding worker in two llama.cpp slots", "Llama.cpp Backend Options"},
     },
     /*support*/ {
         {"system", BackendTier::Core, BackendFormat::Native, {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/ARM64 CPU, GPU"},

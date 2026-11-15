@@ -2,6 +2,7 @@
 
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/hybrid_coder.h"
 #include "lemon/server/model_loader.h"
 #include "lemon/server/omni_collection.h"
 #include "lemon/server/openai_args.h"
@@ -66,6 +67,12 @@ ordered_json chat_completion_schema() {
          "The routing decision, when `model` names a `collection.router` model. See "
          "[Routing](./router.md#routing-collectionrouter) for the decision object."},
     };
+    schema["properties"]["x_lemonade_hybrid"] = {
+        {"type", "object"},
+        {"description", "Opt-in Hybrid-Coder context and performance diagnostics. "
+         "The context.orchestrator capacity and last_prompt_tokens describe "
+         "the private role, not the outer client history."},
+    };
     return schema;
 }
 
@@ -108,6 +115,11 @@ ordered_json chat_completion_chunk_schema() {
         {"description",
          "The routing decision, when `model` names a `collection.router` model. See "
          "[Routing](./router.md#routing-collectionrouter) for the decision object."},
+    };
+    schema["properties"]["x_lemonade_hybrid"] = {
+        {"type", "object"},
+        {"description", "Hybrid-Coder diagnostics on the final choice chunk and, "
+         "when requested, the final usage chunk."},
     };
     return schema;
 }
@@ -296,6 +308,50 @@ protected:
         // OpenCode and other OpenAI-compatible clients may send thinking=false
         // instead of Lemonade's enable_thinking=false.
         normalize_thinking_controls(req.body);
+
+        // Loading a model with Hybrid enabled reserves two backend slots; it
+        // does NOT opt every client using that model into the orchestration.
+        // Both an explicit request field and the provider-scoped header are
+        // supported so Pi/Kilo can opt in without mutating ordinary chats.
+        const bool hybrid_model = hybrid_coder_enabled(ctx_, req.model);
+        const json requested_mode = req.body.value("hybrid_coder_mode", json(false));
+        if (!requested_mode.is_boolean()) {
+            write_openai_error(res, kArgInvalid, "hybrid_coder_mode must be a boolean");
+            return;
+        }
+        // An explicit false in the request overrides a provider-level header.
+        const bool hybrid_request = req.body.contains("hybrid_coder_mode")
+            ? requested_mode.get<bool>()
+            : req.http.get_header_value("X-Lemonade-Hybrid") == "1";
+        if (hybrid_request && !hybrid_model) {
+            write_openai_error(res, kArgInvalid,
+                               "Hybrid-Coder requires a model loaded with hybrid_coder_mode=true");
+            return;
+        }
+        // Session identifiers are *only* meaningful on explicit Hybrid calls.
+        if (hybrid_request) {
+            const std::string header_session =
+                req.http.get_header_value("X-Lemonade-Hybrid-Session");
+            if (!header_session.empty() && !req.body.contains("x_lemonade_hybrid_session")) {
+                req.body["x_lemonade_hybrid_session"] = header_session;
+            }
+            if (is_streaming) {
+                ServerContext* context = &ctx_;
+                stream_response(req, res, [context](const std::string& body, httplib::DataSink& sink) {
+                    stream_hybrid_coder(*context, json::parse(body), sink);
+                });
+            } else {
+                auto cancel = cancel_on_disconnect(req);
+                auto response = run_hybrid_coder(ctx_, req.body);
+                if (response.contains("error")) {
+                    set_error_response(response, res, kBackendError);
+                    return;
+                }
+                res.set_content(response.dump(), "application/json");
+                record_usage(response, req);
+            }
+            return;
+        }
 
         if (is_streaming) {
             LOG(INFO, "Server") << "POST /api/v1/chat/completions - Streaming" << std::endl;

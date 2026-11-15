@@ -2231,14 +2231,19 @@ nlohmann::ordered_json Router::classifier_inference(
 }
 
 json Router::get_slots() {
+    return get_slots("");
+}
+
+json Router::get_slots(const std::string& model_name) {
     WrappedServer* server = nullptr;
     ISlotsServer* slots_server = nullptr;
 
     {
         std::unique_lock<std::mutex> lock(load_mutex_);
         wait_for_slot_clearance(lock);
-        server = get_most_recent_server();
-        if (!server) {
+        server = model_name.empty() ? get_most_recent_server()
+                                    : find_server_by_model_name(resolve_model_name(model_name));
+        if (!server || !server->is_backend_alive()) {
             return ErrorResponse::from_exception(
                 ModelNotLoadedException("No models loaded")
             );
@@ -2271,14 +2276,20 @@ json Router::get_slots() {
 }
 
 json Router::slots_action(int slot_id, const std::string& action, const json& request_body) {
+    return slots_action(slot_id, action, request_body, "");
+}
+
+json Router::slots_action(int slot_id, const std::string& action, const json& request_body,
+                          const std::string& model_name) {
     WrappedServer* server = nullptr;
     ISlotsServer* slots_server = nullptr;
 
     {
         std::unique_lock<std::mutex> lock(load_mutex_);
         wait_for_slot_clearance(lock);
-        server = get_most_recent_server();
-        if (!server) {
+        server = model_name.empty() ? get_most_recent_server()
+                                    : find_server_by_model_name(resolve_model_name(model_name));
+        if (!server || !server->is_backend_alive()) {
             return ErrorResponse::from_exception(
                 ModelNotLoadedException("No models loaded")
             );

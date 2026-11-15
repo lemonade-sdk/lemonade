@@ -12,6 +12,7 @@ export interface RecipeOptions {
   llamacpp_backend?: string;
   llamacpp_device?: string;
   llamacpp_args?: string;
+  hybrid_coder_mode?: boolean;
   steps?: number;
   cfg_scale?: number;
   width?: number;
@@ -699,7 +700,7 @@ export function recipeOptionsForCapability(
     case 'chat':
     case 'vision':
     case 'code':
-      return pickRecipeOptions(options, ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'mmproj_enabled', 'flm_args', 'vllm_backend', 'vllm_args', 'merge_args']);
+      return pickRecipeOptions(options, ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'hybrid_coder_mode', 'mmproj_enabled', 'flm_args', 'vllm_backend', 'vllm_args', 'merge_args']);
     case 'all':
     default:
       return { ...options };

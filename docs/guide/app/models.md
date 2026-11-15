@@ -28,6 +28,8 @@ Download and load errors appear in the detail panel. Download progress also appe
 
 Select the model's **Configuration** tab (**1**). **Load settings** (**2**) can include context size and automatic context tuning, backend and device, typed load-time sampling fields, and additional backend CLI arguments. The controls come from the selected recipe, so not every model shows every field.
 
+For a llama.cpp chat model, check **Apply Hybrid-Coder-Mode** immediately below the context selector to reserve half the context for a persistent orchestrator and half for a resettable coding worker. This experimental server mode needs a new conversation and a dedicated model instance; see [Hybrid-Coder-Mode](../../dev/hybrid-coder-mode.md).
+
 ![A selected model's Configuration tab, with callouts for the tab, load settings, and Save](https://raw.githubusercontent.com/lemonade-sdk/assets/39bdd476eced437d135a971d893a99f917117a64/docs/guides/gui3-guide/02-models.png)
 
 The values shown in the form are sent by **Load** or **Get & Load**, even if they have not been saved. **Save** is callout **3**; it and the other actions at the bottom have distinct effects:

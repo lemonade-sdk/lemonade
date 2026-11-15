@@ -82,6 +82,8 @@ private:
     // for a loaded model, so counted once by the first rule-head request.
     std::mutex rule_head_counts_mutex_;
     std::optional<std::pair<size_t, size_t>> rule_head_counts_;
+    // Hybrid uses two existing slots; ordinary requests use backend auto placement.
+    bool hybrid_coder_slots_ = false;
     bool decision_model_ = false;
     std::string decision_type_;
     int64_t decision_max_head_tokens_ = 0;
