@@ -1951,6 +1951,10 @@
       "body": {
         "canonical_model_name": "user.Phi-4-Mini-GGUF",
         "model": {
+          "capabilities": [
+            "chat"
+          ],
+          "capability": "chat",
           "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Q3_K_M",
           "checkpoint_status": [
             {
@@ -9581,6 +9585,10 @@
       "body": {
         "data": [
           {
+            "capabilities": [
+              "classification"
+            ],
+            "capability": "classification",
             "checkpoint": "lemonade-sdk/phishing-email-detection-distilbert-ONNX",
             "checkpoint_status": [
               {
@@ -9611,6 +9619,10 @@
             "update_available": false
           },
           {
+            "capabilities": [
+              "chat"
+            ],
+            "capability": "chat",
             "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
             "checkpoint_status": [
               {
@@ -9645,6 +9657,10 @@
             "update_available": false
           },
           {
+            "capabilities": [
+              "chat"
+            ],
+            "capability": "chat",
             "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Qwen3-0.6B-Q4_0.gguf",
             "checkpoint_status": [
               {
@@ -9679,6 +9695,10 @@
             "update_available": false
           },
           {
+            "capabilities": [
+              "image"
+            ],
+            "capability": "image",
             "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
             "checkpoint_status": [
               {
@@ -9710,6 +9730,10 @@
             "update_available": false
           },
           {
+            "capabilities": [
+              "image"
+            ],
+            "capability": "image",
             "checkpoint": "stabilityai/sd-turbo:sd_turbo.safetensors",
             "checkpoint_status": [
               {
@@ -9747,6 +9771,10 @@
             "update_available": false
           },
           {
+            "capabilities": [
+              "model3d"
+            ],
+            "capability": "model3d",
             "checkpoint": "ilintar/trellis2-gguf",
             "checkpoint_status": [
               {
@@ -9777,6 +9805,10 @@
             "update_available": false
           },
           {
+            "capabilities": [
+              "audio-generation"
+            ],
+            "capability": "audio-generation",
             "checkpoint": "ilintar/thinksound-gguf",
             "checkpoint_status": [
               {
@@ -9807,6 +9839,10 @@
             "update_available": false
           },
           {
+            "capabilities": [
+              "transcription"
+            ],
+            "capability": "transcription",
             "checkpoint": "ggerganov/whisper.cpp:ggml-tiny.bin",
             "checkpoint_status": [
               {
@@ -9846,6 +9882,10 @@
             "update_available": false
           },
           {
+            "capabilities": [
+              "reranking"
+            ],
+            "capability": "reranking",
             "checkpoint": "mradermacher/jina-reranker-v1-tiny-en-GGUF:Q8_0",
             "checkpoint_status": [
               {
@@ -9878,6 +9918,10 @@
             "update_available": false
           },
           {
+            "capabilities": [
+              "tts"
+            ],
+            "capability": "tts",
             "checkpoint": "mikkoph/kokoro-onnx",
             "checkpoint_status": [
               {
@@ -9908,6 +9952,10 @@
             "update_available": false
           },
           {
+            "capabilities": [
+              "embedding"
+            ],
+            "capability": "embedding",
             "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
             "checkpoint_status": [
               {
@@ -9959,6 +10007,10 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
+        "capabilities": [
+          "chat"
+        ],
+        "capability": "chat",
         "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
         "checkpoint_status": [
           {

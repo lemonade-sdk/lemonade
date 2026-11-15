@@ -263,6 +263,8 @@ Requires `LEMONADE_API_KEY` when it is set.
     "owned_by": "lemonade",
     "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Q3_K_M",
     "recipe": "llamacpp",
+    "capability": "chat",
+    "capabilities": ["chat"],
     "downloaded": false,
     "update_available": false,
     "suggested": true,
@@ -291,6 +293,8 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `owned_by` - Always `"lemonade"`.
   - `checkpoint` - The main checkpoint in the model's registry; see `registry_source`.
   - `recipe` - Recipe used to load the model, e.g. `llamacpp` or `flm`.
+  - `capability` - Primary server-owned deployment capability, e.g. chat, image or router.
+  - `capabilities` - Canonical server-owned capabilities including recognized labels such as image-edit.
   - `size` - Size in GB; omitted when unknown.
   - `max_context_window` - Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models.
   - `context_length` - Tokens the model handles in one request: the loaded `ctx_size` while it runs, else the configured `ctx_size`, else `max_context_window`; omitted when none is known.
