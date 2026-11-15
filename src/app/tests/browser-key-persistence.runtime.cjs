@@ -20,6 +20,7 @@ const program = `class TestAPI {
   _apiKeyPersisted = false;
   _hostBaseUrl = null;
   _connectionSettingsPromise = null;
+  _dropSystemInfoOfOtherServer() {}
   ${methods.join('\n')}
 }
 module.exports = TestAPI;`;

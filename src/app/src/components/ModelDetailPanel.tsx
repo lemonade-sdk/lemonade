@@ -50,6 +50,7 @@ import {
 } from '../samplerArgs';
 import type { ArgFieldSpec } from '../samplerArgs';
 import { storageKey } from '../storage';
+import { deviceSelectionIsAvailable, isAutomaticDevice, matchingDeviceOption, serverLabel } from '../deviceSelection';
 import {
   describeRouterModelConnection,
   providerEndpointNeedsInsecureOptIn,
@@ -498,7 +499,7 @@ function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefin
     }
   }
   const normalizedCurrent = optionalDisplayValue(current);
-  const options = normalizedCurrent && !base.includes(normalizedCurrent) ? [normalizedCurrent, ...base] : base;
+  const options = normalizedCurrent && !matchingDeviceOption(normalizedCurrent, base) ? [normalizedCurrent, ...base] : base;
   return Array.from(new Set(options.filter(Boolean)));
 }
 
@@ -1532,6 +1533,14 @@ const ModelConfigurationTab: React.FC<{
   currentNameRef.current = name;
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [systemInfoSettled, setSystemInfoSettled] = useState(() => api.systemInfoData !== null);
+  // Device lists and saved options belong to one server. This panel stays
+  // mounted while the app is pointed at another one, so it follows the server.
+  const [serverId, setServerId] = useState(() => api.baseUrl);
+  useEffect(() => api.onServerChange(() => {
+    setServerId(api.baseUrl);
+    setSystemInfo(null);
+    setSystemInfoSettled(false);
+  }), []);
 
   useEffect(() => {
     if (!isActive) return;
@@ -1543,7 +1552,7 @@ const ModelConfigurationTab: React.FC<{
       .catch(() => { if (alive) setSystemInfo(api.systemInfoData); })
       .finally(() => { if (alive) setSystemInfoSettled(true); });
     return () => { alive = false; };
-  }, [isActive]);
+  }, [isActive, serverId]);
 
   const baseTuning = useMemo(
     () => modelBaseTuningForModel(model, serverDefaultCtxSize),
@@ -1622,7 +1631,7 @@ const ModelConfigurationTab: React.FC<{
         setNotice(`Could not load saved model options: ${friendlyErrorMessage(error)}`);
       });
     return () => { cancelled = true; };
-  }, [name, systemInfoSettled]);
+  }, [name, systemInfoSettled, serverId]);
 
   const savedLoadSettings = useMemo(
     () => draftFromResolvedOptions(recipeKeys, serverSavedRecipeOptions, serverEffectiveRecipeOptions, offersResolvedValue),
@@ -1836,6 +1845,33 @@ const ModelConfigurationTab: React.FC<{
     }
   };
 
+  // A GPU saved for another server, or for a card that is gone, cannot be
+  // applied here. Say so and fall back to automatic selection in the draft, so
+  // a load does not fail on, or land on the wrong card of, this machine.
+  useEffect(() => {
+    if (!serverOptionsLoaded || !systemInfo) return;
+    const backendKey = recipeBackendOptionName(systemInfo, activeRecipe) as keyof RecipeOptions | null;
+    const selectedBackend = backendKey
+      ? recipeDraft[String(backendKey)] || activeBackendValue(backendKey, defaultOptionValue(backendKey), model, info)
+      : 'auto';
+    const stale = recipeKeys.filter(key => {
+      if (!recipeOptionIsDevice(systemInfo, activeRecipe, String(key))) return false;
+      const value = recipeDraft[String(key)] || '';
+      if (isAutomaticDevice(value)) return false;
+      return !deviceSelectionIsAvailable(value, deviceOptionsForKey(key, undefined, selectedBackend, model, info));
+    });
+    if (stale.length === 0) return;
+    setRecipeDraft(prev => {
+      const next = { ...prev };
+      for (const key of stale) next[String(key)] = 'auto';
+      return next;
+    });
+    setNotice(t('GPU {device} is not available on {server}. Using automatic selection; Save to keep this.', {
+      device: stale.map(key => recipeDraft[String(key)]).join(', '),
+      server: serverLabel(serverId),
+    }));
+  });
+
   const renderConfigRecipeField = (key: keyof RecipeOptions) => {
     const fieldId = `config-${name}-${String(key)}`.replace(/[^a-zA-Z0-9_-]/g, '-');
     const label = t(TUNING_FIELD_LABELS[key] || recipeOptionLabel(systemInfo, activeRecipe, String(key)));
@@ -1886,6 +1922,7 @@ const ModelConfigurationTab: React.FC<{
         : 'auto';
       const activeDevice = optionalDisplayValue(serverDefaultRecipeOptions[key]) || 'auto';
       const options = deviceOptionsForKey(key, draftValue || undefined, selectedBackend, model, info).filter(opt => opt !== activeDevice);
+      const selectedDevice = matchingDeviceOption(draftValue, options) ?? draftValue;
       const runtimeDevices = runtimeDevicesFor(info, activeRecipe, deviceBackendFor(activeRecipe, selectedBackend, info));
       return (
         <label key={String(key)} className="detail-tuning__field detail-configuration__field" htmlFor={fieldId}>
@@ -1895,12 +1932,13 @@ const ModelConfigurationTab: React.FC<{
             className="select detail-configuration__select"
             title={hint || undefined}
             aria-description={hint || undefined}
-            value={draftValue}
+            value={selectedDevice}
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           >
             <option value="">{deviceOptionLabel(activeDevice, info, runtimeDevices)}</option>
             {options.map(opt => <option key={opt} value={opt}>{deviceOptionLabel(opt, info, runtimeDevices)}</option>)}
           </select>
+          <small>{t('GPUs on {server}', { server: serverLabel(serverId) })}</small>
         </label>
       );
     }
