@@ -25,6 +25,7 @@ env:
   LEMONADE_DOWNLOAD_REAL_TEST_WAIT_SECONDS: "300"
 
 jobs:
+
   classify-small-docs-pr:
     name: Classify small docs PR
     runs-on: ubuntu-latest
@@ -54,11 +55,12 @@ jobs:
        needs.classify-small-docs-pr.outputs.docs_only != 'true')
     runs-on: ubuntu-latest
     steps:
-      - run: echo "${{ needs.classify-small-docs-pr.outputs.reason }}"
+      - name: Allow full CI
+        run: echo 'Full CI enabled'
 
   server-download-registry-tests:
-    name: Server download registry tests
     needs: full-ci-gate
+    name: Server download registry tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:

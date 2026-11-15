@@ -37,6 +37,39 @@ env:
   LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
 
 jobs:
+
+  classify-small-docs-pr:
+    name: Classify small docs PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      reason: ${{ steps.classify.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions/classify-small-docs-pr
+      - name: Classify changed files
+        id: classify
+        uses: ./.github/actions/classify-small-docs-pr
+        with:
+          max-files: "5"
+
+  full-ci-gate:
+    name: Full CI gate
+    needs: classify-small-docs-pr
+    if: >-
+      !cancelled() &&
+      (needs.classify-small-docs-pr.result != 'success' ||
+       needs.classify-small-docs-pr.outputs.docs_only != 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Allow full CI
+        run: echo 'Full CI enabled'
+
   source-tarball:
     name: Build Source Tarball
     if: startsWith(github.ref, 'refs/heads/release-v') || startsWith(github.ref, 'refs/tags/v')
@@ -76,6 +109,7 @@ jobs:
   # ========================================================================
 
   build-lemonade-server-installer:
+    needs: full-ci-gate
     name: Build Lemonade Server Installer
     runs-on: windows-latest
     outputs:
@@ -172,6 +206,7 @@ jobs:
           retention-days: 7
 
   build-lemonade-desktop-installer:
+    needs: full-ci-gate
     name: Build Lemonade Desktop Installer
     # Packaging-only variant: it builds the Tauri desktop app and lemonade.msi,
     # which no test job installs. The merge queue gates every merge, so PR
@@ -258,6 +293,7 @@ jobs:
           retention-days: 7
 
   tauri-compile-check:
+    needs: full-ci-gate
     name: Compile-check the Tauri host (${{ matrix.os }})
     # The Tauri host is Rust, which `npm run typecheck` does not touch. Both
     # jobs that build it — the Windows desktop installer and the macOS .dmg —
@@ -351,6 +387,7 @@ jobs:
           retention-days: 7
 
   build-lemonade-deb:
+    needs: full-ci-gate
     name: Build Lemonade .deb Package
     runs-on: ubuntu-latest
     outputs:
@@ -440,6 +477,7 @@ jobs:
           fi
 
   cpp-unit-tests:
+    needs: full-ci-gate
     name: C++ unit tests
     # Own job rather than a step of build-lemonade-deb: it shares nothing with
     # the packaging build (different configure, different flags), so as a step
@@ -479,6 +517,7 @@ jobs:
           ctest --test-dir build --output-on-failure --no-tests=error -L "^cpp-ci$"
 
   build-lemonade-debian13:
+    needs: full-ci-gate
     name: Build Lemonade .deb Package (Debian 13)${{ matrix.job-suffix }}
     # Packaging-only variant: the merge queue gates every merge, so PR pushes
     # skip it. Any Debian 13 build break still blocks at merge-queue time.
@@ -640,6 +679,7 @@ jobs:
           kill $SERVER_PID 2>/dev/null || true
 
   build-lemonade-rpm:
+    needs: full-ci-gate
     name: Build Lemonade .rpm - Fedora ${{ matrix.fedora-version }}${{ matrix.job-suffix }}
     # Packaging-only variant: the merge queue gates every merge, so PR pushes
     # skip it. Any Fedora build break still blocks at merge-queue time.
@@ -732,6 +772,7 @@ jobs:
           retention-days: 7
 
   build-lemonade-macos-dmg:
+    needs: full-ci-gate
     name: Build Lemonade macOS .dmg (with Tauri App)
     # macOS runners are the scarcest GitHub-hosted resource (org-wide cap: 5
     # concurrent) and observed queue waits reach 40+ minutes. Build Embeddable
@@ -814,6 +855,7 @@ jobs:
           fi
 
   build-lemonade-embeddable-linux:
+    needs: full-ci-gate
     name: Build Embeddable Lemonade (Linux${{ matrix.job-suffix }})
     runs-on: ${{ matrix.runs-on }}
     outputs:
@@ -885,6 +927,7 @@ jobs:
           retention-days: 7
 
   build-lemonade-linux-arm64:
+    needs: full-ci-gate
     name: Build Lemonade (Linux ARM64)
     runs-on: ubuntu-24.04-arm
     outputs:
@@ -934,6 +977,7 @@ jobs:
           retention-days: 7
 
   build-lemonade-embeddable-windows:
+    needs: full-ci-gate
     name: Build Embeddable Lemonade (Windows)
     runs-on: windows-latest
     outputs:
@@ -984,6 +1028,7 @@ jobs:
           retention-days: 7
 
   build-lemonade-embeddable-macos:
+    needs: full-ci-gate
     name: Build Embeddable Lemonade (macOS)
     runs-on: macos-latest
     outputs:
