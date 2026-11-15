@@ -28,6 +28,11 @@ namespace lemon {
 namespace backends {
 
 namespace {
+
+bool request_cancelled() {
+    return WrappedServer::current_request_cancel_context().cancelled();
+}
+
 // ace-server returns synth results as multipart/mixed (audio part + latent
 // part). Extract the first audio part's raw bytes. Returns "" if not found.
 std::string extract_multipart_audio(const std::string& body) {
@@ -160,6 +165,13 @@ void AceStepServer::load(const std::string& model_name,
 bool AceStepServer::run_job(const std::string& path, const std::string& body,
                             std::string& result, std::string& error) {
     const std::string stage = path.substr(1);
+    auto cancelled = [&]() {
+        if (!request_cancelled()) return false;
+        LOG(INFO, "acestep-server") << stage << " cancelled" << std::endl;
+        error = stage + " cancelled";
+        return true;
+    };
+    if (cancelled()) return false;
     const std::string base = get_base_url();
     auto submit = utils::HttpClient::post(
         base + path,
@@ -183,6 +195,7 @@ bool AceStepServer::run_job(const std::string& path, const std::string& body,
     const std::string job_url = base + "/job?id=" + job_id;
     std::string status;
     for (int i = 0; i < 1200; ++i) {
+        if (cancelled()) return false;
         auto poll = utils::HttpClient::get(job_url, {}, 30,
                                            utils::HttpSecurityPolicy::TrustedLoopback);
         if (poll.status_code == 200) {
@@ -190,6 +203,7 @@ bool AceStepServer::run_job(const std::string& path, const std::string& body,
             catch (...) { status.clear(); }
         }
         if (status == "done" || status == "failed" || status == "cancelled") break;
+        if (cancelled()) return false;
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     if (status != "done") {
@@ -199,6 +213,7 @@ bool AceStepServer::run_job(const std::string& path, const std::string& body,
         return false;
     }
 
+    if (cancelled()) return false;
     auto fetched = utils::HttpClient::get(job_url + "&result=1", {}, 120,
                                           utils::HttpSecurityPolicy::TrustedLoopback);
     if (fetched.status_code != 200) {
@@ -219,6 +234,10 @@ void AceStepServer::audio_generations(const json& request, httplib::DataSink& si
         sink.write(payload.data(), payload.size());
     };
     try {
+        if (request_cancelled()) {
+            fail("audio generation cancelled");
+            return;
+        }
         json synth;
         synth["caption"] = request.value("prompt", std::string());
         synth["synth_model"] = "";
@@ -244,6 +263,10 @@ void AceStepServer::audio_generations(const json& request, httplib::DataSink& si
             }
             synth["vocal_language"] = language;
 
+            if (request_cancelled()) {
+                fail("lm cancelled");
+                return;
+            }
             if (!run_job("/lm", synth.dump(), synth_body, error)) {
                 fail(error);
                 return;
@@ -254,6 +277,10 @@ void AceStepServer::audio_generations(const json& request, httplib::DataSink& si
         }
 
         std::string result;
+        if (request_cancelled()) {
+            fail("synth cancelled");
+            return;
+        }
         if (!run_job("/synth", synth_body, result, error)) {
             fail(error);
             return;

@@ -57,7 +57,8 @@ providers.my_new_op = [router](const lemon::jobs::json& params,
   failures (e.g. `400` for bad params, `404` for unknown model, `424` for backend
   failure, `499` for interrupt).
 - Respect the `cancel` flag. Check `cancel.load()` at sensible cancellation points
-  and throw `JobError(499, "interrupted")` if you detect it.
+  and throw `JobError(499, "interrupted")` if you detect it. ACE-Step checks the
+  request token during polling and between its `/lm` and `/synth` stages.
 - The return value is arbitrary JSON; it will be stored under
   `context[<step id>]` and is available to later steps via `${step_id.field}`.
 
@@ -112,8 +113,8 @@ std::function<json(const json& params, const json& context, CancelFlag& cancel)>
 
 1. Step `a` runs and returns `{"tps": 42.0, "model": "x"}`.
 2. The engine stores it at `context["a"]`.
-3. If `extract: {"tps": "timings.predicted_per_second"}` is set, it also copies
-   `output.timings.predicted_second` to `context["tps"]`.
+3. If `extract: {"tps": "tps"}` is set, it also copies
+   `output.tps` to `context["tps"]`.
 4. Step `b` can reference `${a.tps}`, `${a.model}`, or `${tps}` in its params.
 
 ## Existing ops for reference
@@ -134,12 +135,26 @@ std::function<json(const json& params, const json& context, CancelFlag& cancel)>
 | `audio_generations` | yes | lambda in `services/job_ops.cpp` | Negotiates `response_format`; base64 media (size-capped); cancellable |
 | `model_3d_generations` | yes | lambda in `services/job_ops.cpp` | Returns base64 GLB (size-capped); cancellable |
 
+### Media outputs
+
+Each media result has an 8 MiB limit. Image results count decoded bytes across
+all `b64_json` images and gain a `size` field when they contain image bytes.
+A job has a 16 MiB media budget, counted once per result even though the job
+document stores each result twice (step output and context). Both limits reject
+the result with `JobError(413, ...)` before the engine stores it. The constants
+and accounting helpers live in `lemon/jobs/job_media_limits.h`.
+
+A backend failure sent as an SSE error event fails the step with
+`JobError(424, ...)`, including when media bytes arrived before the error.
+Media providers accept the job context as their second argument so they can
+check the aggregate budget before returning a result.
+
 ## Returning binary/media results
 
 Ops that produce media (audio, GLB) buffer the backend bytes, base64-encode them,
 and return them inline in the op output. Because the whole job context is
 persisted to `jobs.json`, that output is capped by `kMaxJobMediaOutputBytes` in
-`services/job_ops.cpp`; a result above the cap fails the step with `JobError(413, ...)`
+`lemon/jobs/job_media_limits.h`; a result above the cap fails the step with `JobError(413, ...)`
 rather than bloating the on-disk job store. Media ops must also select and
 validate `response_format` against the backend's supported formats (reuse
 `negotiate_speech_format` / `negotiate_audio_generation_format` from

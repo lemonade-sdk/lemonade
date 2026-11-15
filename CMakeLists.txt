@@ -2816,6 +2816,18 @@ if(BUILD_TESTING AND EXISTS "${_JOB_GRAPH_TEST_SRC}")
     add_cpp_ci_test(JobGraphTest CI ON COMMAND test_job_graph)
 endif()
 
+set(_JOB_MEDIA_LIMITS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_media_limits.cpp")
+if(BUILD_TESTING AND EXISTS "${_JOB_MEDIA_LIMITS_TEST_SRC}")
+    add_executable(test_job_media_limits test/cpp/test_job_media_limits.cpp)
+    target_include_directories(test_job_media_limits PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_job_media_limits PRIVATE nlohmann_json::nlohmann_json)
+    include(CTest)
+    add_cpp_ci_test(test_job_media_limits CI ON COMMAND test_job_media_limits)
+endif()
+
 # Backend install atomicity (staging + verified atomic swap).
 # Header-only unit under test, so no extra source files are required.
 set(_INSTALL_ATOMICITY_TEST_SRC

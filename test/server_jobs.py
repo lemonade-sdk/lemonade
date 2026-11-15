@@ -1758,25 +1758,25 @@ class JobEngineTests(unittest.TestCase):
             {
                 "id": "img",
                 "op": "image_generations",
-                "params": {"prompt": "test"},
+                "params": {"model": "no-such-job-media-model", "prompt": "test"},
                 "on_fail": "continue",
             },
             {
                 "id": "tts",
                 "op": "audio_speech",
-                "params": {"input": "test"},
+                "params": {"model": "no-such-job-media-model", "input": "test"},
                 "on_fail": "continue",
             },
             {
                 "id": "audio",
                 "op": "audio_generations",
-                "params": {"prompt": "test"},
+                "params": {"model": "no-such-job-media-model", "prompt": "test"},
                 "on_fail": "continue",
             },
             {
                 "id": "3d",
                 "op": "model_3d_generations",
-                "params": {"prompt": "test"},
+                "params": {"model": "no-such-job-media-model", "prompt": "test"},
                 "on_fail": "continue",
             },
             {"id": "done", "op": "system_info"},
@@ -1787,6 +1787,13 @@ class JobEngineTests(unittest.TestCase):
         self.assertEqual(self.step_by_id(done, "tts")["status"], "failed")
         self.assertEqual(self.step_by_id(done, "audio")["status"], "failed")
         self.assertEqual(self.step_by_id(done, "3d")["status"], "failed")
+        for sid in ("img", "tts", "audio", "3d"):
+            step = self.step_by_id(done, sid)
+            self.assertIn("no-such-job-media-model", step.get("error", ""), step)
+        for sid in ("img", "tts", "audio", "3d"):
+            self.assertNotIn(
+                sid, done["context"], f"failed step {sid} should leave no context entry"
+            )
         self.assertEqual(self.step_by_id(done, "done")["status"], "completed")
 
     def test_audio_op_rejects_unknown_format(self):
