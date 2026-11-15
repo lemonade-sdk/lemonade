@@ -50,6 +50,7 @@ import {
 } from '../samplerArgs';
 import type { ArgFieldSpec } from '../samplerArgs';
 import { storageKey } from '../storage';
+import { deviceSelectionIsAvailable, isAutomaticDevice, serverLabel } from '../deviceSelection';
 import {
   describeRouterModelConnection,
   providerEndpointNeedsInsecureOptIn,
@@ -1843,6 +1844,33 @@ const ModelConfigurationTab: React.FC<{
       });
     }
   };
+
+  // A GPU saved for another server, or for a card that is gone, cannot be
+  // applied here. Say so and fall back to automatic selection in the draft, so
+  // a load does not fail on, or land on the wrong card of, this machine.
+  useEffect(() => {
+    if (!serverOptionsLoaded || !systemInfo) return;
+    const backendKey = recipeBackendOptionName(systemInfo, activeRecipe) as keyof RecipeOptions | null;
+    const selectedBackend = backendKey
+      ? recipeDraft[String(backendKey)] || activeBackendValue(backendKey, defaultOptionValue(backendKey), model, info)
+      : 'auto';
+    const stale = recipeKeys.filter(key => {
+      if (!recipeOptionIsDevice(systemInfo, activeRecipe, String(key))) return false;
+      const value = recipeDraft[String(key)] || '';
+      if (isAutomaticDevice(value)) return false;
+      return !deviceSelectionIsAvailable(value, deviceOptionsForKey(key, undefined, selectedBackend, model, info));
+    });
+    if (stale.length === 0) return;
+    setRecipeDraft(prev => {
+      const next = { ...prev };
+      for (const key of stale) next[String(key)] = 'auto';
+      return next;
+    });
+    setNotice(t('GPU {device} is not available on {server}. Using automatic selection; Save to keep this.', {
+      device: stale.map(key => recipeDraft[String(key)]).join(', '),
+      server: serverLabel(serverId),
+    }));
+  });
 
   const renderConfigRecipeField = (key: keyof RecipeOptions) => {
     const fieldId = `config-${name}-${String(key)}`.replace(/[^a-zA-Z0-9_-]/g, '-');

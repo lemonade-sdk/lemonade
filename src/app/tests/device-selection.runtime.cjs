@@ -30,8 +30,33 @@ function systemInfoFor(name) {
 }
 
 (async () => {
+  const helpers = await bundle('../src/deviceSelection.ts', 'deviceSelection.cjs');
   const apiBundle = await bundle('../src/api.ts', 'api.cjs');
   try {
+    const {
+      isAutomaticDevice, matchingDeviceOption, deviceSelectionIsAvailable, serverLabel,
+    } = require(helpers.modulePath);
+
+    // Automatic is always applicable; a named card only when the server lists it.
+    assert.equal(isAutomaticDevice(''), true);
+    assert.equal(isAutomaticDevice(undefined), true);
+    assert.equal(isAutomaticDevice(' Auto '), true);
+    assert.equal(isAutomaticDevice('cuda0'), false);
+    assert.equal(deviceSelectionIsAvailable('auto', []), true);
+    assert.equal(deviceSelectionIsAvailable('', ['cuda0']), true);
+    assert.equal(deviceSelectionIsAvailable('cuda1', ['auto', 'cuda0', 'cuda1']), true);
+    assert.equal(deviceSelectionIsAvailable('cuda3', ['auto', 'cuda0', 'cuda1']), false);
+    assert.equal(deviceSelectionIsAvailable('Vulkan4', ['auto', 'vulkan0', 'vulkan1']), false);
+
+    // The CLI and API docs spell devices CUDA1; the app lists cuda1. Same device.
+    assert.equal(matchingDeviceOption('CUDA1', ['auto', 'cuda0', 'cuda1']), 'cuda1');
+    assert.equal(matchingDeviceOption('cuda7', ['cuda0']), undefined);
+    assert.equal(matchingDeviceOption('', ['cuda0']), undefined);
+    assert.equal(deviceSelectionIsAvailable('CUDA1', ['auto', 'cuda0', 'cuda1']), true);
+
+    assert.equal(serverLabel('http://gpu-box.example:13305'), 'gpu-box.example:13305');
+    assert.equal(serverLabel('not a url'), 'not a url');
+
     // System-info belongs to one server: moving the app to another drops it.
     const values = new Map();
     global.localStorage = {
@@ -85,6 +110,7 @@ function systemInfoFor(name) {
     const c = await api.systemInfo();
     assert.equal(c['OS Version'], 'server-c.test:13305');
   } finally {
+    fs.rmSync(helpers.outputPath, { recursive: true, force: true });
     fs.rmSync(apiBundle.outputPath, { recursive: true, force: true });
   }
   console.log('device selection runtime checks passed');

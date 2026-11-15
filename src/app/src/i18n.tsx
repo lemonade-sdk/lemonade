@@ -1259,6 +1259,7 @@ const ZH_CN: Record<string, string> = {
   'OpenMOSS accelerator backend for speech generation.': '用于语音生成的 OpenMOSS 加速后端。',
   'TRELLIS accelerator backend for 3D reconstruction.': '用于三维重建的 TRELLIS 加速后端。',
   'Stable Diffusion accelerator backend for this image model. Switching back restores the last draft args for that backend in this browser session.': '此图像模型使用的 Stable Diffusion 加速后端。切换回来时会恢复本次浏览器会话中该后端最近的草稿参数。',
+  'GPU {device} is not available on {server}. Using automatic selection; Save to keep this.': '{server} 上没有 GPU {device}。已改为自动选择；点击“保存”以保留此设置。',
   'Optional device selector for the selected backend.': '可为所选后端指定设备。',
   'Select the GPU for TheNoise; CUDA device numbers refer to the NVIDIA GPU list.': '选择 TheNoise 使用的 GPU；CUDA 设备编号对应 NVIDIA GPU 列表。',
   'Select the GPU for sd.cpp. CUDA selection uses GPU UUIDs to avoid index mismatches.': '选择 sd.cpp 使用的 GPU。CUDA 使用 GPU UUID，避免设备编号不一致。',
