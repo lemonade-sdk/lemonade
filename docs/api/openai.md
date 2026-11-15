@@ -180,6 +180,95 @@ data: {"id": "chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1", "object": "chat.comple
 data: [DONE]
 ```
 
+#### VLLM non-streaming
+
+Shows vLLM's `max_completion_tokens` parameter. The response below is a synthetic offline example.
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/chat/completions" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model": "Qwen3.5-4B-FP16-vLLM",
+          "messages": [{"role": "user", "content": "What is 2+2? Reply in one sentence."}],
+          "max_completion_tokens": 50,
+          "stream": false
+        }'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "Qwen3.5-4B-FP16-vLLM",
+          "messages": [{"role": "user", "content": "What is 2+2? Reply in one sentence."}],
+          "max_completion_tokens": 50,
+          "stream": false
+        }'
+    ```
+
+**Response:** `200 OK`
+
+```json
+{
+  "id": "chatcmpl-offline-vllm-example",
+  "object": "chat.completion",
+  "created": 0,
+  "model": "Qwen3.5-4B-FP16-vLLM",
+  "choices": [
+    {"index": 0, "message": {"role": "assistant", "content": "4."}, "finish_reason": "stop"}
+  ],
+  "usage": {"prompt_tokens": 17, "completion_tokens": 3, "total_tokens": 20}
+}
+```
+
+#### VLLM streaming
+
+Illustrates vLLM streaming, including a usage chunk. These SSE events are illustrative, not recorded from vLLM.
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/chat/completions" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{
+          "model": "Qwen3.5-4B-FP16-vLLM",
+          "messages": [{"role": "user", "content": "What is 2+2? Reply in one sentence."}],
+          "max_completion_tokens": 50,
+          "stream": true
+        }'
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl http://localhost:13305/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{
+          "model": "Qwen3.5-4B-FP16-vLLM",
+          "messages": [{"role": "user", "content": "What is 2+2? Reply in one sentence."}],
+          "max_completion_tokens": 50,
+          "stream": true
+        }'
+    ```
+
+**Response:** `200 OK`
+
+```text
+data: {"id": "chatcmpl-offline-vllm-stream", "object": "chat.completion.chunk", "created": 0, "model": "Qwen3.5-4B-FP16-vLLM", "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": null}]}
+data: {"id": "chatcmpl-offline-vllm-stream", "object": "chat.completion.chunk", "created": 0, "model": "Qwen3.5-4B-FP16-vLLM", "choices": [{"index": 0, "delta": {"content": "4."}, "finish_reason": null}]}
+data: {"id": "chatcmpl-offline-vllm-stream", "object": "chat.completion.chunk", "created": 0, "model": "Qwen3.5-4B-FP16-vLLM", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+data: {"id": "chatcmpl-offline-vllm-stream", "object": "chat.completion.chunk", "created": 0, "model": "Qwen3.5-4B-FP16-vLLM", "choices": [], "usage": {"prompt_tokens": 17, "completion_tokens": 3, "total_tokens": 20}}
+data: [DONE]
+```
+
 #### Image input
 
 Asks a vision model what `image.png` shows. A `messages[*].content` array mixes `text` and `image_url` items, with each image as a base64 data URL, such as one from `FileReader.readAsDataURL(...)` in a web app.
