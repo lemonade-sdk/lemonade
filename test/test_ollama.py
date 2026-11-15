@@ -717,6 +717,49 @@ class OllamaTests(ServerTestBase):
         self.assertIn("message", data)
         self.assertIn("content", data["message"])
 
+    def test_021a_generate_with_image_input(self):
+        """Test /api/generate passes `images` to a vision model, in both stream modes."""
+        if sys.platform == "darwin":
+            self.skipTest("Vision model not supported on macOS")
+        pull_model_with_retry(VISION_MODEL)
+
+        # 10x10 red PNG to avoid backend assertions on tiny images.
+        png_b64 = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFElEQVR42mP4"
+            "z8DwnxjMMKqQvgoBksPHOXvuG4oAAAAASUVORK5CYII="
+        )
+        prompt = "What color is this image?"
+
+        def generate(stream, images):
+            response = requests.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json={
+                    "model": VISION_MODEL,
+                    "prompt": prompt,
+                    "images": images,
+                    "stream": stream,
+                    "options": {"num_predict": 10},
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            return [json.loads(line) for line in response.text.splitlines() if line]
+
+        # Each image adds its tokens to the prompt only if it reaches the model.
+        one_image = generate(False, [png_b64])[0]
+        two_images = generate(False, [png_b64, png_b64])[0]
+        self.assertGreater(one_image["eval_count"], 0, one_image)
+        self.assertGreater(
+            two_images["prompt_eval_count"], one_image["prompt_eval_count"]
+        )
+
+        lines = generate(True, [png_b64])
+        self.assertTrue(all("error" not in line for line in lines), lines)
+        self.assertTrue(
+            all(isinstance(line.get("response"), str) for line in lines), lines
+        )
+        self.assertTrue(lines[-1]["done"], lines)
+
     def skip_without_sdcpp(self):
         if sys.platform == "darwin":
             self.skipTest("sd-cpp not supported on macOS")
@@ -867,8 +910,8 @@ class OllamaTests(ServerTestBase):
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertEqual(response.json()["done_reason"], "unload")
 
-    def test_022g_show_speech_decision_capabilities(self):
-        """Test /api/show reports speech and decision the way Ollama does."""
+    def test_022g_show_speech_decision_audio_capabilities(self):
+        """Test /api/show reports speech, decision and audio the way Ollama does."""
         cases = {
             # A text-to-speech model.
             "kokoro-v1": ["speech"],
@@ -876,8 +919,8 @@ class OllamaTests(ServerTestBase):
             "Bert-Phishing-ONNX": [],
             # A SystemOne decision model reports nothing else, as in Ollama.
             "Laya-GGUF": ["decision"],
-            # /api/generate drops audio sent in `images`, so audio input is not reported.
-            "Qwen2.5-Omni-3B-GGUF": ["completion", "vision"],
+            # A llama.cpp chat model that hears audio.
+            "Qwen2.5-Omni-3B-GGUF": ["completion", "vision", "audio"],
         }
         for model, expected in cases.items():
             with self.subTest(model=model):

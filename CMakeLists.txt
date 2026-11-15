@@ -3999,6 +3999,13 @@ if(BUILD_TESTING AND EXISTS "${_OLLAMA_OUTPUT_TEST_SRC}")
     add_cpp_ci_test(OllamaOutputTest CI ON COMMAND test_ollama_output)
 endif()
 
+set(_OLLAMA_GENERATE_CHUNK_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ollama_generate_chunk.cpp")
+if(BUILD_TESTING AND EXISTS "${_OLLAMA_GENERATE_CHUNK_TEST_SRC}")
+    add_executable(test_ollama_generate_chunk test/cpp/test_ollama_generate_chunk.cpp)
+    target_link_libraries(test_ollama_generate_chunk PRIVATE lemonade-server-core)
+    add_cpp_ci_test(OllamaGenerateChunkTest CI ON COMMAND test_ollama_generate_chunk)
+endif()
+
 set(_ANTHROPIC_RELAY_HEADERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_anthropic_relay_headers.cpp")
 if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_RELAY_HEADERS_TEST_SRC}")
     add_executable(test_anthropic_relay_headers test/cpp/test_anthropic_relay_headers.cpp)
