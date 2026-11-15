@@ -1532,6 +1532,14 @@ const ModelConfigurationTab: React.FC<{
   currentNameRef.current = name;
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [systemInfoSettled, setSystemInfoSettled] = useState(() => api.systemInfoData !== null);
+  // Device lists and saved options belong to one server. This panel stays
+  // mounted while the app is pointed at another one, so it follows the server.
+  const [serverId, setServerId] = useState(() => api.baseUrl);
+  useEffect(() => api.onServerChange(() => {
+    setServerId(api.baseUrl);
+    setSystemInfo(null);
+    setSystemInfoSettled(false);
+  }), []);
 
   useEffect(() => {
     if (!isActive) return;
@@ -1543,7 +1551,7 @@ const ModelConfigurationTab: React.FC<{
       .catch(() => { if (alive) setSystemInfo(api.systemInfoData); })
       .finally(() => { if (alive) setSystemInfoSettled(true); });
     return () => { alive = false; };
-  }, [isActive]);
+  }, [isActive, serverId]);
 
   const baseTuning = useMemo(
     () => modelBaseTuningForModel(model, serverDefaultCtxSize),
@@ -1622,7 +1630,7 @@ const ModelConfigurationTab: React.FC<{
         setNotice(`Could not load saved model options: ${friendlyErrorMessage(error)}`);
       });
     return () => { cancelled = true; };
-  }, [name, systemInfoSettled]);
+  }, [name, systemInfoSettled, serverId]);
 
   const savedLoadSettings = useMemo(
     () => draftFromResolvedOptions(recipeKeys, serverSavedRecipeOptions, serverEffectiveRecipeOptions, offersResolvedValue),
