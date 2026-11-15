@@ -7371,6 +7371,41 @@
       "count": 177
     }
   },
+  "1b21870e934634c1f7834ed54ede9fb65571bf793ba9d52e4575b619849fdf01": {
+    "route": "openai.chat_completions",
+    "format": "EventStream",
+    "request": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "query": {},
+      "json": {
+        "model": "Qwen3-0.6B-GGUF",
+        "messages": [
+          {
+            "role": "user",
+            "content": "What is the population of Paris?"
+          }
+        ],
+        "stream": true
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "text/event-stream",
+      "head": [
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null}}],\"created\":1794760515,\"id\":\"chatcmpl-9xMDSGtzXcqo09byZqmwaOtfhP9smRYf\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12418-b54752df4\",\"object\":\"chat.completion.chunk\"}",
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\"Okay\"}}],\"created\":1794760515,\"id\":\"chatcmpl-9xMDSGtzXcqo09byZqmwaOtfhP9smRYf\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12418-b54752df4\",\"object\":\"chat.completion.chunk\"}",
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\",\"}}],\"created\":1794760515,\"id\":\"chatcmpl-9xMDSGtzXcqo09byZqmwaOtfhP9smRYf\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12418-b54752df4\",\"object\":\"chat.completion.chunk\"}"
+      ],
+      "tail": [
+        "data: {\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"delta\":{}}],\"created\":1794760516,\"id\":\"chatcmpl-9xMDSGtzXcqo09byZqmwaOtfhP9smRYf\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12418-b54752df4\",\"object\":\"chat.completion.chunk\",\"timings\":{\"cache_n\":14,\"prompt_n\":1,\"prompt_ms\":5.816,\"prompt_per_token_ms\":5.816,\"prompt_per_second\":171.939477303989,\"predicted_n\":219,\"predicted_ms\":643.056,\"predicted_per_token_ms\":2.949798165137615,\"predicted_per_second\":339.00624517926894}}",
+        "data: [DONE]"
+      ],
+      "count": 217
+    }
+  },
   "97e6314155061d1a9b3cce50e84da8d432fd2334adee1c732035504a07e5a8b3": {
     "route": "openai.chat_completions",
     "format": "Json",
@@ -7492,6 +7527,68 @@
             "cached_tokens": 0
           },
           "total_tokens": 379
+        }
+      }
+    }
+  },
+  "c9d4d28f540a401cffe10be95118dafd4f4f8a29f1965864ade2b3bb8e91246a": {
+    "route": "openai.chat_completions",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "query": {},
+      "json": {
+        "model": "Qwen3-0.6B-GGUF",
+        "messages": [
+          {
+            "role": "user",
+            "content": "What is the population of Paris?"
+          }
+        ],
+        "stream": false
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "The population of Paris is approximately **10 million**. This is a commonly cited figure for the city, and it reflects its significant role as the capital of France.",
+              "reasoning_content": "Okay, so I need to figure out the population of Paris. Let me start by recalling... (1,183 characters)",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1794760515,
+        "id": "chatcmpl-UhVx2g3Giku6yda86twYlJydFraJTYYN",
+        "model": "Qwen3-0.6B-GGUF",
+        "object": "chat.completion",
+        "system_fingerprint": "b12418-b54752df4",
+        "timings": {
+          "cache_n": 0,
+          "predicted_ms": 972.61,
+          "predicted_n": 310,
+          "predicted_per_second": 317.7018537748944,
+          "predicted_per_token_ms": 3.1476051779935275,
+          "prompt_ms": 354.267,
+          "prompt_n": 15,
+          "prompt_per_second": 42.34094623546647,
+          "prompt_per_token_ms": 23.6178
+        },
+        "usage": {
+          "completion_tokens": 310,
+          "prompt_tokens": 15,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "total_tokens": 325
         }
       }
     }
