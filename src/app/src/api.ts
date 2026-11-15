@@ -335,6 +335,7 @@ export interface DirectorySettings {
 }
 
 export interface ChatCompletionStats {
+  smartRole?: string;
   content: string;
   reasoning: string;
   /** Backend stop reason (e.g. "stop", "tool_calls", "length"). */
@@ -358,6 +359,7 @@ export interface LiveStreamStats {
 }
 
 export interface ChatCompletionCallbacks {
+  onSmartRole?: (role: string, state: unknown) => void;
   onToken?: (token: string, fullContent: string) => void;
   onReasoning?: (token: string, fullReasoning: string) => void;
   onStats?: (stats: LiveStreamStats) => void;
@@ -2620,6 +2622,13 @@ class LemonadeAPI {
         includeSessionHeaders: true,
       });
 
+      const effectiveRole = resp.headers.get('X-Lemonade-Smart-Role');
+      const encodedState = resp.headers.get('X-Lemonade-Smart-State');
+      if (effectiveRole !== null) {
+        let state: unknown = null;
+        try { state = encodedState ? JSON.parse(encodedState) : null; } catch { /* malformed trace */ }
+        callbacks.onSmartRole?.(effectiveRole, state);
+      }
       const reader = resp.body!.getReader();
       const dec = new TextDecoder();
       let buf = '';

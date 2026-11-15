@@ -1064,6 +1064,27 @@ input[type="checkbox"]:disabled {
 
 .message__body { flex: 1; min-width: 0; }
 
+.message__smart-role {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* The title's old bottom margin shifted the inline badge downward despite
+   align-items:center on .message__author-row. Space the row, not its child. */
+.message__author-row {
+  margin-bottom: var(--space-2);
+}
+
+.message__author-row > .message__author {
+  margin-bottom: 0;
+}
+
 .message__author {
   font-size: var(--text-xs);
   letter-spacing: var(--tracking-caps);

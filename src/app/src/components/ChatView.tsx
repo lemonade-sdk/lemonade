@@ -23,6 +23,7 @@ const MarkdownMessage: React.FC<React.ComponentProps<typeof LazyMarkdownMessage>
   </Suspense>
 );
 import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact, type ChatThinkingMode } from '../hooks/useChatStreaming';
+import { isSmartRole, SMART_ROLE_LABELS } from '../features/smartRoles/smartRoles';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
@@ -4020,6 +4021,11 @@ ${index}`;
                   <div className="message__body">
                     <div className="message__author-row">
                       <div className="message__author">{modelDisplayName(currentModelSnapshot)}</div>
+                      {isSmartRole(currentStream?.smartRole) && (
+                        <span className="message__smart-role" title={t('Active working mode')}>
+                          {t(SMART_ROLE_LABELS[currentStream.smartRole])}
+                        </span>
+                      )}
                     </div>
                     {streamingThinking && (
                       <details className="message__thinking" open={streaming.thinkingExpanded}>
@@ -5397,6 +5403,11 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
       <div className="message__body">
         <div className="message__author-row">
           <div className="message__author">{message.isError ? 'Lemonade' : modelDisplayName(displayModel)}</div>
+          {!message.isError && isSmartRole(message.stats?.smartRole) && (
+            <span className="message__smart-role" title={t('Active working mode')}>
+              {t(SMART_ROLE_LABELS[message.stats.smartRole])}
+            </span>
+          )}
         </div>
         {message.thinking && (
           <details

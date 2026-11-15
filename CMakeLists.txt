@@ -2945,6 +2945,13 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_LLM_ROUTER_TEST_SRC}")
     add_cpp_ci_test(RoutingPolicyLlmRouterTest CI ON COMMAND test_routing_policy_llm_router)
 endif()
 
+# Experimental smart-role controller (self-contained and backend-independent).
+if(BUILD_TESTING)
+    add_executable(test_smart_roles test/cpp/test_smart_roles.cpp)
+    target_include_directories(test_smart_roles PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    add_cpp_ci_test(SmartRolesTest CI ON COMMAND test_smart_roles)
+endif()
+
 # Routing deterministic leaf conditions (issue #2380): keywords/regex/min_chars/
 # max_chars/has_*/metadata conditions and their leaf-factory map.
 set(_ROUTING_DETERMINISTIC_TEST_SRC

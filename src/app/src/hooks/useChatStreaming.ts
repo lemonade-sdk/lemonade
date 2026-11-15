@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { loadSmartRoleSettings, smartRoleRequest, isSmartRole, validSmartRoleState, type SmartRoleState } from '../features/smartRoles/smartRoles';
 import type { ChatMessage, LiveStreamStats, ChatCompletionStats } from '../api';
 import type { ToolCall, ToolResult } from '../tools/lemonadeTools';
 import { ToolLoopDetector } from './toolLoopDetector';
@@ -99,6 +100,7 @@ export interface ToolCallEntry {
 interface StreamState {
   content: string;
   thinking: string;
+  smartRole?: string;
   toolStatus?: string;
   toolCalls: ToolCallEntry[];
 }
@@ -130,6 +132,8 @@ export function useChatStreaming(
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
 
   const controllersRef = useRef<Map<string, AbortController>>(new Map());
+  // Independent bounded transition state per conversation and chat model.
+  const smartRoleStateRef = useRef<Map<string, { model: string; state: SmartRoleState }>>(new Map());
   const tokenBufferRef = useRef<Record<string, StreamState>>({});
   const flushTimerRef = useRef<number | null>(null);
 
@@ -199,6 +203,15 @@ export function useChatStreaming(
     const dropTokenBufferIfOwned = () => { if (ownsConversation()) delete tokenBufferRef.current[convoId]; };
 
     let fullMessages = [...messages];
+    const roleSettings = loadSmartRoleSettings();
+    const hasPriorTurn = messages.filter(message => message.role === 'user').length > 1;
+    const savedRoleState = smartRoleStateRef.current.get(convoId);
+    if (!hasPriorTurn || savedRoleState?.model !== model || !roleSettings.enabled)
+      smartRoleStateRef.current.delete(convoId);
+    const rolePreference = smartRoleRequest(roleSettings,
+      hasPriorTurn && savedRoleState?.model === model ? savedRoleState.state : undefined);
+    let selectedRole: string | null = null;
+    let selectedRoleState: SmartRoleState | null = null;
     // When a small context is exhausted by tool schemas, retry with exactly
     // the original conversation and attachments, omitting the tool-only prompt.
     const withoutToolPrompt = runtime?.systemPrompt
@@ -220,8 +233,23 @@ export function useChatStreaming(
         const withoutToolSystemPrompt = toolsDisabled && runtime?.systemPrompt
           && fullMessages[0]?.role === 'system' && fullMessages[0].content === runtime.systemPrompt
           ? fullMessages.slice(1) : fullMessages;
+        // A tool follow-up must not classify an artificial user/tool message
+        // as a fresh user turn. Freeze the first applied role for this response.
+        const roles = selectedRole !== null ? { mode: 'manual', role: selectedRole } :
+          retriedWithoutTools ? null : rolePreference;
         api.chatCompletion(model, retriedWithoutTools ? withoutToolPrompt : withoutToolSystemPrompt, {
-          params: chatThinkingParams(thinkingMode),
+          params: { ...chatThinkingParams(thinkingMode), ...(roles ? { smart_roles: roles } : {}) },
+          onSmartRole: (role, state) => {
+            if (!ownsConversation() || controller.signal.aborted) return;
+            if (!isSmartRole(role)) return;
+            if (selectedRole === null) {
+              selectedRole = role;
+              if (validSmartRoleState(state)) selectedRoleState = state;
+            }
+            setActiveStreams(prev => prev[convoId]
+              ? { ...prev, [convoId]: { ...prev[convoId], smartRole: selectedRole || role } }
+              : prev);
+          },
           tools: !toolsDisabled && !retriedWithoutTools && runtime?.tools?.length ? runtime.tools : undefined,
           onReasoning: (_token, fullReasoning) => {
             if (!ownsConversation()) return;
@@ -449,6 +477,11 @@ Some tool calls were skipped after repeated identical failures. Other tools rema
             } else if (!stats.content.trim() && allToolCalls.length === 0) {
               onError(convoId, 'The model returned no visible answer (reasoning-only or empty completion). Its context may be full; increase context size or disable tools.');
             } else {
+              if (rolePreference && selectedRole !== null) {
+                stats.smartRole = selectedRole;
+                if (roleSettings.override === 'auto' && selectedRoleState)
+                  smartRoleStateRef.current.set(convoId, { model, state: selectedRoleState });
+              }
               onDone(convoId, stats, allToolCalls.length > 0 ? [...allToolCalls] : undefined);
             }
 

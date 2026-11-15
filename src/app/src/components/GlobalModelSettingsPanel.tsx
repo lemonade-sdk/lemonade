@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { ROLE_IDS, SMART_ROLE_LABELS, loadSmartRoleSettings, saveSmartRoleSettings } from '../features/smartRoles/smartRoles';
 import { api, friendlyErrorMessage, type LoadedModel, type ModelInfo } from '../api';
 import { capabilityFromModelInfo } from '../modelCapabilities';
 import { loadChatHistoryPreference, saveChatHistoryPreference } from '../features/chatHistory/historySettings';
@@ -53,6 +54,7 @@ const READ_MODES: Array<{ value: TtsReadMode; title: string; description: string
 const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ section, models, loadedModels, connected }) => {
   const { t } = useI18n();
   const [draft, setDraft] = useState<GlobalModelSettings>(() => loadGlobalModelSettings());
+  const [rolesDraft, setRolesDraft] = useState(() => loadSmartRoleSettings());
   const [memoryDraft, setMemoryDraft] = useState<MemoryRuntimeSettings | null>(null);
   const [autoCheckModelUpdates, setAutoCheckModelUpdates] = useState<boolean | null>(null);
   const [persistHistory, setPersistHistory] = useState(() => loadChatHistoryPreference());
@@ -65,6 +67,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
 
   useEffect(() => {
     setDraft(loadGlobalModelSettings());
+    setRolesDraft(loadSmartRoleSettings());
     setPersistHistory(loadChatHistoryPreference());
     const speech = loadTtsPlaybackSettings();
     setTtsModel(speech.modelName);
@@ -150,6 +153,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
       const savedSettings = saveGlobalModelSettings({ collapseThinkingByDefault: draft.collapseThinkingByDefault });
       setDraft(savedSettings);
       saveChatHistoryPreference(persistHistory);
+      saveSmartRoleSettings(rolesDraft);
       saveActiveTtsModel(ttsModel);
       saveTtsReadMode(ttsReadMode);
       setSaved(true);
@@ -195,6 +199,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
     if (section === 'chat') {
       setDraft(current => ({ ...current, collapseThinkingByDefault: DEFAULT_GLOBAL_MODEL_SETTINGS.collapseThinkingByDefault }));
       setPersistHistory(true);
+      setRolesDraft({ enabled: false, decisionModel: '', override: 'auto' });
       setTtsModel(null);
       setTtsReadMode('on-demand');
       return;
@@ -234,6 +239,38 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
               <input type="checkbox" checked={draft.collapseThinkingByDefault} onChange={event => patchDraft('collapseThinkingByDefault', event.target.checked)} />
               <span><strong>{t('Collapse thinking by default')}</strong><small>{t('Reasoning remains available in an expandable section on every assistant message.')}</small></span>
             </label>
+            <label className="global-settings-toggle">
+              <input type="checkbox" checked={rolesDraft.enabled}
+                onChange={event => { setRolesDraft(s => ({ ...s, enabled: event.target.checked })); setSaved(false); }} />
+              <span><strong>{t('Smart Thinking roles (experimental)')}</strong>
+                <small>{t('Use one of 14 task methods; default adds no instruction. A decision call may load another model.')}</small>
+              </span>
+            </label>
+            {rolesDraft.enabled && <>
+              <label className="global-settings-field">
+                <span>{t('Working mode')}</span>
+                <select className="select" value={rolesDraft.override}
+                  onChange={e => { setRolesDraft(s => ({ ...s, override: e.target.value as typeof s.override })); setSaved(false); }}>
+                  <option value="auto">{t('Automatic')}</option>
+                  {ROLE_IDS.map(role => <option value={role} key={role}>{t(SMART_ROLE_LABELS[role])}</option>)}
+                </select>
+              </label>
+              {rolesDraft.override === 'auto' && <label className="global-settings-field">
+                <span>{t('Decision model')}</span>
+                <select className="select" value={rolesDraft.decisionModel}
+                  onChange={e => { setRolesDraft(s => ({ ...s, decisionModel: e.target.value })); setSaved(false); }}>
+                  <option value="">{t('Same as chat model')}</option>
+                  {models.filter(model => model.downloaded === true ||
+                    loadedModels.some(loaded => loaded.model_name === modelName(model)))
+                    .filter(model => capabilityFromModelInfo(model) === 'chat' ||
+                      (capabilityFromModelInfo(model) === 'classification' &&
+                       (model.labels || []).some(label => label === 'zero-shot' || label === 'systemone')))
+                    .map(model => <option value={modelName(model)} key={modelName(model)}>
+                      {modelDisplayName(model)}
+                    </option>)}
+                </select>
+              </label>}
+            </>}
           </section>
 
           <section className="global-settings-card">
