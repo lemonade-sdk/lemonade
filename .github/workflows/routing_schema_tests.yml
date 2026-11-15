@@ -3,6 +3,7 @@ on:
   push:
     branches: ["main"]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   merge_group:
 
 permissions:
@@ -11,14 +12,13 @@ permissions:
 jobs:
 
   classify-small-docs-pr:
-    name: Classify small docs PR
+    name: Classify small docs PR (Routing Schema)
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
-      reason: ${{ steps.classify.outputs.reason }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -31,19 +31,22 @@ jobs:
           max-files: "5"
 
   full-ci-gate:
-    name: Full CI gate
+    name: Full CI gate (Routing Schema)
     needs: classify-small-docs-pr
     if: >-
       !cancelled() &&
       (needs.classify-small-docs-pr.result != 'success' ||
        needs.classify-small-docs-pr.outputs.docs_only != 'true')
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Allow full CI
         run: echo 'Full CI enabled'
 
   routing-schema-tests:
     needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: Routing schema + fixtures
     runs-on: ubuntu-latest
     concurrency:

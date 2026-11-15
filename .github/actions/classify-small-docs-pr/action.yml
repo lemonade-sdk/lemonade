@@ -6,6 +6,10 @@ inputs:
     description: Maximum number of Markdown files eligible for reduced CI
     required: false
     default: "5"
+  eligible-docs-prefixes:
+    description: Directory prefixes whose Markdown files may use reduced CI
+    required: false
+    default: "docs/"
   force-full-ci-paths:
     description: Exact Markdown paths containing generated sections
     required: false
@@ -41,9 +45,10 @@ runs:
   steps:
     - name: Inspect pull request files
       id: classify
-      uses: actions/github-script@v7
+      uses: actions/github-script@v8
       env:
         MAX_FILES: ${{ inputs.max-files }}
+        ELIGIBLE_DOCS_PREFIXES: ${{ inputs.eligible-docs-prefixes }}
         FORCE_FULL_CI_PATHS: ${{ inputs.force-full-ci-paths }}
         FORCE_FULL_CI_PREFIXES: ${{ inputs.force-full-ci-prefixes }}
       with:
@@ -51,6 +56,8 @@ runs:
         script: |
           const rawMax = process.env.MAX_FILES ?? "";
           const maxFiles = Number(rawMax);
+          const eligiblePrefixes = (process.env.ELIGIBLE_DOCS_PREFIXES ?? "")
+            .split(/\r?\n/).map(x => x.trim()).filter(Boolean);
           const exactPaths = new Set(
             (process.env.FORCE_FULL_CI_PATHS ?? "")
               .split(/\r?\n/).map(x => x.trim()).filter(Boolean),
@@ -91,13 +98,18 @@ runs:
                 files.every(f => typeof f.filename === "string") &&
                 allPaths.every(p => typeof p === "string" &&
                   p.toLowerCase().endsWith(".md"));
+              // Previous paths must also remain inside a documentation area.
+              // Markdown fixtures under src/, test/, etc. still need full CI.
+              const eligibleDocsArea = allPaths.length > 0 &&
+                allPaths.every(p => typeof p === "string" &&
+                  eligiblePrefixes.some(prefix => p.startsWith(prefix)));
               forceFullCiPathChanged = allPaths.some(p =>
                 exactPaths.has(p) || prefixes.some(prefix => p.startsWith(prefix)));
               const labels = context.payload.pull_request?.labels ?? [];
               const forcedByLabel = labels.some(label => optInLabels.has(label.name));
               docsOnly = changedFileCount >= 1 &&
                 changedFileCount <= maxFiles && markdownOnly &&
-                !forceFullCiPathChanged && !forcedByLabel;
+                eligibleDocsArea && !forceFullCiPathChanged && !forcedByLabel;
 
               if (changedFileCount === 0) {
                 reason = "No files returned (fail closed)";
@@ -105,6 +117,8 @@ runs:
                 reason = `${changedFileCount} files exceed limit ${maxFiles}`;
               } else if (!markdownOnly) {
                 reason = "A current or previous path is not Markdown";
+              } else if (!eligibleDocsArea) {
+                reason = "Markdown outside eligible docs directories needs full CI";
               } else if (forceFullCiPathChanged) {
                 reason = "Generated documentation needs full CI";
               } else if (forcedByLabel) {

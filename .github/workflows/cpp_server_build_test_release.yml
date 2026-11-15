@@ -39,14 +39,13 @@ env:
 jobs:
 
   classify-small-docs-pr:
-    name: Classify small docs PR
+    name: Classify small docs PR (C++ CI)
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
-      reason: ${{ steps.classify.outputs.reason }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -59,13 +58,14 @@ jobs:
           max-files: "5"
 
   full-ci-gate:
-    name: Full CI gate
+    name: Full CI gate (C++ CI)
     needs: classify-small-docs-pr
     if: >-
       !cancelled() &&
       (needs.classify-small-docs-pr.result != 'success' ||
        needs.classify-small-docs-pr.outputs.docs_only != 'true')
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Allow full CI
         run: echo 'Full CI enabled'
@@ -110,6 +110,8 @@ jobs:
 
   build-lemonade-server-installer:
     needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: Build Lemonade Server Installer
     runs-on: windows-latest
     outputs:
@@ -218,8 +220,11 @@ jobs:
     # BUILD_FULL_INSTALLER above, spelled the same way so the two stay
     # provably complementary.
     if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success' &&
+      (
       !(startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-v') || inputs.enable_signing == true) &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros'))
+      )
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -294,6 +299,8 @@ jobs:
 
   tauri-compile-check:
     needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: Compile-check the Tauri host (${{ matrix.os }})
     # The Tauri host is Rust, which `npm run typecheck` does not touch. Both
     # jobs that build it — the Windows desktop installer and the macOS .dmg —
@@ -388,6 +395,8 @@ jobs:
 
   build-lemonade-deb:
     needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: Build Lemonade .deb Package
     runs-on: ubuntu-latest
     outputs:
@@ -478,6 +487,8 @@ jobs:
 
   cpp-unit-tests:
     needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: C++ unit tests
     # Own job rather than a step of build-lemonade-deb: it shares nothing with
     # the packaging build (different configure, different flags), so as a step
@@ -522,7 +533,9 @@ jobs:
     # Packaging-only variant: the merge queue gates every merge, so PR pushes
     # skip it. Any Debian 13 build break still blocks at merge-queue time.
     # Label a PR `ci:distros` to opt it back in.
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success' &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros'))
     runs-on: ${{ matrix.runs-on }}
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -684,7 +697,9 @@ jobs:
     # Packaging-only variant: the merge queue gates every merge, so PR pushes
     # skip it. Any Fedora build break still blocks at merge-queue time.
     # Label a PR `ci:distros` to opt it back in.
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success' &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros'))
     runs-on: ${{ matrix.runs-on }}
     container:
       image: fedora:${{ matrix.fedora-version }}
@@ -779,7 +794,9 @@ jobs:
     # Lemonade (macOS) stays on PR pushes as the AppleClang compile canary; the
     # Tauri/dmg/pkg surface is packaging-only, so it gates at merge-queue time.
     # Label a PR `ci:macos` to opt it back in.
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos')
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success' &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos'))
     runs-on: macos-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -855,7 +872,6 @@ jobs:
           fi
 
   build-lemonade-embeddable-linux:
-    needs: full-ci-gate
     name: Build Embeddable Lemonade (Linux${{ matrix.job-suffix }})
     runs-on: ${{ matrix.runs-on }}
     outputs:
@@ -928,6 +944,8 @@ jobs:
 
   build-lemonade-linux-arm64:
     needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: Build Lemonade (Linux ARM64)
     runs-on: ubuntu-24.04-arm
     outputs:
@@ -978,6 +996,8 @@ jobs:
 
   build-lemonade-embeddable-windows:
     needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: Build Embeddable Lemonade (Windows)
     runs-on: windows-latest
     outputs:
@@ -1029,6 +1049,8 @@ jobs:
 
   build-lemonade-embeddable-macos:
     needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: Build Embeddable Lemonade (macOS)
     runs-on: macos-latest
     outputs:
@@ -1838,7 +1860,7 @@ jobs:
   # to run on ordinary pull request pushes.
   packaging-gate:
     name: Packaging builds
-    needs: [build-lemonade-debian13, test-lemonade-debian13-smoke, build-lemonade-rpm, test-rpm-package, build-lemonade-desktop-installer, tauri-compile-check]
+    needs: [classify-small-docs-pr, full-ci-gate, build-lemonade-debian13, test-lemonade-debian13-smoke, build-lemonade-rpm, test-rpm-package, build-lemonade-desktop-installer, tauri-compile-check]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1853,7 +1875,7 @@ jobs:
   # settings.
   backends-gate:
     name: Inference backend tests
-    needs: [build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-container-backends, test-container-smoke, test-watchdog-lifecycle-linux]
+    needs: [classify-small-docs-pr, full-ci-gate, build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-container-backends, test-container-smoke, test-watchdog-lifecycle-linux]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1866,7 +1888,7 @@ jobs:
   # Same gate pattern as packaging-gate, for the macOS jobs that PR pushes skip.
   macos-gate:
     name: macOS builds
-    needs: [build-lemonade-macos-dmg, test-cli-endpoints-macos, test-embeddable-macos, test-dmg-inference]
+    needs: [classify-small-docs-pr, full-ci-gate, build-lemonade-macos-dmg, test-cli-endpoints-macos, test-embeddable-macos, test-dmg-inference]
     if: always()
     runs-on: ubuntu-latest
     steps:
