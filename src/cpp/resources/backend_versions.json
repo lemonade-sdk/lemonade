@@ -3,6 +3,11 @@
   "checksums": {
     "comment": "Expected SHA-256 of downloaded GitHub release assets, verified after download (see BackendUtils::lookup_expected_asset_hash). Keyed by checksums.github.<owner/repo>.<tag>.<asset>. Values are the sha256:<hex> digests GitHub publishes for each asset. Update alongside the matching version pin below.",
     "github": {
+      "lemonade-sdk/ryzenai-server": {
+        "v1.9.0": {
+          "ryzenai-server.zip": "sha256:afb4bd87e71dab243cc9fc30a9996220e685ae15b5fb9214f237698a23a629b3"
+        }
+      },
       "pwilkin/openmoss": {
         "v0.3.0": {
           "moss-tts-vulkan-linux-x64.tar.gz": "sha256:1288a22295451d0e5d8bd707ef79ea324e1c7b5f1cd9bfbdab2167a388fe3af7",
