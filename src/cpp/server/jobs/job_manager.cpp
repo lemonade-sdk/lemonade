@@ -2,6 +2,7 @@
 
 #include "lemon/jobs/job_expr.h"
 #include "lemon/jobs/job_graph.h"
+#include "lemon/jobs/job_media_limits.h"
 #include "lemon/utils/path_utils.h"
 
 #include <lemon/utils/aixlog.hpp>
@@ -648,6 +649,16 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                 LOG(INFO, "Jobs") << "job " << id << " interrupted during step '" << step_id << "'"
                                   << std::endl;
                 return;
+            }
+
+            if (ok) {
+                const size_t retained = retained_media_bytes(job);
+                const size_t added = media_result_bytes(output);
+                if (!job_media_within_budget(retained, added)) {
+                    ok = false;
+                    run_error = s->op + " output would exceed the per-job media store limit of " +
+                                std::to_string(kMaxJobMediaStoreBytes) + " bytes";
+                }
             }
 
             if (ok) {

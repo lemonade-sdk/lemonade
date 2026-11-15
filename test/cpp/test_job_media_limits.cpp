@@ -36,12 +36,28 @@ int main() {
     check("media: image estimate",
           media_result_bytes(json{{"data", json::array({{{"b64_json", "YWJj"}}})}}) == 3);
     check("media: image URL", media_result_bytes(json{{"data", json::array({{{"url", "image.png"}}})}}) == 0);
-    const json context = {{"audio", media}, {"image", image}, {"ordinary", {{"tps", 42}}}};
-    check("context: media sum", context_media_bytes(context) == 9);
+    Job job;
+    check("retained: empty job", retained_media_bytes(job) == 0);
+    StepRecord audio_step;
+    audio_step.id = "a";
+    audio_step.output = media;
+    audio_step.extract = {{"a", "size"}};
+    job.steps.push_back(audio_step);
+    job.context["a"] = 4;
+    check("retained: extract cannot hide media", retained_media_bytes(job) == 6);
+    StepRecord ordinary_step;
+    ordinary_step.output = {{"tps", 42}};
+    job.steps.push_back(ordinary_step);
+    StepRecord image_step;
+    image_step.output = image;
+    job.steps.push_back(image_step);
+    check("retained: mixed output sum", retained_media_bytes(job) == 9);
     const json large = {{"mime_type", "audio/wav"}, {"data", ""},
                         {"size", std::numeric_limits<size_t>::max()}};
-    check("context: overflow saturates",
-          context_media_bytes(json{{"a", large}, {"b", large}}) == std::numeric_limits<size_t>::max());
+    job.steps[0].output = large;
+    job.steps[2].output = large;
+    check("retained: overflow saturates",
+          retained_media_bytes(job) == std::numeric_limits<size_t>::max());
     std::printf("\n%s (%d failures)\n", g_failures ? "FAIL" : "ALL PASS", g_failures);
     return g_failures ? 1 : 0;
 }

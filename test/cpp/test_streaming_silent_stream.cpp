@@ -1,3 +1,5 @@
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <functional>
 #include <string>
@@ -195,11 +197,76 @@ static void test_line_parser_handles_every_terminator() {
           "line parser: end of stream releases the held CR");
 }
 
+static void test_cancellation_during_backend_silence(bool sse, bool predicate_only) {
+    using namespace std::chrono_literals;
+    httplib::Server backend;
+    std::atomic<bool> started{false};
+    std::atomic<bool> release_backend{false};
+    std::atomic<bool> cancelled{false};
+    backend.Post("/stream", [&](const httplib::Request&, httplib::Response& res) {
+        started.store(true);
+        const auto deadline = std::chrono::steady_clock::now() + 5s;
+        while (!release_backend.load() && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(10ms);
+        }
+        res.set_content("", sse ? "text/event-stream" : "audio/wav");
+    });
+    const int port = backend.bind_to_any_port("127.0.0.1");
+    check(port > 0, "cancellation: mock backend bound");
+    if (port <= 0) return;
+    std::thread backend_thread([&]() { backend.listen_after_bind(); });
+    backend.wait_until_ready();
+    std::thread interrupter([&]() {
+        const auto deadline = std::chrono::steady_clock::now() + 5s;
+        while (!started.load() && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(10ms);
+        }
+        std::this_thread::sleep_for(100ms);
+        cancelled.store(true);
+    });
+
+    lemon::utils::CancelToken cancel;
+    if (predicate_only) {
+        cancel.should_cancel = [&]() { return cancelled.load(); };
+    } else {
+        cancel.flag = &cancelled;
+    }
+    std::string output;
+    httplib::DataSink sink;
+    sink.write = [&](const char* data, size_t length) {
+        output.append(data, length);
+        return true;
+    };
+    sink.done = []() {};
+    sink.is_writable = []() { return true; };
+    const auto start = std::chrono::steady_clock::now();
+    const std::string url = "http://127.0.0.1:" + std::to_string(port) + "/stream";
+    if (sse) {
+        lemon::StreamingProxy::forward_sse_stream(url, "{}", sink, nullptr, 10, nullptr, 0, cancel);
+    } else {
+        lemon::StreamingProxy::forward_byte_stream(url, "{}", sink, 10, nullptr, cancel);
+    }
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    const bool returned_during_silence = !release_backend.exchange(true) && elapsed < 3s;
+    interrupter.join();
+    backend.stop();
+    backend_thread.join();
+    const std::string name = std::string(sse ? "SSE" : "byte stream") +
+                             (predicate_only ? " predicate" : " flag");
+    check(started.load(), name + ": request reached silent backend");
+    check(cancelled.load() && returned_during_silence, name + ": cancellation stops silent transfer");
+    if (!sse) check(output.empty(), name + ": cancellation sends no backend-error payload");
+}
+
 int main() {
     test_delivered_events_are_forwarded();
     test_streams_that_delivered_nothing_are_errors();
     test_backend_done_marker_is_not_duplicated();
     test_line_parser_handles_every_terminator();
+    test_cancellation_during_backend_silence(false, false);
+    test_cancellation_during_backend_silence(false, true);
+    test_cancellation_during_backend_silence(true, false);
+    test_cancellation_during_backend_silence(true, true);
 
     if (g_failures == 0) {
         std::printf("All silent stream tests passed.\n");

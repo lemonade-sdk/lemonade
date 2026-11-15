@@ -850,6 +850,7 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
         note_backend_activity();
     };
 
+    const auto cancel = current_request_cancel_context();
     try {
         if (sse) {
             // Use StreamingProxy to forward the SSE stream with telemetry callback
@@ -861,11 +862,14 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                     }
                 },
                 timeout_seconds,
-                mark_stream_progress
+                mark_stream_progress,
+                1000,
+                cancel
             );
         } else {
             StreamingProxy::forward_byte_stream(url, request_body, sink, timeout_seconds,
-                mark_stream_progress
+                mark_stream_progress,
+                cancel
             );
         }
     } catch (const std::exception& e) {

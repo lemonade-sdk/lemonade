@@ -9,7 +9,8 @@ namespace lemon::jobs {
 
 inline constexpr size_t kMaxJobMediaOutputBytes = 8u * 1024u * 1024u;
 // Each result lives in the step output and context, bounding the document at
-// roughly twice this budget plus base64 growth.
+// roughly twice this budget plus base64 growth. Count step outputs because an
+// extract can overwrite the context copy.
 inline constexpr size_t kMaxJobMediaStoreBytes = 16u * 1024u * 1024u;
 
 inline size_t base64_decoded_size(size_t encoded_len) {
@@ -51,10 +52,10 @@ inline size_t media_result_bytes(const json& result) {
     return binary ? base64_decoded_size(data->get_ref<const json::string_t&>().size()) : image_bytes;
 }
 
-inline size_t context_media_bytes(const json& context) {
+inline size_t retained_media_bytes(const Job& job) {
     size_t total = 0;
-    for (const auto& result : context) {
-        const size_t bytes = media_result_bytes(result);
+    for (const auto& step : job.steps) {
+        const size_t bytes = media_result_bytes(step.output);
         if (bytes > std::numeric_limits<size_t>::max() - total)
             return std::numeric_limits<size_t>::max();
         total += bytes;
