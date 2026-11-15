@@ -36,6 +36,20 @@ int main() {
     check("media: image estimate",
           media_result_bytes(json{{"data", json::array({{{"b64_json", "YWJj"}}})}}) == 3);
     check("media: image URL", media_result_bytes(json{{"data", json::array({{{"url", "image.png"}}})}}) == 0);
+    check("payload: string", payload_bytes("YWJjZA==") == 8);
+    check("payload: nested array and object",
+          payload_bytes(json{{"a", json::array({"abc", json{{"b", "de"}}, 1, true})},
+                             {"c", "f"}}) == 6);
+    check("payload: number", payload_bytes(42) == 0);
+    check("payload: bool", payload_bytes(true) == 0);
+    json nested = "abc";
+    for (size_t depth = 0; depth < 32; ++depth) nested = json::array({nested});
+    check("payload: bounded nesting", payload_bytes(nested) == 3);
+    nested = json::array({nested});
+    check("payload: excessive nesting saturates",
+          payload_bytes(nested) == std::numeric_limits<size_t>::max());
+    check("payload: nested overflow saturates",
+          payload_bytes(json::array({"abc", nested})) == std::numeric_limits<size_t>::max());
     Job job;
     check("retained: empty job", retained_media_bytes(job) == 0);
     StepRecord audio_step;
@@ -45,6 +59,15 @@ int main() {
     job.steps.push_back(audio_step);
     job.context["a"] = 4;
     check("retained: extract cannot hide media", retained_media_bytes(job) == 6);
+    Job aliased_job;
+    aliased_job.steps.push_back(audio_step);
+    aliased_job.context["a"] = media;
+    check("retained: media context counted once", retained_media_bytes(aliased_job) == 6);
+    aliased_job.context["copy1"] = media["data"];
+    aliased_job.context["copy2"] = media["data"];
+    aliased_job.context["copy3"] = media["data"];
+    check("retained: every extracted payload copy counts",
+          retained_media_bytes(aliased_job) == 6 + 3 * 8);
     StepRecord ordinary_step;
     ordinary_step.output = {{"tps", 42}};
     job.steps.push_back(ordinary_step);
@@ -58,6 +81,9 @@ int main() {
     job.steps[2].output = large;
     check("retained: overflow saturates",
           retained_media_bytes(job) == std::numeric_limits<size_t>::max());
+    aliased_job.steps[0].output = large;
+    check("retained: context overflow saturates",
+          retained_media_bytes(aliased_job) == std::numeric_limits<size_t>::max());
     std::printf("\n%s (%d failures)\n", g_failures ? "FAIL" : "ALL PASS", g_failures);
     return g_failures ? 1 : 0;
 }

@@ -246,6 +246,7 @@ static void test_cancellation_during_backend_silence(bool sse, bool predicate_on
     } else {
         lemon::StreamingProxy::forward_byte_stream(url, "{}", sink, 10, nullptr, cancel);
     }
+    const bool cancelled_at_return = cancelled.load();
     const auto elapsed = std::chrono::steady_clock::now() - start;
     const bool returned_during_silence = !release_backend.exchange(true) && elapsed < 3s;
     interrupter.join();
@@ -254,7 +255,7 @@ static void test_cancellation_during_backend_silence(bool sse, bool predicate_on
     const std::string name = std::string(sse ? "SSE" : "byte stream") +
                              (predicate_only ? " predicate" : " flag");
     check(started.load(), name + ": request reached silent backend");
-    check(cancelled.load() && returned_during_silence, name + ": cancellation stops silent transfer");
+    check(cancelled_at_return && returned_during_silence, name + ": cancellation stops silent transfer");
     if (!sse) check(output.empty(), name + ": cancellation sends no backend-error payload");
 }
 

@@ -52,10 +52,37 @@ inline size_t media_result_bytes(const json& result) {
     return binary ? base64_decoded_size(data->get_ref<const json::string_t&>().size()) : image_bytes;
 }
 
+// Extract copies persist in the context as bare values, not media objects.
+inline size_t payload_bytes(const json& value) {
+    const auto count = [](const auto& self, const json& current, size_t depth) -> size_t {
+        if (current.is_string()) return current.get_ref<const json::string_t&>().size();
+        if (!current.is_array() && !current.is_object()) return 0;
+        // Exhaust the budget rather than undercount values beyond the recursion bound.
+        if (depth >= 32) return std::numeric_limits<size_t>::max();
+        size_t total = 0;
+        for (const auto& member : current) {
+            const size_t bytes = self(self, member, depth + 1);
+            if (bytes > std::numeric_limits<size_t>::max() - total)
+                return std::numeric_limits<size_t>::max();
+            total += bytes;
+        }
+        return total;
+    };
+    return count(count, value, 0);
+}
+
 inline size_t retained_media_bytes(const Job& job) {
     size_t total = 0;
     for (const auto& step : job.steps) {
         const size_t bytes = media_result_bytes(step.output);
+        if (bytes > std::numeric_limits<size_t>::max() - total)
+            return std::numeric_limits<size_t>::max();
+        total += bytes;
+    }
+    for (const auto& value : job.context) {
+        // Media-shaped entries are already counted through their step outputs.
+        if (media_result_bytes(value) != 0) continue;
+        const size_t bytes = payload_bytes(value);
         if (bytes > std::numeric_limits<size_t>::max() - total)
             return std::numeric_limits<size_t>::max();
         total += bytes;

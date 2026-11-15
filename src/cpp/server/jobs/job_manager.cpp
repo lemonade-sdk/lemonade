@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 
 namespace fs = std::filesystem;
 
@@ -24,6 +25,22 @@ namespace jobs {
 namespace {
 
 constexpr size_t kMaxJobs = 50;
+
+size_t projected_media_bytes(const StepRecord& step, const json& output) {
+    size_t total = media_result_bytes(output);
+    // Extract copies persist separately, so count them before storing the output.
+    for (auto it = step.extract.begin(); it != step.extract.end(); ++it) {
+        try {
+            const auto resolved = expr_detail::resolve_ref_path(it.value().get<std::string>(), output);
+            const size_t bytes = payload_bytes(resolved);
+            if (bytes > std::numeric_limits<size_t>::max() - total)
+                return std::numeric_limits<size_t>::max();
+            total += bytes;
+        } catch (const std::exception&) {
+        }
+    }
+    return total;
+}
 
 std::string iso_now() {
     const auto now = std::chrono::system_clock::now();
@@ -653,7 +670,7 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
 
             if (ok) {
                 const size_t retained = retained_media_bytes(job);
-                const size_t added = media_result_bytes(output);
+                const size_t added = projected_media_bytes(*s, output);
                 if (!job_media_within_budget(retained, added)) {
                     ok = false;
                     run_error = s->op + " output would exceed the per-job media store limit of " +
