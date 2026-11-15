@@ -693,7 +693,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 This endpoint does not take any parameters.
 
-An alias stands in for its target in the `model` field of inference requests and of [`POST /v1/load`](./lemonade.md#post-v1load) and [`POST /v1/unload`](./lemonade.md#post-v1unload); the Ollama and Anthropic gateways do not resolve aliases. Aliases live in `<cache_dir>/aliases.json`; see [Model Aliases](../guide/configuration/custom-models.md).
+An alias stands in for its target in the `model` field of inference requests on every gateway, of [`POST /v1/load`](./lemonade.md#post-v1load) and [`POST /v1/unload`](./lemonade.md#post-v1unload), and of Ollama's [`POST /api/show`](./ollama.md#post-apishow); Ollama's `/api/pull` and `/api/delete` take only model names. Aliases live in `<cache_dir>/aliases.json`; see [Model Aliases](../guide/configuration/custom-models.md).
 
 ### Example
 

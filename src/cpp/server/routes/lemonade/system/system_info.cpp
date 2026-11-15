@@ -182,6 +182,7 @@ ordered_json system_info_schema() {
                         "display_name": {"type": "string", "description": "The recipe's name for people, such as `Llama.cpp GPU`."},
                         "web_display_name": {"type": "string", "description": "The recipe's name on the Lemonade website."},
                         "modality": {"type": "string", "description": "The kind of model the recipe mainly serves, such as `Text generation`."},
+                        "supported_modes": {"type": "array", "items": {"type": "string"}, "description": "Deployment modes the recipe serves (such as `chat` or `image`), distinct from model capability labels like `edit` and `upscaling`."},
                         "selectable_backend": {"type": "boolean", "description": "Whether a `<recipe>_backend` option chooses the recipe's backend."},
                         "uses_ctx_size": {"type": "boolean", "description": "Whether the recipe accepts the shared `ctx_size` option."},
                         "slot_policy": {"enum": ["standard", "exclusive_npu", "coexist_by_type", "exclusive_host", "unmetered"], "description": "How the recipe's models count against loaded-model limits: `standard`, `exclusive_npu` (loading one evicts every NPU model), `coexist_by_type` (one per model type), `exclusive_host` (shares the machine with no other local model) or `unmetered` (never counted or evicted)."},

@@ -1732,6 +1732,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         entry["selectable_backend"] = desc->selectable_backend;
         entry["uses_ctx_size"] = desc->uses_ctx_size;
         entry["modality"] = lemon::backends::modality_display_for(*desc);
+        entry["supported_modes"] = desc->supported_modes;
         const std::string selected_backend = entry.value("default_backend", "");
         const std::string selected_tier =
             entry["backends"].value(selected_backend, json::object()).value("tier", "");
