@@ -9,6 +9,7 @@
 #include <system_error>
 #include <lemon/auto_context_budget.h>
 #include <lemon/backends/backend_ops.h>
+#include <lemon/backends/llamacpp/llamacpp_rulehead.h>
 #include <lemon/backends/backend_registry.h>
 #include <lemon/gguf_reader.h>
 #include <lemon/gpu_memory_selection.h>
@@ -354,6 +355,12 @@ inline bool is_encoder_decision_model(const ModelInfo& model_info) {
            model_info.max_context_window > 0;
 }
 
+/// See llamacpp_rulehead.h. Its GGUF declares the base model's 128000-token
+/// window, not what the router trained on.
+inline bool is_rule_head_router_model(const ModelInfo& model_info) {
+    return !model_info.checkpoint("rulehead").empty();
+}
+
 /// Auto-resolve ctx_size if it is -1 in the effective options.
 /// Returns the resolved context size, or -2 if no auto-resolution is needed
 /// (i.e. ctx_size was already set to an explicit non-negative value).
@@ -369,6 +376,10 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
 
     if (is_encoder_decision_model(model_info)) {
         return model_info.max_context_window;
+    }
+
+    if (is_rule_head_router_model(model_info)) {
+        return backends::llamacpp::RULE_HEAD_ROUTER_CTX_SIZE;
     }
 
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);
