@@ -1,0 +1,31 @@
+[package]
+name = "lemonade-virtual-netstack"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# rlib alongside staticlib so `cargo test` can link the unit tests.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+smoltcp = { version = ">=0.12, <0.15", default-features = false, features = [
+    "std",
+    "medium-ip",
+    "proto-ipv4",
+    "socket-tcp",
+    # Congestion control for the bridged TCP connections. Without it a
+    # connection sends a full window at once and recovers from loss by
+    # retransmitting from the first lost byte.
+    "socket-tcp-cubic",
+    "socket-udp",
+    "socket-icmp",
+    # Inbound UDP datagrams up to the IPv4 maximum, like a kernel socket:
+    # fragments are reassembled, up to 16 datagrams at once. Outbound UDP is
+    # fragmented by the stack itself (stack.rs send_udp).
+    "proto-ipv4-fragmentation",
+    "reassembly-buffer-size-65536",
+    "reassembly-buffer-count-16",
+    "assembler-max-segment-count-32",
+] }
+mio = { version = "1", features = ["os-poll", "net", "os-ext"] }
+log = "0.4"

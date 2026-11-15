@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y \
     nodejs \
     npm \
     python3 \
+    cargo-1.85 \
+    rustc-1.85 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy source code
@@ -72,6 +74,7 @@ ENV XDG_RUNTIME_DIR=/run/lemonade
 # Copy built executables and resources from builder
 COPY --from=builder /app/build/lemond ./lemond
 COPY --from=builder /app/build/lemonade ./lemonade
+COPY --from=builder /app/build/liblemonade_nexus_sdk.so ./liblemonade_nexus_sdk.so
 COPY --from=builder /app/build/resources ./resources
 
 # Make executables executable

@@ -70,7 +70,7 @@ const managerSource = sources.get(managerPath);
 const globalSettingsSource = sources.get(globalSettingsPath);
 const storageSource = sources.get(storagePath);
 
-assert.match(appSource, /<header className=\{`titlebar\$\{isDesktop \? ' titlebar--desktop' : ''\}`\} data-tauri-drag-region>/);
+assert.match(appSource, /<header className=\{`titlebar titlebar--with-account\$\{isDesktop \? ' titlebar--desktop' : ''\}`\} data-tauri-drag-region>/);
 assert.doesNotMatch(appSource, /titlebar--chat/);
 assert.doesNotMatch(styles, /\.titlebar--chat\s+\.titlebar__nav/);
 

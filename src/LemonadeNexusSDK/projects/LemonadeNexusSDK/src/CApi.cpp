@@ -1,0 +1,2198 @@
+#include <LemonadeNexusSDK/lemonade_nexus.h>
+#include <LemonadeNexusSDK/AccountAvatarClient.hpp>
+#include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
+#include <LemonadeNexusSDK/ServerDiscovery.hpp>
+#include <LemonadeNexusSDK/GroupKey.hpp>
+#include <LemonadeNexusSDK/IdentityHandoff.hpp>
+#include <LemonadeNexusSDK/IdentityStore.hpp>
+#include <LemonadeNexusSDK/MeshPort.hpp>
+#include <LemonadeNexus/Auth/AccountDeletionProof.hpp>
+
+#include <nlohmann/json.hpp>
+#include <spdlog/sinks/base_sink.h>
+#include <spdlog/spdlog.h>
+
+#include <algorithm>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <memory>
+#include <mutex>
+#include <span>
+#include <stdexcept>
+#include <string>
+
+using json = nlohmann::json;
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+// Map an lnsdk::Result failure to a distinct ln_error_t. The SDK client
+// reports the transport failure (no HTTP status), the HTTP status it did
+// receive, and a text message. Without this split, e.g. ln_tree_get_node
+// collapsed auth / network / parse failures into one code and a C caller
+// could not tell "not authenticated" from "server unreachable" from a
+// malformed response.
+static ln_error_t ln_map_error(int http_status) {
+    if (http_status == 401 || http_status == 403) return LN_ERR_AUTH;
+    if (http_status == 404) return LN_ERR_NOT_FOUND;
+    if (http_status == 0)   return LN_ERR_CONNECT;
+    if (http_status >= 500) return LN_ERR_CONNECT;
+    return LN_ERR_REJECTED;
+}
+
+struct ln_client_s {
+    lnsdk::LemonadeNexusClient client;
+    std::unique_ptr<lnsdk::AccountAvatarClient> avatar;
+    std::mutex mesh_port_mutex;
+    // Declared after `client` so it is destroyed, and stopped, first.
+    std::unique_ptr<lnsdk::MeshPort> mesh_port;
+    // The application's renewal callback. The client has one renewal callback,
+    // so on_cert_renewed() delivers each event to the mesh port and to this.
+    std::mutex cert_callback_mutex;
+    ln_cert_renewed_fn cert_callback{nullptr};
+    void* cert_callback_user{nullptr};
+    // The application's session-move callback, same rules as the renewal one.
+    std::mutex session_callback_mutex;
+    ln_session_moved_fn session_callback{nullptr};
+    void* session_callback_user{nullptr};
+    // The application's ingress refusal callback, same rules.
+    std::mutex ingress_callback_mutex;
+    ln_ingress_denied_fn ingress_callback{nullptr};
+    void* ingress_callback_user{nullptr};
+    // The application's mesh event callback, same rules.
+    std::mutex mesh_event_callback_mutex;
+    ln_mesh_event_fn mesh_event_callback{nullptr};
+    void* mesh_event_callback_user{nullptr};
+
+    explicit ln_client_s(const lnsdk::ServerConfig& cfg) : client{cfg} {
+        client.set_cert_renewed_callback([this](const lnsdk::CertRenewedEvent& event) { on_cert_renewed(event); });
+        client.set_session_moved_callback([this](const lnsdk::SessionMoveEvent& event) { on_session_moved(event); });
+        client.set_ingress_denied_callback([this](const lnsdk::IngressDeniedEvent& event) { on_ingress_denied(event); });
+        client.set_mesh_callback([this](const lnsdk::MeshTunnelStatus&) { on_mesh_changed(); });
+        client.set_mesh_devices_callback([this] { on_mesh_devices_changed(); });
+    }
+    ~ln_client_s() {
+        // Waits for a running callback, so none runs during member destruction.
+        client.set_cert_renewed_callback({});
+        client.set_session_moved_callback({});
+        client.set_ingress_denied_callback({});
+        // Setting the mesh callback does not wait for a running one; stopping
+        // the orchestrator joins the thread that runs it.
+        client.disable_mesh();
+        client.set_mesh_callback({});
+        client.set_mesh_devices_callback({});
+        // Waits for a running change report, as the setters above do.
+        if (mesh_port) mesh_port->set_change_callback({});
+        std::lock_guard lock(mesh_event_callback_mutex);
+        mesh_event_callback = nullptr;
+    }
+    ln_client_s(const ln_client_s&) = delete;
+    ln_client_s& operator=(const ln_client_s&) = delete;
+
+    void on_cert_renewed(const lnsdk::CertRenewedEvent& event);
+    void on_session_moved(const lnsdk::SessionMoveEvent& event);
+    void on_ingress_denied(const lnsdk::IngressDeniedEvent& event);
+    void on_mesh_changed();
+    void on_mesh_devices_changed();
+    /// Reports {"event": `name`} to the application's mesh event callback.
+    void emit_mesh_event(const char* name);
+};
+
+struct ln_identity_s {
+    lnsdk::Identity identity;
+};
+
+struct ln_handoff_s {
+    lnsdk::IdentityHandoff handoff;
+};
+
+static char* strdup_json(const json& j) {
+    auto s = j.dump();
+    char* out = static_cast<char*>(std::malloc(s.size() + 1));
+    if (out) {
+        std::memcpy(out, s.c_str(), s.size() + 1);
+    }
+    return out;
+}
+
+static char* strdup_str(const std::string& s) {
+    char* out = static_cast<char*>(std::malloc(s.size() + 1));
+    if (out) {
+        std::memcpy(out, s.c_str(), s.size() + 1);
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// Memory management
+// ---------------------------------------------------------------------------
+
+void ln_free(char* ptr) {
+    std::free(ptr);
+}
+
+ln_error_t ln_account_avatar_configure(ln_client_t* client, const ln_identity_t* identity, const char* cache_root) {
+    if (!client || !identity || !cache_root) return LN_ERR_NULL_ARG;
+    try {
+        if (!identity->identity.is_valid()) return LN_ERR_NO_IDENTITY;
+        if (!*cache_root || !std::filesystem::u8path(cache_root).is_absolute()) return LN_ERR_REJECTED;
+        client->avatar = std::make_unique<lnsdk::AccountAvatarClient>(identity->identity,
+            std::filesystem::u8path(cache_root),
+            [client](const std::string& method, const std::string& path, const std::string& body) {
+                return client->client.call_private_api(method, path, body);
+            },
+            [client](uint16_t port, const std::string& target) { return client->client.expose_service(port, target).ok; },
+            [client](const std::string& ip, uint16_t port) { return client->client.open_egress(ip, port); },
+            [client] { return client->client.get_mesh_peers(); });
+        return LN_OK;
+    } catch (...) { return LN_ERR_INTERNAL; }
+}
+
+ln_error_t ln_account_avatar_sign(const ln_identity_t* identity, const char* group_id,
+                                  const char* image, uint64_t revision, char** out_json) {
+    if (out_json) *out_json = nullptr;
+    if (!identity || !group_id || !image || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        if (!identity->identity.is_valid()) return LN_ERR_NO_IDENTITY;
+        *out_json = strdup_json(lnsdk::sign_avatar_reference(identity->identity, group_id, image, revision));
+        return *out_json ? LN_OK : LN_ERR_INTERNAL;
+    } catch (const std::invalid_argument&) { return LN_ERR_REJECTED; }
+    catch (...) { return LN_ERR_INTERNAL; }
+}
+
+static ln_error_t avatar_result(const lnsdk::Result<json>& result, char** out_json) {
+    *out_json = strdup_json(result.ok ? result.value : json{{"error", result.error}});
+    if (!*out_json) return LN_ERR_INTERNAL;
+    if (result.http_status == 501) return LN_ERR_UNSUPPORTED;
+    return result.ok ? LN_OK : ln_map_error(result.http_status);
+}
+
+ln_error_t ln_account_avatar_get(ln_client_t* client, char** out_json) {
+    if (out_json) *out_json = nullptr;
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        if (!client->avatar) return LN_ERR_UNSUPPORTED;
+        return avatar_result(client->avatar->read(), out_json);
+    } catch (...) { return LN_ERR_INTERNAL; }
+}
+
+ln_error_t ln_account_avatar_put(ln_client_t* client, const char* record_json, const char* image, char** out_json) {
+    if (out_json) *out_json = nullptr;
+    if (!client || !record_json || !image || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        if (!client->avatar) return LN_ERR_UNSUPPORTED;
+        return avatar_result(client->avatar->write(json::parse(record_json, nullptr, false), image), out_json);
+    } catch (...) { return LN_ERR_INTERNAL; }
+}
+
+// ---------------------------------------------------------------------------
+// Client lifecycle
+// ---------------------------------------------------------------------------
+
+// Bump spdlog to debug when LN_DEBUG is set in the environment — surfaces the
+// dataplane's route/send/handshake logs for diagnosing mesh connectivity.
+// spdlog::set_level reaches every registered logger, so a callback logger
+// installed before the first ln_create gets the level too.
+static void ln_apply_debug_log_level() {
+    static bool applied = false;
+    if (applied) return;
+    applied = true;
+    if (const char* v = std::getenv("LN_DEBUG"); v && *v && std::string(v) != "0") {
+        spdlog::set_level(spdlog::level::debug);
+        spdlog::debug("[CApi] debug logging enabled (LN_DEBUG)");
+    }
+}
+
+namespace {
+
+/// A spdlog sink that hands each line's text to an ln_log_fn. The line is
+/// not formatted: the host logger adds its own timestamp and level.
+class LnCallbackSink final : public spdlog::sinks::base_sink<std::mutex> {
+public:
+    LnCallbackSink(ln_log_fn fn, void* user) : fn_(fn), user_(user) {}
+
+protected:
+    void sink_it_(const spdlog::details::log_msg& msg) override {
+        const std::string logger(msg.logger_name.data(), msg.logger_name.size());
+        const std::string text(msg.payload.data(), msg.payload.size());
+        fn_(static_cast<int>(msg.level), logger.c_str(), text.c_str(), user_);
+    }
+    void flush_() override {}
+
+private:
+    ln_log_fn fn_;
+    void*     user_;
+};
+
+/// The logger the process started with, kept so a NULL callback can put it
+/// back. Captured on the first ln_set_log_callback call.
+std::shared_ptr<spdlog::logger>& ln_original_logger() {
+    static std::shared_ptr<spdlog::logger> original;
+    return original;
+}
+
+}  // namespace
+
+ln_error_t ln_set_ca_bundle_path(const char* path) {
+    if (!path) return LN_ERR_NULL_ARG;
+    try {
+        lnsdk::set_ca_bundle_path(path);
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_set_log_callback(ln_log_fn callback, void* user) {
+    try {
+        auto& original = ln_original_logger();
+        const auto current = spdlog::default_logger();
+        if (!original) original = current;
+        if (!callback) {
+            spdlog::set_default_logger(original);
+            return LN_OK;
+        }
+        auto sink = std::make_shared<LnCallbackSink>(callback, user);
+        auto logger = std::make_shared<spdlog::logger>("lemonade-nexus-sdk", std::move(sink));
+        // The level in force (the default, or debug from LN_DEBUG) carries over.
+        logger->set_level(current->level());
+        logger->flush_on(current->flush_level());
+        spdlog::set_default_logger(std::move(logger));
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_client_t* ln_create(const char* host, uint16_t port) {
+    if (!host) return nullptr;
+    ln_apply_debug_log_level();
+    lnsdk::ServerConfig cfg(host, port, false);
+    return new(std::nothrow) ln_client_s{cfg};
+}
+
+ln_client_t* ln_create_tls(const char* host, uint16_t port) {
+    if (!host) return nullptr;
+    ln_apply_debug_log_level();
+    lnsdk::ServerConfig cfg(host, port, true);
+    return new(std::nothrow) ln_client_s{cfg};
+}
+
+void ln_destroy(ln_client_t* client) {
+    delete client;
+}
+
+// ---------------------------------------------------------------------------
+// Identity management
+// ---------------------------------------------------------------------------
+
+ln_identity_t* ln_identity_generate(void) {
+    auto* id = new(std::nothrow) ln_identity_s;
+    if (id) {
+        id->identity.generate();
+    }
+    return id;
+}
+
+ln_identity_t* ln_identity_load(const char* path) {
+    if (!path) return nullptr;
+    auto* id = new(std::nothrow) ln_identity_s;
+    if (!id) return nullptr;
+    if (!id->identity.load(path)) {
+        delete id;
+        return nullptr;
+    }
+    return id;
+}
+
+ln_error_t ln_identity_save(const ln_identity_t* identity, const char* path) {
+    if (!identity || !path) return LN_ERR_NULL_ARG;
+    return identity->identity.save(path) ? LN_OK : LN_ERR_INTERNAL;
+}
+
+char* ln_identity_pubkey(const ln_identity_t* identity) {
+    if (!identity) return nullptr;
+    return strdup_str(identity->identity.pubkey_string());
+}
+
+void ln_identity_destroy(ln_identity_t* identity) {
+    delete identity;
+}
+
+ln_error_t ln_set_identity(ln_client_t* client, const ln_identity_t* identity) {
+    if (!client || !identity) return LN_ERR_NULL_ARG;
+    client->client.set_identity(identity->identity);
+    return LN_OK;
+}
+
+// ---------------------------------------------------------------------------
+// Health
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_health(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.check_health();
+    json j;
+    j["status"]          = result.value.status;
+    j["service"]         = result.value.service;
+    j["dns_base_domain"] = result.value.dns_base_domain;
+    j["rp_id"]           = result.value.rp_id;
+    j["ok"]              = result.ok;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_CONNECT;
+}
+
+// ---------------------------------------------------------------------------
+// Authentication
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_auth_password(ln_client_t* client,
+                             const char* username,
+                             const char* password,
+                             char** out_json) {
+    if (!client || !username || !password || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.authenticate(username, password);
+    json j;
+    j["authenticated"] = result.value.authenticated;
+    j["user_id"]       = result.value.user_id;
+    j["session_token"] = result.value.session_token;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_AUTH;
+}
+
+ln_error_t ln_auth_passkey(ln_client_t* client,
+                            const char* passkey_json,
+                            char** out_json) {
+    if (!client || !passkey_json || !out_json) return LN_ERR_NULL_ARG;
+
+    auto data = json::parse(passkey_json, nullptr, false);
+    if (data.is_discarded()) return LN_ERR_INTERNAL;
+
+    auto result = client->client.authenticate_passkey(data);
+    json j;
+    j["authenticated"] = result.value.authenticated;
+    j["user_id"]       = result.value.user_id;
+    j["session_token"] = result.value.session_token;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_AUTH;
+}
+
+ln_error_t ln_auth_passkey_challenge(ln_client_t* client,
+                                     const char* user_id,
+                                     char** out_json) {
+    if (!client || !user_id || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.issue_passkey_challenge(user_id);
+    json j;
+    if (result.ok) {
+        j["challenge"] = result.value;
+    } else {
+        j["error"] = result.error;
+    }
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : ln_map_error(result.http_status);
+}
+
+ln_error_t ln_auth_token(ln_client_t* client,
+                          const char* token,
+                          char** out_json) {
+    if (!client || !token || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.authenticate_token(token);
+    json j;
+    j["authenticated"] = result.value.authenticated;
+    j["user_id"]       = result.value.user_id;
+    j["session_token"] = result.value.session_token;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_AUTH;
+}
+
+// ---------------------------------------------------------------------------
+// Tree operations
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_tree_get_node(ln_client_t* client,
+                             const char* node_id,
+                             char** out_json) {
+    if (!client || !node_id || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.get_tree_node(node_id);
+    if (result.ok) {
+        json j = result.value;
+        *out_json = strdup_json(j);
+        return LN_OK;
+    }
+
+    json err;
+    err["error"] = result.error;
+    *out_json = strdup_json(err);
+    // A 2xx response whose body failed to deserialize is a malformed-response
+    // failure (LN_ERR_PARSE), distinct from auth (401/403), not-found (404)
+    // and network (no transport / 5xx) failures.
+    return (result.http_status >= 200 && result.http_status < 300)
+        ? LN_ERR_PARSE
+        : ln_map_error(result.http_status);
+}
+
+ln_error_t ln_tree_submit_delta(ln_client_t* client,
+                                 const char* delta_json,
+                                 char** out_json) {
+    if (!client || !delta_json || !out_json) return LN_ERR_NULL_ARG;
+
+    auto parsed = json::parse(delta_json, nullptr, false);
+    if (parsed.is_discarded()) {
+        json err; err["error"] = "invalid JSON in delta";
+        *out_json = strdup_json(err);
+        return LN_ERR_INTERNAL;
+    }
+
+    lnsdk::TreeDelta delta;
+    try {
+        delta = parsed.get<lnsdk::TreeDelta>();
+    } catch (const std::exception& e) {
+        json err; err["error"] = std::string("delta parse error: ") + e.what();
+        *out_json = strdup_json(err);
+        return LN_ERR_INTERNAL;
+    }
+
+    auto result = client->client.submit_delta(delta);
+    json j;
+    j["success"]        = result.value.success;
+    j["delta_sequence"] = result.value.delta_sequence;
+    j["node_id"]        = result.value.node_id;
+    j["tunnel_ip"]      = result.value.tunnel_ip;
+    j["private_subnet"] = result.value.private_subnet;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_REJECTED;
+}
+
+ln_error_t ln_create_child_node(ln_client_t* client,
+                                 const char* parent_id,
+                                 const char* node_type,
+                                 char** out_json) {
+    if (!client || !parent_id || !node_type || !out_json) return LN_ERR_NULL_ARG;
+
+    lnsdk::TreeNode child;
+    std::string type_str(node_type);
+    try {
+        child.type = lnsdk::string_to_node_type(type_str);
+    } catch (...) {
+        json err; err["error"] = "invalid node type: " + type_str;
+        *out_json = strdup_json(err);
+        return LN_ERR_INTERNAL;
+    }
+    child.parent_id = parent_id;
+
+    auto result = client->client.create_child_node(parent_id, child);
+    json j;
+    j["success"]        = result.value.success;
+    j["delta_sequence"] = result.value.delta_sequence;
+    j["node_id"]        = result.value.node_id;
+    j["tunnel_ip"]      = result.value.tunnel_ip;
+    j["private_subnet"] = result.value.private_subnet;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_REJECTED;
+}
+
+ln_error_t ln_update_node(ln_client_t* client,
+                           const char* node_id,
+                           const char* updates_json,
+                           char** out_json) {
+    if (!client || !node_id || !updates_json || !out_json) return LN_ERR_NULL_ARG;
+
+    auto parsed = json::parse(updates_json, nullptr, false);
+    if (parsed.is_discarded()) {
+        json err; err["error"] = "invalid JSON in updates";
+        *out_json = strdup_json(err);
+        return LN_ERR_INTERNAL;
+    }
+
+    auto result = client->client.update_node(node_id, parsed);
+    json j;
+    j["success"]        = result.value.success;
+    j["delta_sequence"] = result.value.delta_sequence;
+    j["node_id"]        = result.value.node_id;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_REJECTED;
+}
+
+ln_error_t ln_delete_node(ln_client_t* client,
+                           const char* node_id,
+                           char** out_json) {
+    if (!client || !node_id || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.delete_node(node_id);
+    json j;
+    j["success"]        = result.value.success;
+    j["delta_sequence"] = result.value.delta_sequence;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_REJECTED;
+}
+
+// ---------------------------------------------------------------------------
+// IPAM
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_ipam_allocate(ln_client_t* client,
+                             const char* node_id,
+                             const char* block_type,
+                             char** out_json) {
+    if (!client || !node_id || !block_type || !out_json) return LN_ERR_NULL_ARG;
+
+    lnsdk::AllocationRequest req;
+    req.node_id = node_id;
+
+    std::string bt = block_type;
+    if (bt == "tunnel")       req.block_type = lnsdk::BlockType::Tunnel;
+    else if (bt == "private") req.block_type = lnsdk::BlockType::Private;
+    else if (bt == "shared")  req.block_type = lnsdk::BlockType::Shared;
+    else return LN_ERR_INTERNAL;
+
+    auto result = client->client.allocate_ip(req);
+    json j;
+    j["success"] = result.value.success;
+    j["network"] = result.value.network;
+    j["node_id"] = result.value.node_id;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_REJECTED;
+}
+
+// ---------------------------------------------------------------------------
+// Relay
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_relay_list(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.list_relays();
+    json arr = json::array();
+    for (const auto& r : result.value) {
+        arr.push_back({
+            {"relay_id",         r.relay_id},
+            {"endpoint",         r.endpoint},
+            {"region",           r.region},
+            {"reputation_score", r.reputation_score},
+            {"supports_stun",    r.supports_stun},
+            {"supports_relay",   r.supports_relay},
+        });
+    }
+    *out_json = strdup_json(arr);
+    return result.ok ? LN_OK : LN_ERR_CONNECT;
+}
+
+ln_error_t ln_relay_ticket(ln_client_t* client,
+                            const char* peer_id,
+                            const char* relay_id,
+                            char** out_json) {
+    if (!client || !peer_id || !relay_id || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.request_relay_ticket(peer_id, relay_id);
+    json j;
+    j["peer_id"]       = result.value.peer_id;
+    j["relay_id"]      = result.value.relay_id;
+    j["session_nonce"] = result.value.session_nonce;
+    j["issued_at"]     = result.value.issued_at;
+    j["expires_at"]    = result.value.expires_at;
+    j["network_id"]    = result.value.network_id;
+    j["epoch"]         = result.value.epoch;
+    j["issuer"]        = result.value.issuer;
+    j["signature"]     = result.value.signature;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : ln_map_error(result.http_status);
+}
+
+ln_error_t ln_relay_register(ln_client_t* client,
+                              const char* reg_json,
+                              char** out_json) {
+    if (!client || !reg_json || !out_json) return LN_ERR_NULL_ARG;
+
+    auto parsed = json::parse(reg_json, nullptr, false);
+    if (parsed.is_discarded()) return LN_ERR_INTERNAL;
+
+    lnsdk::RelayRegistration reg;
+    reg.relay_id       = parsed.value("relay_id", "");
+    reg.endpoint       = parsed.value("endpoint", "");
+    reg.region         = parsed.value("region", "");
+    reg.public_key     = parsed.value("public_key", "");
+    reg.capacity_mbps  = parsed.value("capacity_mbps", uint32_t{0});
+    reg.supports_stun  = parsed.value("supports_stun", true);
+    reg.supports_relay = parsed.value("supports_relay", true);
+
+    auto result = client->client.register_relay(reg);
+    json j;
+    j["success"]  = result.value.success;
+    j["relay_id"] = result.value.relay_id;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_REJECTED;
+}
+
+// ---------------------------------------------------------------------------
+// Certificates
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_cert_status(ln_client_t* client,
+                           const char* domain,
+                           char** out_json) {
+    if (!client || !domain || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.get_cert_status(domain);
+    json j;
+    j["domain"]     = result.value.domain;
+    j["has_cert"]   = result.value.has_cert;
+    j["expires_at"] = result.value.expires_at;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_NOT_FOUND;
+}
+
+ln_error_t ln_cert_request(ln_client_t* client,
+                            const char* hostname,
+                            char** out_json) {
+    if (!client || !hostname || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.request_certificate(hostname);
+    json j;
+    j["domain"]           = result.value.domain;
+    j["fullchain_pem"]    = result.value.fullchain_pem;
+    j["encrypted_privkey"] = result.value.encrypted_privkey;
+    j["crypto_version"]    = result.value.crypto_version;
+    j["nonce"]            = result.value.nonce;
+    j["ephemeral_pubkey"] = result.value.ephemeral_pubkey;
+    j["expires_at"]       = result.value.expires_at;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_CONNECT;
+}
+
+ln_error_t ln_cert_decrypt(ln_client_t* client,
+                            const char* bundle_json,
+                            char** out_json) {
+    if (!client || !bundle_json || !out_json) return LN_ERR_NULL_ARG;
+
+    auto parsed = json::parse(bundle_json, nullptr, false);
+    if (parsed.is_discarded()) return LN_ERR_INTERNAL;
+
+    lnsdk::IssuedCertBundle bundle;
+    bundle.domain           = parsed.value("domain", "");
+    bundle.fullchain_pem    = parsed.value("fullchain_pem", "");
+    bundle.encrypted_privkey = parsed.value("encrypted_privkey", "");
+    bundle.crypto_version    = parsed.value("crypto_version", 0u);
+    bundle.nonce            = parsed.value("nonce", "");
+    bundle.ephemeral_pubkey = parsed.value("ephemeral_pubkey", "");
+    bundle.expires_at       = parsed.value("expires_at", uint64_t{0});
+
+    auto result = client->client.decrypt_certificate(bundle);
+    json j;
+    j["domain"]        = result.value.domain;
+    j["fullchain_pem"] = result.value.fullchain_pem;
+    j["privkey_pem"]   = result.value.privkey_pem;
+    j["expires_at"]    = result.value.expires_at;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_INTERNAL;
+}
+
+ln_error_t ln_cert_request_group(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        auto result = client->client.request_group_loopback_certificate();
+        json j;
+        j["domain"]            = result.value.domain;
+        j["fullchain_pem"]     = result.value.fullchain_pem;
+        j["encrypted_privkey"] = result.value.encrypted_privkey;
+        j["crypto_version"]    = result.value.crypto_version;
+        j["nonce"]             = result.value.nonce;
+        j["ephemeral_pubkey"]  = result.value.ephemeral_pubkey;
+        j["expires_at"]        = result.value.expires_at;
+        if (!result.ok) j["error"] = result.error;
+
+        *out_json = strdup_json(j);
+        return result.ok ? LN_OK : ln_map_error(result.http_status);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_set_cert_renewed_callback(ln_client_t* client,
+                                        ln_cert_renewed_fn fn,
+                                        void* user) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        // on_cert_renewed() calls the callback under this lock, so the old
+        // callback is not running when the lock is held here.
+        std::lock_guard lock(client->cert_callback_mutex);
+        client->cert_callback = fn;
+        client->cert_callback_user = fn ? user : nullptr;
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+// The mesh port updates its devices as the peers change, and reads the device
+// list again when it may have changed.
+void ln_client_s::on_mesh_changed() {
+    lnsdk::MeshPort* port = nullptr;
+    {
+        std::lock_guard lock(mesh_port_mutex);
+        port = mesh_port.get();
+    }
+    if (port) port->peers_changed();
+    emit_mesh_event("peers");
+}
+
+void ln_client_s::on_mesh_devices_changed() {
+    lnsdk::MeshPort* port = nullptr;
+    {
+        std::lock_guard lock(mesh_port_mutex);
+        port = mesh_port.get();
+    }
+    if (port) port->devices_changed();
+    emit_mesh_event("devices");
+}
+
+void ln_client_s::emit_mesh_event(const char* name) {
+    std::lock_guard lock(mesh_event_callback_mutex);
+    if (!mesh_event_callback) return;
+    try {
+        // The callback owns the text (see ln_mesh_event_fn).
+        char* text = strdup_json(json{{"event", name}});
+        if (!text) return;
+        mesh_event_callback(text, mesh_event_callback_user);
+    } catch (...) {
+        spdlog::warn("[CApi] mesh event not delivered");
+    }
+}
+
+ln_error_t ln_set_mesh_event_callback(ln_client_t* client, ln_mesh_event_fn fn, void* user) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        // emit_mesh_event() calls the callback under this lock, so the old
+        // callback is not running when the lock is held here.
+        std::lock_guard lock(client->mesh_event_callback_mutex);
+        client->mesh_event_callback = fn;
+        client->mesh_event_callback_user = fn ? user : nullptr;
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+void ln_client_s::on_cert_renewed(const lnsdk::CertRenewedEvent& event) {
+    lnsdk::MeshPort* port = nullptr;
+    {
+        std::lock_guard lock(mesh_port_mutex);
+        port = mesh_port.get();
+    }
+    try {
+        if (port) port->certificate_renewed(event.target, event.domain, event.fullchain_path, event.privkey_path);
+    } catch (...) {
+        spdlog::warn("[CApi] mesh port did not reload the renewed certificate");
+    }
+    std::lock_guard lock(cert_callback_mutex);
+    if (!cert_callback) return;
+    try {
+        json j;
+        j["target"]         = event.target;
+        j["domain"]         = event.domain;
+        j["fullchain_path"] = event.fullchain_path;
+        j["privkey_path"]   = event.privkey_path;
+        j["expires_at"]     = event.expires_at;
+        const auto text = j.dump();
+        cert_callback(text.c_str(), cert_callback_user);
+    } catch (...) {
+        spdlog::warn("[CApi] certificate renewed event not delivered");
+    }
+}
+
+ln_error_t ln_set_session_moved_callback(ln_client_t* client,
+                                         ln_session_moved_fn fn,
+                                         void* user) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        // on_session_moved() calls the callback under this lock, so the old
+        // callback is not running when the lock is held here.
+        std::lock_guard lock(client->session_callback_mutex);
+        client->session_callback = fn;
+        client->session_callback_user = fn ? user : nullptr;
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+void ln_client_s::on_session_moved(const lnsdk::SessionMoveEvent& event) {
+    std::lock_guard lock(session_callback_mutex);
+    if (!session_callback) return;
+    try {
+        // The callback owns the text (see ln_session_moved_fn).
+        char* text = strdup_json(json(event));
+        if (!text) return;
+        session_callback(text, session_callback_user);
+    } catch (...) {
+        spdlog::warn("[CApi] session moved event not delivered");
+    }
+}
+
+ln_error_t ln_set_ingress_denied_callback(ln_client_t* client,
+                                          ln_ingress_denied_fn fn,
+                                          void* user) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        // on_ingress_denied() calls the callback under this lock, so the old
+        // callback is not running when the lock is held here.
+        std::lock_guard lock(client->ingress_callback_mutex);
+        client->ingress_callback = fn;
+        client->ingress_callback_user = fn ? user : nullptr;
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+void ln_client_s::on_ingress_denied(const lnsdk::IngressDeniedEvent& event) {
+    std::lock_guard lock(ingress_callback_mutex);
+    if (!ingress_callback) return;
+    try {
+        // The callback owns the text (see ln_ingress_denied_fn).
+        char* text = strdup_json(json(event));
+        if (!text) return;
+        ingress_callback(text, ingress_callback_user);
+    } catch (...) {
+        spdlog::warn("[CApi] ingress denied event not delivered");
+    }
+}
+
+ln_error_t ln_cert_renew_if_needed(ln_client_t* client,
+                                   const char* hostname,
+                                   const char* cert_dir,
+                                   char** out_json) {
+    if (!client || !hostname || !cert_dir || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        const auto result = client->client.renew_certificate_if_needed(hostname, cert_dir);
+        json j;
+        switch (result.status) {
+            case lnsdk::CertRenewalStatus::Renewed: j["status"] = "renewed"; break;
+            case lnsdk::CertRenewalStatus::NotDue:  j["status"] = "not_due"; break;
+            case lnsdk::CertRenewalStatus::Failed:  j["status"] = "failed";  break;
+        }
+        j["domain"]         = result.domain;
+        j["expires_at"]     = result.expires_at;
+        j["fullchain_path"] = result.fullchain_path;
+        j["privkey_path"]   = result.privkey_path;
+        if (!result.error.empty()) j["error"] = result.error;
+
+        *out_json = strdup_json(j);
+        if (result.status != lnsdk::CertRenewalStatus::Failed) return LN_OK;
+        return result.http_status != 0 ? ln_map_error(result.http_status) : LN_ERR_CONNECT;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tree: children
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_tree_get_children(ln_client_t* client,
+                                 const char* parent_id,
+                                 char** out_json) {
+    if (!client || !parent_id || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.get_children(parent_id);
+    json arr = json::array();
+    for (const auto& child : result.value) {
+        json j = child;
+        arr.push_back(j);
+    }
+    *out_json = strdup_json(arr);
+    // Symmetric with ln_tree_get_node: a 2xx response whose body did not
+    // parse is a malformed-response failure (LN_ERR_PARSE), not a network or
+    // auth failure.
+    if (result.ok) return LN_OK;
+    return (result.http_status >= 200 && result.http_status < 300)
+        ? LN_ERR_PARSE
+        : ln_map_error(result.http_status);
+}
+
+// ---------------------------------------------------------------------------
+// Passkey registration
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_register_passkey(ln_client_t* client,
+                                const char* user_id,
+                                const char* credential_id,
+                                const char* public_key_x,
+                                const char* public_key_y,
+                                char** out_json) {
+    if (!client || !user_id || !credential_id || !public_key_x || !public_key_y || !out_json)
+        return LN_ERR_NULL_ARG;
+
+    lnsdk::PasskeyCredential cred;
+    cred.credential_id = credential_id;
+    cred.public_key_x  = public_key_x;
+    cred.public_key_y  = public_key_y;
+
+    auto result = client->client.register_passkey_credential(user_id, cred);
+    json j;
+    j["authenticated"] = result.value.authenticated;
+    j["user_id"]       = result.value.user_id;
+    j["session_token"] = result.value.session_token;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_AUTH;
+}
+
+// ---------------------------------------------------------------------------
+// Group membership
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_add_group_member(ln_client_t* client,
+                                const char* node_id,
+                                const char* pubkey,
+                                const char* permissions_json,
+                                char** out_json) {
+    if (!client || !node_id || !pubkey || !permissions_json || !out_json)
+        return LN_ERR_NULL_ARG;
+
+    auto perms = json::parse(permissions_json, nullptr, false);
+    if (perms.is_discarded() || !perms.is_array()) return LN_ERR_INTERNAL;
+
+    lnsdk::GroupMember member;
+    member.management_pubkey = pubkey;
+    for (const auto& p : perms) {
+        if (p.is_string()) member.permissions.push_back(p.get<std::string>());
+    }
+
+    auto result = client->client.add_group_member(node_id, member);
+    json j;
+    j["success"] = result.value.success;
+    j["node_id"] = result.value.node_id;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_REJECTED;
+}
+
+ln_error_t ln_remove_group_member(ln_client_t* client,
+                                   const char* node_id,
+                                   const char* pubkey,
+                                   char** out_json) {
+    if (!client || !node_id || !pubkey || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.remove_group_member(node_id, pubkey);
+    json j;
+    j["success"] = result.value.success;
+    j["node_id"] = result.value.node_id;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_REJECTED;
+}
+
+/// The JSON object for one device of a device list.
+static json network_device_json(const lnsdk::NetworkDevice& d) {
+    json j = {{"node_id", d.node_id},           {"device_name", d.device_name},
+              {"tunnel_ip", d.tunnel_ip},       {"mgmt_pubkey", d.mgmt_pubkey},
+              {"parent_id", d.parent_id},       {"group_id", d.group_id},
+              {"is_inference", d.is_inference}, {"member", d.member},
+              {"is_self", d.is_self},           {"can_connect", d.can_connect},
+              {"admin", d.admin}};
+    if (!d.group_role.empty()) j["group_role"] = d.group_role;
+    return j;
+}
+
+/// The out_json and return code for a device list.
+static ln_error_t device_list_result(const lnsdk::Result<std::vector<lnsdk::NetworkDevice>>& result,
+                                     char** out_json) {
+    if (!result.ok) {
+        *out_json = strdup_json(json{{"error", result.error}});
+        return ln_map_error(result.http_status);
+    }
+    json arr = json::array();
+    for (const auto& d : result.value) arr.push_back(network_device_json(d));
+    *out_json = strdup_json(arr);
+    return LN_OK;
+}
+
+ln_error_t ln_get_group_devices(ln_client_t* client, const char* group_id, char** out_json) {
+    if (!client || !group_id || !out_json) return LN_ERR_NULL_ARG;
+    return device_list_result(client->client.get_group_devices(group_id), out_json);
+}
+
+ln_error_t ln_list_network_devices(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    return device_list_result(client->client.list_network_devices(), out_json);
+}
+
+ln_error_t ln_get_group_members(ln_client_t* client,
+                                 const char* node_id,
+                                 char** out_json) {
+    if (!client || !node_id || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.get_group_members(node_id);
+    json arr = json::array();
+    for (const auto& m : result.value) {
+        arr.push_back({
+            {"management_pubkey", m.management_pubkey},
+            {"permissions",       m.permissions},
+        });
+    }
+    *out_json = strdup_json(arr);
+    // Symmetric with ln_tree_get_node: a 2xx response whose body did not
+    // parse is a malformed-response failure (LN_ERR_PARSE), not a network or
+    // auth failure.
+    if (result.ok) return LN_OK;
+    return (result.http_status >= 200 && result.http_status < 300)
+        ? LN_ERR_PARSE
+        : ln_map_error(result.http_status);
+}
+
+ln_error_t ln_join_group(ln_client_t* client,
+                          const char* parent_node_id,
+                          char** out_json) {
+    if (!client || !parent_node_id || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.join_group(parent_node_id);
+    json j;
+    j["success"]        = result.value.success;
+    j["node_id"]        = result.value.node_id;
+    j["tunnel_ip"]      = result.value.tunnel_ip;
+    j["parent_node_id"] = result.value.parent_node_id;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_REJECTED;
+}
+
+// ---------------------------------------------------------------------------
+// High-level operations
+// ---------------------------------------------------------------------------
+
+// Marks a refusal of the device key itself, as the server revoked it: the
+// caller replaces the key instead of trying again.
+static void note_identity_revoked(json& j, const std::string& error) {
+    if (error == nexus::auth::kIdentityRevokedError) j["identity_revoked"] = true;
+}
+
+ln_error_t ln_join_network(ln_client_t* client,
+                            const char* username,
+                            const char* password,
+                            char** out_json) {
+    if (!client || !username || !password || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.join_network(username, password);
+    json j;
+    j["success"]        = result.value.success;
+    j["node_id"]        = result.value.node_id;
+    j["tunnel_ip"]      = result.value.tunnel_ip;
+    j["private_subnet"] = result.value.private_subnet;
+    j["mesh_pubkey"]    = result.value.mesh_pubkey;
+    if (result.value.device_name_refused) {
+        j["device_name_refused"]    = true;
+        j["device_name_suggestion"] = result.value.device_name_suggestion;
+    }
+    if (!result.value.membership.status.empty()) {
+        json m = {{"status", result.value.membership.status},
+                  {"group_id", result.value.membership.group_id}};
+        if (!result.value.membership.error.empty()) m["error"] = result.value.membership.error;
+        j["membership"] = std::move(m);
+    }
+    if (!result.ok) {
+        j["error"] = result.error;
+        note_identity_revoked(j, result.error);
+    }
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_AUTH;
+}
+
+ln_error_t ln_leave_network(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.leave_network();
+    json j;
+    j["success"] = result.ok;
+    if (!result.ok) j["error"] = result.error;
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_REJECTED;
+}
+
+// ---------------------------------------------------------------------------
+// Latency-based auto-switching
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_enable_auto_switching(ln_client_t* client,
+                                     double threshold_ms,
+                                     double hysteresis,
+                                     uint32_t cooldown_sec) {
+    if (!client) return LN_ERR_NULL_ARG;
+
+    lnsdk::LatencyConfig config;
+    config.threshold_ms = threshold_ms;
+    config.hysteresis   = hysteresis;
+    config.cooldown_sec = cooldown_sec;
+
+    try {
+        client->client.enable_auto_switching(config);
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_disable_auto_switching(ln_client_t* client) {
+    if (!client) return LN_ERR_NULL_ARG;
+
+    try {
+        client->client.disable_auto_switching();
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+double ln_current_latency_ms(ln_client_t* client) {
+    if (!client) return 0.0;
+    return client->client.current_latency_ms();
+}
+
+ln_error_t ln_server_latencies(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+
+    auto stats = client->client.server_latencies();
+    json arr = json::array();
+    for (const auto& sl : stats) {
+        json entry;
+        if (!sl.server.servers.empty()) {
+            entry["host"] = sl.server.servers[0].host;
+            entry["port"] = sl.server.servers[0].port;
+            entry["use_tls"] = sl.server.servers[0].use_tls;
+        }
+        entry["smoothed_rtt_ms"]      = sl.smoothed_rtt_ms;
+        entry["reachable"]            = sl.reachable;
+        entry["last_probe_time"]      = sl.last_probe_time;
+        entry["consecutive_failures"] = sl.consecutive_failures;
+        arr.push_back(std::move(entry));
+    }
+    *out_json = strdup_json(arr);
+    return LN_OK;
+}
+
+// ---------------------------------------------------------------------------
+// Mesh dataplane keypair
+// ---------------------------------------------------------------------------
+
+char* ln_generate_keypair(void) {
+    auto [priv, pub] = lnsdk::BoringtunMesh::generate_keypair();
+    json j;
+    j["private_key"] = priv;
+    j["public_key"]  = pub;
+    return strdup_json(j);
+}
+
+// ---------------------------------------------------------------------------
+// Account group-key envelopes
+// ---------------------------------------------------------------------------
+
+char* ln_group_key_generate(void) {
+    auto key = lnsdk::GroupKey::generate();
+    if (key.empty()) return nullptr;
+    return strdup_str(key);
+}
+
+char* ln_group_key_wrap(const char* recipient_ed25519_pubkey, const char* group_key_b64) {
+    if (!recipient_ed25519_pubkey || !group_key_b64) return nullptr;
+    auto env = lnsdk::GroupKey::wrap(recipient_ed25519_pubkey, group_key_b64);
+    if (!env) return nullptr;
+    json j;
+    j["ephemeral_pubkey"] = env->ephemeral_pubkey;
+    j["wrapped_key"]      = env->wrapped_key;
+    return strdup_json(j);
+}
+
+char* ln_group_key_unwrap(const ln_identity_t* identity, const char* envelope_json) {
+    if (!identity || !envelope_json) return nullptr;
+    lnsdk::GroupKeyEnvelope env;
+    try {
+        auto j = json::parse(envelope_json);
+        env.ephemeral_pubkey = j.value("ephemeral_pubkey", std::string{});
+        env.wrapped_key      = j.value("wrapped_key", std::string{});
+    } catch (...) {
+        return nullptr;
+    }
+    auto key = lnsdk::GroupKey::unwrap(
+        std::span<const uint8_t>(identity->identity.private_key()), env);
+    if (!key) return nullptr;
+    return strdup_str(*key);
+}
+
+// ---------------------------------------------------------------------------
+// Identity: seed-based creation
+// ---------------------------------------------------------------------------
+
+ln_identity_t* ln_identity_from_seed(const uint8_t* seed, uint32_t seed_len) {
+    if (!seed || seed_len != 32) return nullptr;
+    auto* id = new(std::nothrow) ln_identity_s;
+    if (!id) return nullptr;
+    id->identity.from_seed({seed, seed_len});
+    if (!id->identity.is_valid()) {
+        delete id;
+        return nullptr;
+    }
+    return id;
+}
+
+char* ln_derive_seed(const char* username, const char* password) {
+    if (!username || !password) return nullptr;
+    auto seed = lnsdk::Identity::derive_seed(username, password);
+    if (seed.empty()) return nullptr;
+    return strdup_str(lnsdk::Identity::to_base64(seed));
+}
+
+// ---------------------------------------------------------------------------
+// Per-user identity store and hand-off
+// ---------------------------------------------------------------------------
+
+static ln_error_t ln_map_store(lnsdk::StoreResult result) {
+    using lnsdk::StoreResult;
+    switch (result) {
+    case StoreResult::Ok:          return LN_OK;
+    case StoreResult::NotFound:    return LN_ERR_NOT_FOUND;
+    case StoreResult::Denied:      return LN_ERR_AUTH;
+    case StoreResult::Unsupported: return LN_ERR_UNSUPPORTED;
+    case StoreResult::Exists:
+    case StoreResult::Invalid:     return LN_ERR_REJECTED;
+    case StoreResult::Failed:      break;
+    }
+    return LN_ERR_INTERNAL;
+}
+
+static ln_error_t ln_map_handoff(lnsdk::IdentityHandoff::OpenResult result) {
+    using Open = lnsdk::IdentityHandoff::OpenResult;
+    switch (result) {
+    case Open::Ok:          return LN_OK;
+    case Open::AlreadyUsed:
+    case Open::Expired:
+    case Open::Rejected:    return LN_ERR_REJECTED;
+    case Open::Malformed:   return LN_ERR_PARSE;
+    case Open::Unsealable:  return LN_ERR_AUTH;
+    }
+    return LN_ERR_INTERNAL;
+}
+
+static void ln_set_err(ln_error_t* out_err, ln_error_t err) {
+    if (out_err) *out_err = err;
+}
+
+// UTF-8 text of a path; std::filesystem::path::u8string() is char8_t in C++20.
+static std::string ln_path_utf8(const std::filesystem::path& path) {
+    const auto u8 = path.u8string();
+    return std::string(u8.begin(), u8.end());
+}
+
+// One store per process: the file and the keystore item are shared state,
+// so the operations run one at a time.
+static std::mutex g_user_store_mutex;
+
+char* ln_identity_user_dir(void) {
+    try {
+        const auto store = lnsdk::IdentityStore::for_user();
+        if (store.dir().empty()) return nullptr;
+        return strdup_str(ln_path_utf8(store.dir()));
+    } catch (...) { return nullptr; }
+}
+
+ln_error_t ln_identity_user_status(char** out_json) {
+    if (out_json) *out_json = nullptr;
+    if (!out_json) return LN_ERR_NULL_ARG;
+    try {
+        std::lock_guard lock(g_user_store_mutex);
+        const auto status = lnsdk::IdentityStore::for_user().status();
+        json j;
+        j["present"]  = status.present;
+        j["backend"]  = status.backend;
+        j["unlocked"] = status.unlocked;
+        j["dir"]      = ln_path_utf8(status.dir);
+        if (status.present) j["public_key"] = status.public_key;
+        *out_json = strdup_json(j);
+        return *out_json ? LN_OK : LN_ERR_INTERNAL;
+    } catch (...) { return LN_ERR_INTERNAL; }
+}
+
+ln_identity_t* ln_identity_user_load(ln_error_t* out_err) {
+    ln_set_err(out_err, LN_ERR_INTERNAL);
+    try {
+        auto id = std::unique_ptr<ln_identity_s>(new(std::nothrow) ln_identity_s);
+        if (!id) return nullptr;
+        std::lock_guard lock(g_user_store_mutex);
+        const ln_error_t err = ln_map_store(lnsdk::IdentityStore::for_user().load(id->identity));
+        ln_set_err(out_err, err);
+        return err == LN_OK ? id.release() : nullptr;
+    } catch (...) { return nullptr; }
+}
+
+ln_identity_t* ln_identity_user_create(ln_error_t* out_err) {
+    ln_set_err(out_err, LN_ERR_INTERNAL);
+    try {
+        auto id = std::unique_ptr<ln_identity_s>(new(std::nothrow) ln_identity_s);
+        if (!id) return nullptr;
+        std::lock_guard lock(g_user_store_mutex);
+        auto store = lnsdk::IdentityStore::for_user();
+        const ln_error_t err = ln_map_store(store.create(id->identity));
+        ln_set_err(out_err, err);
+        return err == LN_OK ? id.release() : nullptr;
+    } catch (...) { return nullptr; }
+}
+
+ln_error_t ln_identity_user_import(const ln_identity_t* identity) {
+    if (!identity) return LN_ERR_NULL_ARG;
+    try {
+        std::lock_guard lock(g_user_store_mutex);
+        auto store = lnsdk::IdentityStore::for_user();
+        return ln_map_store(store.import(identity->identity));
+    } catch (...) { return LN_ERR_INTERNAL; }
+}
+
+ln_error_t ln_identity_user_remove(void) {
+    try {
+        std::lock_guard lock(g_user_store_mutex);
+        auto store = lnsdk::IdentityStore::for_user();
+        return ln_map_store(store.remove());
+    } catch (...) { return LN_ERR_INTERNAL; }
+}
+
+ln_handoff_t* ln_identity_handoff_begin(char** out_request_json) {
+    if (out_request_json) *out_request_json = nullptr;
+    if (!out_request_json) return nullptr;
+    try {
+        auto handoff = std::unique_ptr<ln_handoff_s>(new(std::nothrow) ln_handoff_s);
+        if (!handoff || !handoff->handoff.valid()) return nullptr;
+        *out_request_json = strdup_str(handoff->handoff.request_json());
+        if (!*out_request_json) return nullptr;
+        return handoff.release();
+    } catch (...) { return nullptr; }
+}
+
+char* ln_identity_handoff_seal(const ln_identity_t* identity, const char* request_json) {
+    if (!identity || !request_json) return nullptr;
+    try {
+        const auto envelope = lnsdk::IdentityHandoff::seal(identity->identity, request_json);
+        if (!envelope) return nullptr;
+        return strdup_str(*envelope);
+    } catch (...) { return nullptr; }
+}
+
+ln_identity_t* ln_identity_handoff_open(ln_handoff_t* handoff, const char* envelope_json,
+                                        ln_error_t* out_err) {
+    if (!handoff || !envelope_json) {
+        ln_set_err(out_err, LN_ERR_NULL_ARG);
+        return nullptr;
+    }
+    ln_set_err(out_err, LN_ERR_INTERNAL);
+    try {
+        auto id = std::unique_ptr<ln_identity_s>(new(std::nothrow) ln_identity_s);
+        if (!id) return nullptr;
+        const ln_error_t err = ln_map_handoff(handoff->handoff.open(envelope_json, id->identity));
+        ln_set_err(out_err, err);
+        return err == LN_OK ? id.release() : nullptr;
+    } catch (...) { return nullptr; }
+}
+
+void ln_identity_handoff_destroy(ln_handoff_t* handoff) {
+    delete handoff;
+}
+
+ln_identity_t* ln_identity_from_json(const char* json_text) {
+    if (!json_text) return nullptr;
+    try {
+        auto id = std::unique_ptr<ln_identity_s>(new(std::nothrow) ln_identity_s);
+        if (!id || !id->identity.from_json_text(json_text)) return nullptr;
+        return id.release();
+    } catch (...) { return nullptr; }
+}
+
+// ---------------------------------------------------------------------------
+// Ed25519 challenge-response authentication
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_auth_ed25519(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+
+    auto result = client->client.authenticate_ed25519();
+    json j;
+    j["authenticated"] = result.value.authenticated;
+    j["user_id"]       = result.value.user_id;
+    j["session_token"] = result.value.session_token;
+    if (!result.ok) {
+        j["error"] = result.error;
+        note_identity_revoked(j, result.error);
+    }
+
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_AUTH;
+}
+
+// ---------------------------------------------------------------------------
+// Stats & server listing
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_stats(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    auto result = client->client.get_stats();
+    json j;
+    j["service"]             = result.value.service;
+    j["peer_count"]          = result.value.peer_count;
+    j["private_api_enabled"] = result.value.private_api_enabled;
+    if (!result.ok) j["error"] = result.error;
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_CONNECT;
+}
+
+ln_error_t ln_servers(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    auto result = client->client.get_servers();
+    json arr = json::array();
+    for (const auto& s : result.value) {
+        arr.push_back({
+            {"endpoint",  s.endpoint},
+            {"pubkey",    s.pubkey},
+            {"http_port", s.http_port},
+            {"last_seen", s.last_seen},
+            {"healthy",   s.healthy},
+        });
+    }
+    *out_json = strdup_json(arr);
+    return result.ok ? LN_OK : LN_ERR_CONNECT;
+}
+
+// ---------------------------------------------------------------------------
+// Trust & attestation
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_private_api_call(ln_client_t* client, const char* method,
+                               const char* path, const char* body_json,
+                               char** out_json) {
+    if (!client || !method || !path || !out_json) return LN_ERR_NULL_ARG;
+    auto r = client->client.call_private_api(method, path,
+                                             body_json ? body_json : "");
+    // r.value is the raw JSON body; return it verbatim so the caller can parse.
+    *out_json = strdup_str(r.ok ? r.value : std::string("{\"error\":\"") + r.error + "\"}");
+    return r.ok ? LN_OK : LN_ERR_CONNECT;
+}
+
+ln_error_t ln_trust_status(ln_client_t* client, char** out_json) {
+    // Retired endpoint: /api/trust/status no longer exists. The symbol is
+    // kept for ABI stability and fails explicitly.
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = strdup_str("{\"error\":\"endpoint retired\"}");
+    return LN_ERR_UNSUPPORTED;
+}
+
+ln_error_t ln_trust_peer(ln_client_t* client, const char* pubkey, char** out_json) {
+    // Retired endpoint: /api/trust/peer/{pubkey} no longer exists.
+    if (!client || !pubkey || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = strdup_str("{\"error\":\"endpoint retired\"}");
+    return LN_ERR_UNSUPPORTED;
+}
+
+// ---------------------------------------------------------------------------
+// DDNS status
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_ddns_status(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    auto result = client->client.get_ddns_status();
+    json j;
+    j["has_credentials"] = result.value.has_credentials;
+    j["last_ip"]         = result.value.last_ip;
+    j["binary_hash"]     = result.value.binary_hash;
+    j["binary_approved"] = result.value.binary_approved;
+    if (!result.ok) j["error"] = result.error;
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_CONNECT;
+}
+
+// ---------------------------------------------------------------------------
+// Retired endpoints (kept for ABI stability)
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_enrollment_status(ln_client_t* client, char** out_json) {
+    // Retired endpoint: /api/enrollment/status no longer exists.
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = strdup_str("{\"error\":\"endpoint retired\"}");
+    return LN_ERR_UNSUPPORTED;
+}
+
+ln_error_t ln_governance_proposals(ln_client_t* client, char** out_json) {
+    // Retired endpoint: /api/governance/proposals no longer exists.
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = strdup_str("{\"error\":\"endpoint retired\"}");
+    return LN_ERR_UNSUPPORTED;
+}
+
+ln_error_t ln_governance_propose(ln_client_t* client,
+                                   uint8_t parameter,
+                                   const char* new_value,
+                                   const char* rationale,
+                                   char** out_json) {
+    // Retired endpoint: /api/governance/propose no longer exists.
+    if (!client || !new_value || !rationale || !out_json) return LN_ERR_NULL_ARG;
+    (void)parameter;
+    *out_json = strdup_str("{\"error\":\"endpoint retired\"}");
+    return LN_ERR_UNSUPPORTED;
+}
+
+// ---------------------------------------------------------------------------
+// Attestation manifests
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_attestation_manifests(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    auto result = client->client.get_attestation_manifests();
+    json j;
+    j["self_hash"]     = result.value.self_hash;
+    j["self_approved"] = result.value.self_approved;
+    j["github_url"]    = result.value.github_url;
+    j["minimum_version"] = result.value.minimum_version;
+    j["manifest_fetch_interval_sec"] = result.value.manifest_fetch_interval_sec;
+    json manifests = json::array();
+    for (const auto& m : result.value.manifests) {
+        manifests.push_back({
+            {"version",       m.version},
+            {"platform",      m.platform},
+            {"binary_sha256", m.binary_sha256},
+            {"timestamp",     m.timestamp},
+        });
+    }
+    j["manifests"] = manifests;
+    if (!result.ok) j["error"] = result.error;
+    *out_json = strdup_json(j);
+    return result.ok ? LN_OK : LN_ERR_CONNECT;
+}
+
+// ---------------------------------------------------------------------------
+// Session management
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_set_session_token(ln_client_t* client, const char* token) {
+    if (!client || !token) return LN_ERR_NULL_ARG;
+    client->client.set_session_token(token);
+    return LN_OK;
+}
+
+char* ln_get_session_token(ln_client_t* client) {
+    if (!client) return nullptr;
+    auto token = client->client.session_token();
+    if (token.empty()) return nullptr;
+    return strdup_str(token);
+}
+
+ln_error_t ln_set_node_id(ln_client_t* client, const char* node_id) {
+    if (!client || !node_id) return LN_ERR_NULL_ARG;
+    client->client.set_node_id(node_id);
+    return LN_OK;
+}
+
+ln_error_t ln_set_link_token(ln_client_t* client, const char* token) {
+    if (!client || !token) return LN_ERR_NULL_ARG;
+    return client->client.set_link_token(token) ? LN_OK : LN_ERR_REJECTED;
+}
+
+/// The out_json and return code for an invite that is neither a code nor a
+/// token, written before any request. False when the invite is well formed.
+static bool refuse_malformed_invite(const char* invite, char** out_json) {
+    const auto malformed = lnsdk::invite_format_error(invite);
+    if (!malformed) return false;
+    *out_json = strdup_json(json{{"error", *malformed}});
+    return true;
+}
+
+ln_error_t ln_set_inference_node(ln_client_t* client, int inference) {
+    if (!client) return LN_ERR_NULL_ARG;
+    client->client.set_inference_node(inference != 0);
+    return LN_OK;
+}
+
+ln_error_t ln_set_device_name(ln_client_t* client, const char* name) {
+    if (!client) return LN_ERR_NULL_ARG;
+    return client->client.set_device_name(name ? name : "") ? LN_OK : LN_ERR_REJECTED;
+}
+
+/// The out_json and return code for a JSON result of the invite, membership,
+/// and move calls.
+static ln_error_t json_call_result(const lnsdk::Result<json>& result, char** out_json) {
+    json j = result.value.is_object() ? result.value : json::object();
+    if (!result.ok) j["error"] = result.error;
+    *out_json = strdup_json(j);
+    if (!*out_json) return LN_ERR_INTERNAL;
+    return result.ok ? LN_OK : ln_map_error(result.http_status);
+}
+
+ln_error_t ln_link_token_create(ln_client_t* client, uint32_t ttl_sec, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    // The same mapping as ln_invite_create: a caller the server refuses (no
+    // add_child on the group) gets LN_ERR_AUTH, not "unreachable".
+    return json_call_result(client->client.create_link_token(ttl_sec), out_json);
+}
+
+ln_error_t ln_invite_create(ln_client_t* client, const char* target_node_id,
+                            const char* permissions_json, uint32_t ttl_sec, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    try {
+        std::vector<std::string> permissions;
+        if (permissions_json) {
+            auto perms = json::parse(permissions_json, nullptr, false);
+            if (perms.is_discarded() || !perms.is_array()) return LN_ERR_REJECTED;
+            for (const auto& p : perms) {
+                if (!p.is_string()) return LN_ERR_REJECTED;
+                permissions.push_back(p.get<std::string>());
+            }
+        }
+        auto result = client->client.create_link_token(
+            ttl_sec, target_node_id ? std::string(target_node_id) : std::string{}, permissions);
+        return json_call_result(result, out_json);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_invite_accept(ln_client_t* client, const char* link_token, char** out_json) {
+    if (!client || !link_token || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    try {
+        if (refuse_malformed_invite(link_token, out_json)) return LN_ERR_REJECTED;
+        return json_call_result(client->client.accept_invite(link_token), out_json);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_memberships_list(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    try {
+        return json_call_result(client->client.list_memberships(), out_json);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_membership_leave(ln_client_t* client, const char* group_node_id,
+                               char** out_json) {
+    if (!client || !group_node_id || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    try {
+        auto result = client->client.leave_membership(group_node_id);
+        json j;
+        j["success"] = result.value.success;
+        j["node_id"] = result.value.node_id;
+        if (!result.ok) j["error"] = result.error;
+        *out_json = strdup_json(j);
+        if (!*out_json) return LN_ERR_INTERNAL;
+        return result.ok ? LN_OK : ln_map_error(result.http_status);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_move_node(ln_client_t* client, const char* node_id, const char* new_parent_id,
+                        char** out_json) {
+    if (!client || !node_id || !new_parent_id || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    try {
+        return json_call_result(client->client.move_node(node_id, new_parent_id), out_json);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_check_device_name(ln_client_t* client, const char* name, const char* group_node_id,
+                                const char* link_token, char** out_json) {
+    if (!client || !name || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    const std::string group = group_node_id ? group_node_id : "";
+    const std::string token = link_token ? link_token : "";
+    if (group.empty() && token.empty()) return LN_ERR_NULL_ARG;
+    try {
+        if (group.empty() && refuse_malformed_invite(token.c_str(), out_json)) {
+            return LN_ERR_REJECTED;
+        }
+        const auto result = client->client.check_device_name(name, group, token);
+        json j;
+        if (result.ok) {
+            json conflicts = json::array();
+            for (const auto& c : result.value.conflicts) {
+                conflicts.push_back({{"node_id", c.node_id}, {"device_name", c.device_name}});
+            }
+            j = {{"label", result.value.label},
+                 {"available", result.value.available},
+                 {"conflicts", std::move(conflicts)},
+                 {"suggestion", result.value.suggestion}};
+        } else {
+            j["error"] = result.error;
+        }
+        *out_json = strdup_json(j);
+        if (!*out_json) return LN_ERR_INTERNAL;
+        return result.ok ? LN_OK : ln_map_error(result.http_status);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_account_delete(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    *out_json = nullptr;
+    try {
+        if (!client->client.identity().is_valid()) {
+            *out_json = strdup_json(json{{"success", false}, {"error", "no identity"}});
+            return LN_ERR_NO_IDENTITY;
+        }
+        auto result = client->client.delete_account();
+        if (result.ok && result.value.value("status", std::string{}) == "deleted") {
+            // The account image service serves this account's cached images
+            // to mesh peers; stop it with the account.
+            client->avatar.reset();
+        }
+        return json_call_result(result, out_json);
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_mesh_expose_service(ln_client_t* client, uint16_t vport, const char* target) {
+    if (!client || !target) return LN_ERR_NULL_ARG;
+    auto result = client->client.expose_service(vport, target);
+    return result.ok ? LN_OK : LN_ERR_CONNECT;
+}
+
+ln_error_t ln_mesh_service_set_catalog(ln_client_t* client, uint16_t vport, const char* catalog_json) {
+    if (!client || !catalog_json) return LN_ERR_NULL_ARG;
+    try {
+        // Bounded before it is parsed: a catalog is a small document.
+        if (std::strlen(catalog_json) > lnsdk::service_ingress::kCatalogTextLimit) return LN_ERR_REJECTED;
+        const auto parsed = json::parse(catalog_json, nullptr, false);
+        if (parsed.is_discarded()) return LN_ERR_REJECTED;
+        const auto result = client->client.set_service_catalog(vport, parsed);
+        if (result.ok) return LN_OK;
+        spdlog::info("[CApi] service catalog for vport {} refused: {}", vport, result.error);
+        return result.http_status == 503 ? LN_ERR_CONNECT : LN_ERR_REJECTED;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_mesh_service_catalog(ln_client_t* client, uint16_t vport, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        *out_json = strdup_json(client->client.service_catalog(vport));
+        return *out_json ? LN_OK : LN_ERR_INTERNAL;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_mesh_open_egress(ln_client_t* client, const char* dst_ip,
+                               uint16_t dst_port, uint16_t* out_port) {
+    if (!client || !dst_ip || !out_port) return LN_ERR_NULL_ARG;
+    uint16_t port = client->client.open_egress(dst_ip, dst_port);
+    if (port == 0) return LN_ERR_CONNECT;
+    *out_port = port;
+    return LN_OK;
+}
+
+ln_error_t ln_mesh_close_egress(ln_client_t* client, const char* dst_ip, uint16_t dst_port) {
+    if (!client || !dst_ip) return LN_ERR_NULL_ARG;
+    client->client.close_egress(dst_ip, dst_port);
+    return LN_OK;
+}
+
+int ln_mesh_is_active(ln_client_t* client) {
+    return client && client->client.is_mesh_active() ? 1 : 0;
+}
+
+char* ln_get_node_id(ln_client_t* client) {
+    if (!client) return nullptr;
+    auto id = client->client.node_id();
+    if (id.empty()) return nullptr;
+    return strdup_str(id);
+}
+
+// ---------------------------------------------------------------------------
+// Mesh P2P networking
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_mesh_enable(ln_client_t* client) {
+    if (!client) return LN_ERR_NULL_ARG;
+    client->client.enable_mesh();
+    return LN_OK;
+}
+
+ln_error_t ln_mesh_enable_config(ln_client_t* client, const char* config_json) {
+    if (!client) return LN_ERR_NULL_ARG;
+
+    lnsdk::MeshConfig cfg;
+    if (config_json) {
+        try {
+            // A key that is left out keeps its MeshConfig default.
+            cfg = json::parse(config_json).get<lnsdk::MeshConfig>();
+        } catch (...) {
+            return LN_ERR_INTERNAL;
+        }
+    }
+    client->client.enable_mesh(cfg);
+    return LN_OK;
+}
+
+ln_error_t ln_mesh_disable(ln_client_t* client) {
+    if (!client) return LN_ERR_NULL_ARG;
+    client->client.disable_mesh();
+    return LN_OK;
+}
+
+ln_error_t ln_mesh_status(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    // The shared to_json(MeshTunnelStatus) and to_json(MeshPeer) keep the C
+    // ABI in step with every field the header documents.
+    const json j = client->client.mesh_status();
+    *out_json = strdup_json(j);
+    return LN_OK;
+}
+
+ln_error_t ln_mesh_peers(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    const json arr = client->client.get_mesh_peers();
+    *out_json = strdup_json(arr);
+    return LN_OK;
+}
+
+ln_error_t ln_mesh_refresh(ln_client_t* client) {
+    if (!client) return LN_ERR_NULL_ARG;
+    client->client.refresh_mesh_peers();
+    return LN_OK;
+}
+
+ln_error_t ln_resume(ln_client_t* client) {
+    if (!client) return LN_ERR_NULL_ARG;
+    client->client.resume();
+    return LN_OK;
+}
+
+ln_error_t ln_suspend(ln_client_t* client) {
+    if (!client) return LN_ERR_NULL_ARG;
+    client->client.suspend();
+    return LN_OK;
+}
+
+// ---------------------------------------------------------------------------
+// Routing layer (connect-by-identifier)
+// ---------------------------------------------------------------------------
+
+ln_error_t ln_routing_profile(ln_client_t* client, int page, int page_size,
+                              char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    auto r = client->client.get_routing_profile(page, page_size);
+    if (!r.ok) return r.http_status == 404 ? LN_ERR_NOT_FOUND : LN_ERR_CONNECT;
+
+    json eps = json::array();
+    for (const auto& e : r.value.authorized_endpoints) {
+        eps.push_back({{"identifier", e.identifier}, {"node_id", e.node_id},
+                       {"hostname", e.hostname}, {"region", e.region},
+                       {"is_inference", e.is_inference}, {"tunnel_ip", e.tunnel_ip}});
+    }
+    json j = {{"node_id", r.value.node_id}, {"endpoint_identifier", r.value.endpoint_identifier},
+              {"parent_id", r.value.parent_id}, {"authorized_endpoints", eps},
+              {"total", r.value.total}, {"page", r.value.page},
+              {"page_size", r.value.page_size}};
+    *out_json = strdup_json(j);
+    return LN_OK;
+}
+
+ln_error_t ln_routing_request(ln_client_t* client, const char* identifier,
+                              const char* conn_nonce_b64, const char* client_mesh_pubkey,
+                              char** out_json) {
+    if (!client || !identifier || !conn_nonce_b64 || !out_json) return LN_ERR_NULL_ARG;
+    auto r = client->client.request_endpoint(identifier, conn_nonce_b64,
+                                             client_mesh_pubkey ? client_mesh_pubkey : "");
+    if (!r.ok) return r.http_status == 403 ? LN_ERR_REJECTED : LN_ERR_CONNECT;
+    json j = {{"connection_id", r.value.connection_id}, {"state", r.value.state}};
+    *out_json = strdup_json(j);
+    return LN_OK;
+}
+
+ln_error_t ln_routing_connection_status(ln_client_t* client, const char* connection_id,
+                                        char** out_json) {
+    if (!client || !connection_id || !out_json) return LN_ERR_NULL_ARG;
+    auto r = client->client.connection_status(connection_id);
+    if (!r.ok) return r.http_status == 404 ? LN_ERR_NOT_FOUND : LN_ERR_CONNECT;
+    json j = {{"connection_id", r.value.connection_id}, {"phase", r.value.phase},
+              {"data_path", r.value.data_path}, {"created_at", r.value.created_at},
+              {"expires_at", r.value.expires_at}};
+    *out_json = strdup_json(j);
+    return LN_OK;
+}
+
+// ---------------------------------------------------------------------------
+// Tier 1 servers
+// ---------------------------------------------------------------------------
+
+static json tier1_membership_json(const lnsdk::Tier1Membership& membership, bool refounded) {
+    json servers = json::array();
+    for (const auto& s : membership.servers) {
+        servers.push_back({{"node_id", s.node_id}, {"host", s.host}, {"port", s.port}});
+    }
+    return json{{"epoch", membership.epoch},
+                {"chain", membership.chain},
+                {"members", membership.members},
+                {"servers", std::move(servers)},
+                {"refounded", refounded}};
+}
+
+// No exception crosses the C ABI: each entry point catches and reports
+// LN_ERR_INTERNAL.
+ln_error_t ln_set_genesis_key(ln_client_t* client, const char* genesis_pubkey_b64,
+                              uint64_t min_epoch) {
+    if (!client || !genesis_pubkey_b64) return LN_ERR_NULL_ARG;
+    try {
+        const auto result = client->client.set_genesis_key(genesis_pubkey_b64, min_epoch);
+        return result.ok ? LN_OK : LN_ERR_REJECTED;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_set_epoch_floor(ln_client_t* client, const char* chain, uint64_t min_epoch) {
+    if (!client || !chain) return LN_ERR_NULL_ARG;
+    try {
+        const auto result = client->client.set_epoch_floor(chain, min_epoch);
+        return result.ok ? LN_OK : LN_ERR_REJECTED;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_tier1_refresh(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        const auto result = client->client.refresh_tier1();
+        if (!result.ok) {
+            *out_json = strdup_json(json{{"error", result.error},
+                                         {"refounded", client->client.network_refounded()}});
+            return result.http_status == 0 ? LN_ERR_CONNECT : LN_ERR_REJECTED;
+        }
+        *out_json = strdup_json(tier1_membership_json(result.value, false));
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_tier1_membership(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        *out_json = strdup_json(tier1_membership_json(client->client.tier1_membership(),
+                                                      client->client.network_refounded()));
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_tier1_progress(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        const auto p = client->client.tier1_walk_progress();
+        *out_json = strdup_json(json{{"active", p.active},
+                                     {"epoch", p.epoch},
+                                     {"target", p.target},
+                                     {"pages_done", p.pages_done},
+                                     {"pages_total", p.pages_total}});
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_discover_servers(const char* domain, const char* region, uint16_t port,
+                               char** out_json) {
+    if (!domain || !region || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        const auto result = lnsdk::discover_servers(domain, region, port);
+        if (!result.ok) {
+            *out_json = strdup_json(json{{"error", result.error}});
+            // A malformed domain or region never reaches the network.
+            return result.error.find("must be hostname labels") != std::string::npos
+                       ? LN_ERR_REJECTED
+                       : LN_ERR_CONNECT;
+        }
+        json servers = json::array();
+        for (const auto& s : result.value) {
+            servers.push_back({{"host", s.host}, {"port", s.port}, {"address", s.address}});
+        }
+        *out_json = strdup_json(json{{"servers", servers}});
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_discover_genesis_key(ln_client_t* client, const char* hosts_json,
+                                   char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        std::vector<lnsdk::ServerEndpoint> hosts;
+        if (hosts_json) {
+            const auto parsed = json::parse(hosts_json, nullptr, false);
+            const auto valid_entry = [](const json& e) {
+                if (!e.is_object() || !e.contains("host") || !e["host"].is_string() ||
+                    e["host"].get_ref<const std::string&>().empty()) {
+                    return false;
+                }
+                if (!e.contains("port")) return true;
+                return e["port"].is_number_unsigned() && e["port"].get<uint64_t>() >= 1 &&
+                       e["port"].get<uint64_t>() <= 65535;
+            };
+            if (parsed.is_discarded() || !parsed.is_array() ||
+                !std::all_of(parsed.begin(), parsed.end(), valid_entry)) {
+                *out_json = strdup_json(json{
+                    {"error", "hosts_json must be an array of {\"host\", \"port\"} objects"}});
+                return LN_ERR_REJECTED;
+            }
+            for (const auto& e : parsed) {
+                hosts.push_back({e["host"].get<std::string>(),
+                                 static_cast<uint16_t>(e.value("port", uint64_t{9100})), true});
+            }
+        }
+        const auto result = client->client.discover_genesis_key(hosts);
+        if (!result.ok) {
+            *out_json = strdup_json(json{{"error", result.error}});
+            return result.http_status == 0 ? LN_ERR_CONNECT : LN_ERR_REJECTED;
+        }
+        *out_json = strdup_json(json{{"genesis_pubkey", result.value.genesis_pubkey},
+                                     {"network_id", result.value.network_id},
+                                     {"dns_base_domain", result.value.dns_base_domain},
+                                     {"hosts", result.value.hosts}});
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_set_discovery_target(ln_client_t* client, const char* domain, const char* region) {
+    if (!client || !domain || !region) return LN_ERR_NULL_ARG;
+    try {
+        return client->client.set_discovery_target(domain, region).ok ? LN_OK : LN_ERR_REJECTED;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mesh port
+// ---------------------------------------------------------------------------
+
+// The mesh port is created on first use and lives until ln_destroy, so callers
+// use the returned pointer without holding mesh_port_mutex.
+static lnsdk::MeshPort* ln_mesh_port(ln_client_t* client, bool create) {
+    std::lock_guard lock(client->mesh_port_mutex);
+    if (!client->mesh_port && create) {
+        client->mesh_port = std::make_unique<lnsdk::MeshPort>(lnsdk::make_mesh_port_backend(client->client));
+        client->mesh_port->set_change_callback([client] { client->emit_mesh_event("port"); });
+    }
+    return client->mesh_port.get();
+}
+
+ln_error_t ln_mesh_port_start(ln_client_t* client, uint16_t port, const char* local_service_url) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        switch (ln_mesh_port(client, true)->start(port, local_service_url ? local_service_url : "")) {
+            case lnsdk::MeshPortStartResult::Ok:              return LN_OK;
+            case lnsdk::MeshPortStartResult::InvalidArgument: return LN_ERR_REJECTED;
+            case lnsdk::MeshPortStartResult::AlreadyRunning:  return LN_ERR_REJECTED;
+            case lnsdk::MeshPortStartResult::PortInUse:       return LN_ERR_PORT_IN_USE;
+            case lnsdk::MeshPortStartResult::BindFailed:      return LN_ERR_INTERNAL;
+        }
+        return LN_ERR_INTERNAL;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_mesh_port_set_cert_dir(ln_client_t* client, const char* cert_dir) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        ln_mesh_port(client, true)->set_certificate_dir(cert_dir ? cert_dir : "");
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_mesh_port_stop(ln_client_t* client) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        if (auto* mesh_port = ln_mesh_port(client, false)) mesh_port->stop();
+        return LN_OK;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_mesh_port_set_selection(ln_client_t* client, const char* target, const char* peer_key) {
+    if (!client) return LN_ERR_NULL_ARG;
+    try {
+        auto* mesh_port = ln_mesh_port(client, false);
+        if (!mesh_port) return LN_ERR_REJECTED;
+        switch (mesh_port->set_selection(target ? target : "", peer_key ? peer_key : "")) {
+            case 0:   return LN_OK;
+            case 403: return LN_ERR_AUTH;
+            case 404: return LN_ERR_NOT_FOUND;
+            default:  return LN_ERR_REJECTED;
+        }
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}
+
+ln_error_t ln_mesh_port_status(ln_client_t* client, char** out_json) {
+    if (!client || !out_json) return LN_ERR_NULL_ARG;
+    try {
+        *out_json = strdup_json(ln_mesh_port(client, true)->status());
+        return *out_json ? LN_OK : LN_ERR_INTERNAL;
+    } catch (...) {
+        return LN_ERR_INTERNAL;
+    }
+}

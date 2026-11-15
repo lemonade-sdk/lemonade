@@ -91,6 +91,7 @@ RUN --mount=type=bind,target=/mnt/src \
           cp -a /mnt/src /__w/lemonade/lemonade; \
           cd /__w/lemonade/lemonade; \
           mv contrib/debian .; \
+          debian/vendor-rust-crates; \
           sed -e "s|@@DEB_VERSION@@|0~ccache-prime|g" \
               -e "s|@@DEB_CODENAME@@|$(. /etc/os-release && echo "$UBUNTU_CODENAME")|g" \
               -e "s|@@DEB_DATE@@|$(date -R)|g" \

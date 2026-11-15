@@ -81,7 +81,7 @@ for (const stylesheet of ['src/styles/styles.css', 'src/styles/critical.generate
 assert.match(sources.app, /<span className="titlebar__brand-name">lemonade<\/span>/);
 assert.match(sources.app, /type="search"[\s\S]*?role="combobox"[\s\S]*?aria-expanded=\{navigationSearchOpen\}/);
 assert.match(sources.app, /aria-activedescendant=/);
-assert.match(sources.app, /className=\{`titlebar\$\{isDesktop \? ' titlebar--desktop' : ''\}`\}/);
+assert.match(sources.app, /className=\{`titlebar titlebar--with-account\$\{isDesktop \? ' titlebar--desktop' : ''\}`\}/);
 assert.match(sources.app, /className="titlebar__window-btn titlebar__window-btn--minimize"[\s\S]*?onClick=\{\(\) => window\.api\?\.minimizeWindow\?\.\(\)\}[\s\S]*?aria-label=(?:"Minimize"|\{t\('Minimize'\)\})/);
 assert.match(styles, /\.titlebar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
 assert.match(styles, /\.titlebar__utilities-toggle\s*\{[\s\S]*?border:\s*1px solid var\(--border-subtle\)/);

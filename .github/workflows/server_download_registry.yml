@@ -44,6 +44,15 @@ jobs:
       - name: Configure git safe directory
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
+      - name: Install build dependencies
+        # The nightly image bakes in main's Build-Depends; the Nexus SDK's Rust
+        # toolchain is installed here so the configure does not depend on the
+        # image catching up, the same as the C++ unit tests job.
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update && apt-get build-dep ./contrib -y
+
       - name: Configure CMake
         run: cmake --preset default -DBUILD_WEB_APP=OFF
 

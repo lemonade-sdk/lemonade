@@ -21,7 +21,7 @@ export type IconName =
   | 'thermometer' | 'gem' | 'gauge' | 'timer' | 'hard-drive' | 'library' | 'scan-eye' | 'minus' | 'minimize-2'
   | 'panel-left-close' | 'panel-left-open' | 'square' | 'maximize-2' | 'brain-off' | 'brain-cog' | 'brain-circuit' | 'wrench-off' | 'terminal-square' | 'settings' | 'layers'
   | 'menu' | 'flask-conical' | 'external-link'
-  | 'model-details';
+  | 'model-details' | 'user-round' | 'camera' | 'monitor' | 'smartphone';
 
 interface IconProps {
   name: IconName;

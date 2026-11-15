@@ -11,8 +11,17 @@
 #include <vector>
 #include <set>
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <thread>
+#include <utility>
+
+// The tray carries the signed-in user's Nexus device key to lemond on macOS and Linux,
+// where lemond may run outside the user's session. LemonadeServer.exe is the user's
+// process itself and loads the key directly.
+#ifndef _WIN32
+#define LEMONADE_TRAY_NEXUS_CARRIER 1
+#endif
 
 namespace lemon_tray {
 
@@ -111,6 +120,21 @@ private:
 
     // Connection helpers
     std::string get_connect_host() const;
+
+#ifdef LEMONADE_TRAY_NEXUS_CARRIER
+    // Hands the user's device key to lemond sealed inside the SDK; it never exists here in
+    // plaintext.
+    void offer_device_key_if_needed();
+    void on_unlock_nexus();
+    bool offer_device_key(const nlohmann::json& status);
+    std::pair<int, std::string> controller_request(int port, bool post, const std::string& path, const std::string& body);
+    void set_nexus_key_status(const std::string& text);
+    std::string nexus_key_status();
+    std::string nexus_key_status_;  // guarded by state_mutex_
+    std::string last_menu_nexus_key_status_;
+    std::chrono::steady_clock::time_point nexus_key_retry_at_{};
+    std::atomic<bool> nexus_key_busy_{false};
+#endif
 
     // State
     int port_;

@@ -262,7 +262,10 @@ void HttpListener::start() {
         if (!in_use_ip.empty()) {
             std::string msg = "Port " + std::to_string(port_) + " on " + in_use_ip +
                 " is already in use. Another Lemonade server (lemond) is likely "
-                "already running on this port. This instance will now exit.";
+                "already running on this port, possibly as a system service under "
+                "another user (check with 'sudo lsof -i:" + std::to_string(port_) +
+                "'). Stop it or start this instance with --port. "
+                "This instance will now exit.";
             std::cerr << "[Server] ERROR: " << msg << std::endl;
             LOG(ERROR, "Server") << msg << std::endl;
             startup_failed_ = true;

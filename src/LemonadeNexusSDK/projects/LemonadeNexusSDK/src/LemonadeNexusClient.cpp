@@ -1,0 +1,4478 @@
+#include <LemonadeNexusSDK/LemonadeNexusClient.hpp>
+#include <LemonadeNexusSDK/LanPaths.hpp>
+#include <LemonadeNexusSDK/LatencyMonitor.hpp>
+#include <LemonadeNexusSDK/MeshOrchestrator.hpp>
+
+#include <LemonadeNexus/Api/TreeRouteGate.hpp>
+#include <LemonadeNexus/Auth/AccountDeletionProof.hpp>
+#include <LemonadeNexus/Tree/DeviceLabel.hpp>
+
+#include <httplib.h>
+#include <spdlog/spdlog.h>
+#include <sodium.h>
+
+#include <algorithm>
+#include <atomic>
+#include <cctype>
+#include <chrono>
+#include <csignal>
+#include <functional>
+#include <map>
+#include <mutex>
+#include <optional>
+#include <set>
+#include <thread>
+#include <utility>
+
+// Cross-platform name resolution (getaddrinfo / inet_ntop / sockaddr_in).
+// On Windows these live in the Winsock headers; Winsock is already initialized
+// process-wide by httplib (included above).
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#endif
+
+namespace lnsdk {
+
+// The one crypto construction this SDK speaks; mirrors
+// nexus::crypto::kEncryptedBlobVersion. Version 1 is
+// XChaCha20-Poly1305-IETF with a 24-byte nonce.
+static constexpr unsigned kEncryptedBlobVersion = 1;
+
+// Byte-identical mirror of nexus::crypto::aead_aad:
+//   version || LP(purpose) || LP(context[0]) ...   (LP = u32 LE length + bytes)
+// The server builds the same bytes; if these ever diverge the tag fails, which
+// is the intended failure mode rather than a silent mismatch.
+static std::vector<uint8_t> aead_aad(
+        std::string_view purpose,
+        std::initializer_list<std::span<const uint8_t>> context) {
+    std::vector<uint8_t> aad;
+    const auto put = [&aad](const uint8_t* data, std::size_t size) {
+        const auto n = static_cast<uint32_t>(size);
+        aad.push_back(static_cast<uint8_t>(n & 0xFF));
+        aad.push_back(static_cast<uint8_t>((n >> 8) & 0xFF));
+        aad.push_back(static_cast<uint8_t>((n >> 16) & 0xFF));
+        aad.push_back(static_cast<uint8_t>((n >> 24) & 0xFF));
+        aad.insert(aad.end(), data, data + size);
+    };
+    aad.push_back(static_cast<uint8_t>(kEncryptedBlobVersion));
+    put(reinterpret_cast<const uint8_t*>(purpose.data()), purpose.size());
+    for (const auto& piece : context) put(piece.data(), piece.size());
+    return aad;
+}
+
+using json = nlohmann::json;
+
+namespace {
+// Private mesh transport timeouts. These bound the TLS handshake + response
+// over the tunnel, so they must be generous enough for a real (possibly lossy)
+// tunnel to complete its handshake round-trips — too tight and valid calls fail
+// with "SSL connection failed". Responsiveness is handled by the breaker below
+// (it stops repeated long waits) and by deferring UI fetches off the transition,
+// NOT by starving the handshake.
+constexpr int     kMeshConnectTimeoutSec  = 3;
+// The read timeout must exceed the server's tree-op commit wait: a private
+// tree route (POST /api/tree/node/update, for example) answers only after the
+// op commits through Tier 1 consensus or that wait ends, which is
+// nexus::tree::kTreeOpCommitWaitMs (8 s, TreeConsensus.hpp) plus the
+// request's own round trips. A shorter timeout reports NO RESPONSE for an op
+// the server then commits anyway.
+constexpr int     kMeshReadTimeoutSec     = 15;
+// After a mesh failure, fail fast (skip the doomed handshake) for this long so a
+// persistently-down tunnel doesn't re-freeze every periodic caller.
+constexpr int64_t kMeshBreakerCooldownMs  = 8000;
+// The server's answer to a link token or invite code it does not hold
+// (TokenLinkAuthProvider): the same text for an unknown, expired, or spent
+// invite, so a join treats it as "unknown here" and asks another member.
+constexpr std::string_view kInviteUnknownError = "invalid or expired link token";
+// Pacing of a join's invite hops (see join_network). A refusal of a fresh
+// invite as unknown usually means the mint, seconds old, has not replicated
+// to that member yet, so the next member asked at once very likely lacks it
+// too. Each refusal also counts as a wrong code on the refusing server
+// (nexus::auth::kLinkCodeMaxFailuresPerSource: 5 per source address per 10
+// minutes, after which that address is refused for 10 minutes even with a
+// valid code; kLinkCodeMaxFailuresPerServer: 100 per server). Hop n waits
+// n times this delay first: 1.5 s before the second attempt, 3 s before the
+// third.
+constexpr std::chrono::milliseconds kInviteHopDelay{1500};
+// Joins with the invite that one join_network() sends at most: the first and
+// two hops, whatever the size of the membership, so a join spends at most
+// one wrong code on each of three members.
+constexpr int kInviteJoinMaxAttempts = 3;
+// The start of the tree's device-name refusal (tree::rules::device_name_refusal).
+constexpr std::string_view kDeviceNameRefusal = "device name '";
+// Private requests that get no answer at the connect or handshake level for
+// this long, while the session server stays a verified member whose public
+// API answers, start a forced session move (see note_private_path_unanswered).
+constexpr int64_t kMeshUnansweredWindowMs = 30'000;
+
+int64_t steady_now_ms() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
+/// True when httplib failed before it wrote any request byte: the TCP connect
+/// or the TLS handshake failed. Each later error (Write, Read, and others)
+/// can follow a request that the server received and applied.
+bool request_not_sent(httplib::Error error) {
+    return error == httplib::Error::Connection ||
+           error == httplib::Error::ConnectionTimeout ||
+           error == httplib::Error::SSLConnection;
+}
+
+/// Ignore SIGPIPE once for the process. A TLS write to a socket the OS
+/// closed under the SDK (iOS defuncts sockets of a suspended app) otherwise
+/// kills the process before any error reaches the caller. cpp-httplib does
+/// the same, but only in its Server constructor, which runs only when the
+/// mesh port starts; a client needs it from its first request.
+void ignore_sigpipe_once() {
+#ifndef _WIN32
+    static std::once_flag once;
+    std::call_once(once, [] { ::signal(SIGPIPE, SIG_IGN); });
+#endif
+}
+
+/// Socket options for every httplib client the SDK opens. On Apple platforms
+/// SO_NOSIGPIPE also keeps a write to a dead socket from raising SIGPIPE in
+/// case another library restores the default handler.
+template <typename HttpClient>
+void apply_client_socket_options(HttpClient& client) {
+#ifdef __APPLE__
+    client.set_socket_options([](socket_t sock) {
+        int on = 1;
+        ::setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
+    });
+#else
+    (void)client;
+#endif
+    // The bundle from set_ca_bundle_path(), when the host gave one; a plain
+    // HTTP client keeps the path unused.
+    if (const auto bundle = ca_bundle_path(); !bundle.empty()) {
+        client.set_ca_cert_path(bundle);
+    }
+}
+
+// The event socket dials the private FQDN at the loopback egress with the
+// certificate still verified against the FQDN. Only the hostname map of the
+// WebSocket client allows that, and cpp-httplib added it in v0.47.0 (the
+// client itself in v0.33.0). The SDK also builds against the older library a
+// distribution ships (Ubuntu: 0.26.0, Debian 13 backports: 0.41.0); that
+// build has no event socket, and the orchestrator keeps the peer list
+// long-poll and the heartbeat's devices_revision instead.
+template <typename WsClient>
+concept EventSocketClient = requires(WsClient& ws, std::map<std::string, std::string> addresses) {
+    ws.set_hostname_addr_map(addresses);
+};
+
+#ifndef LEMONADE_NEXUS_HTTPLIB_VERSION
+#error "LEMONADE_NEXUS_HTTPLIB_VERSION names the cpp-httplib release (see cmake/libraries/httplib.cmake)"
+#endif
+#if LEMONADE_NEXUS_HTTPLIB_VERSION >= 33000
+using EventSocket = httplib::ws::WebSocketClient;
+#else
+struct EventSocket {};  // no WebSocket client in this cpp-httplib
+#endif
+constexpr bool kEventSocketSupported = EventSocketClient<EventSocket>;
+constexpr const char* kNoEventSocket =
+    "this build has no event socket (cpp-httplib " CPPHTTPLIB_VERSION ")";
+
+/// Closes an open event socket with status 1001 (going away), from the
+/// thread that reads it.
+void close_event_socket([[maybe_unused]] EventSocket& ws, [[maybe_unused]] const char* reason) {
+#if LEMONADE_NEXUS_HTTPLIB_VERSION >= 33000
+    ws.close(httplib::ws::CloseStatus::GoingAway, reason);
+#endif
+}
+
+/// An event socket client and the socket it connected on.
+///
+/// The handle closes an open socket before it destroys the client. Until
+/// cpp-httplib v0.50.1 the client's teardown freed the TLS session and then
+/// sent the close frame through it (a use-after-free on every secure close
+/// of a still-open socket); close() first marks the socket closed and sends
+/// the frame while the session is alive, and the teardown then sends nothing.
+/// The SDK closes on every path anyway; the handle makes that a guarantee.
+struct EventSocketHandle {
+    std::unique_ptr<EventSocket> client;
+    /// The connected socket, from the client's socket options callback, for
+    /// end_event_socket().
+    std::atomic<socket_t> sock{INVALID_SOCKET};
+
+    ~EventSocketHandle() {
+#if LEMONADE_NEXUS_HTTPLIB_VERSION >= 33000
+        if (client && client->is_open()) close_event_socket(*client, "released");
+#endif
+    }
+};
+
+/// Ends an event socket from a thread other than the one reading it. From
+/// cpp-httplib v0.54.0 close() sends the close frame and leaves the peer's
+/// reply to the thread that is reading, so it can run from here. Before,
+/// close() reads the reply itself beside that thread: two readers of one TLS
+/// session, which corrupts it. There the socket is shut down instead; the
+/// read ends, and the reading thread closes the socket.
+void end_event_socket([[maybe_unused]] EventSocketHandle& handle,
+                      [[maybe_unused]] const char* reason) {
+#if LEMONADE_NEXUS_HTTPLIB_VERSION >= 54000
+    if (handle.client) close_event_socket(*handle.client, reason);
+#elif LEMONADE_NEXUS_HTTPLIB_VERSION >= 33000
+    if (const auto sock = handle.sock.load(); sock != INVALID_SOCKET) {
+#ifdef _WIN32
+        ::shutdown(sock, SD_BOTH);
+#else
+        ::shutdown(sock, SHUT_RDWR);
+#endif
+    }
+#endif
+}
+
+/// The event socket client for `url`, with `fqdn` mapped to the loopback
+/// egress and the ping schedule set; nullptr when the library has no
+/// hostname map. The caller checks the client's is_valid().
+template <typename WsClient>
+std::shared_ptr<EventSocketHandle> make_event_socket([[maybe_unused]] const std::string& url,
+                                                     [[maybe_unused]] const httplib::Headers& headers,
+                                                     [[maybe_unused]] const std::string& fqdn,
+                                                     [[maybe_unused]] time_t ping_sec,
+                                                     [[maybe_unused]] int max_missed_pongs) {
+    if constexpr (!EventSocketClient<WsClient>) {
+        return nullptr;
+    } else {
+        auto handle = std::make_shared<EventSocketHandle>();
+        // `ws` stays WsClient& (dependent) so a library without the client
+        // does not see these calls.
+        auto client = std::make_unique<WsClient>(url, headers);
+        WsClient& ws = *client;
+        handle->client = std::move(client);
+        if (!ws.is_valid()) return handle;
+        ws.set_hostname_addr_map({{fqdn, "127.0.0.1"}});
+        ws.set_websocket_ping_interval(ping_sec);
+        ws.set_websocket_max_missed_pongs(max_missed_pongs);
+        // Runs on the connecting thread while the handle, which owns the
+        // client, is alive. SO_NOSIGPIPE as in apply_client_socket_options.
+        ws.set_socket_options([owner = handle.get()](socket_t sock) {
+            owner->sock.store(sock);
+#ifdef __APPLE__
+            int on = 1;
+            ::setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
+#endif
+        });
+        return handle;
+    }
+}
+
+struct EventSocketOpen {
+    bool        ok{false};
+    int         status{0};  ///< the server's HTTP answer, 0 when unknown
+    std::string error;
+};
+
+/// connect() of the event socket. From cpp-httplib v0.58.0 it answers with a
+/// Result that carries the server's HTTP status (404: no event socket);
+/// before, with a bool, so a refusal reports status 0.
+template <typename WsClient>
+EventSocketOpen open_event_socket([[maybe_unused]] WsClient& ws) {
+    if constexpr (!EventSocketClient<WsClient>) {
+        return {false, 0, kNoEventSocket};
+    } else {
+        const auto opened = ws.connect();
+        if constexpr (requires { opened.status(); opened.error(); }) {
+            if (opened) return {true, 0, {}};
+            return {false, std::max(opened.status(), 0), httplib::to_string(opened.error())};
+        } else {
+            if (opened) return {true, 0, {}};
+            return {false, 0, "no answer"};
+        }
+    }
+}
+
+/// Resolve a hostname to its first IPv4 address (dotted string), or "" on
+/// failure. Used to learn the server's mesh IP from its private FQDN (which the
+/// authoritative DNS maps to the in-mesh address, e.g. 10.64.252.37).
+std::string resolve_ipv4(const std::string& host) {
+    struct addrinfo hints{};
+    hints.ai_family   = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo* res = nullptr;
+    if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || !res) return {};
+    char buf[INET_ADDRSTRLEN] = {0};
+    auto* sin = reinterpret_cast<struct sockaddr_in*>(res->ai_addr);
+    inet_ntop(AF_INET, &sin->sin_addr, buf, sizeof buf);
+    freeaddrinfo(res);
+    return buf;
+}
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// PIMPL implementation
+// ---------------------------------------------------------------------------
+
+struct LemonadeNexusClient::Impl {
+    ServerConfig config;
+    Identity     identity;
+    std::string  session_token;
+    std::string  node_id;
+    std::string  link_token;           // single-use device link token for the next join
+    bool         inference_node{false};  // join as Tier 3 (inference) instead of Tier 4
+    std::string  device_name;          // endpoint name for the next join ("" = server default)
+    bool         omit_device_name_once{false};  // the name was refused; join under the default
+    std::vector<std::pair<uint16_t, std::string>> exposed_services;  // vport -> target
+    std::string  server_seip_fqdn;     // e.g. "<id>.<region>.seip.lemonade-nexus.io" — public API after join
+    std::string  server_private_fqdn;  // e.g. "private.<id>.<region>.seip.lemonade-nexus.io"
+    std::string  server_tunnel_ip;    // session server in-mesh address, e.g. "10.64.252.37"
+    uint16_t     private_port{9101};
+    // Guards the fields above and the mesh state below. Never hold it across a
+    // request: a private request checks the session's server against the
+    // verified membership and, when the server left Tier 1, reads the identity
+    // under this mutex (has_identity), so a caller that holds it waits on itself.
+    mutable std::mutex mutex;
+
+    // The Dart client calls in from worker isolates, so the public transport is
+    // used from several threads at once. transport_mtx guards server_pool,
+    // current_server, has_discovered, session_token, latency_monitor and
+    // public_clients. It is never held across network I/O and never held while
+    // taking `mutex` (lock order: mutex, then transport_mtx).
+    //
+    // Declared before mesh_orchestrator: members are destroyed in reverse
+    // order, and the orchestrator's thread uses this lock until it is stopped.
+    mutable std::mutex transport_mtx;
+
+    // One keep-alive client per server base URL. A client per request meant a
+    // TCP + TLS handshake every call (about three round trips); reusing the
+    // connection leaves one. httplib::Client is not safe for concurrent
+    // requests, so each pooled client serializes its own users.
+    struct PooledClient {
+        std::mutex      in_use;
+        httplib::Client cli;
+        explicit PooledClient(const std::string& url) : cli(url) {}
+    };
+    std::map<std::string, std::shared_ptr<PooledClient>> public_clients;
+
+    // Server pool with health state
+    struct ServerState {
+        ServerEndpoint endpoint;
+        bool           healthy{true};
+        uint32_t       consecutive_failures{0};
+        uint64_t       last_health_check_ms{0};
+    };
+    std::vector<ServerState> server_pool;
+    std::size_t              current_server{0};
+    bool                     has_discovered{false};
+
+    // Fallback discovery, when no known server answers a Tier 1 refresh:
+    // the DNS step, and when it last ran (steady ms, 0 = never). Both
+    // guarded by transport_mtx.
+    LemonadeNexusClient::RegionDiscovery region_discovery{
+        [](const std::string& domain, const std::string& region, uint16_t port) {
+            return lnsdk::discover_servers(domain, region, port);
+        }};
+    int64_t last_fallback_discovery_ms{0};
+
+    // Latency-based auto-switching
+    std::unique_ptr<LatencyMonitor> latency_monitor;
+
+    // Verified Tier 1 servers: the only servers tree traffic goes to. A
+    // session belongs to the server that issued it (session_node), and a
+    // challenge to the server that issued it (challenge_node). Both are
+    // base64 node ids, guarded by transport_mtx.
+    Tier1Directory tier1;
+    std::string    session_node;
+    std::string    challenge_node;
+    // Set when the session was dropped because its server left the verified
+    // membership and the SDK could not move it; cleared by the next
+    // successful join. Reported by mesh_status() so the application knows to
+    // join again.
+    std::atomic<bool> rejoin_needed{false};
+
+    // The owning client: a session move calls its join and mesh methods.
+    LemonadeNexusClient* owner{nullptr};
+
+    // Whether enable_mesh() is in effect, and the config it was given, so a
+    // session move brings the orchestrator back as it was. Guarded by mutex.
+    bool       mesh_enabled{false};
+    MeshConfig mesh_config;
+
+    // One session move at a time, on its own thread: it verifies the
+    // membership, authenticates, and joins again, which neither a private-API
+    // caller nor the orchestrator's thread may block on. move_mtx guards the
+    // thread handle and the flags below.
+    std::mutex  move_mtx;
+    std::thread move_thread;
+    bool        move_running{false};
+    // Set by the destructor: no move starts, and a running one restarts no
+    // orchestrator.
+    std::atomic<bool> closing{false};
+    // The highest next epoch a departure notice named that started a move,
+    // so one notice starts one move.
+    uint64_t    move_hint_epoch{0};
+    // Members whose servers a challenge must not go to: while a move runs,
+    // the departing session server when it is still verified, and during a
+    // join, each member that refused the join's invite as unknown. Guarded
+    // by transport_mtx.
+    std::set<std::string> avoid_nodes;
+    // The wait before a join's first invite hop (set_invite_hop_delay).
+    std::atomic<int64_t> invite_hop_delay_ms{kInviteHopDelay.count()};
+
+    // The application's session-move callback. notify_session_moved() calls
+    // it under this lock, so set_session_moved_callback() returns only when
+    // the previous callback is not running.
+    std::mutex                               session_moved_mtx;
+    LemonadeNexusClient::SessionMovedCallback session_moved_callback;
+
+    // The front ends of the exposed services that have a catalog. Declared
+    // before meshplane: the netstack reports connection sources to it until
+    // the dataplane stops.
+    ServiceIngress service_ingress;
+
+    // The client's single userspace mesh dataplane (boringtun Noise + smoltcp
+    // netstack, no TUN). Brought up at join; carries both mesh P2P traffic and
+    // the private-API transport (see private_http_*).
+    BoringtunMesh meshplane;
+    // The join-assigned dataplane config, kept so callers can inspect it.
+    BoringtunConfig boringtun_config;
+
+    // Circuit breaker for the private mesh transport: steady-clock ms until which
+    // private calls fail fast without attempting the SSL handshake (0 = closed).
+    std::atomic<int64_t> mesh_breaker_until_ms{0};
+
+    // Steady-clock ms at which the first of the private requests in a row
+    // that got no answer at the connect or handshake level failed (0 while
+    // the private path answers). See note_private_path_unanswered().
+    std::atomic<int64_t> private_unanswered_since_ms{0};
+
+    // Every private request shares one loopback egress through the netstack, so
+    // only one may be in flight: the orchestrator's heartbeat/peer-refresh
+    // thread otherwise collides with app calls and both fail the TLS handshake.
+    std::mutex private_api_mtx;
+
+    // One keep-alive connection for the private API, reused across requests.
+    // A connection per call meant a TLS handshake every time (~570ms) and
+    // enough socket churn through the netstack bridge to stall new connects.
+    // private_cli_mtx guards the pointer and the port, never the request:
+    // the request runs under private_api_mtx on its own copy of the pointer,
+    // so reset_private_transport() can take the connection away and stop it
+    // (the request then fails at once) without waiting for the request.
+    std::mutex                          private_cli_mtx;
+    std::shared_ptr<httplib::SSLClient> private_cli;
+    uint16_t                            private_cli_port{0};
+
+    // Counts the private transport resets (reset_private_transport). A
+    // request that fails after a reset started was cut off by the reset, not
+    // by the path: it arms no breaker and counts as no unanswered request.
+    std::atomic<uint64_t> private_transport_generation{0};
+
+    std::shared_ptr<httplib::SSLClient> private_client(uint16_t egress_port) {
+        std::lock_guard lock(private_cli_mtx);
+        if (private_cli && private_cli_port == egress_port) return private_cli;
+        private_cli = std::make_shared<httplib::SSLClient>(server_private_fqdn, egress_port);
+        // The private FQDN lands on the loopback egress; SNI + certificate
+        // verification still use the FQDN (against the public CA).
+        private_cli->set_hostname_addr_map({{server_private_fqdn, "127.0.0.1"}});
+        private_cli->set_connection_timeout(kMeshConnectTimeoutSec);
+        private_cli->set_read_timeout(kMeshReadTimeoutSec);
+        private_cli->set_keep_alive(true);
+        apply_client_socket_options(*private_cli);
+        private_cli_port = egress_port;
+        return private_cli;
+    }
+
+    void drop_private_client() {
+        std::lock_guard lock(private_cli_mtx);
+        private_cli.reset();
+        private_cli_port = 0;
+    }
+
+    // See LemonadeNexusClient::reset_private_transport(). Each connection is
+    // taken out of its slot under that slot's lock and stopped outside it:
+    // httplib's stop() shuts the socket down under a request in flight, so
+    // the thread in the request sees an error at once.
+    void reset_private_transport() {
+        private_transport_generation.fetch_add(1, std::memory_order_relaxed);
+        std::shared_ptr<httplib::SSLClient> stale_private;
+        {
+            std::lock_guard lock(private_cli_mtx);
+            stale_private = std::move(private_cli);
+            private_cli_port = 0;
+        }
+        if (stale_private) stale_private->stop();
+        std::shared_ptr<httplib::SSLClient> stale_poll;
+        std::shared_ptr<EventSocketHandle>  stale_events;
+        {
+            std::lock_guard lock(poll_mtx);
+            stale_poll = std::move(poll_cli);
+            poll_cli_port = 0;
+            stale_events = events_ws;
+        }
+        if (stale_poll) stale_poll->stop();
+        if (stale_events) end_event_socket(*stale_events, "resumed");
+        mesh_breaker_until_ms.store(0, std::memory_order_relaxed);
+        private_path_answered();
+        {
+            std::lock_guard lock(transport_mtx);
+            public_clients.clear();
+        }
+        spdlog::info("[LemonadeNexusClient] private transport reset after a resume");
+    }
+
+    // The peer list long-poll (wait_mesh_peers) holds its request for up to
+    // half a minute, so it has its own connection and does not take
+    // private_api_mtx: the netstack egress listener accepts several
+    // connections, each its own virtual TCP connection. poll_mtx guards the
+    // client pointer and the cancel flag; the request itself runs without it
+    // so cancel_mesh_peer_wait() can close the socket.
+    std::mutex                          poll_mtx;
+    std::shared_ptr<httplib::SSLClient> poll_cli;
+    uint16_t                            poll_cli_port{0};
+    bool                                poll_cancelled{false};
+    // The event socket (run_mesh_events), guarded by poll_mtx like the
+    // long-poll client so cancel_mesh_peer_wait() can end it.
+    std::shared_ptr<EventSocketHandle> events_ws;
+
+    // Device and group loopback certificates kept current on disk. Declared
+    // before mesh_orchestrator: the orchestrator's renewal thread uses it
+    // until the orchestrator is stopped.
+    CertRenewer cert_renewer;
+
+    // Mesh P2P orchestrator
+    std::unique_ptr<MeshOrchestrator> mesh_orchestrator;
+    LemonadeNexusClient::MeshStateCallback mesh_callback;
+    LemonadeNexusClient::MeshDevicesCallback mesh_devices_callback;
+
+    explicit Impl(const ServerConfig& cfg)
+        : config{cfg},
+          tier1{[this](const ServerEndpoint& ep, const std::string& path) {
+              return discovery_get(ep, path);
+          }},
+          service_ingress{[this] { return mesh_peers_snapshot(); }} {
+        for (const auto& ep : config.servers) {
+            server_pool.push_back({ep, true, 0, 0});
+        }
+        meshplane.set_ingress_source_handler(
+            [this](uint16_t vport, uint16_t bridge_port, const std::string& src_ip, uint16_t src_port,
+                   bool opened) {
+                if (opened) service_ingress.connection_opened(vport, bridge_port, src_ip, src_port);
+                else service_ingress.connection_closed(vport, bridge_port);
+            });
+    }
+
+    /// The latest peer list (empty while the mesh orchestrator is not running).
+    std::vector<MeshPeer> mesh_peers_snapshot() {
+        std::lock_guard lock(mutex);
+        return mesh_orchestrator ? mesh_orchestrator->peers() : std::vector<MeshPeer>{};
+    }
+
+    /// Install the netstack forward for an exposure: through the service
+    /// ingress front end when `vport` has a catalog, else straight to `target`.
+    bool apply_ingress(uint16_t vport, const std::string& target, std::string& error) {
+        const auto bridge = service_ingress.bridge_target(vport, target);
+        if (!bridge.ok) {
+            error = bridge.error;
+            return false;
+        }
+        if (!meshplane.tcp_ingress(vport, bridge.target, bridge.front_end)) {
+            error = "failed to register ingress forward";
+            return false;
+        }
+        return true;
+    }
+
+    // --- Tier 1 transport -----------------------------------------------------
+
+    /// How long a verified membership is used before it is verified again.
+    static constexpr int64_t kTier1MaxAgeMs = 5 * 60 * 1000;
+
+    // A discovery GET: no session token, so a server that is not Tier 1
+    // never sees the session.
+    std::optional<HttpReply> discovery_get(const ServerEndpoint& ep, const std::string& path) {
+        const auto url = base_url(ep);
+        try {
+            auto pooled = pooled_client(url);
+            httplib::Result res{nullptr, httplib::Error::Unknown};
+            {
+                std::lock_guard use(pooled->in_use);
+                res = pooled->cli.Get(path);
+            }
+            if (!res) {
+                // The transport reason (DNS, connect, TLS verification) goes
+                // back with the reply, so the directory's failure text names
+                // it next to the server; the full URL is logged here.
+                const auto why = httplib::to_string(res.error());
+                spdlog::warn("[LemonadeNexusClient] GET {}{} failed: {}", url, path, why);
+                drop_pooled_client(url);
+                return HttpReply{0, {}, why};
+            }
+            return HttpReply{res->status, res->body};
+        } catch (const std::exception& e) {
+            spdlog::warn("[LemonadeNexusClient] GET {}{} exception: {}", url, path, e.what());
+            drop_pooled_client(url);
+            return HttpReply{0, {}, e.what()};
+        }
+    }
+
+    /// How long after one fallback discovery the next may run. A long outage
+    /// then costs one DNS sweep a minute, not one per tree call.
+    static constexpr int64_t kFallbackDiscoveryIntervalMs = 60 * 1000;
+
+    static bool same_endpoint(const ServerEndpoint& a, const ServerEndpoint& b) {
+        return a.host == b.host && a.port == b.port;
+    }
+
+    // Where a membership walk starts: the current pool, then the configured
+    // seeds.
+    std::vector<ServerEndpoint> tier1_sources() const {
+        std::vector<ServerEndpoint> out;
+        std::lock_guard lock(transport_mtx);
+        for (const auto& s : server_pool) out.push_back(s.endpoint);
+        for (const auto& ep : config.servers) {
+            const bool known = std::any_of(out.begin(), out.end(), [&ep](const ServerEndpoint& o) {
+                return same_endpoint(o, ep);
+            });
+            if (!known) out.push_back(ep);
+        }
+        return out;
+    }
+
+    // Add servers the client learned of to the pool, once each. Caller holds
+    // transport_mtx.
+    void add_pool_servers_locked(const std::vector<ServerEndpoint>& endpoints) {
+        for (const auto& ep : endpoints) {
+            const bool known = std::any_of(server_pool.begin(), server_pool.end(),
+                                           [&ep](const ServerState& s) {
+                                               return same_endpoint(s.endpoint, ep);
+                                           });
+            if (known) continue;
+            server_pool.push_back({ep, true, 0, 0});
+            spdlog::info("[LemonadeNexusClient] discovered server {}:{}", ep.host, ep.port);
+        }
+    }
+
+    // Put `ep` first in the pool and make it current; the other servers stay
+    // behind it in their order. Caller holds transport_mtx.
+    void lead_pool_with_locked(const ServerEndpoint& ep) {
+        auto it = std::find_if(server_pool.begin(), server_pool.end(),
+                               [&ep](const ServerState& s) { return same_endpoint(s.endpoint, ep); });
+        if (it == server_pool.end()) {
+            server_pool.insert(server_pool.begin(), {ep, true, 0, 0});
+        } else {
+            std::rotate(server_pool.begin(), it, it + 1);
+        }
+        current_server = 0;
+    }
+
+    // The SEIP region fallback discovery resolves: the configured domain and
+    // region, else the ones a known server's FQDN `<id>.<region>.seip.<domain>`
+    // names. nullopt when neither is known.
+    struct DiscoveryTarget {
+        std::string domain;
+        std::string region;
+        uint16_t    port{9100};
+    };
+    std::optional<DiscoveryTarget> discovery_target() const {
+        std::lock_guard lock(transport_mtx);
+        DiscoveryTarget target;
+        target.domain = config.discovery_domain;
+        target.region = config.discovery_region;
+        if (!server_pool.empty()) target.port = server_pool[current_server].endpoint.port;
+        if (target.domain.empty() || target.region.empty()) {
+            std::vector<std::string> known;
+            for (const auto& s : server_pool) known.push_back(s.endpoint.host);
+            for (const auto& ep : config.servers) known.push_back(ep.host);
+            for (const auto& host : known) {
+                if (const auto name = parse_seip_fqdn(host)) {
+                    target.domain = name->domain;
+                    target.region = name->region;
+                    break;
+                }
+            }
+        }
+        if (target.domain.empty() || target.region.empty()) return std::nullopt;
+        return target;
+    }
+
+    // The servers the region's SEIP records name. Candidates only: the
+    // endpoint proofs, or the Genesis key agreement, decide. `why` opens the
+    // log lines with the reason for the lookup. Empty when it found nothing.
+    std::vector<ServerEndpoint> region_servers(const DiscoveryTarget& target, const char* why) {
+        LemonadeNexusClient::RegionDiscovery discovery;
+        {
+            std::lock_guard lock(transport_mtx);
+            discovery = region_discovery;
+        }
+        const auto region_name = target.region + ".seip." + target.domain;
+        Result<std::vector<DiscoveredServer>> found;
+        try {
+            found = discovery(target.domain, target.region, target.port);
+        } catch (const std::exception& e) {
+            found.ok = false;
+            found.error = e.what();
+        }
+        if (!found.ok || found.value.empty()) {
+            spdlog::warn("[LemonadeNexusClient] {}; discovery of {} found no server: {}", why,
+                         region_name, found.error);
+            return {};
+        }
+        std::vector<ServerEndpoint> out;
+        std::string names;
+        for (const auto& s : found.value) {
+            if (s.host.empty() || s.port == 0) continue;
+            out.push_back({s.host, s.port, true});
+            names += (names.empty() ? "" : ", ") + s.host + ":" + std::to_string(s.port);
+        }
+        spdlog::info("[LemonadeNexusClient] {}; {} names {} server(s) to verify: {}", why,
+                     region_name, out.size(), names);
+        return out;
+    }
+
+    // The region's servers from DNS, for a refresh that found no known server
+    // answering. Runs at most once per kFallbackDiscoveryIntervalMs; empty
+    // when it did not run or found nothing.
+    std::vector<ServerEndpoint> fallback_discovery() {
+        const auto target = discovery_target();
+        if (!target) {
+            spdlog::warn("[LemonadeNexusClient] no known server answered and no discovery "
+                         "domain and region are known: no fallback discovery (set "
+                         "ServerConfig::discovery_domain and discovery_region, or call "
+                         "set_discovery_target)");
+            return {};
+        }
+        {
+            std::lock_guard lock(transport_mtx);
+            const auto now = steady_now_ms();
+            if (last_fallback_discovery_ms != 0 &&
+                now - last_fallback_discovery_ms < kFallbackDiscoveryIntervalMs) {
+                return {};
+            }
+            last_fallback_discovery_ms = now;
+        }
+        return region_servers(*target, "no known server answered");
+    }
+
+    // Verify the Tier 1 membership from the known servers and, when none
+    // answers, from the region's DNS records as well. A refusal (a forged
+    // chain, a stale epoch, another chain) is final: other servers of the
+    // same region do not change it, so no fallback runs for it.
+    Result<Tier1Membership> refresh_tier1() {
+        auto refreshed = tier1.refresh(tier1_sources());
+        if (refreshed.ok || refreshed.http_status != 0) return refreshed;
+        const auto found = fallback_discovery();
+        if (found.empty()) return refreshed;
+        auto sources = tier1_sources();
+        for (const auto& ep : found) {
+            const bool known = std::any_of(sources.begin(), sources.end(),
+                                           [&ep](const ServerEndpoint& o) {
+                                               return same_endpoint(o, ep);
+                                           });
+            if (!known) sources.push_back(ep);
+        }
+        auto again = tier1.refresh(sources);
+        if (again.ok) {
+            // The region's servers answered: keep them as sources for the
+            // next refresh and for the public API.
+            std::lock_guard lock(transport_mtx);
+            add_pool_servers_locked(found);
+        }
+        return again;
+    }
+
+    // A verified membership, refreshed when due. Empty on success, otherwise
+    // why no tree request may leave the client.
+    std::string ensure_tier1() {
+        if (!tier1.has_genesis_key()) {
+            return "no pinned Genesis key: call set_genesis_key() before any tree call";
+        }
+        if (tier1.needs_refresh(kTier1MaxAgeMs)) {
+            auto refreshed = refresh_tier1();
+            if (!refreshed.ok) return refreshed.error;
+        }
+        return {};
+    }
+
+    // A tree route on the public API, sent only to verified Tier 1 servers.
+    // Session pinning: a challenge may go to any verified server; the
+    // request that answers it (/api/auth..., /api/join) goes to the server
+    // that issued it, and a request that carries the session goes to the
+    // server that issued the session. A successful answer that carries a
+    // session token binds the session to the server that sent it.
+    std::optional<json> tier1_http(bool post, const std::string& path, const json* body,
+                                   int& status_out) {
+        status_out = 0;
+        const auto ready = ensure_tier1();
+        if (!ready.empty()) {
+            spdlog::warn("[LemonadeNexusClient] {} {} not sent: {}", post ? "POST" : "GET", path,
+                         ready);
+            return json{{"error", ready}};
+        }
+        const bool is_challenge = path == "/api/auth/challenge";
+        const bool answers_challenge =
+            path == "/api/auth" || path.starts_with("/api/auth/") || path == "/api/join";
+        std::string pin;
+        std::set<std::string> avoid;
+        {
+            std::lock_guard lock(transport_mtx);
+            if (is_challenge) {
+                pin.clear();
+            } else if (answers_challenge) {
+                pin = !challenge_node.empty() ? challenge_node : session_node;
+                challenge_node.clear();
+            } else {
+                pin = session_node;
+            }
+            avoid = avoid_nodes;
+        }
+        const auto attempt = [&](const ServerEndpoint& ep) -> std::optional<HttpReply> {
+            const auto url = base_url(ep);
+            httplib::Headers headers;
+            {
+                // Only the server that issued the session sees it.
+                std::lock_guard lock(transport_mtx);
+                if (!session_token.empty() && session_server_locked(ep.host, ep.port)) {
+                    headers.emplace("Authorization", "Bearer " + session_token);
+                }
+            }
+            try {
+                auto pooled = pooled_client(url);
+                httplib::Result res{nullptr, httplib::Error::Unknown};
+                {
+                    std::lock_guard use(pooled->in_use);
+                    res = post ? pooled->cli.Post(path, headers, body->dump(), "application/json")
+                               : pooled->cli.Get(path, headers);
+                }
+                if (!res) {
+                    drop_pooled_client(url);
+                    return std::nullopt;
+                }
+                return HttpReply{res->status, res->body};
+            } catch (const std::exception&) {
+                drop_pooled_client(url);
+                return std::nullopt;
+            }
+        };
+        Tier1Server answered;
+        std::string error;
+        auto reply = tier1.send(attempt, pin, &answered, error, avoid);
+        if (!reply && pin.empty() && tier1.needs_refresh(kTier1MaxAgeMs)) {
+            // Every verified server refused: the membership may have moved.
+            if (refresh_tier1().ok) {
+                reply = tier1.send(attempt, pin, &answered, error, avoid);
+            }
+        }
+        if (!reply) {
+            spdlog::warn("[LemonadeNexusClient] {} {} failed: {}", post ? "POST" : "GET", path,
+                         error);
+            return json{{"error", error}};
+        }
+        status_out = reply->status;
+        auto parsed = json::parse(reply->body, nullptr, false);
+        if (parsed.is_discarded()) {
+            parsed = json{{"error", "HTTP " + std::to_string(reply->status)}};
+        }
+        if (reply->status >= 200 && reply->status < 300) {
+            std::lock_guard lock(transport_mtx);
+            if (is_challenge) {
+                challenge_node = answered.node_id;
+            } else if (parsed.is_object()) {
+                const auto carries = [&parsed](const char* field) {
+                    const auto it = parsed.find(field);
+                    return it != parsed.end() && it->is_string() &&
+                           !it->get_ref<const std::string&>().empty();
+                };
+                if (carries("session_token") || carries("token")) {
+                    session_node = answered.node_id;
+                }
+            }
+        }
+        return parsed;
+    }
+
+    // Private-API calls carry the session, so they go only to the verified
+    // Tier 1 server that issued it. Empty when allowed, otherwise why not.
+    std::string private_api_refusal() {
+        const auto ready = ensure_tier1();
+        if (!ready.empty()) return ready;
+        std::string node;
+        {
+            std::lock_guard lock(transport_mtx);
+            node = session_node;
+        }
+        if (node.empty()) {
+            return "no session bound to a verified Tier 1 server: authenticate or join first";
+        }
+        if (!tier1.is_verified_member(node)) {
+            // Tier 1 rotates members out at epoch boundaries. The session is a
+            // bearer token for a server that no longer holds the tree, and
+            // join_network() reuses a held token, so a join that kept it
+            // would still target that server. With an identity the SDK moves
+            // the session itself (run_session_move); without one it drops
+            // the session, and the next join authenticates through a current
+            // member.
+            if (has_identity()) {
+                start_session_move("the session's server left Tier 1", 0);
+                return "the session's server is no longer a verified Tier 1 server: "
+                       "the session is moving";
+            }
+            drop_departed_session(node, "no identity for a silent re-authentication");
+            return "the session's server is no longer a verified Tier 1 server: join again";
+        }
+        return {};
+    }
+
+    bool has_identity() {
+        std::lock_guard lock(mutex);
+        return identity.is_valid();
+    }
+
+    // The certificate FQDN of a verified member, or empty.
+    std::string host_of(const std::string& node) const {
+        for (const auto& s : tier1.membership().servers) {
+            if (s.node_id == node) return s.host;
+        }
+        return {};
+    }
+
+    void notify_session_moved(const SessionMoveEvent& event) {
+        std::lock_guard lock(session_moved_mtx);
+        if (!session_moved_callback) return;
+        try {
+            session_moved_callback(event);
+        } catch (const std::exception& e) {
+            spdlog::warn("[LemonadeNexusClient] session moved callback threw: {}", e.what());
+        } catch (...) {
+            spdlog::warn("[LemonadeNexusClient] session moved callback threw");
+        }
+    }
+
+    // The session of `node`, whose server left Tier 1, cannot move by itself:
+    // drop it, so the application joins again through a current member.
+    void drop_departed_session(const std::string& node, std::string error) {
+        SessionMoveEvent event;
+        event.from_node_id = node;
+        event.from_host    = host_of(node);
+        event.epoch        = tier1.membership().epoch;
+        event.error        = std::move(error);
+        {
+            std::lock_guard lock(transport_mtx);
+            if (session_node != node) return;
+            session_token.clear();
+            session_node.clear();
+        }
+        rejoin_needed.store(true, std::memory_order_relaxed);
+        spdlog::info("[LemonadeNexusClient] the session cannot move by itself: session "
+                     "dropped, join again ({})", event.error);
+        notify_session_moved(event);
+    }
+
+    // Start a session move on its own thread, unless one runs. `hint_epoch`
+    // is the next epoch a departure notice named (0 when the trigger carried
+    // none); a notice starts at most one move per epoch. A `forced` move
+    // re-joins even when the session's server is still a verified member
+    // (see run_session_move).
+    void start_session_move(std::string reason, uint64_t hint_epoch, bool forced = false) {
+        std::thread finished;
+        {
+            std::lock_guard lock(move_mtx);
+            if (move_running || closing.load(std::memory_order_relaxed)) return;
+            if (hint_epoch != 0) {
+                if (hint_epoch <= move_hint_epoch) return;
+                move_hint_epoch = hint_epoch;
+            }
+            finished = std::move(move_thread);  // the previous move ended
+            move_running = true;
+            move_thread = std::thread([this, reason = std::move(reason), hint_epoch, forced] {
+                try {
+                    owner->run_session_move(reason, hint_epoch, forced);
+                } catch (const std::exception& e) {
+                    spdlog::warn("[LemonadeNexusClient] session move failed: {}", e.what());
+                } catch (...) {
+                    spdlog::warn("[LemonadeNexusClient] session move failed");
+                }
+                std::lock_guard done(move_mtx);
+                move_running = false;
+            });
+        }
+        if (finished.joinable()) finished.join();
+    }
+
+    // Wait for a running session move to end. Never called from the move
+    // thread.
+    void join_session_move() {
+        std::thread running;
+        {
+            std::lock_guard lock(move_mtx);
+            running = std::move(move_thread);
+        }
+        if (running.joinable()) running.join();
+    }
+
+    // Before destruction: a session move in progress uses the client, so it
+    // ends (bounded by the HTTP timeouts) before anything is destroyed, no
+    // new one starts, and the orchestrator it may have restarted stops with
+    // the rest.
+    void close() {
+        closing.store(true, std::memory_order_relaxed);
+        join_session_move();
+    }
+
+    // The session's server announced in its heartbeat answer that it leaves
+    // Tier 1 at `next_epoch`. A hint: the move verifies the membership
+    // itself. An epoch at or below the verified one says nothing new.
+    void note_departure_notice(uint64_t next_epoch) {
+        if (next_epoch == 0 || next_epoch <= tier1.membership().epoch) return;
+        start_session_move("the session's server leaves Tier 1 at epoch " +
+                               std::to_string(next_epoch),
+                           next_epoch);
+    }
+
+    // A private request to the session's server got no answer at the
+    // connect or handshake level (the Noise or TLS handshake never
+    // completed), although the server is still a verified member. A Tier 1
+    // server that restarted in place has forgotten this client's dataplane
+    // peer and keeps it forgotten until a fresh join adds it back; nothing
+    // else (no departure notice, no 421, no membership change) says so. Once
+    // such requests have failed for kMeshUnansweredWindowMs with no answer in
+    // between (the window starts at the first failure, so one lost handshake
+    // never counts), a forced session move re-joins through a verified
+    // member. The move verifies the membership again over the public API
+    // first, so a device that lost its network (nothing verifiable) does
+    // not move. The window restarts at the move, so one move starts per
+    // window, and at a resume (reset_private_transport), so requests a
+    // suspension cut off never move the session.
+    void note_private_path_unanswered() {
+        const int64_t now   = steady_now_ms();
+        const int64_t since = private_unanswered_since_ms.load(std::memory_order_relaxed);
+        if (since == 0) {
+            private_unanswered_since_ms.store(now, std::memory_order_relaxed);
+            return;
+        }
+        if (now - since < kMeshUnansweredWindowMs) return;
+        private_unanswered_since_ms.store(0, std::memory_order_relaxed);
+        start_session_move("the session's server stopped answering over the mesh", 0,
+                           /*forced=*/true);
+    }
+
+    void private_path_answered() {
+        private_unanswered_since_ms.store(0, std::memory_order_relaxed);
+    }
+
+    // Build the base URL for a specific server. Always HTTPS — the mesh has no
+    // plaintext path; `host` must be the server's cert FQDN (verified by
+    // httplib's default trust-store check).
+    static std::string base_url(const ServerEndpoint& ep) {
+        return "https://" + ep.host + ":" + std::to_string(ep.port);
+    }
+
+    // --- Public transport state ---------------------------------------------
+
+    std::string token() const {
+        std::lock_guard lock(transport_mtx);
+        return session_token;
+    }
+
+    void set_token(std::string value) {
+        std::lock_guard lock(transport_mtx);
+        session_token = std::move(value);
+    }
+
+    bool discovered() const {
+        std::lock_guard lock(transport_mtx);
+        return has_discovered;
+    }
+
+    // Get the current server's base URL. Caller holds transport_mtx.
+    std::string current_base_url_locked() const {
+        if (server_pool.empty()) return "https://127.0.0.1:9100";
+        return base_url(server_pool[current_server].endpoint);
+    }
+
+    // Mark the current server as failed, rotate to next healthy.
+    // Caller holds transport_mtx.
+    void mark_failed_locked() {
+        if (server_pool.empty()) return;
+        auto& s = server_pool[current_server];
+        s.consecutive_failures++;
+        if (s.consecutive_failures >= 3) {
+            s.healthy = false;
+        }
+        rotate_server_locked();
+    }
+
+    // Move to the next healthy server. Caller holds transport_mtx.
+    void rotate_server_locked() {
+        if (server_pool.size() <= 1) return;
+        auto start = current_server;
+        for (std::size_t i = 1; i < server_pool.size(); ++i) {
+            auto idx = (start + i) % server_pool.size();
+            if (server_pool[idx].healthy) {
+                current_server = idx;
+                spdlog::info("[LemonadeNexusClient] rotated to server {}:{}",
+                              server_pool[idx].endpoint.host,
+                              server_pool[idx].endpoint.port);
+                return;
+            }
+        }
+        // All unhealthy — reset all and try first
+        for (auto& s : server_pool) {
+            s.healthy = true;
+            s.consecutive_failures = 0;
+        }
+        current_server = 0;
+        spdlog::warn("[LemonadeNexusClient] all servers unhealthy, resetting pool");
+    }
+
+    // Mark current server as successful. Caller holds transport_mtx.
+    void mark_success_locked() {
+        if (server_pool.empty()) return;
+        auto& s = server_pool[current_server];
+        s.healthy = true;
+        s.consecutive_failures = 0;
+    }
+
+    // Build common headers (including Bearer auth when session token is set)
+    httplib::Headers auth_headers() const {
+        httplib::Headers hdrs;
+        auto t = token();
+        if (!t.empty()) {
+            hdrs.emplace("Authorization", "Bearer " + t);
+        }
+        return hdrs;
+    }
+
+    // What one public request targets, captured under transport_mtx so the
+    // request itself runs without the lock.
+    struct Target {
+        std::string      url;
+        std::string      host;
+        uint16_t         port{0};
+        bool             can_fail_over{false};
+        httplib::Headers headers;
+    };
+
+    Target current_target() const {
+        std::lock_guard lock(transport_mtx);
+        Target t;
+        t.url = current_base_url_locked();
+        if (!server_pool.empty()) {
+            t.host = server_pool[current_server].endpoint.host;
+            t.port = server_pool[current_server].endpoint.port;
+        }
+        t.can_fail_over = server_pool.size() > 1;
+        // The session is a bearer token for the Tier 1 server that issued it.
+        // A public request to any other server (a seed, a Tier 2 server)
+        // carries no session.
+        if (!session_token.empty() && session_server_locked(t.host, t.port)) {
+            t.headers.emplace("Authorization", "Bearer " + session_token);
+        }
+        return t;
+    }
+
+    // True when host:port is the verified Tier 1 server that issued the
+    // session. Caller holds transport_mtx.
+    bool session_server_locked(const std::string& host, uint16_t port) const {
+        if (session_node.empty()) return false;
+        const auto lower = [](std::string s) {
+            std::transform(s.begin(), s.end(), s.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return s;
+        };
+        const auto wanted = lower(host);
+        for (const auto& s : tier1.membership().servers) {
+            if (s.node_id == session_node && s.port == port && lower(s.host) == wanted) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std::shared_ptr<PooledClient> pooled_client(const std::string& url) {
+        std::lock_guard lock(transport_mtx);
+        auto& slot = public_clients[url];
+        if (!slot) {
+            slot = std::make_shared<PooledClient>(url);
+            slot->cli.set_connection_timeout(config.connect_timeout_sec);
+            slot->cli.set_read_timeout(config.read_timeout_sec);
+            slot->cli.set_write_timeout(config.write_timeout_sec);
+            slot->cli.set_keep_alive(true);
+            apply_client_socket_options(slot->cli);
+        }
+        return slot;
+    }
+
+    // A failed or closed connection is discarded so the next call dials fresh.
+    void drop_pooled_client(const std::string& url) {
+        std::lock_guard lock(transport_mtx);
+        public_clients.erase(url);
+    }
+
+    // Record a request's outcome against the server it targeted. Another
+    // thread may have rotated or replaced the pool meanwhile; the outcome then
+    // belongs to a server that is no longer current and is not applied.
+    void report(const Target& t, bool ok, double rtt_ms) {
+        std::lock_guard lock(transport_mtx);
+        if (current_base_url_locked() != t.url) return;
+        if (ok) {
+            mark_success_locked();
+            if (latency_monitor) latency_monitor->record_rtt(rtt_ms);
+        } else {
+            mark_failed_locked();
+        }
+    }
+
+    // GET or POST against the current public server, failing over once. A
+    // tree route goes only to verified Tier 1 servers (tier1_http).
+    std::optional<json> http_send(bool post, const std::string& path, const json* body,
+                                  int& status_out) {
+        if (nexus::api::is_tree_route(path)) {
+            return tier1_http(post, path, body, status_out);
+        }
+        const char* verb = post ? "POST" : "GET";
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            const Target t = current_target();
+            try {
+                auto pooled = pooled_client(t.url);
+                httplib::Result res{nullptr, httplib::Error::Unknown};
+                auto rtt_start = std::chrono::steady_clock::now();
+                {
+                    std::lock_guard use(pooled->in_use);
+                    res = post ? pooled->cli.Post(path, t.headers, body->dump(), "application/json")
+                               : pooled->cli.Get(path, t.headers);
+                }
+                auto rtt_end = std::chrono::steady_clock::now();
+
+                if (!res) {
+                    spdlog::warn("[LemonadeNexusClient] {} {} failed: connection error (server {}:{})",
+                                  verb, path, t.host, t.port);
+                    drop_pooled_client(t.url);
+                    report(t, false, 0);
+                    if (attempt == 0 && t.can_fail_over) continue;
+                    status_out = 0;
+                    return std::nullopt;
+                }
+
+                report(t, true,
+                       std::chrono::duration<double, std::milli>(rtt_end - rtt_start).count());
+                status_out = res->status;
+                if (res->status < 200 || res->status >= 300) {
+                    if (!post) {
+                        spdlog::warn("[LemonadeNexusClient] GET {} returned status {}", path,
+                                     res->status);
+                        try {
+                            return json::parse(res->body);
+                        } catch (...) {
+                            return std::nullopt;
+                        }
+                    }
+                    std::string reason;
+                    try {
+                        auto err = json::parse(res->body);
+                        reason = err.value("error", std::string{});
+                    } catch (...) {}
+                    spdlog::warn("[LemonadeNexusClient] POST {} returned status {}{}{}", path,
+                                 res->status, reason.empty() ? "" : ": ", reason);
+                    try {
+                        return json::parse(res->body);
+                    } catch (...) {
+                        json err;
+                        err["error"] = "HTTP " + std::to_string(res->status);
+                        return err;
+                    }
+                }
+                return json::parse(res->body);
+            } catch (const std::exception& e) {
+                spdlog::error("[LemonadeNexusClient] {} {} exception: {}", verb, path, e.what());
+                drop_pooled_client(t.url);
+                report(t, false, 0);
+                if (attempt == 0 && t.can_fail_over) continue;
+                status_out = 0;
+                return std::nullopt;
+            }
+        }
+        status_out = 0;
+        return std::nullopt;
+    }
+
+    std::optional<json> http_get(const std::string& path, int& status_out) {
+        return http_send(false, path, nullptr, status_out);
+    }
+
+    std::optional<json> http_post(const std::string& path, const json& body, int& status_out) {
+        return http_send(true, path, &body, status_out);
+    }
+
+    // --- Private API (verified HTTPS over the mesh, by private FQDN) ---
+
+    // Send a private-API request over the userspace mesh dataplane — the only
+    // path to the server's private routes (the server terminates the tunnel in
+    // userspace + smoltcp, so there is no OS route to its tunnel IP). Egresses a
+    // loopback port bridged through the netstack to the server's private API.
+    //
+    // The private API carries the public cert for server_private_fqdn. We connect
+    // BY that FQDN (SNI + certificate verification) while the addr-map lands the
+    // socket on the loopback egress the netstack opened — split-horizon DNS:
+    // verified public TLS over the mesh, with no by-IP or verification-disabled
+    // path.
+    //
+    // Returns the parsed body if the dataplane served the request (success OR
+    // error status); `served` distinguishes "handled" from "not attempted / no
+    // response" so the caller can fall through to legacy transports.
+    std::optional<json> mesh_request(const char* method, const std::string& path,
+                                     const std::string& body, int& status_out,
+                                     bool& served, bool use_breaker = true) {
+        served = false;
+        if (const auto refusal = private_api_refusal(); !refusal.empty()) {
+            spdlog::warn("[LemonadeNexusClient] private(mesh) {} {} not sent: {}", method, path,
+                         refusal);
+            return std::nullopt;
+        }
+        std::lock_guard egress_lock(private_api_mtx);
+        if (!meshplane.is_active() || server_tunnel_ip.empty() || server_private_fqdn.empty()) {
+            spdlog::warn("[LemonadeNexusClient] private(mesh) {} {} SKIP "
+                         "(active={}, tunnel_ip='{}', fqdn='{}')",
+                         method, path, meshplane.is_active(), server_tunnel_ip,
+                         server_private_fqdn);
+            return std::nullopt;
+        }
+        // The breaker throttles the periodic callers (heartbeat every 3 s, peer
+        // refresh) so a down tunnel can't block them repeatedly. Callers acting
+        // on a user request skip it: otherwise a failing heartbeat keeps the
+        // breaker armed and starves every interactive call.
+        int64_t now_ms = steady_now_ms();
+        if (use_breaker && now_ms < mesh_breaker_until_ms.load(std::memory_order_relaxed)) {
+            spdlog::debug("[LemonadeNexusClient] private(mesh) {} {} fail-fast (breaker open)",
+                          method, path);
+            return std::nullopt;
+        }
+        uint16_t lp = meshplane.tcp_egress(server_tunnel_ip, private_port);
+        spdlog::debug("[LemonadeNexusClient] private(mesh) {} {} -> egress {}:{} = 127.0.0.1:{}",
+                      method, path, server_tunnel_ip, private_port, lp);
+        if (lp == 0) {
+            mesh_breaker_until_ms.store(now_ms + kMeshBreakerCooldownMs, std::memory_order_relaxed);
+            return std::nullopt;
+        }
+
+        // The packet that triggers a boringtun handshake is dropped while the
+        // session is negotiated, so a cold or expired tunnel loses the first
+        // connect. By the time it fails the session is usually live — retry
+        // once rather than surfacing a failure the caller can't act on.
+        //
+        // Only a GET is always safe to send again. The server may already have
+        // applied a POST whose response was lost, so a POST is retried only
+        // when httplib reports that no request byte was written.
+        const bool is_get = std::string(method) == "GET";
+        // Set when the final attempt failed before any request byte went
+        // out: the path to the server is dead, not merely slow.
+        bool unanswered = false;
+        const auto generation = private_transport_generation.load(std::memory_order_relaxed);
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            try {
+                auto cli = private_client(lp);
+                httplib::Result res = is_get
+                    ? cli->Get(path, auth_headers())
+                    : cli->Post(path, auth_headers(), body, "application/json");
+                if (res) {
+                    served = true;
+                    status_out = res->status;
+                    mesh_breaker_until_ms.store(0, std::memory_order_relaxed);  // healthy
+                    private_path_answered();
+                    spdlog::debug("[LemonadeNexusClient] private(mesh) {} {} -> HTTP {}",
+                                  method, path, res->status);
+                    if (res->status == nexus::api::kTreeRouteRefusedStatus) {
+                        // The session's server no longer serves the tree: it
+                        // left Tier 1 at an epoch boundary. Verify the
+                        // membership again and move the session.
+                        tier1.mark_stale();
+                        start_session_move("the session's server no longer serves the tree", 0);
+                    }
+                    try { return json::parse(res->body); }
+                    catch (...) {
+                        if (res->status >= 200 && res->status < 300) return std::nullopt;
+                        json err; err["error"] = "HTTP " + std::to_string(res->status);
+                        return err;
+                    }
+                }
+                // A pooled connection the server has since closed fails on use;
+                // drop it so the retry dials a fresh one.
+                drop_private_client();
+                if (attempt == 0 && (is_get || request_not_sent(res.error()))) {
+                    spdlog::debug("[LemonadeNexusClient] private(mesh) {} {} retrying "
+                                  "after {}", method, path, httplib::to_string(res.error()));
+                    continue;
+                }
+                spdlog::warn("[LemonadeNexusClient] private(mesh) {} {} NO RESPONSE "
+                             "(httplib err={})", method, path, httplib::to_string(res.error()));
+                unanswered = request_not_sent(res.error());
+                break;
+            } catch (const std::exception& e) {
+                // An exception does not show how much of the request was sent.
+                drop_private_client();
+                if (attempt == 0 && is_get) continue;
+                spdlog::warn("[LemonadeNexusClient] private(mesh) {} {} EXCEPTION: {}",
+                             method, path, e.what());
+                break;
+            }
+        }
+        // A failure that a transport reset caused says nothing about the path.
+        if (generation != private_transport_generation.load(std::memory_order_relaxed)) {
+            return std::nullopt;
+        }
+        if (use_breaker) {
+            mesh_breaker_until_ms.store(now_ms + kMeshBreakerCooldownMs,
+                                        std::memory_order_relaxed);
+        }
+        if (unanswered) note_private_path_unanswered();
+        return std::nullopt;
+    }
+
+    // Private routes exist ONLY on the server's private API, reachable ONLY over
+    // the mesh dataplane — no public or OS-routed fallback (the public API 404s
+    // them and the private FQDN has no OS route). Fail fast instead.
+    std::optional<json> private_http_get(const std::string& path, int& status_out,
+                                         bool use_breaker = true) {
+        bool served = false;
+        auto r = mesh_request("GET", path, "", status_out, served, use_breaker);
+        if (!served) status_out = 0;
+        return served ? r : std::nullopt;
+    }
+
+    std::optional<json> private_http_post(const std::string& path, const json& body,
+                                          int& status_out, bool use_breaker = true) {
+        bool served = false;
+        auto r = mesh_request("POST", path, body.dump(), status_out, served, use_breaker);
+        if (!served) status_out = 0;
+        return served ? r : std::nullopt;
+    }
+
+    // Discover additional servers via /api/servers
+    void discover_servers() {
+        if (discovered()) return;
+        int status = 0;
+        auto resp = http_get("/api/servers", status);
+        if (!resp || !resp->is_array()) return;
+
+        std::vector<ServerEndpoint> listed;
+        for (const auto& srv : *resp) {
+            uint16_t port = srv.value("http_port", uint16_t{9100});
+
+            // The public API is verified HTTPS, so we can only add a discovered
+            // server by its certificate FQDN. Skip IP-only entries rather than
+            // connect unverified (no plaintext / verify-off path).
+            std::string host = srv.value("fqdn", "");
+            if (host.empty()) {
+                spdlog::debug("[LemonadeNexusClient] skipping discovered server with no "
+                              "cert FQDN (endpoint={})", srv.value("endpoint", ""));
+                continue;
+            }
+            listed.push_back({host, port, true});
+        }
+        std::lock_guard lock(transport_mtx);
+        add_pool_servers_locked(listed);
+        has_discovered = true;
+    }
+
+    // Refresh health of all servers in the pool. Probes run without the
+    // transport lock; results apply to the servers still in the pool.
+    void refresh_health() {
+        auto now_ms = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+
+        std::vector<ServerEndpoint> endpoints;
+        {
+            std::lock_guard lock(transport_mtx);
+            for (const auto& s : server_pool) endpoints.push_back(s.endpoint);
+        }
+        for (const auto& ep : endpoints) {
+            bool ok = false;
+            try {
+                httplib::Client cli(base_url(ep));
+                cli.set_connection_timeout(config.connect_timeout_sec);
+                cli.set_read_timeout(config.read_timeout_sec);
+                apply_client_socket_options(cli);
+                auto res = cli.Get("/api/health");
+                ok = res && res->status == 200;
+            } catch (...) {
+            }
+            std::lock_guard lock(transport_mtx);
+            for (auto& s : server_pool) {
+                if (s.endpoint.host != ep.host || s.endpoint.port != ep.port) continue;
+                s.last_health_check_ms = now_ms;
+                if (ok) {
+                    s.healthy = true;
+                    s.consecutive_failures = 0;
+                } else {
+                    s.consecutive_failures++;
+                    if (s.consecutive_failures >= 3) s.healthy = false;
+                }
+            }
+        }
+    }
+
+    // Sign a delta with the current identity
+    void sign_delta(TreeDelta& delta) {
+        if (!identity.is_valid()) {
+            spdlog::warn("[LemonadeNexusClient] cannot sign delta: no identity set");
+            return;
+        }
+        delta.signer_pubkey = identity.pubkey_string();
+        delta.timestamp = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+
+        auto canonical = canonical_delta_json(delta);
+        auto canonical_bytes = std::vector<uint8_t>(canonical.begin(), canonical.end());
+        auto sig = identity.sign(canonical_bytes);
+        delta.signature = Identity::to_base64(sig);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Constructor / Destructor / Move
+// ---------------------------------------------------------------------------
+
+LemonadeNexusClient::LemonadeNexusClient(const ServerConfig& config)
+    : impl_{std::make_unique<Impl>(config)}
+{
+    ignore_sigpipe_once();
+    impl_->owner = this;
+}
+
+LemonadeNexusClient::~LemonadeNexusClient() {
+    if (!impl_) return;
+    impl_->close();
+    disable_mesh();
+}
+
+LemonadeNexusClient::LemonadeNexusClient(LemonadeNexusClient&& other) noexcept
+    : impl_{std::move(other.impl_)} {
+    if (impl_) impl_->owner = this;
+}
+
+LemonadeNexusClient& LemonadeNexusClient::operator=(LemonadeNexusClient&& other) noexcept {
+    if (this != &other) {
+        if (impl_) impl_->close();
+        impl_ = std::move(other.impl_);
+        if (impl_) impl_->owner = this;
+    }
+    return *this;
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+void LemonadeNexusClient::set_identity(const Identity& identity) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->identity = identity;
+}
+
+Identity LemonadeNexusClient::identity() const {
+    std::lock_guard lock(impl_->mutex);
+    return impl_->identity;
+}
+
+// ---------------------------------------------------------------------------
+// Tier 1 servers
+// ---------------------------------------------------------------------------
+
+StatusResult LemonadeNexusClient::set_genesis_key(const std::string& genesis_pubkey_b64,
+                                                  uint64_t min_epoch) {
+    StatusResult result;
+    if (!impl_->tier1.set_genesis_key(genesis_pubkey_b64, min_epoch)) {
+        result.error = "the Genesis key must be a base64 Ed25519 public key (32 bytes)";
+        return result;
+    }
+    result.ok = true;
+    return result;
+}
+
+StatusResult LemonadeNexusClient::set_epoch_floor(const std::string& chain, uint64_t min_epoch) {
+    StatusResult result;
+    if (!impl_->tier1.set_epoch_floor(chain, min_epoch)) {
+        result.error = "the chain must be the 64 hex digits of a verified membership";
+        return result;
+    }
+    result.ok = true;
+    return result;
+}
+
+bool LemonadeNexusClient::network_refounded() const {
+    return impl_->tier1.network_refounded();
+}
+
+Result<GenesisKeyDiscovery> LemonadeNexusClient::discover_genesis_key(
+    const std::vector<ServerEndpoint>& hosts) {
+    if (impl_->tier1.has_genesis_key()) {
+        Result<GenesisKeyDiscovery> refused;
+        refused.error = "a Genesis key is already pinned; discovery never replaces it";
+        refused.http_status = 409;
+        return refused;
+    }
+    if (impl_->config.auto_discover) impl_->discover_servers();
+    auto candidates = hosts;
+    const auto pool = impl_->tier1_sources();
+    candidates.insert(candidates.end(), pool.begin(), pool.end());
+
+    // Agreement needs kGenesisDiscoveryMinHosts distinct hosts. A client
+    // that knows fewer (one seed, or a seed whose /api/servers did not
+    // answer) asks the region's SEIP records for the rest; they only add
+    // candidates, and the domain and agreement rules still decide.
+    std::set<std::string> distinct;
+    for (const auto& ep : candidates) {
+        std::string name = ep.host;
+        std::transform(name.begin(), name.end(), name.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (!name.empty() && name.back() == '.') name.pop_back();
+        if (!name.empty()) distinct.insert(name);
+    }
+    std::vector<ServerEndpoint> region;
+    if (distinct.size() < kGenesisDiscoveryMinHosts) {
+        if (const auto target = impl_->discovery_target()) {
+            region = impl_->region_servers(*target, "Genesis key discovery knows fewer than 3 "
+                                                    "hosts");
+            for (const auto& ep : region) {
+                const bool known = std::any_of(
+                    candidates.begin(), candidates.end(),
+                    [&ep](const ServerEndpoint& o) { return Impl::same_endpoint(o, ep); });
+                if (!known) candidates.push_back(ep);
+            }
+        } else {
+            spdlog::warn("[LemonadeNexusClient] Genesis key discovery knows {} host(s), fewer "
+                         "than the {} it needs, and no discovery domain and region: no region "
+                         "lookup (set ServerConfig::discovery_domain and discovery_region, or "
+                         "call set_discovery_target)",
+                         distinct.size(), kGenesisDiscoveryMinHosts);
+        }
+    }
+    auto found = impl_->tier1.discover_genesis_key(candidates);
+    if (found.ok && !region.empty()) {
+        // The region's servers answered: keep them as sources for the Tier 1
+        // refresh that follows and for the public API.
+        std::lock_guard lock(impl_->transport_mtx);
+        impl_->add_pool_servers_locked(region);
+    }
+    return found;
+}
+
+StatusResult LemonadeNexusClient::set_discovery_target(const std::string& domain,
+                                                       const std::string& region) {
+    StatusResult result;
+    if (!valid_discovery_target(domain, region)) {
+        result.error = "the network domain and region must be hostname labels";
+        return result;
+    }
+    std::lock_guard lock(impl_->transport_mtx);
+    impl_->config.discovery_domain = domain;
+    impl_->config.discovery_region = region;
+    result.ok = true;
+    return result;
+}
+
+Result<Tier1Membership> LemonadeNexusClient::refresh_tier1() {
+    return impl_->refresh_tier1();
+}
+
+void LemonadeNexusClient::set_region_discovery(RegionDiscovery discovery) {
+    std::lock_guard lock(impl_->transport_mtx);
+    if (discovery) impl_->region_discovery = std::move(discovery);
+}
+
+std::vector<ServerEndpoint> LemonadeNexusClient::known_servers() const {
+    std::lock_guard lock(impl_->transport_mtx);
+    std::vector<ServerEndpoint> out;
+    for (const auto& s : impl_->server_pool) out.push_back(s.endpoint);
+    return out;
+}
+
+Tier1Membership LemonadeNexusClient::tier1_membership() const {
+    return impl_->tier1.membership();
+}
+
+std::optional<std::chrono::milliseconds> LemonadeNexusClient::tier1_verified_age() const {
+    return impl_->tier1.verified_age();
+}
+
+Tier1WalkProgress LemonadeNexusClient::tier1_walk_progress() const {
+    return impl_->tier1.walk_progress();
+}
+
+// ---------------------------------------------------------------------------
+// Session state
+// ---------------------------------------------------------------------------
+
+void LemonadeNexusClient::set_session_token(const std::string& token) {
+    // Setting the token the SDK already holds keeps its server binding; any
+    // other token names no issuing server.
+    std::lock_guard lock(impl_->transport_mtx);
+    if (impl_->session_token != token) {
+        impl_->session_token = token;
+        impl_->session_node.clear();
+    }
+}
+
+std::string LemonadeNexusClient::session_token() const {
+    return impl_->token();
+}
+
+std::string LemonadeNexusClient::node_id() const {
+    std::lock_guard lock(impl_->mutex);
+    return impl_->node_id;
+}
+
+void LemonadeNexusClient::set_node_id(const std::string& id) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->node_id = id;
+}
+
+namespace {
+std::mutex& ca_bundle_mutex() {
+    static std::mutex m;
+    return m;
+}
+std::string& ca_bundle_storage() {
+    static std::string path;
+    return path;
+}
+}  // namespace
+
+void set_ca_bundle_path(std::string path) {
+    std::lock_guard lock(ca_bundle_mutex());
+    ca_bundle_storage() = std::move(path);
+}
+
+std::string ca_bundle_path() {
+    std::lock_guard lock(ca_bundle_mutex());
+    return ca_bundle_storage();
+}
+
+std::optional<std::string> invite_format_error(std::string_view invite) {
+    constexpr std::string_view kTokenPrefix = "lnk_";
+    constexpr std::size_t kCodeDigits = 8;
+    constexpr std::size_t kTokenHexDigits = 64;
+    const auto all = [&](std::string_view s, auto&& ok) {
+        return std::all_of(s.begin(), s.end(),
+                           [&](char c) { return ok(static_cast<unsigned char>(c)); });
+    };
+    if (invite.size() == kCodeDigits && all(invite, [](unsigned char c) { return std::isdigit(c) != 0; })) {
+        return std::nullopt;
+    }
+    if (invite.starts_with(kTokenPrefix) &&
+        invite.size() == kTokenPrefix.size() + kTokenHexDigits &&
+        all(invite.substr(kTokenPrefix.size()),
+            [](unsigned char c) { return std::isxdigit(c) != 0; })) {
+        return std::nullopt;
+    }
+    return "an invite is an 8-digit code or a link token (lnk_ and 64 hex digits)";
+}
+
+bool LemonadeNexusClient::set_link_token(const std::string& token) {
+    if (!token.empty() && invite_format_error(token)) return false;
+    std::lock_guard lock(impl_->mutex);
+    impl_->link_token = token;
+    return true;
+}
+
+void LemonadeNexusClient::set_invite_hop_delay(std::chrono::milliseconds first_hop) {
+    impl_->invite_hop_delay_ms.store(std::max<int64_t>(first_hop.count(), 0));
+}
+
+void LemonadeNexusClient::set_inference_node(bool inference) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->inference_node = inference;
+}
+
+bool LemonadeNexusClient::set_device_name(const std::string& name) {
+    // Peers drop a listed peer whose hostname carries one of these characters
+    // (fetch_mesh_peers), so such a name would hide the device.
+    constexpr std::string_view kRefused = ";|&$`(){}<>'\"\\";
+    const bool usable =
+        name.empty() ||
+        (name.size() <= 64 && !nexus::tree::device_label(name).empty() &&
+         std::none_of(name.begin(), name.end(), [&](unsigned char c) {
+             return c < 0x20 || c == 0x7f || kRefused.find(static_cast<char>(c)) != std::string_view::npos;
+         }));
+    if (!usable) return false;
+    std::lock_guard lock(impl_->mutex);
+    impl_->device_name = name;
+    impl_->omit_device_name_once = false;
+    return true;
+}
+
+Result<nlohmann::json> LemonadeNexusClient::create_link_token(
+        uint32_t ttl_sec, const std::string& target_node_id,
+        const std::vector<std::string>& permissions) {
+    Result<nlohmann::json> result;
+    json body = {{"ttl_sec", ttl_sec}};
+    if (!target_node_id.empty()) body["target_node_id"] = target_node_id;
+    if (!permissions.empty()) body["permissions"] = permissions;
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/link/token", body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "link token request failed (server unreachable)";
+        return result;
+    }
+    if (status != 200) {
+        result.error = resp->value("error", "link token request failed");
+        return result;
+    }
+
+    result.ok    = true;
+    result.value = *resp;
+    return result;
+}
+
+namespace {
+
+/// A private-API JSON answer as a Result: ok for 200 and for 202 (a tree
+/// operation that has not committed yet), else the server's "error".
+Result<nlohmann::json> json_result(const std::optional<json>& resp, int status,
+                                   const char* what) {
+    Result<nlohmann::json> result;
+    result.http_status = status;
+    if (!resp) {
+        result.error = std::string(what) + " failed (server unreachable)";
+        return result;
+    }
+    if (status != 200 && status != 202) {
+        result.error = resp->value("error", std::string(what) + " failed");
+        result.value = *resp;
+        return result;
+    }
+    result.ok = true;
+    result.value = *resp;
+    return result;
+}
+
+}  // namespace
+
+Result<nlohmann::json> LemonadeNexusClient::accept_invite(const std::string& link_token) {
+    if (link_token.empty()) {
+        Result<nlohmann::json> result;
+        result.error = "link token required";
+        return result;
+    }
+    if (const auto malformed = invite_format_error(link_token)) {
+        Result<nlohmann::json> result;
+        result.error = *malformed;
+        return result;
+    }
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/link/accept", json{{"link_token", link_token}},
+                                         status);
+    return json_result(resp, status, "invite acceptance");
+}
+
+Result<nlohmann::json> LemonadeNexusClient::list_memberships() {
+    int status = 0;
+    auto resp = impl_->private_http_get("/api/tree/memberships", status);
+    return json_result(resp, status, "membership list");
+}
+
+Result<DeltaResult> LemonadeNexusClient::leave_membership(const std::string& group_node_id) {
+    std::string own_key;
+    {
+        std::lock_guard lock(impl_->mutex);
+        if (impl_->identity.is_valid()) own_key = impl_->identity.pubkey_string();
+    }
+    if (own_key.empty()) {
+        Result<DeltaResult> result;
+        result.error = "no identity";
+        return result;
+    }
+    // Removing this identity's own entry is the leave; the server allows it
+    // without admin only for a group entered through an invite.
+    return set_member_permissions(group_node_id, own_key, {});
+}
+
+Result<nlohmann::json> LemonadeNexusClient::move_node(const std::string& node_id,
+                                                      const std::string& new_parent_id) {
+    if (node_id.empty() || new_parent_id.empty()) {
+        Result<nlohmann::json> result;
+        result.error = "node_id and new_parent_id required";
+        return result;
+    }
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/tree/node/move/" + node_id,
+                                         json{{"parent_id", new_parent_id}}, status);
+    return json_result(resp, status, "move");
+}
+
+Result<DeviceNameCheck> LemonadeNexusClient::check_device_name(const std::string& name,
+                                                               const std::string& group_node_id,
+                                                               const std::string& link_token) {
+    Result<DeviceNameCheck> result;
+    if (group_node_id.empty() && link_token.empty()) {
+        result.error = "group_node_id or link_token required";
+        return result;
+    }
+    if (group_node_id.empty()) {
+        if (const auto malformed = invite_format_error(link_token)) {
+            result.error = *malformed;
+            return result;
+        }
+    }
+    json body{{"name", name}};
+    if (!group_node_id.empty()) body["group_node_id"] = group_node_id;
+    else body["link_token"] = link_token;
+
+    // A tree route on the public API: sent to a verified Tier 1 server, with
+    // the session when that server issued it. No mesh session is needed.
+    int status = 0;
+    auto resp = impl_->http_post("/api/tree/device-name/check", body, status);
+    result.http_status = status;
+    if (!resp) {
+        result.error = "device name check failed (server unreachable)";
+        return result;
+    }
+    if (status != 200) {
+        result.error = resp->value("error", std::string{"device name check failed"});
+        return result;
+    }
+    result.value.label      = resp->value("label", std::string{});
+    result.value.available  = resp->value("available", false);
+    result.value.suggestion = resp->value("suggestion", std::string{});
+    if (const auto it = resp->find("conflicts"); it != resp->end() && it->is_array()) {
+        for (const auto& c : *it) {
+            if (!c.is_object()) continue;
+            result.value.conflicts.push_back({c.value("node_id", std::string{}),
+                                              c.value("device_name", std::string{})});
+        }
+    }
+    result.ok = true;
+    return result;
+}
+
+Result<nlohmann::json> LemonadeNexusClient::delete_account() {
+    Identity local_identity;
+    {
+        std::lock_guard lock(impl_->mutex);
+        local_identity = impl_->identity;
+    }
+    if (!local_identity.is_valid()) {
+        Result<nlohmann::json> result;
+        result.error = "no identity set — call set_identity() first";
+        return result;
+    }
+
+    // The account is gone once the server refuses the key as revoked: the
+    // deletion revokes the key when it commits, before its answer travels
+    // back over a tunnel the deletion itself may tear down. A request that
+    // gets no answer is therefore settled by one more authentication.
+    const auto account_gone = [this] {
+        const auto probe = authenticate_ed25519();
+        return !probe.ok && probe.error == nexus::auth::kIdentityRevokedError;
+    };
+    const auto end_account = [this](json value) {
+        Result<nlohmann::json> result;
+        result.ok          = true;
+        result.http_status = 200;
+        result.value       = std::move(value);
+        // The account is gone: its key is revoked and its node removed, so
+        // the session and the mesh session end here.
+        disable_mesh();
+        impl_->meshplane.stop();
+        {
+            std::lock_guard lock(impl_->mutex);
+            impl_->node_id.clear();
+        }
+        // Drop the token with its server binding, so no session move joins
+        // the deleted account again.
+        set_session_token({});
+        spdlog::info("[LemonadeNexusClient] deleted account {}{}",
+                     result.value.value("account_id", std::string{}),
+                     result.value.contains("confirmed") ? " (confirmed by the revoked key)" : "");
+        return result;
+    };
+    const json deleted_by_revocation = {{"success", true},
+                                        {"status", "deleted"},
+                                        {"account_id", ""},
+                                        {"confirmed", "revoked"}};
+
+    // The challenge comes from the session's server over the private API, so
+    // the server that verifies the proof is the one that issued it.
+    int status = 0;
+    auto challenge_resp =
+        impl_->private_http_post("/api/account/delete/challenge", json::object(), status);
+    if (!challenge_resp || status != 200) {
+        if (!challenge_resp && account_gone()) return end_account(deleted_by_revocation);
+        return json_result(challenge_resp, status, "account deletion challenge");
+    }
+    const auto challenge_b64 = challenge_resp->value("challenge", std::string{});
+    std::vector<uint8_t> challenge;
+    try {
+        challenge = Identity::from_base64(challenge_b64);
+    } catch (const std::exception&) {
+        challenge.clear();
+    }
+    if (challenge.empty()) {
+        Result<nlohmann::json> result;
+        result.http_status = status;
+        result.error = "server returned an invalid challenge";
+        return result;
+    }
+
+    const auto& pubkey = local_identity.public_key();
+    const auto message = nexus::auth::account_delete_proof_message(
+        challenge, std::span<const uint8_t>(pubkey.data(), pubkey.size()));
+    const auto signature = local_identity.sign(std::span<const uint8_t>(message));
+    const json body = {{"challenge", challenge_b64},
+                       {"signature", Identity::to_base64(std::span<const uint8_t>(signature))}};
+    auto resp = impl_->private_http_post("/api/account/delete", body, status);
+    if (!resp && account_gone()) return end_account(deleted_by_revocation);
+    auto result = json_result(resp, status, "account deletion");
+    if (result.ok && status == 200) return end_account(std::move(result.value));
+    return result;
+}
+
+StatusResult LemonadeNexusClient::expose_service(uint16_t vport, const std::string& target) {
+    StatusResult result;
+    if (vport == 0 || target.empty()) {
+        result.error = "vport and target required";
+        return result;
+    }
+    if (!impl_->meshplane.is_active()) {
+        result.error = "mesh dataplane not active — join first";
+        return result;
+    }
+    if (!impl_->apply_ingress(vport, target, result.error)) return result;
+    {
+        std::lock_guard lock(impl_->mutex);
+        auto& v = impl_->exposed_services;
+        bool known = false;
+        for (const auto& e : v) {
+            if (e.first == vport && e.second == target) { known = true; break; }
+        }
+        if (!known) v.emplace_back(vport, target);
+    }
+    result.ok = true;
+    return result;
+}
+
+std::vector<std::pair<uint16_t, std::string>> LemonadeNexusClient::exposed_services() const {
+    std::lock_guard lock(impl_->mutex);
+    return impl_->exposed_services;
+}
+
+StatusResult LemonadeNexusClient::set_service_catalog(uint16_t vport, const nlohmann::json& catalog) {
+    auto result = impl_->service_ingress.set_catalog(vport, catalog);
+    if (!result.ok) return result;
+    // An exposure of this port that the netstack bridges raw moves behind
+    // the front end now. The last exposure of a port is the one in force.
+    std::string target;
+    {
+        std::lock_guard lock(impl_->mutex);
+        for (const auto& [exposed_port, exposed_target] : impl_->exposed_services) {
+            if (exposed_port == vport) target = exposed_target;
+        }
+    }
+    if (target.empty() || !impl_->meshplane.is_active()) return result;
+    std::string error;
+    if (!impl_->apply_ingress(vport, target, error)) {
+        result.ok = false;
+        result.http_status = 503;
+        result.error = error;
+    }
+    return result;
+}
+
+nlohmann::json LemonadeNexusClient::service_catalog(uint16_t vport) const {
+    return impl_->service_ingress.catalog(vport);
+}
+
+void LemonadeNexusClient::set_ingress_denied_callback(IngressDeniedCallback cb) {
+    impl_->service_ingress.set_denied_callback(std::move(cb));
+}
+
+uint16_t LemonadeNexusClient::open_egress(const std::string& dst_ip, uint16_t dst_port) {
+    return impl_->meshplane.tcp_egress(dst_ip, dst_port);
+}
+
+void LemonadeNexusClient::close_egress(const std::string& dst_ip, uint16_t dst_port) {
+    impl_->meshplane.close_egress(dst_ip, dst_port);
+}
+
+// ---------------------------------------------------------------------------
+// Health
+// ---------------------------------------------------------------------------
+
+Result<HealthStatus> LemonadeNexusClient::check_health() {
+    Result<HealthStatus> result;
+    int status = 0;
+    auto resp = impl_->http_get("/api/health", status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "server unreachable";
+        return result;
+    }
+
+    // A session whose server left Tier 1 can no longer carry tree traffic:
+    // report it, so the caller joins again through another Tier 1 server.
+    std::string session_node;
+    {
+        std::lock_guard lock(impl_->transport_mtx);
+        session_node = impl_->session_node;
+    }
+    if (!session_node.empty()) {
+        if (const auto refusal = impl_->private_api_refusal(); !refusal.empty()) {
+            result.http_status = 0;
+            result.error = refusal;
+            return result;
+        }
+    }
+
+    result.ok = true;
+    result.value.status          = resp->value("status", "");
+    result.value.service         = resp->value("service", "");
+    result.value.dns_base_domain = resp->value("dns_base_domain", "");
+    result.value.rp_id           = resp->value("rp_id", "");
+
+    // Auto-discover additional servers after first successful health check
+    if (result.ok && impl_->config.auto_discover && !impl_->discovered()) {
+        impl_->discover_servers();
+    }
+
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Server discovery & health
+// ---------------------------------------------------------------------------
+
+void LemonadeNexusClient::discover_servers() {
+    std::lock_guard lock(impl_->mutex);
+    {
+        std::lock_guard transport(impl_->transport_mtx);
+        impl_->has_discovered = false; // reset so discover_servers() actually runs
+    }
+    impl_->discover_servers();
+}
+
+void LemonadeNexusClient::refresh_health() {
+    std::lock_guard lock(impl_->mutex);
+    impl_->refresh_health();
+}
+
+// ---------------------------------------------------------------------------
+// Latency-based auto-switching
+// ---------------------------------------------------------------------------
+
+void LemonadeNexusClient::enable_auto_switching(const LatencyConfig& config) {
+    std::lock_guard lock(impl_->mutex);
+
+    // Stop any existing monitor
+    std::unique_ptr<LatencyMonitor> previous;
+    {
+        std::lock_guard transport(impl_->transport_mtx);
+        previous = std::move(impl_->latency_monitor);
+    }
+    if (previous) {
+        previous->stop();
+    }
+
+    auto monitor = std::make_unique<LatencyMonitor>(config);
+
+    // Populate with current server pool
+    std::vector<ServerConfig> server_configs;
+    std::optional<ServerConfig> current;
+    {
+        std::lock_guard transport(impl_->transport_mtx);
+        for (const auto& s : impl_->server_pool) {
+            ServerConfig sc;
+            sc.servers = {s.endpoint};
+            server_configs.push_back(sc);
+        }
+        if (!impl_->server_pool.empty()) {
+            ServerConfig cur;
+            cur.servers = {impl_->server_pool[impl_->current_server].endpoint};
+            current = cur;
+        }
+    }
+    monitor->set_servers(server_configs);
+    if (current) {
+        monitor->set_current_server(*current);
+    }
+
+    // The callback touches only the transport state, so it takes only the
+    // transport lock: taking `mutex` here could deadlock with a stop() that
+    // waits for this monitor's thread while holding `mutex`.
+    monitor->set_switch_callback(
+        [this](const ServerConfig& new_server) {
+            std::lock_guard inner_lock(impl_->transport_mtx);
+            if (new_server.servers.empty()) return;
+
+            const auto& ep = new_server.servers[0];
+
+            // Find this endpoint in our server pool and switch to it
+            for (std::size_t i = 0; i < impl_->server_pool.size(); ++i) {
+                if (impl_->server_pool[i].endpoint.host == ep.host &&
+                    impl_->server_pool[i].endpoint.port == ep.port) {
+                    impl_->current_server = i;
+                    spdlog::info("[LemonadeNexusClient] auto-switched to server {}:{}",
+                                  ep.host, ep.port);
+                    break;
+                }
+            }
+        });
+
+    auto* started = monitor.get();
+    {
+        std::lock_guard transport(impl_->transport_mtx);
+        impl_->latency_monitor = std::move(monitor);
+    }
+    started->start();
+    spdlog::info("[LemonadeNexusClient] latency-based auto-switching enabled "
+                 "(threshold={:.0f}ms, hysteresis={:.0f}%, cooldown={}s)",
+                 config.threshold_ms, config.hysteresis * 100.0, config.cooldown_sec);
+}
+
+void LemonadeNexusClient::disable_auto_switching() {
+    std::lock_guard lock(impl_->mutex);
+    std::unique_ptr<LatencyMonitor> previous;
+    {
+        std::lock_guard transport(impl_->transport_mtx);
+        previous = std::move(impl_->latency_monitor);
+    }
+    if (previous) {
+        previous->stop();
+        spdlog::info("[LemonadeNexusClient] latency-based auto-switching disabled");
+    }
+}
+
+double LemonadeNexusClient::current_latency_ms() const {
+    std::lock_guard lock(impl_->mutex);
+    if (impl_->latency_monitor) {
+        return impl_->latency_monitor->current_rtt_ms();
+    }
+    return 0.0;
+}
+
+std::vector<ServerLatency> LemonadeNexusClient::server_latencies() const {
+    std::lock_guard lock(impl_->mutex);
+    if (impl_->latency_monitor) {
+        return impl_->latency_monitor->get_stats();
+    }
+    return {};
+}
+
+// ---------------------------------------------------------------------------
+// Authentication
+// ---------------------------------------------------------------------------
+
+Result<AuthResponse> LemonadeNexusClient::authenticate_ed25519() {
+    Result<AuthResponse> result;
+
+    // Copy identity under lock to avoid racing with other threads
+    Identity local_identity;
+    {
+        std::lock_guard lock(impl_->mutex);
+        local_identity = impl_->identity;
+    }
+
+    if (!local_identity.is_valid()) {
+        result.error = "no identity set — call set_identity() first";
+        return result;
+    }
+
+    // Phase 1: Request a challenge nonce from the server
+    auto pubkey_b64 = Identity::to_base64(
+        std::span<const uint8_t>(local_identity.public_key()));
+
+    json challenge_body;
+    challenge_body["pubkey"] = pubkey_b64;
+
+    int challenge_status = 0;
+    auto challenge_resp = impl_->http_post("/api/auth/challenge", challenge_body, challenge_status);
+    if (!challenge_resp) {
+        result.error = "challenge request failed";
+        result.http_status = challenge_status;
+        return result;
+    }
+
+    auto challenge_b64 = challenge_resp->value("challenge", std::string{});
+    if (challenge_b64.empty()) {
+        result.error = challenge_resp->value("error", std::string{"server returned empty challenge"});
+        result.http_status = challenge_status;
+        return result;
+    }
+
+    // Phase 2: Sign the challenge with our Ed25519 private key
+    auto challenge_bytes = Identity::from_base64(challenge_b64);
+    auto signature = local_identity.sign(std::span<const uint8_t>(challenge_bytes));
+    auto signature_b64 = Identity::to_base64(std::span<const uint8_t>(signature));
+
+    // Phase 3: Authenticate with the signed challenge
+    json auth_body;
+    auth_body["method"]    = "ed25519";
+    auth_body["pubkey"]    = pubkey_b64;
+    auth_body["challenge"] = challenge_b64;
+    auth_body["signature"] = signature_b64;
+
+    int status = 0;
+    auto resp = impl_->http_post("/api/auth", auth_body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "ed25519 auth request failed";
+        return result;
+    }
+
+    result.value.authenticated = resp->value("authenticated", false);
+    result.value.user_id       = resp->value("user_id", "");
+    result.value.session_token = resp->value("session_token", "");
+    result.value.error         = resp->value("error", resp->value("error_message", ""));
+
+    if (result.value.authenticated) {
+        result.ok = true;
+        std::lock_guard lock(impl_->mutex);
+        impl_->set_token(result.value.session_token);
+    } else {
+        result.error = result.value.error;
+    }
+    return result;
+}
+
+Result<AuthResponse> LemonadeNexusClient::authenticate(const std::string& username,
+                                                         const std::string& password) {
+    Result<AuthResponse> result;
+    json body;
+    body["method"]   = "password";
+    body["username"] = username;
+    body["password"] = password;
+
+    if (impl_->identity.is_valid()) {
+        body["client_pubkey"] = impl_->identity.pubkey_string();
+    }
+
+    int status = 0;
+    auto resp = impl_->http_post("/api/auth", body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "authentication request failed";
+        return result;
+    }
+
+    result.value.authenticated = resp->value("authenticated", false);
+    result.value.user_id       = resp->value("user_id", "");
+    result.value.session_token = resp->value("session_token", "");
+    result.value.error         = resp->value("error", resp->value("error_message", ""));
+
+    if (result.value.authenticated) {
+        result.ok = true;
+        std::lock_guard lock(impl_->mutex);
+        impl_->set_token(result.value.session_token);
+    } else {
+        result.error = result.value.error;
+    }
+    return result;
+}
+
+Result<AuthResponse> LemonadeNexusClient::authenticate_passkey(const nlohmann::json& passkey_data) {
+    Result<AuthResponse> result;
+    json body = passkey_data;
+    body["method"] = "passkey";
+
+    int status = 0;
+    auto resp = impl_->http_post("/api/auth", body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "passkey auth request failed";
+        return result;
+    }
+
+    result.value.authenticated = resp->value("authenticated", false);
+    result.value.user_id       = resp->value("user_id", "");
+    result.value.session_token = resp->value("session_token", "");
+    result.value.error         = resp->value("error", resp->value("error_message", ""));
+
+    if (result.value.authenticated) {
+        result.ok = true;
+        std::lock_guard lock(impl_->mutex);
+        impl_->set_token(result.value.session_token);
+    } else {
+        result.error = result.value.error;
+    }
+    return result;
+}
+
+Result<std::string> LemonadeNexusClient::issue_passkey_challenge(const std::string& user_id) {
+    Result<std::string> result;
+
+    json body;
+    body["type"]    = "passkey";
+    body["user_id"] = user_id;
+
+    int status = 0;
+    auto resp = impl_->http_post("/api/auth/challenge", body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "challenge request failed";
+        return result;
+    }
+
+    auto challenge = resp->value("challenge", std::string{});
+    if (challenge.empty()) {
+        result.error = resp->value("error", "server returned empty challenge");
+        return result;
+    }
+
+    result.value = std::move(challenge);
+    result.ok    = true;
+    return result;
+}
+
+Result<AuthResponse> LemonadeNexusClient::authenticate_token(const std::string& token) {
+    Result<AuthResponse> result;
+    json body;
+    body["method"] = "token-link";
+    body["token"]  = token;
+
+    int status = 0;
+    auto resp = impl_->http_post("/api/auth", body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "token auth request failed";
+        return result;
+    }
+
+    result.value.authenticated = resp->value("authenticated", false);
+    result.value.user_id       = resp->value("user_id", "");
+    result.value.session_token = resp->value("session_token", "");
+    result.value.error         = resp->value("error", resp->value("error_message", ""));
+
+    if (result.value.authenticated) {
+        result.ok = true;
+        std::lock_guard lock(impl_->mutex);
+        impl_->set_token(result.value.session_token);
+    } else {
+        result.error = result.value.error;
+    }
+    return result;
+}
+
+Result<AuthResponse> LemonadeNexusClient::register_passkey(const PasskeyRegistration& reg) {
+    Result<AuthResponse> result;
+    json body;
+    body["user_id"]         = reg.user_id;
+    body["credential_data"] = reg.credential_data;
+
+    int status = 0;
+    auto resp = impl_->http_post("/api/auth/register", body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "passkey registration request failed";
+        return result;
+    }
+
+    result.value.authenticated = resp->value("authenticated", false);
+    result.value.user_id       = resp->value("user_id", "");
+    result.value.session_token = resp->value("session_token", "");
+    result.value.error         = resp->value("error", resp->value("error_message", ""));
+    result.ok = result.value.authenticated;
+    if (!result.ok) {
+        result.error = result.value.error;
+    }
+    return result;
+}
+
+Result<AuthResponse> LemonadeNexusClient::register_passkey_credential(const std::string& user_id,
+                                                                        const PasskeyCredential& cred) {
+    Result<AuthResponse> result;
+    json body;
+    body["user_id"]       = user_id;
+    body["credential_id"] = cred.credential_id;
+    body["public_key_x"]  = cred.public_key_x;
+    body["public_key_y"]  = cred.public_key_y;
+
+    int status = 0;
+    auto resp = impl_->http_post("/api/auth/register", body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "passkey registration request failed";
+        return result;
+    }
+
+    result.value.authenticated = resp->value("authenticated", false);
+    result.value.user_id       = resp->value("user_id", "");
+    result.value.session_token = resp->value("session_token", "");
+    result.value.error         = resp->value("error", resp->value("error_message", ""));
+    result.ok = result.value.authenticated;
+    if (!result.ok) {
+        result.error = result.value.error;
+    } else {
+        std::lock_guard lock(impl_->mutex);
+        impl_->set_token(result.value.session_token);
+    }
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Tree operations
+// ---------------------------------------------------------------------------
+
+Result<TreeNode> LemonadeNexusClient::get_tree_node(const std::string& node_id) {
+    Result<TreeNode> result;
+    int status = 0;
+    auto resp = impl_->private_http_get("/api/tree/node/" + node_id, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "node not found or server unreachable";
+        return result;
+    }
+
+    if (status == 404) {
+        result.error = "node not found";
+        return result;
+    }
+
+    try {
+        result.value = resp->get<TreeNode>();
+        result.ok = true;
+    } catch (const std::exception& e) {
+        result.error = std::string("failed to parse node: ") + e.what();
+    }
+    return result;
+}
+
+Result<DeltaResult> LemonadeNexusClient::submit_delta(const TreeDelta& delta) {
+    Result<DeltaResult> result;
+
+    TreeDelta signed_delta = delta;
+    impl_->sign_delta(signed_delta);
+
+    json body = signed_delta;
+
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/tree/delta", body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "server unreachable";
+        return result;
+    }
+
+    result.value.success        = resp->value("success", false);
+    result.value.delta_sequence = resp->value("delta_sequence", uint64_t{0});
+    result.value.node_id        = resp->value("node_id", "");
+    result.value.tunnel_ip      = resp->value("tunnel_ip", "");
+    result.value.private_subnet = resp->value("private_subnet", "");
+    result.value.error          = resp->value("error", resp->value("error_message", ""));
+
+    result.ok = result.value.success;
+    if (!result.ok) {
+        result.error = result.value.error;
+    }
+    return result;
+}
+
+Result<DeltaResult> LemonadeNexusClient::create_child_node(const std::string& parent_id,
+                                                             const TreeNode& child) {
+    Result<DeltaResult> result;
+
+    json body;
+    body["parent_id"] = parent_id;
+    body["type"]      = node_type_to_string(child.type);
+    if (!child.hostname.empty()) body["hostname"] = child.hostname;
+
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/tree/node", body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "server unreachable";
+        return result;
+    }
+
+    result.value.success = resp->value("success", false);
+    result.value.node_id = resp->value("node_id", "");
+    result.value.error   = resp->value("error", "");
+    result.ok = result.value.success;
+    if (!result.ok) result.error = result.value.error;
+    return result;
+}
+
+Result<DeltaResult> LemonadeNexusClient::update_node(const std::string& node_id,
+                                                       const nlohmann::json& updates) {
+    Result<DeltaResult> result;
+
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/tree/node/update/" + node_id, updates, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "server unreachable";
+        return result;
+    }
+
+    result.value.success = resp->value("success", false);
+    result.value.node_id = resp->value("node_id", "");
+    result.value.error   = resp->value("error", "");
+    result.ok = result.value.success;
+    if (!result.ok) result.error = result.value.error;
+    return result;
+}
+
+Result<DeltaResult> LemonadeNexusClient::delete_node(const std::string& node_id) {
+    Result<DeltaResult> result;
+
+    int status = 0;
+    json body = json::object(); // empty body
+    auto resp = impl_->private_http_post("/api/tree/node/delete/" + node_id, body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "server unreachable";
+        return result;
+    }
+
+    result.value.success = resp->value("success", false);
+    result.value.error   = resp->value("error", "");
+    result.ok = result.value.success;
+    if (!result.ok) result.error = result.value.error;
+    return result;
+}
+
+Result<std::vector<TreeNode>> LemonadeNexusClient::get_children(const std::string& parent_id) {
+    Result<std::vector<TreeNode>> result;
+    int status = 0;
+    auto resp = impl_->private_http_get("/api/tree/children/" + parent_id, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "server unreachable";
+        return result;
+    }
+
+    try {
+        if (resp->is_array()) {
+            for (const auto& item : *resp) {
+                result.value.push_back(item.get<TreeNode>());
+            }
+        }
+        result.ok = true;
+    } catch (const std::exception& e) {
+        result.error = std::string("failed to parse children: ") + e.what();
+    }
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// IPAM
+// ---------------------------------------------------------------------------
+
+Result<AllocationResponse> LemonadeNexusClient::allocate_ip(const AllocationRequest& req) {
+    Result<AllocationResponse> result;
+
+    json body;
+    body["node_id"] = req.node_id;
+    switch (req.block_type) {
+        case BlockType::Tunnel:  body["block_type"] = "tunnel";  break;
+        case BlockType::Private: body["block_type"] = "private"; break;
+        case BlockType::Shared:  body["block_type"] = "shared";  break;
+    }
+    if (req.block_type != BlockType::Tunnel) {
+        body["prefix_len"] = req.prefix_len;
+    }
+
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/ipam/allocate", body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "server unreachable";
+        return result;
+    }
+
+    result.value.success = resp->value("success", false);
+    result.value.network = resp->value("network", "");
+    result.value.node_id = resp->value("node_id", "");
+    result.ok = result.value.success;
+
+    if (!result.ok) {
+        result.error = resp->value("error", "allocation failed");
+    }
+    return result;
+}
+
+Result<AllocationResponse> LemonadeNexusClient::allocate_tunnel_ip(const std::string& node_id) {
+    AllocationRequest req;
+    req.node_id    = node_id;
+    req.block_type = BlockType::Tunnel;
+    return allocate_ip(req);
+}
+
+// ---------------------------------------------------------------------------
+// Relay
+// ---------------------------------------------------------------------------
+
+Result<std::vector<RelayNodeInfo>> LemonadeNexusClient::list_relays() {
+    Result<std::vector<RelayNodeInfo>> result;
+
+    int status = 0;
+    auto resp = impl_->private_http_get("/api/relay/list", status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "server unreachable";
+        return result;
+    }
+
+    try {
+        if (resp->is_array()) {
+            for (const auto& r : *resp) {
+                RelayNodeInfo info;
+                info.relay_id         = r.value("relay_id", "");
+                info.endpoint         = r.value("endpoint", "");
+                info.region           = r.value("region", "");
+                info.reputation_score = r.value("reputation_score", 0.0f);
+                info.supports_stun    = r.value("supports_stun", true);
+                info.supports_relay   = r.value("supports_relay", true);
+                result.value.push_back(std::move(info));
+            }
+        }
+        result.ok = true;
+    } catch (const std::exception& e) {
+        result.error = std::string("failed to parse relay list: ") + e.what();
+    }
+    return result;
+}
+
+Result<RelayTicket> LemonadeNexusClient::request_relay_ticket(const std::string& peer_id,
+                                                                const std::string& relay_id) {
+    Result<RelayTicket> result;
+
+    json body;
+    body["peer_id"]  = peer_id;
+    body["relay_id"] = relay_id;
+
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/relay/ticket", body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "server unreachable";
+        return result;
+    }
+    if (status != 200 || !resp->is_object()) {
+        result.error = resp->is_object() ? resp->value("error", "relay ticket refused")
+                                         : "relay ticket refused";
+        return result;
+    }
+
+    result.value.peer_id       = resp->value("peer_id", "");
+    result.value.relay_id      = resp->value("relay_id", "");
+    result.value.session_nonce = resp->value("session_nonce", "");
+    result.value.issued_at     = resp->value("issued_at", uint64_t{0});
+    result.value.expires_at    = resp->value("expires_at", uint64_t{0});
+    result.value.network_id    = resp->value("network_id", "");
+    result.value.epoch         = resp->value("epoch", uint64_t{0});
+    result.value.issuer        = resp->value("issuer", "");
+    result.value.signature     = resp->value("signature", "");
+    result.ok = true;
+    return result;
+}
+
+Result<RelayRegisterResult> LemonadeNexusClient::register_relay(const RelayRegistration& reg) {
+    Result<RelayRegisterResult> result;
+
+    json body;
+    body["relay_id"]        = reg.relay_id;
+    body["endpoint"]        = reg.endpoint;
+    body["region"]          = reg.region;
+    body["public_key"]      = reg.public_key;
+    body["capacity_mbps"]   = reg.capacity_mbps;
+    body["supports_stun"]   = reg.supports_stun;
+    body["supports_relay"]  = reg.supports_relay;
+
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/relay/register", body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "server unreachable";
+        return result;
+    }
+
+    result.value.success  = resp->value("success", false);
+    result.value.relay_id = resp->value("relay_id", "");
+    result.ok = result.value.success;
+
+    if (!result.ok) {
+        result.error = resp->value("error", "registration failed");
+    }
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Certificates
+// ---------------------------------------------------------------------------
+
+Result<CertStatus> LemonadeNexusClient::get_cert_status(const std::string& domain) {
+    Result<CertStatus> result;
+
+    int status = 0;
+    auto resp = impl_->private_http_get("/api/certs/" + domain, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "server unreachable";
+        return result;
+    }
+
+    if (status == 404) {
+        result.value.domain   = domain;
+        result.value.has_cert = false;
+        result.ok = true;
+        return result;
+    }
+
+    result.value.domain     = resp->value("domain", domain);
+    result.value.has_cert   = resp->value("has_cert", false);
+    result.value.expires_at = resp->value("expires_at", uint64_t{0});
+    result.ok = true;
+    return result;
+}
+
+Result<IssuedCertBundle> LemonadeNexusClient::request_certificate(const std::string& hostname) {
+    return issue_certificate(json{{"hostname", hostname}});
+}
+
+Result<IssuedCertBundle> LemonadeNexusClient::request_group_loopback_certificate() {
+    return issue_certificate(json{{"scope", "group_loopback"}});
+}
+
+Result<IssuedCertBundle> LemonadeNexusClient::issue_certificate(const json& fields) {
+    Result<IssuedCertBundle> result;
+
+    // Copy identity under lock to avoid racing with other threads
+    Identity local_identity;
+    {
+        std::lock_guard lock(impl_->mutex);
+        local_identity = impl_->identity;
+    }
+
+    if (!local_identity.is_valid()) {
+        result.error = "identity required for certificate request";
+        return result;
+    }
+
+    json body = fields;
+    body["client_pubkey"] = local_identity.pubkey_string();
+
+    int status = 0;
+    // Private-only route: the server registers /api/certs/issue on the private
+    // router, so the public socket answers 404 and the request must go over
+    // the mesh dataplane like every other private API call.
+    auto resp = impl_->private_http_post("/api/certs/issue", body, status);
+    result.http_status = status;
+
+    if (!resp) {
+        result.error = "server unreachable";
+        return result;
+    }
+
+    if (status != 200) {
+        result.error = resp->value("error", "certificate request failed");
+        return result;
+    }
+
+    result.value.domain           = resp->value("domain", "");
+    result.value.fullchain_pem    = resp->value("fullchain_pem", "");
+    result.value.encrypted_privkey = resp->value("encrypted_privkey", "");
+    result.value.crypto_version    = resp->value("crypto_version", 0u);
+    result.value.nonce            = resp->value("nonce", "");
+    result.value.ephemeral_pubkey = resp->value("ephemeral_pubkey", "");
+    result.value.expires_at       = resp->value("expires_at", uint64_t{0});
+    result.ok = true;
+    return result;
+}
+
+Result<DecryptedCert> LemonadeNexusClient::decrypt_certificate(const IssuedCertBundle& bundle) {
+    Result<DecryptedCert> result;
+
+    // Copy identity under lock to avoid racing with other threads
+    Identity local_identity;
+    {
+        std::lock_guard lock(impl_->mutex);
+        local_identity = impl_->identity;
+    }
+
+    if (!local_identity.is_valid()) {
+        result.error = "identity required for decryption";
+        return result;
+    }
+
+    // 1. Decode the server's ephemeral X25519 public key
+    auto eph_bytes = Identity::from_base64(bundle.ephemeral_pubkey);
+    if (eph_bytes.size() != 32) {
+        result.error = "invalid ephemeral_pubkey size";
+        return result;
+    }
+
+    // 2. Convert our Ed25519 private key to X25519
+    // crypto_sign_ed25519_sk_to_curve25519 converts the 64-byte Ed25519 secret
+    // to a 32-byte X25519 private key
+    uint8_t our_x25519_sk[32];
+    if (crypto_sign_ed25519_sk_to_curve25519(our_x25519_sk,
+            local_identity.private_key().data()) != 0) {
+        result.error = "Ed25519→X25519 conversion failed";
+        return result;
+    }
+
+    // 3. X25519 DH: shared_secret = DH(our_x_sk, ephemeral_pk)
+    uint8_t shared_secret[32];
+    if (crypto_scalarmult(shared_secret, our_x25519_sk, eph_bytes.data()) != 0) {
+        result.error = "X25519 DH failed";
+        return result;
+    }
+
+    // 4. HKDF-SHA256 to derive the 32-byte AEAD key
+    // Extract: PRK = HMAC-SHA256(salt="", IKM=shared_secret)
+    const std::string info_str = "lemonade-nexus-cert-issue";
+    uint8_t prk[32];
+    uint8_t empty_salt[32] = {};
+    crypto_auth_hmacsha256(prk, shared_secret, 32, empty_salt);
+
+    // Expand: OKM = HMAC-SHA256(PRK, info + 0x01)
+    uint8_t aes_key[32];
+    {
+        crypto_auth_hmacsha256_state st;
+        crypto_auth_hmacsha256_init(&st, prk, 32);
+        crypto_auth_hmacsha256_update(&st,
+            reinterpret_cast<const uint8_t*>(info_str.data()), info_str.size());
+        uint8_t counter = 0x01;
+        crypto_auth_hmacsha256_update(&st, &counter, 1);
+        crypto_auth_hmacsha256_final(&st, aes_key);
+    }
+
+    // 5. Decrypt. One construction, named by the bundle's version — never
+    //    inferred from a field width, and never chosen from this cpu.
+    auto nonce_bytes = Identity::from_base64(bundle.nonce);
+    auto ct_bytes = Identity::from_base64(bundle.encrypted_privkey);
+
+    const auto fail = [&](const char* why) {
+        result.error = why;
+        sodium_memzero(our_x25519_sk, 32);
+        sodium_memzero(shared_secret, 32);
+        sodium_memzero(aes_key, 32);
+        return result;
+    };
+
+    if (bundle.crypto_version != kEncryptedBlobVersion) {
+        return fail("unsupported certificate bundle crypto version");
+    }
+    // Exact size before the pointer reaches libsodium.
+    if (nonce_bytes.size() != crypto_aead_xchacha20poly1305_ietf_NPUBBYTES) {
+        return fail("invalid nonce size");
+    }
+    if (ct_bytes.size() < crypto_aead_xchacha20poly1305_ietf_ABYTES) {
+        return fail("invalid ciphertext size");
+    }
+
+    std::vector<uint8_t> plaintext(ct_bytes.size());
+    unsigned long long plaintext_len = 0;
+
+    // Same binding the server used: this client's identity and this domain.
+    const auto our_pk = local_identity.public_key();
+    const auto aad = aead_aad(
+        "cert-bundle",
+        {std::span<const uint8_t>(our_pk.data(), our_pk.size()),
+         std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(bundle.domain.data()),
+                                  bundle.domain.size())});
+
+    if (crypto_aead_xchacha20poly1305_ietf_decrypt(
+            plaintext.data(), &plaintext_len, nullptr,
+            ct_bytes.data(), ct_bytes.size(), aad.data(), aad.size(),
+            nonce_bytes.data(), aes_key) != 0) {
+        return fail("decryption failed (wrong key or corrupted data)");
+    }
+
+    // Clean up sensitive material
+    sodium_memzero(our_x25519_sk, 32);
+    sodium_memzero(shared_secret, 32);
+    sodium_memzero(aes_key, 32);
+
+    result.value.domain        = bundle.domain;
+    result.value.fullchain_pem = bundle.fullchain_pem;
+    result.value.privkey_pem   = std::string(plaintext.begin(), plaintext.begin() + plaintext_len);
+    result.value.expires_at    = bundle.expires_at;
+    result.ok = true;
+    return result;
+}
+
+namespace {
+
+uint64_t unix_now() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
+} // namespace
+
+Result<DecryptedCert> LemonadeNexusClient::fetch_certificate(const std::string& target) {
+    auto issued = target == kGroupLoopbackCertTarget ? request_group_loopback_certificate()
+                                                     : request_certificate(target);
+    if (!issued.ok) {
+        Result<DecryptedCert> failed;
+        failed.http_status = issued.http_status;
+        failed.error       = issued.error;
+        return failed;
+    }
+    return decrypt_certificate(issued.value);
+}
+
+void LemonadeNexusClient::set_cert_renewed_callback(CertRenewedCallback cb) {
+    impl_->cert_renewer.set_callback(std::move(cb));
+}
+
+CertRenewalResult LemonadeNexusClient::renew_certificate_if_needed(const std::string& target,
+                                                                   const std::string& cert_dir) {
+    if (target.empty() || cert_dir.empty()) {
+        CertRenewalResult invalid;
+        invalid.error = "target and cert_dir required";
+        return invalid;
+    }
+    return impl_->cert_renewer.renew_if_needed(
+        target, cert_dir, unix_now(),
+        [this](const std::string& t) { return fetch_certificate(t); });
+}
+
+bool LemonadeNexusClient::certificate_renewal_pending() const {
+    return impl_->cert_renewer.renewal_pending(unix_now());
+}
+
+void LemonadeNexusClient::renew_managed_certificates() {
+    impl_->cert_renewer.renew_managed(
+        unix_now(), [this](const std::string& t) { return fetch_certificate(t); });
+}
+
+// ---------------------------------------------------------------------------
+// High-level composite operations
+// ---------------------------------------------------------------------------
+
+Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username,
+                                                       const std::string& password) {
+    Result<JoinResult> result;
+
+    // Copy identity and session state under lock to avoid racing with other threads
+    Identity local_identity;
+    bool needs_auth = false;
+    {
+        std::lock_guard lock(impl_->mutex);
+        local_identity = impl_->identity;
+        needs_auth = impl_->token().empty();
+    }
+
+    if (needs_auth) {
+        Result<AuthResponse> auth;
+        if (local_identity.is_valid()) {
+            auth = authenticate_ed25519();
+            // Without credentials there is nothing to fall back to: the
+            // server's reason for refusing the key (a revoked key, for one)
+            // is the answer, not a complaint about an empty password.
+            if (!auth && (!username.empty() || !password.empty())) {
+                spdlog::warn("[LemonadeNexusClient] Ed25519 auth failed ({}), "
+                             "falling back to password", auth.error);
+                auth = authenticate(username, password);
+            }
+        } else {
+            auth = authenticate(username, password);
+        }
+        if (!auth) {
+            result.error = "authentication failed: " + auth.error;
+            result.http_status = auth.http_status;
+            return result;
+        }
+    }
+
+    // Step 2: the mesh keypair is the identity-bound X25519 form of the
+    // device identity — stable across launches, and derivable by the server
+    // from the authenticated identity alone, which is what proves possession
+    // of the static without any extra handshake. A device coming from the
+    // legacy hash-derived static simply rotates on this join; the server's
+    // rekey path handles that. Fall back to a random key only when there is
+    // no identity (e.g. password-only join).
+    auto [mesh_private_key, mesh_pubkey] = local_identity.is_valid()
+        ? BoringtunMesh::identity_bound_keypair(
+              std::span<const uint8_t>(local_identity.private_key()))
+        : BoringtunMesh::generate_keypair();
+
+    // Step 3: create endpoint node via the server's composite /api/join endpoint.
+    // This endpoint handles node ID generation, parent assignment, IP allocation,
+    // and hostname assignment all server-side.
+    json join_body;
+    if (local_identity.is_valid()) {
+        join_body["public_key"] = local_identity.pubkey_string(); // "ed25519:base64..."
+    }
+    join_body["mesh_pubkey"] = mesh_pubkey;
+
+    // Single-use device link token (see set_link_token / create_link_token)
+    {
+        std::lock_guard lock(impl_->mutex);
+        if (!impl_->link_token.empty()) {
+            join_body["link_token"] = impl_->link_token;
+        }
+        join_body["is_inference"] = impl_->inference_node;
+        // The server applies the name only when this join creates the node.
+        if (!std::exchange(impl_->omit_device_name_once, false) && !impl_->device_name.empty()) {
+            join_body["hostname"] = impl_->device_name;
+        }
+    }
+
+    // Include auth credentials so /api/join can authenticate inline. The
+    // challenge nonce is single use, so each attempt signs a fresh one.
+    const auto authenticated_join = [&]() {
+        json body = join_body;
+        if (local_identity.is_valid()) {
+            auto pubkey_b64 = Identity::to_base64(
+                std::span<const uint8_t>(local_identity.public_key()));
+
+            json challenge_body;
+            challenge_body["pubkey"] = pubkey_b64;
+
+            int challenge_status = 0;
+            auto challenge_resp = impl_->http_post("/api/auth/challenge",
+                                                    challenge_body, challenge_status);
+            if (challenge_resp) {
+                auto challenge_b64 = challenge_resp->value("challenge", std::string{});
+                if (!challenge_b64.empty()) {
+                    auto challenge_bytes = Identity::from_base64(challenge_b64);
+                    auto signature = local_identity.sign(
+                        std::span<const uint8_t>(challenge_bytes));
+                    auto signature_b64 = Identity::to_base64(
+                        std::span<const uint8_t>(signature));
+
+                    body["method"]    = "ed25519";
+                    body["pubkey"]    = pubkey_b64;
+                    body["challenge"] = challenge_b64;
+                    body["signature"] = signature_b64;
+                }
+            }
+        }
+
+        if (!body.contains("method")) {
+            // Fallback to password auth in join body
+            body["method"]   = "password";
+            body["username"] = username;
+            body["password"] = password;
+        }
+        return body;
+    };
+
+    // A join that places the device under another identity's group (a link
+    // token) commits through Tier 1 consensus. When the commit outlasts the
+    // server's wait, /api/join answers 202 {"status":"pending"} without a
+    // tunnel address or session token. The token is settled with that
+    // operation, so the device joins again without it (a returning-device
+    // join) until the committed node answers 200.
+    const auto pending_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    int status = 0;
+    std::optional<json> resp;
+    // An invite is minted on the inviter's session server and reaches the
+    // other Tier 1 members over the backbone, so one verified member can
+    // refuse it as unknown while another holds it: a member that restarted
+    // minutes ago has no backbone peers yet, and a mint presented within the
+    // replication delay has not arrived anywhere else. Such a refusal is not
+    // final. The join is pinned to the member that issued its challenge, so
+    // it hops: it waits for replication (kInviteHopDelay), then challenges
+    // and joins through a verified member that has not refused the invite in
+    // this join. It asks no member twice and makes at most
+    // kInviteJoinMaxAttempts attempts, because each refusal counts as a wrong
+    // code on that server. When no unasked member takes the challenge, the
+    // last refusal is the answer.
+    std::set<std::string> avoid_before;
+    {
+        std::lock_guard lock(impl_->transport_mtx);
+        avoid_before = impl_->avoid_nodes;
+    }
+    const auto restore_avoid = [&] {
+        std::lock_guard lock(impl_->transport_mtx);
+        impl_->avoid_nodes = avoid_before;
+    };
+    const std::chrono::milliseconds hop_delay{impl_->invite_hop_delay_ms.load()};
+    std::set<std::string> refused_invite;
+    std::optional<json> last_refusal;
+    int invite_attempts = 0;
+    bool hopping = false;
+    for (;;) {
+        const auto body = authenticated_join();
+        std::string target;
+        {
+            std::lock_guard lock(impl_->transport_mtx);
+            target = impl_->challenge_node;
+        }
+        if (std::exchange(hopping, false) &&
+            (target.empty() || refused_invite.contains(target))) {
+            spdlog::info("[LemonadeNexusClient] no other verified Tier 1 server took the "
+                         "challenge: the invite stays refused");
+            resp = std::move(last_refusal);
+            status = 403;
+            result.http_status = status;
+            break;
+        }
+        if (join_body.contains("link_token")) ++invite_attempts;
+        resp = impl_->http_post("/api/join", body, status);
+        result.http_status = status;
+        if (!resp) {
+            restore_avoid();
+            result.error = "join request failed (server unreachable)";
+            return result;
+        }
+        if (status == 403 && join_body.contains("link_token") && !target.empty() &&
+            resp->value("error", std::string{}) == kInviteUnknownError) {
+            refused_invite.insert(target);
+            std::set<std::string> avoid;
+            {
+                std::lock_guard lock(impl_->transport_mtx);
+                impl_->avoid_nodes.insert(target);
+                avoid = impl_->avoid_nodes;
+            }
+            const auto servers = impl_->tier1.membership().servers;
+            const bool unasked_member = std::any_of(
+                servers.begin(), servers.end(),
+                [&avoid](const Tier1Server& s) { return !avoid.contains(s.node_id); });
+            if (unasked_member && invite_attempts < kInviteJoinMaxAttempts) {
+                const auto wait = hop_delay * invite_attempts;
+                spdlog::info("[LemonadeNexusClient] the invite is unknown to {}: asking another "
+                             "verified Tier 1 server in {} ms (attempt {} of {})",
+                             target.substr(0, 12), wait.count(), invite_attempts + 1,
+                             kInviteJoinMaxAttempts);
+                last_refusal = resp;
+                hopping = true;
+                std::this_thread::sleep_for(wait);
+                continue;
+            }
+        }
+        if (status != 202 || resp->value("status", std::string{}) != "pending") break;
+        {
+            std::lock_guard lock(impl_->mutex);
+            impl_->link_token.clear();
+        }
+        join_body.erase("link_token");
+        if (std::chrono::steady_clock::now() >= pending_deadline) {
+            restore_avoid();
+            result.error = "join is waiting for the network to commit; sign in again shortly";
+            return result;
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+    restore_avoid();
+
+    // The tree refuses a device name whose mesh-port label another device of
+    // the target group holds. The join itself is still wanted: join again
+    // under the server's default name and report a free name for a rename.
+    if (status == 409 && join_body.contains("hostname") &&
+        resp->value("error", std::string{}).starts_with(kDeviceNameRefusal)) {
+        const auto name = join_body["hostname"].get<std::string>();
+        std::string invite;
+        {
+            std::lock_guard lock(impl_->mutex);
+            invite = impl_->link_token;
+            impl_->omit_device_name_once = true;
+        }
+        spdlog::info("[LemonadeNexusClient] device name '{}' is taken in the target group; "
+                     "joining under the server's default name", name);
+        std::string suggestion;
+        if (!invite.empty()) {
+            // Checking does not spend the invite.
+            if (const auto check = check_device_name(name, {}, invite)) {
+                suggestion = check.value.suggestion;
+            }
+        }
+        auto joined = join_network(username, password);
+        joined.value.device_name_refused = true;
+        joined.value.device_name_suggestion = suggestion;
+        return joined;
+    }
+
+    if (status != 200) {
+        result.error = resp->value("error", resp->value("error_message", "join failed"));
+        return result;
+    }
+
+    // Store the session token from the join response
+    auto token = resp->value("token", std::string{});
+    if (!token.empty()) {
+        std::lock_guard lock(impl_->mutex);
+        impl_->set_token(token);
+    }
+    impl_->rejoin_needed.store(false, std::memory_order_relaxed);
+
+    auto node_id   = resp->value("node_id", std::string{});
+    auto tunnel_ip = resp->value("tunnel_ip", std::string{});
+
+    result.ok = true;
+    result.value.success        = true;
+    result.value.node_id        = node_id;
+    result.value.tunnel_ip      = tunnel_ip;
+    result.value.mesh_pubkey    = mesh_pubkey;
+    if (const auto m = resp->find("membership"); m != resp->end() && m->is_object()) {
+        result.value.membership.status   = m->value("status", std::string{});
+        result.value.membership.group_id = m->value("node_id", std::string{});
+        result.value.membership.error    = m->value("error", std::string{});
+        spdlog::info("[LemonadeNexusClient] this device already has a node: the invite made "
+                     "its identity a member of {} ({}); the device stays in its network",
+                     result.value.membership.group_id, result.value.membership.status);
+    }
+
+    {
+        std::lock_guard lock(impl_->mutex);
+        impl_->node_id = node_id;
+        impl_->link_token.clear();  // consumed server-side on successful join
+        // The private API lives at the tunnel address of the server that
+        // answered this join. Each server has its own address, so never keep
+        // the address of a server from an earlier join.
+        auto srv_tunnel = resp->value("server_tunnel_ip", std::string{});
+        impl_->server_tunnel_ip = srv_tunnel;
+
+        // Store SEIP FQDN — this is the server's canonical hostname
+        auto srv_seip_fqdn = resp->value("server_seip_fqdn", std::string{});
+        if (!srv_seip_fqdn.empty() && !impl_->config.pin_server) {
+            impl_->server_seip_fqdn = srv_seip_fqdn;
+            // Switch the public API to the SEIP hostname (proper cert match).
+            // The session server leads the pool; the other known servers
+            // stay behind it as sources for the next Tier 1 refresh, so an
+            // outage of the session server leaves the client servers to ask.
+            std::lock_guard transport(impl_->transport_mtx);
+            uint16_t public_port = impl_->server_pool.empty()
+                                       ? uint16_t{9100}
+                                       : impl_->server_pool[impl_->current_server].endpoint.port;
+            for (const auto& s : impl_->tier1.membership().servers) {
+                if (s.node_id == impl_->session_node) public_port = s.port;
+            }
+            impl_->lead_pool_with_locked({srv_seip_fqdn, public_port, true});
+            spdlog::info("[LemonadeNexusClient] switched public API to https://{}:{} ({} other "
+                         "known server(s) kept)",
+                         srv_seip_fqdn, public_port, impl_->server_pool.size() - 1);
+        }
+
+        // Store private FQDN, and resolve it to the server's in-mesh IP so the
+        // mesh dataplane can egress to the private API (the FQDN maps to the
+        // server's tunnel IP via the authoritative DNS).
+        auto srv_priv_fqdn = resp->value("server_private_fqdn", std::string{});
+        impl_->private_port = static_cast<uint16_t>(
+            resp->value("private_api_port", 9101));
+        if (!srv_priv_fqdn.empty()) {
+            impl_->server_private_fqdn = srv_priv_fqdn;
+            if (impl_->server_tunnel_ip.empty()) {
+                auto ip = resolve_ipv4(srv_priv_fqdn);
+                if (!ip.empty()) {
+                    impl_->server_tunnel_ip = ip;
+                    spdlog::info("[LemonadeNexusClient] server mesh IP {} (from {})",
+                                  ip, srv_priv_fqdn);
+                } else {
+                    spdlog::warn("[LemonadeNexusClient] could not resolve private FQDN {}",
+                                  srv_priv_fqdn);
+                }
+            }
+            spdlog::info("[LemonadeNexusClient] private API: https://{}:{}",
+                          srv_priv_fqdn, impl_->private_port);
+        } else if (!srv_tunnel.empty()) {
+            spdlog::info("[LemonadeNexusClient] private API fallback: https://{}:{}",
+                          srv_tunnel, impl_->private_port);
+        }
+    }
+
+    // Step 4: bring up the userspace mesh dataplane with the assigned config.
+    if (!tunnel_ip.empty()) {
+        BoringtunConfig bt;
+        bt.private_key       = mesh_private_key;
+        bt.public_key        = mesh_pubkey;
+        bt.tunnel_ip         = tunnel_ip;
+        bt.server_public_key = resp->value("mesh_server_pubkey", std::string{});
+        bt.server_endpoint   = resp->value("mesh_endpoint", std::string{});
+        bt.allowed_ips       = {resp->value("tunnel_subnet", std::string{"10.64.0.0/10"})};
+
+        {
+            std::lock_guard lock(impl_->mutex);
+            bt.server_tunnel_ip = impl_->server_tunnel_ip;
+            impl_->boringtun_config = bt;
+        }
+        if (!impl_->meshplane.start(bt)) {
+            spdlog::warn("[LemonadeNexusClient] mesh dataplane start failed");
+        } else {
+            // Fresh dataplane — close the breaker so private calls probe at once,
+            // forget the old path's unanswered requests, and drop any
+            // connection pooled against the old egress.
+            impl_->mesh_breaker_until_ms.store(0, std::memory_order_relaxed);
+            impl_->private_path_answered();
+            {
+                std::lock_guard lock(impl_->private_api_mtx);
+                impl_->drop_private_client();
+            }
+            // Re-apply service exposures registered before a re-join
+            std::vector<std::pair<uint16_t, std::string>> exposures;
+            {
+                std::lock_guard lock(impl_->mutex);
+                exposures = impl_->exposed_services;
+            }
+            for (const auto& [vport, target] : exposures) {
+                std::string error;
+                if (!impl_->apply_ingress(vport, target, error)) {
+                    spdlog::warn("[LemonadeNexusClient] re-exposing {} -> {} failed: {}",
+                                 vport, target, error);
+                }
+            }
+        }
+    }
+
+    spdlog::info("[LemonadeNexusClient] joined network: node_id={}, tunnel_ip={}, mesh_pubkey={}",
+                  node_id, tunnel_ip, mesh_pubkey);
+    return result;
+}
+
+StatusResult LemonadeNexusClient::leave_network() {
+    StatusResult result;
+
+    std::string current_node_id;
+    {
+        std::lock_guard lock(impl_->mutex);
+        current_node_id = impl_->node_id;
+    }
+
+    if (current_node_id.empty()) {
+        impl_->meshplane.stop();
+        result.error = "not currently joined (no node ID)";
+        return result;
+    }
+
+    // The delete goes to the private API, which is reachable only over the
+    // mesh. Delete the node first, and keep the mesh up when the delete fails
+    // so the caller can retry.
+    auto del = delete_node(current_node_id);
+    if (!del) {
+        result.error = "leave failed: deleting this device's node " + current_node_id +
+                       (del.http_status > 0
+                            ? " was refused (HTTP " + std::to_string(del.http_status) + ")"
+                            : std::string(" did not reach the server")) +
+                       ": " + (del.error.empty() ? "no reason given" : del.error) +
+                       "; the mesh stays up";
+        result.http_status = del.http_status;
+        return result;
+    }
+
+    disable_mesh();
+    impl_->meshplane.stop();
+    {
+        std::lock_guard lock(impl_->mutex);
+        impl_->node_id.clear();
+    }
+    // The session belonged to the removed device. Its server may also have
+    // revoked the key, so a later join authenticates afresh, and no session
+    // move re-joins this device on its own.
+    set_session_token({});
+
+    result.ok = true;
+    spdlog::info("[LemonadeNexusClient] left network (was node {})", current_node_id);
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Group membership management
+// ---------------------------------------------------------------------------
+
+// The server owns assignment changes: it applies the admin and joined-identity
+// rules and replaces the key's entry in place, so a promotion never leaves a
+// stale duplicate and no client-side copy of the node is written back.
+Result<DeltaResult> LemonadeNexusClient::set_member_permissions(
+        const std::string& node_id, const std::string& pubkey,
+        const std::vector<std::string>& permissions) {
+    Result<DeltaResult> result;
+
+    const json body = {{"pubkey", pubkey}, {"permissions", permissions}};
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/tree/node/assignments/" + node_id, body,
+                                         status);
+    result.http_status = status;
+    if (!resp) {
+        result.error = "server unreachable";
+        return result;
+    }
+
+    result.value.success = resp->value("success", false);
+    result.value.node_id = resp->value("node_id", "");
+    result.value.error   = resp->value("error", "");
+    result.ok = result.value.success;
+    if (!result.ok) result.error = result.value.error;
+    return result;
+}
+
+Result<DeltaResult> LemonadeNexusClient::add_group_member(const std::string& node_id,
+                                                             const GroupMember& member) {
+    return set_member_permissions(node_id, member.management_pubkey, member.permissions);
+}
+
+Result<DeltaResult> LemonadeNexusClient::remove_group_member(const std::string& node_id,
+                                                                const std::string& pubkey) {
+    return set_member_permissions(node_id, pubkey, {});
+}
+
+Result<std::vector<GroupMember>> LemonadeNexusClient::get_group_members(const std::string& node_id) {
+    Result<std::vector<GroupMember>> result;
+
+    auto node_result = get_tree_node(node_id);
+    if (!node_result) {
+        result.error = "failed to fetch node: " + node_result.error;
+        result.http_status = node_result.http_status;
+        return result;
+    }
+
+    for (const auto& a : node_result.value.assignments) {
+        GroupMember member;
+        member.management_pubkey = a.management_pubkey;
+        member.permissions       = a.permissions;
+        result.value.push_back(std::move(member));
+    }
+    result.ok = true;
+    return result;
+}
+
+Result<std::vector<NetworkDevice>> LemonadeNexusClient::get_group_devices(
+    const std::string& group_id) {
+    Result<std::vector<NetworkDevice>> result;
+    int status = 0;
+    const auto resp = impl_->private_http_get("/api/tree/devices/" + group_id, status);
+    result.http_status = status;
+    // An unknown route answers 404 without a JSON body, which the transport
+    // reports as {"error": "HTTP 404"}; the route's own 404s carry a message.
+    if (status == 404 && (!resp || resp->value("error", std::string{}) == "HTTP 404")) {
+        // A server from before the route: the placed devices only, with the
+        // connect check the mesh port made before (an entry for this key).
+        const auto self = node_id();
+        // The federation accepts either base64 spelling of a key, with or
+        // without the "ed25519:" prefix.
+        const auto bare = [](std::string key) {
+            if (key.rfind("ed25519:", 0) == 0) key.erase(0, 8);
+            std::replace(key.begin(), key.end(), '-', '+');
+            std::replace(key.begin(), key.end(), '_', '/');
+            while (!key.empty() && key.back() == '=') key.pop_back();
+            return key;
+        };
+        std::string self_key;
+        {
+            std::lock_guard lock(impl_->mutex);
+            if (impl_->identity.is_valid()) self_key = impl_->identity.pubkey_string();
+        }
+        const auto grants_connect = [&](const TreeNode& node) {
+            for (const auto& entry : node.assignments) {
+                if (self_key.empty() || bare(entry.management_pubkey) != bare(self_key)) continue;
+                for (const auto& p : entry.permissions) {
+                    if (p == "connect_private" || p == "connect_shared" || p == "admin") return true;
+                }
+            }
+            return false;
+        };
+        auto children = get_children(group_id);
+        if (!children.ok) {
+            result.error = children.error;
+            result.http_status = children.http_status;
+            return result;
+        }
+        for (const auto& child : children.value) {
+            if (child.type != NodeType::Endpoint) continue;
+            NetworkDevice d;
+            d.node_id = child.id;
+            d.device_name = child.hostname;
+            d.tunnel_ip = child.tunnel_ip;
+            d.mgmt_pubkey = child.mgmt_pubkey;
+            d.parent_id = child.parent_id;
+            d.group_id = group_id;
+            d.is_inference = child.is_inference;
+            d.is_self = child.id == self;
+            d.can_connect = !d.is_self && grants_connect(child);
+            result.value.push_back(std::move(d));
+        }
+        result.ok = true;
+        return result;
+    }
+    if (!resp || status != 200) {
+        result.error = resp ? resp->value("error", std::string{"device list refused"})
+                            : std::string{"device list request failed"};
+        return result;
+    }
+    const auto list = resp->find("devices");
+    if (list == resp->end() || !list->is_array()) {
+        result.error = "malformed device list";
+        return result;
+    }
+    for (const auto& entry : *list) {
+        if (!entry.is_object()) continue;
+        NetworkDevice d;
+        d.node_id = entry.value("node_id", std::string{});
+        if (d.node_id.empty()) continue;
+        d.device_name = entry.value("device_name", std::string{});
+        d.tunnel_ip = entry.value("tunnel_ip", std::string{});
+        d.mgmt_pubkey = entry.value("mgmt_pubkey", std::string{});
+        d.parent_id = entry.value("parent_id", std::string{});
+        d.group_id = entry.value("group_id", group_id);
+        d.is_inference = entry.value("is_inference", false);
+        d.member = entry.value("member", false);
+        d.is_self = entry.value("is_self", false);
+        d.can_connect = entry.value("can_connect", false);
+        d.admin = entry.value("admin", false);
+        result.value.push_back(std::move(d));
+    }
+    result.ok = true;
+    return result;
+}
+
+Result<std::vector<NetworkDevice>> LemonadeNexusClient::list_network_devices() {
+    Result<std::vector<NetworkDevice>> result;
+    const auto memberships = list_memberships();
+    result.http_status = memberships.http_status;
+    if (!memberships.ok) {
+        result.error = memberships.error;
+        return result;
+    }
+    const auto list = memberships.value.find("memberships");
+    if (list == memberships.value.end() || !list->is_array()) {
+        result.error = "malformed membership list";
+        return result;
+    }
+    std::vector<std::pair<std::string, std::string>> groups;  // (id, role), home first
+    for (const auto* role : {"home", "member"}) {
+        for (const auto& m : *list) {
+            if (m.is_object() && m.value("role", std::string{}) == role) {
+                groups.emplace_back(m.value("node_id", std::string{}), role);
+            }
+        }
+    }
+    std::set<std::string> seen;
+    for (const auto& [group, role] : groups) {
+        if (group.empty()) continue;
+        auto devices = get_group_devices(group);
+        if (!devices.ok) {
+            result.error = devices.error;
+            result.http_status = devices.http_status;
+            return result;
+        }
+        for (auto& d : devices.value) {
+            if (!seen.insert(d.node_id).second) continue;
+            d.group_role = role;
+            result.value.push_back(std::move(d));
+        }
+    }
+    result.ok = true;
+    return result;
+}
+
+Result<GroupJoinResult> LemonadeNexusClient::join_group(const std::string& parent_node_id) {
+    Result<GroupJoinResult> result;
+
+    // Step 1: Create endpoint node under the parent group
+    TreeNode endpoint_node;
+    endpoint_node.type      = NodeType::Endpoint;
+    endpoint_node.parent_id = parent_node_id;
+    if (impl_->identity.is_valid()) {
+        endpoint_node.mgmt_pubkey = impl_->identity.pubkey_string();
+    }
+
+    auto create_result = create_child_node(parent_node_id, endpoint_node);
+    if (!create_result) {
+        result.error = "failed to create endpoint node: " + create_result.error;
+        result.http_status = create_result.http_status;
+        return result;
+    }
+
+    std::string new_node_id = create_result.value.node_id;
+
+    // Step 2: Allocate tunnel IP for the new node
+    auto alloc = allocate_tunnel_ip(new_node_id);
+
+    result.ok = true;
+    result.value.success        = true;
+    result.value.node_id        = new_node_id;
+    result.value.parent_node_id = parent_node_id;
+    result.value.tunnel_ip      = alloc ? alloc.value.network : "";
+
+    {
+        std::lock_guard lock(impl_->mutex);
+        impl_->node_id = new_node_id;
+    }
+
+    spdlog::info("[LemonadeNexusClient] joined group {}: node_id={}, tunnel_ip={}",
+                  parent_node_id, new_node_id, result.value.tunnel_ip);
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Stats & server listing
+// ---------------------------------------------------------------------------
+
+Result<StatsResponse> LemonadeNexusClient::get_stats() {
+    int status = 0;
+    auto resp = impl_->http_get("/api/stats", status);
+    if (!resp) return {false, {}, status, "Connection failed"};
+    try {
+        return {true, resp->get<StatsResponse>(), status, ""};
+    } catch (const std::exception& e) {
+        return {false, {}, status, std::string("Parse error: ") + e.what()};
+    }
+}
+
+Result<std::vector<ServerEntry>> LemonadeNexusClient::get_servers() {
+    int status = 0;
+    auto resp = impl_->http_get("/api/servers", status);
+    if (!resp) return {false, {}, status, "Connection failed"};
+    try {
+        if (!resp->is_array()) return {false, {}, status, "Expected array"};
+        return {true, resp->get<std::vector<ServerEntry>>(), status, ""};
+    } catch (const std::exception& e) {
+        return {false, {}, status, std::string("Parse error: ") + e.what()};
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Private-API transport
+// ---------------------------------------------------------------------------
+
+Result<std::string> LemonadeNexusClient::call_private_api(const std::string& method,
+                                                         const std::string& path,
+                                                         const std::string& body) {
+    // No client lock here: the request path takes Impl::mutex itself.
+    int status = 0;
+    std::optional<json> resp;
+    // App-initiated, so always attempt: the breaker is for periodic callers.
+    constexpr bool kUseBreaker = false;
+    if (method == "GET") {
+        resp = impl_->private_http_get(path, status, kUseBreaker);
+    } else {  // POST covers create/update/delete
+        json jbody = json::object();
+        if (!body.empty()) { try { jbody = json::parse(body); } catch (...) {} }
+        resp = impl_->private_http_post(path, jbody, status, kUseBreaker);
+    }
+    if (!resp) return {false, {}, status, "Connection failed"};
+    return {true, resp->dump(), status, ""};
+}
+
+// ---------------------------------------------------------------------------
+// DDNS status
+// ---------------------------------------------------------------------------
+
+Result<DdnsStatus> LemonadeNexusClient::get_ddns_status() {
+    int status = 0;
+    auto resp = impl_->http_get("/api/ddns/status", status);
+    if (!resp) return {false, {}, status, "Connection failed"};
+    try {
+        return {true, resp->get<DdnsStatus>(), status, ""};
+    } catch (const std::exception& e) {
+        return {false, {}, status, std::string("Parse error: ") + e.what()};
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Attestation manifests
+// ---------------------------------------------------------------------------
+
+Result<AttestationManifests> LemonadeNexusClient::get_attestation_manifests() {
+    int status = 0;
+    auto resp = impl_->http_get("/api/attestation/manifests", status);
+    if (!resp) return {false, {}, status, "Connection failed"};
+    try {
+        return {true, resp->get<AttestationManifests>(), status, ""};
+    } catch (const std::exception& e) {
+        return {false, {}, status, std::string("Parse error: ") + e.what()};
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mesh dataplane
+// ---------------------------------------------------------------------------
+
+bool LemonadeNexusClient::is_mesh_active() const {
+    return impl_->meshplane.is_active();
+}
+
+// ---------------------------------------------------------------------------
+// Mesh P2P networking
+// ---------------------------------------------------------------------------
+
+void LemonadeNexusClient::enable_mesh(const MeshConfig& config) {
+    std::string nid;
+    {
+        std::lock_guard lock(impl_->mutex);
+        nid = impl_->node_id;
+    }
+    if (nid.empty()) {
+        spdlog::warn("[LemonadeNexusClient] enable_mesh called but node_id is not set");
+        return;
+    }
+
+    if (!impl_->meshplane.is_active()) {
+        spdlog::warn("[LemonadeNexusClient] enable_mesh: dataplane not up "
+                     "(it failed to start — see the [dataplane] error above — "
+                     "or the network was never joined)");
+        return;
+    }
+
+    // Stop existing orchestrator if any
+    disable_mesh();
+
+    impl_->mesh_orchestrator = std::make_unique<MeshOrchestrator>(
+        *this, impl_->meshplane, nid);
+
+    {
+        std::lock_guard lock(impl_->mutex);
+        if (impl_->mesh_callback) {
+            impl_->mesh_orchestrator->set_callback(impl_->mesh_callback);
+        }
+        if (impl_->mesh_devices_callback) {
+            impl_->mesh_orchestrator->set_devices_callback(impl_->mesh_devices_callback);
+        }
+        impl_->mesh_enabled = true;
+        impl_->mesh_config  = config;
+    }
+
+    impl_->mesh_orchestrator->start(config);
+}
+
+void LemonadeNexusClient::disable_mesh() {
+    // stop() joins the orchestrator thread, and a state callback on that
+    // thread may call a client method that takes impl_->mutex. Detach the
+    // orchestrator under the lock, then stop it without the lock.
+    std::unique_ptr<MeshOrchestrator> orchestrator;
+    {
+        std::lock_guard lock(impl_->mutex);
+        orchestrator = std::move(impl_->mesh_orchestrator);
+        impl_->mesh_enabled = false;
+    }
+    if (orchestrator) orchestrator->stop();
+}
+
+MeshTunnelStatus LemonadeNexusClient::mesh_status() const {
+    MeshTunnelStatus status;
+    {
+        std::lock_guard lock(impl_->mutex);
+        if (impl_->mesh_orchestrator) {
+            status = impl_->mesh_orchestrator->status();
+        }
+    }
+    status.needs_rejoin = impl_->rejoin_needed.load(std::memory_order_relaxed);
+    return status;
+}
+
+std::vector<MeshPeer> LemonadeNexusClient::get_mesh_peers() const {
+    std::lock_guard lock(impl_->mutex);
+    if (impl_->mesh_orchestrator) {
+        return impl_->mesh_orchestrator->peers();
+    }
+    return {};
+}
+
+void LemonadeNexusClient::refresh_mesh_peers() {
+    std::lock_guard lock(impl_->mutex);
+    if (impl_->mesh_orchestrator) {
+        impl_->mesh_orchestrator->refresh_now();
+    }
+}
+
+void LemonadeNexusClient::resume() {
+    // The tunnel first, on a new socket: the OS defuncts the sockets of a
+    // suspended app, so the old one may receive nothing. The handshakes
+    // leave from the new socket now, so the connection the next private
+    // request dials finds a live session instead of waiting for the
+    // dataplane's own rekey timers.
+    const auto sent = impl_->meshplane.rebind();
+    impl_->reset_private_transport();
+    std::lock_guard lock(impl_->mutex);
+    if (impl_->mesh_orchestrator) impl_->mesh_orchestrator->resume();
+    spdlog::info("[LemonadeNexusClient] resumed: {}, mesh {}",
+                 sent ? "new dataplane socket, " + std::to_string(*sent) + " handshakes sent"
+                      : "dataplane inactive",
+                 impl_->mesh_orchestrator ? "pass requested" : "disabled");
+}
+
+void LemonadeNexusClient::suspend() {
+    impl_->meshplane.suspend();
+    impl_->reset_private_transport();
+    spdlog::info("[LemonadeNexusClient] suspended: dataplane socket closed, private "
+                 "connections dropped");
+}
+
+void LemonadeNexusClient::reset_private_transport() {
+    impl_->reset_private_transport();
+}
+
+void LemonadeNexusClient::set_mesh_devices_callback(MeshDevicesCallback cb) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->mesh_devices_callback = std::move(cb);
+    if (impl_->mesh_orchestrator) {
+        impl_->mesh_orchestrator->set_devices_callback(impl_->mesh_devices_callback);
+    }
+}
+
+void LemonadeNexusClient::set_mesh_callback(MeshStateCallback cb) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->mesh_callback = std::move(cb);
+    if (impl_->mesh_orchestrator) {
+        impl_->mesh_orchestrator->set_callback(impl_->mesh_callback);
+    }
+}
+
+void LemonadeNexusClient::set_session_moved_callback(SessionMovedCallback cb) {
+    std::lock_guard lock(impl_->session_moved_mtx);
+    impl_->session_moved_callback = std::move(cb);
+}
+
+void LemonadeNexusClient::run_session_move(const std::string& reason, uint64_t hint_epoch,
+                                           bool forced) {
+    SessionMoveEvent event;
+    {
+        std::lock_guard lock(impl_->transport_mtx);
+        event.from_node_id = impl_->session_node;
+    }
+    if (event.from_node_id.empty()) return;  // no session to move
+    event.from_host = impl_->host_of(event.from_node_id);
+
+    // The notice is a hint. Only the membership verified from the pinned
+    // Genesis key says who serves now, and only it chooses the next server.
+    impl_->tier1.mark_stale();
+    const auto refreshed = impl_->refresh_tier1();
+    if (!refreshed.ok) {
+        spdlog::warn("[LemonadeNexusClient] session not moved ({}): the Tier 1 membership "
+                     "could not be verified: {}", reason, refreshed.error);
+        return;
+    }
+    const auto& membership = refreshed.value;
+    event.epoch = membership.epoch;
+    const auto member = [&](const std::string& node) {
+        return std::any_of(membership.servers.begin(), membership.servers.end(),
+                           [&node](const Tier1Server& s) { return s.node_id == node; });
+    };
+    if (member(event.from_node_id)) {
+        if (forced) {
+            // The session's server stopped answering over the mesh, yet the
+            // refresh just proved it a verified member reachable over the
+            // public API (`servers` lists only members that answered): the
+            // server forgot this client's peer, and a fresh join adds it
+            // back, so the same server is as good as any other. A device
+            // that lost its network never gets here: nothing verifies.
+        } else {
+            // The session's server still serves the verified epoch. A
+            // notice for a later epoch moves the session early, onto
+            // another verified server, when there is one; otherwise the move
+            // waits for the handoff, which the server's tree refusal then
+            // reports.
+            const bool another = std::any_of(
+                membership.servers.begin(), membership.servers.end(),
+                [&event](const Tier1Server& s) { return s.node_id != event.from_node_id; });
+            if (hint_epoch <= membership.epoch || !another) {
+                spdlog::info("[LemonadeNexusClient] session stays ({}): its server is a "
+                             "verified member of epoch {}", reason, membership.epoch);
+                return;
+            }
+        }
+    }
+
+    Identity   local_identity;
+    bool       mesh_enabled = false;
+    MeshConfig mesh_config;
+    {
+        std::lock_guard lock(impl_->mutex);
+        local_identity = impl_->identity;
+        mesh_enabled   = impl_->mesh_enabled;
+        mesh_config    = impl_->mesh_config;
+    }
+    if (!local_identity.is_valid()) {
+        impl_->drop_departed_session(event.from_node_id,
+                                     "no identity for a silent re-authentication");
+        return;
+    }
+
+    spdlog::info("[LemonadeNexusClient] moving the session: {} (verified epoch {})", reason,
+                 membership.epoch);
+    // The orchestrator stops first: the join brings the dataplane up for the
+    // new server. The old session goes, so the join authenticates afresh,
+    // and a departing server takes no challenge while it is still verified.
+    // A forced move avoids no server: the join may land on the same one.
+    disable_mesh();
+    {
+        std::lock_guard lock(impl_->transport_mtx);
+        if (impl_->session_node == event.from_node_id) {
+            impl_->session_token.clear();
+            impl_->session_node.clear();
+        }
+        if (!forced) impl_->avoid_nodes = {event.from_node_id};
+    }
+    const auto joined = join_network({}, {});
+    {
+        std::lock_guard lock(impl_->transport_mtx);
+        impl_->avoid_nodes.clear();
+        event.to_node_id = impl_->session_node;
+    }
+    event.to_host = impl_->host_of(event.to_node_id);
+    if (!joined.ok) {
+        event.error = joined.error;
+        impl_->rejoin_needed.store(true, std::memory_order_relaxed);
+        spdlog::warn("[LemonadeNexusClient] session move failed, join again: {}", joined.error);
+        impl_->notify_session_moved(event);
+        return;
+    }
+    if (mesh_enabled && !impl_->closing.load(std::memory_order_relaxed)) enable_mesh(mesh_config);
+    event.silent = true;
+    spdlog::info("[LemonadeNexusClient] session moved to {} (epoch {})", event.to_host,
+                 event.epoch);
+    impl_->notify_session_moved(event);
+}
+
+Result<std::vector<MeshPeer>> LemonadeNexusClient::fetch_mesh_peers(const std::string& nid) {
+    int status = 0;
+    auto resp = impl_->private_http_get("/api/mesh/peers/" + nid, status);
+    if (!resp) {
+        return {false, {}, status, "mesh peers request failed"};
+    }
+    if (status != 200) {
+        return {false, {}, status, resp->value("error", "mesh peers request failed")};
+    }
+
+    try {
+        std::vector<MeshPeer> peers;
+        if (resp->contains("peers") && (*resp)["peers"].is_array()) {
+            for (const auto& p : (*resp)["peers"]) {
+                MeshPeer mp;
+                mp.node_id        = p.value("node_id", "");
+                mp.hostname       = p.value("hostname", "");
+                mp.mesh_pubkey    = p.value("mesh_pubkey", "");
+                mp.tunnel_ip      = p.value("tunnel_ip", "");
+                mp.private_subnet = p.value("private_subnet", "");
+                mp.endpoint       = p.value("endpoint", "");
+                // local_endpoints: the peer's LAN endpoints (servers with
+                // LAN-direct paths). Only strings count, at most
+                // kMaxLocalEndpoints. The orchestrator drops every entry
+                // that is not a dotted private address (lan_endpoint_usable)
+                // before any use.
+                if (const auto lan = p.find("local_endpoints");
+                    lan != p.end() && lan->is_array()) {
+                    for (const auto& entry : *lan) {
+                        if (mp.local_endpoints.size() >= kMaxLocalEndpoints) break;
+                        if (entry.is_string()) mp.local_endpoints.push_back(entry.get<std::string>());
+                    }
+                }
+                mp.relay_endpoint = p.value("relay_endpoint", "");
+                mp.server_online  = p.value("is_online", false);
+                mp.is_online      = mp.server_online;
+                mp.mgmt_pubkey    = p.value("mgmt_pubkey", "");
+                // peer_permissions: what the peer's key holds on this device.
+                // A permission is one token; anything else is dropped, so a
+                // listed value can never widen access or break a header.
+                if (p.contains("peer_permissions") && p["peer_permissions"].is_array()) {
+                    for (const auto& permission : p["peer_permissions"]) {
+                        if (!permission.is_string()) continue;
+                        const auto& text = permission.get_ref<const std::string&>();
+                        const bool token = !text.empty() && text.size() <= 80 &&
+                            std::all_of(text.begin(), text.end(), [](unsigned char c) {
+                                return std::isalnum(c) || c == '_' || c == '.' || c == ':' || c == '-';
+                            });
+                        if (token) mp.permissions.push_back(text);
+                        else spdlog::debug("[MeshPeers] peer '{}' lists a malformed permission; ignored", mp.node_id);
+                    }
+                }
+
+                // Validate critical fields — reject peers with shell-unsafe
+                // or malformed data before they reach mesh commands.
+                // Check for shell metacharacters in all string fields.
+                auto has_unsafe_chars = [](const std::string& s) {
+                    for (char c : s) {
+                        if (c == ';' || c == '|' || c == '&' || c == '$' ||
+                            c == '`' || c == '(' || c == ')' || c == '{' ||
+                            c == '}' || c == '<' || c == '>' || c == '\'' ||
+                            c == '"' || c == '\\' || c == '\n' || c == '\r') {
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+                if (has_unsafe_chars(mp.mesh_pubkey) || has_unsafe_chars(mp.endpoint) ||
+                    has_unsafe_chars(mp.tunnel_ip) || has_unsafe_chars(mp.private_subnet) ||
+                    has_unsafe_chars(mp.relay_endpoint) || has_unsafe_chars(mp.hostname) ||
+                    has_unsafe_chars(mp.mgmt_pubkey)) {
+                    spdlog::warn("[MeshPeers] Rejected peer '{}' with shell-unsafe characters",
+                                  mp.node_id);
+                    continue;  // skip this peer entirely
+                }
+                // Reject peers with empty pubkey (unusable for the mesh)
+                if (mp.mesh_pubkey.empty()) {
+                    spdlog::debug("[MeshPeers] Skipping peer '{}' with empty mesh_pubkey", mp.node_id);
+                    continue;
+                }
+
+                peers.push_back(std::move(mp));
+            }
+        }
+        return {true, std::move(peers), status, ""};
+    } catch (const std::exception& e) {
+        return {false, {}, status, std::string("Parse error: ") + e.what()};
+    }
+}
+
+Result<std::string> LemonadeNexusClient::wait_mesh_peers(const std::string& node_id,
+                                                         const std::string& revision,
+                                                         uint32_t timeout_sec) {
+    // A wait sends no request byte the server could apply twice, and its
+    // only effect is an earlier peer refresh, so every failure is harmless.
+    constexpr std::size_t kMaxPeersRevision = 128;
+    constexpr int         kReadMarginSec    = 10;
+    timeout_sec = std::clamp<uint32_t>(timeout_sec, 1, 30);
+    if (node_id.empty() || revision.empty() || revision.size() > kMaxPeersRevision) {
+        return {false, {}, 0, "wait_mesh_peers needs a node id and a revision"};
+    }
+    if (const auto refusal = impl_->private_api_refusal(); !refusal.empty()) {
+        return {false, {}, 0, refusal};
+    }
+    std::string fqdn;
+    uint16_t lp = 0;
+    {
+        std::lock_guard egress_lock(impl_->private_api_mtx);
+        if (!impl_->meshplane.is_active() || impl_->server_tunnel_ip.empty() ||
+            impl_->server_private_fqdn.empty()) {
+            return {false, {}, 0, "the mesh is not up"};
+        }
+        fqdn = impl_->server_private_fqdn;
+        lp = impl_->meshplane.tcp_egress(impl_->server_tunnel_ip, impl_->private_port);
+    }
+    if (lp == 0) return {false, {}, 0, "no egress to the session server"};
+
+    std::shared_ptr<httplib::SSLClient> cli;
+    {
+        std::lock_guard lock(impl_->poll_mtx);
+        if (impl_->poll_cancelled) return {false, {}, 0, "cancelled"};
+        if (!impl_->poll_cli || impl_->poll_cli_port != lp) {
+            impl_->poll_cli = std::make_shared<httplib::SSLClient>(fqdn, lp);
+            impl_->poll_cli->set_hostname_addr_map({{fqdn, "127.0.0.1"}});
+            impl_->poll_cli->set_connection_timeout(kMeshConnectTimeoutSec);
+            impl_->poll_cli->set_keep_alive(true);
+            apply_client_socket_options(*impl_->poll_cli);
+            impl_->poll_cli_port = lp;
+        }
+        impl_->poll_cli->set_read_timeout(static_cast<time_t>(timeout_sec) + kReadMarginSec);
+        cli = impl_->poll_cli;
+    }
+    const auto path = "/api/mesh/peers/" + node_id + "?wait_revision=" + revision +
+                      "&timeout=" + std::to_string(timeout_sec);
+    httplib::Result res;
+    try {
+        res = cli->Get(path, impl_->auth_headers());
+    } catch (const std::exception& e) {
+        std::lock_guard lock(impl_->poll_mtx);
+        if (impl_->poll_cli == cli) impl_->poll_cli.reset();
+        return {false, {}, 0, std::string("peer wait failed: ") + e.what()};
+    }
+    if (!res) {
+        std::lock_guard lock(impl_->poll_mtx);
+        if (impl_->poll_cli == cli) impl_->poll_cli.reset();
+        return {false, {}, 0, "peer wait got no answer: " + httplib::to_string(res.error())};
+    }
+    if (res->status != 200) {
+        return {false, {}, res->status, "peer wait answered HTTP " + std::to_string(res->status)};
+    }
+    std::string next;
+    try {
+        const auto body = json::parse(res->body);
+        if (const auto found = body.find("peers_revision");
+            found != body.end() && found->is_string() &&
+            found->get_ref<const std::string&>().size() <= kMaxPeersRevision) {
+            next = found->get<std::string>();
+        }
+    } catch (...) {
+        return {false, {}, res->status, "peer wait answered invalid JSON"};
+    }
+    if (next.empty()) return {false, {}, res->status, "the server does not hold peer waits"};
+    return {true, std::move(next), res->status, ""};
+}
+
+void LemonadeNexusClient::cancel_mesh_peer_wait() {
+    std::shared_ptr<httplib::SSLClient> cli;
+    std::shared_ptr<EventSocketHandle>  ws;
+    {
+        std::lock_guard lock(impl_->poll_mtx);
+        impl_->poll_cancelled = true;
+        cli = impl_->poll_cli;
+        ws = impl_->events_ws;
+    }
+    if (cli) cli->stop();
+    if (ws) end_event_socket(*ws, "mesh stopping");
+}
+
+Result<bool> LemonadeNexusClient::run_mesh_events(
+    const std::string& node_id, const std::function<void(const MeshRevisions&)>& on_revisions) {
+    constexpr std::size_t kMaxRevision = 128;
+    constexpr std::size_t kMaxMessage = 4096;
+    // Pings every 15 s; two missed pongs end the socket, so a mesh path that
+    // went silent is noticed within about 45 s.
+    constexpr time_t kPingSec = 15;
+    constexpr int kMaxMissedPongs = 2;
+    const auto node_char = [](unsigned char c) { return std::isalnum(c) || c == '_' || c == '-'; };
+    if (node_id.empty() || !std::all_of(node_id.begin(), node_id.end(), node_char)) {
+        return {false, false, 0, "run_mesh_events needs a node id"};
+    }
+#if LEMONADE_NEXUS_HTTPLIB_VERSION < 33000
+    (void)on_revisions;
+    return {false, false, 0, kNoEventSocket};
+#else
+    if (!event_socket_supported()) return {false, false, 0, kNoEventSocket};
+    if (const auto refusal = impl_->private_api_refusal(); !refusal.empty()) {
+        return {false, false, 0, refusal};
+    }
+    // The TLS handshake holds private_api_mtx like every private request: two
+    // handshakes through the netstack egress at once both fail, and the
+    // socket opens as the mesh starts, together with the first peer refresh.
+    // The open socket runs on its own connection without the lock.
+    std::unique_lock egress_lock(impl_->private_api_mtx);
+    if (!impl_->meshplane.is_active() || impl_->server_tunnel_ip.empty() ||
+        impl_->server_private_fqdn.empty()) {
+        return {false, false, 0, "the mesh is not up"};
+    }
+    const auto fqdn = impl_->server_private_fqdn;
+    const auto lp = impl_->meshplane.tcp_egress(impl_->server_tunnel_ip, impl_->private_port);
+    if (lp == 0) return {false, false, 0, "no egress to the session server"};
+
+    // The private FQDN lands on the loopback egress, as for the other private
+    // calls; SNI and certificate verification still use the FQDN.
+    auto ws = make_event_socket<EventSocket>(
+        "wss://" + fqdn + ":" + std::to_string(lp) + "/api/events?node_id=" + node_id,
+        impl_->auth_headers(), fqdn, kPingSec, kMaxMissedPongs);
+    if (!ws) return {false, false, 0, kNoEventSocket};
+    if (!ws->client->is_valid()) return {false, false, 0, "the event socket URL is not valid"};
+    ws->client->set_connection_timeout(kMeshConnectTimeoutSec);
+    {
+        std::lock_guard lock(impl_->poll_mtx);
+        if (impl_->poll_cancelled) return {false, false, 0, "cancelled"};
+        impl_->events_ws = ws;
+    }
+    const auto release = [&] {
+        std::lock_guard lock(impl_->poll_mtx);
+        if (impl_->events_ws == ws) impl_->events_ws.reset();
+    };
+    const auto opened = open_event_socket(*ws->client);
+    egress_lock.unlock();
+    if (!opened.ok) {
+        release();
+        return {false, false, opened.status, "event socket not opened: " + opened.error};
+    }
+    bool cancelled = false;
+    {
+        std::lock_guard lock(impl_->poll_mtx);
+        cancelled = impl_->poll_cancelled;
+    }
+    if (cancelled) {
+        // cancel_mesh_peer_wait() ran while the socket was opening and may
+        // have found nothing to end yet, so the socket is closed here, or
+        // the read below would wait for the server to end it.
+        close_event_socket(*ws->client, "mesh stopping");
+        release();
+        return {false, false, 0, "cancelled"};
+    }
+
+    std::string message;
+    std::string error;
+    while (ws->client->read(message) != httplib::ws::Fail) {
+        if (message.size() > kMaxMessage) {
+            error = "event message too large";
+            break;
+        }
+        const auto event = json::parse(message, nullptr, false);
+        if (!event.is_object()) {
+            error = "event message is not a JSON object";
+            break;
+        }
+        // Other events are for later versions of the server.
+        if (event.value("event", std::string{}) != "revisions") continue;
+        const auto revision = [&](const char* key) -> std::optional<std::string> {
+            const auto found = event.find(key);
+            if (found == event.end() || !found->is_string()) return std::nullopt;
+            const auto& text = found->get_ref<const std::string&>();
+            if (text.empty() || text.size() > kMaxRevision) return std::nullopt;
+            return text;
+        };
+        const auto peers = revision("peers_revision");
+        const auto devices = revision("devices_revision");
+        if (!peers || !devices) {
+            error = "event message without valid revisions";
+            break;
+        }
+        on_revisions({*peers, *devices});
+    }
+    ws->client->close();
+    release();
+    return {true, true, 101, error};
+#endif
+}
+
+void LemonadeNexusClient::begin_mesh_peer_waits() {
+    std::lock_guard lock(impl_->poll_mtx);
+    impl_->poll_cancelled = false;
+}
+
+bool LemonadeNexusClient::event_socket_supported() noexcept { return kEventSocketSupported; }
+
+Result<LemonadeNexusClient::MeshRevisions> LemonadeNexusClient::mesh_heartbeat(
+    const std::string& nid, const std::string& endpoint,
+    const std::optional<std::vector<std::string>>& local_endpoints) {
+    json body;
+    body["node_id"]  = nid;
+    body["endpoint"] = endpoint;
+    if (local_endpoints) body["local_endpoints"] = *local_endpoints;
+
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/mesh/heartbeat", body, status);
+    if (!resp) {
+        return {false, {}, status, "heartbeat request failed"};
+    }
+    if (status != 200) {
+        return {false, {}, status, resp->value("error", "heartbeat failed")};
+    }
+    // The session's server says it leaves Tier 1 at the next epoch: move
+    // the session early. Verified by the move, never taken on its word.
+    if (const auto notice = resp->find("tier1_departure");
+        notice != resp->end() && notice->is_object()) {
+        impl_->note_departure_notice(notice->value("next_epoch", uint64_t{0}));
+    }
+    // A change only makes the orchestrator fetch a list sooner, so a
+    // malformed value is ignored rather than refused.
+    constexpr std::size_t kMaxRevision = 128;
+    const auto revision = [&](const char* key) {
+        std::string out;
+        if (const auto found = resp->find(key); found != resp->end() && found->is_string() &&
+            found->get_ref<const std::string&>().size() <= kMaxRevision) {
+            out = found->get<std::string>();
+        }
+        return out;
+    };
+    return {true, MeshRevisions{revision("peers_revision"), revision("devices_revision")}, status,
+            ""};
+}
+
+// ---------------------------------------------------------------------------
+// Routing layer (connect-by-identifier control plane)
+// ---------------------------------------------------------------------------
+
+Result<RoutingProfile> LemonadeNexusClient::get_routing_profile(int page, int page_size) {
+    Result<RoutingProfile> result;
+    int status = 0;
+    auto path = "/api/routing/profile?page=" + std::to_string(page) +
+                "&page_size=" + std::to_string(page_size);
+    auto resp = impl_->private_http_get(path, status);
+    result.http_status = status;
+    if (!resp) { result.error = "routing profile unreachable"; return result; }
+    try {
+        result.value = resp->get<RoutingProfile>();
+        result.ok = true;
+    } catch (const std::exception& e) {
+        result.error = std::string("failed to parse profile: ") + e.what();
+    }
+    return result;
+}
+
+Result<ConnectionRequestResult> LemonadeNexusClient::request_endpoint(
+    const std::string& identifier, const std::string& conn_nonce_b64,
+    const std::string& client_mesh_pubkey, const std::vector<std::string>& candidates) {
+    Result<ConnectionRequestResult> result;
+    nlohmann::json body = {
+        {"identifier", identifier},
+        {"conn_nonce", conn_nonce_b64},
+        {"client_mesh_pubkey", client_mesh_pubkey},
+        {"client_candidates", candidates},
+    };
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/routing/request", body, status);
+    result.http_status = status;
+    if (!resp) {
+        result.error = status == 403 ? "endpoint not found or not authorized"
+                                     : "routing request failed";
+        return result;
+    }
+    try {
+        result.value = resp->get<ConnectionRequestResult>();
+        result.ok = true;
+    } catch (const std::exception& e) {
+        result.error = std::string("failed to parse request result: ") + e.what();
+    }
+    return result;
+}
+
+Result<ConnectionDirective> LemonadeNexusClient::routing_connect(
+    const std::string& connection_id) {
+    Result<ConnectionDirective> result;
+    nlohmann::json body = {{"connection_id", connection_id}};
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/routing/connect", body, status);
+    result.http_status = status;
+    if (!resp) {
+        result.error = status == 409 ? "connection not ready" : "connect failed";
+        return result;
+    }
+    try {
+        result.value = resp->get<ConnectionDirective>();
+        result.ok = true;
+    } catch (const std::exception& e) {
+        result.error = std::string("failed to parse directive: ") + e.what();
+    }
+    return result;
+}
+
+Result<ConnectionStatus> LemonadeNexusClient::connection_status(
+    const std::string& connection_id) {
+    Result<ConnectionStatus> result;
+    int status = 0;
+    auto resp = impl_->private_http_get("/api/routing/session/" + connection_id, status);
+    result.http_status = status;
+    if (!resp) {
+        result.error = status == 404 ? "session not found" : "status unreachable";
+        return result;
+    }
+    try {
+        result.value = resp->get<ConnectionStatus>();
+        result.ok = true;
+    } catch (const std::exception& e) {
+        result.error = std::string("failed to parse status: ") + e.what();
+    }
+    return result;
+}
+
+Result<nlohmann::json> LemonadeNexusClient::routing_register_endpoint(
+    const std::string& cpu_id, const std::string& net_mac,
+    const std::string& mesh_pubkey, const std::string& stun_endpoint) {
+    Result<nlohmann::json> result;
+    nlohmann::json body = {
+        {"cpu_id", cpu_id}, {"net_mac", net_mac},
+        {"mesh_pubkey", mesh_pubkey}, {"stun_endpoint", stun_endpoint},
+    };
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/routing/endpoint/register", body, status);
+    result.http_status = status;
+    if (!resp) { result.error = "endpoint register failed"; return result; }
+    result.value = *resp;
+    result.ok = true;
+    return result;
+}
+
+Result<nlohmann::json> LemonadeNexusClient::routing_endpoint_ready(
+    const std::string& connection_id, const std::string& cpu_id,
+    const std::string& net_mac, const std::string& endpoint_mesh_pubkey,
+    const std::vector<std::string>& candidates) {
+    Result<nlohmann::json> result;
+    nlohmann::json body = {
+        {"connection_id", connection_id}, {"cpu_id", cpu_id}, {"net_mac", net_mac},
+        {"endpoint_mesh_pubkey", endpoint_mesh_pubkey}, {"endpoint_candidates", candidates},
+    };
+    int status = 0;
+    auto resp = impl_->private_http_post("/api/routing/endpoint/ready", body, status);
+    result.http_status = status;
+    if (!resp) { result.error = "endpoint ready failed"; return result; }
+    result.value = *resp;
+    result.ok = true;
+    return result;
+}
+
+} // namespace lnsdk

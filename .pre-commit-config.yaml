@@ -3,8 +3,12 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      # The vendored Nexus SDK and its patch series must stay byte-identical to
+      # upstream (see tools/update_nexus_sdk.py).
       - id: trailing-whitespace
+        exclude: ^src/LemonadeNexusSDK/
       - id: end-of-file-fixer
+        exclude: ^src/LemonadeNexusSDK/
       - id: check-yaml
       - id: check-added-large-files
         # Allow the vendored model-viewer bundle (see src/app/src/renderer/vendor/README.md),

@@ -7,6 +7,7 @@
 #include <lemon/utils/aixlog.hpp>
 #include <lemon/utils/http_client.h>
 #include <lemon/utils/json_utils.h>
+#include <lemon/utils/network_utils.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/version.h>
 #include "telemetry.h"
@@ -206,6 +207,11 @@ int main(int argc, char** argv) {
 
         utils::set_models_dir(config->models_dir());
 
+        // Service managers start lemond with a small descriptor limit (launchd: 256).
+        // Raise it before the listeners, worker pools and backends start opening
+        // descriptors; see raise_open_file_limit() for what happens once it is reached.
+        const std::size_t open_file_limit = utils::raise_open_file_limit();
+
         LOG(INFO) << "Starting Lemonade Server..." << std::endl;
         LOG(INFO) << "  Version: " << LEMON_VERSION_STRING << std::endl;
         LOG(INFO) << "  Cache dir: " << cli_config.cache_dir << std::endl;
@@ -216,6 +222,9 @@ int main(int argc, char** argv) {
         LOG(INFO) << "  Log file mode: " << config->log_file() << std::endl;
         LOG(INFO) << "  Log max file size: " << config->log_max_file_size_mb() << " MB" << std::endl;
         LOG(INFO) << "  Log max files: " << config->log_max_files() << std::endl;
+        if (open_file_limit > 0) {
+            LOG(INFO) << "  Open file limit: " << open_file_limit << std::endl;
+        }
         if (!config->extra_models_dir().empty()) {
             LOG(INFO) << "  Extra models dir: " << config->extra_models_dir() << std::endl;
         }

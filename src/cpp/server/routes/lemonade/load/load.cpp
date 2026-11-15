@@ -6,6 +6,7 @@
 
 #include "lemon/model_manager.h"
 #include "lemon/model_types.h"
+#include "lemon/nexus_manager.h"
 #include "lemon/recipe_options.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
@@ -56,7 +57,8 @@ const RouteArg kModelName{"model_name", ArgIn::JsonBody, {{"type", "string"}}, t
 const RouteArg kPinned{"pinned", ArgIn::JsonBody, {{"type", json::array({"boolean", "null"})}}, false, Support::Available,
                        "If `true`, pins the model so least-recently-used eviction skips it; `false` unpins it. "
                        "When omitted, a loaded model keeps its pin state and a new load uses the model's "
-                       "saved `pinned` option, else `false`."};
+                       "saved `pinned` option, else `false`. A request relayed from a Nexus mesh peer "
+                       "is treated as omitted: a peer never changes this server's pins."};
 const RouteArg kSaveOptions{"save_options", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                             "If `true`, saves the options sent in this request as the model's "
                             "`recipe_options.json` entry, replacing the stored one, so an option the request "
@@ -209,11 +211,13 @@ public:
                 }
             }
 
-            bool save_options = req.value(kSaveOptions, false);
-            std::optional<bool> pinned_opt = std::nullopt;
-            if (req.arg(kPinned).is_boolean()) {
-                pinned_opt = req.arg(kPinned).get<bool>();
-            }
+            // A mesh peer uses this server's models; it does not change how the
+            // operator loaded them, what is stored for them or whether they stay
+            // pinned. Its load keeps a loaded model as it is and reports that.
+            const bool mesh_peer = nexus_access::request_from_mesh_peer();
+            bool save_options = !mesh_peer && req.value(kSaveOptions, false);
+            const std::optional<bool> pinned_opt = nexus_access::load_pin_request(
+                mesh_peer, req.arg(kPinned), options, transient_saved_option_tombstones);
 
             LOG(INFO, "Server") << "Ensuring model loaded: " << model_name;
             LOG(INFO, "Server") << " " << options.to_log_string(false);
@@ -278,9 +282,11 @@ public:
                 res.set_content(response.dump(), "application/json");
             } else {
                 // Declarative: a no-op when already loaded with matching options; a
-                // reload only when the options differ.
+                // reload only when the options differ and the operator asked. A mesh
+                // peer never reloads a loaded model: its options are its own machine's.
+                const bool already_loaded = ctx_.router->is_model_loaded(model_name);
                 ctx_.router->load_model(model_name, info, options, true,
-                                        /*allow_reload_on_option_change=*/true,
+                                        /*allow_reload_on_option_change=*/!mesh_peer,
                                         pinned_opt);
 
                 json response = {
@@ -289,6 +295,7 @@ public:
                     {"checkpoint", info.checkpoint()},
                     {"recipe", info.recipe}
                 };
+                if (mesh_peer) response["already_loaded"] = already_loaded;
                 res.set_content(response.dump(), "application/json");
             }
 

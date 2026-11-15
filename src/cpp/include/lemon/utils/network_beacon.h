@@ -29,7 +29,8 @@ public:
     // Server: Starts a blocking loop to shout presence
     std::string getLocalHostname();
     std::string buildStandardPayloadPattern(std::string hostname, std::string hostUrl);
-    bool isRFC1918(const std::string& ipAddress);
+    /// True for a dotted IPv4 address in 10/8, 172.16/12, 192.168/16 or 127/8.
+    static bool isRFC1918(const std::string& ipAddress);
     std::vector<NetworkInterfaceInfo> getLocalRFC1918Interfaces();
     void startBroadcasting(int beaconPort, int serverPort, uint16_t intervalSeconds);
     void stopBroadcasting();
