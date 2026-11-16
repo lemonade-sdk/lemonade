@@ -591,6 +591,8 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         sys.platform.startswith("linux"), "System backend only supported on Linux"
     )
     def _call_mcp_chat(self, **extra_arguments):
+        if os.path.exists(self.capture_path):
+            os.remove(self.capture_path)
         response = requests.post(
             f"http://localhost:{PORT}/mcp",
             json={
@@ -611,6 +613,9 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertNotIn("error", body, body)
+        result = body["result"]
+        self.assertFalse(result.get("isError"), result)
+        self.assertEqual(result["content"][0]["type"], "text", result)
 
         with open(self.capture_path, "r", encoding="utf-8") as handle:
             return json.load(handle)
