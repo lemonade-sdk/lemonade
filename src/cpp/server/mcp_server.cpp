@@ -4,11 +4,14 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cmath>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <lemon/model_manager.h>
+#include <limits>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -19,13 +22,58 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/api_docs.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/collection_orchestrator.h"
+#include "lemon/media_model_selection.h"
 #include "lemon/model_types.h"
 #include "lemon/models/store_snapshot.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
 #include "lemon/web_search.h"
+
+// Media selection is implemented here rather than in its public header: the
+// implementation needs the ModelManager facade, while consumers of the
+// candidate type only need ModelInfo.
+namespace lemon::mcp {
+
+bool model_advertises_capability(const ModelInfo& info,
+                                const std::string& required_capability) {
+    if (required_capability.empty()) return true;
+    const auto capabilities = ModelManager::model_capabilities(info);
+    return std::find(capabilities.begin(), capabilities.end(), required_capability) !=
+           capabilities.end();
+}
+
+bool media_model_eligible(const MediaModelCandidate& candidate,
+                          ModelType required_type,
+                          const std::string& required_capability) {
+    return candidate.type == required_type &&
+           (required_capability.empty() ||
+            std::find(candidate.capabilities.begin(), candidate.capabilities.end(),
+                      required_capability) != candidate.capabilities.end());
+}
+
+std::optional<std::string> select_media_model(
+        const std::vector<MediaModelCandidate>& loaded,
+        const std::vector<MediaModelCandidate>& downloaded,
+        ModelType required_type, const std::string& required_capability) {
+    auto select = [&](const std::vector<MediaModelCandidate>& candidates)
+        -> std::optional<std::string> {
+        for (const auto& candidate : candidates) {
+            if (!candidate.name.empty() &&
+                media_model_eligible(candidate, required_type, required_capability)) {
+                return candidate.name;
+            }
+        }
+        return std::nullopt;
+    };
+
+    if (auto loaded_match = select(loaded)) return loaded_match;
+    return select(downloaded);
+}
+
+}  // namespace lemon::mcp
 
 namespace lemon {
 
@@ -63,6 +111,37 @@ std::string extract_string_arg(const json& args, const char* key) {
         throw std::runtime_error(std::string("Missing or non-string argument: ") + key);
     }
     return args[key].get<std::string>();
+}
+
+// Validate the whole input, not only the prefix accepted by base64_decode.
+// Standard padding is optional, but trailing junk and non-canonical pad bits
+// must not reach image_edits (or trigger model loading).
+bool valid_image_base64(const std::string& image) {
+    if (image.empty() || image.size() % 4 == 1) return false;
+
+    std::size_t padding = 0;
+    if (image.back() == '=') {
+        padding = 1;
+        if (image.size() > 1 && image[image.size() - 2] == '=') padding = 2;
+    }
+    const std::size_t chars = image.size() - padding;
+    if (chars < 2 || chars % 4 == 1) return false;
+    if (padding && (image.size() % 4 != 0 || chars % 4 != 4 - padding)) return false;
+
+    int last = 0;
+    for (std::size_t i = 0; i < chars; ++i) {
+        const unsigned char c = static_cast<unsigned char>(image[i]);
+        if (c >= 'A' && c <= 'Z') last = c - 'A';
+        else if (c >= 'a' && c <= 'z') last = c - 'a' + 26;
+        else if (c >= '0' && c <= '9') last = c - '0' + 52;
+        else if (c == '+') last = 62;
+        else if (c == '/') last = 63;
+        else return false;
+    }
+    // In a final two-/three-character group, unused low bits must be zero.
+    if (chars % 4 == 2 && (last & 15) != 0) return false;
+    if (chars % 4 == 3 && (last & 3) != 0) return false;
+    return true;
 }
 
 // Some MCP clients (notably Claude Desktop) emit chat messages in Anthropic's
@@ -423,7 +502,84 @@ std::variant<std::string, json> McpServer::resolve_model_for_tool(
         ModelType want_type,
         const char* type_str,
         const char* default_model,
-        bool allow_download) {
+        bool allow_download,
+        std::string required_capability) {
+    if (!required_capability.empty()) {
+        auto selection_error = [](const std::string& message) -> json {
+            return {
+                {"content", json::array({text_content_block(message)})},
+                {"isError", true},
+            };
+        };
+
+        if (arguments.contains("model") && arguments["model"].is_string() &&
+            !arguments["model"].get<std::string>().empty()) {
+            const std::string requested = arguments["model"].get<std::string>();
+            const auto resolved = model_manager_->resolve(requested);
+            if (!resolved) {
+                if (model_manager_->model_exists_unfiltered(requested)) {
+                    std::string reason = model_manager_->get_model_filter_reason(requested);
+                    if (reason.empty()) {
+                        reason = "This model is not available on this server.";
+                    }
+                    return selection_error("Model '" + requested +
+                                           "' is not available on this lemonade server. " + reason);
+                }
+                return selection_error("Unknown model '" + requested + "'.");
+            }
+            if (resolved->info->type != want_type) {
+                return selection_error("Model '" + requested + "' is not a " +
+                                       type_str + " model.");
+            }
+            if (!mcp::model_advertises_capability(*resolved->info, required_capability)) {
+                return selection_error("Model '" + requested +
+                                       "' does not advertise " + required_capability +
+                                       " support.");
+            }
+            if (!router_->is_model_loaded(resolved->canonical_id) &&
+                model_manager_->download_policy(*resolved->info) !=
+                    backends::DownloadPolicy::SelfManaged &&
+                !model_manager_->is_model_downloaded(resolved->canonical_id)) {
+                return selection_error("Model '" + requested +
+                                       "' is not downloaded. Download it explicitly "
+                                       "before calling lemonade_edit_image.");
+            }
+            return resolved->canonical_id;
+        }
+
+        std::vector<mcp::MediaModelCandidate> loaded_candidates;
+        for (const auto& loaded : router_->get_all_loaded_models()) {
+            const std::string name = loaded.value("model_name", std::string());
+            if (name.empty()) continue;
+            const auto resolved = model_manager_->resolve(name);
+            if (resolved) {
+                loaded_candidates.push_back({
+                    resolved->canonical_id, resolved->info->type,
+                    ModelManager::model_capabilities(*resolved->info)});
+            }
+        }
+
+        ModelQueryOptions query;
+        query.downloaded = true;
+        query.capability = required_capability;
+        const auto downloaded = model_manager_->query_models(query);
+        std::vector<mcp::MediaModelCandidate> downloaded_candidates;
+        downloaded_candidates.reserve(downloaded.models.size());
+        for (const auto& [name, info] : downloaded.models) {
+            downloaded_candidates.push_back({
+                name, info.type, ModelManager::model_capabilities(info)});
+        }
+
+        if (auto selected = mcp::select_media_model(
+                loaded_candidates, downloaded_candidates, want_type,
+                required_capability)) {
+            return *selected;
+        }
+        return selection_error("No loaded or downloaded " + required_capability +
+                               " capable model is available. Select or download an "
+                               "eligible model explicitly.");
+    }
+
     // 1. Explicit model argument always wins.
     if (arguments.contains("model") && arguments["model"].is_string() &&
         !arguments["model"].get<std::string>().empty()) {
@@ -775,6 +931,80 @@ json McpServer::tool_generate_image(const json& arguments) {
         {"content", std::move(content)},
         {"isError", false},
     };
+}
+
+json McpServer::tool_edit_image(const json& arguments) {
+    const std::string prompt = extract_string_arg(arguments, "prompt");
+
+    // Image-edit is a model-specific capability, not an image backend property.
+    // Resolve and validate it before decoding the upload or loading any model.
+    auto resolved = resolve_model_for_tool(
+        arguments, ModelType::IMAGE, "image", "", false, "image-edit");
+    if (std::holds_alternative<json>(resolved)) return std::get<json>(resolved);
+    const std::string model = std::get<std::string>(resolved);
+
+    std::string image = extract_string_arg(arguments, "image");
+    if (image.rfind("data:", 0) == 0) {
+        const size_t separator = image.find(";base64,");
+        if (image.rfind("data:image/", 0) != 0 || separator == std::string::npos) {
+            throw std::runtime_error("image must be base64 or a data:image/...;base64 URL");
+        }
+        image = image.substr(separator + 8);
+    }
+    if (!valid_image_base64(image)) {
+        throw std::runtime_error("image must contain valid base64 data");
+    }
+
+    json router_request = {
+        {"model", model},
+        {"prompt", prompt},
+        {"image_data", image},
+        {"response_format", "b64_json"},
+    };
+    for (const char* key : {"size", "n", "seed", "steps", "cfg_scale"}) {
+        if (!arguments.contains(key)) continue;
+        const json& value = arguments[key];
+        if (std::string(key) == "n" || std::string(key) == "seed" ||
+            std::string(key) == "steps") {
+            // Both image adapters read these values as int. Do not narrow an
+            // out-of-range integer (or integral JSON float) to a different value.
+            if (!value.is_number()) {
+                throw std::runtime_error(std::string("Invalid integer value for '") + key + "'");
+            }
+            const double number = value.get<double>();
+            if (!std::isfinite(number) || std::trunc(number) != number ||
+                number < static_cast<double>(std::numeric_limits<int>::min()) ||
+                number > static_cast<double>(std::numeric_limits<int>::max())) {
+                throw std::runtime_error(std::string("Invalid integer value for '") + key + "'");
+            }
+            router_request[key] = static_cast<int>(number);
+        } else {
+            router_request[key] = value;
+        }
+    }
+
+    // All argument checks must complete before loading a potentially large model.
+    ensure_loaded_(model);
+
+    json response = router_->image_edits(router_request);
+    if (response.contains("error")) {
+        throw std::runtime_error(response["error"].value("message", "image editing failed"));
+    }
+
+    json content = json::array();
+    if (response.contains("data") && response["data"].is_array()) {
+        for (const auto& entry : response["data"]) {
+            if (!entry.contains("b64_json") || !entry["b64_json"].is_string()) continue;
+            content.push_back({
+                {"type", "image"},
+                {"data", entry["b64_json"].get<std::string>()},
+                {"mimeType", "image/png"},
+            });
+        }
+    }
+    if (content.empty()) throw std::runtime_error("Image editing returned no images");
+
+    return {{"content", std::move(content)}, {"isError", false}};
 }
 
 json McpServer::tool_omni(const json& arguments) {
@@ -1691,6 +1921,52 @@ std::vector<McpTool> McpServer::build_tools() {
             },
             [this](const json& arguments) {
                 return tool_generate_image(arguments);
+            }),
+        McpTool(
+            json{
+                {"name", "lemonade_edit_image"},
+                {"description",
+                 "Edit an image using a model advertising the image-edit capability. "
+                 "The host chooses the source image and passes it as base64 or a "
+                 "data:image/...;base64 URL. An explicit model must be an image-edit "
+                 "capable IMAGE model. Without a model, Lemonade prefers an already "
+                 "loaded eligible model, then an already downloaded one. "
+                 "Generation-only image models are skipped and no model is "
+                 "downloaded automatically."},
+                {"inputSchema", {
+                    {"type", "object"},
+                    {"required", json::array({"prompt", "image"})},
+                    {"properties", {
+                        {"prompt", { {"type", "string"},
+                                     {"description", "Instructions for editing the source image."} }},
+                        {"image", { {"type", "string"},
+                                    {"description", "Raw base64 image bytes or a data:image/...;base64 URL."} }},
+                        {"model", { {"type", "string"},
+                                    {"description", "Optional. An IMAGE model with image-edit capability; omit to select an eligible local model."} }},
+                        {"size", { {"type", "string"},
+                                   {"description", "Output size as WIDTHxHEIGHT."} }},
+                        {"steps", { {"type", "integer"}, {"minimum", 1},
+                                    {"description", "Number of image editing steps."} }},
+                        {"cfg_scale", { {"type", "number"},
+                                        {"description", "Classifier-free guidance scale."} }},
+                        {"seed", { {"type", "integer"},
+                                   {"description", "Optional random seed."} }},
+                        {"n", { {"type", "integer"}, {"minimum", 1}, {"maximum", 10},
+                                {"description", "Number of edited images to return."} }},
+                    }},
+                }},
+                {"_meta", {
+                    {"lemonade/result", {
+                        {"description",
+                         "On success returns native MCP image content blocks containing "
+                         "the edited images as base64 PNG data. If an explicit model lacks "
+                         "image-edit or no local eligible model exists, returns one error "
+                         "text block with isError=true."},
+                    }},
+                }},
+            },
+            [this](const json& arguments) {
+                return tool_edit_image(arguments);
             }),
         McpTool(
             json{
