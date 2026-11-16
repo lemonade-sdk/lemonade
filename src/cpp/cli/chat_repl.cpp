@@ -97,14 +97,6 @@ int detect_console_width() {
     return 80;
 }
 
-void enable_utf8_console_output() {
-#ifdef _WIN32
-    if (stdout_is_tty()) {
-        SetConsoleOutputCP(CP_UTF8);
-    }
-#endif
-}
-
 TermUi init_term_ui() {
     TermUi ui;
     bool tty = stdout_is_tty();
@@ -114,9 +106,9 @@ TermUi init_term_ui() {
     if (ui.width < 40) ui.width = 40;
 
 #ifdef _WIN32
-    // Enable ANSI escape sequence processing for the console.
+    // Enable ANSI escape sequence processing and UTF-8 output for the console.
     if (tty) {
-        enable_utf8_console_output();
+        SetConsoleOutputCP(CP_UTF8);
         HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
         DWORD mode = 0;
         if (h != INVALID_HANDLE_VALUE && GetConsoleMode(h, &mode)) {
@@ -926,10 +918,40 @@ bool stdin_is_tty() {
 #endif
 }
 
+#ifdef _WIN32
+std::atomic<UINT> g_saved_output_code_page{0};
+#endif
+
+// Switches a Windows console to UTF-8 output and puts the previous code page back afterwards.
+// Does nothing when stdout is not a console or on other platforms.
+class Utf8ConsoleOutput {
+public:
+    Utf8ConsoleOutput() {
+#ifdef _WIN32
+        if (!stdout_is_tty()) return;
+        UINT previous = GetConsoleOutputCP();
+        if (previous != 0 && previous != CP_UTF8 && SetConsoleOutputCP(CP_UTF8)) {
+            g_saved_output_code_page = previous;
+        }
+#endif
+    }
+    ~Utf8ConsoleOutput() { restore(); }
+    Utf8ConsoleOutput(const Utf8ConsoleOutput&) = delete;
+    Utf8ConsoleOutput& operator=(const Utf8ConsoleOutput&) = delete;
+
+    static void restore() {
+#ifdef _WIN32
+        UINT previous = g_saved_output_code_page.exchange(0);
+        if (previous != 0) SetConsoleOutputCP(previous);
+#endif
+    }
+};
+
 // Ctrl-C ends a one-shot run immediately with exit code 130.
 #ifdef _WIN32
 BOOL WINAPI oneshot_ctrl_handler(DWORD ctrl_type) {
     if (ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_BREAK_EVENT) {
+        Utf8ConsoleOutput::restore();
         std::_Exit(kExitInterrupted);
     }
     return FALSE;
@@ -972,6 +994,11 @@ int oneshot_error(const std::string& message, int code) {
     return code;
 }
 
+bool stdout_write_failed() {
+    std::cout.flush();
+    return std::cout.fail();
+}
+
 std::string describe_exception(const std::exception& e) {
     if (const auto* http = dynamic_cast<const lemonade::HttpError*>(&e)) {
         return lemonade::extract_server_error_message(*http);
@@ -1001,8 +1028,11 @@ int oneshot_blocking(lemonade::LemonadeClient& client, const std::string& model,
         return oneshot_error("server returned an invalid chat response", kExitFailure);
     }
     const json& choice = response["choices"][0];
-    json message = choice.contains("message") && choice["message"].is_object()
-        ? choice["message"] : json::object();
+    if (!choice.contains("message") || !choice["message"].is_object()) {
+        return oneshot_error("server returned a response without an assistant message",
+                             kExitFailure);
+    }
+    const json& message = choice["message"];
 
     if (json_output) {
         json out;
@@ -1014,7 +1044,8 @@ int oneshot_blocking(lemonade::LemonadeClient& client, const std::string& model,
         out["finish_reason"] = choice.contains("finish_reason") ? choice["finish_reason"]
                                                                  : json(nullptr);
         std::cout << dump_safe(out) << std::endl;
-        return kExitOk;
+        return stdout_write_failed() ? oneshot_error("failed to write to stdout", kExitFailure)
+                                     : kExitOk;
     }
 
     std::string text = message.contains("content") && message["content"].is_string()
@@ -1022,7 +1053,8 @@ int oneshot_blocking(lemonade::LemonadeClient& client, const std::string& model,
     std::cout << text;
     if (text.empty() || text.back() != '\n') std::cout << "\n";
     std::cout.flush();
-    return kExitOk;
+    return stdout_write_failed() ? oneshot_error("failed to write to stdout", kExitFailure)
+                                 : kExitOk;
 }
 
 // Streams the answer text to stdout as it arrives; any stream failure exits 1 after partial output.
@@ -1063,6 +1095,7 @@ int oneshot_streaming(lemonade::LemonadeClient& client, json request_body) {
                 }
             }
         } catch (const json::exception&) {
+            if (stream_error.empty()) stream_error = "received a malformed stream event";
         }
     };
 
@@ -1087,7 +1120,9 @@ int oneshot_streaming(lemonade::LemonadeClient& client, json request_body) {
     } else if (wrote_any && last_char != '\n') {
         std::cout << "\n";
     }
-    std::cout.flush();
+    if (stdout_write_failed() && code == kExitOk) {
+        code = oneshot_error("failed to write to stdout", kExitFailure);
+    }
     return code;
 }
 
@@ -1188,7 +1223,7 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
         return oneshot_error("--json requires --prompt or piped stdin", kExitUsage);
     }
     if (oneshot) {
-        enable_utf8_console_output();
+        Utf8ConsoleOutput utf8_output;
         return run_chat_oneshot(client, options);
     }
 

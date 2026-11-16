@@ -1817,6 +1817,8 @@ int main(int argc, char* argv[]) {
 
     // Parse arguments
     try {
+        // On Windows this replaces argv with UTF-8 so non-ASCII prompts survive; no-op elsewhere.
+        argv = app.ensure_utf8(argv);
         app.parse(argc, argv);
     } catch (const CLI::ParseError& e) {
         if (is_launch_provider_misuse(argc, argv)) {

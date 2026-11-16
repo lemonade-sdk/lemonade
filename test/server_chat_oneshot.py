@@ -27,6 +27,7 @@ MODEL = "Mock-Model"
 class MockState:
     loaded_model = MODEL
     fail_stream = False
+    fault = None
     last_chat_request = None
 
 
@@ -66,18 +67,13 @@ class MockHandler(BaseHTTPRequestHandler):
             if req.get("stream"):
                 self._stream(req)
             else:
+                choice = {"finish_reason": "stop"}
+                if MockState.fault != "no_message":
+                    choice["message"] = {"role": "assistant", "content": "Hello there"}
                 self._send_json(
                     {
                         "model": req["model"],
-                        "choices": [
-                            {
-                                "message": {
-                                    "role": "assistant",
-                                    "content": "Hello there",
-                                },
-                                "finish_reason": "stop",
-                            }
-                        ],
+                        "choices": [choice],
                         "usage": {"prompt_tokens": 3, "completion_tokens": 2},
                     }
                 )
@@ -95,6 +91,8 @@ class MockHandler(BaseHTTPRequestHandler):
 
         for piece in ("Hello", " there"):
             event({"choices": [{"delta": {"content": piece}}]})
+        if MockState.fault == "bad_stream_event":
+            self.wfile.write(b"data: {not json\n\n")
         if MockState.fail_stream:
             return
         event({"choices": [], "usage": {"prompt_tokens": 3, "completion_tokens": 2}})
@@ -116,6 +114,7 @@ class ChatOneShotTests(unittest.TestCase):
     def setUp(self):
         MockState.loaded_model = MODEL
         MockState.fail_stream = False
+        MockState.fault = None
         MockState.last_chat_request = None
 
     def chat(self, *args, stdin=""):
@@ -165,6 +164,12 @@ class ChatOneShotTests(unittest.TestCase):
         r = self.chat(MODEL, stdin="log line\n")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.sent_user_content(), "log line\n")
+
+    def test_non_ascii_prompt_reaches_server(self):
+        prompt = "café ☕ 日本語"
+        r = self.chat(MODEL, "-p", prompt)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.sent_user_content(), prompt)
 
     def test_prompt_precedes_stdin(self):
         r = self.chat(MODEL, "-p", "Summarize", stdin="log line\n")
@@ -221,6 +226,21 @@ class ChatOneShotTests(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertTrue(r.stdout.startswith("Hello there"))
         self.assertIn("Error", r.stderr)
+
+    def test_response_without_message_fails(self):
+        MockState.fault = "no_message"
+        for extra in ((), ("--json",)):
+            r = self.chat(MODEL, "-p", "hi", "--no-stream", *extra)
+            self.assertEqual(r.returncode, 1, r.stderr)
+            self.assertEqual(r.stdout, "")
+            self.assertIn("Error", r.stderr)
+
+    def test_malformed_stream_event_fails(self):
+        MockState.fault = "bad_stream_event"
+        r = self.chat(MODEL, "-p", "hi")
+        self.assertEqual(r.returncode, 1)
+        self.assertTrue(r.stdout.startswith("Hello there"))
+        self.assertIn("malformed", r.stderr)
 
     def test_unreachable_server_fails(self):
         cmd = [
