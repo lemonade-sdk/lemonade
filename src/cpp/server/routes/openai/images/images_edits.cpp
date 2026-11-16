@@ -160,7 +160,7 @@ public:
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
-        response.schema = image_response_schema();
+        response.schema = image_generation_response_schema();
         s.responses = {response};
 
         RouteExample example;
