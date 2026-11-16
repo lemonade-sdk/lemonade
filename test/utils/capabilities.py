@@ -213,7 +213,7 @@ CAPABILITIES = {
                 # ryzenai-server only parses Qwen <tool_call> and Mistral
                 # [TOOL_CALLS] output; Llama 3.2 emits bare JSON, so tool-call
                 # tests need a Qwen model.
-                "tool_calling": "Qwen2.5-3B-Instruct-NPU",
+                "tool_calling": "Llama-3.2-1B-Instruct-NPU",
                 "multimodal": "Gemma-4-E2B-it-NPU",
             },
         },
