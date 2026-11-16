@@ -449,6 +449,69 @@ function runtimeDevicesFor(info: SystemInfoLike, recipe: string, backend: string
   return Array.isArray(list) ? list.filter((device: any) => typeof device?.name === 'string') : null;
 }
 
+interface GpuChoice {
+  value: string;
+  indexName: string;
+  label: string;
+}
+
+const isGpuId = (value: string): boolean => /[-:]/.test(value);
+
+/** Enough of a UUID to tell cards of one model apart; a PCI address is short already. */
+function shortGpuId(id: string): string {
+  return /^gpu-/i.test(id) ? id.slice(0, 12) : id;
+}
+
+/**
+ * The GPUs a CUDA or ROCm backend can be pinned to. Each is saved under its stable
+ * id (NVIDIA or ROCr uuid, else AMD pci_bus_id): unlike an index, an id still names
+ * the same card after cards are added or removed, and names no card on another server.
+ */
+function gpuChoices(info: SystemInfoLike, kind: 'cuda' | 'rocm'): GpuChoice[] {
+  const gpus: Array<{ index: number; name: string; id: string }> = [];
+  if (kind === 'cuda') {
+    const list = (info as any)?.devices?.nvidia_gpu;
+    if (Array.isArray(list)) {
+      list.forEach((gpu: any, ordinal: number) => {
+        if (gpu?.available === false) return;
+        const index = Number.isInteger(gpu?.index) && gpu.index >= 0 ? gpu.index : ordinal;
+        gpus.push({ index, name: String(gpu?.name || ''), id: String(gpu?.uuid || '') });
+      });
+    }
+  } else {
+    for (const gpu of hipIndexedAmdGpus(info)) {
+      gpus.push({ index: gpu.hip_index, name: gpu.name, id: gpu.uuid || gpu.pci_bus_id });
+    }
+  }
+  const prefix = kind === 'cuda' ? 'CUDA' : 'ROCm';
+  return gpus.map(gpu => {
+    const shared = gpu.name && gpus.filter(other => other.name === gpu.name).length > 1;
+    const detail = gpu.name ? ` (${gpu.name}${shared && gpu.id ? ` · ${shortGpuId(gpu.id)}` : ''})` : '';
+    return {
+      value: gpu.id || `${kind}${gpu.index}`,
+      indexName: `${kind}${gpu.index}`,
+      label: `${prefix}${gpu.index}${detail}`,
+    };
+  });
+}
+
+function gpuChoiceFor(value: string, info: SystemInfoLike): GpuChoice | undefined {
+  const wanted = value.trim().toLowerCase();
+  return [...gpuChoices(info, 'cuda'), ...gpuChoices(info, 'rocm')]
+    .find(choice => choice.value.toLowerCase() === wanted || choice.indexName === wanted);
+}
+
+function matchingDeviceOption(value: string | undefined, options: readonly string[], info: SystemInfoLike): string | undefined {
+  const wanted = (value || '').trim().toLowerCase();
+  if (!wanted) return undefined;
+  const direct = options.find(option => option.toLowerCase() === wanted);
+  if (direct) return direct;
+  const choice = gpuChoiceFor(wanted, info);
+  return choice
+    ? options.find(option => gpuChoiceFor(option, info)?.value === choice.value)
+    : undefined;
+}
+
 function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefined, selectedBackend: string, model: ModelInfo, info: SystemInfoLike): string[] {
   const recipe = activeRecipeForModel(model);
   const singleGpuRecipe = SINGLE_GPU_RECIPES.includes(recipe);
@@ -456,14 +519,11 @@ function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefin
   const runtimeDevices = runtimeDevicesFor(info, recipe, backend);
   const runtimeOptions = (prefix: string): string[] | null => runtimeDevices
     ? runtimeDevices.map(device => device.name.toLowerCase()).filter(name => name.startsWith(prefix))
+      .map(name => gpuChoiceFor(name, info)?.value ?? name)
     : null;
   const devices = availableDeviceCounts(info);
-  const nvidiaList = (info as any)?.devices?.nvidia_gpu;
-  const detectedCudaOptions: string[] = Array.isArray(nvidiaList)
-    ? nvidiaList.flatMap((gpu: any, ordinal: number) => gpu?.available === false ? []
-      : [`cuda${Number.isInteger(gpu?.index) && gpu.index >= 0 ? gpu.index : ordinal}`])
-    : [];
-  const cudaOptions = detectedCudaOptions.length ? detectedCudaOptions : indexed('cuda', devices.nvidia, 1);
+  const cudaChoices = gpuChoices(info, 'cuda').map(choice => choice.value);
+  const cudaOptions = cudaChoices.length ? cudaChoices : indexed('cuda', devices.nvidia, 1);
   let base: string[] = [];
 
   if (!backend || backend === 'auto') {
@@ -479,7 +539,7 @@ function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefin
   else if (backend.includes('rocm')) {
     const amdGpus = (info as any)?.devices?.amd_gpu;
     const count = Array.isArray(amdGpus) ? amdGpus.filter((gpu: any) => gpu?.available !== false).length : devices.amd;
-    const hipOptions = hipIndexedAmdGpus(info).map(gpu => `rocm${gpu.hip_index}`);
+    const hipOptions = gpuChoices(info, 'rocm').map(choice => choice.value);
     // Without HIP indices, SystemInfo's iGPU-first order may not be HIP's, so
     // several AMD GPUs cannot be told apart by position.
     base = runtimeOptions('rocm')
@@ -494,48 +554,52 @@ function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefin
     base.unshift('auto');
     // These servers support CUDA/ROCm visibility masks, not native Vulkan device selection.
     if (!['thenoise', 'sd-cpp'].includes(recipe)) {
-      base = base.filter(device => device === 'auto' || /^cuda\d+$/i.test(device) || /^rocm\d+$/i.test(device));
+      base = base.filter(device => device === 'auto' || isGpuId(device)
+        || /^cuda\d+$/i.test(device) || /^rocm\d+$/i.test(device));
     }
   }
   const normalizedCurrent = optionalDisplayValue(current);
-  const options = normalizedCurrent && !base.includes(normalizedCurrent) ? [normalizedCurrent, ...base] : base;
+  const options = normalizedCurrent && !matchingDeviceOption(normalizedCurrent, base, info)
+    ? [normalizedCurrent, ...base] : base;
   return Array.from(new Set(options.filter(Boolean)));
 }
 
-function deviceOptionLabel(option: string, info: SystemInfoLike, runtimeDevices?: RuntimeDevice[] | null): string {
+function deviceOptionLabel(option: string, info: SystemInfoLike, runtimeDevices?: RuntimeDevice[] | null,
+  notOnServer = 'not on this server'): string {
+  const choice = gpuChoiceFor(option, info);
+  if (choice) return choice.label;
+
   const runtime = runtimeDevices?.find(device => device.name.toLowerCase() === option.toLowerCase());
   if (runtime) return runtime.description ? `${runtime.name} (${runtime.description})` : runtime.name;
 
-  const cuda = /^cuda(\d+)$/i.exec(option);
-  if (cuda) {
-    const gpus = (info as any)?.devices?.nvidia_gpu;
-    if (!Array.isArray(gpus)) return option;
-    const index = Number(cuda[1]);
-    const gpu = gpus.find((value: any, ordinal: number) => value?.available !== false
-      && (Number.isInteger(value?.index) ? value.index : ordinal) === index);
-    return gpu?.name ? `${option.toUpperCase()} (${gpu.name})` : option;
-  }
-
   const rocm = /^rocm(\d+)$/i.exec(option);
   const amdGpus = (info as any)?.devices?.amd_gpu;
-  if (!rocm || !Array.isArray(amdGpus)) return option;
-  const index = Number(rocm[1]);
-  const byHip = hipIndexedAmdGpus(info).find(gpu => gpu.hip_index === index);
-  if (byHip) return `ROCm${index} (${byHip.name})`;
-  // Without HIP indices only a single GPU can be named: SystemInfo lists the iGPU
-  // first, which may differ from HIP's order.
-  const available = amdGpus.filter((gpu: any) => gpu?.available !== false);
-  return available.length === 1 && index === 0 && available[0]?.name
-    ? `ROCm0 (${available[0].name})` : option;
+  if (rocm && Array.isArray(amdGpus) && gpuChoices(info, 'rocm').length === 0) {
+    // Without HIP indices only a single GPU can be named: SystemInfo lists the iGPU
+    // first, which may differ from HIP's order.
+    const available = amdGpus.filter((gpu: any) => gpu?.available !== false);
+    return available.length === 1 && Number(rocm[1]) === 0 && available[0]?.name
+      ? `ROCm0 (${available[0].name})` : option;
+  }
+  // An id, or an index this server lists no GPU for, was saved against another
+  // server or a card that has been removed. Show it as it is, marked.
+  const kind = /^(cuda|rocm)\d+$/i.exec(option)?.[1]?.toLowerCase() as 'cuda' | 'rocm' | undefined;
+  if (isGpuId(option) || (kind && gpuChoices(info, kind).length > 0)) return `${option} (${notOnServer})`;
+  return option;
 }
 
 /** AMD GPUs lemond could place in HIP's own numbering, in that order. */
-function hipIndexedAmdGpus(info: SystemInfoLike): Array<{ hip_index: number; name: string }> {
+function hipIndexedAmdGpus(info: SystemInfoLike): Array<{ hip_index: number; name: string; uuid: string; pci_bus_id: string }> {
   const amdGpus = (info as any)?.devices?.amd_gpu;
   if (!Array.isArray(amdGpus)) return [];
   return amdGpus
     .filter((gpu: any) => gpu?.available !== false && Number.isInteger(gpu?.hip_index) && gpu.hip_index >= 0)
-    .map((gpu: any) => ({ hip_index: gpu.hip_index as number, name: String(gpu.name || '') }))
+    .map((gpu: any) => ({
+      hip_index: gpu.hip_index as number,
+      name: String(gpu.name || ''),
+      uuid: String(gpu.uuid || ''),
+      pci_bus_id: String(gpu.pci_bus_id || ''),
+    }))
     .sort((a, b) => a.hip_index - b.hip_index);
 }
 
@@ -1532,6 +1596,7 @@ const ModelConfigurationTab: React.FC<{
   currentNameRef.current = name;
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [systemInfoSettled, setSystemInfoSettled] = useState(() => api.systemInfoData !== null);
+  const [serverUrl, setServerUrl] = useState(() => api.baseUrl);
 
   useEffect(() => {
     if (!isActive) return;
@@ -1543,7 +1608,7 @@ const ModelConfigurationTab: React.FC<{
       .catch(() => { if (alive) setSystemInfo(api.systemInfoData); })
       .finally(() => { if (alive) setSystemInfoSettled(true); });
     return () => { alive = false; };
-  }, [isActive]);
+  }, [isActive, serverUrl]);
 
   const baseTuning = useMemo(
     () => modelBaseTuningForModel(model, serverDefaultCtxSize),
@@ -1622,7 +1687,15 @@ const ModelConfigurationTab: React.FC<{
         setNotice(`Could not load saved model options: ${friendlyErrorMessage(error)}`);
       });
     return () => { cancelled = true; };
-  }, [name, systemInfoSettled]);
+  }, [name, systemInfoSettled, serverUrl]);
+
+  useEffect(() => api.onServerChange(() => {
+    setServerOptionsLoaded(false);
+    setRecipeDraft({});
+    setSystemInfo(null);
+    setSystemInfoSettled(false);
+    setServerUrl(api.baseUrl);
+  }), []);
 
   const savedLoadSettings = useMemo(
     () => draftFromResolvedOptions(recipeKeys, serverSavedRecipeOptions, serverEffectiveRecipeOptions, offersResolvedValue),
@@ -1885,7 +1958,10 @@ const ModelConfigurationTab: React.FC<{
         ? recipeDraft[String(backendKey)] || activeBackendValue(backendKey, defaultOptionValue(backendKey), model, info)
         : 'auto';
       const activeDevice = optionalDisplayValue(serverDefaultRecipeOptions[key]) || 'auto';
-      const options = deviceOptionsForKey(key, draftValue || undefined, selectedBackend, model, info).filter(opt => opt !== activeDevice);
+      const options = deviceOptionsForKey(key, draftValue || undefined, selectedBackend, model, info)
+        .filter(opt => !matchingDeviceOption(activeDevice, [opt], info));
+      // A saved CUDA4 is the cuda4 option, and a saved index the option of that GPU's id.
+      const selectedDevice = matchingDeviceOption(draftValue, options, info) ?? draftValue;
       const runtimeDevices = runtimeDevicesFor(info, activeRecipe, deviceBackendFor(activeRecipe, selectedBackend, info));
       return (
         <label key={String(key)} className="detail-tuning__field detail-configuration__field" htmlFor={fieldId}>
@@ -1895,11 +1971,11 @@ const ModelConfigurationTab: React.FC<{
             className="select detail-configuration__select"
             title={hint || undefined}
             aria-description={hint || undefined}
-            value={draftValue}
+            value={selectedDevice}
             onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
           >
-            <option value="">{deviceOptionLabel(activeDevice, info, runtimeDevices)}</option>
-            {options.map(opt => <option key={opt} value={opt}>{deviceOptionLabel(opt, info, runtimeDevices)}</option>)}
+            <option value="">{deviceOptionLabel(activeDevice, info, runtimeDevices, t('not on this server'))}</option>
+            {options.map(opt => <option key={opt} value={opt}>{deviceOptionLabel(opt, info, runtimeDevices, t('not on this server'))}</option>)}
           </select>
         </label>
       );

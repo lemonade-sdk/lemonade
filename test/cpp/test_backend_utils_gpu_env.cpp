@@ -179,6 +179,32 @@ int main() {
         check(rejected, "several AMD GPUs without HIP data are not guessed at");
     }
 
+    // Test 2a2: a stable GPU id resolves to the index form on this server only.
+    {
+        const std::vector<std::pair<int, std::vector<std::string>>> nvidia = {
+            {3, {"GPU-1111aaaa-0000-0000-0000-000000000003", ""}},
+            {4, {"GPU-2222bbbb-0000-0000-0000-000000000004", ""}}};
+        check(BackendUtils::canonical_gpu_selection(
+                  "gpu-2222BBBB-0000-0000-0000-000000000004", "cuda", nvidia) == "cuda4",
+              "an NVIDIA UUID resolves to its CUDA index, ignoring case");
+        check(BackendUtils::canonical_gpu_selection("CUDA3", "cuda", nvidia) == "CUDA3",
+              "an index selection is returned unchanged");
+        bool rejected = false;
+        std::string message;
+        try { (void)BackendUtils::canonical_gpu_selection(
+                  "GPU-9999cccc-0000-0000-0000-000000000009", "cuda", nvidia); }
+        catch (const std::invalid_argument& e) { rejected = true; message = e.what(); }
+        check(rejected && message.find("not on this server") != std::string::npos,
+              "a UUID from another server is rejected instead of landing on another card");
+
+        const std::vector<std::pair<int, std::vector<std::string>>> amd = {
+            {1, {"", "0000:c3:00.0"}}, {0, {"GPU-00000000000000bb", "0000:03:00.0"}}};
+        check(BackendUtils::canonical_gpu_selection("0000:C3:00.0", "rocm", amd) == "rocm1",
+              "an AMD PCI address resolves to its HIP index");
+        check(BackendUtils::canonical_gpu_selection("GPU-00000000000000bb", "rocm", amd) == "rocm0",
+              "a ROCr UUID resolves to its HIP index");
+    }
+
     // Test 2b2: ggml backends map a selection through their own device list,
     // so an iGPU-first SystemInfo order cannot shift the index.
     {

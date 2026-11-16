@@ -18,7 +18,7 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  false,
     /*options*/ {
         {"trellis_device", "--trellis-device", "", "DEVICES",
-         "GPU to use (ROCm0, ROCm1, CUDA0, CUDA1); auto selects automatically", "3D Generation Options"},
+         "GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically", "3D Generation Options"},
         {"trellis_backend", "--trellis", "", "BACKEND",
          "Trellis backend to use", "3D Generation Options"},
         {"trellis_args", "--trellis-args", "", "ARGS",

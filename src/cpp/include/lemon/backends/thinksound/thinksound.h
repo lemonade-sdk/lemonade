@@ -20,7 +20,7 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  false,
     /*options*/ {
         {"thinksound_device", "--thinksound-device", "", "DEVICES",
-         "GPU to use (ROCm0, ROCm1, CUDA0, CUDA1); auto selects automatically", "Audio Generation Options"},
+         "GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically", "Audio Generation Options"},
         {"thinksound_backend", "--thinksound", "", "BACKEND",
          "ThinkSound backend to use", "Audio Generation Options"},
     },

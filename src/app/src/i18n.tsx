@@ -1260,6 +1260,7 @@ const ZH_CN: Record<string, string> = {
   'TRELLIS accelerator backend for 3D reconstruction.': '用于三维重建的 TRELLIS 加速后端。',
   'Stable Diffusion accelerator backend for this image model. Switching back restores the last draft args for that backend in this browser session.': '此图像模型使用的 Stable Diffusion 加速后端。切换回来时会恢复本次浏览器会话中该后端最近的草稿参数。',
   'Optional device selector for the selected backend.': '可为所选后端指定设备。',
+  'not on this server': '不在此服务器上',
   'Select the GPU for TheNoise; CUDA device numbers refer to the NVIDIA GPU list.': '选择 TheNoise 使用的 GPU；CUDA 设备编号对应 NVIDIA GPU 列表。',
   'Select the GPU for sd.cpp. CUDA selection uses GPU UUIDs to avoid index mismatches.': '选择 sd.cpp 使用的 GPU。CUDA 使用 GPU UUID，避免设备编号不一致。',
   'Choose the ROCm or CUDA GPU for ACE-Step; auto uses the backend default.': '选择 ACE-Step 使用的 ROCm 或 CUDA GPU；auto 使用后端默认设备。',

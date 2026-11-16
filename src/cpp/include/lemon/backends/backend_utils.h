@@ -346,6 +346,20 @@ namespace lemon::backends {
             const std::string& prefix,
             const std::vector<std::pair<std::string, std::string>>& devices);
 
+        // A GPU may be named by its index (cuda1, rocm0) or by a stable id that
+        // system-info reports for it: an NVIDIA or ROCr `uuid`, or an AMD
+        // `pci_bus_id`. An id still names the same card after cards are added or
+        // removed, and names no card on another server. `gpus` holds each GPU's
+        // index and ids. Returns the index form (prefix + index); a selection
+        // that is already an index, or not an id, is returned unchanged.
+        static std::string canonical_gpu_selection(
+            const std::string& selection,
+            const std::string& prefix,
+            const std::vector<std::pair<int, std::vector<std::string>>>& gpus);
+
+        static std::string resolve_gpu_selection(const std::string& selection,
+                                                 const std::string& backend);
+
         // A single-device selection for CUDA/ROCm subprocesses. For CUDA, an
         // explicit device takes precedence over the inherited CUDA_VISIBLE_DEVICES;
         // with no selection, retain the standard architecture-based auto filter.

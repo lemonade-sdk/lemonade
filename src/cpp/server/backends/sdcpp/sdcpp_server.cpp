@@ -448,8 +448,10 @@ void SDServer::load(const std::string& model_name,
     const bool explicit_device = !selected_device.empty() && selected_device != "auto";
     if (explicit_device && (resolved_backend == "vulkan" || is_rocm_backend(resolved_backend))) {
         const std::string prefix = resolved_backend == "vulkan" ? "vulkan" : "rocm";
+        // ggml numbers ROCm devices in HIP order, so a GPU id resolves to its HIP index.
         const std::string device = BackendUtils::ggml_device_for_selection(
-            selected_device, prefix, probe_sdcpp_devices(resolved_backend, exe_path));
+            BackendUtils::resolve_gpu_selection(selected_device, resolved_backend), prefix,
+            probe_sdcpp_devices(resolved_backend, exe_path));
         args.push_back("--backend");
         args.push_back(device);
         LOG(INFO, "SDServer") << "Selecting " << device << " via --backend" << std::endl;

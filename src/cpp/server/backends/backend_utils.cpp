@@ -2629,13 +2629,61 @@ namespace lemon::backends {
                            : ". The backend reported: " + found));
     }
 
+    std::string BackendUtils::canonical_gpu_selection(
+            const std::string& selection,
+            const std::string& prefix,
+            const std::vector<std::pair<int, std::vector<std::string>>>& gpus) {
+        // Index forms and backend names are plain words; every id has a '-' (UUID)
+        // or ':' (PCI address).
+        if (selection.find_first_of("-:") == std::string::npos) return selection;
+        auto lower = [](std::string text) {
+            std::transform(text.begin(), text.end(), text.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return text;
+        };
+        const std::string wanted = lower(selection);
+        for (const auto& gpu : gpus) {
+            for (const auto& id : gpu.second) {
+                if (!id.empty() && lower(id) == wanted) return prefix + std::to_string(gpu.first);
+            }
+        }
+        throw std::invalid_argument("Selected GPU " + selection + " is not on this server");
+    }
+
+    std::string BackendUtils::resolve_gpu_selection(const std::string& selection,
+                                                    const std::string& backend) {
+        const bool cuda = backend.rfind("cuda", 0) == 0;
+        const bool rocm = backend == "rocm" || backend.rfind("rocm-", 0) == 0;
+        if (!cuda && !rocm) return selection;
+
+        std::vector<std::pair<int, std::vector<std::string>>> gpus;
+        const json system_info = SystemInfoCache::get_system_info_with_cache();
+        const char* list = cuda ? "nvidia_gpu" : "amd_gpu";
+        if (system_info.contains("devices") && system_info["devices"].contains(list) &&
+            system_info["devices"][list].is_array()) {
+            int ordinal = 0;
+            for (const auto& gpu : system_info["devices"][list]) {
+                const int position = ordinal++;
+                if (!gpu.value("available", false)) continue;
+                const int index = cuda ? gpu.value("index", position) : gpu.value("hip_index", -1);
+                if (index < 0) continue;
+                gpus.push_back({index, {gpu.value("uuid", ""), gpu.value("pci_bus_id", "")}});
+            }
+        }
+        return canonical_gpu_selection(selection, cuda ? "cuda" : "rocm", gpus);
+    }
+
     void BackendUtils::apply_accelerator_device_env_vars(
             std::vector<std::pair<std::string, std::string>>& env_vars,
             const std::string& log_tag,
             const std::string& backend,
-            const std::string& selection,
+            const std::string& requested,
             const std::string& required_cuda_arch) {
-        const bool automatic = selection.empty() || selection == "auto";
+        const bool automatic = requested.empty() || requested == "auto";
+        const std::string selection = automatic ? requested : resolve_gpu_selection(requested, backend);
+        if (selection != requested) {
+            LOG(INFO, log_tag) << "GPU " << requested << " is " << selection << std::endl;
+        }
         if (backend == "cuda") {
             if (automatic) {
                 apply_cuda_env_vars(env_vars, log_tag);
