@@ -3,31 +3,36 @@
 
 #include "lemon/model_manager.h"
 #include "lemon/routing_policy.h"
-#include "lemon/utils/path_utils.h"
 
-#include <chrono>
 #include <cstdio>
-#include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 
-namespace fs = std::filesystem;
+using lemon::ModelInfo;
 using lemon::ModelManager;
+using lemon::ModelManagerConfig;
 using lemon::json;
+using lemon::models::BackendAvailability;
+using lemon::models::RecipeAvailability;
+
+// The machine these tests mean: plenty of RAM, and no NPU. Registering a ryzenai
+// model then stays filtered wherever the suite runs, NPU hosts included.
+static BackendAvailability machine_without_npu() {
+    BackendAvailability availability;
+    availability.system_ram_gb = 64.0;
+    availability.largest_mem_pool_gb = 48.0;
+    availability.processor = "Declared for the test";
+    availability.recipes["ryzenai-llm"] =
+        RecipeAvailability{"the test machine has no NPU", "", false};
+    return availability;
+}
 
 static int g_failures = 0;
 
 static void check(const char* name, bool ok) {
     std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
     if (!ok) ++g_failures;
-}
-
-static fs::path make_temp_dir() {
-    fs::path dir = fs::temp_directory_path();
-    dir /= "model_manager_collection_validation_" +
-           std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    fs::create_directories(dir);
-    return dir;
 }
 
 static json component_def(const std::string& name) {
@@ -170,6 +175,52 @@ static void test_inline_capability_matches_registration(ModelManager& manager) {
     check("label-less llamacpp still defaults to LLM (valid classifier)", !err.has_value());
 }
 
+// A zero-shot model and a fixed-label one share CLASSIFICATION, but each refuses
+// the other's /classify body, so only the `zero-shot` label tells them apart.
+static void test_zero_shot_label_selects_classifier_type(ModelManager& manager) {
+    auto onnx_def = [](const char* name, json labels) {
+        return json{{"model_name", name}, {"recipe", "onnxruntime"},
+                    {"checkpoint", std::string("example/") + name}, {"labels", labels}};
+    };
+    const json zero_shot_def = onnx_def("zs", {"classification", "zero-shot"});
+    const json fixed_def = onnx_def("fixed", {"classification"});
+
+    check("inline zero-shot model accepted as zero_shot",
+          !manager.validate_collection_request(
+              "user.RouterKit", router_with_classifier("zero_shot", zero_shot_def)).has_value());
+    check("inline zero-shot model rejected as classifier",
+          error_contains(manager.validate_collection_request(
+                             "user.RouterKit", router_with_classifier("classifier", zero_shot_def)),
+                         "use type 'zero_shot'"));
+    check("inline fixed-label model rejected as zero_shot",
+          error_contains(manager.validate_collection_request(
+                             "user.RouterKit", router_with_classifier("zero_shot", fixed_def)),
+                         "is not a zero-shot model"));
+
+    manager.register_user_model(
+        "user.ZsRegistered",
+        json{{"model_name", "user.ZsRegistered"}, {"recipe", "onnxruntime"},
+             {"checkpoint", "example/zs-registered"},
+             {"labels", {"classification", "zero-shot"}}});
+    // The inline definition omits the label: a registered model keeps its own.
+    json registered = router_with_classifier(
+        "classifier", onnx_def("user.ZsRegistered", {"classification"}));
+    check("registered zero-shot model rejected as classifier",
+          error_contains(manager.validate_collection_request("user.RouterKit", registered),
+                         "use type 'zero_shot'"));
+
+    const json decision_def = {{"model_name", "decision"}, {"recipe", "llamacpp"},
+                               {"checkpoint", "example/decision:Q8_0"},
+                               {"labels", {"classification", "systemone"}}};
+    check("llamacpp decision model accepted as zero_shot",
+          !manager.validate_collection_request(
+              "user.RouterKit", router_with_classifier("zero_shot", decision_def)).has_value());
+    check("llamacpp decision model rejected as classifier",
+          error_contains(manager.validate_collection_request(
+                             "user.RouterKit", router_with_classifier("classifier", decision_def)),
+                         "use type 'zero_shot'"));
+}
+
 // A chat-indicator label (reasoning/vision/…) must not promote a non-chat
 // backend to LLM. The backend's deployment capability wins, at both the model
 // type (which drives runtime routing) and collection.router validation.
@@ -217,10 +268,10 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
           error_contains(manager.validate_collection_request("user.RouterKit", kokoro_clf),
                          "cannot serve as a classifier"));
 
-    // The inverse: /v1/classify is served only by onnxruntime, so a
-    // `classification` label on a chat backend names a mode it cannot serve.
-    // Registration refuses it rather than registering a model that would fail
-    // when run_classifier reached Router::classify().
+    // The inverse: llamacpp serves /v1/classify only for SystemOne decision
+    // models, so a `classification` label without `systemone` names a mode it
+    // cannot serve. Registration refuses it rather than registering a model that
+    // would fail when run_classifier reached Router::classify().
     bool rejected = false;
     try {
         manager.register_user_model(
@@ -285,6 +336,39 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
              {"checkpoint", "example/xclf2:Q4_K_M"}});
     check("label-less llamacpp accepted as classifier via LLM chat path",
           !manager.validate_collection_request("user.RouterKit", llama_clf_bare).has_value());
+
+    auto systemone_router = [](const json& classifier_model_def) {
+        json doc = router_with_classifier("systemone", classifier_model_def);
+        json& clf = doc["routing"]["classifiers"][0];
+        clf.erase("labels");
+        clf["default_label"] = "true";
+        clf["question"] = {{"type", "noul"}, {"instructions", "Is the message urgent?"}};
+        return doc;
+    };
+    check("onnxruntime classifier rejected as systemone",
+          error_contains(manager.validate_collection_request(
+                             "user.RouterKit",
+                             systemone_router(json{{"model_name", "onnxclf"},
+                                                   {"recipe", "onnxruntime"},
+                                                   {"checkpoint", "example/onnxclf"},
+                                                   {"labels", {"classification"}}})),
+                         "is not a SystemOne decision model"));
+    check("onnxruntime classifier labelled systemone rejected as systemone",
+          error_contains(manager.validate_collection_request(
+                             "user.RouterKit",
+                             systemone_router(json{{"model_name", "onnxs1"},
+                                                   {"recipe", "onnxruntime"},
+                                                   {"checkpoint", "example/onnxs1"},
+                                                   {"labels", {"classification", "systemone"}}})),
+                         "is not a SystemOne decision model"));
+    check("llamacpp decision model accepted as systemone",
+          !manager.validate_collection_request(
+               "user.RouterKit",
+               systemone_router(json{{"model_name", "decider"},
+                                     {"recipe", "llamacpp"},
+                                     {"checkpoint", "example/decider:Q8_0"},
+                                     {"labels", {"classification", "systemone"}}}))
+               .has_value());
 }
 
 // What #2748 actually promises is that the REST of the policy keeps working,
@@ -327,7 +411,7 @@ static void test_filtered_classifier_component_does_not_drop_policy(ModelManager
         "user.npu-clf",
         json{{"model_name", "user.npu-clf"}, {"recipe", "ryzenai-llm"},
              {"checkpoint", "example/npu-clf"}});
-    check("npu-clf is actually hardware-filtered on this host (test premise)",
+    check("npu-clf is hardware-filtered (test machine has no NPU)",
           !manager.model_exists("user.npu-clf"));
 
     json doc = {
@@ -376,7 +460,7 @@ static void test_filtered_classifier_bare_name_resolves_through_alias(ModelManag
         "user.npu-clf2",
         json{{"model_name", "user.npu-clf2"}, {"recipe", "ryzenai-llm"},
              {"checkpoint", "example/npu-clf2"}});
-    check("npu-clf2 is actually hardware-filtered on this host (test premise)",
+    check("npu-clf2 is hardware-filtered (test machine has no NPU)",
           !manager.model_exists("user.npu-clf2"));
 
     json doc = {
@@ -420,11 +504,10 @@ static void test_filtered_classifier_bare_name_resolves_through_alias(ModelManag
 
 // #2748 follow-up: builtin.<X> is a distinct alias form from the bare name,
 // added only by compute_model_alias_maps()'s builtin.<X> pass. Uses a real
-// builtin (ryzenai-llm, reliably filtered on any non-NPU CI host) so no
+// builtin (ryzenai-llm, which the declared machine cannot run) so no
 // registration is needed to test it.
 static void test_filtered_classifier_builtin_prefixed_alias_resolves(ModelManager& manager) {
-    check("Qwen2.5-0.5B-Instruct-CPU is actually hardware-filtered on this "
-          "host (test premise)",
+    check("Qwen2.5-0.5B-Instruct-CPU is hardware-filtered (test machine has no NPU)",
           !manager.model_exists("Qwen2.5-0.5B-Instruct-CPU"));
 
     json doc = {
@@ -476,20 +559,20 @@ static void test_register_preserves_routing(ModelManager& manager) {
 }
 
 int main() {
-    fs::path temp = make_temp_dir();
-    lemon::utils::set_cache_dir(temp.string());
-
-    ModelManager manager;
+    ModelManagerConfig config;
+    config.availability = [](const std::map<std::string, ModelInfo>&) {
+        return machine_without_npu();
+    };
+    ModelManager manager(config);
     test_accepts_valid_router_policy(manager);
     test_rejects_bad_routing(manager);
     test_inline_capability_matches_registration(manager);
+    test_zero_shot_label_selects_classifier_type(manager);
     test_backend_capability_over_chat_indicator(manager);
     test_filtered_classifier_component_does_not_drop_policy(manager);
     test_filtered_classifier_bare_name_resolves_through_alias(manager);
     test_filtered_classifier_builtin_prefixed_alias_resolves(manager);
     test_register_preserves_routing(manager);
-
-    fs::remove_all(temp);
 
     if (g_failures == 0) {
         std::printf("All model manager collection validation tests passed.\n");

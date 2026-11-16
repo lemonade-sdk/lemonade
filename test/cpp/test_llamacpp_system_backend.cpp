@@ -153,6 +153,18 @@ json test_devices() {
     };
 }
 
+// Builds the recipe table from an arbitrary config document. A section may be
+// absent or hold the wrong type; neither is allowed to empty the set.
+json build_recipes_from(TestSystemInfo& system_info,
+                        const fs::path& path_dir,
+                        json config_json) {
+    lemon::RuntimeConfig config(config_json);
+    ScopedRuntimeConfig config_scope(&config);
+    ScopedEnvVar path_scope("PATH");
+    path_scope.set(path_dir.string());
+    return system_info.build_recipes_info(test_devices());
+}
+
 json build_recipes(TestSystemInfo& system_info,
                    const fs::path& path_dir,
                    const std::string& configured_backend,
@@ -318,6 +330,20 @@ int main() {
                        "missing system backend with prefer_system=false");
     check(unavailable_not_preferred["llamacpp"].value("default_backend", "") != "system",
           "prefer_system=false also falls back when system llama-server is unavailable");
+
+    // A config document that names a backend where a section object belongs makes the
+    // value read throw type_error.302 mid-build. Caught upstream, that leaves `recipes`
+    // missing altogether, which reads to the router as "no recipe is available" and
+    // filters every model on the machine. One bad key must cost one recipe at most.
+    {
+        json broken = lemon::ConfigFile::base_defaults();
+        broken["llamacpp"]["backend"] = 42;  // a number where a string belongs
+        const json survived = build_recipes_from(system_info, system_bin, broken);
+        check(!survived.empty(),
+              "a mistyped backend value does not empty the recipe table");
+        check(survived.contains("llamacpp"),
+              "a mistyped backend value keeps the recipe it belongs to");
+    }
 
     if (failures != 0) {
         std::cerr << "Total failures: " << failures << std::endl;

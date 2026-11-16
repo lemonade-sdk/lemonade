@@ -4,22 +4,23 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/models/registry_types.h"
 #include <string>
 
 namespace lemon {
 namespace backends {
 
-class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public ITranscriptionServer {
+class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public ITranscriptionServer,
+                         public IClassificationServer, public ISystemOneServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
-
 
     FastFlowLMServer(const std::string& log_level, ModelManager* model_manager = nullptr,
                      BackendManager* backend_manager = nullptr);
 
     std::string download_model(const std::string& checkpoint,
                               bool do_not_upgrade = false,
-                              RemoteRegistrySource source = RemoteRegistrySource::HuggingFace);
+                              RegistryId source = models::huggingface_descriptor().id);
 
     void load(const std::string& model_name,
              const ModelInfo& model_info,
@@ -37,6 +38,13 @@ public:
     // ITranscriptionServer implementation
     json audio_transcriptions(const json& request) override;
 
+    // IClassificationServer implementation: zero-shot labels as one `choice`
+    // question to a d3 decision model
+    json classify(const json& request) override;
+
+    // ISystemOneServer implementation
+    nlohmann::ordered_json systemone(const nlohmann::ordered_json& request) override;
+
     // Override to transform model name to checkpoint for FLM
     void forward_streaming_request(const std::string& endpoint,
                                    const std::string& request_body,
@@ -46,6 +54,12 @@ public:
                                    TelemetryCallback telemetry_callback = nullptr) override;
 
 private:
+    bool serves_text() const;
+    json unsupported_decision_request(const std::string& operation) const;
+    // /v1/systemone for both systemone() and classify(): the window refusal as a
+    // 400, else `truncated` on each answer.
+    nlohmann::ordered_json decide(const nlohmann::ordered_json& body);
+
     // Get the path to the flm executable from the install directory
     std::string get_flm_path();
 };

@@ -6,7 +6,7 @@
 #include <vector>
 #include <httplib.h>
 #include <nlohmann/json.hpp>
-#include "model_manager.h"
+#include "lemon/model_manager_types.h"
 
 namespace lemon {
 
@@ -36,7 +36,7 @@ class Router;
 class CollectionOrchestrator {
 public:
     // Loads a component model on demand (download + load). Wraps
-    // Server::auto_load_model_if_needed so the orchestrator doesn't duplicate the
+    // ModelLoader::ensure_loaded so the orchestrator doesn't duplicate the
     // download/load logic. Throws on failure.
     using EnsureLoadedFn = std::function<void(const std::string&)>;
 

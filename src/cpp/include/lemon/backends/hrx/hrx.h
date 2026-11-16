@@ -36,7 +36,7 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
 
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "llamacpp-hrx",
-    /*display_name*/    "HRX GPU (experimental)",
+    /*display_name*/    "HRX GPU",
     /*binary*/          "llama-server",
     /*config_section*/  "hrx",
     /*default_device*/  DEVICE_GPU,
@@ -49,16 +49,19 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to the HRX llama-server", "HRX Options"},
     },
     /*support*/ {
-        {"hrx", {"linux"},
+        {"hrx", BackendTier::Experimental, BackendFormat::Native, {"linux"},
          {{"amd_gpu", {"gfx1100", "gfx1151"}}},
          "AMD GPUs (gfx1100, gfx1151)",
          {{"gfx1100", {/*os*/ {"linux"}, /*channels*/ {}}},
           {"gfx1151", {/*os*/ {"linux"}, /*channels*/ {}}}}},
     },
+    /*about*/ {
+        {"hrx", {"Early access for AMD's experimental HRX GPU backend for llama.cpp.",
+                 "AMD ROCm", "AMD ROCm", "MIT", "https://github.com/ROCm/ggml-staging-automation"}},
+    },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
-    /*experimental*/    true,
     /*web_display_name*/ "",
     /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ true,

@@ -13,6 +13,7 @@ using json = nlohmann::json;
 struct FieldWidths {
     size_t scenario_name = 20;
     size_t ttft = 8;
+    size_t pp_tps = 7;
     size_t tps = 8;
     size_t vram = 8;
 };
@@ -31,7 +32,8 @@ std::string fmt_vram_change(std::optional<double> val);
 FieldWidths calculate_field_widths(const std::vector<BenchBackendResult>& results);
 
 // Print results as a formatted table to stdout.
-// use_percentiles: show p50/p95 columns (true when runs >= 10); otherwise show min/max.
+// use_percentiles: show p50/p95 columns for TTFT and TPS (true when runs >= 10); otherwise min/max.
+// The PP t/s (prefill throughput) column is always a single mean column.
 void print_table(const std::vector<BenchBackendResult>& results, const std::string& model,
                  bool use_percentiles);
 

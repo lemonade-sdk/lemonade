@@ -39,6 +39,7 @@ public:
     int log_max_files() const;
     void set_log_max_files_override(std::optional<int> override_val);
     std::string extra_models_dir() const;
+    json model_catalogs() const;
     bool broadcast() const;
     void set_broadcast_override(std::optional<bool> override_val);
     long global_timeout() const;
@@ -110,7 +111,7 @@ public:
     static void set_global(RuntimeConfig* instance);
     static RuntimeConfig* global();
 
-    // Log format string — shared between main.cpp and apply_config_side_effects
+    // Log format string — shared between main.cpp and ConfigEffects
     static constexpr const char* LOG_FORMAT =
         "%Y-%m-%d %H:%M:%S.#ms [#severity] (#tag_func) #message";
 

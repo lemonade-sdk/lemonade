@@ -47,6 +47,15 @@ json split_lora_specs(const std::string& specs) {
     return result;
 }
 
+std::string resolve_thenoise_backend(const std::string& requested) {
+    if (!requested.empty() && requested != "auto") return requested;
+    const auto supported = SystemInfo::get_supported_backends("thenoise");
+    if (supported.backends.empty()) {
+        throw std::runtime_error("No supported TheNoise GPU backend: " + supported.not_supported_error);
+    }
+    return supported.backends.front();
+}
+
 #ifdef _WIN32
 void launch_bundled_python(std::string& exe_path,
                            std::vector<std::string>& args,
@@ -61,14 +70,21 @@ void launch_bundled_python(std::string& exe_path,
 }  // namespace
 
 InstallParams TheNoiseServer::get_install_params(const std::string& backend, const std::string& version) {
+    InstallParams params;
+    params.repo = "lemonade-sdk/thenoise";
+    if (backend == "cuda") {
+#if defined(__linux__) && defined(__x86_64__)
+        params.filename = version + "-cuda-x64.tar.gz";
+        return params;
+#else
+        throw std::runtime_error("TheNoise CUDA is supported on Linux x86_64 only");
+#endif
+    }
     if (backend != "rocm") {
-        throw std::runtime_error("TheNoise backend '" + backend + "' is not supported. Supported: rocm");
+        throw std::runtime_error("TheNoise backend '" + backend + "' is not supported. Supported: rocm, cuda (Linux)");
     }
 
     std::string target_arch = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
-
-    InstallParams params;
-    params.repo = "lemonade-sdk/thenoise";
 #ifdef _WIN32
     params.filename = version + "-" + target_arch + "-win-x64.zip";
 #else
@@ -89,12 +105,7 @@ void TheNoiseServer::load(const std::string& model_name,
     LOG(INFO, "TheNoise") << "Loading model: " << model_name << std::endl;
     LOG(DEBUG, "TheNoise") << "Per-model settings: " << options.to_log_string() << std::endl;
 
-    image_defaults_ = model_info.image_defaults;
-
-    std::string backend = options.get_option("thenoise_backend");
-    if (backend.empty()) {
-        backend = "rocm";
-    }
+    const std::string backend = resolve_thenoise_backend(options.get_option("thenoise_backend"));
 
     RuntimeConfig::validate_backend_choice("thenoise", backend);
 
@@ -202,17 +213,14 @@ std::string TheNoiseServer::resolve_size(const json& request) const {
         return std::to_string(request["width"].get<int>()) + "x"
              + std::to_string(request["height"].get<int>());
     }
-    if (image_defaults_.has_defaults) {
-        return std::to_string(image_defaults_.width) + "x"
-             + std::to_string(image_defaults_.height);
-    }
-    return "";
+    const auto w = recipe_options_.stored_int_option("width");
+    const auto h = recipe_options_.stored_int_option("height");
+    if (!w || !h || *w <= 0 || *h <= 0) return "";
+    return std::to_string(*w) + "x" + std::to_string(*h);
 }
 
 json TheNoiseServer::build_request(const json& request) const {
     // thenoise /text2image accepts the shared model-agnostic params directly.
-    // Precedence for each value: request override -> model image_defaults
-    // -> recipe_options.
     json body;
 
     body["prompt"] = request.value("prompt", "");
@@ -254,25 +262,20 @@ json TheNoiseServer::build_request(const json& request) const {
 
     // negative_prompt
     std::string negative_prompt = resolve_string("negative_prompt",
-        recipe_options_.get_option("negative_prompt"));
+        recipe_options_.string_option("negative_prompt").value_or(""));
     if (!negative_prompt.empty()) {
         body["negative_prompt"] = negative_prompt;
     }
 
     // steps
-    int steps = image_defaults_.has_defaults
-                  ? image_defaults_.steps
-                  : static_cast<int>(recipe_options_.get_option("steps"));
-    steps = resolve_int("steps", steps);
+    int steps = resolve_int("steps", recipe_options_.int_option("steps").value_or(0));
     if (steps > 0) {
         body["steps"] = steps;
     }
 
     // cfg_scale -> guidance_scale
-    float cfg_scale = image_defaults_.has_defaults
-                              ? image_defaults_.cfg_scale
-                              : static_cast<float>(recipe_options_.get_option("cfg_scale"));
-    cfg_scale = resolve_float("cfg_scale", cfg_scale);
+    float cfg_scale = resolve_float("cfg_scale",
+                                    static_cast<float>(recipe_options_.number_option("cfg_scale").value_or(0.0)));
     if (cfg_scale > 0.0f) {
         body["guidance_scale"] = cfg_scale;
     }
@@ -285,27 +288,27 @@ json TheNoiseServer::build_request(const json& request) const {
     }
 
     // sampler
-    std::string sampler = resolve_string("sampler", recipe_options_.get_option("sampler"));
+    std::string sampler = resolve_string("sampler", recipe_options_.string_option("sampler").value_or(""));
     if (!sampler.empty()) {
         body["sampler"] = sampler;
     }
 
     // qwen_vae_enhance
     bool qwen_vae_enhance = resolve_bool("qwen_vae_enhance",
-        recipe_options_.get_option("qwen_vae_enhance"));
+        recipe_options_.bool_option("qwen_vae_enhance").value_or(false));
     if (qwen_vae_enhance) {
         body["qwen_vae_enhance"] = true;
     }
 
     // film_grain
-    float film_grain = static_cast<float>(recipe_options_.get_option("film_grain"));
+    float film_grain = static_cast<float>(recipe_options_.number_option("film_grain").value_or(0.0));
     film_grain = resolve_float("film_grain", film_grain);
     if (film_grain > 0.0f) {
         body["film_grain"] = film_grain;
     }
 
     // sharpening
-    float sharpening = static_cast<float>(recipe_options_.get_option("sharpening"));
+    float sharpening = static_cast<float>(recipe_options_.number_option("sharpening").value_or(0.0));
     sharpening = resolve_float("sharpening", sharpening);
     if (sharpening > 0.0f) {
         body["sharpening"] = sharpening;
@@ -319,8 +322,7 @@ json TheNoiseServer::build_request(const json& request) const {
         json specs = split_lora_specs(request["lora_specs"].get<std::string>());
         if (!specs.empty()) body["lora_specs"] = specs;
     } else {
-        const json opt = recipe_options_.get_option("lora_specs");
-        std::string specs = opt.is_string() ? opt.get<std::string>() : "";
+        std::string specs = recipe_options_.string_option("lora_specs").value_or("");
         if (!specs.empty()) body["lora_specs"] = split_lora_specs(specs);
     }
 
@@ -422,10 +424,17 @@ json TheNoiseServer::image_variations(const json& /* request */) {
 
 std::string TheNoiseServer::upscale_via_cli(
     const std::string& b64_image,
-    const std::string& upscale_model_path) {
+    const std::string& upscale_model_path,
+    double upscale_factor) {
 
-    //ROCm is currently the only available backend. If other backends are added this needs to be parameterized accordingly.
-    std::string exe_path = BackendUtils::get_backend_binary_path(*thenoise::spec(), "rocm");
+    std::string configured_backend;
+    if (auto* cfg = RuntimeConfig::global()) {
+        configured_backend = cfg->backend_string("thenoise", "backend");
+    }
+    const std::string backend = resolve_thenoise_backend(configured_backend);
+    RuntimeConfig::validate_backend_choice("thenoise", backend);
+    backend_manager_->install_backend(thenoise::spec()->recipe, backend);
+    std::string exe_path = BackendUtils::get_backend_binary_path(*thenoise::spec(), backend);
 
     if (!fs::exists(exe_path)) {
         LOG(ERROR, "TheNoise") << "thenoise binary not found at: " << exe_path << std::endl;
@@ -489,6 +498,10 @@ std::string TheNoiseServer::upscale_via_cli(
         "--input", input_path.string(),
         "--out", output_path.string()
     };
+    if (upscale_factor > 0.0) {
+        args.push_back("--upscale-factor");
+        args.push_back(std::to_string(upscale_factor));
+    }
 
     std::vector<std::pair<std::string, std::string>> env_vars;
 #ifdef _WIN32

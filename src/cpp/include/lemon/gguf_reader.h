@@ -13,45 +13,26 @@
 #include <cstring>
 #include <fstream>
 #include <ios>
+#include <map>
 #include <string>
 #include <vector>
 #include <lemon/gguf_capabilities.h>
+#include <lemon/models/model_info.h>
 #include <lemon/utils/path_utils.h>
 
 namespace lemon {
 
-/// Metadata extracted from a GGUF file's KV header.
-///
-/// Stored inside ModelInfo for llama.cpp models so that auto-tune and other
-/// subsystems can estimate KV-cache pressure and clamp context size.
-///
-/// Arrays that vary per-block (head_count_kv_per_layer, sliding_window_pattern)
-/// are stored as-is so that downstream code can perform precise per-layer
-/// computations (e.g. distinguishing SWA-layer head counts from full-layer
-/// head counts).  Scalar convenience fields (head_count_kv, swa_layer_count)
-/// are derived from the raw arrays after the header pass completes.
-struct GgufMetadata {
-    std::string architecture;
-    int64_t context_length = 0;
-    int64_t block_count = 0;
-    int64_t embedding_length = 0;
-    int64_t head_count_kv = 0;       // total across all blocks (derived)
-    int64_t key_length = 0;
-    int64_t key_length_swa = 0;      // SWA-reduced key length (Gemma4, etc.)
-    int64_t swa_layer_count = 0;     // layers with sliding-window attention (derived)
-    int64_t full_attention_interval = 0; // every Nth layer does full attention (Qwen SSM)
-    GgufCapabilities caps;
-
-    // ── Raw per-layer arrays (stored as read from GGUF) ───────────────
-    // Populated when the GGUF field is an array.  Empty when the field is
-    // a scalar (in which case the scalar is repeated for every block).
-    std::vector<int64_t> head_count_kv_per_layer;
-    std::vector<bool> sliding_window_pattern;
-
-    // Transient scalar held when head_count_kv GGUF field is a scalar.
-    // Converted to head_count_kv_per_layer in post-loop validation.
-    int64_t head_count_kv_scalar = 0;
-};
+// BERT encoders may omit KV-head dimensions in GGUF. Estimate full-width
+// F16 K/V storage from the hidden width and transformer layer count.
+inline double estimate_bert_encoder_kv_bytes_per_token(const GgufMetadata& gguf,
+                                                        bool encoder_model) {
+    if (!encoder_model || gguf.architecture.find("bert") == std::string::npos ||
+        gguf.block_count <= 0 || gguf.embedding_length <= 0) {
+        return 0.0;
+    }
+    return static_cast<double>(gguf.block_count) *
+           static_cast<double>(gguf.embedding_length) * 4.0;
+}
 
 // ── Low-level binary readers ──────────────────────────────────────────
 
@@ -123,10 +104,27 @@ static bool read_gguf_integer_value(std::istream& in, uint32_t type, int64_t& va
     }
 }
 
+// Advance past a string without building it. Same length limit as
+// read_gguf_string, so an oversized entry fails the read either way.
+static bool skip_gguf_string(std::istream& in) {
+    uint64_t len = 0;
+    if (!read_gguf_le(in, len)) return false;
+    if (len > 1024 * 1024) return false;
+    if (len == 0) return true;
+    in.ignore(static_cast<std::streamsize>(len));
+    return static_cast<bool>(in);
+}
+
+static bool skip_gguf_string_array(std::istream& in, uint64_t count) {
+    for (uint64_t i = 0; i < count; ++i) {
+        if (!skip_gguf_string(in)) return false;
+    }
+    return true;
+}
+
 static bool skip_gguf_value(std::istream& in, uint32_t type) {
     if (type == 8) {  // STRING
-        std::string ignored;
-        return read_gguf_string(in, ignored);
+        return skip_gguf_string(in);
     }
 
     if (type == 9) {  // ARRAY
@@ -135,11 +133,7 @@ static bool skip_gguf_value(std::istream& in, uint32_t type) {
         if (!read_gguf_le(in, elem_type) || !read_gguf_le(in, count)) return false;
 
         if (elem_type == 8) {
-            for (uint64_t i = 0; i < count; ++i) {
-                std::string ignored;
-                if (!read_gguf_string(in, ignored)) return false;
-            }
-            return true;
+            return skip_gguf_string_array(in, count);
         }
 
         if (elem_type == 9) return false;
@@ -214,6 +208,12 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
 
     int64_t pending_context_length = 0;
 
+    // SystemOne keys can come before general.architecture, so each is matched by
+    // suffix, kept per prefix, and used only if that prefix is the architecture.
+    std::map<std::string, bool> causal_by_arch;
+    std::map<std::string, std::string> decision_type_by_arch;
+    std::map<std::string, int64_t> max_head_by_arch;
+
     for (uint64_t i = 0; i < kv_count; ++i) {
         std::string key;
         uint32_t type = 0;
@@ -225,6 +225,44 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
                 out.context_length = pending_context_length;
             }
             continue;
+        }
+
+        auto arch_before = [&key](const std::string& suffix) {
+            if (key.size() <= suffix.size() ||
+                key.compare(key.size() - suffix.size(), suffix.size(), suffix) != 0) {
+                return std::string();
+            }
+            return key.substr(0, key.size() - suffix.size());
+        };
+        if (type == 7) {
+            std::string arch = arch_before(".attention.causal");
+            if (!arch.empty()) {
+                uint8_t value = 1;
+                if (!read_gguf_le(in, value)) return false;
+                causal_by_arch[std::move(arch)] = value != 0;
+                continue;
+            }
+        }
+        if (type == 8) {
+            std::string arch = arch_before(".decision.type");
+            if (!arch.empty()) {
+                std::string value;
+                if (!read_gguf_string(in, value)) return false;
+                decision_type_by_arch[std::move(arch)] = std::move(value);
+                continue;
+            }
+        }
+        {
+            std::string arch = arch_before(".decision.max_head_tokens");
+            if (!arch.empty()) {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value)) {
+                    max_head_by_arch[std::move(arch)] = value;
+                } else if (!in) {
+                    return false;
+                }
+                continue;
+            }
         }
 
         // Context length
@@ -325,7 +363,13 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
             continue;
         }
 
-        // Capability detection (vision, tool-calling, MTP)
+        // Capability detection (vision, tool-calling, MTP).  Only the keys
+        // named by the two predicates below can carry a hint (see
+        // inspect_gguf_string), so other strings are skipped rather than read:
+        // a tokenizer vocabulary is a string array of hundreds of thousands of
+        // entries, and lowercasing each one cost more than the rest of the
+        // header combined.
+        const bool carries_hint = is_stable_vision_key(key) || is_chat_template_key(key);
         if (type == 4) {
             uint32_t val = 0;
             if (read_gguf_le(in, val)) {
@@ -333,9 +377,13 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
                     out.caps.mtp = true;
             }
         } else if (type == 8) {
-            std::string value;
-            if (read_gguf_string(in, value)) {
-                inspect_gguf_string(key, value, out.caps);
+            if (carries_hint) {
+                std::string value;
+                if (read_gguf_string(in, value)) {
+                    inspect_gguf_string(key, value, out.caps);
+                }
+            } else if (!skip_gguf_string(in)) {
+                return false;
             }
         } else if (type == 9) {
             // Array — check string elements for capability hints
@@ -343,10 +391,14 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
             uint64_t count = 0;
             if (read_gguf_le(in, elem_type) && read_gguf_le(in, count)) {
                 if (elem_type == 8) {
-                    for (uint64_t j = 0; j < count; ++j) {
-                        std::string value;
-                        if (!read_gguf_string(in, value)) return false;
-                        inspect_gguf_string(key, value, out.caps);
+                    if (!carries_hint) {
+                        if (!skip_gguf_string_array(in, count)) return false;
+                    } else {
+                        for (uint64_t j = 0; j < count; ++j) {
+                            std::string value;
+                            if (!read_gguf_string(in, value)) return false;
+                            inspect_gguf_string(key, value, out.caps);
+                        }
                     }
                 } else if (elem_type != 9) {
                     uint64_t elem_size = gguf_scalar_size(elem_type);
@@ -365,6 +417,17 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
 
     if (out.context_length == 0 && pending_context_length > 0) {
         out.context_length = pending_context_length;
+    }
+    if (const auto it = causal_by_arch.find(out.architecture); it != causal_by_arch.end()) {
+        out.causal_attention = it->second;
+    }
+    if (const auto it = decision_type_by_arch.find(out.architecture);
+        it != decision_type_by_arch.end()) {
+        out.decision_type = it->second;
+    }
+    if (const auto it = max_head_by_arch.find(out.architecture);
+        it != max_head_by_arch.end() && it->second > 0) {
+        out.decision_max_head_tokens = it->second;
     }
 
     // ── Derive scalar convenience fields from raw arrays ──────────────

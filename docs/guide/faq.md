@@ -76,6 +76,8 @@
    lemonade config set extra_models_dir="/home/you/.lmstudio/models"
    ```
 
+   With the Linux `.deb`/`.rpm` packages, a folder under `/home` is hidden from the server by default; see [the note under Imported models](./configuration/custom-models.md#imported-models-extra_models_dir) for the drop-in that exposes it.
+
    Any `.gguf` files in this directory, including its subdirectories, appear in Lemonade's model list in the `custom` category. For how they are named and how the folder layout selects the way they run, see [Imported models](./configuration/custom-models.md#imported-models-extra_models_dir).
 
    **FastFlowLM**
