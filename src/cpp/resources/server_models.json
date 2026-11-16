@@ -2751,14 +2751,16 @@
             "image"
         ],
         "recipe": "thenoise",
+        "suggested": true,
+        "size": 18.86,
         "recipe_options": {
             "cfg_scale": 1,
+            "sampler": "euler",
             "height": 1024,
             "steps": 8,
             "width": 1024,
             "soft_pixel_cap": 4194304
-        },
-        "size": 18.86
+        }
     },
     "MOSS-Image-Base-8-Steps": {
         "checkpoints": {
@@ -2771,14 +2773,16 @@
             "image"
         ],
         "recipe": "thenoise",
+        "suggested": true,
+        "size": 18.86,
         "recipe_options": {
             "cfg_scale": 1,
+            "sampler": "euler",
             "height": 1024,
             "steps": 8,
             "width": 1024,
             "soft_pixel_cap": 4194304
-        },
-        "size": 18.86
+        }
     },
     "H3-Image-INT8": {
         "checkpoints": {
@@ -2792,14 +2796,16 @@
             "edit"
         ],
         "recipe": "thenoise",
+        "suggested": true,
+        "size": 49.29,
         "recipe_options": {
             "cfg_scale": 1,
+            "sampler": "euler",
             "height": 2048,
             "steps": 6,
             "width": 2048,
             "soft_pixel_cap": 20971520
-        },
-        "size": 49.29
+        }
     },
     "Z-Image-Turbo-TheNoise": {
         "checkpoints": {
