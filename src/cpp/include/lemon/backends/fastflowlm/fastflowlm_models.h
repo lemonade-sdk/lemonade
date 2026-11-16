@@ -40,6 +40,10 @@ std::string find_flm_in_path();
 // Locate the flm executable: config override, PATH, then install dir ("" if not found).
 std::string find_flm_executable();
 
+// The user-facing reason a `flm validate --json` result is not ready, or ""
+// when it is.
+std::string flm_validation_error(const nlohmann::json& validation);
+
 // Run `flm validate` and report readiness; error_message on failure.
 bool run_flm_validate(const std::string& flm_path, std::string& error_message);
 

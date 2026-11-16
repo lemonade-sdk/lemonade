@@ -36,12 +36,29 @@ namespace backends {
 
 static const std::string DRIVER_INSTALL_URL = "https://lemonade-server.ai/driver_install.html";
 
+// The upstream FastFlowLM release has no XDNA3 build yet, so on XDNA3 the user
+// supplies one and points flm.npu_bin at it.
+static const std::string XDNA3_UNAVAILABLE_MESSAGE =
+    "FastFlowLM for XDNA3 NPUs is not available for download yet; "
+    "set flm.npu_bin to the flm.exe of a FastFlowLM build for XDNA3.";
+static const std::string XDNA3_UNAVAILABLE_ACTION =
+    "lemonade config set flm.npu_bin=<path to FastFlowLM for XDNA3>\\flm.exe";
+
+static bool needs_user_supplied_flm() {
+    return SystemInfo::get_npu_family() == "XDNA3" &&
+           BackendUtils::find_external_backend_binary("flm", "npu").empty();
+}
+
 
 InstallParams FastFlowLMServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
 
     if (backend == "system") {
         return params;
+    }
+
+    if (needs_user_supplied_flm()) {
+        throw std::runtime_error(XDNA3_UNAVAILABLE_MESSAGE);
     }
 
     params.repo = "ROCm/FastFlowLM";
@@ -502,6 +519,15 @@ public:
 
     InstallCheck check_install(const std::string&, bool binary_found) const override {
         return {!find_flm_executable().empty(), ""};
+    }
+
+    std::optional<UnavailableState> classify_unavailable(
+        const std::string& backend, const std::string&, const std::string&) const override {
+        if (backend == "npu" && needs_user_supplied_flm()) {
+            return UnavailableState{"action_required", XDNA3_UNAVAILABLE_MESSAGE,
+                                    XDNA3_UNAVAILABLE_ACTION};
+        }
+        return std::nullopt;
     }
 
 };
