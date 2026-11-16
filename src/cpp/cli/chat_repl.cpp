@@ -97,6 +97,14 @@ int detect_console_width() {
     return 80;
 }
 
+void enable_utf8_console_output() {
+#ifdef _WIN32
+    if (stdout_is_tty()) {
+        SetConsoleOutputCP(CP_UTF8);
+    }
+#endif
+}
+
 TermUi init_term_ui() {
     TermUi ui;
     bool tty = stdout_is_tty();
@@ -106,9 +114,9 @@ TermUi init_term_ui() {
     if (ui.width < 40) ui.width = 40;
 
 #ifdef _WIN32
-    // Enable ANSI escape sequence processing and UTF-8 output for the console.
+    // Enable ANSI escape sequence processing for the console.
     if (tty) {
-        SetConsoleOutputCP(CP_UTF8);
+        enable_utf8_console_output();
         HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
         DWORD mode = 0;
         if (h != INVALID_HANDLE_VALUE && GetConsoleMode(h, &mode)) {
@@ -1180,6 +1188,7 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
         return oneshot_error("--json requires --prompt or piped stdin", kExitUsage);
     }
     if (oneshot) {
+        enable_utf8_console_output();
         return run_chat_oneshot(client, options);
     }
 

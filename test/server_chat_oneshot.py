@@ -71,7 +71,10 @@ class MockHandler(BaseHTTPRequestHandler):
                         "model": req["model"],
                         "choices": [
                             {
-                                "message": {"role": "assistant", "content": "Hello there"},
+                                "message": {
+                                    "role": "assistant",
+                                    "content": "Hello there",
+                                },
                                 "finish_reason": "stop",
                             }
                         ],
