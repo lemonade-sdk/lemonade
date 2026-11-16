@@ -24,9 +24,11 @@ Usage:
     python server_omni.py --wrapped-server llamacpp --backend vulkan
 """
 
+import base64
+import struct
 import time
+import zlib
 
-from utils.media import solid_color_png_data_uri
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
@@ -105,6 +107,33 @@ class OmniTests(ServerTestBase):
         pull_model_with_retry(model)
         print(f"[SETUP] {model} is ready")
         cls._model_pulled = True
+
+    @staticmethod
+    def _solid_color_png_data_uri(r, g, b, size=256):
+        """Build a data-URI for a solid RGB PNG (stdlib only, no Pillow).
+
+        Used to upload a known image to the collection planner so a test can
+        assert the planner actually saw it (by naming the color back).
+        """
+
+        def _chunk(tag, data):
+            return (
+                struct.pack(">I", len(data))
+                + tag
+                + data
+                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+            )
+
+        ihdr = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)  # 8-bit RGB
+        row = b"\x00" + bytes((r, g, b)) * size  # filter byte + pixels
+        raw = row * size
+        png = (
+            b"\x89PNG\r\n\x1a\n"
+            + _chunk(b"IHDR", ihdr)
+            + _chunk(b"IDAT", zlib.compress(raw, 9))
+            + _chunk(b"IEND", b"")
+        )
+        return "data:image/png;base64," + base64.b64encode(png).decode()
 
     @staticmethod
     def _assert_contains(testcase, content, needle, label):
@@ -326,7 +355,7 @@ class OmniTests(ServerTestBase):
         client = self.get_openai_client()
         model = self.get_test_model("omni")
 
-        image_uri = solid_color_png_data_uri(0, 255, 0)
+        image_uri = self._solid_color_png_data_uri(0, 255, 0)
         completion = client.chat.completions.create(
             model=model,
             messages=[

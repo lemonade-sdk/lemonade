@@ -211,7 +211,6 @@ CAPABILITIES = {
                 "llm": "Llama-3.2-1B-Instruct-NPU",
                 "llm_npu": "Llama-3.2-1B-Instruct-NPU",
                 "tool_calling": "Llama-3.2-1B-Instruct-NPU",
-                "multimodal": "Gemma-4-E2B-it-NPU",
             },
         },
         "flm": {

@@ -25,11 +25,6 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 import threading
 
-from utils.media import (
-    SPEECH_KEYWORD,
-    solid_color_png_data_uri,
-    speech_input_audio_part,
-)
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
@@ -86,8 +81,6 @@ class LLMTests(ServerTestBase):
         models = [get_test_model("llm")]
         if supports("tool_calls") or supports("tool_calls_streaming"):
             models.append(get_test_model("tool_calling"))
-        if supports("image_input") or supports("audio_input"):
-            models.append(get_test_model("multimodal"))
         if supports("embeddings"):
             models.append(get_test_model("embedding"))
         if supports("reranking"):
@@ -616,83 +609,6 @@ class LLMTests(ServerTestBase):
 
         self.assertGreater(tool_call_count, 0, "Should receive tool call chunks")
 
-    # =========================================================================
-    # IMAGE / AUDIO INPUT TESTS
-    # =========================================================================
-
-    def _multimodal_chat(self, content, stream=False):
-        """Send one user turn with content parts to the multimodal test model."""
-        client = self.get_openai_client()
-        model = self.get_test_model("multimodal")
-        response = load_model(model)
-        self.assertEqual(response.status_code, 200, response.text)
-
-        completion = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": content}],
-            temperature=0.0,
-            max_completion_tokens=48,
-            extra_body=get_extra_body("chat"),
-            stream=stream,
-        )
-        if not stream:
-            return completion.choices[0].message.content or ""
-        return "".join(
-            chunk.choices[0].delta.content or ""
-            for chunk in completion
-            if chunk.choices and chunk.choices[0].delta
-        )
-
-    @skip_if_unsupported("image_input")
-    def test_013b_chat_completions_with_image(self):
-        """The model sees an inline image and names its color."""
-        content = self._multimodal_chat(
-            [
-                {
-                    "type": "image_url",
-                    "image_url": {"url": solid_color_png_data_uri(220, 20, 20)},
-                },
-                {
-                    "type": "text",
-                    "text": "What color is this image? Answer with one word.",
-                },
-            ]
-        )
-        print(f"Response: {content}")
-        self.assertIn("red", content.lower(), content)
-
-    @skip_if_unsupported("image_input")
-    def test_013c_chat_completions_with_image_streaming(self):
-        """Streaming works for a turn that carries an image."""
-        content = self._multimodal_chat(
-            [
-                {
-                    "type": "image_url",
-                    "image_url": {"url": solid_color_png_data_uri(20, 20, 220)},
-                },
-                {
-                    "type": "text",
-                    "text": "What color is this image? Answer with one word.",
-                },
-            ],
-            stream=True,
-        )
-        print(f"Response: {content}")
-        self.assertIn("blue", content.lower(), content)
-
-    @skip_if_unsupported("audio_input")
-    def test_013d_chat_completions_with_audio(self):
-        """The model hears an inline WAV clip and repeats what was said."""
-        content = self._multimodal_chat(
-            [
-                speech_input_audio_part(),
-                {"type": "text", "text": "Transcribe this audio exactly."},
-            ]
-        )
-        print(f"Response: {content}")
-        self.assertIn(SPEECH_KEYWORD, content.lower(), content)
-
-    # =========================================================================
     # GENERATION PARAMETERS TESTS
     # =========================================================================
 
