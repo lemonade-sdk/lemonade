@@ -292,6 +292,42 @@ docker run -d \
 
 Lemonade detects the GPU through `--device`, and passes the devices' group on to each backend. Mounting the Docker socket gives Lemonade root-equivalent control of the host, so prefer Podman where you can, and set `LEMONADE_API_KEY`.
 
+With Docker Compose, which creates both networks, run `DOCKER_GID=$(getent group docker | cut -d: -f3) docker compose up -d` with this `docker-compose.yml`:
+
+```yml
+services:
+  lemonade:
+    image: ghcr.io/lemonade-sdk/lemonade-server:latest
+    container_name: lemonade-server
+    ports:
+      - "13305:13305"
+    networks: [default, lemonade-backends]
+    group_add:
+      - "${DOCKER_GID}"
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - lemonade-cache:/opt/lemonade/.cache/huggingface
+      - lemonade-llama:/opt/lemonade/llama
+      - lemonade-data:/opt/lemonade/.cache/lemonade
+      - lemonade-config:/opt/lemonade/.config/lemonade
+
+networks:
+  lemonade-backends:
+    name: lemonade-backends
+    internal: true
+
+volumes:
+  lemonade-cache:
+  lemonade-llama:
+  lemonade-data:
+  lemonade-config:
+```
+
+The network keeps the name `lemonade-backends` through `name:`; Lemonade puts backends only on an internal network with that name.
+
 Then install a backend and run a model, with `podman exec` under Podman:
 
 ```bash
