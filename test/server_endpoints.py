@@ -147,9 +147,23 @@ def _running_lemond(config=None, cache_prefix="lemond_test_", extra_env=None):
             try:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
+                _print_log_tail(log_path, "lemond did not exit within 10s of terminate")
                 proc.kill()
-                proc.wait(timeout=10)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    print(f"WARNING: lemond (pid {proc.pid}) not reaped 10s after kill")
         shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+def _print_log_tail(log_path, reason, lines=40):
+    print(f"WARNING: {reason}; last {lines} lines of {log_path}:")
+    try:
+        with open(log_path, encoding="utf-8", errors="replace") as f:
+            for line in f.readlines()[-lines:]:
+                print(f"    {line.rstrip()}")
+    except OSError as e:
+        print(f"    (could not read log: {e})")
 
 
 def _wait_until_healthy(proc, port, headers, timeout_s=60):
@@ -7048,13 +7062,17 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(files_response.status_code, 200)
             files = files_response.json()["files"]
             main_files = [f for f in files if f["role"] == "main"]
-            self.assertEqual(len(main_files), 1)
-            self.assertEqual(main_files[0]["name"], os.path.basename(shard1))
             self.assertEqual(
-                main_files[0]["size_bytes"],
-                shard1_bytes,
-                "/files must report the individual file size, not the shard total",
+                [file["name"] for file in main_files],
+                [os.path.basename(shard1), os.path.basename(shard2)],
             )
+            for file, expected_bytes in zip(main_files, [shard1_bytes, shard2_bytes]):
+                self.assertTrue(file["exists"])
+                self.assertEqual(
+                    file["size_bytes"],
+                    expected_bytes,
+                    "/files must report the individual file size, not the shard total",
+                )
 
             print("[OK] sharded size sums shards while /files stays per-file")
 

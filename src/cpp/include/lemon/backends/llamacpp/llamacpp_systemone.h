@@ -46,7 +46,8 @@ int encoder_decision_ctx_size(int requested, int64_t trained_window);
 
 // Which of -b and -ub lemond adds, and at what size, given the flags in
 // `user_args`; and the longest input then accepted. Without flags the batch
-// stops at 4096 tokens; -b / -ub raise it.
+// stops at 4096 tokens; -b / -ub raise it, and -np above 1 without --kv-unified
+// lowers it to one slot's share of the context.
 struct SingleBatchPlan {
     bool add_batch_size = false;
     bool add_ubatch_size = false;

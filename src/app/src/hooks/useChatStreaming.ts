@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { ChatMessage, LiveStreamStats, ChatCompletionStats } from '../api';
 import type { ToolCall, ToolResult } from '../tools/lemonadeTools';
 import { ToolLoopDetector } from './toolLoopDetector';
+import { directImageFollowupContent } from '../features/images/directImageAnalysis';
 
 export type { ToolCall } from '../tools/lemonadeTools';
 
@@ -30,12 +31,15 @@ export interface ToolExecutionPayload extends ToolResult {
   displayResult?: string;
   artifacts?: ToolArtifact[];
   error?: boolean;
+  attachImageIds?: string[]; // transient IDs, not tool-result text or persisted history
 }
 
 export interface ChatToolRuntime {
   tools: Record<string, unknown>[];
-  execute: (call: ToolCall) => Promise<ToolExecutionPayload>;
+  execute: (call: ToolCall, signal?: AbortSignal) => Promise<ToolExecutionPayload>;
   systemPrompt?: string;
+  acceptsImageReferences?: boolean;
+  resolveImageAttachment?: (imageId: string) => Promise<string>;
 }
 
 /** Produce a short human-readable summary of a tool result */
@@ -281,11 +285,11 @@ export function useChatStreaming(
                   content: JSON.stringify({ error: `Skipped: ${reason}` }),
                   displayResult: `Skipped: ${reason}`,
                   error: true,
-                } : runtime!.execute(tc as ToolCall);
+                } : runtime!.execute(tc as ToolCall, controller.signal);
               }));
 
-              // Tool execution takes no abort signal, so a stop mid-call lands
-              // here with a dead controller.
+              // Backends may ignore cancellation. Discard late results from
+              // a stopped conversation rather than exposing them to the user.
               if (controller.signal.aborted) {
                 dropTokenBufferIfOwned();
                 resolve();
@@ -349,9 +353,17 @@ Possible tool loop: ${loopNotice.reason}. Do not repeat identical calls with unc
 
 Some tool calls were skipped after repeated identical failures. Other tools remain available; change the blocked call's arguments or choose a different tool.`
                     : TOOL_FOLLOWUP_PROMPT;
+              const followupContent = await directImageFollowupContent(
+                guidance, results, runtime?.resolveImageAttachment, controller.signal,
+              );
+              if (controller.signal.aborted || !ownsConversation()) {
+                dropTokenBufferIfOwned();
+                resolve();
+                return;
+              }
               fullMessages = [
                 ...fullMessages,
-                { role: 'user' as const, content: guidance },
+                { role: 'user' as const, content: followupContent },
               ];
 
               // Clear tool status, keep accumulated tool call entries
