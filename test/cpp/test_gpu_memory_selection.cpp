@@ -134,7 +134,18 @@ int main() {
     auto bare_rocm = select_gpu_memory_pool(
         gpu_memory_vendor_for_target("system", "ROCm"), amd_igpu, two_amd, nvidia,
         unavailable, "ROCm");
-    check(bare_rocm.total_gb == 8.0, "bare ROCm selects the first AMD pool");
+    check(bare_rocm.total_gb == 16.0 && !bare_rocm.unified,
+          "bare ROCm prefers the AMD dGPU over the iGPU");
+
+    auto hybrid_auto = select_gpu_memory_pool(
+        GpuMemoryVendor::Any, amd_igpu, two_amd, {}, unavailable);
+    check(hybrid_auto.label == "AMD dGPU" && hybrid_auto.total_gb == 16.0,
+          "untargeted AMD iGPU+dGPU host sizes against the dGPU");
+
+    auto igpu_only = select_gpu_memory_pool(
+        GpuMemoryVendor::Any, amd_igpu, {}, {}, unavailable);
+    check(igpu_only.label == "AMD iGPU" && igpu_only.unified && igpu_only.total_gb == 8.0,
+          "untargeted iGPU-only host sizes against the iGPU");
 
     auto lowercase_cuda = select_gpu_memory_pool(
         gpu_memory_vendor_for_target("SYSTEM", "cuda1"), unavailable, amd, two_nvidia,
@@ -145,9 +156,22 @@ int main() {
     GPUInfo amd_igpu_unknown_usage = gpu(2.0, 0.5);
     amd_igpu_unknown_usage.virtual_gb = 6.0;
     auto unknown_usage = select_gpu_memory_pool(
-        GpuMemoryVendor::Amd, amd_igpu_unknown_usage, two_amd, nvidia, unavailable);
+        GpuMemoryVendor::Amd, amd_igpu_unknown_usage, {}, nvidia, unavailable);
     check(unknown_usage.used_gb < 0.0,
           "incomplete unified-memory usage remains unknown");
+
+    GPUInfo amd_igpu_no_carveout = gpu(0.0);
+    amd_igpu_no_carveout.virtual_gb = 16.0;
+    auto no_carveout = select_gpu_memory_pool(
+        GpuMemoryVendor::Any, amd_igpu_no_carveout, {}, {}, unavailable);
+    check(no_carveout.unified && no_carveout.total_gb == 16.0 &&
+          no_carveout.label == "AMD iGPU",
+          "iGPU without a carve-out still exposes its shared pool");
+
+    auto no_carveout_rocm0 = select_gpu_memory_pool(
+        GpuMemoryVendor::Amd, amd_igpu_no_carveout, two_amd, nvidia, unavailable, "ROCm0");
+    check(no_carveout_rocm0.unified && no_carveout_rocm0.total_gb == 16.0,
+          "iGPU without a carve-out keeps ROCm0");
 
     std::vector<GPUInfo> mixed_usage_nvidia{
         gpu(24.0, -1.0, 0), gpu(8.0, 1.0, 1)};
