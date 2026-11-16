@@ -714,6 +714,7 @@ FakeHost contained_host() {
     FakeHost host;
     host.tools = {"podman"};
     host.account = "lemonade";
+    host.root = true;
     host.env = {{"CONTAINER_HOST", "unix:///run/podman/podman.sock"},
                 {"XDG_RUNTIME_DIR", "/run/lemonade"}};
     host.paths = {"/run/.containerenv", "/run/podman/podman.sock"};
@@ -821,6 +822,19 @@ void test_in_container() {
     check("an internal network not named lemonade-backends is not the backends' network",
           other_manager.backend_network().empty() && other_failures.size() == 1 &&
               other_failures[0].id == "backend_network");
+
+    FakeHost keep_id = contained_host();
+    keep_id.root = false;
+    const auto keep_id_failures = ContainerManager(keep_id.host()).check_host();
+    check("under rootless Podman, lemond not running as root, as with --userns=keep-id, fails",
+          keep_id_failures.size() == 1 && keep_id_failures[0].id == "container_user" &&
+              keep_id_failures[0].steps[0].find("--user 0:0") != std::string::npos);
+    FakeHost rootful = contained_host();
+    rootful.root = false;
+    rootful.podman_rootless = "false";
+    rootful.gpu_group = "990";
+    check("under rootful Podman, lemond need not run as root",
+          ContainerManager(rootful.host()).check_host().empty());
 
     FakeHost no_socket = contained_host();
     no_socket.paths = {"/run/.containerenv"};

@@ -374,6 +374,16 @@ std::optional<SetupFailure> ContainerManager::check_container() const {
                             {"Mount the socket of the Podman or Docker that runs lemond's container" + docs},
                             ""};
     }
+    // Under --userns=keep-id, lemond's user namespace belongs to the host
+    // account its backends' root maps to, which then holds every capability
+    // over lemond, its memory and its mounted socket included.
+    if (rootless_podman() && !host_.is_root()) {
+        return SetupFailure{"container_user",
+                            "Under rootless Podman, lemond's container must run as root, which is "
+                            "your own account on the host",
+                            {"Start lemond's container with --user 0:0 instead of --userns=keep-id"},
+                            ""};
+    }
     if (backend_network().empty()) {
         std::vector<std::string> steps;
         std::string usual = "podman";

@@ -258,7 +258,7 @@ podman run -d \
   --name lemonade-server \
   -p 13305:13305 \
   --network podman --network lemonade-backends \
-  --userns=keep-id:uid=10001,gid=10001 \
+  --user 0:0 \
   -v $XDG_RUNTIME_DIR/podman/podman.sock:/run/podman/podman.sock \
   -v lemonade-cache:/opt/lemonade/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
@@ -267,7 +267,7 @@ podman run -d \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
-`--userns=keep-id` runs Lemonade as your account on the host, which owns the socket.
+Under rootless Podman, `--user 0:0` runs Lemonade as your own account on the host, which owns the socket. Don't use `--userns=keep-id`: it gives backends control over Lemonade's process, and Lemonade refuses to start them.
 
 **With Docker** 25 or newer:
 
