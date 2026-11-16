@@ -37,8 +37,8 @@ struct LockedFile {
 
 struct BundlePlan {
     std::string model_id;
-    // The card's only preset when it has no "chat" one; "" leaves the choice to
-    // loom-serve.
+    // "chat" when the card has it, else the card's only preset; "" leaves the
+    // choice to loom-serve.
     std::string preset;
     std::vector<OriginFile> origin_files;
     std::vector<LockedFile> locked_files;

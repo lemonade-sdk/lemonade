@@ -8,6 +8,7 @@
 #include "lemon/backends/loom/loom_bundle.h"
 #include "lemon/model_manager.h"
 #include "lemon/models/artifact_ref.h"
+#include "lemon/models/artifact_transfer.h"
 #include "lemon/models/fetchable_repository.h"
 #include "lemon/models/registry_id.h"
 #include "lemon/models/registry_types.h"
@@ -19,18 +20,14 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <set>
 #include <stdexcept>
 #include <thread>
 #include <vector>
-
-#ifdef _WIN32
-    #include <windows.h>
-#endif
 
 namespace fs = std::filesystem;
 
@@ -63,11 +60,20 @@ bool bundle_complete(const std::string& checkpoint) {
            fs::is_regular_file(dir / loom::kCardFile, ec);
 }
 
-bool file_matches(const fs::path& path, std::uint64_t size, const std::string& sha256) {
+bool file_matches(const fs::path& path, std::uint64_t size, const std::string& algorithm,
+                  const std::string& hash) {
     std::error_code ec;
     if (!fs::is_regular_file(path, ec) || fs::file_size(path, ec) != size || ec) return false;
     std::string error;
-    return utils::HttpClient::verify_file_digest(utils::path_to_utf8(path), "sha256", sha256, error);
+    return hash.empty() ||
+           utils::HttpClient::verify_file_digest(utils::path_to_utf8(path), algorithm, hash, error);
+}
+
+// The download re-hashes a file it finds in place, but takes one the listing
+// gives no hash for as complete whatever its size.
+void drop_if_resized(const fs::path& path, std::uint64_t size) {
+    std::error_code ec;
+    if (fs::is_regular_file(path, ec) && fs::file_size(path, ec) != size) fs::remove(path, ec);
 }
 
 // Pulls a bundle repository and the origin files its lock pins into one run
@@ -105,88 +111,63 @@ public:
             bundle_files.push_back(file);
         }
 
-        const auto fetch_listed = [&](const std::string& path) {
-            for (const auto& file : bundle_files) {
-                if (file.path == path) return fetch_bundle_file(file, listing.revision);
+        models::DownloadPlan card_plan{utils::path_to_utf8(dir_), {}};
+        for (const char* name : {loom::kCardFile, loom::kLockFile}) {
+            const auto it = std::find_if(bundle_files.begin(), bundle_files.end(),
+                                         [&](const RegistryFile& file) { return file.path == name; });
+            if (it == bundle_files.end()) {
+                throw std::runtime_error(repo_id_ + " is not a Loom bundle: it has no " + name);
             }
-            throw std::runtime_error(repo_id_ + " is not a Loom bundle: it has no " + path);
-        };
-        fetch_listed(loom::kCardFile);
-        fetch_listed(loom::kLockFile);
-        const loom::BundlePlan plan =
+            card_plan.files.push_back(bundle_download(*it, listing.revision));
+        }
+        execute(card_plan, nullptr);
+        const loom::BundlePlan bundle =
             loom::plan_bundle(read_json_file(dir_ / loom::kCardFile),
                               read_json_file(dir_ / loom::kLockFile));
 
-        total_files_ = static_cast<int>(bundle_files.size() + plan.origin_files.size());
-        for (const auto& file : bundle_files) total_bytes_ += file.size;
-        for (const auto& file : plan.origin_files) total_bytes_ += file.size;
-
-        for (const auto& file : bundle_files) fetch_bundle_file(file, listing.revision);
-        for (const auto& file : plan.origin_files) fetch_origin_file(file);
-        for (const auto& file : plan.locked_files) {
-            if (!file_matches(dir_ / utils::path_from_utf8(file.path), file.size, file.sha256)) {
+        models::DownloadPlan plan{utils::path_to_utf8(dir_), {}};
+        for (const auto& file : bundle_files) plan.files.push_back(bundle_download(file, listing.revision));
+        for (const auto& file : bundle.origin_files) plan.files.push_back(origin_download(file));
+        execute(plan, progress_);
+        for (const auto& file : bundle.locked_files) {
+            if (!file_matches(dir_ / utils::path_from_utf8(file.path), file.size, "sha256",
+                              file.sha256)) {
                 throw std::runtime_error(file.path + " does not match the bundle's lock");
             }
         }
 
         std::ofstream marker(dir_ / loom::kCompleteMarker, std::ios::binary | std::ios::trunc);
         marker << json{{"repo_id", repo_id_}, {"revision", listing.revision.id},
-                       {"model_id", plan.model_id}}.dump(2);
+                       {"model_id", bundle.model_id}}.dump(2);
         if (!marker.good()) throw std::runtime_error("Cannot record the completed Loom bundle");
         marker.close();
 
         if (progress_) {
             DownloadProgress done;
             done.complete = true;
-            done.file_index = total_files_;
-            done.total_files = total_files_;
-            done.total_download_size = static_cast<size_t>(total_bytes_);
             done.percent = 100;
             (void)progress_(done);
         }
     }
 
 private:
-    bool fetch_bundle_file(const RegistryFile& file, const models::Revision& revision) {
-        const fs::path target = dir_ / utils::path_from_utf8(file.path);
-        if (fetched_.count(file.path)) return true;
-        fetched_.insert(file.path);
-        std::string error;
-        std::error_code ec;
-        const bool present = fs::is_regular_file(target, ec) && fs::file_size(target, ec) == file.size &&
-                             (file.hash.empty() ||
-                              utils::HttpClient::verify_file_digest(utils::path_to_utf8(target),
-                                                                     file.hash_algorithm, file.hash,
-                                                                     error));
-        if (present) {
-            report_skipped(file.path, file.size);
-            return true;
-        }
-        fs::remove(target, ec);
-        download(repository_->file_url({repo_id_, revision, file.path}), target, file.path,
-                 file.size, file.hash_algorithm, file.hash);
-        return true;
+    models::DownloadFile bundle_download(const RegistryFile& file, const models::Revision& revision) {
+        drop_if_resized(dir_ / utils::path_from_utf8(file.path), file.size);
+        return {file.path, repository_->file_url({repo_id_, revision, file.path}), file.size,
+                file.hash_algorithm, file.hash, ""};
     }
 
-    void fetch_origin_file(const loom::OriginFile& file) {
+    models::DownloadFile origin_download(const loom::OriginFile& file) {
         const fs::path target = dir_ / utils::path_from_utf8(file.path);
-        if (file_matches(target, file.size, file.sha256)) {
-            report_skipped(file.path, file.size);
-            return;
-        }
+        drop_if_resized(target, file.size);
         std::error_code ec;
-        fs::remove(target, ec);
-        fs::create_directories(target.parent_path(), ec);
-        if (adopt_cached_copy(file, target)) {
-            report_skipped(file.path, file.size);
-            return;
-        }
-        download(repository_->file_url({file.repository, models::Revision{file.revision, true},
-                                        file.file}),
-                 target, file.path, file.size, "sha256", file.sha256);
+        if (!fs::exists(target, ec)) adopt_cached_copy(file, target);
+        return {file.path,
+                repository_->file_url({file.repository, models::Revision{file.revision, true}, file.file}),
+                file.size, "sha256", file.sha256, ""};
     }
 
-    bool adopt_cached_copy(const loom::OriginFile& file, const fs::path& target) {
+    void adopt_cached_copy(const loom::OriginFile& file, const fs::path& target) {
         const fs::path cache = utils::path_from_utf8(utils::get_hf_cache_dir()) /
                                registry_repo_cache_dir_name(file.repository, source_);
         std::vector<fs::path> candidates = {
@@ -196,10 +177,11 @@ private:
         const fs::path active = hf_cache::active_snapshot_path(cache);
         if (!active.empty()) candidates.push_back(active / utils::path_from_utf8(file.file));
 
+        std::error_code ec;
+        fs::create_directories(target.parent_path(), ec);
         for (const auto& candidate : candidates) {
-            std::error_code ec;
             const fs::path resolved = fs::canonical(candidate, ec);
-            if (ec || !file_matches(resolved, file.size, file.sha256)) continue;
+            if (ec || !file_matches(resolved, file.size, "sha256", file.sha256)) continue;
             fs::create_hard_link(resolved, target, ec);
             if (ec) {
                 ec.clear();
@@ -208,67 +190,14 @@ private:
             if (!ec) {
                 LOG(INFO, "Loom") << "Reusing " << utils::path_to_utf8(resolved) << " for "
                                   << file.path << std::endl;
-                return true;
+                return;
             }
         }
-        return false;
     }
 
-    void download(const std::string& url, const fs::path& target, const std::string& name,
-                  std::uint64_t size, const std::string& hash_algorithm, const std::string& hash) {
-        std::error_code ec;
-        fs::create_directories(target.parent_path(), ec);
-        ++file_index_;
-        utils::DownloadOptions options;
-        options.max_retries = 10;
-        options.initial_retry_delay_ms = 2000;
-        options.max_retry_delay_ms = 120000;
-        options.connect_timeout = 60;
-        options.low_speed_limit = 1000;
-        options.low_speed_time = static_cast<int>(utils::HttpClient::get_default_timeout());
-        options.expected_hash_algorithm = hash_algorithm;
-        options.expected_hash = hash;
-
-        const auto on_bytes = [&](size_t downloaded, size_t total) -> bool {
-            if (cancel_.cancelled()) return false;
-            if (!progress_) return true;
-            DownloadProgress update;
-            update.file = name;
-            update.file_index = file_index_;
-            update.total_files = total_files_;
-            update.bytes_downloaded = downloaded;
-            update.bytes_total = total > 0 ? total : static_cast<size_t>(size);
-            update.total_download_size = static_cast<size_t>(total_bytes_);
-            update.percent = update.bytes_total > 0
-                                 ? static_cast<int>((downloaded * 100) / update.bytes_total)
-                                 : 0;
-            return progress_(update);
-        };
-
-        LOG(INFO, "Loom") << "Downloading " << name << " (" << size << " bytes)" << std::endl;
-        const auto result =
-            utils::HttpClient::download_file(url, utils::path_to_utf8(target), on_bytes,
-                                             repository_->auth_headers(), options,
-                                             utils::HttpSecurityPolicy::ExternalHttpsOnly, cancel_);
-        if (result.cancelled) throw std::runtime_error("Download cancelled");
-        if (!result.success) {
-            throw std::runtime_error("Failed to download " + name + ": " + result.error_message);
-        }
-    }
-
-    void report_skipped(const std::string& name, std::uint64_t size) {
-        ++file_index_;
-        if (!progress_) return;
-        DownloadProgress update;
-        update.file = name;
-        update.file_index = file_index_;
-        update.total_files = total_files_;
-        update.bytes_downloaded = static_cast<size_t>(size);
-        update.bytes_total = static_cast<size_t>(size);
-        update.total_download_size = static_cast<size_t>(total_bytes_);
-        update.bytes_previously_downloaded = static_cast<size_t>(size);
-        update.percent = 100;
-        (void)progress_(update);
+    void execute(const models::DownloadPlan& plan, DownloadProgressCallback progress) {
+        models::ArtifactTransfer::with_default_transfers().execute(
+            plan, repository_->auth_headers(), std::move(progress), cancel_);
     }
 
     std::string repo_id_;
@@ -277,10 +206,6 @@ private:
     utils::CancelToken cancel_;
     std::unique_ptr<models::FetchableRepository> repository_;
     fs::path dir_;
-    std::set<std::string> fetched_;
-    int file_index_ = 0;
-    int total_files_ = 0;
-    std::uint64_t total_bytes_ = 0;
 };
 
 void require_strix_halo() {
@@ -317,18 +242,6 @@ std::string diagnose_startup_failure(const ServerCommand& command) {
         return "";
     }
     return loom::startup_failure_detail(lines);
-}
-
-// libamdf opens the GPU through the kernel graphics interface, which a Remote
-// Desktop session does not expose; the same machine works from its console.
-std::string remote_session_hint() {
-#ifdef _WIN32
-    if (GetSystemMetrics(SM_REMOTESESSION) != 0) {
-        return " (Loom cannot reach the GPU from a Remote Desktop session; run Lemonade from "
-               "the machine's local console)";
-    }
-#endif
-    return "";
 }
 
 json get_loopback_json(int port, const std::string& path) {
@@ -403,10 +316,8 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
     } catch (const std::runtime_error&) {
         if (load_cancelled()) throw;
         const std::string detail = diagnose_startup_failure(command);
-        const std::string hint = remote_session_hint();
-        if (detail.empty() && hint.empty()) throw;
-        throw std::runtime_error("loom-serve failed to start" +
-                                 (detail.empty() ? std::string() : ": " + detail) + hint);
+        if (detail.empty()) throw;
+        throw std::runtime_error("loom-serve failed to start: " + detail);
     }
     wait_for_bundle(model_name);
 }

@@ -110,9 +110,12 @@ BundlePlan plan_bundle(const json& card, const json& lock) {
     plan.model_id = string_field(card.value("model", json::object()), "id");
     if (plan.model_id.empty()) throw std::runtime_error("Loom card has no model.id");
     const auto presets = card.find("presets");
-    if (presets != card.end() && presets->is_object() && !presets->contains("chat") &&
-        presets->size() == 1) {
-        plan.preset = presets->begin().key();
+    if (presets != card.end() && presets->is_object()) {
+        if (presets->contains("chat")) {
+            plan.preset = "chat";
+        } else if (presets->size() == 1) {
+            plan.preset = presets->begin().key();
+        }
     }
 
     const auto origins = read_origins(card, lock);

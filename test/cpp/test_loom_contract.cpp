@@ -83,7 +83,7 @@ const json kLock = json::parse(R"({
 void check_bundle_plan() {
     const loom::BundlePlan plan = loom::plan_bundle(kCard, kLock);
     check("Plan carries the card's model id", plan.model_id == "Qwen/Qwen3.6-27B");
-    check("A card with a chat preset leaves the preset to loom-serve", plan.preset.empty());
+    check("A card with a chat preset runs it", plan.preset == "chat");
     check("Plan lists one file per pinned parameter", plan.origin_files.size() == 2);
     if (plan.origin_files.size() == 2) {
         const auto& model = plan.origin_files[0].path == "parameter/model.gguf"
@@ -106,6 +106,16 @@ void check_bundle_plan() {
     single_preset["presets"] = {{"vision-mtp", {{"execution", json::object()}}}};
     check("A card whose only preset is not chat names that preset",
           loom::plan_bundle(single_preset, kLock).preset == "vision-mtp");
+
+    json several_presets = kCard;
+    several_presets["presets"]["chat-r9700"] = {{"execution", json::object()}};
+    check("A card with several presets still runs chat",
+          loom::plan_bundle(several_presets, kLock).preset == "chat");
+
+    json no_chat = kCard;
+    no_chat["presets"] = {{"a", json::object()}, {"b", json::object()}};
+    check("A card with several presets and no chat leaves the choice to loom-serve",
+          loom::plan_bundle(no_chat, kLock).preset.empty());
 
     json url_origin = kCard;
     url_origin["origins"]["drafter"]["kind"] = "url";
