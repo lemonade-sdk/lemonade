@@ -51,12 +51,12 @@
     }
   },
   "llamacpp": {
-    "vulkan": "b12109",
-    "rocm-stable": "b12109",
-    "rocm-nightly": "b1365",
-    "cuda": "b12109",
-    "metal": "b12109",
-    "cpu": "b12109",
+    "vulkan": "b12233",
+    "rocm-stable": "b12223",
+    "rocm-nightly": "b1372",
+    "cuda": "b12223",
+    "metal": "b12233",
+    "cpu": "b12233",
     "nathanw": "vulkan-radv-performance@sha256:21231761efc08e92ddbc8a705f122e8423dd4905147b74b49e1f1e544c07ba96",
     "halobox": "rocm-10.0-strix-llama@sha256:804a38d5b2ffc5481f1a1064a6356254575e2ae640dcb9ebb9f46d1eb4ad798b"
   },
