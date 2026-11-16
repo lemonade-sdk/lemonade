@@ -86,8 +86,7 @@ std::string startup_failure_detail(const std::vector<std::string>& output_lines)
 // or "" when the card does not say.
 std::string card_memory_bytes(const json& info);
 
-// The rules docs/tools/gen_loom_models.py applies to the curated catalog, so a
-// bundle found by search registers like the rows Lemonade ships.
+// So a bundle found by search registers like the curated rows Lemonade ships.
 std::vector<std::string> suggested_labels(const json& info, const std::string& name);
 std::string suggested_name(const std::string& repo_id, const json& card);
 std::uint64_t locked_bytes(const json& lock);
