@@ -64,16 +64,15 @@ int main() {
           media_result_bytes(over_media) == kMaxJobMediaOutputBytes + 1);
     check("media: one byte over limit rejected",
           !media_output_within_limit(media_result_bytes(over_media)));
-    check("extract: exact cap accepted",
-          payload_bytes(std::string(kMaxJobExtractValueBytes, 'x')) <= kMaxJobExtractValueBytes);
-    check("extract: one byte over cap rejected",
-          payload_bytes(std::string(kMaxJobExtractValueBytes + 1, 'x')) > kMaxJobExtractValueBytes);
     check("payload: string", payload_bytes("YWJjZA==") == 8);
     check("payload: nested array and object",
           payload_bytes(json{{"a", json::array({"abc", json{{"b", "de"}}, 1, true})},
-                             {"c", "f"}}) == 6);
-    check("payload: number", payload_bytes(42) == 0);
-    check("payload: bool", payload_bytes(true) == 0);
+                             {"c", "f"}}) == 6 + 2 * sizeof(json));
+    check("payload: number", payload_bytes(42) == sizeof(json));
+    check("payload: fraction", payload_bytes(1.5) == sizeof(json));
+    check("payload: bool", payload_bytes(true) == sizeof(json));
+    check("payload: null", payload_bytes(nullptr) == sizeof(json));
+    check("payload: numeric array", payload_bytes(json::array({1, 2, 3})) == 3 * sizeof(json));
     json nested = "abc";
     for (size_t depth = 0; depth < 32; ++depth) nested = json::array({nested});
     check("payload: bounded nesting", payload_bytes(nested) == 3);
@@ -114,23 +113,80 @@ int main() {
     const json large = {{"mime_type", "audio/wav"}, {"data", ""},
                         {"size", std::numeric_limits<size_t>::max()}};
     const json extracts = {{"copy", "YWJj"}, {"other", "abc"}};
-    check("projected: output and extracts count in full",
-          projected_media_bytes(image, extracts) == 3 + 4 + 3);
-    const size_t projected = projected_media_bytes(image, extracts);
-    job.context["copy"] = "old";
-    job.context["other"] = media;
-    check("projected: existing context does not change result",
-          projected_media_bytes(image, extracts) == projected);
-    job.context["copy"] = "a longer replacement";
-    check("projected: context replacement does not change result",
-          projected_media_bytes(image, extracts) == projected);
-    check("projected: output without extracts", projected_media_bytes(image, json::object()) == 3);
+    const auto next = next_media_extracts(image, extracts, {});
+    check("extracts: media adds keys", next == std::map<std::string, size_t>{{"copy", 4}, {"other", 3}});
+    check("extracts: ordinary output adds nothing",
+          next_media_extracts(ordinary_step.output, extracts, {}).empty());
+    check("extracts: no extracts preserves tally",
+          next_media_extracts(ordinary_step.output, json::object(), next) == next);
+    check("extracts: non-media replacement removes key",
+          next_media_extracts(ordinary_step.output, json{{"copy", "new"}}, next) ==
+              std::map<std::string, size_t>{{"other", 3}});
+    const auto replaced = next_media_extracts(image, json{{"copy", "ab"}}, next);
+    check("extracts: media replacement updates size",
+          replaced == std::map<std::string, size_t>{{"copy", 2}, {"other", 3}});
+    const auto scalars = next_media_extracts(image, json{{"numbers", json::array({1, 2})}}, {});
+    check("extracts: numeric array counts", scalars.at("numbers") == 2 * sizeof(json));
+    job.media_extract_bytes = next;
+    check("retained: extract tally included", retained_media_bytes(job) == 7 + 4 + 3);
+    check("projected: outputs and next tally",
+          projected_media_bytes(job, image, next) == 7 + 3 + 4 + 3);
+    check("projected: replacement does not double count",
+          projected_media_bytes(job, image, replaced) == 7 + 3 + 2 + 3);
+    check("projected: removal does not count old tally",
+          projected_media_bytes(job, ordinary_step.output, {}) == 7);
+    check("projected: output without extracts", projected_media_bytes(Job{}, image, {}) == 3);
     check("projected: overflow saturates",
-          projected_media_bytes(large, json{{"copy", "YWJj"}}) ==
-              std::numeric_limits<size_t>::max());
+          projected_media_bytes(job, large, next) == std::numeric_limits<size_t>::max());
+    const auto overflowing = next_media_extracts(image, json{{"copy", nested}}, {});
     check("projected: extract overflow saturates",
-          projected_media_bytes(image, json{{"copy", nested}}) ==
+          projected_media_bytes(Job{}, image, overflowing) == std::numeric_limits<size_t>::max());
+    Job tally_only;
+    tally_only.media_extract_bytes = {{"a", std::numeric_limits<size_t>::max()}, {"b", 1}};
+    check("retained: tally overflow saturates",
+          retained_media_bytes(tally_only) == std::numeric_limits<size_t>::max());
+    check("projected: tally overflow saturates",
+          projected_media_bytes(Job{}, json::object(), tally_only.media_extract_bytes) ==
               std::numeric_limits<size_t>::max());
+
+    const json small_media = {{"mime_type", "audio/wav"}, {"data", "YWJj"}, {"size", 3}};
+    const json step_one_extracts = {{"a", std::string(3u * 1024u * 1024u, 'a')},
+                                   {"b", std::string(3u * 1024u * 1024u, 'b')},
+                                   {"c", std::string(3u * 1024u * 1024u, 'c')}};
+    const json step_two_extracts = {{"d", step_one_extracts["a"]},
+                                   {"e", step_one_extracts["b"]},
+                                   {"f", step_one_extracts["c"]}};
+    Job cumulative;
+    const auto first = next_media_extracts(small_media, step_one_extracts, {});
+    check("cumulative: first step fits",
+          projected_media_bytes(cumulative, small_media, first) <= kMaxJobMediaStoreBytes);
+    check("cumulative: second step alone fits",
+          projected_media_bytes(Job{}, small_media,
+                                next_media_extracts(small_media, step_two_extracts, {})) <=
+              kMaxJobMediaStoreBytes);
+    StepRecord first_step;
+    first_step.output = small_media;
+    cumulative.steps.push_back(first_step);
+    cumulative.media_extract_bytes = first;
+    check("cumulative: retained first extracts counted",
+          retained_media_bytes(cumulative) == 3 + 9u * 1024u * 1024u);
+    check("cumulative: combined steps exceed budget",
+          projected_media_bytes(cumulative, small_media,
+                                next_media_extracts(small_media, step_two_extracts, first)) >
+              kMaxJobMediaStoreBytes);
+    check("cumulative: replacing keys fits",
+          projected_media_bytes(cumulative, small_media,
+                                next_media_extracts(small_media, step_one_extracts, first)) <=
+              kMaxJobMediaStoreBytes);
+    const json large_chat = {{"response", std::string(kMaxJobMediaStoreBytes + 1, 'x')}};
+    check("extracts: non-media response beyond budget is unrestricted",
+          next_media_extracts(large_chat, large_chat, {}).empty() &&
+              projected_media_bytes(Job{}, large_chat, {}) == 0);
+    const auto exact = std::map<std::string, size_t>{{"copy", kMaxJobMediaStoreBytes - 3}};
+    check("projected: exact budget", projected_media_bytes(Job{}, image, exact) == kMaxJobMediaStoreBytes);
+    const auto over = std::map<std::string, size_t>{{"copy", kMaxJobMediaStoreBytes - 2}};
+    check("projected: one byte over budget",
+          projected_media_bytes(Job{}, image, over) == kMaxJobMediaStoreBytes + 1);
     job.steps[0].output = large;
     job.steps[2].output = large;
     check("retained: overflow saturates",

@@ -8,11 +8,7 @@
 
 namespace lemon::jobs {
 
-inline constexpr size_t kMaxJobExtractValueBytes = 64u * 1024u;
 inline constexpr size_t kMaxJobMediaOutputBytes = 8u * 1024u * 1024u;
-// Each result lives in the step output and context, bounding the document at
-// roughly twice this budget plus base64 growth. Count step outputs because an
-// extract can overwrite the context copy.
 inline constexpr size_t kMaxJobMediaStoreBytes = 16u * 1024u * 1024u;
 
 inline size_t base64_decoded_size(std::string_view encoded) {
@@ -64,7 +60,7 @@ inline size_t media_result_bytes(const json& result) {
 inline size_t payload_bytes(const json& value) {
     const auto count = [](const auto& self, const json& current, size_t depth) -> size_t {
         if (current.is_string()) return current.get_ref<const json::string_t&>().size();
-        if (!current.is_array() && !current.is_object()) return 0;
+        if (!current.is_array() && !current.is_object()) return sizeof(json);
         // Exhaust the budget rather than undercount values beyond the recursion bound.
         if (depth >= 32) return std::numeric_limits<size_t>::max();
         size_t total = 0;
@@ -79,26 +75,37 @@ inline size_t payload_bytes(const json& value) {
     return count(count, value, 0);
 }
 
-inline size_t projected_media_bytes(const json& output, const json& resolved_extracts) {
-    size_t total = media_result_bytes(output);
-    for (const auto& value : resolved_extracts) {
-        const size_t added = payload_bytes(value);
-        if (added > std::numeric_limits<size_t>::max() - total)
-            return std::numeric_limits<size_t>::max();
-        total += added;
+inline std::map<std::string, size_t> next_media_extracts(
+    const json& output, const json& resolved_extracts,
+    const std::map<std::string, size_t>& current) {
+    auto next = current;
+    const bool media = media_result_bytes(output) != 0;
+    for (auto extract = resolved_extracts.begin(); extract != resolved_extracts.end(); ++extract) {
+        if (media) next[extract.key()] = payload_bytes(extract.value());
+        else next.erase(extract.key());
     }
-    return total;
+    return next;
 }
 
-inline size_t retained_media_bytes(const Job& job) {
-    size_t total = 0;
+inline size_t projected_media_bytes(const Job& job, const json& output,
+                                    const std::map<std::string, size_t>& next) {
+    size_t total = media_result_bytes(output);
     for (const auto& step : job.steps) {
         const size_t bytes = media_result_bytes(step.output);
         if (bytes > std::numeric_limits<size_t>::max() - total)
             return std::numeric_limits<size_t>::max();
         total += bytes;
     }
+    for (const auto& extract : next) {
+        if (extract.second > std::numeric_limits<size_t>::max() - total)
+            return std::numeric_limits<size_t>::max();
+        total += extract.second;
+    }
     return total;
+}
+
+inline size_t retained_media_bytes(const Job& job) {
+    return projected_media_bytes(job, json::object(), job.media_extract_bytes);
 }
 
 } // namespace lemon::jobs

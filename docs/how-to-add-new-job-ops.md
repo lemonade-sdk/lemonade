@@ -140,10 +140,11 @@ std::function<json(const json& params, const json& context, CancelFlag& cancel)>
 Each media result has an 8 MiB limit. Image results count decoded bytes across
 all `b64_json` images and gain a `size` field when they contain image bytes.
 A job has a 16 MiB media budget. The budget counts media retained in step
-outputs plus the values a step's extract copies into the context. A single
-extract value may not exceed 64 KiB, because a payload belongs in the step
-output and should be referenced as `${step.<field>}` in later steps' params
-rather than copied into the context. The per-result limit rejects the result
+outputs plus the payload bytes of context copies extracted from a media
+result. The job tracks these copies per context key across steps and recounts
+the budget for each step, adjusting the size when a key is replaced. Extracts
+from non-media steps are unrestricted; overwriting a key removes its previous
+media-copy size from the budget. The per-result limit rejects the result
 with `JobError(413, ...)` before the engine stores it.
 The constants and accounting helpers live in `lemon/jobs/job_media_limits.h`.
 
