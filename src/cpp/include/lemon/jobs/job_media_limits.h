@@ -4,17 +4,25 @@
 
 #include <cstddef>
 #include <limits>
+#include <string_view>
 
 namespace lemon::jobs {
 
+inline constexpr size_t kMaxJobExtractValueBytes = 64u * 1024u;
 inline constexpr size_t kMaxJobMediaOutputBytes = 8u * 1024u * 1024u;
 // Each result lives in the step output and context, bounding the document at
 // roughly twice this budget plus base64 growth. Count step outputs because an
 // extract can overwrite the context copy.
 inline constexpr size_t kMaxJobMediaStoreBytes = 16u * 1024u * 1024u;
 
-inline size_t base64_decoded_size(size_t encoded_len) {
-    return (encoded_len / 4) * 3;
+inline size_t base64_decoded_size(std::string_view encoded) {
+    size_t bytes = (encoded.size() / 4) * 3;
+    if (bytes == 0) return 0;
+    if (encoded.back() == '=') {
+        --bytes;
+        if (encoded.size() >= 2 && encoded[encoded.size() - 2] == '=') --bytes;
+    }
+    return bytes;
 }
 
 inline bool media_output_within_limit(size_t bytes) {
@@ -39,7 +47,7 @@ inline size_t media_result_bytes(const json& result) {
             const auto encoded = item.find("b64_json");
             if (encoded != item.end() && encoded->is_string()) {
                 image = true;
-                image_bytes += base64_decoded_size(encoded->get_ref<const json::string_t&>().size());
+                image_bytes += base64_decoded_size(encoded->get_ref<const json::string_t&>());
             }
         }
     }
@@ -49,7 +57,7 @@ inline size_t media_result_bytes(const json& result) {
         if (size->is_number_unsigned()) return size->get<size_t>();
         if (size->get<int64_t>() >= 0) return size->get<size_t>();
     }
-    return binary ? base64_decoded_size(data->get_ref<const json::string_t&>().size()) : image_bytes;
+    return binary ? base64_decoded_size(data->get_ref<const json::string_t&>()) : image_bytes;
 }
 
 // Extract copies persist in the context as bare values, not media objects.
@@ -71,17 +79,10 @@ inline size_t payload_bytes(const json& value) {
     return count(count, value, 0);
 }
 
-inline size_t projected_media_bytes(const json& output, const json& resolved_extracts,
-                                    const json& context) {
+inline size_t projected_media_bytes(const json& output, const json& resolved_extracts) {
     size_t total = media_result_bytes(output);
-    for (auto it = resolved_extracts.begin(); it != resolved_extracts.end(); ++it) {
-        size_t added = payload_bytes(it.value());
-        const auto previous = context.find(it.key());
-        if (previous != context.end() && media_result_bytes(*previous) == 0) {
-            // An extract overwrites its key, so only growth beyond the retained value is new data.
-            const size_t replaced = payload_bytes(*previous);
-            added = added > replaced ? added - replaced : 0;
-        }
+    for (const auto& value : resolved_extracts) {
+        const size_t added = payload_bytes(value);
         if (added > std::numeric_limits<size_t>::max() - total)
             return std::numeric_limits<size_t>::max();
         total += added;
@@ -93,14 +94,6 @@ inline size_t retained_media_bytes(const Job& job) {
     size_t total = 0;
     for (const auto& step : job.steps) {
         const size_t bytes = media_result_bytes(step.output);
-        if (bytes > std::numeric_limits<size_t>::max() - total)
-            return std::numeric_limits<size_t>::max();
-        total += bytes;
-    }
-    for (const auto& value : job.context) {
-        // Media-shaped entries are already counted through their step outputs.
-        if (media_result_bytes(value) != 0) continue;
-        const size_t bytes = payload_bytes(value);
         if (bytes > std::numeric_limits<size_t>::max() - total)
             return std::numeric_limits<size_t>::max();
         total += bytes;

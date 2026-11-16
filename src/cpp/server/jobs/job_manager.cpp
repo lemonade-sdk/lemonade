@@ -12,9 +12,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 
 namespace fs = std::filesystem;
 
@@ -24,19 +26,6 @@ namespace jobs {
 namespace {
 
 constexpr size_t kMaxJobs = 50;
-
-size_t projected_media_bytes(const StepRecord& step, const json& output, const json& context) {
-    json resolved_extracts = json::object();
-    for (auto it = step.extract.begin(); it != step.extract.end(); ++it) {
-        try {
-            resolved_extracts[it.key()] =
-                expr_detail::resolve_ref_path(it.value().get<std::string>(), output);
-        } catch (const std::exception&) {
-            // The store loop keeps its own error reporting for failed resolutions.
-        }
-    }
-    return lemon::jobs::projected_media_bytes(output, resolved_extracts, context);
-}
 
 std::string iso_now() {
     const auto now = std::chrono::system_clock::now();
@@ -664,9 +653,33 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                 return;
             }
 
+            json resolved_extracts = json::object();
+            std::map<std::string, std::exception_ptr> extract_errors;
+            if (ok) {
+                for (auto extract = s->extract.begin(); extract != s->extract.end(); ++extract) {
+                    try {
+                        resolved_extracts[extract.key()] = expr_detail::resolve_ref_path(
+                            extract.value().get<std::string>(), output);
+                    } catch (const std::exception&) {
+                        extract_errors[extract.key()] = std::current_exception();
+                        continue;
+                    }
+                    const size_t bytes = payload_bytes(resolved_extracts[extract.key()]);
+                    if (bytes > kMaxJobExtractValueBytes) {
+                        ok = false;
+                        run_error = s->op + " extract '" + extract.key() + "' would copy " +
+                                    std::to_string(bytes) +
+                                    " bytes into the job context; the limit is " +
+                                    std::to_string(kMaxJobExtractValueBytes) +
+                                    " bytes — reference ${" + step_id +
+                                    ".<field>} in params instead";
+                        break;
+                    }
+                }
+            }
             if (ok) {
                 const size_t retained = retained_media_bytes(job);
-                const size_t added = projected_media_bytes(*s, output, job.context);
+                const size_t added = projected_media_bytes(output, resolved_extracts);
                 if (!job_media_within_budget(retained, added)) {
                     ok = false;
                     run_error = s->op + " output would exceed the per-job media store limit of " +
@@ -678,9 +691,11 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                 s->output = output;
                 job.context[s->id] = output;
                 try {
-                    for (auto it2 = s->extract.begin(); it2 != s->extract.end(); ++it2)
-                        job.context[it2.key()] =
-                            expr_detail::resolve_ref_path(it2.value().get<std::string>(), output);
+                    for (auto it2 = s->extract.begin(); it2 != s->extract.end(); ++it2) {
+                        const auto error = extract_errors.find(it2.key());
+                        if (error != extract_errors.end()) std::rethrow_exception(error->second);
+                        job.context[it2.key()] = resolved_extracts.at(it2.key());
+                    }
                     const std::string next = next_after_success(job, *s);
                     s->status = StepStatus::Completed;
                     job.cursor = next;

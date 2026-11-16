@@ -45,7 +45,7 @@ lemon::jobs::json image_op_result(const nlohmann::json& response, const std::str
         for (const auto& item : response["data"]) {
             if (item.is_object() && item.contains("b64_json") && item["b64_json"].is_string())
                 bytes += lemon::jobs::base64_decoded_size(
-                    item["b64_json"].get_ref<const std::string&>().size());
+                    item["b64_json"].get_ref<const std::string&>());
         }
     }
     if (!lemon::jobs::media_output_within_limit(bytes))
@@ -80,6 +80,23 @@ lemon::jobs::json media_op_result(const std::string& op, lemon::jobs::CancelFlag
     sink.write = [&](const char* data, size_t len) {
         if (cancel.load() || overflow || !stream_error.is_null()) return false;
         if (len == 0) return true;
+        // A byte stream reports failure by writing the error object after the media,
+        // so chunk-level detection catches it before it becomes part of the output.
+        if (len <= 64u * 1024u) {
+            std::string_view chunk(data, len);
+            const auto start = chunk.find_first_not_of(" \r\n");
+            if (start != std::string_view::npos) {
+                chunk.remove_prefix(start);
+                if (chunk.front() == '{' || chunk.rfind("data: ", 0) == 0) {
+                    if (chunk.front() != '{') chunk.remove_prefix(6);
+                    auto payload = nlohmann::json::parse(chunk, nullptr, false);
+                    if (payload.is_object() && payload.contains("error")) {
+                        stream_error = std::move(payload);
+                        return false;
+                    }
+                }
+            }
+        }
         if (!sse.has_value()) {
             const std::string_view chunk(data, len);
             sse = chunk.rfind("event: ", 0) == 0 || chunk.rfind("data: ", 0) == 0;

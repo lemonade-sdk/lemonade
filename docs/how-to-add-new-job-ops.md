@@ -139,19 +139,17 @@ std::function<json(const json& params, const json& context, CancelFlag& cancel)>
 
 Each media result has an 8 MiB limit. Image results count decoded bytes across
 all `b64_json` images and gain a `size` field when they contain image bytes.
-A job has a 16 MiB media budget. Each media result counts once even though the
-job document stores it twice (step output and context); anything an extract
-copies into the context also consumes the budget. The per-result limit rejects
-the result with `JobError(413, ...)` before the engine stores it.
+A job has a 16 MiB media budget. The budget counts media retained in step
+outputs plus the values a step's extract copies into the context. A single
+extract value may not exceed 64 KiB, because a payload belongs in the step
+output and should be referenced as `${step.<field>}` in later steps' params
+rather than copied into the context. The per-result limit rejects the result
+with `JobError(413, ...)` before the engine stores it.
 The constants and accounting helpers live in `lemon/jobs/job_media_limits.h`.
 
 A backend failure sent as an SSE error event fails the step with
 `JobError(424, ...)`, including when media bytes arrived before the error.
-The job engine counts media retained in step outputs plus payloads copied into
-the context by extract. An extract that aliases a payload into several context
-keys consumes the budget for each copy rather than hiding it. An extract that
-replaces an existing context key counts only the increase in payload bytes,
-not the whole new value. Once the sum passes the limit, the job fails that step
+Once the sum passes the limit, the job fails that step
 with "would exceed the per-job media store limit",
 subject to the step's `on_fail` policy.
 Speech/3D byte streams pass the request cancellation into the HTTP transfer, so
