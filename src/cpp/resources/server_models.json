@@ -353,7 +353,8 @@
         "recipe": "ryzenai-llm",
         "suggested": true,
         "labels": [
-            "chat"
+            "chat",
+            "hot"
         ],
         "size": 21.0
     },
