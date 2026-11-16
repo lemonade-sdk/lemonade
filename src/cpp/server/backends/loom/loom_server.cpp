@@ -80,10 +80,13 @@ void drop_if_resized(const fs::path& path, std::uint64_t size) {
 // folder, reusing any copy the models directory already holds.
 class BundleFetcher {
 public:
+    // A non-empty `target` refuses a bundle that does not support it before its
+    // weights download.
     BundleFetcher(std::string repo_id, const models::RegistryId& source,
-                  DownloadProgressCallback progress, utils::CancelToken cancel)
+                  DownloadProgressCallback progress, utils::CancelToken cancel,
+                  std::string target = "")
         : repo_id_(std::move(repo_id)), source_(source), progress_(std::move(progress)),
-          cancel_(std::move(cancel)) {}
+          cancel_(std::move(cancel)), target_(std::move(target)) {}
 
     void run() {
         if (source_ != models::huggingface_descriptor().id) {
@@ -120,7 +123,17 @@ public:
             }
             card_plan.files.push_back(bundle_download(*it, listing.revision));
         }
+        const auto info_file =
+            std::find_if(bundle_files.begin(), bundle_files.end(),
+                         [](const RegistryFile& file) { return file.path == loom::kInfoFile; });
+        if (!target_.empty() && info_file != bundle_files.end()) {
+            card_plan.files.push_back(bundle_download(*info_file, listing.revision));
+        }
         execute(card_plan, nullptr);
+        if (!target_.empty() && info_file != bundle_files.end() &&
+            !loom::bundle_supports_target(read_json_file(dir_ / loom::kInfoFile), target_)) {
+            throw std::runtime_error(repo_id_ + " is not supported on this GPU (" + target_ + ")");
+        }
         const loom::BundlePlan bundle =
             loom::plan_bundle(read_json_file(dir_ / loom::kCardFile),
                               read_json_file(dir_ / loom::kLockFile));
@@ -204,21 +217,33 @@ private:
     models::RegistryId source_;
     DownloadProgressCallback progress_;
     utils::CancelToken cancel_;
+    std::string target_;
     std::unique_ptr<models::FetchableRepository> repository_;
     fs::path dir_;
 };
 
-void require_strix_halo() {
-    std::string arch;
+// The iGPU is checked first so a Strix Halo with an attached dGPU keeps the
+// target it had before the R9700 was supported.
+std::string require_supported_gpu() {
+    std::vector<std::string> found;
     try {
-        const GPUInfo igpu = create_system_info()->get_amd_igpu_device();
-        if (igpu.available) arch = identify_rocm_arch_from_name(igpu.name);
+        const auto system_info = create_system_info();
+        std::vector<GPUInfo> gpus = {system_info->get_amd_igpu_device()};
+        const auto dgpus = system_info->get_amd_dgpu_devices();
+        gpus.insert(gpus.end(), dgpus.begin(), dgpus.end());
+        for (const auto& gpu : gpus) {
+            if (!gpu.available) continue;
+            const std::string arch = identify_rocm_arch_from_name(gpu.name);
+            const std::string target = loom::device_target(arch, gpu.name);
+            if (!target.empty()) return target;
+            if (!arch.empty()) found.push_back(arch);
+        }
     } catch (...) {
     }
-    if (arch != "gfx1151") {
-        throw std::runtime_error("Loom requires an AMD Strix Halo GPU (gfx1151)" +
-                                 (arch.empty() ? std::string() : ", found " + arch));
-    }
+    std::string detail;
+    for (const auto& arch : found) detail += (detail.empty() ? ", found " : ", ") + arch;
+    throw std::runtime_error(
+        "Loom requires an AMD Strix Halo (gfx1151) or Radeon AI PRO R9700 (gfx1201) GPU" + detail);
 }
 
 // The server process does not keep its console output, so a failed start is
@@ -278,14 +303,14 @@ InstallParams LoomServer::get_install_params(const std::string& backend, const s
 void LoomServer::load(const std::string& model_name, const ModelInfo& model_info,
                       const RecipeOptions& options, bool do_not_upgrade) {
     (void)do_not_upgrade;
-    require_strix_halo();
+    const std::string target = require_supported_gpu();
     device_type_ = DEVICE_GPU;
     backend_manager_->install_backend(loom::descriptor.recipe, kBackend);
 
     const std::string checkpoint = model_info.checkpoint();
     if (!bundle_complete(checkpoint)) {
         BundleFetcher(models::repo_id_from_checkpoint(checkpoint),
-                      model_manager_->download_source_for(model_info), nullptr, {})
+                      model_manager_->download_source_for(model_info), nullptr, {}, target)
             .run();
     }
     const fs::path dir = run_dir(checkpoint);
@@ -293,17 +318,20 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
                                                     read_json_file(dir / loom::kLockFile));
     served_model_id_ = plan.model_id;
 
-    std::string memory_bytes = options.get_option("loom_memory_bytes").get<std::string>();
-    if (memory_bytes.empty() && fs::exists(dir / loom::kInfoFile)) {
-        memory_bytes = loom::card_memory_bytes(read_json_file(dir / loom::kInfoFile));
+    const json info = fs::exists(dir / loom::kInfoFile) ? read_json_file(dir / loom::kInfoFile) : json();
+    if (!loom::bundle_supports_target(info, target)) {
+        throw std::runtime_error(model_name + " is not supported on this GPU (" + target + ")");
     }
+
+    const loom::PoolSettings pool = loom::pool_settings(
+        target, options.get_option("loom_memory_bytes").get<std::string>(), info);
 
     port_ = choose_port();
     ServerCommand command;
     command.program = BackendUtils::get_backend_binary_path(*loom::spec(), kBackend);
     command.args = loom::build_server_argv(utils::path_to_utf8(dir), port_, plan.preset,
                                            options.get_option("loom_device").get<std::string>(),
-                                           memory_bytes,
+                                           pool.memory_bytes, pool.pool_backing,
                                            options.get_option("loom_args").get<std::string>());
     command.port = port_;
     command.ready_endpoint = "/readyz";

@@ -56,7 +56,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `llamacpp` | nathanw | guest | container | linux | amd_gpu (gfx1151) |
 | `llamacpp` | halobox | guest | container | linux | amd_gpu (gfx1151) |
 | `llamacpp-hrx` | hrx | experimental | native | linux | amd_gpu (gfx1100, gfx1151) |
-| `loom` | rocm | experimental | native | linux, windows | amd_gpu (gfx1151) |
+| `loom` | rocm | experimental | native | linux, windows | amd_gpu (gfx1151, gfx120X) |
 | `moonshine` | cpu | core | python | windows | cpu (x86_64) |
 | `moonshine` | cpu | core | python | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | core | python | macos | cpu (arm64) |
@@ -146,8 +146,8 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
-| `loom_device` | `--loom-device` | URI | amdgpu:// | HAL device URI loom-serve runs the bundle on |
-| `loom_memory_bytes` | `--loom-memory-bytes` | BYTES | "" | Device pool size, e.g. 16gib; empty uses the bundle's card |
+| `loom_device` | `--loom-device` | URI | amdgpu:// | HAL device URI loom-serve runs the bundle on. amdgpu:// is amdgpu://0, the first GPU loom-serve supports in its own enumeration order (not a DRM card or HIP device index); amdgpu://1 selects the next one |
+| `loom_memory_bytes` | `--loom-memory-bytes` | BYTES | "" | Device pool size, e.g. 16gib; empty uses the bundle's card on Strix Halo and a fixed pool on the R9700 |
 | `loom_args` | `--loom-args` | ARGS | "" | Custom arguments to pass to loom-serve |
 
 #### `moonshine` — Moonshine

@@ -17,6 +17,10 @@ inline constexpr const char* kLockFile = "model.json.lock";
 inline constexpr const char* kInfoFile = "info.json";
 inline constexpr const char* kCompleteMarker = ".lemonade-loom.json";
 
+// Keys of info.json's `devices` map, one per GPU a bundle is built and gated for.
+inline constexpr const char* kStrixHaloTarget = "strix-halo";
+inline constexpr const char* kRadeonR9700Target = "radeon-r9700";
+
 // A parameter the card places in the run folder but takes from a pinned
 // revision of another repository.
 struct OriginFile {
@@ -55,10 +59,22 @@ bool is_contained_relative_path(const std::string& path);
 // `<org>--<name>` for an `org/name` bundle repository id.
 std::string store_dir_name(const std::string& repo_id);
 
+// The device target a GPU runs, or "" when Loom has no build for it. `arch` is
+// what identify_rocm_arch_from_name gives for `gpu_name`: the exact ISA on Linux,
+// but only the gfx120X family on Windows, where the name tells gfx1201 (Navi 48:
+// R9700, RX 9070) from gfx1200 (RX 9060).
+std::string device_target(const std::string& arch, const std::string& gpu_name);
+
+// False when info.json gates its targets and `target` is missing or marked
+// unsupported (a bundle too large for the R9700's 32 GB). A bundle without that
+// map is left to loom-serve.
+bool bundle_supports_target(const json& info, const std::string& target);
+
 std::vector<std::string> build_server_argv(const std::string& model_dir, int port,
                                            const std::string& preset,
                                            const std::string& device,
                                            const std::string& memory_bytes,
+                                           const std::string& pool_backing,
                                            const std::string& custom_args);
 
 // loom-serve registers the bundle under the card's model id and reads
@@ -85,6 +101,17 @@ std::string startup_failure_detail(const std::vector<std::string>& output_lines)
 // The pool size a card asks for, in the byte-string form --memory_bytes takes,
 // or "" when the card does not say.
 std::string card_memory_bytes(const json& info);
+
+struct PoolSettings {
+    std::string memory_bytes;
+    std::string pool_backing;
+};
+
+// The card's memory figure is sized for Strix Halo's unified memory, so the
+// R9700 backs the pool with its fixed VRAM instead. loom-serve rejects a
+// memory limit on a fixed pool, so a size the user asks for keeps it elastic.
+PoolSettings pool_settings(const std::string& target, const std::string& requested_memory_bytes,
+                           const json& info);
 
 // So a bundle found by search registers like the curated rows Lemonade ships.
 std::vector<std::string> suggested_labels(const json& info, const std::string& name);

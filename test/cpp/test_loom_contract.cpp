@@ -166,25 +166,56 @@ void check_launch_contract() {
         "--workers=4",
     };
     check("Launch argv binds loopback and appends benign custom flags",
-          loom::build_server_argv("/run", 14123, "vision-mtp", "amdgpu://", "57000000000",
+          loom::build_server_argv("/run", 14123, "vision-mtp", "amdgpu://", "57000000000", "",
                                   "--workers=4") == expected);
-    check("Launch argv omits unset preset and memory",
-          loom::build_server_argv("/run", 1, "", "amdgpu://", "", "") ==
+    check("Launch argv omits unset preset, memory and pool backing",
+          loom::build_server_argv("/run", 1, "", "amdgpu://", "", "", "") ==
               std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1",
                                         "--device=amdgpu://"}));
+    check("A fixed pool backing is passed through",
+          loom::build_server_argv("/run", 1, "", "amdgpu://", "", "fixed", "") ==
+              std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1",
+                                        "--device=amdgpu://", "--pool_backing=fixed"}));
 
     for (const std::string custom : {"--listen=0.0.0.0:80", "--model=other.json", "--device=task",
                                      "--devices=d.json", "--memory_bytes=1", "--preset=x",
                                      "--flagfile=f", "--listen 0.0.0.0:80"}) {
         check("Reserved custom argument is rejected: " + custom, throws_exception([&] {
-                  (void)loom::build_server_argv("/run", 1, "", "amdgpu://", "", custom);
+                  (void)loom::build_server_argv("/run", 1, "", "amdgpu://", "", "", custom);
               }));
     }
     check("A device with whitespace is rejected", throws_exception([] {
-              (void)loom::build_server_argv("/run", 1, "", "amdgpu:// --listen=0.0.0.0:1", "", "");
+              (void)loom::build_server_argv("/run", 1, "", "amdgpu:// --listen=0.0.0.0:1", "", "",
+                                            "");
           }));
     check("An empty device is rejected",
-          throws_exception([] { (void)loom::build_server_argv("/run", 1, "", "", "", ""); }));
+          throws_exception([] { (void)loom::build_server_argv("/run", 1, "", "", "", "", ""); }));
+}
+
+void check_device_targets() {
+    check("Strix Halo runs the strix-halo build",
+          loom::device_target("gfx1151", "110501") == loom::kStrixHaloTarget);
+    check("A gfx1201 ISA runs the radeon-r9700 build",
+          loom::device_target("gfx1201", "120001") == loom::kRadeonR9700Target);
+    check("A Windows R9700 named by family runs the radeon-r9700 build",
+          loom::device_target("gfx120X", "AMD Radeon AI PRO R9700") == loom::kRadeonR9700Target);
+    check("A gfx1200 card has no build", loom::device_target("gfx1200", "120000").empty());
+    check("A Windows RX 9060 named by family has no build",
+          loom::device_target("gfx120X", "AMD Radeon RX 9060 XT").empty());
+    check("Other GPUs have no build", loom::device_target("gfx1100", "110000").empty());
+
+    const json info = json::parse(R"({"devices":{
+        "strix-halo":{"gates":{}},
+        "radeon-r9700":{"required_bytes":82400000000,"state":"unsupported"}}})");
+    check("A gated target is supported", loom::bundle_supports_target(info, loom::kStrixHaloTarget));
+    check("A target marked unsupported is refused",
+          !loom::bundle_supports_target(info, loom::kRadeonR9700Target));
+    check("A target the bundle does not list is refused",
+          !loom::bundle_supports_target(json::parse(R"({"devices":{"strix-halo":{}}})"),
+                                        loom::kRadeonR9700Target));
+    check("A bundle without a devices map is left to loom-serve",
+          loom::bundle_supports_target(json::object(), loom::kRadeonR9700Target) &&
+              loom::bundle_supports_target(json(), loom::kRadeonR9700Target));
 }
 
 void check_request_contract() {
@@ -259,6 +290,16 @@ void check_card_metadata() {
     check("Card memory becomes the pool budget", loom::card_memory_bytes(info) == "57000000000");
     check("A card without memory leaves the budget to loom-serve",
           loom::card_memory_bytes(json::object()).empty());
+
+    const auto halo = loom::pool_settings(loom::kStrixHaloTarget, "", info);
+    check("Strix Halo sizes an elastic pool from the card",
+          halo.memory_bytes == "57000000000" && halo.pool_backing.empty());
+    const auto r9700 = loom::pool_settings(loom::kRadeonR9700Target, "", info);
+    check("The R9700 backs the pool with fixed VRAM and no card budget",
+          r9700.memory_bytes.empty() && r9700.pool_backing == "fixed");
+    const auto sized = loom::pool_settings(loom::kRadeonR9700Target, "16gib", info);
+    check("A requested size keeps the R9700 pool elastic",
+          sized.memory_bytes == "16gib" && sized.pool_backing.empty());
     check("Verified features become catalog labels",
           loom::suggested_labels(info, "Qwen3.6-27B-Loom") ==
               std::vector<std::string>({"chat", "vision", "tool-calling", "reasoning", "dflash"}));
@@ -314,9 +355,9 @@ void check_descriptor_contract() {
               support[0].tier == lemon::BackendTier::Experimental);
     if (support.size() == 1) {
         const auto gpus = support[0].devices.find("amd_gpu");
-        check("Loom supports only gfx1151",
-              gpus != support[0].devices.end() && gpus->second.size() == 1 &&
-                  gpus->second.count("gfx1151") == 1);
+        check("Loom supports Strix Halo and the R9700's family",
+              gpus != support[0].devices.end() && gpus->second.size() == 2 &&
+                  gpus->second.count("gfx1151") == 1 && gpus->second.count("gfx120X") == 1);
     }
     check("Loom pulls its own bundles", loom::descriptor.self_manages_downloads);
 }
@@ -350,6 +391,7 @@ int main() {
         check_bundle_plan();
         check_paths();
         check_launch_contract();
+        check_device_targets();
         check_request_contract();
         check_readiness_contract();
         check_startup_failure_detail();

@@ -172,10 +172,33 @@ std::string store_dir_name(const std::string& repo_id) {
     return repo_id.substr(0, slash) + "--" + repo_id.substr(slash + 1);
 }
 
+std::string device_target(const std::string& arch, const std::string& gpu_name) {
+    if (arch == "gfx1151") return kStrixHaloTarget;
+    if (arch == "gfx1201") return kRadeonR9700Target;
+    if (arch == "gfx120X") {
+        std::string lower = gpu_name;
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (lower.find("r9700") != std::string::npos || lower.find("9070") != std::string::npos) {
+            return kRadeonR9700Target;
+        }
+    }
+    return "";
+}
+
+bool bundle_supports_target(const json& info, const std::string& target) {
+    const auto devices = info.is_object() ? info.find("devices") : info.end();
+    if (!info.is_object() || devices == info.end() || !devices->is_object()) return true;
+    const auto entry = devices->find(target);
+    return entry != devices->end() && entry->is_object() &&
+           string_field(*entry, "state") != "unsupported";
+}
+
 std::vector<std::string> build_server_argv(const std::string& model_dir, int port,
                                            const std::string& preset,
                                            const std::string& device,
                                            const std::string& memory_bytes,
+                                           const std::string& pool_backing,
                                            const std::string& custom_args) {
     if (device.empty() ||
         std::any_of(device.begin(), device.end(),
@@ -189,6 +212,7 @@ std::vector<std::string> build_server_argv(const std::string& model_dir, int por
     };
     if (!preset.empty()) argv.push_back("--preset=" + preset);
     if (!memory_bytes.empty()) argv.push_back("--memory_bytes=" + memory_bytes);
+    if (!pool_backing.empty()) argv.push_back("--pool_backing=" + pool_backing);
 
     if (!custom_args.empty()) {
         const std::string error =
@@ -274,6 +298,13 @@ std::string card_memory_bytes(const json& info) {
     if (!card.is_object() || it == card.end() || !it->is_number_unsigned()) return "";
     const auto bytes = it->get<std::uint64_t>();
     return bytes == 0 ? "" : std::to_string(bytes);
+}
+
+PoolSettings pool_settings(const std::string& target, const std::string& requested_memory_bytes,
+                           const json& info) {
+    if (!requested_memory_bytes.empty()) return {requested_memory_bytes, ""};
+    if (target == kRadeonR9700Target) return {"", "fixed"};
+    return {card_memory_bytes(info), ""};
 }
 
 std::vector<std::string> suggested_labels(const json& info, const std::string& name) {

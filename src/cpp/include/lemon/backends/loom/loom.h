@@ -38,17 +38,25 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  false,
     /*options*/ {
         {"loom_device", "--loom-device", "amdgpu://", "URI",
-         "HAL device URI loom-serve runs the bundle on", "Loom Options"},
+         "HAL device URI loom-serve runs the bundle on. amdgpu:// is amdgpu://0, the first GPU "
+         "loom-serve supports in its own enumeration order (not a DRM card or HIP device index); "
+         "amdgpu://1 selects the next one",
+         "Loom Options"},
         {"loom_memory_bytes", "--loom-memory-bytes", "", "BYTES",
-         "Device pool size, e.g. 16gib; empty uses the bundle's card", "Loom Options"},
+         "Device pool size, e.g. 16gib; empty uses the bundle's card on Strix Halo and a fixed "
+         "pool on the R9700",
+         "Loom Options"},
         {"loom_args", "--loom-args", "", "ARGS",
          "Custom arguments to pass to loom-serve", "Loom Options"},
     },
     /*support*/ {
+        // gfx120X because Windows names the R9700 by family only; load() turns
+        // away the gfx1200 parts the family also covers.
         {"rocm", BackendTier::Experimental, BackendFormat::Native, {"windows", "linux"},
-         {{"amd_gpu", {"gfx1151"}}},
-         "AMD Strix Halo (gfx1151)",
-         {{"gfx1151", {/*os*/ {"windows", "linux"}, /*channels*/ {}}}}},
+         {{"amd_gpu", {"gfx1151", "gfx120X"}}},
+         "AMD Strix Halo (gfx1151), Radeon AI PRO R9700 (gfx1201)",
+         {{"gfx1151", {/*os*/ {"windows", "linux"}, /*channels*/ {}}},
+          {"gfx120X", {/*os*/ {"windows", "linux"}, /*channels*/ {}}}}},
     },
     /*about*/ {
         {"rocm", {"AMD's experimental HRX Loom runtime, serving compiled Loom model bundles.",
