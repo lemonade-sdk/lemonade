@@ -873,6 +873,16 @@ void test_in_container_docker() {
               join(ContainerManager(from_device.host()).run_command(spec)).find(" --group-add 992 ") !=
                   std::string::npos);
 
+    FakeHost no_internal = from_env;
+    no_internal.internal_networks = {};
+    const auto network_failures = ContainerManager(no_internal.host()).check_host();
+    check("Docker's step puts lemond on a user-defined network, since Docker refuses its default "
+          "bridge beside one",
+          network_failures.size() == 1 && network_failures[0].steps.size() == 3 &&
+              network_failures[0].steps[1] == "docker network create lemonade" &&
+              network_failures[0].steps[2].find("--network lemonade --network lemonade-backends") !=
+                  std::string::npos);
+
     FakeHost neither = host;
     neither.paths = {"/.dockerenv"};
     check("with no socket mounted in a container, Podman stays the default",
