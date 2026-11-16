@@ -342,6 +342,16 @@ GgufVariantSet enumerate_gguf_variants(
     return result;
 }
 
+bool is_omni_collection_manifest(const nlohmann::json& manifest) {
+    // value() throws on a non-string recipe, so check the type first
+    return manifest.is_object() &&
+        manifest.contains("recipe") && manifest["recipe"].is_string() &&
+        is_omni_collection_recipe(manifest["recipe"].get<std::string>()) &&
+        manifest.contains("components") && manifest["components"].is_array() &&
+        !manifest["components"].empty() &&
+        manifest.contains("models") && manifest["models"].is_array();
+}
+
 nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolver,
                                    const std::string& checkpoint,
                                    const std::string& registry_source,
@@ -463,12 +473,7 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
         } catch (const std::exception&) {
             manifest = nlohmann::json();
         }
-        bool valid_manifest = manifest.is_object() &&
-            is_omni_collection_recipe(manifest.value("recipe", std::string())) &&
-            manifest.contains("components") && manifest["components"].is_array() &&
-            !manifest["components"].empty() &&
-            manifest.contains("models") && manifest["models"].is_array();
-        if (!valid_manifest) {
+        if (!is_omni_collection_manifest(manifest)) {
             throw std::invalid_argument(
                 "Repository " + checkpoint + " contains '" + manifest_filename +
                 "' but it is not a Lemonade Omni collection manifest (expected an exported "
