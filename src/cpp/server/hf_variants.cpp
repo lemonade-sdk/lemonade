@@ -412,9 +412,17 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
             throw std::runtime_error("Loom bundles download from Hugging Face only");
         }
         const auto read_bundle_json = [&](const char* name) {
+            for (const auto& kv : file_sizes) {
+                if (kv.first == name && kv.second > backends::loom::kMaxMetadataBytes) {
+                    throw std::runtime_error(std::string("'") + name + "' in repository " +
+                                             checkpoint + " is too large to be a Loom bundle file");
+                }
+            }
             const std::string url = source_repository->file_url(
                 models::RepoRef{checkpoint, models::Revision{repository.download_revision, false}, name});
-            const auto response = HttpClient::get(url, headers);
+            const auto response =
+                HttpClient::get(url, headers, 0, utils::HttpSecurityPolicy::ExternalHttpsOnly,
+                                static_cast<size_t>(backends::loom::kMaxMetadataBytes));
             if (response.status_code != 200) {
                 throw std::runtime_error(std::string("Failed to read '") + name + "' from repository " +
                                          checkpoint + " (HTTP " +

@@ -16,6 +16,10 @@ inline constexpr const char* kCardFile = "model.json";
 inline constexpr const char* kLockFile = "model.json.lock";
 inline constexpr const char* kInfoFile = "info.json";
 inline constexpr const char* kCompleteMarker = ".lemonade-loom.json";
+// Bound on the card, lock, and info.json read while inspecting a repository.
+inline constexpr std::uint64_t kMaxMetadataBytes = 8 * 1024 * 1024;
+// Hugging Face tag every loom-fun bundle repository is cloned at; matches the Loom release.
+inline constexpr const char* kBundleRevision = "v0.1.0";
 
 // Keys of info.json's `devices` map, one per GPU a bundle is built and gated for.
 inline constexpr const char* kStrixHaloTarget = "strix-halo";
