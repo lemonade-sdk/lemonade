@@ -2740,6 +2740,46 @@
             "soft_pixel_cap": 4194304
         }
     },
+    "MOSS-Image-SFT-8-Steps": {
+        "checkpoints": {
+            "main": "thenoise-ai/diffusion-models:moss_image_sft_bf16_8steps.safetensors",
+            "text_encoder": "Comfy-Org/MOSS-Image:text_encoders/qwen3.5_9b_int8_convrot.safetensors",
+            "vae": "Comfy-Org/MOSS-Image:vae/flux2-vae_small.safetensors"
+        },
+        "labels": [
+            "custom",
+            "image"
+        ],
+        "recipe": "thenoise",
+        "recipe_options": {
+            "cfg_scale": 1,
+            "height": 1024,
+            "steps": 8,
+            "width": 1024,
+            "soft_pixel_cap": 4194304
+        },
+        "size": 18.86
+    },
+    "MOSS-Image-Base-8-Steps": {
+        "checkpoints": {
+            "main": "thenoise-ai/diffusion-models:moss_image_base_bf16_8steps.safetensors",
+            "text_encoder": "Comfy-Org/MOSS-Image:text_encoders/qwen3.5_9b_int8_convrot.safetensors",
+            "vae": "Comfy-Org/MOSS-Image:vae/flux2-vae_small.safetensors"
+        },
+        "labels": [
+            "custom",
+            "image"
+        ],
+        "recipe": "thenoise",
+        "recipe_options": {
+            "cfg_scale": 1,
+            "height": 1024,
+            "steps": 8,
+            "width": 1024,
+            "soft_pixel_cap": 4194304
+        },
+        "size": 18.86
+    },
     "Z-Image-Turbo-TheNoise": {
         "checkpoints": {
             "main": "Comfy-Org/z_image_turbo:split_files/diffusion_models/z_image_turbo_bf16.safetensors",
