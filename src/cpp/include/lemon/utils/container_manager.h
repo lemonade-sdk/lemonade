@@ -121,6 +121,9 @@ public:
     std::vector<SetupFailure> check_host() const;
     // lemond.service's subordinate ID ranges, then `podman info`.
     std::optional<SetupFailure> check_podman() const;
+    // lemond's own setup in a container: a socket it can use, the user it runs
+    // as, the backends' network and the render group ID.
+    std::optional<SetupFailure> check_container() const;
     // The SELinux check for a backend whose devices include /dev/kfd, or
     // nullopt when it passes.
     std::optional<SetupFailure> check_selinux() const;
@@ -178,6 +181,8 @@ public:
                                                     const std::string& destination);
 
 private:
+    // The tool whose socket is mounted into lemond's container, if any.
+    std::optional<ContainerTool> mounted_socket() const;
     CommandResult invoke(const std::vector<std::string>& args, int timeout_seconds,
                          bool capture_stderr = true) const;
     void remove_network(const std::string& name) const;

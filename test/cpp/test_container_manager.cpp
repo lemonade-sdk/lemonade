@@ -823,12 +823,27 @@ void test_in_container() {
               other_failures[0].id == "backend_network");
 
     FakeHost no_socket = contained_host();
+    no_socket.paths = {"/run/.containerenv"};
     no_socket.containers.clear();
     no_socket.podman_info_exit = 125;
     const auto failures = ContainerManager(no_socket.host()).check_host();
     check("with no socket mounted, the one failure says to mount it",
           failures.size() == 1 && failures[0].id == "own_container" &&
               failures[0].steps[0].find("docker/#container-backends") != std::string::npos);
+
+    FakeHost unusable = contained_host();
+    unusable.containers.clear();
+    unusable.podman_info_exit = 125;
+    const auto unusable_failures = ContainerManager(unusable.host()).check_host();
+    check("a mounted Podman socket lemond cannot use asks for --user 0:0, not for a mount",
+          unusable_failures.size() == 1 && unusable_failures[0].id == "socket_access" &&
+              unusable_failures[0].steps[0].find("--user 0:0") != std::string::npos);
+
+    FakeHost foreign = contained_host();
+    foreign.containers.clear();
+    const auto foreign_failures = ContainerManager(foreign.host()).check_host();
+    check("a socket whose Podman does not run lemond's container says so",
+          foreign_failures.size() == 1 && foreign_failures[0].id == "socket_daemon");
 
     FakeHost on_host;
     on_host.tools = {"podman"};
@@ -896,6 +911,14 @@ void test_in_container_docker() {
               network_failures[0].steps[1] == "docker network create lemonade" &&
               network_failures[0].steps[2].find("--network lemonade --network lemonade-backends") !=
                   std::string::npos);
+
+    FakeHost no_group = from_env;
+    no_group.containers.clear();
+    no_group.docker_info_exit = 1;
+    const auto no_group_failures = ContainerManager(no_group.host()).check_host();
+    check("a mounted Docker socket lemond cannot use asks for --group-add, not for a mount",
+          no_group_failures.size() == 1 && no_group_failures[0].id == "socket_access" &&
+              no_group_failures[0].steps[0].find("--group-add") != std::string::npos);
 
     FakeHost neither = host;
     neither.paths = {"/.dockerenv"};

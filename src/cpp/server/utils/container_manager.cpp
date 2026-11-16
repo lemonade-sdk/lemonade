@@ -219,22 +219,27 @@ ContainerManager& ContainerManager::global() {
     return instance;
 }
 
+std::optional<ContainerTool> ContainerManager::mounted_socket() const {
+    const auto given = [this](const std::string& url, const std::string& fallback) {
+        if (url.empty()) return host_.exists(fallback);
+        if (url.rfind("unix://", 0) != 0) return true;
+        return host_.exists(url.substr(7));
+    };
+    if (host_.on_path("podman") && !host_.env("CONTAINER_HOST").empty() &&
+        given(host_.env("CONTAINER_HOST"), "")) {
+        return ContainerTool::Podman;
+    }
+    if (host_.on_path("docker") && given(host_.env("DOCKER_HOST"), "/var/run/docker.sock")) {
+        return ContainerTool::Docker;
+    }
+    return std::nullopt;
+}
+
 std::optional<ContainerTool> ContainerManager::tool() const {
     // The image carries both clients; only the mounted socket says which host
     // tool there is.
     if (in_container()) {
-        const auto given = [this](const std::string& url, const std::string& fallback) {
-            if (url.empty()) return host_.exists(fallback);
-            if (url.rfind("unix://", 0) != 0) return true;
-            return host_.exists(url.substr(7));
-        };
-        if (host_.on_path("podman") && !host_.env("CONTAINER_HOST").empty() &&
-            given(host_.env("CONTAINER_HOST"), "")) {
-            return ContainerTool::Podman;
-        }
-        if (host_.on_path("docker") && given(host_.env("DOCKER_HOST"), "/var/run/docker.sock")) {
-            return ContainerTool::Docker;
-        }
+        if (const auto socket = mounted_socket()) return socket;
     }
     if (host_.on_path("podman")) return ContainerTool::Podman;
     if (host_.on_path("docker")) return ContainerTool::Docker;
@@ -294,46 +299,13 @@ bool ContainerManager::own_podman_socket() const {
 std::vector<SetupFailure> ContainerManager::check_host() const {
     std::vector<SetupFailure> failures;
     // In a container, the image's own account, groups and os-release say
-    // nothing about the host, so the one check is that the host's tool, reached
-    // through a mounted socket, finds lemond's container.
-    const bool contained = in_container();
-    if (contained && own_container().empty()) {
-        failures.push_back(
-            {"own_container",
-             "lemond runs in a container that no Podman or Docker socket mounted into it can find",
-             {std::string("Start lemond's container with the host's Podman or Docker socket mounted, as ") +
-              kContainerDocs + " shows"},
-             ""});
-        return failures;
-    }
-    if (contained && backend_network().empty()) {
-        std::vector<std::string> steps;
-        std::string usual = "podman";
-        if (tool() == ContainerTool::Docker) {
-            // Docker refuses its default bridge alongside a user-defined network.
-            usual = "lemonade";
-            steps = {std::string("docker network create --internal ") + kBackendNetwork,
-                     "docker network create " + usual};
-        } else {
-            // lemond connects by address, and rootless Podman's DNS server needs
-            // a systemd user manager (see create_network).
-            steps = {std::string("podman network create --internal --disable-dns ") + kBackendNetwork};
+    // nothing about the host; of the host checks, only Docker's still apply.
+    if (in_container()) {
+        if (auto failure = check_container()) {
+            failures.push_back(*failure);
+            return failures;
         }
-        steps.push_back("Start lemond's container with --network " + usual + " --network " +
-                        kBackendNetwork + ", as " + kContainerDocs + " shows");
-        failures.push_back(
-            {"backend_network",
-             std::string("lemond's container is not on an internal network named ") + kBackendNetwork,
-             steps, ""});
-        return failures;
-    }
-    // Docker and rootful Podman add the render group by number (see run_command).
-    if (contained && !rootless_podman() && render_group_id().empty()) {
-        failures.push_back(
-            {"render_group", "lemond cannot tell the host's render group ID from inside its container",
-             {"Start lemond's container with -e LEMONADE_RENDER_GID=$(getent group render | cut -d: -f3)"},
-             ""});
-        return failures;
+        if (tool() != ContainerTool::Docker) return failures;
     }
     const bool service = host_.account() == kServiceAccount;
     const std::string member = service ? kServiceAccount : "$USER";
@@ -365,11 +337,71 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
         failures.push_back({"container_tool", "podman is not on PATH",
                             {install_command(host_.read_file("/etc/os-release"), "podman", "Podman")}, ""});
     }
-    if (!contained && expect_rootless() && !host_.gpu_devices_accessible()) {
+    if (expect_rootless() && !host_.gpu_devices_accessible()) {
         failures.push_back({"device_groups", "Account cannot open the GPU devices",
                             {"sudo usermod -aG render " + member}, apply});
     }
     return failures;
+}
+
+std::optional<SetupFailure> ContainerManager::check_container() const {
+    const std::string docs = std::string(", as ") + kContainerDocs + " shows";
+    if (own_container().empty()) {
+        const std::optional<ContainerTool> socket = mounted_socket();
+        if (!socket) {
+            return SetupFailure{
+                "own_container", "No Podman or Docker socket is mounted into lemond's container",
+                {"Start lemond's container with the host's Podman or Docker socket mounted" + docs},
+                ""};
+        }
+        const bool docker = *socket == ContainerTool::Docker;
+        const std::string name = docker ? "Docker" : "Podman";
+        const bool answers =
+            docker ? host_.run({"docker", "info", "--format", "{{.ID}}"}, kDockerInfoTimeoutSeconds,
+                               /*capture_stderr=*/false)
+                             .exit_code == 0
+                   : podman_info_rootless().has_value();
+        if (!answers) {
+            return SetupFailure{
+                "socket_access", "lemond cannot use the mounted " + name + " socket",
+                {docker ? "Start lemond's container with --group-add $(getent group docker | cut -d: -f3)"
+                        : "Start lemond's container with --user 0:0, which runs it as the account "
+                          "that owns the socket"},
+                ""};
+        }
+        return SetupFailure{"socket_daemon",
+                            "The " + name + " behind the mounted socket does not run lemond's container",
+                            {"Mount the socket of the Podman or Docker that runs lemond's container" + docs},
+                            ""};
+    }
+    if (backend_network().empty()) {
+        std::vector<std::string> steps;
+        std::string usual = "podman";
+        if (tool() == ContainerTool::Docker) {
+            // Docker refuses its default bridge alongside a user-defined network.
+            usual = "lemonade";
+            steps = {std::string("docker network create --internal ") + kBackendNetwork,
+                     "docker network create " + usual};
+        } else {
+            // lemond connects by address, and rootless Podman's DNS server needs
+            // a systemd user manager (see create_network).
+            steps = {std::string("podman network create --internal --disable-dns ") + kBackendNetwork};
+        }
+        steps.push_back("Start lemond's container with --network " + usual + " --network " +
+                        kBackendNetwork + docs);
+        return SetupFailure{"backend_network",
+                            std::string("lemond's container is not on an internal network named ") +
+                                kBackendNetwork,
+                            steps, ""};
+    }
+    // Docker and rootful Podman add the render group by number (see run_command).
+    if (!rootless_podman() && render_group_id().empty()) {
+        return SetupFailure{
+            "render_group", "lemond cannot tell the host's render group ID from inside its container",
+            {"Start lemond's container with -e LEMONADE_RENDER_GID=$(getent group render | cut -d: -f3)"},
+            ""};
+    }
+    return std::nullopt;
 }
 
 std::optional<SetupFailure> ContainerManager::check_podman() const {
