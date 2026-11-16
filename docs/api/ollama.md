@@ -157,6 +157,10 @@ A request with tools and streaming runs non-streaming on the backend and answers
 
 #### NDJSON
 
+One JSON object per line.
+
+##### Line
+
 Each line carries the next message piece with `done: false`. When the message ends, a line with `done: true` and the real `done_reason` follows, then a last `done: true` line with the token counts, which are `0` when the backend reports no usage, and `done_reason` `stop`.
 
 - `model` - The model that generated the response.
@@ -174,6 +178,12 @@ Each line carries the next message piece with `done: false`. When the message en
 - `prompt_eval_duration` - Prompt processing time in nanoseconds on a request with tools, when the backend reports timings; otherwise `0`.
 - `eval_duration` - Generation time in nanoseconds on a request with tools, when the backend reports timings; otherwise `0`.
 
+##### Error line
+
+Sent in place of the rest of the stream when the backend fails after the stream has started. No `done: true` line follows it, and the status stays `200`.
+
+- `error` - What failed, such as the backend's message.
+
 ### Errors
 
 | Status | Code | When |
@@ -181,6 +191,7 @@ Each line carries the next message piece with `done: false`. When the message en
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | `model` is any model other than an LLM, such as an image, embedding or transcription model, which is checked before it loads |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
@@ -201,6 +212,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | No | Text to continue, or the image to generate for an image model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `images` | No | Base64-encoded images, or WAV audio, for models that take them. A request with `images` runs as a one-message chat, as in Ollama, so the model's chat template applies. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | `true` streams the response as newline-delimited JSON; `false` sends one response once complete. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `options` | No | Sampling options: `temperature`, `top_p`, `stop`, `num_predict` (maximum generated tokens), `repeat_penalty`, which is sent as OpenAI's `frequency_penalty`, and the `seed`, `width`, `height`, `steps` and `cfg_scale` documented below. A key given at the top level wins. `num_ctx` sets the context size when this request loads the model, unless `ctx_size` is sent. Other keys are ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `width` | No | Image models only: image width in pixels. Defaults to `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -324,6 +336,10 @@ Image generation never streams.
 
 #### NDJSON
 
+One JSON object per line.
+
+##### Line
+
 Each line carries the next piece of text with `done: false`. When the text ends, a line with `done: true` and the real `done_reason` follows, then a last `done: true` line with the token counts and `done_reason` `stop`.
 
 - `model` - The model that generated the response.
@@ -337,6 +353,12 @@ Each line carries the next piece of text with `done: false`. When the text ends,
 - `eval_count` - Generated tokens.
 - `total_duration`, `load_duration`, `prompt_eval_duration`, `eval_duration` - Always `0`.
 
+##### Error line
+
+Sent in place of the rest of the stream when the backend fails after the stream has started. No `done: true` line follows it, and the status stays `200`.
+
+- `error` - What failed, such as the backend's message.
+
 ### Errors
 
 | Status | Code | When |
@@ -344,6 +366,7 @@ Each line carries the next piece of text with `done: false`. When the text ends,
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `400` |  | `model` is any model other than an LLM or an image generation model, such as an embedding, transcription or upscaling model, which is checked before it loads |
 | `404` |  | `model` fails to load for any reason other than a residency conflict, such as naming no model or a failed download |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
 | `500` |  | The backend reports an error, whatever its own status |
@@ -496,7 +519,7 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `families` - A list holding only `family`.
   - `parameter_size` - From the model name, e.g. `0.6B`; empty when the name has none.
   - `quantization_level` - From the checkpoint, e.g. `Q4_0`; empty when the checkpoint has none.
-- `capabilities` - From the model's labels: `completion` for chat models, `embedding` for embedding models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels.
+- `capabilities` - From the model's labels: `completion` for chat models, `embedding` for embedding models, `image` for image generation models, `speech` for text-to-speech models, plus `tools`, `vision` and `thinking` for the `tool-calling` (or `tools`), `vision` and `reasoning` labels, and `audio` for llama.cpp models with the `chat-transcription` label. A SystemOne decision model reports only `decision`, plus `vision` when it has that label.
 - `model_info` - `general.architecture` (the recipe) and `<recipe>.context_length` (the context size in `parameters`); the other keys are always `0`.
 
 ### Errors
