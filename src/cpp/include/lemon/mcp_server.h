@@ -41,6 +41,7 @@ private:
     json tool_chat(const json& arguments);
     json tool_transcribe_audio(const json& arguments);
     json tool_generate_image(const json& arguments);
+    json tool_edit_image(const json& arguments);
     json tool_omni(const json& arguments);
     json tool_list_models(const json& arguments);
     json tool_docs(const json& arguments);
@@ -59,7 +60,8 @@ private:
         ModelType want_type,
         const char* type_str,
         const char* default_model,
-        bool allow_download);
+        bool allow_download,
+        std::string required_capability = {});
 
     static json text_content_block(const std::string& text);
     static json make_error_response(const json& id, int code, const std::string& message);

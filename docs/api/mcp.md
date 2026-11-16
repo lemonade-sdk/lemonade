@@ -252,6 +252,25 @@ Without `output_path` or `output_dir`, success returns one native MCP `image` co
 | `size` | no | `{"type":"string"}` | Requested image size as WIDTHxHEIGHT, for example 512x512. |
 | `steps` | no | `{"type":"integer"}` | Number of diffusion sampling steps. |
 
+### `lemonade_edit_image`
+
+Edit an image using a model advertising the image-edit capability. The host chooses the source image and passes it as base64 or a data:image/...;base64 URL. An explicit model must be an image-edit capable IMAGE model. Without a model, Lemonade prefers an already loaded eligible model, then an already downloaded one. Generation-only image models are skipped and no model is downloaded automatically.
+
+**Returns**
+
+On success returns native MCP image content blocks containing the edited images as base64 PNG data. If an explicit model lacks image-edit or no local eligible model exists, returns one error text block with isError=true.
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `cfg_scale` | no | `{"type":"number"}` | Classifier-free guidance scale. |
+| `image` | yes | `{"type":"string"}` | Raw base64 image bytes or a data:image/...;base64 URL. |
+| `model` | no | `{"type":"string"}` | Optional. An IMAGE model with image-edit capability; omit to select an eligible local model. |
+| `n` | no | `{"maximum":10,"minimum":1,"type":"integer"}` | Number of edited images to return. |
+| `prompt` | yes | `{"type":"string"}` | Instructions for editing the source image. |
+| `seed` | no | `{"type":"integer"}` | Optional random seed. |
+| `size` | no | `{"type":"string"}` | Output size as WIDTHxHEIGHT. |
+| `steps` | no | `{"minimum":1,"type":"integer"}` | Number of image editing steps. |
+
 ### `lemonade_omni`
 
 Multimodal turn against a Lemonade Omni collection (one tool call -&gt; text + images + speech in the same response). The server runs an internal tool-calling loop against the collection's planner LLM and executes its image / image-edit / TTS tools by routing to the bundled component models; the result comes back as a text block plus native MCP `image` / `audio` content blocks (one per artifact). `model` is OPTIONAL: when omitted, the server reuses an already-downloaded Omni collection; if none is downloaded it asks you to pass a `model` or `allow_download: true` (which downloads the default, `LMX-Omni-5.5B-Lite`). Pass `model='LMX-Omni-52B-Halo'` (or any other recipe='collection.omni' model from `lemonade_list_models`) to opt into a larger collection; that model may be multi-GB. Same-machine deployment: PREFER `output_dir` to write artifacts to disk and avoid expensive inline base64 blobs. For plain text chat against a regular LLM, use `lemonade_chat` instead.
