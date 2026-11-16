@@ -307,12 +307,16 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
         return failures;
     }
     if (contained && backend_network().empty()) {
-        const std::string tool_command = tool() == ContainerTool::Docker ? "docker" : "podman";
-        const std::string usual = tool() == ContainerTool::Docker ? "bridge" : "podman";
+        const bool docker = tool() == ContainerTool::Docker;
+        // lemond connects by address, and rootless Podman's DNS server needs a
+        // systemd user manager (see create_network).
+        const std::string create = docker ? "docker network create --internal "
+                                          : "podman network create --internal --disable-dns ";
+        const std::string usual = docker ? "bridge" : "podman";
         failures.push_back(
             {"backend_network",
              "lemond's container is on no internal network for its container backends",
-             {tool_command + " network create --internal " + kBackendNetwork,
+             {create + kBackendNetwork,
               "Start lemond's container with --network " + usual + " --network " + kBackendNetwork +
                   ", as " + kContainerDocs + " shows"},
              ""});

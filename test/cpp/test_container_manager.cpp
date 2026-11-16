@@ -789,7 +789,8 @@ void test_in_container() {
     const auto network_failures = ContainerManager(no_internal.host()).check_host();
     check("with no internal network, the failure says to create one and start lemond on it",
           network_failures.size() == 1 && network_failures[0].id == "backend_network" &&
-              network_failures[0].steps[0] == "podman network create --internal lemonade-backends" &&
+              network_failures[0].steps[0] ==
+                  "podman network create --internal --disable-dns lemonade-backends" &&
               network_failures[0].steps[1].find("--network podman --network lemonade-backends") !=
                   std::string::npos);
 
