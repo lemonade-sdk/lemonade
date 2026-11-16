@@ -155,6 +155,8 @@ subject to the step's `on_fail` policy.
 Speech/3D byte streams pass the request cancellation into the HTTP transfer, so
 an interrupt during backend silence stops the transfer instead of holding the
 exclusive slot.
+ACE-Step passes the request token into its submit, poll and result HTTP calls, so
+an interrupt aborts an in-flight backend call instead of waiting for its timeout.
 
 ## Returning binary/media results
 

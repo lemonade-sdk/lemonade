@@ -1,13 +1,17 @@
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include <curl/curl.h>
 #include <httplib.h>
 #include <lemon/streaming_proxy.h>
+#include <lemon/utils/http_client.h>
 
 static int g_failures = 0;
 
@@ -259,7 +263,78 @@ static void test_cancellation_during_backend_silence(bool sse, bool predicate_on
     if (!sse) check(output.empty(), name + ": cancellation sends no backend-error payload");
 }
 
+static void test_get_cancellation_during_backend_silence(bool predicate_only) {
+    using namespace std::chrono_literals;
+    httplib::Server backend;
+    std::mutex mutex;
+    std::condition_variable ready;
+    bool started = false;
+    bool release_backend = false;
+    std::atomic<bool> cancelled{false};
+    backend.Get("/silent", [&](const httplib::Request&, httplib::Response& res) {
+        std::unique_lock<std::mutex> lock(mutex);
+        started = true;
+        ready.notify_all();
+        ready.wait(lock, [&]() { return release_backend; });
+        res.set_content("done", "text/plain");
+    });
+    const int port = backend.bind_to_any_port("127.0.0.1");
+    check(port > 0, "GET cancellation: mock backend bound");
+    if (port <= 0) return;
+    std::thread backend_thread([&]() { backend.listen_after_bind(); });
+    backend.wait_until_ready();
+    bool accepted_before_cancel = false;
+    std::chrono::steady_clock::time_point cancelled_at;
+    std::thread interrupter([&]() {
+        std::unique_lock<std::mutex> lock(mutex);
+        accepted_before_cancel = ready.wait_for(lock, 20s, [&]() { return started; });
+        cancelled_at = std::chrono::steady_clock::now();
+        cancelled.store(true);
+    });
+
+    lemon::utils::CancelToken cancel;
+    if (predicate_only) {
+        cancel.should_cancel = [&]() { return cancelled.load(); };
+    } else {
+        cancel.flag = &cancelled;
+    }
+    bool caught_cancellation = false;
+    int curl_code = CURLE_OK;
+    try {
+        lemon::utils::HttpClient::get(
+            "http://127.0.0.1:" + std::to_string(port) + "/silent", {}, 60,
+            lemon::utils::HttpSecurityPolicy::TrustedLoopback, 0, cancel);
+    } catch (const lemon::utils::HttpClientCancellationException& e) {
+        caught_cancellation = true;
+        curl_code = e.curl_code();
+    } catch (const std::exception& e) {
+        std::printf("[FAIL] GET cancellation: unexpected exception: %s\n", e.what());
+        ++g_failures;
+    }
+    const auto returned_at = std::chrono::steady_clock::now();
+    interrupter.join();
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        release_backend = true;
+    }
+    ready.notify_all();
+    backend.stop();
+    backend_thread.join();
+
+    const std::string name = predicate_only ? "GET predicate" : "GET flag";
+    check(accepted_before_cancel, name + ": request reached silent backend before cancellation");
+    check(caught_cancellation, name + ": threw HttpClientCancellationException");
+    check(curl_code == CURLE_ABORTED_BY_CALLBACK, name + ": preserved cancellation curl code");
+    check(returned_at >= cancelled_at && returned_at - cancelled_at < 10s,
+          name + ": returned within 10s of cancellation with a 60s transfer timeout");
+    std::printf("%s cancellation completed in %lld ms\n", name.c_str(),
+                static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    returned_at - cancelled_at).count()));
+}
+
 int main() {
+    test_get_cancellation_during_backend_silence(false);
+    test_get_cancellation_during_backend_silence(true);
     test_delivered_events_are_forwarded();
     test_streams_that_delivered_nothing_are_errors();
     test_backend_done_marker_is_not_duplicated();

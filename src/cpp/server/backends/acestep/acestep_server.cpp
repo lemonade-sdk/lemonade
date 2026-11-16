@@ -165,66 +165,75 @@ void AceStepServer::load(const std::string& model_name,
 bool AceStepServer::run_job(const std::string& path, const std::string& body,
                             std::string& result, std::string& error) {
     const std::string stage = path.substr(1);
+    const auto cancel = WrappedServer::current_request_cancel_context();
     auto cancelled = [&]() {
-        if (!request_cancelled()) return false;
+        if (!cancel.cancelled()) return false;
         LOG(INFO, "acestep-server") << stage << " cancelled" << std::endl;
         error = stage + " cancelled";
         return true;
     };
-    if (cancelled()) return false;
-    const std::string base = get_base_url();
-    auto submit = utils::HttpClient::post(
-        base + path,
-        body,
-        {{"Content-Type", "application/json"}},
-        60,
-        utils::HttpSecurityPolicy::TrustedLoopback);
-    if (submit.status_code != 200) {
-        LOG(ERROR, "acestep-server") << stage << " submit failed (HTTP " << submit.status_code
-                                     << "): " << submit.body << std::endl;
-        error = stage + " submit failed (HTTP " + std::to_string(submit.status_code) + ")";
-        return false;
-    }
-    std::string job_id = json::parse(submit.body).value("id", std::string());
-    if (job_id.empty()) {
-        LOG(ERROR, "acestep-server") << stage << " submit returned no job id: " << submit.body << std::endl;
-        error = stage + " submit returned no job id";
-        return false;
-    }
-
-    const std::string job_url = base + "/job?id=" + job_id;
-    std::string status;
-    for (int i = 0; i < 1200; ++i) {
+    try {
         if (cancelled()) return false;
-        auto poll = utils::HttpClient::get(job_url, {}, 30,
-                                           utils::HttpSecurityPolicy::TrustedLoopback);
-        if (poll.status_code == 200) {
-            try { status = json::parse(poll.body).value("status", std::string()); }
-            catch (...) { status.clear(); }
+        const std::string base = get_base_url();
+        auto submit = utils::HttpClient::post(
+            base + path,
+            body,
+            {{"Content-Type", "application/json"}},
+            60,
+            utils::HttpSecurityPolicy::TrustedLoopback, cancel);
+        if (cancelled()) return false;
+        if (submit.status_code != 200) {
+            LOG(ERROR, "acestep-server") << stage << " submit failed (HTTP " << submit.status_code
+                                         << "): " << submit.body << std::endl;
+            error = stage + " submit failed (HTTP " + std::to_string(submit.status_code) + ")";
+            return false;
         }
-        if (status == "done" || status == "failed" || status == "cancelled") break;
-        if (cancelled()) return false;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-    if (status != "done") {
-        LOG(ERROR, "acestep-server") << stage << " job " << job_id << " ended with status '"
-                                     << status << "'" << std::endl;
-        error = stage + " job ended with status '" + status + "'";
-        return false;
-    }
+        std::string job_id = json::parse(submit.body).value("id", std::string());
+        if (job_id.empty()) {
+            LOG(ERROR, "acestep-server") << stage << " submit returned no job id: " << submit.body << std::endl;
+            error = stage + " submit returned no job id";
+            return false;
+        }
 
-    if (cancelled()) return false;
-    auto fetched = utils::HttpClient::get(job_url + "&result=1", {}, 120,
-                                          utils::HttpSecurityPolicy::TrustedLoopback);
-    if (fetched.status_code != 200) {
-        LOG(ERROR, "acestep-server") << "fetching " << stage << " job result failed (HTTP "
-                                     << fetched.status_code << ")" << std::endl;
-        error = "fetching " + stage + " job result failed (HTTP " +
-                std::to_string(fetched.status_code) + ")";
-        return false;
+        const std::string job_url = base + "/job?id=" + job_id;
+        std::string status;
+        for (int i = 0; i < 1200; ++i) {
+            if (cancelled()) return false;
+            auto poll = utils::HttpClient::get(job_url, {}, 30,
+                                               utils::HttpSecurityPolicy::TrustedLoopback, 0, cancel);
+            if (cancelled()) return false;
+            if (poll.status_code == 200) {
+                try { status = json::parse(poll.body).value("status", std::string()); }
+                catch (...) { status.clear(); }
+            }
+            if (status == "done" || status == "failed" || status == "cancelled") break;
+            if (cancelled()) return false;
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        if (status != "done") {
+            LOG(ERROR, "acestep-server") << stage << " job " << job_id << " ended with status '"
+                                         << status << "'" << std::endl;
+            error = stage + " job ended with status '" + status + "'";
+            return false;
+        }
+
+        if (cancelled()) return false;
+        auto fetched = utils::HttpClient::get(job_url + "&result=1", {}, 120,
+                                              utils::HttpSecurityPolicy::TrustedLoopback, 0, cancel);
+        if (cancelled()) return false;
+        if (fetched.status_code != 200) {
+            LOG(ERROR, "acestep-server") << "fetching " << stage << " job result failed (HTTP "
+                                         << fetched.status_code << ")" << std::endl;
+            error = "fetching " + stage + " job result failed (HTTP " +
+                    std::to_string(fetched.status_code) + ")";
+            return false;
+        }
+        result = std::move(fetched.body);
+        return true;
+    } catch (const std::exception&) {
+        if (cancelled()) return false;
+        throw;
     }
-    result = std::move(fetched.body);
-    return true;
 }
 
 void AceStepServer::audio_generations(const json& request, httplib::DataSink& sink) {
