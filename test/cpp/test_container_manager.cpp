@@ -12,11 +12,14 @@
 #include "lemon/utils/container_manager.h"
 #include "lemon/utils/network_utils.h"
 
+#include <cerrno>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <map>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -899,30 +902,54 @@ void test_refused_connections() {
         ::inet_pton(AF_INET, text, &address.sin_addr);
         return address;
     };
+    const auto failed = [](const char* step) {
+        check(std::string("refused-connection setup: ") + step + " failed: " + std::strerror(errno),
+              false);
+    };
     const int listener = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (listener < 0) return failed("socket");
     sockaddr_in address = loopback("127.0.0.1");
-    ::bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address));
-    ::listen(listener, 4);
     socklen_t length = sizeof(address);
-    ::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length);
-    const auto accept_from = [&](const char* source) {
+    if (::bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0 ||
+        ::listen(listener, 4) != 0 ||
+        ::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length) != 0) {
+        ::close(listener);
+        return failed("listen on 127.0.0.1");
+    }
+    // The connection's verdict, or nullopt when a step fails.
+    const auto accept_from = [&](const char* source) -> std::optional<bool> {
         const int client = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (client < 0) {
+            failed("client socket");
+            return std::nullopt;
+        }
         sockaddr_in from = loopback(source);
-        ::bind(client, reinterpret_cast<sockaddr*>(&from), sizeof(from));
-        ::connect(client, reinterpret_cast<sockaddr*>(&address), sizeof(address));
+        if (::bind(client, reinterpret_cast<sockaddr*>(&from), sizeof(from)) != 0 ||
+            ::connect(client, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) {
+            failed((std::string("connect from ") + source).c_str());
+            ::close(client);
+            return std::nullopt;
+        }
         const int accepted = ::accept(listener, nullptr, nullptr);
         ::close(client);
+        if (accepted < 0) {
+            failed("accept");
+            return std::nullopt;
+        }
         const bool refused = lemon::utils::is_refused_connection(accepted);
         ::close(accepted);
         return refused;
     };
 
-    check("with no refused address, every connection is answered", !accept_from("127.0.0.2"));
+    const auto unrefused = accept_from("127.0.0.2");
+    if (unrefused) check("with no refused address, every connection is answered", !*unrefused);
     lemon::utils::set_refused_local_addresses({"127.0.0.1"});
-    check("a connection from another address on lemond's backends' address is refused",
-          accept_from("127.0.0.2"));
-    check("a connection from lemond's own address, as a port forwarder makes, is answered",
-          !accept_from("127.0.0.1"));
+    const auto other = accept_from("127.0.0.2");
+    if (other) check("a connection from another address on lemond's backends' address is refused", *other);
+    const auto own = accept_from("127.0.0.1");
+    if (own) {
+        check("a connection from lemond's own address, as a port forwarder makes, is answered", !*own);
+    }
     lemon::utils::set_refused_local_addresses({});
     ::close(listener);
 }
