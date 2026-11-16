@@ -878,38 +878,40 @@ void test_in_container_docker() {
           ContainerManager(neither.host()).tool() == lemon::utils::ContainerTool::Podman);
 }
 
-#ifndef _WIN32
-// lemond's own address on the backends' network refuses connections; any other
-// address of the same listener still takes them.
-void test_refused_local_addresses() {
+#ifdef __linux__
+// A connection on lemond's address on the backends' network is refused unless
+// it comes from that same address, as rootless Podman's port forwarder does.
+void test_refused_connections() {
+    const auto loopback = [](const char* text) {
+        sockaddr_in address = {};
+        address.sin_family = AF_INET;
+        ::inet_pton(AF_INET, text, &address.sin_addr);
+        return address;
+    };
     const int listener = ::socket(AF_INET, SOCK_STREAM, 0);
-    sockaddr_in address = {};
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    sockaddr_in address = loopback("127.0.0.1");
     ::bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address));
     ::listen(listener, 4);
     socklen_t length = sizeof(address);
     ::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length);
-    const auto accept_one = [&]() {
+    const auto accept_from = [&](const char* source) {
         const int client = ::socket(AF_INET, SOCK_STREAM, 0);
+        sockaddr_in from = loopback(source);
+        ::bind(client, reinterpret_cast<sockaddr*>(&from), sizeof(from));
         ::connect(client, reinterpret_cast<sockaddr*>(&address), sizeof(address));
         const int accepted = ::accept(listener, nullptr, nullptr);
         ::close(client);
-        return accepted;
+        const bool refused = lemon::utils::is_refused_connection(accepted);
+        ::close(accepted);
+        return refused;
     };
 
-    const ContainerManager manager(contained_host().host());
-    manager.own_container();
-    int accepted = accept_one();
-    check("a connection on another address is answered",
-          !lemon::utils::arrived_on_refused_address(accepted));
-    ::close(accepted);
-
+    check("with no refused address, every connection is answered", !accept_from("127.0.0.2"));
     lemon::utils::set_refused_local_addresses({"127.0.0.1"});
-    accepted = accept_one();
-    check("a connection on lemond's address on the backends' network is refused",
-          lemon::utils::arrived_on_refused_address(accepted));
-    ::close(accepted);
+    check("a connection from another address on lemond's backends' address is refused",
+          accept_from("127.0.0.2"));
+    check("a connection from lemond's own address, as a port forwarder makes, is answered",
+          !accept_from("127.0.0.1"));
     lemon::utils::set_refused_local_addresses({});
     ::close(listener);
 }
@@ -927,8 +929,8 @@ int main() {
     test_helpers();
     test_in_container();
     test_in_container_docker();
-#ifndef _WIN32
-    test_refused_local_addresses();
+#ifdef __linux__
+    test_refused_connections();
 #endif
 #ifndef _WIN32
     test_model_mounts();

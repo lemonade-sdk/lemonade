@@ -29,6 +29,24 @@ std::mutex refused_mutex;
 std::set<std::string> refused_addresses;
 std::atomic<bool> any_refused{false};
 
+// The address in `storage` as text, with a v4-mapped IPv6 address as IPv4, since
+// the "::" listener takes IPv4 connections that way.
+std::string address_text(const sockaddr_storage& storage) {
+    char text[INET6_ADDRSTRLEN] = {};
+    if (storage.ss_family == AF_INET) {
+        inet_ntop(AF_INET, &reinterpret_cast<const sockaddr_in*>(&storage)->sin_addr, text,
+                  sizeof(text));
+    } else if (storage.ss_family == AF_INET6) {
+        const in6_addr* v6 = &reinterpret_cast<const sockaddr_in6*>(&storage)->sin6_addr;
+        if (IN6_IS_ADDR_V4MAPPED(v6)) {
+            inet_ntop(AF_INET, &v6->s6_addr[12], text, sizeof(text));
+        } else {
+            inet_ntop(AF_INET6, v6, text, sizeof(text));
+        }
+    }
+    return text;
+}
+
 } // namespace
 
 void set_refused_local_addresses(const std::vector<std::string>& addresses) {
@@ -37,27 +55,22 @@ void set_refused_local_addresses(const std::vector<std::string>& addresses) {
     any_refused.store(!refused_addresses.empty());
 }
 
-bool arrived_on_refused_address(socket_t sock) {
+bool is_refused_connection(socket_t sock) {
     if (!any_refused.load()) return false;
     sockaddr_storage local = {};
-    socklen_t length = sizeof(local);
-    if (getsockname(sock, reinterpret_cast<sockaddr*>(&local), &length) != 0) return false;
-    char address[INET6_ADDRSTRLEN] = {};
-    if (local.ss_family == AF_INET) {
-        inet_ntop(AF_INET, &reinterpret_cast<sockaddr_in*>(&local)->sin_addr, address, sizeof(address));
-    } else if (local.ss_family == AF_INET6) {
-        const in6_addr* v6 = &reinterpret_cast<sockaddr_in6*>(&local)->sin6_addr;
-        // The "::" listener takes IPv4 connections as v4-mapped addresses.
-        if (IN6_IS_ADDR_V4MAPPED(v6)) {
-            inet_ntop(AF_INET, &v6->s6_addr[12], address, sizeof(address));
-        } else {
-            inet_ntop(AF_INET6, v6, address, sizeof(address));
-        }
-    } else {
+    sockaddr_storage peer = {};
+    socklen_t local_length = sizeof(local);
+    socklen_t peer_length = sizeof(peer);
+    if (getsockname(sock, reinterpret_cast<sockaddr*>(&local), &local_length) != 0 ||
+        getpeername(sock, reinterpret_cast<sockaddr*>(&peer), &peer_length) != 0) {
         return false;
     }
     std::lock_guard<std::mutex> lock(refused_mutex);
-    return refused_addresses.count(address) > 0;
+    // Rootless Podman's port forwarder connects from inside lemond's own
+    // network namespace, to whichever of lemond's addresses it picks, so a
+    // published port can arrive on a refused address from that same address.
+    return refused_addresses.count(address_text(local)) > 0 &&
+           refused_addresses.count(address_text(peer)) == 0;
 }
 
 bool configure_tcp_keepalive(socket_t sock) {

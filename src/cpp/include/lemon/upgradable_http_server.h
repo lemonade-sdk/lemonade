@@ -142,7 +142,7 @@ public:
 
 private:
     bool process_and_close_socket(socket_t sock) override {
-        if (lemon::utils::arrived_on_refused_address(sock)) {
+        if (lemon::utils::is_refused_connection(sock)) {
             LOG(WARNING, "Server") << "Refused a connection on the container backends' network" << std::endl;
 #ifdef _WIN32
             ::shutdown(sock, SD_BOTH);

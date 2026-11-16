@@ -132,7 +132,7 @@ bool is_tcp_listener_active(int family, const std::string& host_ip, int port) {
 // Container backends, the only source of refused addresses, run on Linux.
 void set_refused_local_addresses(const std::vector<std::string>&) {}
 
-bool arrived_on_refused_address(socket_t) {
+bool is_refused_connection(socket_t) {
     return false;
 }
 
