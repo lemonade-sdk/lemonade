@@ -1,4 +1,5 @@
 #include "lemon/router.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/network_utils.h"
 #include "lemon/utils/origin_utils.h"
@@ -73,10 +74,12 @@ int WebSocketServer::ws_callback(struct lws* wsi,
             auto origin_opt = get_header(wsi, WSI_TOKEN_ORIGIN);
             if (origin_opt && !origin_opt->empty()) {
                 std::string origin = *origin_opt;
-                const char* env_origins = std::getenv("LEMONADE_ALLOWED_ORIGINS");
-                std::string allowed_origins = env_origins ? std::string(env_origins) : "";
+                auto host_opt = get_header(wsi, WSI_TOKEN_HOST);
+                std::string host = host_opt.value_or("");
+                std::string allowed_origins = utils::resolve_allowed_origins();
+                std::string bound_host = server ? server->host_ : "";
 
-                if (!utils::is_websocket_origin_allowed(origin, allowed_origins)) {
+                if (!utils::is_websocket_origin_allowed(origin, allowed_origins, host, "http", bound_host)) {
                     LOG(WARNING, "WebSocket") << "Rejected connection from unauthorized origin: " << origin << std::endl;
                     return 1;
                 }
@@ -768,9 +771,9 @@ std::string WebSocketServer::get_request_path(struct lws* wsi) {
 }
 
 WebSocketServer::ConnectionKind WebSocketServer::classify_path(const std::string& path) {
-    // Quad-prefix invariant: endpoints are reachable bare and under
-    // /api/v0, /api/v1, /v0, /v1. OpenAI Realtime SDK clients connect
-    // to /v1/realtime.
+    // Clients built against older releases connect bare or under /api/v0,
+    // /api/v1 or /v0 (see the HTTP server spec's compatibility section).
+    // OpenAI Realtime SDK clients connect to /v1/realtime.
     std::string stripped = path;
     for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
         size_t len = std::strlen(prefix);

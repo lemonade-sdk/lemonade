@@ -19,6 +19,7 @@ on:
       - .ubuntu/Dockerfile
       - .dockerignore
       - contrib/debian/**
+      - tools/version.py
       - .github/workflows/build-container.yml
 
 concurrency:
@@ -39,9 +40,6 @@ jobs:
           - ubuntu_version: "24.04"
             ubuntu_ppa: "ppa:lemonade-team/bleeding-edge"
             prime_ccache: "true"
-          - ubuntu_version: "25.10"
-            ubuntu_ppa: "ppa:lemonade-team/bleeding-edge"
-            prime_ccache: ""
           - ubuntu_version: "26.04"
             ubuntu_ppa: ""
             prime_ccache: ""
@@ -53,6 +51,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Stamp version
+        run: |
+          VERSION=$(python3 tools/version.py)
+          printf '%s\n' "$VERSION" > .version
 
       # Only the publish path needs arm64, and emulating it on a PR would cost
       # far more than the Dockerfile change being verified.

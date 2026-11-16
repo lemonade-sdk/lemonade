@@ -37,6 +37,7 @@ apply_options(CloudProviderRegistry::Record record,
     if (options.allow_insecure_http) record.allow_insecure_http = *options.allow_insecure_http;
     if (options.auth_header_name) record.auth_header_name = *options.auth_header_name;
     if (options.auth_header_prefix) record.auth_header_prefix = *options.auth_header_prefix;
+    if (options.wire_format) record.wire_format = *options.wire_format;
     return record;
 }
 
@@ -121,6 +122,13 @@ std::string CloudProviderRegistry::validate_base_url(const std::string& base_url
     return "Base URL must start with https:// or http://";
 }
 
+std::string CloudProviderRegistry::validate_wire_format(const std::string& wire_format) {
+    if (wire_format == "openai" || wire_format == "anthropic") {
+        return "";
+    }
+    return "Wire format must be one of: openai, anthropic";
+}
+
 bool CloudProviderRegistry::is_http_base_url(const std::string& base_url) {
     return starts_with_scheme(base_url, "http://");
 }
@@ -180,6 +188,12 @@ void CloudProviderRegistry::load_from_config(const json& cloud_providers_array) 
                 r.auth_header_prefix = std::move(prefix);
             }
         }
+        // An unrecognized persisted value would leave the provider
+        // undispatchable, so fall back to the default rather than store it.
+        if (entry.contains("wire_format") && entry["wire_format"].is_string() &&
+            validate_wire_format(entry["wire_format"].get<std::string>()).empty()) {
+            r.wire_format = entry["wire_format"].get<std::string>();
+        }
         if (r.name.empty() || r.base_url.empty()) continue;
         installed_.push_back(std::move(r));
     }
@@ -202,6 +216,9 @@ json CloudProviderRegistry::to_config_array() const {
         }
         if (r.auth_header_prefix != defaults.auth_header_prefix) {
             entry["auth_header_prefix"] = r.auth_header_prefix;
+        }
+        if (r.wire_format != defaults.wire_format) {
+            entry["wire_format"] = r.wire_format;
         }
         arr.push_back(std::move(entry));
     }
@@ -285,6 +302,14 @@ CloudProviderRegistry::auth_header_for(const std::string& provider) const {
         if (r.name == provider) return {r.auth_header_name, r.auth_header_prefix};
     }
     return {};
+}
+
+std::string CloudProviderRegistry::wire_format_for(const std::string& provider) const {
+    std::shared_lock lock(mu_);
+    for (const auto& r : installed_) {
+        if (r.name == provider) return r.wire_format;
+    }
+    return "openai";
 }
 
 std::string CloudProviderRegistry::resolve_key(const std::string& provider) const {

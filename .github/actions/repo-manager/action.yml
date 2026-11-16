@@ -1,0 +1,56 @@
+name: 'Repo Manager'
+description: >-
+  Run one repo-manager command on a self-hosted runner and commit the result to
+  lemonade-sdk/lemonade-testing. How repo-manager runs — its version, the model, the tools and
+  how they are installed — is lemonade-testing's runner/run.sh and runner/pin.env, so a pin
+  changes there without a change here.
+
+inputs:
+  command:
+    description: 'repo-manager command and arguments, for example "commit review <sha>".'
+    required: true
+  app-client-id:
+    description: >-
+      Client ID of the GitHub App that may push to lemonade-sdk/lemonade-testing, the
+      repository where repo-manager keeps its results.
+    required: true
+  app-private-key:
+    description: 'Private key of that app. A composite action cannot read `secrets` itself.'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/create-github-app-token@v3
+      id: state-token
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: lemonade-sdk
+        repositories: lemonade-testing
+
+    # repo-manager writes its results into this clone, and its runner/ directory says how
+    # to run repo-manager.
+    - name: Clone lemonade-testing
+      uses: actions/checkout@v5
+      with:
+        repository: lemonade-sdk/lemonade-testing
+        token: ${{ steps.state-token.outputs.token }}
+        path: state
+        fetch-depth: 1
+        persist-credentials: true
+
+    - name: Clone lemonade for git and diff operations
+      uses: actions/checkout@v5
+      with:
+        path: checkout
+        fetch-depth: 0
+        fetch-tags: true
+
+    - name: Run repo-manager
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+        COMMAND: ${{ inputs.command }}
+      run: bash state/runner/run.sh "$COMMAND"

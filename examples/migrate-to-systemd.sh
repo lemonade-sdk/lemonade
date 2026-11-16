@@ -69,7 +69,7 @@ declare -a SOURCE_PATHS=(
 declare -a DEST_PATHS=(
     "/var/lib/lemonade"
     "/var/cache/lemonade"
-    "/var/cache/huggingface"
+    "$LEMONADE_HOME/.cache/huggingface"
     "$LEMONADE_HOME/.local/share/lemonade-server"
 )
 

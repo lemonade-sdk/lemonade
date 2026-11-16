@@ -3,8 +3,10 @@
 // Compile: g++ -std=c++17 -I src/cpp/include test/cpp/test_auto_tune.cpp -o test_auto_tune
 
 #include "lemon/gguf_reader.h"
+#include "lemon/auto_context_budget.h"
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 using lemon::GgufMetadata;
@@ -294,7 +296,174 @@ static void test_varying_heads_swa() {
           !approx_eq(bytes, old_approx, 1000.0));
 }
 
+
+static void test_auto_context_budget() {
+    using lemon::estimate_auto_context_budget;
+    // 5090 (32 GiB), Qwen3.8-27B Q4 (16.5 GiB), vision projector and MTP.
+    auto qwen = estimate_auto_context_budget(32.0, 18.0, 65536.0 * 1.07,
+                                             true, true);
+    check("auto ctx: CUDA uses most VRAM without exhausting it",
+          qwen.max_tokens >= 170000 && qwen.max_tokens < 215000);
+    check("auto ctx: dGPU runtime reserve is bounded",
+          qwen.reserve_gib >= 1.5 && qwen.reserve_gib <= 3.0);
+    check("auto ctx: GGUF weights counted once",
+          approx_eq(qwen.model_gib, 18.0));
+    using lemon::auto_context_total_weights_gib;
+    check("auto ctx: model registry already includes mmproj",
+          approx_eq(auto_context_total_weights_gib(18.0, 16.5, 1.5, 0.0), 18.0));
+    check("auto ctx: incomplete registry gets resolved extras",
+          approx_eq(auto_context_total_weights_gib(16.5, 16.5, 1.5, 0.0), 18.0));
+    check("auto ctx: sharded total is not replaced by first shard",
+          approx_eq(auto_context_total_weights_gib(21.0, 1.1, 0.0, 0.0), 21.0));
+
+    auto no_extra = estimate_auto_context_budget(32.0, 16.5, 65536.0,
+                                                 true, false);
+    check("auto ctx: mmproj and MTP reduce available context",
+          qwen.max_tokens < no_extra.max_tokens);
+
+    auto apu = estimate_auto_context_budget(110.0, 18.0, 65536.0,
+                                            true, false, true);
+    check("auto ctx: 128 GB APU still supports long context",
+          apu.max_tokens >= 262144);
+    check("auto ctx: UMA retains OS memory headroom",
+          apu.reserve_gib >= 8.0 && apu.reserve_gib < 14.0);
+
+    auto discrete = estimate_auto_context_budget(110.0, 18.0, 65536.0,
+                                                 true, false, false);
+    check("auto ctx: discrete and UMA budgets differ",
+          discrete.reserve_gib < apu.reserve_gib);
+
+    auto small_mac = estimate_auto_context_budget(3.2, 0.73, 128.0 * 1024.0,
+                                                   true, false, true);
+    check("auto ctx: 7 GiB Mac with 3.2 GiB free can load a small model",
+          small_mac.max_tokens >= 8192);
+    check("auto ctx: small UMA pool retains runtime headroom",
+          small_mac.reserve_gib >= 1.0 && small_mac.reserve_gib < 2.0);
+    auto constrained_mac = estimate_auto_context_budget(1.3, 0.73, 128.0 * 1024.0,
+                                                         true, false, true);
+    check("auto ctx: small UMA pool still rejects genuine memory exhaustion",
+          constrained_mac.max_tokens == 0);
+    auto larger_uma = estimate_auto_context_budget(24.0, 0.73, 128.0 * 1024.0,
+                                                   true, false, true);
+    check("auto ctx: larger UMA pool retains proportional headroom",
+          larger_uma.reserve_gib > 2.0);
+
+    auto small = estimate_auto_context_budget(8.0, 3.0, 65536.0,
+                                              true, false);
+    check("auto ctx: 8 GiB GPU has compute headroom",
+          small.reserve_gib >= 1.0 && small.reserve_gib <= 2.5);
+    check("auto ctx: 8 GiB GPU provides useful context",
+          small.max_tokens >= 32768);
+
+    auto no_space = estimate_auto_context_budget(4.0, 5.0, 65536.0,
+                                                 true, false);
+    check("auto ctx: weights exceeding VRAM cannot claim KV", no_space.max_tokens == 0);
+    auto missing_model = estimate_auto_context_budget(32.0, 0.0, 65536.0,
+                                                      true, false);
+    check("auto ctx: missing model size handled", missing_model.max_tokens == 0);
+    auto invalid_kv = estimate_auto_context_budget(32.0, 16.5, 0.0,
+                                                   true, false);
+    check("auto ctx: invalid KV metadata handled", invalid_kv.max_tokens == 0);
+
+    auto barely_fits = estimate_auto_context_budget(8.0, 7.875, 65536.0,
+                                                     true, false);
+    check("auto ctx: known insufficient VRAM returns zero, not 4096",
+          barely_fits.max_tokens == 0);
+    auto tiny_budget = estimate_auto_context_budget(8.0, 6.7, 65536.0,
+                                                     true, false);
+    check("auto ctx: low but positive budget is not raised to a fallback",
+          tiny_budget.max_tokens > 0 && tiny_budget.max_tokens < 4096);
+
+    using lemon::auto_context_clamp_tokens;
+    auto embedding_budget = estimate_auto_context_budget(41.4, 0.51,
+                                                          128.0 * 1024.0,
+                                                          true, false, true);
+    check("auto ctx: embedding budget can hold 8192 tokens on 41.4 GiB UMA",
+          embedding_budget.max_tokens > 8192);
+    check("auto ctx: model maximum smaller than runtime floor is not OOM",
+          auto_context_clamp_tokens(embedding_budget.max_tokens, 512, 32768, 8192) == 8192);
+    check("auto ctx: runtime minimum requires actual capacity",
+          auto_context_clamp_tokens(4096, 512, 32768, 8192) == 0);
+    check("auto ctx: model maximum is honored for normal LLMs",
+          auto_context_clamp_tokens(100000, 512, 32768) == 512);
+    check("auto ctx: unknown maximum has a bounded default",
+          auto_context_clamp_tokens(100000, 0, 32768) == 32768);
+    check("auto ctx: model maximum above runtime minimum remains capped",
+          auto_context_clamp_tokens(100000, 16384, 32768, 8192) == 16384);
+
+    GgufMetadata bert_encoder;
+    bert_encoder.architecture = "nomic-bert-moe";
+    bert_encoder.block_count = 12;
+    bert_encoder.embedding_length = 768;
+    const double encoder_kv = lemon::estimate_bert_encoder_kv_bytes_per_token(
+        bert_encoder, true);
+    check("auto ctx: BERT encoder estimates full-width K/V from GGUF",
+          approx_eq(encoder_kv, 12.0 * 768.0 * 4.0));
+    check("auto ctx: non-encoder retains the existing KV fallback",
+          lemon::estimate_bert_encoder_kv_bytes_per_token(bert_encoder, false) == 0.0);
+    bert_encoder.embedding_length = 0;
+    check("auto ctx: missing encoder dimensions retain the size fallback",
+          lemon::estimate_bert_encoder_kv_bytes_per_token(bert_encoder, true) == 0.0);
+
+    // Values observed on the 7 GiB macOS CI runner for nomic-embed-text-v2-moe.
+    auto generic_embedding = estimate_auto_context_budget(2.40, 0.48,
+                                                          128.0 * 1024.0,
+                                                          true, false, true);
+    check("auto ctx: generic fallback rejects the observed macOS sample",
+          generic_embedding.max_tokens < 8192);
+    auto mac_embedding = estimate_auto_context_budget(2.40, 0.48, encoder_kv,
+                                                      true, false, true);
+    check("auto ctx: measured macOS embedding budget fits 8192 tokens",
+          auto_context_clamp_tokens(mac_embedding.max_tokens, 512, 32768, 8192) == 8192);
+    check("auto ctx: measured macOS runtime reserve stays intact",
+          approx_eq(mac_embedding.reserve_gib, 1.25));
+    auto mac_insufficient = estimate_auto_context_budget(1.90, 0.48, encoder_kv,
+                                                         true, false, true);
+    check("auto ctx: real macOS embedding shortage is still rejected",
+          auto_context_clamp_tokens(mac_insufficient.max_tokens, 512, 32768, 8192) == 0);
+
+    using lemon::auto_context_cap_shared_memory_gib;
+    check("auto ctx: unified RAM cap uses physical RAM total",
+          approx_eq(auto_context_cap_shared_memory_gib(20.0, 32.0, 24.0), 8.0));
+    check("auto ctx: unified RAM cap leaves tighter GPU limit intact",
+          approx_eq(auto_context_cap_shared_memory_gib(12.0, 32.0, 4.0), 12.0));
+    check("auto ctx: unknown RAM usage does not fabricate a cap",
+          approx_eq(auto_context_cap_shared_memory_gib(12.0, 32.0, -1.0), 12.0));
+
+    using lemon::auto_context_available_gpu_gib;
+    auto cuda_free = auto_context_available_gpu_gib(32.0, 4.0, false, 0.0, -1.0);
+    check("auto ctx: measured discrete VRAM remains unchanged",
+          cuda_free && approx_eq(*cuda_free, 28.0));
+    check("auto ctx: unknown discrete VRAM is unavailable",
+          !auto_context_available_gpu_gib(32.0, -1.0, false, 0.0, 12.0));
+
+    auto metal_free = auto_context_available_gpu_gib(24.0, -1.0, true, 32.0, 24.0);
+    check("auto ctx: unified GPU uses measured physical RAM without VRAM metrics",
+          metal_free && approx_eq(*metal_free, 8.0));
+    check("auto ctx: unknown unified VRAM and RAM use safe fallback",
+          !auto_context_available_gpu_gib(24.0, -1.0, true, 32.0, 0.0));
+    check("auto ctx: invalid unified RAM and GPU readings use safe fallback",
+          !auto_context_available_gpu_gib(24.0, -1.0, true, 32.0, -1.0));
+
+    auto shared_free = auto_context_available_gpu_gib(24.0, 2.0, true, 32.0, 25.0);
+    check("auto ctx: shared GPU applies tighter RAM limit",
+          shared_free && approx_eq(*shared_free, 7.0));
+    check("auto ctx: GPU usage alone cannot establish shared RAM availability",
+          !auto_context_available_gpu_gib(24.0, 2.0, true, 32.0, 0.0));
+    check("auto ctx: unified GPU requires known physical RAM capacity",
+          !auto_context_available_gpu_gib(24.0, 2.0, true, 0.0, 20.0));
+    check("auto ctx: unified GPU rejects nonfinite RAM usage",
+          !auto_context_available_gpu_gib(24.0, 2.0, true, 32.0,
+                                          std::numeric_limits<double>::quiet_NaN()));
+
+    auto huge = estimate_auto_context_budget(110.0, 18.0, 1e-12,
+                                              true, false);
+    check("auto ctx: token conversion saturates without int64 overflow",
+          huge.max_tokens == std::numeric_limits<int64_t>::max());
+}
+
 int main() {
+    test_auto_context_budget();
     test_scalar_head_count_kv();
     test_array_head_count_kv();
     test_swa_pattern_derivation();

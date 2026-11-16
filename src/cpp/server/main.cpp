@@ -1,12 +1,8 @@
-#include <iostream>
-#include <csignal>
-#include <atomic>
-#include <chrono>
-#include <thread>
+#include <lemon/server.h>
+
 #include <lemon/cli_parser.h>
 #include <lemon/config_file.h>
 #include <lemon/logging_config.h>
-#include <lemon/server.h>
 #include <lemon/system_info.h>
 #include <lemon/utils/aixlog.hpp>
 #include <lemon/utils/http_client.h>
@@ -14,6 +10,13 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/version.h>
 #include "telemetry.h"
+
+#include <atomic>
+#include <cerrno>
+#include <chrono>
+#include <csignal>
+#include <iostream>
+#include <thread>
 
 #if defined(__GLIBC__)
 #include <cstdlib>
@@ -23,6 +26,22 @@
 
 #ifndef _WIN32
 #include <unistd.h>
+void start_parent_watchdog(int fd) {
+    if (fd >= 0) {
+        // Blocks until the parent dies and the OS closes the pipe write end.
+        std::thread([fd]() {
+            char buf;
+            ssize_t res;
+            do {
+                res = read(fd, &buf, 1);
+            } while (res < 0 && errno == EINTR);
+            if (res <= 0) {
+                std::cerr << "[Watchdog] Parent process died or closed pipe. Shutting down." << std::endl;
+                std::raise(SIGTERM);
+            }
+        }).detach();
+    }
+}
 #endif
 
 using namespace lemon;
@@ -139,6 +158,10 @@ int main(int argc, char** argv) {
 
         auto cli_config = parser.get_config();
 
+#ifndef _WIN32
+        start_parent_watchdog(cli_config.watchdog_fd);
+#endif
+
         // Initialize logging early with INFO so config loading messages are captured
         {
             auto early_filter = AixLog::Filter(AixLog::Severity::info);
@@ -148,8 +171,7 @@ int main(int argc, char** argv) {
 
         utils::set_cache_dir(cli_config.cache_dir);
         utils::set_config_dir(cli_config.config_dir);
-        utils::migrate_legacy_json_files_to_config_dir(cli_config.cache_dir,
-                                                       cli_config.config_dir);
+        utils::migrate_legacy_paths(cli_config.cache_dir, cli_config.config_dir);
         json config_json = ConfigFile::load(cli_config.cache_dir,
                                             cli_config.config_dir);
 
@@ -165,9 +187,22 @@ int main(int argc, char** argv) {
         if (cli_config.broadcast.has_value()) {
             config->set_broadcast_override(cli_config.broadcast);
         }
+        if (!cli_config.log_file.empty()) {
+            config->set_log_file_override(cli_config.log_file);
+        }
+        if (cli_config.log_max_file_size_mb != -1) {
+            config->set_log_max_file_size_mb_override(cli_config.log_max_file_size_mb);
+        }
+        if (cli_config.log_max_files != -1) {
+            config->set_log_max_files_override(cli_config.log_max_files);
+        }
 
-        // Initialize logging with the configured level — console + file + log hub
-        configure_application_logging(config->log_level(), LoggingMode::direct_server);
+        // Initialize logging with configured level and rotation limits
+        LogRotationConfig rot_cfg;
+        rot_cfg.file_mode = config->log_file();
+        rot_cfg.max_file_size_mb = static_cast<size_t>(config->log_max_file_size_mb());
+        rot_cfg.max_files = static_cast<size_t>(config->log_max_files());
+        configure_application_logging(config->log_level(), LoggingMode::direct_server, rot_cfg);
 
         utils::set_models_dir(config->models_dir());
 
@@ -178,6 +213,9 @@ int main(int argc, char** argv) {
         LOG(INFO) << "  Port: " << config->port() << std::endl;
         LOG(INFO) << "  Host: " << config->host() << std::endl;
         LOG(INFO) << "  Log level: " << config->log_level() << std::endl;
+        LOG(INFO) << "  Log file mode: " << config->log_file() << std::endl;
+        LOG(INFO) << "  Log max file size: " << config->log_max_file_size_mb() << " MB" << std::endl;
+        LOG(INFO) << "  Log max files: " << config->log_max_files() << std::endl;
         if (!config->extra_models_dir().empty()) {
             LOG(INFO) << "  Extra models dir: " << config->extra_models_dir() << std::endl;
         }

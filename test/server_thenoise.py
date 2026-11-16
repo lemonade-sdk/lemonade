@@ -175,8 +175,8 @@ class TheNoiseTests(ServerTestBase):
         assert_valid_png(self, result["data"][0]["b64_json"], "seed=12345")
         print(f"[OK] Image generation with explicit seed successful")
 
-    def test_007_models_endpoint_returns_image_defaults(self):
-        """Test that /models returns image_defaults for the TheNoise model."""
+    def test_007_models_endpoint_returns_generation_options(self):
+        """Test that /models returns generation options for the TheNoise model."""
         response = requests.get(
             f"{self.base_url}/models?show_all=true",
             timeout=TIMEOUT_DEFAULT,
@@ -197,12 +197,14 @@ class TheNoiseTests(ServerTestBase):
                 break
 
         self.assertIsNotNone(model, f"TheNoise model not found in /models response")
-        self.assertIn("image_defaults", model, "Model should have image_defaults")
-        defaults = model["image_defaults"]
-        self.assertIn("steps", defaults, "image_defaults should have steps")
-        self.assertIn("width", defaults, "image_defaults should have width")
-        self.assertIn("height", defaults, "image_defaults should have height")
-        print(f"[OK] {THENOISE_MODEL} image_defaults verified: {defaults}")
+        options = model.get("recipe_options", {})
+        self.assertIn("steps", options, "recipe_options should have steps")
+        self.assertIn("width", options, "recipe_options should have width")
+        self.assertIn("height", options, "recipe_options should have height")
+        self.assertIn(
+            "soft_pixel_cap", options, "recipe_options should have soft_pixel_cap"
+        )
+        print(f"[OK] {THENOISE_MODEL} generation options verified: {options}")
 
     @skip_heavy
     def test_008_negative_prompt(self):
@@ -288,61 +290,6 @@ class TheNoiseTests(ServerTestBase):
             self.assertIn("b64_json", entry)
             assert_valid_png(self, entry["b64_json"], "multi-image")
         print(f"[OK] Image generation with n=2 successful")
-
-    def test_013_image_edits_unsupported(self):
-        """Test that /images/edits returns an error (TheNoise is text2image only)."""
-        response = requests.post(
-            f"{self.base_url}/images/edits",
-            files={"image": ("test.png", b"\x89PNG\r\n\x1a\n", "image/png")},
-            data={
-                "model": THENOISE_MODEL,
-                "prompt": "a red circle",
-                "size": "256x256",
-                "response_format": "b64_json",
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-
-        self.assertEqual(
-            response.status_code,
-            500,
-            f"Expected 500 for unsupported image edit, got {response.status_code}: {response.text}",
-        )
-        self.assertIn(
-            "not supported",
-            response.text.lower(),
-            f"Error should mention edits are not supported: {response.text}",
-        )
-        print(
-            f"[OK] Correctly rejected image edit as unsupported: {response.status_code}"
-        )
-
-    def test_014_image_variations_unsupported(self):
-        """Test that /images/variations returns an error (TheNoise is text2image only)."""
-        response = requests.post(
-            f"{self.base_url}/images/variations",
-            files={"image": ("test.png", b"\x89PNG\r\n\x1a\n", "image/png")},
-            data={
-                "model": THENOISE_MODEL,
-                "size": "256x256",
-                "response_format": "b64_json",
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-
-        self.assertEqual(
-            response.status_code,
-            500,
-            f"Expected 500 for unsupported image variations, got {response.status_code}: {response.text}",
-        )
-        self.assertIn(
-            "not supported",
-            response.text.lower(),
-            f"Error should mention variations are not supported: {response.text}",
-        )
-        print(
-            f"[OK] Correctly rejected image variations as unsupported: {response.status_code}"
-        )
 
 
 if __name__ == "__main__":

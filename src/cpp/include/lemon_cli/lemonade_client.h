@@ -63,6 +63,8 @@ struct BackendStatus {
     std::string version;
     std::string message;
     std::string action;
+    std::string tier;    // "core", "experimental" or "guest"
+    std::string format;  // "native", "python" or "container"
 };
 
 // Recipe status structure
@@ -113,6 +115,7 @@ public:
 
     // Recipe/backend commands
     int list_recipes(bool show_all = false) const;
+    int show_backend_info(const std::string& recipe, const std::string& backend) const;
     int install_backend(const std::string& recipe, const std::string& backend, bool force = false);
     int uninstall_backend(const std::string& recipe, const std::string& backend);
 
@@ -128,7 +131,8 @@ public:
                                 const std::string& api_key = "",
                                 bool allow_insecure_http = false,
                                 const std::optional<std::string>& auth_header_name = std::nullopt,
-                                const std::optional<std::string>& auth_header_prefix = std::nullopt);
+                                const std::optional<std::string>& auth_header_prefix = std::nullopt,
+                                const std::optional<std::string>& wire_format = std::nullopt);
     int uninstall_cloud_provider(const std::string& provider);
     int cloud_auth(const std::string& provider,
                    const std::string& api_key,

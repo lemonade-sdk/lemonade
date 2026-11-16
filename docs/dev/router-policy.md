@@ -62,6 +62,9 @@ A **rule** is `{ id, match, route_to, outputs? }`. `route_to` must be one of
 
 A `match` is a match-expression. Combine with the logical operators `any` (OR),
 `all` (AND), and `not`; a leaf object with several keys is an implicit `all`.
+The order in which the keys of such a leaf are evaluated is not specified, so
+its entries in the decision trace may change between versions. The children of
+an explicit `all` or `any` run in list order.
 
 **Deterministic (no model needed):**
 
@@ -71,7 +74,7 @@ A `match` is a match-expression. Combine with the logical operators `any` (OR),
 | `regex` | ECMAScript regex over the input. |
 | `min_chars` / `max_chars` | Input length in UTF-8 bytes. |
 | `min_total_chars` / `max_total_chars` | Length of **all** text in the request, in UTF-8 bytes. |
-| `has_tools` / `has_images` | Boolean - request carries tools / images. |
+| `has_tools` / `has_images` | Boolean - request carries a non-empty `tools` array / image content parts. |
 | `metadata` | `{ key, equals \| any \| exists }` over the request's OpenAI `metadata`. |
 
 The text conditions above - `keywords_any` / `keywords_all`, `regex`, and the
@@ -96,6 +99,8 @@ window, estimate ~4 bytes per token.
 |------|---------|
 | `semantic_similarity` | Cosine similarity of the input against labelled `reference_phrases`, via an embedding model. |
 | `classifier` | A `{label: score}` classifier — an encoder model via the `onnxruntime` backend (`/v1/classify`), or any model as an LLM-as-classifier via chat. |
+| `zero_shot` | Scores the input against the `labels` **you** declare, sent with each request. Supports two kinds of zero-shot model: an LFM2 prompt router that reads the labels and the text together in a single pass, on the `onnxruntime` backend, and a llama.cpp decision model (`systemone` label). No LLM fallback. |
+| `systemone` | One typed question (`choice`, `noul`, or `score`) with your own instructions, answered by a llama.cpp decision model through `/v1/systemone`. Its labels are the question's options. |
 | `llm` | An LLM picks exactly one of the declared `labels` for the request (with a rationale); the chosen label scores `1.0`, the rest `0`. You supply the `model` and a `prompt` describing when to choose each label. |
 
 A classifier condition is a band test: `{ "classifier": "<id>", "label": "<name>",
@@ -156,6 +161,24 @@ and every entry's `model` must be one of `components`:
 - `classifier` uses the model's `{label: score}` output; declare its `labels`
   (an onnxruntime encoder serves `/v1/classify`, else it runs as an
   LLM-as-classifier via chat).
+- `zero_shot` sends your `labels` to the model on every request: the model has
+  no per-label head to read them off, so the label list is an input to the graph.
+  Lemonade ships
+  [`LFM2.5-Encoder-350M-Prompt-Router-ONNX`](https://huggingface.co/lemonade-sdk/LFM2.5-Encoder-350M-Prompt-Router-ONNX)
+  for it. Its model must carry the `zero-shot` label or be a llama.cpp decision
+  model, and a `classifier`'s model must be neither: each kind of model refuses the other's request, so
+  registration refuses either mismatch.
+
+  Every classifier's `labels` are checked at registration: unique, not blank,
+  and free of control characters because a label the backend would reject
+  turns every request into an `on_error` fallback. **How many** labels a
+  zero-shot model accepts, and how long each may be, is not checked here: both
+  derive from that model's token window and are tunable per model, so the model
+  enforces them and names the numbers in its error.
+- `systemone`: the `model` must be a llama.cpp decision model (labels
+  `classification` and `systemone`), checked when the policy is registered. An
+  ONNX classifier is refused, and so is a downloaded GGUF whose decision type the
+  bundled llama.cpp cannot load.
 - `llm` shows the request to an LLM and asks it to choose one of `labels` (the
   chosen label scores `1.0`). Because it produces a plain label, it's a
   **composable signal** — combine it with any other condition, as in
@@ -163,11 +186,99 @@ and every entry's `model` must be one of `components`:
   request context and the label set, so the prompt just needs to say when to pick
   each label; a malformed reply fails open to `default_model`.
 
+  A `type: "llm"` classifier's judge never sees `has_tools`/`has_images`
+  (#2789) — not even when a sibling condition composes the deterministic leaf
+  in the *same* rule, as `risky-tool-calls-stay-local` does above; exposing
+  them there would feed the judge the very signal the rule already checks
+  deterministically, biasing the label from their mere presence. Write
+  `prompt` with an explicit criterion instead (as `risk` does above: "risk
+  for tool execution", not just "risk"), and compose the `has_tools`/
+  `has_images` leaf alongside the classifier when a request feature should
+  affect routing, exactly as shown above.
+
 > A `type: "llm"` classifier and the [`routing.router`](#llm-as-router-routingrouter)
 > block are the two LLM forms. `routing.router` picks the final candidate itself
 > and replaces rules entirely (it's shorthand for a single `llm` classifier whose
 > labels are the candidate models); a `type: "llm"` classifier only produces a
 > label that rules combine with any other condition.
+
+### Truncated input (`on_truncation`)
+
+The model-backed types, `classifier`, `zero_shot` and `systemone`, read a token
+window. When the input overflows it, the backend cuts the text (never the
+labels) and reports the cut, and each type loses a different part:
+
+| Type | The cut keeps | What disappears |
+|---|---|---|
+| `zero_shot` on ort-server | the head and the tail, with `\n...\n` between | the middle |
+| `classifier` | the head, plus the final separator | **the end** |
+| `systemone`, and `zero_shot` on a decision model | depends on the decision type, below | |
+
+A score computed from cut text is still a *success*, so `on_error` never sees
+it. `on_truncation` decides what the cut means:
+
+| Value | Behaviour |
+|---|---|
+| `score` (default) | Use the scores anyway. Fine for topic routing. |
+| `fail` | Treat the cut as an evaluation failure, so `on_error` applies. |
+
+`fail` also needs a backend that reports its cuts. ort-server does from 0.4.0.
+An older ort-server cuts without saying so, and lemond warns when it loads one.
+Against it, every evaluation under `fail` counts as a failure, so `on_error`
+applies. `score` is unaffected. Most llama.cpp decision models, Laya and
+Julia-1 among them, and FastFlowLM's d3 models refuse a text that is too long,
+so they report `false`. `lfm2-d1-omni`, and `h2o-lightning` for a text over
+32,000 bytes, can cut it without saying so, so they report nothing and `fail`
+fails closed.
+
+`LFM2.5-Encoder-350M-Prompt-Router-ONNX` has a default 2,048-token window, so a text
+longer than about 8,000 characters is cut. To raise it, pass
+`--onnxruntime-args "--max-length 4096"`; memory grows with the square of the
+window.
+
+An encoder decision model (Laya, Julia-1, the `vllm-d3` models) reads at most
+4,096 tokens per input by default, whatever its context size, and refuses a
+longer one. To raise it, pass `--llamacpp-args "-b 8192 -ub 8192"`.
+
+The other types never read a token window and refuse the option. A `classifier`
+backed by a chat LLM refuses it too: a chat model reports no cut, so `fail`
+could never fire.
+
+For a privacy rule, where a missed entity is a leak rather than a wrong model,
+pair `fail` with `on_error: match_true`. That forces the condition true and
+**fires the rule**, which protects the request only when all three hold:
+
+1. The rule routes to a **local** model. A rule that fires into a cloud model
+   sends the whole uncut prompt there.
+2. The engine reaches the rule **before** any cloud rule. Rules are read in
+   order and the first match wins, so a cloud rule placed above this one takes
+   the request first and the guard never runs.
+3. The personal data is in the **routing input**. The classifier reads only the
+   last user message, so data in an earlier turn is never scored.
+
+The example shows how the two settings combine, not a PII detector to deploy.
+`LFM2.5-Encoder-350M-Prompt-Router-ONNX` is a prompt router: it has not been
+validated for PII, and its scores depend on how the labels are worded. For a
+real privacy rule, use a classifier trained and evaluated for PII; the same
+`on_truncation` and `on_error` settings apply to it.
+
+```json
+"classifiers": [
+  { "id": "pii", "type": "zero_shot", "model": "LFM2.5-Encoder-350M-Prompt-Router-ONNX",
+    "labels": ["contains personal identifiable information", "general question"],
+    "on_truncation": "fail", "on_error": "match_true" },
+  { "id": "topic", "type": "zero_shot", "model": "LFM2.5-Encoder-350M-Prompt-Router-ONNX",
+    "labels": ["code", "general"] }
+],
+"rules": [
+  { "id": "pii-to-local",
+    "match": { "classifier": "pii", "label": "contains personal identifiable information", "min_score": 0.5 },
+    "route_to": "LocalLLM" },
+  { "id": "code-to-cloud",
+    "match": { "classifier": "topic", "label": "code" },
+    "route_to": "CloudLLM" }
+]
+```
 
 ## Registering and invoking
 
@@ -189,7 +300,7 @@ client.chat.completions.create(model="user.My-Router", messages=[...])
 
 ## Testing a policy before registering it
 
-[`POST /v1/routing/validate`](../api/lemonade.md#post-v1routingvalidate) evaluates a
+[`POST /v1/routing/validate`](../api/router.md#post-v1routingvalidate) evaluates a
 policy document against a prompt and returns the decision plus its full trace,
 without registering the policy or dispatching the user request to the selected
 candidate. Component names are accepted without resolving against the model
@@ -227,6 +338,20 @@ also carries an **`x_lemonade_route`** object:
 `route_to` is the candidate that actually answered. For streaming responses the
 same object is attached to the first SSE event as `x_lemonade_route`.
 
+A failing **`classifier`**, **`zero_shot`** or **`systemone`** condition adds an **`error`** string
+to its own trace entry, naming the reason the backend gave. Without it a failed
+condition and one that simply scored below its threshold both read as
+`"result": false`, and `on_error` hides which of the two happened.
+
+A **`classifier`**, **`zero_shot`** or **`systemone`** entry also carries
+**`truncated`**: `true` when the backend cut the input text to fit its token
+window before scoring, `false` when it scored the whole input. A model never
+cuts its labels, a label pooled from half its tokens would score something the
+model only partly read: ort-server and a `laya` decision model refuse a label,
+an option or a question too long to read whole. The key is absent when the
+backend does not report cuts (ort-server before 0.4.0, or a chat LLM), so its
+absence means "unknown".
+
 ## Cloud candidates
 
 A candidate may be a cloud model — the router derives the route category from the
@@ -254,6 +379,17 @@ directly; any other model backing a `classifier` is used as an LLM-as-classifier
 via chat. The classifier's model must be able to serve one of those paths, and
 that capability is checked when the collection is registered.
 
+The `zero_shot` condition runs the same backend, but only
+`ModelType::CLASSIFICATION` satisfies it, a chat model cannot score a label
+list it is handed at request time, so there is no fallback to substitute.
+
+The `systemone` condition calls `/v1/systemone` on a llama.cpp decision model,
+which deploys as `ModelType::CLASSIFICATION`. llama-server builds the prompt from
+the template in the GGUF. Lemonade sends the question as the policy wrote it.
+The option order changes the scores, and a stored policy sorts object keys, so
+a `choice` question's `criteria` must be an array:
+`["billing", {"shipping": "where an order is"}]`.
+
 ## LLM-as-router (`routing.router`)
 
 Instead of authoring rules, you can hand the decision to a small LLM. Provide a
@@ -275,3 +411,17 @@ The router `model` must be one of `components`. At request time the engine asks 
 to pick a candidate, and that desugars into the same first-match engine and
 `Decision`/trace as the rule form. `routing.router.type` must be `"llm"`, and the
 block is **mutually exclusive** with `routing.rules` and `routing.classifiers`.
+
+Unlike a `type: "llm"` classifier (which never receives `has_tools`/
+`has_images`, see above), the router always does: it's the sole decision
+mechanism here, so `prompt` can rely on them directly — e.g. "use Vision-GGUF
+when the request includes images."
+
+## Request Cancellation & Connection Robustness
+
+When an OpenAI-compatible HTTP client disconnects or times out mid-request:
+1. **Socket Progress Interception**: `utils::HttpClient` progress callbacks (`CURLOPT_XFERINFOFUNCTION`) monitor client socket liveness during prefill and generation for both streaming and non-streaming requests.
+2. **Upstream Transfer Abort**: Detecting client disconnect immediately aborts the active upstream HTTP transfer to the backend, enabling the backend process to reclaim execution slots without re-entering `Router` mutex scopes.
+3. **Isolated Disconnect Handling**: Non-streaming client disconnects return a clean HTTP 400 "Request cancelled by client" response (`ErrorType::INVALID_REQUEST`); streaming disconnects end the SSE stream. Neither triggers a nuclear model reload nor disrupts concurrent clients.
+
+This guarantee currently covers the OpenAI-compatible non-streaming endpoints (`chat/completions`, `completions`, `responses`). Non-streaming paths through the Anthropic/Ollama/MCP gateways and streaming Omni (which runs inside the SSE content-provider after the handler scope ends) are not yet covered.

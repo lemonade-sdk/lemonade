@@ -46,6 +46,8 @@ CAPABILITIES = {
                 "metal",
                 "cpu",
                 "system",
+                "nathanw",
+                "halobox",
             ],
             "supports": {
                 "chat_completions": True,
@@ -59,8 +61,8 @@ CAPABILITIES = {
                 "embeddings": True,
                 "embeddings_batch": True,
                 "reranking": True,
-                "tool_calls": False,
-                "tool_calls_streaming": False,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
                 "multi_model": True,
                 "stop_parameter": True,
                 "echo_parameter": False,
@@ -71,9 +73,116 @@ CAPABILITIES = {
             },
             "test_models": {
                 "llm": "LFM2-1.2B-GGUF",
+                "tool_calling": "Qwen3-4B-Instruct-2507-GGUF",
                 "embedding": "nomic-embed-text-v2-moe-GGUF",
                 "reranking": "jina-reranker-v1-tiny-en-GGUF",
             },
+        },
+        "llamacpp-hrx": {
+            "backends": ["hrx"],
+            "supports": {"chat_completions": True},
+            "test_models": {
+                "llm": "Meta-Llama-3.1-8B-Instruct-HRX",
+            },
+        },
+        # The fork serves llama-server's surface for chat models only. Its models
+        # reason, so thinking is turned off for the run as for ds4 below.
+        "rocmfpx": {
+            "backends": ["rocm"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "multi_model": True,
+                "stop_parameter": True,
+                "slots": True,
+                "tokenize": True,
+                "static_max_context_window": True,
+            },
+            "test_models": {
+                "llm": "Qwen3.8-27B-ROCmFP4-STRIX-MTP",
+            },
+            "chat_extra_body": {"enable_thinking": False},
+            "responses_extra_body": {"reasoning": {"effort": "none"}},
+        },
+        "halogen": {
+            "backends": ["rocm"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "host_exclusive": True,
+                "stop_parameter": True,
+                "static_max_context_window": True,
+            },
+            "test_models": {
+                "llm": "Qwen3.8-Flash-Next-Halogen",
+            },
+            "chat_extra_body": {"enable_thinking": False},
+            "responses_extra_body": {"reasoning": {"effort": "none"}},
+        },
+        # gufo serves its own OpenAI-compatible surface: no slots or tokenize.
+        "gufo": {
+            "backends": ["rocm"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "multi_model": True,
+                "stop_parameter": True,
+                "static_max_context_window": True,
+            },
+            "test_models": {
+                "llm": "Qwen3.8-27B-Gufo",
+            },
+            "chat_extra_body": {"enable_thinking": False},
+            "responses_extra_body": {"reasoning": {"effort": "none"}},
+        },
+        # A reasoning model, with thinking turned off for the run: the tests'
+        # small token budgets would otherwise land entirely in reasoning.
+        "ds4": {
+            "backends": ["rocm"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "multi_model": True,
+                "stop_parameter": True,
+                "static_max_context_window": False,
+            },
+            "test_models": {
+                "llm": "DeepSeek-V4-Flash-Vision-IQ2XXS-DS4",
+            },
+            "chat_extra_body": {"enable_thinking": False},
+            "responses_extra_body": {"reasoning": {"effort": "none"}},
         },
         "ryzenai": {
             "backends": ["cpu", "hybrid", "npu"],
@@ -118,8 +227,8 @@ CAPABILITIES = {
                 "embeddings": True,
                 "embeddings_batch": False,
                 "reranking": False,
-                "tool_calls": False,
-                "tool_calls_streaming": False,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
                 "multi_model": False,
                 "stop_parameter": False,
                 "echo_parameter": False,
@@ -129,6 +238,7 @@ CAPABILITIES = {
             },
             "test_models": {
                 "llm": "llama3.2-1b-FLM",
+                "tool_calling": "qwen3-it-4b-FLM",
                 "embedding": "embed-gemma-300m-FLM",
             },
         },
@@ -184,7 +294,7 @@ CAPABILITIES = {
             },
         },
         "thenoise": {
-            "backends": ["rocm"],
+            "backends": ["rocm", "cuda"],
             "supports": {
                 "image_generation": True,
                 "image_generation_b64": True,
@@ -213,6 +323,23 @@ CAPABILITIES = {
                 "audio_generation": "ACE-Step-Music",
             },
         },
+        "openmoss": {
+            "backends": ["vulkan", "cuda"],
+            # Keep the duplicate backend's flat fallback a superset of its TTS
+            # entry because _build_flat_capabilities() intentionally keeps the
+            # first modality occurrence for duplicate backend names.
+            "supports": {
+                "audio_generation": True,
+                "pcm_audio_generation": True,
+                "tts": True,
+                "voice_cloning": True,
+                "voice_design": True,
+            },
+            "test_models": {
+                "audio_generation": "MOSS-SoundEffect",
+                "tts": "OpenMOSS-TTS",
+            },
+        },
     },
     "model3d": {
         "trellis": {
@@ -233,17 +360,55 @@ CAPABILITIES = {
             },
             "test_models": {
                 "classification": "Phishing-Email-Detection-ONNX",
+                "zero_shot_classification": "LFM2.5-Encoder-350M-Prompt-Router-ONNX",
+            },
+        },
+    },
+    # SystemOne decision models: a model that deploys as classification and
+    # answers /v1/systemone (llama.cpp b11361 or later, or FLM's d3 models).
+    "systemone": {
+        "llamacpp": {
+            "backends": ["cpu", "vulkan", "rocm", "metal"],
+            "supports": {
+                "systemone": True,
+                "classify_labels": True,
+                "laya_decision_type": True,
+            },
+            "test_models": {
+                "systemone": "Laya-GGUF",
+                "systemone_router": "Laya-GGUF",
+                "llm": "Tiny-Test-Model-GGUF",
+                "llm_capable": "Qwen3-0.6B-GGUF",
+            },
+        },
+        # d3 decision models on the NPU (`flm serve --decision`, FLM 1.0.11 or
+        # later).
+        "flm": {
+            "backends": ["npu"],
+            "supports": {
+                "systemone": True,
+                "classify_labels": True,
+                "laya_decision_type": False,
+            },
+            "test_models": {
+                "systemone": "d3-lite-FLM",
+                "systemone_router": "d3-lite-FLM",
+                "llm": "llama3.2-1b-FLM",
+                "llm_capable": "qwen3-1.7b-FLM",
             },
         },
     },
     "tts": {
         "openmoss": {
-            "backends": ["vulkan", "rocm", "cuda"],
+            "backends": ["vulkan", "cuda"],
             "supports": {
                 "tts": True,
                 "voice_cloning": True,
                 "voice_design": True,
             },
+            # Integrated voice design is exercised through the speech model. Keep
+            # the legacy standalone id for compatibility until the GUI migration
+            # removes MOSS-VoiceGen in its own PR.
             "test_models": {
                 "tts": "OpenMOSS-TTS",
                 "tts_design": "MOSS-VoiceGen",
@@ -374,9 +539,18 @@ def get_test_model(
     if model_type in test_models:
         return test_models[model_type]
 
+    if model_type == "tool_calling":
+        return get_test_model("llm", wrapped_server, backend, modality)
+
     raise ValueError(
         f"No test model found for type '{model_type}' with wrapped_server='{wrapped_server}', backend='{backend}'"
     )
+
+
+def get_extra_body(api: str) -> dict:
+    """Request fields the current wrapped server needs on every `api` request
+    ("chat" or "responses")."""
+    return get_capabilities().get(f"{api}_extra_body", {})
 
 
 def skip_if_unsupported(feature: str):

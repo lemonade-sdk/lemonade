@@ -67,13 +67,14 @@ Use the smallest model that exercises the code path. Suites that run on GitHub-h
 | Changes WebSocket / Realtime behavior | `test/test_websocket_idle.py`, `test/server_websocket_auth.py` |
 | Changes streaming error handling | `test/server_streaming_errors.py` |
 | Changes model downloads or registry search | `test/server_downloads.py` |
+| Changes how container backends run (`ContainerManager`, `ContainerProcess`) | `test/cpp/test_container_manager.cpp`, and `test/server_containers.py`, which the `test-container-smoke` job runs against rootless Podman, rootful Podman and Docker on hosted runners |
 | Changes API key authentication | `test/server_cli_apikey.py`, `test/server_websocket_auth.py` |
 | Adds pure C++ logic (parsers, arg resolvers, utilities) | `test/cpp/test_<thing>.cpp`, declared via `add_cpp_ci_test()` in `CMakeLists.txt` |
 | Changes `server_models.json` | Update `test/utils/test_models.py` and `test/utils/capabilities.py` if tests reference the affected models |
 | Changes the desktop or web UI | `npm run typecheck` must pass; add a `test/app/app-regression/*.test.cjs` regression test where practical |
 | Fixes a bug | A numbered regression test in whichever suite above owns the surface |
 | Changes a persisted JSON format | A schema-version assertion in the owning suite, so accidental format bumps are caught |
-| Docs only | No tests; `markdown-link-check` must pass |
+| Docs only | No tests; the Lychee link/anchor check must pass |
 
 ---
 
@@ -149,7 +150,7 @@ Packaging, distro, PPA, backend-validation, self-hosted inference and most macOS
 
 | Group | Gate check | Opt in on a PR with |
 |---|---|---|
-| Fedora RPM, Debian 13, Arch, openSUSE, Launchpad PPA, `Build Lemonade Desktop Installer` | `Packaging builds`, `Linux distro builds`, `Launchpad PPA builds` | `ci:distros` |
+| Fedora RPM, Debian 13, Launchpad PPA, `Build Lemonade Desktop Installer` | `Packaging builds`, `Launchpad PPA builds` | `ci:distros` |
 | macOS `.dmg`, `Test CLI/Endpoints (macos-latest)`, `Test Embeddable (macOS)`, `Test .dmg - macOS inference` | `macOS builds` | `ci:macos` |
 | llama.cpp, vLLM, stable-diffusion.cpp validation | `llama.cpp validation`, `vLLM validation`, `stable-diffusion.cpp validation` | `ci:upgrades` |
 | `Test .exe - *` and `Test .deb - *` inference suites on the self-hosted rigs | `Inference backend tests` | `ci:backends` |

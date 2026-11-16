@@ -20,11 +20,9 @@ import base64
 import os
 import struct
 import time
-import tempfile
 import wave
 
 import requests
-import urllib.request
 from openai import AsyncOpenAI
 
 from utils.server_base import (
@@ -37,7 +35,6 @@ from utils.capabilities import (
     get_test_model,
 )
 from utils.test_models import (
-    TEST_AUDIO_URL,
     PORT,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
@@ -67,36 +64,10 @@ def _get_whispercpp_backend():
 class WhisperTests(ServerTestBase):
     """Tests for Whisper audio transcription."""
 
-    # Class-level cache for the test audio file
-    _test_audio_path = None
-
-    @classmethod
-    def setUpClass(cls):
-        """Verify server and download test audio file once for all tests."""
-        super().setUpClass()
-
-        # Download test audio file to temp directory
-        cls._test_audio_path = os.path.join(tempfile.gettempdir(), "test_speech.wav")
-
-        if not os.path.exists(cls._test_audio_path):
-            print(f"\n[INFO] Downloading test audio file from {TEST_AUDIO_URL}")
-            try:
-                urllib.request.urlretrieve(TEST_AUDIO_URL, cls._test_audio_path)
-                print(f"[OK] Downloaded to {cls._test_audio_path}")
-            except Exception as e:
-                print(f"[ERROR] Failed to download test audio: {e}")
-                raise
-
-    @classmethod
-    def tearDownClass(cls):
-        """Cleanup test audio file."""
-        if cls._test_audio_path and os.path.exists(cls._test_audio_path):
-            try:
-                os.remove(cls._test_audio_path)
-                print(f"[INFO] Cleaned up test audio file")
-            except Exception:
-                pass  # Ignore cleanup errors
-        super().tearDownClass()
+    _test_audio_path = os.path.join(
+        os.path.dirname(__file__), "test_speech_whisper.wav"
+    )
+    _german_audio_path = os.path.join(os.path.dirname(__file__), "test_speech_de.wav")
 
     def _load_whisper_model_or_fail(self):
         """Load the configured Whisper model before positive transcription tests."""
@@ -206,15 +177,65 @@ class WhisperTests(ServerTestBase):
 
         print(f"[OK] Transcription with language=en: {result['text']}")
 
+    def test_002a_omitted_language_auto_detects(self):
+        """Test omitted language preserves a non-English transcription."""
+        wrapped_server = get_config().get("wrapped_server")
+        if wrapped_server not in (None, "whispercpp"):
+            self.skipTest("Language forwarding is specific to whispercpp")
+
+        self.assertTrue(
+            os.path.exists(self._german_audio_path),
+            f"German test audio not found at {self._german_audio_path}",
+        )
+        model = self._load_whisper_model_or_fail()
+
+        def transcribe(language=None):
+            data = {"model": model, "response_format": "verbose_json"}
+            if language is not None:
+                data["language"] = language
+
+            with open(self._german_audio_path, "rb") as audio_file:
+                response = requests.post(
+                    f"{self.base_url}/audio/transcriptions",
+                    files={"file": ("test_speech_de.wav", audio_file, "audio/wav")},
+                    data=data,
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"German transcription failed: {response.text}",
+            )
+            result = response.json()
+            self.assertIn("text", result)
+            return result["text"].strip().casefold()
+
+        omitted_text = transcribe()
+        auto_text = transcribe("auto")
+        english_text = transcribe("en")
+
+        for language, text in (
+            ("omitted", omitted_text),
+            ("auto", auto_text),
+        ):
+            with self.subTest(language=language):
+                self.assertIn("guten morgen", text)
+                self.assertIn("sonne", text)
+                self.assertIn("deutsch", text)
+
+        self.assertEqual(omitted_text, auto_text)
+        self.assertIn("good morning", english_text)
+        self.assertNotEqual(english_text, omitted_text)
+        print(f"[OK] Omitted language auto-detected German: {omitted_text}")
+
     def test_002b_transcription_response_formats(self):
         """Test audio transcription response_format handling."""
         self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
 
         model = _get_whisper_model()
-        # FLM ignores response_format and always answers with compact
-        # {model, text} JSON, so it cannot produce timestamped subtitles.
-        # Those formats are rejected up front and covered by
-        # test_002d_transcription_subtitle_formats_unsupported_on_flm.
+        # lemond refuses SRT and VTT on FLM, which
+        # test_002d_transcription_subtitle_formats_unsupported_on_flm covers.
         is_flm = get_config().get("wrapped_server") == "flm"
         formats = ["json", "verbose_json", "text"]
         if not is_flm:

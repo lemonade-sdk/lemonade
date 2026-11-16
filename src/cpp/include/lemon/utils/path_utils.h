@@ -41,6 +41,16 @@ bool looks_like_path(const std::string& v);
 std::string get_environment_variable_utf8(const std::string& name);
 
 /**
+ * Set an environment variable using platform-correct UTF-8 handling.
+ */
+void set_environment_variable_utf8(const std::string& name, const std::string& value);
+
+/**
+ * Remove an environment variable using platform-correct UTF-8 handling.
+ */
+void unset_environment_variable_utf8(const std::string& name);
+
+/**
  * Convert a UTF-8 path string to a std::filesystem::path.
  */
 std::filesystem::path path_from_utf8(const std::string& path);
@@ -88,6 +98,14 @@ std::string get_config_dir();
  */
 void migrate_legacy_json_files_to_config_dir(const std::string& cache_dir,
                                              const std::string& config_dir);
+
+/**
+ * Recover data left behind when an upgrade relocated the cache (issue #3387).
+ * Moves the pre-3028 home-based cache payload and HuggingFace models into the
+ * new cache/config/model directories. No-op when nothing was relocated.
+ */
+void migrate_legacy_paths(const std::string& cache_dir,
+                          const std::string& config_dir);
 
 /**
  * Set the models directory for HuggingFace model cache.

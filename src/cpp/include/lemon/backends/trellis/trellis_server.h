@@ -18,13 +18,11 @@ public:
     TrellisServer(const std::string& log_level,
                   ModelManager* model_manager,
                   BackendManager* backend_manager);
-    ~TrellisServer() override;
 
     void load(const std::string& model_name,
               const ModelInfo& model_info,
               const RecipeOptions& options,
               bool do_not_upgrade) override;
-    void unload() override;
 
     void model_3d_generations(const json& request, httplib::DataSink& sink) override;
 

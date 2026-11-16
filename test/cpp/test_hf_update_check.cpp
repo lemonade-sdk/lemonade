@@ -58,7 +58,7 @@ int main() {
             "config.json", "tokenizer.json", "README.md",
         };
         const auto files =
-            rf::select_main_repo_files("vendor/repo", "llamacpp", "model-Q4_K_M.gguf", repo_files);
+            rf::select_main_repo_files("vendor/repo", "model-Q4_K_M.gguf", repo_files);
         check("selects the resolved variant", has(files, "model-Q4_K_M.gguf"));
         check("auto-includes config.json and tokenizer.json",
               has(files, "config.json") && has(files, "tokenizer.json"));
@@ -74,7 +74,7 @@ int main() {
             "big-Q4_K_M-00001-of-00003.gguf", "big-Q4_K_M-00002-of-00003.gguf",
             "big-Q4_K_M-00003-of-00003.gguf", "model-Q2_K.gguf", "config.json",
         };
-        const auto files = rf::select_main_repo_files("vendor/repo", "llamacpp", "Q4_K_M", repo_files);
+        const auto files = rf::select_main_repo_files("vendor/repo", "Q4_K_M", repo_files);
         check("shard family is expanded from the quantization name",
               has(files, "big-Q4_K_M-00001-of-00003.gguf") &&
                   has(files, "big-Q4_K_M-00002-of-00003.gguf") &&
@@ -86,7 +86,7 @@ int main() {
     // No variant and no backend-specific selection means the whole repository.
     {
         const std::vector<std::string> repo_files = {"a.gguf", "config.json"};
-        const auto files = rf::select_main_repo_files("vendor/repo", "llamacpp", "", repo_files);
+        const auto files = rf::select_main_repo_files("vendor/repo", "", repo_files);
         check("empty variant selects the whole repository", files.size() == repo_files.size());
     }
 
@@ -94,12 +94,12 @@ int main() {
     {
         const std::vector<std::string> repo_files = {"model.safetensors", "config.json"};
         const auto files =
-            rf::select_main_repo_files("vendor/repo", "llamacpp", "model.safetensors", repo_files);
+            rf::select_main_repo_files("vendor/repo", "model.safetensors", repo_files);
         check("direct file variant is selected",
               has(files, "model.safetensors") && has(files, "config.json"));
         bool threw = false;
         try {
-            rf::select_main_repo_files("vendor/repo", "llamacpp", "missing.safetensors", repo_files);
+            rf::select_main_repo_files("vendor/repo", "missing.safetensors", repo_files);
         } catch (const std::runtime_error&) {
             threw = true;
         }
@@ -117,7 +117,7 @@ int main() {
             "README.md",
         };
         const auto files = rf::select_main_repo_files(
-            "vendor/repo", "moonshine", "medium-streaming-en/quantized", latest_files);
+            "vendor/repo", "medium-streaming-en/quantized", latest_files);
         check("directory checkpoint selects its subtree", files.size() == 3);
         check("a file added upstream inside the directory is selected",
               has(files, "medium-streaming-en/quantized/added_upstream.onnx"));
@@ -134,7 +134,7 @@ int main() {
             "medium-streaming-en/quantized/model.onnx",
         };
         const auto files = rf::select_main_repo_files_union(
-            "vendor/repo", "moonshine", "medium-streaming-en/quantized", old_files, new_files);
+            "vendor/repo", "medium-streaming-en/quantized", old_files, new_files);
         check("a file removed from the new revision stays in the union",
               has(files, "medium-streaming-en/quantized/tokens.json"));
         check("the surviving file is still in the union",
@@ -150,7 +150,7 @@ int main() {
             "big-Q4_K_M-00001-of-00002.gguf", "config.json",
         };
         const auto files = rf::select_main_repo_files_union(
-            "vendor/repo", "llamacpp", "Q4_K_M", old_files, new_files);
+            "vendor/repo", "Q4_K_M", old_files, new_files);
         check("a shard removed from the new revision stays in the union",
               has(files, "big-Q4_K_M-00002-of-00002.gguf"));
     }
@@ -162,7 +162,7 @@ int main() {
             "model-Q4_K_M.gguf", "config.json", "tokenizer.json",
         };
         const auto files = rf::select_main_repo_files_union(
-            "vendor/repo", "llamacpp", "model-Q4_K_M.gguf", old_files, new_files);
+            "vendor/repo", "model-Q4_K_M.gguf", old_files, new_files);
         std::size_t model_count = 0;
         for (const auto& f : files) {
             if (f == "model-Q4_K_M.gguf") ++model_count;
@@ -178,7 +178,7 @@ int main() {
         bool threw = false;
         try {
             rf::select_main_repo_files_union(
-                "vendor/repo", "llamacpp", "model.safetensors", old_files, new_files);
+                "vendor/repo", "model.safetensors", old_files, new_files);
         } catch (const std::runtime_error&) {
             threw = true;
         }
@@ -198,7 +198,7 @@ int main() {
         };
         const std::vector<std::string> new_files = {"model-Q4_K_M.gguf", "config.json"};
         const auto merged = rf::merge_reuse_comparison_files(
-            base_files, "vendor/repo", "llamacpp", "model-Q4_K_M.gguf", old_files, new_files);
+            base_files, "vendor/repo", "model-Q4_K_M.gguf", old_files, new_files);
         check("a same-repository auxiliary checkpoint is kept in the comparison",
               has(merged, "mmproj-F16.gguf"));
         check("a main artifact is not dropped", has(merged, "model-Q4_K_M.gguf"));
@@ -210,7 +210,7 @@ int main() {
         const std::vector<std::string> old_files = {"model-Q4_K_M.gguf", "config.json"};
         const std::vector<std::string> new_files = {"model-Q4_K_M.gguf", "config.json"};
         const auto merged = rf::merge_reuse_comparison_files(
-            base_files, "vendor/repo", "llamacpp", "model-Q4_K_M.gguf", old_files, new_files);
+            base_files, "vendor/repo", "model-Q4_K_M.gguf", old_files, new_files);
         std::size_t model_count = 0;
         for (const auto& f : merged) {
             if (f == "model-Q4_K_M.gguf") ++model_count;
@@ -263,7 +263,9 @@ int main() {
             {"draft", "vendor/aux:draft-Q4_K_M.gguf"},
             {"npu_cache", "vendor/cache:should-not-appear"},
         };
-        const auto grouped = rf::group_aux_checkpoint_variants(checkpoints);
+        // Whisper is the recipe that fetches a side cache on first use, so this is
+        // the recipe whose pull must leave it out.
+        const auto grouped = rf::group_aux_checkpoint_variants("whispercpp", checkpoints);
         check("auxiliary checkpoints are grouped by their own repository",
               grouped.size() == 1 && grouped.count("vendor/aux") == 1);
         check("all auxiliary variants are listed",
@@ -276,7 +278,7 @@ int main() {
             {"main", "vendor/main:Q4_K_M"},
             {"mmproj", "vendor/main:mmproj-F16.gguf"},
         };
-        const auto grouped = rf::group_aux_checkpoint_variants(checkpoints);
+        const auto grouped = rf::group_aux_checkpoint_variants("llamacpp", checkpoints);
         check("a same-repository auxiliary checkpoint groups under the main repo",
               grouped.size() == 1 && grouped.count("vendor/main") == 1 &&
                   has(grouped.at("vendor/main"), "mmproj-F16.gguf"));
@@ -287,7 +289,7 @@ int main() {
             {"mmproj", "no-variant-shape"},
         };
         check("a checkpoint without repo:variant shape is skipped",
-              rf::group_aux_checkpoint_variants(checkpoints).empty());
+              rf::group_aux_checkpoint_variants("llamacpp", checkpoints).empty());
     }
 
     // --- active_local_snapshot: the comparison baseline is the snapshot on

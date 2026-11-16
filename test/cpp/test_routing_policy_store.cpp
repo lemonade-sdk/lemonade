@@ -102,28 +102,24 @@ static void test_directory_watcher_reload() {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
     doc["routing"]["rules"][0]["route_to"] = "Qwen3-8B-GGUF";
-    // Delete first to trigger a directory entry change. macOS's kqueue-based
-    // DirectoryWatcher monitors the directory fd and does not detect inline writes.
-    fs::remove(policy_path);
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
     write_json(policy_path, doc);
 
+    // A watcher event left over from the first write can reload the old file,
+    // so wait for the updated policy rather than for any engine swap.
     std::shared_ptr<const lemon::RoutingPolicyEngine> next_engine;
+    std::string routed_to;
     for (int i = 0; i < 40; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         next_engine = store.get_engine("user.Router-Keywords");
         if (next_engine && next_engine != first_engine) {
-            break;
+            routed_to = next_engine->route(request("please fix this stack trace"), false).route_to;
+            if (routed_to == "Qwen3-8B-GGUF") break;
         }
     }
 
     check("DirectoryWatcher triggers engine swap",
           next_engine != nullptr && next_engine != first_engine);
-    if (next_engine) {
-        Decision routed = next_engine->route(request("please fix this stack trace"), false);
-        check("watcher-reloaded engine uses updated policy",
-              routed.route_to == "Qwen3-8B-GGUF");
-    }
+    check("watcher-reloaded engine uses updated policy", routed_to == "Qwen3-8B-GGUF");
     store.stop_watching();
     fs::remove_all(dir);
 }

@@ -4,7 +4,7 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/server_capabilities.h"
-#include "lemon/model_manager.h"
+#include "lemon/model_manager_types.h"
 #include "lemon/recipe_options.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/backends/backend_utils.h"
@@ -14,23 +14,18 @@
 namespace lemon {
 namespace backends {
 
-class SDServer : public WrappedServer, public IImageServer {
+class SDServer : public WrappedServer, public IImageServer, public IUpscaleServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
-
 
     explicit SDServer(const std::string& log_level,
                       ModelManager* model_manager,
                       BackendManager* backend_manager);
 
-    ~SDServer() override;
-
     void load(const std::string& model_name,
              const ModelInfo& model_info,
              const RecipeOptions& options,
              bool do_not_upgrade = false) override;
-
-    void unload() override;
 
     // ICompletionServer implementation (not supported - return errors)
     json chat_completion(const json& request) override;
@@ -42,13 +37,10 @@ public:
     json image_edits(const json& request) override;
     json image_variations(const json& request) override;
 
-    // ESRGAN upscaling via sd-cli subprocess.
-    //
-    // sd-server's HTTP API does not expose an upscaling endpoint, so we use the
-    // sd-cli binary's -M upscale mode as a subprocess.
-    static std::string upscale_via_cli(
+    std::string upscale_via_cli(
         const std::string& b64_image,
-        const std::string& upscale_model_path);
+        const std::string& upscale_model_path,
+        double upscale_factor) override;
 
 private:
     // Precedence and fall-through are documented in build_extra_args().

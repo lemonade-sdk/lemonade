@@ -7,6 +7,8 @@ body:
       value: |
         Help us improve the Lemonade documentation! Let us know what's missing or could be better.
 
+        Please write this issue in your own words, per the [AI content policy](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/ai-content-policy.md).
+
   - type: input
     id: page
     attributes:

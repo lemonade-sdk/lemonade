@@ -130,17 +130,17 @@ int main() {
         "--override-kv a=bool:false --override-kv b=bool:false --threads 8");
     failures += !expect_merge(
         "binary negation precedence is preserved",
-        "--no-mmap",
-        "--mmap --override-kv a=bool:false --override-kv b=bool:false",
-        "--no-mmap --override-kv a=bool:false --override-kv b=bool:false");
+        "--no-jinja",
+        "--jinja --override-kv a=bool:false --override-kv b=bool:false",
+        "--no-jinja --override-kv a=bool:false --override-kv b=bool:false");
 
     // Overridable-arg detection must compare complete flag tokens, not
     // substrings, so a flag name appearing only inside a value or file path
     // does not suppress a Lemonade default (regression for llama.cpp arg
-    // handling, e.g. "--load-mode none" and the -lm / --mmap aliases).
+    // handling, e.g. "--load-mode none" and the -lm / --load-mode aliases).
     failures += !expect_has_flag(
-        "real long alias token matches",
-        "--no-mmap", "--no-mmap", true);
+        "real long flag token matches",
+        "--load-mode none", "--load-mode", true);
     failures += !expect_has_flag(
         "real short alias token matches",
         "-lm", "-lm", true);
@@ -149,16 +149,16 @@ int main() {
         "--load-mode=auto", "--load-mode", true);
     failures += !expect_has_flag(
         "equals-value alias matches",
-        "--mmap=auto", "--mmap", true);
+        "-lm=auto", "-lm", true);
     failures += !expect_has_flag(
         "alias inside path does not match",
         "--lora /models/alma-lm-adapter.gguf", "-lm", false);
     failures += !expect_has_flag(
         "long alias inside value does not match",
-        "--override-kv tokenizer.mmap=auto", "--mmap", false);
+        "--override-kv tokenizer.load-mode=auto", "--load-mode", false);
     failures += !expect_has_flag(
         "missing alias does not match",
-        "--threads 8", "--mmap", false);
+        "--threads 8", "--load-mode", false);
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

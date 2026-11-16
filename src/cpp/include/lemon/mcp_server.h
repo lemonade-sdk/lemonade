@@ -4,11 +4,12 @@
 #include <memory>
 #include <string>
 #include <variant>
+#include <vector>
 
-#include <httplib.h>
 #include <nlohmann/json.hpp>
 
-#include "model_manager.h"
+#include "mcp_tool.h"
+#include "lemon/model_manager_types.h"
 #include "router.h"
 
 namespace lemon {
@@ -16,20 +17,18 @@ namespace lemon {
 using json = nlohmann::json;
 
 // MCP gateway: JSON-RPC 2.0 over HTTP (Streamable HTTP transport, spec 2025-06-18).
-//
-// /mcp is an INTENTIONAL EXCEPTION to the quad-prefix invariant:
-// the MCP spec mandates a single endpoint URL.
-class McpServer : public std::enable_shared_from_this<McpServer> {
+class McpServer {
 public:
     using EnsureLoadedFn = std::function<void(const std::string&)>;
 
     McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded);
     ~McpServer();
 
-    // Must be called on a shared_ptr instance — handlers capture shared_from_this().
-    void register_routes(httplib::Server& server);
-
+    // Returns the JSON-RPC reply, or an empty string when every message was a
+    // notification.
     std::string handle_request_body(const std::string& body);
+
+    static json internal_error_response(const std::string& message);
 
 private:
     json dispatch_message(const json& message);
@@ -44,6 +43,7 @@ private:
     json tool_generate_image(const json& arguments);
     json tool_omni(const json& arguments);
     json tool_list_models(const json& arguments);
+    json tool_docs(const json& arguments);
 
     // Resolve which model a tool should use when `model` is omitted. Precedence:
     //   1. an explicit `model` argument always wins;
@@ -71,11 +71,12 @@ private:
     static json make_needs_model_result(const char* type_str,
                                          const char* default_model,
                                          const std::string& name_hint);
-    static json tools_descriptor();
+    std::vector<McpTool> build_tools();
 
     Router* router_;
     ModelManager* model_manager_;
     EnsureLoadedFn ensure_loaded_;
+    std::vector<McpTool> tools_;
 };
 
 }  // namespace lemon

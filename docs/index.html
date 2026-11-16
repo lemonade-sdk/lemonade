@@ -587,7 +587,7 @@
         if (!response.ok) throw new Error('Failed to load release list');
         var releases = await response.json();
         if (!Array.isArray(releases)) throw new Error('Invalid release payload');
-        releaseCarouselState.items = releases.filter(function(item) { return item && !item.draft; });
+        releaseCarouselState.items = releases.filter(function(item) { return item && !item.draft && !item.prerelease; });
         if (!releaseCarouselState.items.length) throw new Error('No releases available');
         setLatestVersionFromTag(releaseCarouselState.items[0].tag_name);
         renderReleaseAt(0);

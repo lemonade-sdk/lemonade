@@ -2,3 +2,7 @@
 AGENTS.md @ramkrishna2910 @jeremyfowers
 CLAUDE.md @ramkrishna2910 @jeremyfowers
 CLAUDE.local.md @ramkrishna2910 @jeremyfowers
+
+# Protect client code
+/src/cpp/cli/ @bitgamma @jeremyfowers
+/src/app/ @kpoineal @jeremyfowers

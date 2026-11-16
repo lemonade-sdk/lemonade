@@ -4,7 +4,7 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/server_capabilities.h"
-#include "lemon/model_manager.h"
+#include "lemon/model_manager_types.h"
 #include "lemon/recipe_options.h"
 #include "lemon/backends/backend_utils.h"
 #include <string>
@@ -12,7 +12,7 @@
 namespace lemon {
 namespace backends {
 
-class TheNoiseServer : public WrappedServer, public IImageServer {
+class TheNoiseServer : public WrappedServer, public IImageServer, public IUpscaleServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -20,14 +20,10 @@ public:
                             ModelManager* model_manager,
                             BackendManager* backend_manager);
 
-    ~TheNoiseServer() override;
-
     void load(const std::string& model_name,
              const ModelInfo& model_info,
              const RecipeOptions& options,
              bool do_not_upgrade = false) override;
-
-    void unload() override;
 
     // ICompletionServer implementation (not supported - return errors)
     json chat_completion(const json& request) override;
@@ -39,21 +35,15 @@ public:
     json image_edits(const json& request) override;
     json image_variations(const json& request) override;
 
-    static std::string upscale_via_cli(
+    std::string upscale_via_cli(
         const std::string& b64_image,
-        const std::string& upscale_model_path);
+        const std::string& upscale_model_path,
+        double upscale_factor) override;
 
 private:
-    // image_defaults from the currently loaded model's server_models.json entry.
-    // Applied when a request doesn't specify size / steps / cfg_scale / etc.
-    ImageDefaults image_defaults_;
-
-    // Build the /text2image request body. Precedence: request -> image_defaults_
-    // -> recipe_options_.
     nlohmann::json build_request(const nlohmann::json& request) const;
 
-    // Resolve the output size from `size: "WxH"`, `width`/`height`, or
-    // image_defaults. Returns "" if nothing can be resolved.
+    // Returns "" when no size is named anywhere.
     std::string resolve_size(const nlohmann::json& request) const;
 };
 

@@ -6,7 +6,10 @@
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
+  "allowed_origins": "",
   "auto_check_model_updates": true,
+  "auto_evict": false,
+  "auto_evict_threshold_pct": 0.9,
   "auto_update_models": false,
   "broadcast": true,
   "cloud_providers": [],
@@ -14,6 +17,10 @@
   "ctx_size": -1,
   "default_model_source": "huggingface",
   "disable_model_filtering": false,
+  "download_rate_limit": "",
+  "ds4": {
+    "args": ""
+  },
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",
   "flm": {
@@ -21,7 +28,14 @@
     "prefer_system": false
   },
   "global_timeout": 600,
+  "gufo": {
+    "args": ""
+  },
   "host": "localhost",
+  "hrx": {
+    "args": "",
+    "hrx_bin": "builtin"
+  },
   "inhibit_suspend": true,
   "kokoro": {
     "cpu_bin": "builtin"
@@ -31,6 +45,7 @@
     "backend": "auto",
     "cpu_args": "",
     "cpu_bin": "builtin",
+    "cuda_args": "",
     "cuda_bin": "builtin",
     "prefer_system": true,
     "rocm_args": "",
@@ -38,8 +53,12 @@
     "vulkan_args": "",
     "vulkan_bin": "builtin"
   },
+  "log_file": "auto",
   "log_level": "info",
+  "log_max_file_size_mb": 10,
+  "log_max_files": 5,
   "max_loaded_models": 1,
+  "model_catalogs": [],
   "models_dir": "auto",
   "moonshine": {
     "args": "",
@@ -56,12 +75,14 @@
   "openmoss": {
     "backend": "auto",
     "cuda_bin": "builtin",
-    "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
   "port": 13305,
   "rocm_channel": "stable",
   "rocm_install_method": "auto",
+  "rocmfpx": {
+    "args": ""
+  },
   "ryzenai": {
     "server_bin": "builtin"
   },
@@ -110,6 +131,7 @@
   },
   "thenoise": {
     "backend": "auto",
+    "cuda_bin": "builtin",
     "lora_dir": "",
     "rocm_bin": "builtin",
     "upscaler_dir": ""
@@ -123,6 +145,7 @@
   "trellis": {
     "args": "",
     "backend": "auto",
+    "cuda12_bin": "builtin",
     "cuda_bin": "builtin",
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
@@ -138,6 +161,8 @@
     "cpu_args": "",
     "cpu_bin": "builtin",
     "npu_args": "",
-    "npu_bin": "builtin"
+    "npu_bin": "builtin",
+    "rocm_args": "",
+    "vulkan_args": ""
   }
 }

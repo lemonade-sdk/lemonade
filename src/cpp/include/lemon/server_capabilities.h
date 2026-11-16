@@ -1,13 +1,21 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
+#include <string>
 #include <type_traits>
+#include <vector>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 
 namespace lemon {
 
 using json = nlohmann::json;
+
+struct AudioFormatMetadata {
+    std::string content_type;
+    std::map<std::string, std::string> headers;
+};
 
 class ICapability {
 public:
@@ -61,6 +69,10 @@ public:
     // buffered set — Kokoros hands back raw PCM on its streaming path whatever the
     // request asked for. Empty means the buffered list applies to both transports.
     virtual std::vector<std::string> supported_streaming_audio_formats() const { return {}; }
+    // Optional wire metadata for a selected encoded/raw format. Empty values
+    // keep the server-wide MIME mapping. Raw PCM backends use this to expose
+    // their actual sample rate/channel contract instead of being mislabeled.
+    virtual AudioFormatMetadata audio_format_metadata(const std::string&) const { return {}; }
 };
 
 // Text-classification capability (encoder classifiers: PII, prompt-safety,
@@ -72,12 +84,28 @@ public:
     virtual json classify(const json& request) = 0;
 };
 
+// System One API of llama-server decision models: a state plus typed
+// questions (choice, score, noul) -> one answer per question.
+class ISystemOneServer : public virtual ICapability {
+public:
+    virtual ~ISystemOneServer() = default;
+    virtual nlohmann::ordered_json systemone(const nlohmann::ordered_json& request) = 0;
+};
+
 class IImageServer : public virtual ICapability {
 public:
     virtual ~IImageServer() = default;
     virtual json image_generations(const json& request) = 0;
     virtual json image_edits(const json& request) = 0;
     virtual json image_variations(const json& request) = 0;
+};
+
+class IUpscaleServer : public virtual ICapability {
+public:
+    virtual ~IUpscaleServer() = default;
+    virtual std::string upscale_via_cli(const std::string& b64_image,
+                                const std::string& upscale_model_path,
+                                double upscale_factor) = 0;
 };
 
 // Generative audio capability (text -> audio clip). Serves both music and
@@ -88,6 +116,7 @@ public:
     virtual ~IAudioGenerationServer() = default;
     virtual void audio_generations(const json& request, httplib::DataSink& sink) = 0;
     virtual std::vector<std::string> supported_audio_formats() const { return {"wav"}; }
+    virtual AudioFormatMetadata audio_format_metadata(const std::string&) const { return {}; }
 };
 
 class IModel3DServer : public virtual ICapability {
@@ -121,8 +150,8 @@ bool supports_capability(ICapability* server) {
 //
 // ICompletionServer is absent on purpose: WrappedServer inherits it and supplies
 // "unsupported capability" defaults for every backend, so it says nothing about
-// whether a backend actually chats. ISlotsServer/ITokenizerServer are absent
-// because they are plumbing, not deployment modes.
+// whether a backend actually chats. ISlotsServer/ITokenizerServer/ISystemOneServer
+// are absent because they are not deployment modes.
 enum CapabilityMask : uint32_t {
     CAP_EMBEDDINGS              = 1u << 0,
     CAP_RERANKING               = 1u << 1,
@@ -133,9 +162,10 @@ enum CapabilityMask : uint32_t {
     CAP_IMAGE                   = 1u << 6,
     CAP_AUDIO_GENERATION        = 1u << 7,
     CAP_MODEL_3D                = 1u << 8,
+    CAP_UPSCALE                 = 1u << 9,
     // Every bit above. BackendModeContractTest sweeps this so a capability added
     // without being classified fails the test instead of going unchecked.
-    CAP_ALL                     = (1u << 9) - 1,
+    CAP_ALL                     = (1u << 10) - 1,
 };
 
 template<typename T>
@@ -149,7 +179,8 @@ constexpr uint32_t capability_mask_of() {
            (std::is_base_of<IClassificationServer, T>::value ? CAP_CLASSIFICATION : 0u) |
            (std::is_base_of<IImageServer, T>::value ? CAP_IMAGE : 0u) |
            (std::is_base_of<IAudioGenerationServer, T>::value ? CAP_AUDIO_GENERATION : 0u) |
-           (std::is_base_of<IModel3DServer, T>::value ? CAP_MODEL_3D : 0u);
+           (std::is_base_of<IModel3DServer, T>::value ? CAP_MODEL_3D : 0u) |
+           (std::is_base_of<IUpscaleServer, T>::value ? CAP_UPSCALE : 0u);
 }
 
 } // namespace lemon

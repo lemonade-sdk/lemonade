@@ -76,6 +76,23 @@ static inline bool config_migrate(json& config,
     return true;
 }
 
+/// Migrate deprecated LEMONADE_ALLOWED_ORIGINS environment variable into config.json.
+/// If env_origins is non-empty:
+///   - If config does not contain "allowed_origins" or it is an empty string, set config["allowed_origins"] to env_origins.
+///   - If config already has a non-empty "allowed_origins", do not modify it.
+/// Returns true if the config was modified.
+static inline bool config_migrate_allowed_origins_env(json& config, const char* env_origins) {
+    if (!env_origins || *env_origins == '\0') {
+        return false;
+    }
+    if (!config.contains("allowed_origins") ||
+        (config["allowed_origins"].is_string() && config["allowed_origins"].get<std::string>().empty())) {
+        config["allowed_origins"] = std::string(env_origins);
+        return true;
+    }
+    return false;
+}
+
 // ============================================================================
 
 /// Manages reading and writing config.json in the lemonade config dir.
@@ -87,7 +104,8 @@ public:
     static json base_defaults();
 
     /// base_defaults() plus deployment overrides. On Linux, an optional distro
-    /// override at /usr/share/lemonade/defaults.json (and LEMONADE_DEFAULTS_PATH)
+    /// override at <prefix>/share/lemonade/defaults.json, where <prefix> is the
+    /// directory above the lemond binary's bin/ (and LEMONADE_DEFAULTS_PATH),
     /// is merged on top when present.
     static json get_defaults();
 

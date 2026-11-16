@@ -5,6 +5,10 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/hf_cache_util.h"
 #include "lemon/model_manager.h"
+#include "lemon/models/artifact_layout.h"
+#include "lemon/models/artifact_source.h"
+#include "lemon/models/artifact_transfer.h"
+#include "lemon/models/artifact_ref.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
@@ -12,8 +16,8 @@
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
-#include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
+#include "whispercpp_multipart_fields.h"
 #include <iostream>
 #include <chrono>
 #include <filesystem>
@@ -66,7 +70,7 @@ WhisperServer::WhisperServer(const std::string& log_level, ModelManager* model_m
 }
 
 WhisperServer::~WhisperServer() {
-    unload();
+    stop_server();
 
     try {
         if (fs::exists(temp_dir_)) {
@@ -127,90 +131,40 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
     return params;
 }
 
-static std::pair<std::string, std::string> get_npu_cache_info(const ModelInfo& model_info) {
-    std::string npu_cache = model_info.checkpoint("npu_cache");
-    std::string npu_cache_repo = "";
-    std::string npu_cache_filename = "";
-
-    if (!npu_cache.empty()) {
-        size_t colon_pos = npu_cache.find(':');
-        if (colon_pos != std::string::npos) {
-            npu_cache_repo = npu_cache.substr(0, colon_pos);
-            npu_cache_filename = npu_cache.substr(colon_pos + 1);
-        }
-    }
-
-    if (!npu_cache_repo.empty() && !npu_cache_filename.empty()) {
-        LOG(INFO, "WhisperServer") << "Using NPU cache from server_models.json: "
-                  << npu_cache_repo << " / " << npu_cache_filename << std::endl;
-        return {npu_cache_repo, npu_cache_filename};
-    }
-
-    LOG(INFO, "WhisperServer") << "No NPU cache configured for model: " << model_info.model_name << std::endl;
-    return {"", ""};
-}
 
 // Helper to download NPU compiled cache (.rai file) for a given ggml .bin model
+// The compiled cache is one file beside the .bin it was built for. The model
+// layer picks the host and the placement; this asks and transfers.
 void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
                                                 const ModelInfo& model_info,
                                                 bool do_not_upgrade) {
-    auto [cache_repo, cache_filename] = get_npu_cache_info(model_info);
-
-    if (cache_repo.empty() || cache_filename.empty()) {
+    if (model_manager_ == nullptr || model_info.checkpoint("npu_cache").empty()) {
         LOG(INFO, "WhisperServer") << "No NPU compiled cache available for this model" << std::endl;
         return;
     }
 
-    LOG(INFO, "WhisperServer") << "Downloading NPU compiled cache: " << cache_filename << std::endl;
-    LOG(INFO, "WhisperServer") << "From repository: " << cache_repo << std::endl;
-
-    if (cache_filename.find('/') != std::string::npos ||
-        cache_filename.find('\\') != std::string::npos ||
-        cache_filename.find("..") != std::string::npos) {
-        throw std::runtime_error("Illegal npu_cache filename: contains path traversal characters");
-    }
-
-    if (cache_repo.find("..") != std::string::npos ||
-        cache_repo.find('\\') != std::string::npos) {
-        throw std::runtime_error("Illegal npu_cache repository: contains suspicious characters");
-    }
-
-    // Determine where to place the .rai file (must be in the same directory as .bin file)
-    fs::path model_dir = fs::path(model_path).parent_path();
-    fs::path cache_path = fs::weakly_canonical(model_dir / fs::path(cache_filename).filename());
-
-    if (cache_path.parent_path() != fs::weakly_canonical(model_dir)) {
-        throw std::runtime_error("npu_cache path escapes model directory");
-    }
-
-    if (fs::exists(cache_path) && !do_not_upgrade) {
-        LOG(INFO, "WhisperServer") << "NPU cache already exists: " << cache_path << std::endl;
-        return;
-    }
-
     try {
-        std::string hf_url = "https://huggingface.co/" + cache_repo + "/resolve/main/" + cache_filename;
-
-        LOG(INFO, "WhisperServer") << "Downloading from: " << hf_url << std::endl;
-
-        auto download_result = utils::HttpClient::download_file(
-            hf_url,
-            cache_path.string(),
-            utils::create_throttled_progress_callback()
-        );
-
-        if (!download_result.success) {
-            throw std::runtime_error("Failed to download NPU cache from: " + hf_url + " - " + download_result.error_message);
+        const auto source = model_manager_->source_for(model_info, "npu_cache");
+        const auto presence = source->present();
+        if (presence.complete && do_not_upgrade) {
+            LOG(INFO, "WhisperServer") << "NPU cache already exists: " << presence.path << std::endl;
+            return;
         }
 
-        LOG(INFO, "WhisperServer") << "NPU cache ready at: " << cache_path << std::endl;
+        const auto acquisition = source->acquisition();
+        if (acquisition.kind != lemon::models::Acquisition::Kind::Plan) {
+            LOG(WARNING, "WhisperServer")
+                << "NPU cache offers nothing to fetch for: " << model_info.checkpoint("npu_cache")
+                << std::endl;
+            return;
+        }
 
+        LOG(INFO, "WhisperServer")
+            << "Downloading NPU cache into: " << acquisition.plan.download_path << std::endl;
+        lemon::models::ArtifactTransfer::with_default_transfers().execute(
+            acquisition.plan, source->auth_headers(), nullptr, {});
+        LOG(INFO, "WhisperServer") << "NPU cache ready beside: " << model_path << std::endl;
     } catch (const std::exception& e) {
-        if (fs::exists(cache_path)) {
-            fs::remove(cache_path);
-            LOG(INFO, "WhisperServer") << "Cleaned up partial cache file" << std::endl;
-        }
-
         LOG(WARNING, "WhisperServer") << "Failed to download NPU cache: " << e.what() << std::endl;
         LOG(WARNING, "WhisperServer") << "Continuing without NPU cache (may cause runtime errors)" << std::endl;
     }
@@ -264,7 +218,6 @@ void WhisperServer::load(const std::string& model_name,
 
     // Lemonade manages the model path and port;
     // optional whisper-server flags like --convert come from whispercpp_args.
-    // Note: Don't include exe_path here - ProcessManager::start_process already handles it
     std::vector<std::string> args = {
         "-m", model_path,
         "--port", std::to_string(port_)
@@ -322,37 +275,12 @@ void WhisperServer::load(const std::string& model_name,
     }
 #endif
 
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        exe_path,
-        args,
-        "",     // working_dir (empty = current)
-        is_debug(),  // inherit_output
-        false,  // filter_health_logs
-        env_vars
-    );
-    set_process_handle(started_handle, exe_path, args);
-
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start whisper-server process");
-    }
-
-    LOG(INFO, "WhisperServer") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/health")) {
-        unload();
-        throw std::runtime_error("whisper-server failed to start or become ready");
-    }
-
-    LOG(INFO, "WhisperServer") << "Server is ready!" << std::endl;
-}
-
-void WhisperServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "WhisperServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    ServerCommand command;
+    command.program = exe_path;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command);
 }
 
 // ICompletionServer implementation - not supported for Whisper
@@ -503,56 +431,21 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
     else if (ext == ".flac") content_type = "audio/flac";
     else if (ext == ".webm") content_type = "audio/webm";
 
-    std::vector<utils::MultipartField> fields;
-
     utils::MultipartField audio_file;
     audio_file.name = "file";
     audio_file.data = file_content;
     audio_file.filename = filepath.filename().string();
     audio_file.content_type = content_type;
-    fields.push_back(audio_file);
 
     std::string response_format = params.value("response_format", "json");
-    utils::MultipartField fmt_field;
-    fmt_field.name = "response_format";
-    fmt_field.data = response_format;
-    fields.push_back(fmt_field);
-
-    utils::MultipartField temp_field;
-    temp_field.name = "temperature";
-    if (params.contains("temperature")) {
-        temp_field.data = std::to_string(params["temperature"].get<double>());
-    } else {
-        temp_field.data = "0.0";
-    }
-    fields.push_back(temp_field);
-
-    if (params.contains("language")) {
-        utils::MultipartField lang_field;
-        lang_field.name = "language";
-        lang_field.data = params["language"].get<std::string>();
-        fields.push_back(lang_field);
-    }
-
-    if (params.contains("prompt")) {
-        utils::MultipartField prompt_field;
-        prompt_field.name = "prompt";
-        prompt_field.data = params["prompt"].get<std::string>();
-        fields.push_back(prompt_field);
-    }
-
-    if (translate) {
-        utils::MultipartField translate_field;
-        translate_field.name = "translate";
-        translate_field.data = "true";
-        fields.push_back(translate_field);
-    }
+    std::vector<utils::MultipartField> fields =
+        whispercpp::detail::build_multipart_fields(std::move(audio_file), params, translate);
 
     const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << std::endl;
 
     // Pass 0 so HttpClient falls back to its default timeout, which is kept in
-    // sync with `global_timeout` in config.json (see server.cpp). Hard-coding 300
+    // sync with `global_timeout` in config.json (see core/config_effects.cpp). Hard-coding 300
     // caused long-form audio (~35+ min on slower backends) to fail regardless of
     // the user's configuration.
     utils::HttpResponse res;
@@ -597,48 +490,15 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
     else if (ext == ".flac") content_type = "audio/flac";
     else if (ext == ".webm") content_type = "audio/webm";
 
-    std::vector<utils::MultipartField> fields;
-
     utils::MultipartField audio_file;
     audio_file.name = "file";
     audio_file.data = audio_data;
     audio_file.filename = filepath.filename().string();
     audio_file.content_type = content_type;
-    fields.push_back(audio_file);
 
     std::string response_format = params.value("response_format", "json");
-    utils::MultipartField fmt_field;
-    fmt_field.name = "response_format";
-    fmt_field.data = response_format;
-    fields.push_back(fmt_field);
-
-    utils::MultipartField temp_field;
-    temp_field.name = "temperature";
-    temp_field.data = params.contains("temperature")
-        ? std::to_string(params["temperature"].get<double>())
-        : "0.0";
-    fields.push_back(temp_field);
-
-    if (params.contains("language")) {
-        utils::MultipartField lang_field;
-        lang_field.name = "language";
-        lang_field.data = params["language"].get<std::string>();
-        fields.push_back(lang_field);
-    }
-
-    if (params.contains("prompt")) {
-        utils::MultipartField prompt_field;
-        prompt_field.name = "prompt";
-        prompt_field.data = params["prompt"].get<std::string>();
-        fields.push_back(prompt_field);
-    }
-
-    if (translate) {
-        utils::MultipartField translate_field;
-        translate_field.name = "translate";
-        translate_field.data = "true";
-        fields.push_back(translate_field);
-    }
+    std::vector<utils::MultipartField> fields =
+        whispercpp::detail::build_multipart_fields(std::move(audio_file), params, translate);
 
     const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << " (direct data)" << std::endl;
@@ -698,10 +558,21 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return std::make_unique<WhisperServer>(ctx.log_level, ctx.model_manager, ctx.backend_manager);
 }
 
-
 namespace {
 class WhisperOps : public BackendOps {
 public:
+    // The NPU cache is useful only beside the .bin it was built for, and only the
+    // NPU build of the engine asks for it, so it is fetched on first use.
+    const lemon::models::ArtifactLayout* checkpoint_layout(
+        const lemon::models::CheckpointRef& checkpoint) const override {
+        return checkpoint.checkpoint_type == "npu_cache" ? &lemon::models::sibling_layout()
+                                                        : nullptr;
+    }
+
+    bool acquires_lazily(const std::string& checkpoint_type) const override {
+        return checkpoint_type == "npu_cache";
+    }
+
     std::string resolve_checkpoint_path(const ModelInfo& info,
                                         const CheckpointResolveContext& ctx) const override {
         // With no variant, find any .bin model file; otherwise use the shared

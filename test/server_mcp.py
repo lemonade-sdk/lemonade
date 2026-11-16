@@ -3,11 +3,13 @@ Integration tests for the MCP gateway endpoint (POST /mcp).
 
 Requires a Lemonade server to already be running on port 13305.
 
-Covers the JSON-RPC 2.0 envelope plus the four tools exposed by the gateway:
+Covers the JSON-RPC 2.0 envelope plus the pre-existing MCP tool catalog:
 - lemonade_list_models
 - lemonade_chat
 - lemonade_transcribe_audio   (smoke-tested via schema only; needs Whisper)
 - lemonade_generate_image     (smoke-tested via schema only; needs SD)
+- lemonade_omni
+- lemonade_docs
 
 The "live" chat tool uses a small model so the suite stays fast.
 
@@ -42,6 +44,14 @@ def _auth_headers():
     if api_key:
         return {"Authorization": f"Bearer {api_key}"}
     return {}
+
+
+def _admin_headers():
+    """Bearer-token header for /internal routes, which only the admin key opens."""
+    admin_key = os.environ.get("LEMONADE_ADMIN_API_KEY")
+    if admin_key:
+        return {"Authorization": f"Bearer {admin_key}"}
+    return _auth_headers()
 
 
 def _post(payload, timeout=TIMEOUT_DEFAULT):
@@ -220,23 +230,54 @@ class McpGatewayTests(ServerTestBase):
         self.assertEqual(body["result"], {})
 
     def test_012_tools_list(self):
-        """tools/list must include the five gateway tools, each with a schema."""
+        """tools/list must expose the pre-existing registry tools with valid schemas."""
         response = _post({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
         body = response.json()
         tools = body["result"]["tools"]
         names = {tool["name"] for tool in tools}
+        self.assertEqual(
+            len(names), len(tools), "tools/list contains duplicate tool names"
+        )
         expected = {
             "lemonade_list_models",
             "lemonade_chat",
             "lemonade_transcribe_audio",
             "lemonade_generate_image",
             "lemonade_omni",
+            "lemonade_docs",
         }
         self.assertTrue(expected.issubset(names), f"missing tools: {expected - names}")
         for tool in tools:
             self.assertIn("description", tool)
+            self.assertIsInstance(tool["description"], str)
+            self.assertTrue(tool["description"].strip())
             self.assertIn("inputSchema", tool)
             self.assertEqual(tool["inputSchema"]["type"], "object")
+
+            meta = tool.get("_meta", {})
+            result_contract = meta.get("lemonade/result", {})
+            result_description = result_contract.get("description", "")
+            self.assertIsInstance(
+                result_description,
+                str,
+                f"{tool['name']}: missing result description",
+            )
+            self.assertTrue(
+                result_description.strip(),
+                f"{tool['name']}: missing result description",
+            )
+
+            for arg, arg_schema in tool["inputSchema"].get("properties", {}).items():
+                arg_description = arg_schema.get("description", "")
+                self.assertIsInstance(
+                    arg_description,
+                    str,
+                    f"{tool['name']}.{arg}: missing argument description",
+                )
+                self.assertTrue(
+                    arg_description.strip(),
+                    f"{tool['name']}.{arg}: missing argument description",
+                )
 
         # lemonade_omni's only required arg is `messages`; `model` is optional
         # so callers can fall back to the default (LMX-Omni-5.5B-Lite).
@@ -342,6 +383,76 @@ class McpGatewayTests(ServerTestBase):
         body = response.json()
         self.assertTrue(body["result"]["isError"])
 
+    def test_021a_tools_call_rejects_wrong_argument_type(self):
+        """Schema validation must reject wrong types before the tool handler runs."""
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 51,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_generate_image",
+                    "arguments": {
+                        "model": "definitely-not-a-real-model",
+                        "prompt": "validation test",
+                        "n": "many",
+                    },
+                },
+            }
+        )
+        body = response.json()
+        self.assertTrue(body["result"]["isError"], msg=str(body))
+        message = body["result"]["content"][0]["text"]
+        self.assertIn("$.n", message)
+        self.assertIn("expected integer", message)
+
+    def test_021b_tools_call_rejects_value_below_minimum(self):
+        """Schema validation must enforce numeric minimum constraints."""
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 52,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_generate_image",
+                    "arguments": {
+                        "model": "definitely-not-a-real-model",
+                        "prompt": "validation test",
+                        "n": 0,
+                    },
+                },
+            }
+        )
+        body = response.json()
+        self.assertTrue(body["result"]["isError"], msg=str(body))
+        message = body["result"]["content"][0]["text"]
+        self.assertIn("$.n", message)
+        self.assertIn("value must be >= 1", message)
+
+    def test_021c_tools_call_optional_null_does_not_preempt_validation(self):
+        """Optional null args must remain handler-compatible, as before the registry."""
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 53,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_generate_image",
+                    "arguments": {
+                        "model": None,
+                        "prompt": "validation test",
+                        "n": 0,
+                    },
+                },
+            }
+        )
+        body = response.json()
+        self.assertTrue(body["result"]["isError"], msg=str(body))
+        message = body["result"]["content"][0]["text"]
+        self.assertNotIn("$.model", message)
+        self.assertIn("$.n", message)
+        self.assertIn("value must be >= 1", message)
+
     def test_022_omni_rejects_non_collection_model(self):
         """
         lemonade_omni must reject a plain LLM (recipe != collection.omni) with
@@ -420,6 +531,120 @@ class McpGatewayTests(ServerTestBase):
         self.assertEqual(content[0]["type"], "text")
         # Some tiny test models emit empty strings — just assert the shape.
         self.assertIsInstance(content[0]["text"], str)
+
+    def test_031_chat_tool_resolves_a_model_alias(self):
+        """An alias must work as the `model` argument, as it does on the REST endpoints."""
+        alias = f"mcp-alias-{uuid.uuid4().hex[:8]}"
+        base = f"http://localhost:{PORT}"
+
+        registered = requests.post(
+            f"{base}/internal/aliases",
+            json={"alias": alias, "target": ENDPOINT_TEST_MODEL},
+            headers=_admin_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            registered.status_code,
+            200,
+            msg=f"could not register alias: {registered.text[:200]}",
+        )
+        self.addCleanup(
+            requests.delete,
+            f"{base}/internal/aliases/{alias}",
+            headers=_admin_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_chat",
+                    "arguments": {
+                        "model": alias,
+                        "messages": [
+                            {"role": "user", "content": "Say hello in 3 words."},
+                        ],
+                        "max_tokens": 16,
+                    },
+                },
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        body = response.json()
+        self.assertNotIn("error", body, msg=str(body))
+        self.assertFalse(
+            body["result"]["isError"],
+            msg=f"alias was not resolved: {body['result']}",
+        )
+
+    def test_032_omni_tool_resolves_a_model_alias(self):
+        """Omni resolves its explicit `model` on its own path, so it needs its own case."""
+        alias = f"mcp-alias-{uuid.uuid4().hex[:8]}"
+        base = f"http://localhost:{PORT}"
+
+        registered = requests.post(
+            f"{base}/internal/aliases",
+            json={"alias": alias, "target": ENDPOINT_TEST_MODEL},
+            headers=_admin_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            registered.status_code,
+            200,
+            msg=f"could not register alias: {registered.text[:200]}",
+        )
+        self.addCleanup(
+            requests.delete,
+            f"{base}/internal/aliases/{alias}",
+            headers=_admin_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        # The target is a plain LLM, so Omni rejects it. Which rejection comes
+        # back is the point: naming the target proves the alias was resolved,
+        # while "Unknown model '<alias>'" would mean it was passed through.
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_omni",
+                    "arguments": {
+                        "model": alias,
+                        "messages": [
+                            {"role": "user", "content": "Say hello in 3 words."},
+                        ],
+                    },
+                },
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        body = response.json()
+        self.assertNotIn("error", body, msg=str(body))
+        self.assertTrue(
+            body["result"]["isError"],
+            msg=f"a plain LLM should not be accepted as an Omni collection: {body['result']}",
+        )
+        text = body["result"]["content"][0]["text"]
+        self.assertIn(
+            "is not an Omni collection",
+            text,
+            msg=f"alias was not resolved before the recipe check: {text}",
+        )
+        self.assertIn(
+            ENDPOINT_TEST_MODEL,
+            text,
+            msg=f"error names the alias instead of its target: {text}",
+        )
+        self.assertNotIn(
+            alias,
+            text,
+            msg=f"error still refers to the unresolved alias: {text}",
+        )
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ struct BenchComparisonDelta {
     std::string backend_args;
     std::string scenario;
     double ttft_pct_change;    // Positive = slower, negative = faster
+    std::optional<double> pp_tps_pct_change; // Positive = faster prefill, nullopt = no data
     double tps_pct_change;     // Positive = faster, negative = slower
     std::optional<double> vram_gb_change; // Positive = more VRAM used, nullopt = no data
     std::string status;        // "matched", "new", "removed", "failed", "prev_failed"
@@ -51,6 +52,7 @@ json build_comparison_json(const std::vector<BenchBackendResult>& results,
                            const std::string& model,
                            const std::string& timestamp,
                            const BenchConfig& config,
+                           const json& model_info,
                            const json& previous_results,
                            const std::vector<BenchComparisonDelta>& deltas);
 

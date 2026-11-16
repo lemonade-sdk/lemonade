@@ -3,9 +3,10 @@
 #include "lemon/backends/backend_registry.h"
 
 #include "lemon/cloud_provider_registry.h"
-#include "lemon/model_manager.h"
+#include "lemon/model_manager_types.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/wrapped_server.h"
+#include <map>
 #include <string>
 #include <vector>
 
@@ -31,9 +32,9 @@ namespace backends {
  * Provider selection: recipe="cloud" + the per-model "cloud_provider" field.
  * The Router constructs CloudServer for cloud recipes, with the provider name
  * fixed by the model's registration. Discovery is server-driven now: at cache
- * build time, ModelManager calls discover_models for every installed provider
- * with a resolvable key, and again whenever a new key is supplied or a
- * provider is installed.
+ * build time ModelManager enumerates one listing catalog per installed
+ * provider, and again whenever a new key is supplied or a provider is
+ * installed.
  *
  * Scope: chat-only (chat/completions and completions on OpenAI v1). Other
  * modalities — embeddings, audio, reranking, image — are intentionally not
@@ -43,9 +44,8 @@ namespace backends {
  * Wire format: OpenAI v1 — chat/completions, completions, models. Auth header
  * name/prefix is configurable per provider (default Authorization: Bearer),
  * to support gateways that front an OpenAI-shaped API with a differently
- * named key header. Streaming via SSE. Providers that diverge from the
- * request/response shape itself (notably Anthropic) need a sibling backend
- * class — they are not handled here.
+ * named key header. Streaming via SSE. Providers registered with a non-openai
+ * wire_format are rejected here and relayed from /v1/messages instead.
  */
 class CloudServer : public WrappedServer {
 public:
@@ -92,7 +92,27 @@ public:
         const std::string& api_key,
         const std::string& base_url,
         bool allow_insecure_http = false,
-        const CloudProviderRegistry::AuthHeader& auth_header = {});
+        const CloudProviderRegistry::AuthHeader& auth_header = {},
+        const std::string& wire_format = "openai");
+
+    /// One installed provider's listing: resolves its key and applies the
+    /// credential and plaintext-endpoint policy first, so every caller of a
+    /// listing enforces the same rules. Empty when the provider is ruled out or
+    /// the upstream failed; never throws.
+    static std::vector<ModelInfo> discover_provider_models(
+        const CloudProviderRegistry& registry,
+        const std::string& provider);
+
+    /// Strict gateways reject any call that omits this, discovery included, so
+    /// relay and discovery must send the same value.
+    static constexpr const char* kAnthropicVersion = "2023-06-01";
+
+    /// Outbound headers for a request to `provider`: the configured auth
+    /// header, plus anything the wire format mandates.
+    static std::map<std::string, std::string> upstream_headers(
+        const CloudProviderRegistry::AuthHeader& auth_header,
+        const std::string& api_key,
+        const std::string& wire_format);
 
     /// Trust boundary for a discovery request. The AllowInsecureHttp opt-in
     /// only applies to plaintext http:// providers; an https:// provider stays
@@ -100,6 +120,16 @@ public:
     /// a redirect can never downgrade the Bearer-carrying request to http.
     static utils::HttpSecurityPolicy discovery_policy(const std::string& base_url,
                                                       bool allow_insecure_http);
+
+    /// Joins a provider base URL with a local endpoint path. The "/v1" the
+    /// router puts on an endpoint is lemonade's own, not the provider's: a
+    /// gateway may serve the OpenAI shape at a base with no version segment.
+    static std::string upstream_url(const std::string& base_url,
+                                    const std::string& endpoint);
+
+    /// Parse context window and completion token limits from a provider's model
+    /// JSON entry. Returns {max_context_window, max_output_tokens}.
+    static std::pair<int64_t, int64_t> parse_cloud_limits(const nlohmann::json& m);
 
 private:
     struct ResolvedCreds {
@@ -119,6 +149,11 @@ private:
     json post_with_auth(const std::string& path, const json& request,
                         const ResolvedCreds& creds, long timeout_seconds = 0);
     json rewrite_model_field(const json& request) const;
+    // When true, the endpoints implemented here are unreachable for this
+    // provider — it is served from /v1/messages instead.
+    bool wire_format_mismatch() const;
+    std::string wire_format_message() const;
+    json wire_format_error() const;
     json missing_creds_error() const;
     std::string missing_creds_sse() const;
     json insecure_http_error() const;

@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -115,6 +116,13 @@ struct Score {
     // — surfaced in the trace, never used for matching.
     std::string rationale;
 
+    // Why the classifier failed, when ok=false.
+    std::string error;
+
+    // true: the backend cut the input to fit its token window before scoring.
+    // false: it scored the whole input. Empty: the backend does not say.
+    std::optional<bool> truncated;
+
     // Score for an explicit label, or 0.0 if absent. Extra labels returned by
     // a classifier are ignored unless a condition references them.
     double score_of(const std::string& label) const {
@@ -151,9 +159,27 @@ inline const char* on_error_to_string(OnError e) {
     return e == OnError::MatchTrue ? "match_true" : "match_false";
 }
 
+enum class OnTruncation {
+    Score,
+    Fail,
+};
+
+inline OnTruncation parse_on_truncation(const std::string& s) {
+    if (s == "fail") return OnTruncation::Fail;
+    if (s == "score") return OnTruncation::Score;
+    throw std::invalid_argument("on_truncation must be score or fail, got '" + s + "'");
+}
+
 // ---------------------------------------------------------------------------
 // Backend injection seam
 // ---------------------------------------------------------------------------
+
+// What a classification backend answers: the per-label scores, plus whether it
+// had to cut the input text to fit its token window (empty when it does not say).
+struct ClassifierScores {
+    std::map<std::string, double> scores;
+    std::optional<bool> truncated;
+};
 
 // The ONLY way the pure engine touches live backends. Real implementations bind
 // these to the Router (embeddings / classifier-model invocation / chat); tests
@@ -165,10 +191,24 @@ struct ClassifierServices {
     std::function<std::vector<float>(const std::string& model,
                                      const std::string& text)> embed;
 
-    // Run a text-classification `model` over `text`; returns label -> score.
-    // Powers the generic `classifier` type.
-    std::function<std::map<std::string, double>(const std::string& model,
-                                                const std::string& text)> run_classifier;
+    // Run a text-classification `model` over `text`. Powers the generic
+    // `classifier` type.
+    std::function<ClassifierScores(const std::string& model,
+                                   const std::string& text)> run_classifier;
+
+    // Score `text` against a caller-supplied `labels` list. Powers the
+    // `zero_shot` type.
+    std::function<ClassifierScores(const std::string& model,
+                                   const std::string& text,
+                                   const std::vector<std::string>& labels)>
+        run_zero_shot_classifier;
+
+    // Powers the `systemone` type (see ISystemOneServer). Maps to
+    // Router::systemone. The question is ordered_json because the order
+    // of a choice question's options changes the model's scores.
+    std::function<json(const std::string& model,
+                       const std::string& text,
+                       const nlohmann::ordered_json& question)> run_systemone;
 
     // Run a chat `model` with a system `prompt` over `input`; returns the raw
     // assistant text. Powers the `llm` router / L0a on-ramp. Maps to
@@ -318,6 +358,10 @@ struct TraceEntry {
                                     // candidate this score belongs to)
     std::string rationale;          // optional; the `llm` router records the
                                     // model's short pick-reason here (empty otherwise)
+    std::string error;              // optional; why a model-backed classifier failed
+                                    // (empty unless the score failed with a reason)
+    std::optional<bool> truncated;  // whether the backend cut the input text to
+                                    // fit its window (empty when it does not say)
 };
 
 // The engine's output for one request. Pure selection — no verdict /
@@ -421,8 +465,15 @@ ConditionPtr compile_match_expr(const MatchExpr& expr, const LeafFactory& leaf_f
 // Classifier / condition registry helpers (#2379). These instantiate the
 // behavior-free contract objects from policy JSON while keeping live backend
 // access behind ClassifierServices.
-ClassifierPtr make_classifier(const json& config);
-std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_json);
+//
+// expose_request_features gates an `llm` classifier's has_tools/has_images
+// visibility (#2789) — see LlmClassifier::effective_prompt in
+// routing_policy.cpp for which classifiers the parser passes true for. The
+// default preserves prior always-expose behavior for direct callers (tests,
+// standalone tooling).
+ClassifierPtr make_classifier(const json& config, bool expose_request_features = true);
+std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_json,
+                                                       bool expose_request_features = true);
 
 // Builds the leaf factory used by compile_match_expr. Classifier leaves are
 // resolved here; deterministic leaf types are supplied by later issues.

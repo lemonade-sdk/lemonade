@@ -1,7 +1,7 @@
 #ifndef LEMON_VERSION_H
 #define LEMON_VERSION_H
 
-// Version information - auto-generated from CMakeLists.txt
+// Version information - auto-generated at configure time
 #define LEMON_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
 #define LEMON_VERSION_MINOR @PROJECT_VERSION_MINOR@
 #define LEMON_VERSION_PATCH @PROJECT_VERSION_PATCH@

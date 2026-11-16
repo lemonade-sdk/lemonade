@@ -11,6 +11,7 @@ on:
       - cmake/**
       - src/cpp/**
       - src/web-app/**
+      - tools/version.py
       - .github/workflows/build-and-push-container.yml
       - .github/workflows/container-build-test.yml
 
@@ -51,6 +52,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Stamp version
+        run: |
+          VERSION=$(python3 tools/version.py)
+          printf '%s\n' "$VERSION" > .version
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
