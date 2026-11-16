@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <string>
+#include <vector>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -54,5 +55,11 @@ private:
 // Note: application-layer idle timeouts (e.g. nginx proxy_read_timeout or ALB
 // idle timeout) require periodic application data / SSE heartbeats.
 bool configure_tcp_keepalive(socket_t sock);
+
+// Local addresses whose accepted connections are refused. Replaces the
+// previous set.
+void set_refused_local_addresses(const std::vector<std::string>& addresses);
+// True when `sock`, an accepted connection, arrived on a refused address.
+bool arrived_on_refused_address(socket_t sock);
 
 } // namespace lemon::utils

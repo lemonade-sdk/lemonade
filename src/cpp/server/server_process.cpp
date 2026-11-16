@@ -15,6 +15,10 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace lemon {
@@ -174,13 +178,22 @@ std::string ContainerProcess::start(const ServerCommand& command) {
         spec.command.push_back(rewrite(arg));
     }
 
-    // From inside its own container, lemond can reach neither a port the host
-    // publishes nor a network it is not on, so the backend joins lemond's.
+    // From inside its own container, lemond reaches its backends on the
+    // internal network it shares with them, which has no route out; lemond
+    // refuses connections arriving on it, so a backend cannot use lemond's API
+    // to reach the internet either. The backend joins lemond's PID namespace,
+    // so the kernel kills it when lemond dies, even by SIGKILL.
     if (own_container.empty()) {
         manager.create_network(name_);
         spec.network = name_;
     } else {
-        spec.network = "container:" + own_container;
+        spec.network = manager.backend_network();
+        spec.pid = "container:" + own_container;
+#ifdef __linux__
+        // A backend in lemond's PID namespace, as the same host account under
+        // rootless Podman, could otherwise read lemond's memory.
+        ::prctl(PR_SET_DUMPABLE, 0);
+#endif
     }
 
     std::vector<std::string> command_line = manager.run_command(spec);
@@ -188,7 +201,7 @@ std::string ContainerProcess::start(const ServerCommand& command) {
                                   << join_command_line(command_line) << std::endl;
     spawn(std::move(command_line), "", {});
 
-    if (!own_container.empty() || manager.rootless_podman()) {
+    if (own_container.empty() && manager.rootless_podman()) {
         return "127.0.0.1";
     }
     // The tool attaches the container's address asynchronously after `run` starts.

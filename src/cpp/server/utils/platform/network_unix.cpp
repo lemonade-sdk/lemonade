@@ -2,7 +2,10 @@
 #include "lemon/utils/network_utils.h"
 
 #include <arpa/inet.h>
+#include <atomic>
 #include <cstring>
+#include <mutex>
+#include <set>
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -19,6 +22,43 @@
 #endif
 
 namespace lemon::utils {
+
+namespace {
+
+std::mutex refused_mutex;
+std::set<std::string> refused_addresses;
+std::atomic<bool> any_refused{false};
+
+} // namespace
+
+void set_refused_local_addresses(const std::vector<std::string>& addresses) {
+    std::lock_guard<std::mutex> lock(refused_mutex);
+    refused_addresses = std::set<std::string>(addresses.begin(), addresses.end());
+    any_refused.store(!refused_addresses.empty());
+}
+
+bool arrived_on_refused_address(socket_t sock) {
+    if (!any_refused.load()) return false;
+    sockaddr_storage local = {};
+    socklen_t length = sizeof(local);
+    if (getsockname(sock, reinterpret_cast<sockaddr*>(&local), &length) != 0) return false;
+    char address[INET6_ADDRSTRLEN] = {};
+    if (local.ss_family == AF_INET) {
+        inet_ntop(AF_INET, &reinterpret_cast<sockaddr_in*>(&local)->sin_addr, address, sizeof(address));
+    } else if (local.ss_family == AF_INET6) {
+        const in6_addr* v6 = &reinterpret_cast<sockaddr_in6*>(&local)->sin6_addr;
+        // The "::" listener takes IPv4 connections as v4-mapped addresses.
+        if (IN6_IS_ADDR_V4MAPPED(v6)) {
+            inet_ntop(AF_INET, &v6->s6_addr[12], address, sizeof(address));
+        } else {
+            inet_ntop(AF_INET6, v6, address, sizeof(address));
+        }
+    } else {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(refused_mutex);
+    return refused_addresses.count(address) > 0;
+}
 
 bool configure_tcp_keepalive(socket_t sock) {
     int opt = 1;

@@ -129,4 +129,11 @@ bool is_tcp_listener_active(int family, const std::string& host_ip, int port) {
     return has_listener;
 }
 
+// Container backends, the only source of refused addresses, run on Linux.
+void set_refused_local_addresses(const std::vector<std::string>&) {}
+
+bool arrived_on_refused_address(socket_t) {
+    return false;
+}
+
 } // namespace lemon::utils

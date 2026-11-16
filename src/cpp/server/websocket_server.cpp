@@ -70,6 +70,14 @@ int WebSocketServer::ws_callback(struct lws* wsi,
     auto* pss = static_cast<PerSessionData*>(user);
 
     switch (reason) {
+        case LWS_CALLBACK_FILTER_NETWORK_CONNECTION: {
+            const auto sock = static_cast<socket_t>(reinterpret_cast<lws_intptr_t>(in));
+            if (utils::arrived_on_refused_address(sock)) {
+                LOG(WARNING, "WebSocket") << "Refused a connection on the container backends' network" << std::endl;
+                return 1;
+            }
+            break;
+        }
         case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION: {
             auto origin_opt = get_header(wsi, WSI_TOKEN_ORIGIN);
             if (origin_opt && !origin_opt->empty()) {

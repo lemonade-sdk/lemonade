@@ -10,6 +10,7 @@
 #include "lemon/backends/gufo/gufo_server.h"
 #include "lemon/backends/halogen/halogen_server.h"
 #include "lemon/utils/container_manager.h"
+#include "lemon/utils/network_utils.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -20,6 +21,13 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#ifndef _WIN32
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 using lemon::utils::ContainerHost;
 using lemon::utils::ContainerManager;
@@ -65,6 +73,8 @@ struct FakeHost {
     std::string gpu_group;        // owner of the GPU device nodes
     // `inspect` answers for these names, as {{.Id}}|{{json .Mounts}}.
     std::map<std::string, std::string> containers;
+    // `network inspect`'s .Internal answer by network name; unlisted ones are false.
+    std::map<std::string, std::string> internal_networks;
     bool root = false;
     // How many commands the manager has run on the host.
     mutable int commands = 0;
@@ -96,6 +106,12 @@ struct FakeHost {
             if (argv.size() > 1 && argv[0] == "podman" && argv[1] == "info") {
                 result.exit_code = podman_info_exit;
                 result.output = podman_rootless + " " + network_backend + " " + oci_runtime + "\n";
+            } else if (argv.size() > 2 && argv[1] == "network" && argv[2] == "inspect") {
+                result.exit_code = 0;
+                for (size_t i = 5; i < argv.size(); ++i) {
+                    const auto it = internal_networks.find(argv[i]);
+                    result.output += argv[i] + " " + (it == internal_networks.end() ? "false" : it->second) + "\n";
+                }
             } else if (argv.size() > 1 && argv[1] == "network") {
                 result.exit_code = 0;
             } else if (argv.size() > 1 && argv[1] == "inspect") {
@@ -709,7 +725,9 @@ FakeHost contained_host() {
              "\"Destination\":\"/opt/lemonade/.cache/huggingface\"},"
              "{\"Type\":\"bind\",\"Source\":\"/srv/models\",\"Destination\":\"/models\"},"
              "{\"Type\":\"bind\",\"Source\":\"/run/user/1000/podman/podman.sock\","
-             "\"Destination\":\"/run/podman/podman.sock\"}]";
+             "\"Destination\":\"/run/podman/podman.sock\"}]"
+             "|{\"podman\":{\"IPAddress\":\"10.88.0.5\"},\"lemonade-backends\":{\"IPAddress\":\"10.89.0.2\",\"GlobalIPv6Address\":\"\"}}";
+    host.internal_networks = {{"podman", "false"}, {"lemonade-backends", "true"}};
     return host;
 }
 
@@ -740,13 +758,18 @@ void test_in_container() {
         return false;
     }());
 
+    check("the backends' network is the internal one lemond's container is on",
+          manager.backend_network() == "lemonade-backends");
+
     ContainerRunSpec spec = example_spec();
-    spec.network = "container:" + id;
+    spec.network = manager.backend_network();
+    spec.pid = "container:" + id;
     spec.mounts = {{"/opt/lemonade/.cache/huggingface/hub/blobs/x",
                     "/mnt/models/Qwen3-4B-Q4_K_M.gguf"}};
     const std::string command = join(manager.run_command(spec));
-    check("a backend shares lemond's network, publishes no port and mounts host paths",
-          command.find(" --network=container:" + id + " ") != std::string::npos &&
+    check("a backend joins the internal network and lemond's PID namespace, publishes no port "
+          "and mounts host paths",
+          command.find(" --network=lemonade-backends --pid=container:" + id + " ") != std::string::npos &&
               command.find(" -p ") == std::string::npos &&
               command.find(" -v /home/user/.local/share/containers/storage/volumes/"
                            "lemonade-cache/_data/hub/blobs/x:/mnt/models/") != std::string::npos &&
@@ -757,9 +780,31 @@ void test_in_container() {
 
     FakeHost hostname_only = contained_host();
     hostname_only.files.erase("/proc/self/mountinfo");
-    hostname_only.containers = {{"lemonade-box", "bbbb|[]"}};
+    hostname_only.containers = {{"lemonade-box", "bbbb|[]|null"}};
     check("lemond falls back to its hostname to find its container",
           ContainerManager(hostname_only.host()).own_container() == "bbbb");
+
+    FakeHost no_internal = contained_host();
+    no_internal.internal_networks = {};
+    const auto network_failures = ContainerManager(no_internal.host()).check_host();
+    check("with no internal network, the failure says to create one and start lemond on it",
+          network_failures.size() == 1 && network_failures[0].id == "backend_network" &&
+              network_failures[0].steps[0] == "podman network create --internal lemonade-backends" &&
+              network_failures[0].steps[1].find("--network podman --network lemonade-backends") !=
+                  std::string::npos);
+
+    FakeHost pasta = contained_host();
+    pasta.containers[id] = id + "|[]|null";
+    check("under pasta, lemond is on no internal network",
+          ContainerManager(pasta.host()).backend_network().empty());
+
+    FakeHost two_internal = contained_host();
+    two_internal.containers[id] =
+        id + "|[]|{\"aaa-internal\":{\"IPAddress\":\"10.90.0.2\"},"
+             "\"lemonade-backends\":{\"IPAddress\":\"10.89.0.2\"}}";
+    two_internal.internal_networks = {{"aaa-internal", "true"}, {"lemonade-backends", "true"}};
+    check("of several internal networks, lemonade-backends is the backends' network",
+          ContainerManager(two_internal.host()).backend_network() == "lemonade-backends");
 
     FakeHost no_socket = contained_host();
     no_socket.containers.clear();
@@ -794,7 +839,9 @@ void test_in_container_docker() {
     host.containers[id] =
         id + "|[{\"Type\":\"volume\",\"Name\":\"lemonade-cache\","
              "\"Source\":\"/var/lib/docker/volumes/lemonade-cache/_data\","
-             "\"Destination\":\"/opt/lemonade/.cache/huggingface\"}]";
+             "\"Destination\":\"/opt/lemonade/.cache/huggingface\"}]"
+             "|{\"bridge\":{\"IPAddress\":\"172.17.0.2\"},\"lemonade-backends\":{\"IPAddress\":\"172.18.0.3\"}}";
+    host.internal_networks = {{"lemonade-backends", "true"}};
     const ContainerManager manager(host.host());
     check("in a container, the tool is the one whose socket is mounted",
           manager.tool() == lemon::utils::ContainerTool::Docker && manager.own_container() == id);
@@ -807,7 +854,8 @@ void test_in_container_docker() {
     from_env.env["LEMONADE_RENDER_GID"] = "990";
     const ContainerManager env_manager(from_env.host());
     ContainerRunSpec spec = example_spec();
-    spec.network = "container:" + id;
+    spec.network = "lemonade-backends";
+    spec.pid = "container:" + id;
     spec.mounts = {{"/opt/lemonade/.cache/huggingface/m.gguf", "/mnt/models/m.gguf"}};
     const std::string command = join(env_manager.run_command(spec));
     check("docker run takes LEMONADE_RENDER_GID, not the image's render group",
@@ -829,6 +877,43 @@ void test_in_container_docker() {
           ContainerManager(neither.host()).tool() == lemon::utils::ContainerTool::Podman);
 }
 
+#ifndef _WIN32
+// lemond's own address on the backends' network refuses connections; any other
+// address of the same listener still takes them.
+void test_refused_local_addresses() {
+    const int listener = ::socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in address = {};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    ::bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address));
+    ::listen(listener, 4);
+    socklen_t length = sizeof(address);
+    ::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &length);
+    const auto accept_one = [&]() {
+        const int client = ::socket(AF_INET, SOCK_STREAM, 0);
+        ::connect(client, reinterpret_cast<sockaddr*>(&address), sizeof(address));
+        const int accepted = ::accept(listener, nullptr, nullptr);
+        ::close(client);
+        return accepted;
+    };
+
+    const ContainerManager manager(contained_host().host());
+    manager.own_container();
+    int accepted = accept_one();
+    check("a connection on another address is answered",
+          !lemon::utils::arrived_on_refused_address(accepted));
+    ::close(accepted);
+
+    lemon::utils::set_refused_local_addresses({"127.0.0.1"});
+    accepted = accept_one();
+    check("a connection on lemond's address on the backends' network is refused",
+          lemon::utils::arrived_on_refused_address(accepted));
+    ::close(accepted);
+    lemon::utils::set_refused_local_addresses({});
+    ::close(listener);
+}
+#endif
+
 int main() {
     test_run_command();
     test_tool_choice_and_setup();
@@ -841,6 +926,9 @@ int main() {
     test_helpers();
     test_in_container();
     test_in_container_docker();
+#ifndef _WIN32
+    test_refused_local_addresses();
+#endif
 #ifndef _WIN32
     test_model_mounts();
 #endif

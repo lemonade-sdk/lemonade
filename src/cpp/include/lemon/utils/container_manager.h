@@ -31,6 +31,9 @@ struct ContainerRunSpec {
     std::string model;
     int port = 0;
     std::string network;
+    // A PID namespace to join, such as container:<id>, or "" for the
+    // container's own.
+    std::string pid;
     std::vector<std::string> devices;
     std::vector<std::string> cap_add;
     std::vector<ContainerMount> mounts;
@@ -136,6 +139,9 @@ public:
     // The path on the host for `path` inside lemond's container, through the
     // bind mount or volume that holds it. Throws when no mount holds it.
     std::string host_path(const std::string& path) const;
+    // The internal network lemond's container is on, lemonade-backends when it
+    // is on several, or "" when it is on none.
+    std::string backend_network() const;
 
     bool has_image(const std::string& image) const;
     void pull(const std::string& image, const DownloadProgressCallback& progress) const;
@@ -207,6 +213,7 @@ private:
     mutable std::mutex own_container_mutex_;
     mutable std::string own_container_;
     mutable std::vector<OwnMount> own_mounts_;
+    mutable std::string backend_network_;
 };
 
 }  // namespace utils

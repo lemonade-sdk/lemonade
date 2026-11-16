@@ -142,6 +142,17 @@ public:
 
 private:
     bool process_and_close_socket(socket_t sock) override {
+        if (lemon::utils::arrived_on_refused_address(sock)) {
+            LOG(WARNING, "Server") << "Refused a connection on the container backends' network" << std::endl;
+#ifdef _WIN32
+            ::shutdown(sock, SD_BOTH);
+            ::closesocket(sock);
+#else
+            ::shutdown(sock, SHUT_RDWR);
+            ::close(sock);
+#endif
+            return false;
+        }
         if (!lemon::utils::configure_tcp_keepalive(sock)) {
             LOG(DEBUG, "Server") << "Failed to configure TCP keep-alive on accepted socket" << std::endl;
         }
