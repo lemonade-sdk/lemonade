@@ -770,6 +770,7 @@ void test_in_container() {
     check("a backend joins the internal network and lemond's PID namespace, publishes no port "
           "and mounts host paths",
           command.find(" --network=lemonade-backends --pid=container:" + id + " ") != std::string::npos &&
+              command.find(" --init") == std::string::npos &&
               command.find(" -p ") == std::string::npos &&
               command.find(" -v /home/user/.local/share/containers/storage/volumes/"
                            "lemonade-cache/_data/hub/blobs/x:/mnt/models/") != std::string::npos &&

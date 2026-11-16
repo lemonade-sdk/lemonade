@@ -502,7 +502,7 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
     const bool rootless = rootless_podman();
 
     std::vector<std::string> argv = {
-        tool_name(*chosen), "run", "--rm", "--init", "--name", spec.name,
+        tool_name(*chosen), "run", "--rm", "--name", spec.name,
         "--label", kLabel,
         "--label", std::string(kLabel) + ".recipe=" + spec.recipe,
         "--label", std::string(kLabel) + ".backend=" + spec.backend,
@@ -513,7 +513,13 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         "--pull=never",
         "--network=" + spec.network,
     };
-    if (!spec.pid.empty()) argv.push_back("--pid=" + spec.pid);
+    // The namespace's PID 1 reaps for a container that joins it, and Podman
+    // refuses --init there.
+    if (spec.pid.empty()) {
+        argv.insert(argv.begin() + 3, "--init");
+    } else {
+        argv.push_back("--pid=" + spec.pid);
+    }
 
     for (const auto& device : spec.devices) {
         argv.push_back("--device");
