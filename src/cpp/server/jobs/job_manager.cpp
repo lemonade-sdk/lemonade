@@ -15,7 +15,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
-#include <limits>
 
 namespace fs = std::filesystem;
 
@@ -26,20 +25,17 @@ namespace {
 
 constexpr size_t kMaxJobs = 50;
 
-size_t projected_media_bytes(const StepRecord& step, const json& output) {
-    size_t total = media_result_bytes(output);
-    // Extract copies persist separately, so count them before storing the output.
+size_t projected_media_bytes(const StepRecord& step, const json& output, const json& context) {
+    json resolved_extracts = json::object();
     for (auto it = step.extract.begin(); it != step.extract.end(); ++it) {
         try {
-            const auto resolved = expr_detail::resolve_ref_path(it.value().get<std::string>(), output);
-            const size_t bytes = payload_bytes(resolved);
-            if (bytes > std::numeric_limits<size_t>::max() - total)
-                return std::numeric_limits<size_t>::max();
-            total += bytes;
+            resolved_extracts[it.key()] =
+                expr_detail::resolve_ref_path(it.value().get<std::string>(), output);
         } catch (const std::exception&) {
+            // The store loop keeps its own error reporting for failed resolutions.
         }
     }
-    return total;
+    return lemon::jobs::projected_media_bytes(output, resolved_extracts, context);
 }
 
 std::string iso_now() {
@@ -670,7 +666,7 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
 
             if (ok) {
                 const size_t retained = retained_media_bytes(job);
-                const size_t added = projected_media_bytes(*s, output);
+                const size_t added = projected_media_bytes(*s, output, job.context);
                 if (!job_media_within_budget(retained, added)) {
                     ok = false;
                     run_error = s->op + " output would exceed the per-job media store limit of " +

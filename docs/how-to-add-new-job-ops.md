@@ -149,8 +149,10 @@ A backend failure sent as an SSE error event fails the step with
 `JobError(424, ...)`, including when media bytes arrived before the error.
 The job engine counts media retained in step outputs plus payloads copied into
 the context by extract. An extract that aliases a payload into several context
-keys consumes the budget for each copy rather than hiding it. Once the sum
-passes the limit, the job fails that step with "would exceed the per-job media store limit",
+keys consumes the budget for each copy rather than hiding it. An extract that
+replaces an existing context key counts only the increase in payload bytes,
+not the whole new value. Once the sum passes the limit, the job fails that step
+with "would exceed the per-job media store limit",
 subject to the step's `on_fail` policy.
 Speech/3D byte streams pass the request cancellation into the HTTP transfer, so
 an interrupt during backend silence stops the transfer instead of holding the

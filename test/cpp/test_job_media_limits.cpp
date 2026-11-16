@@ -77,6 +77,20 @@ int main() {
     check("retained: mixed output sum", retained_media_bytes(job) == 9);
     const json large = {{"mime_type", "audio/wav"}, {"data", ""},
                         {"size", std::numeric_limits<size_t>::max()}};
+    check("projected: new extract counts in full",
+          projected_media_bytes(image, json{{"copy", "YWJj"}}, json::object()) == 3 + 4);
+    check("projected: larger extract counts only growth",
+          projected_media_bytes(image, json{{"copy", "YWJjZA=="}},
+                                json{{"copy", "YWJj"}}) == 3 + 4);
+    check("projected: smaller extract adds zero",
+          projected_media_bytes(image, json{{"copy", "YWJj"}},
+                                json{{"copy", "YWJjZA=="}}) == 3);
+    check("projected: media context does not reduce extract",
+          projected_media_bytes(image, json{{"copy", "YWJj"}},
+                                json{{"copy", media}}) == 3 + 4);
+    check("projected: overflow saturates",
+          projected_media_bytes(large, json{{"copy", "YWJj"}}, json::object()) ==
+              std::numeric_limits<size_t>::max());
     job.steps[0].output = large;
     job.steps[2].output = large;
     check("retained: overflow saturates",

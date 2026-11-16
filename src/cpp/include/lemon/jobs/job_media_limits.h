@@ -71,6 +71,24 @@ inline size_t payload_bytes(const json& value) {
     return count(count, value, 0);
 }
 
+inline size_t projected_media_bytes(const json& output, const json& resolved_extracts,
+                                    const json& context) {
+    size_t total = media_result_bytes(output);
+    for (auto it = resolved_extracts.begin(); it != resolved_extracts.end(); ++it) {
+        size_t added = payload_bytes(it.value());
+        const auto previous = context.find(it.key());
+        if (previous != context.end() && media_result_bytes(*previous) == 0) {
+            // An extract overwrites its key, so only growth beyond the retained value is new data.
+            const size_t replaced = payload_bytes(*previous);
+            added = added > replaced ? added - replaced : 0;
+        }
+        if (added > std::numeric_limits<size_t>::max() - total)
+            return std::numeric_limits<size_t>::max();
+        total += added;
+    }
+    return total;
+}
+
 inline size_t retained_media_bytes(const Job& job) {
     size_t total = 0;
     for (const auto& step : job.steps) {
