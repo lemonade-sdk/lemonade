@@ -228,6 +228,10 @@ void ModelIngest::fetch_registry_artifacts(const ModelInfo& info,
     download_from_registry(info, progress, cancel);
 }
 
+std::unique_ptr<FetchableRepository> ModelIngest::repository_for(const ArtifactRef& ref) const {
+    return deps_.resolver->repository_for(ref, {});
+}
+
 // Always queries the registry for the current file tree: offline and
 // do_not_upgrade policy are the caller's, settled before this runs.
 void ModelIngest::download_from_registry(const ModelInfo& info,

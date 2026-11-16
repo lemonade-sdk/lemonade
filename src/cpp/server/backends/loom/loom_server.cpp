@@ -8,6 +8,7 @@
 #include "lemon/backends/loom/loom_bundle.h"
 #include "lemon/model_manager.h"
 #include "lemon/models/artifact_ref.h"
+#include "lemon/models/artifact_resolver.h"
 #include "lemon/models/artifact_transfer.h"
 #include "lemon/models/fetchable_repository.h"
 #include "lemon/models/registry_id.h"
@@ -76,29 +77,31 @@ void drop_if_resized(const fs::path& path, std::uint64_t size) {
     if (fs::is_regular_file(path, ec) && fs::file_size(path, ec) != size) fs::remove(path, ec);
 }
 
+models::ArtifactRef bundle_ref(const std::string& checkpoint, const models::RegistryId& source) {
+    if (source != models::huggingface_descriptor().id) {
+        throw std::runtime_error("Loom bundles download from Hugging Face only");
+    }
+    models::ArtifactRef ref;
+    ref.registry = source;
+    ref.checkpoint_type = "main";
+    ref.repo_id = models::repo_id_from_checkpoint(checkpoint);
+    return ref;
+}
+
 // Pulls a bundle repository and the origin files its lock pins into one run
 // folder, reusing any copy the models directory already holds.
 class BundleFetcher {
 public:
     // A non-empty `target` refuses a bundle that does not support it before its
     // weights download.
-    BundleFetcher(std::string repo_id, const models::RegistryId& source,
+    BundleFetcher(std::unique_ptr<models::FetchableRepository> repository,
                   DownloadProgressCallback progress, utils::CancelToken cancel,
                   std::string target = "")
-        : repo_id_(std::move(repo_id)), source_(source), progress_(std::move(progress)),
-          cancel_(std::move(cancel)), target_(std::move(target)) {}
+        : repository_(std::move(repository)), repo_id_(repository_->ref().repo_id),
+          progress_(std::move(progress)), cancel_(std::move(cancel)),
+          target_(std::move(target)) {}
 
     void run() {
-        if (source_ != models::huggingface_descriptor().id) {
-            throw std::runtime_error("Loom bundles download from Hugging Face only");
-        }
-        models::ArtifactRef ref;
-        ref.registry = source_;
-        ref.checkpoint_type = "main";
-        ref.repo_id = repo_id_;
-        repository_ = models::create_repository(source_, ref);
-        if (!repository_) throw std::runtime_error("No Hugging Face repository adapter");
-
         const models::RepoListing listing = repository_->list(repo_id_);
         dir_ = run_dir(repo_id_);
         std::error_code ec;
@@ -182,7 +185,7 @@ private:
 
     void adopt_cached_copy(const loom::OriginFile& file, const fs::path& target) {
         const fs::path cache = utils::path_from_utf8(utils::get_hf_cache_dir()) /
-                               registry_repo_cache_dir_name(file.repository, source_);
+                               registry_repo_cache_dir_name(file.repository, repository_->id());
         std::vector<fs::path> candidates = {
             cache / "snapshots" / file.revision / utils::path_from_utf8(file.file),
             cache / "blobs" / file.sha256,
@@ -213,12 +216,11 @@ private:
             plan, repository_->auth_headers(), std::move(progress), cancel_);
     }
 
+    std::unique_ptr<models::FetchableRepository> repository_;
     std::string repo_id_;
-    models::RegistryId source_;
     DownloadProgressCallback progress_;
     utils::CancelToken cancel_;
     std::string target_;
-    std::unique_ptr<models::FetchableRepository> repository_;
     fs::path dir_;
 };
 
@@ -309,9 +311,9 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
 
     const std::string checkpoint = model_info.checkpoint();
     if (!bundle_complete(checkpoint)) {
-        BundleFetcher(models::repo_id_from_checkpoint(checkpoint),
-                      model_manager_->download_source_for(model_info), nullptr, {}, target)
-            .run();
+        const models::ArtifactRef ref =
+            bundle_ref(checkpoint, model_manager_->download_source_for(model_info));
+        BundleFetcher(model_manager_->resolver().repository_for(ref, {}), nullptr, {}, target).run();
     }
     const fs::path dir = run_dir(checkpoint);
     const loom::BundlePlan plan = loom::plan_bundle(read_json_file(dir / loom::kCardFile),
@@ -428,9 +430,9 @@ public:
             throw std::runtime_error("No fetch service while resolving the download source for: " +
                                      info.checkpoint());
         }
-        BundleFetcher(models::repo_id_from_checkpoint(info.checkpoint()),
-                      ctx.fetch->download_source_for(info), std::move(progress), ctx.cancel)
-            .run();
+        const models::ArtifactRef ref =
+            bundle_ref(info.checkpoint(), ctx.fetch->download_source_for(info));
+        BundleFetcher(ctx.fetch->repository_for(ref), std::move(progress), ctx.cancel).run();
     }
 
     void remove_self_managed_model(const ModelInfo& info) const override {
