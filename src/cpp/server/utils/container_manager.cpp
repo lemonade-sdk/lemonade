@@ -323,8 +323,8 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
                         kBackendNetwork + ", as " + kContainerDocs + " shows");
         failures.push_back(
             {"backend_network",
-             "lemond's container is on no internal network for its container backends", steps,
-             ""});
+             std::string("lemond's container is not on an internal network named ") + kBackendNetwork,
+             steps, ""});
         return failures;
     }
     // Docker and rootful Podman add the render group by number (see run_command).
@@ -824,7 +824,7 @@ std::string ContainerManager::own_container() const {
                 std::string internal;
                 words >> name >> internal;
                 if (internal != "true" || !addresses.count(name)) continue;
-                if (backend_network.empty() || name == kBackendNetwork) backend_network = name;
+                if (name == kBackendNetwork) backend_network = name;
             }
         }
         own_container_ = output.substr(0, bar);

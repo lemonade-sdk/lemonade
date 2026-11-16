@@ -811,6 +811,17 @@ void test_in_container() {
     check("of several internal networks, lemonade-backends is the backends' network",
           ContainerManager(two_internal.host()).backend_network() == "lemonade-backends");
 
+    FakeHost only_other = contained_host();
+    only_other.containers[id] =
+        id + "|[]|{\"podman\":{\"IPAddress\":\"10.88.0.5\"},"
+             "\"other-internal\":{\"IPAddress\":\"10.90.0.2\"}}";
+    only_other.internal_networks = {{"other-internal", "true"}};
+    const ContainerManager other_manager(only_other.host());
+    const auto other_failures = other_manager.check_host();
+    check("an internal network not named lemonade-backends is not the backends' network",
+          other_manager.backend_network().empty() && other_failures.size() == 1 &&
+              other_failures[0].id == "backend_network");
+
     FakeHost no_socket = contained_host();
     no_socket.containers.clear();
     no_socket.podman_info_exit = 125;

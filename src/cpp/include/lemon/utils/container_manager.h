@@ -139,8 +139,8 @@ public:
     // The path on the host for `path` inside lemond's container, through the
     // bind mount or volume that holds it. Throws when no mount holds it.
     std::string host_path(const std::string& path) const;
-    // The internal network lemond's container is on, lemonade-backends when it
-    // is on several, or "" when it is on none.
+    // lemonade-backends when lemond's container is on it and it is internal,
+    // otherwise "".
     std::string backend_network() const;
 
     bool has_image(const std::string& image) const;
