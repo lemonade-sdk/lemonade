@@ -36,7 +36,7 @@ ANTHROPIC_VERSION = "2023-06-01"
 
 SYSTEM_PROMPT = """You auto-label GitHub issues and PRs for the lemonade-sdk/lemonade repository.
 
-You will receive an item's title, body, and existing labels. Decide which labels from the list below to ADD. Output ONLY a comma-separated list of label names to add, or the literal string `(none)` if no labels apply. Do NOT include labels the item already has. Do NOT include any explanation, prose, code fences, or formatting — only the bare label list or `(none)`.
+You will receive an item's kind, title, body, and existing labels. Decide which labels from the list below to ADD. Answer in the required JSON shape: `labels` holds every label to add except the workgroup, and `workgroup` holds the one wg:: label for the item, or "none". Do NOT include labels the item already has.
 
 Available labels:
 
@@ -63,6 +63,15 @@ Runtime — apply AT MOST ONE total. Same hard rule. Skip if the item is not spe
 - runtime::cuda   — NVIDIA CUDA path
 - runtime::metal  — Apple Metal path (macOS)
 - runtime::cpu    — CPU-only execution path (only when the issue is specifically about CPU fallback / CPU-only behavior, not when CPU is just one of many devices mentioned)
+
+Workgroup — apply AT MOST ONE. For a pull request (Kind: pull request), ALWAYS apply exactly one: pick the charter that owns most of the change, and use wg::platform-core when nothing else fits (server, backends, model catalog, docs for server features). For an issue, apply one only when it is clearly scoped to a single charter:
+- wg::platform-core     — server infrastructure: router, model manager, wrapped_server, API handlers, build system, packaging. CLI fixes go here (NOT GUI App). Desktop tray goes here. Example: "fix(cli): distinguish a closed connection" → wg::platform-core
+- wg::enterprise-grade  — systematic testing, CI quality, build automation, observability. CI/test infrastructure goes here (NOT GUI App). Example: "fix(ci): make llama.cpp auto-update" → wg::enterprise-grade
+- wg::cloud-hybrid      — routing between local and cloud models
+- wg::remote-use        — serving inference to remote devices/locations
+- wg::cross-vendor-support — hardware vendor support (NVIDIA, ARM, Intel)
+- wg::auto-tune         — self-optimizing models/backends (auto-select backend, benchmark, tune)
+- wg::gui-app           — Frontend UI only: Tauri desktop app (src/app/), web app UI (src/web-app/). NOT backend, routing, CLI, or infrastructure work
 
 Existing component labels — apply only if clearly relevant. Don't double up with area:: (e.g., don't add `cpp` if area::api fits):
 - cpp     — C++ server-side code that doesn't fit area::api or area::cli
@@ -135,8 +144,10 @@ def classify(item, item_num):
 
     existing = [lbl["name"] for lbl in item.get("labels", [])]
     body = (item.get("body") or "").strip() or "(empty)"
+    is_pr = "/pull/" in item.get("url", "")
     user_msg = (
         f"Item: #{item_num}\n"
+        f"Kind: {'pull request' if is_pr else 'issue'}\n"
         f"Title: {item['title']}\n"
         f"Existing labels: {', '.join(existing) if existing else '(none)'}\n\n"
         f"Body:\n{body}"
@@ -148,6 +159,9 @@ def classify(item, item_num):
             "thinking": {"type": "disabled"},
             "system": SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_msg}],
+            "output_config": {
+                "format": {"type": "json_schema", "schema": _schema(is_pr)}
+            },
         }
     ).encode()
     req = urllib.request.Request(
@@ -168,12 +182,38 @@ def classify(item, item_num):
             f"Anthropic API error {exc.code}: {exc.read().decode(errors='replace')}"
         )
 
+    if data.get("stop_reason") == "refusal":
+        print(f"  [warn] #{item_num}: model declined to classify", file=sys.stderr)
+        return "(none)"
     text_blocks = [
         block["text"] for block in data["content"] if block["type"] == "text"
     ]
     if not text_blocks:
         raise ValueError("Anthropic response did not contain a text block")
-    return "".join(text_blocks).strip()
+    answer = json.loads("".join(text_blocks))
+    labels = list(answer["labels"])
+    if answer["workgroup"] != "none":
+        labels.append(answer["workgroup"])
+    return ", ".join(labels) or "(none)"
+
+
+def _schema(is_pr):
+    """Structured-output schema: only known labels, and an explicit workgroup.
+
+    Pull requests must pick a workgroup; the prompt alone wasn't enough to
+    stop Haiku 5.5 from answering "none".
+    """
+    wgs = sorted(lbl for lbl in KNOWN_LABELS if lbl.startswith("wg::"))
+    others = sorted(lbl for lbl in KNOWN_LABELS if not lbl.startswith("wg::"))
+    return {
+        "type": "object",
+        "properties": {
+            "labels": {"type": "array", "items": {"type": "string", "enum": others}},
+            "workgroup": {"type": "string", "enum": wgs if is_pr else wgs + ["none"]},
+        },
+        "required": ["labels", "workgroup"],
+        "additionalProperties": False,
+    }
 
 
 KNOWN_LABELS = {
@@ -195,6 +235,13 @@ KNOWN_LABELS = {
     "runtime::cuda",
     "runtime::metal",
     "runtime::cpu",
+    "wg::platform-core",
+    "wg::enterprise-grade",
+    "wg::cloud-hybrid",
+    "wg::remote-use",
+    "wg::cross-vendor-support",
+    "wg::auto-tune",
+    "wg::gui-app",
     "cpp",
     "app",
     "web ui",
@@ -206,7 +253,7 @@ KNOWN_LABELS = {
 }
 
 # Label families where at most one label may be applied per item.
-AT_MOST_ONE_PREFIXES = ("engine::", "area::", "runtime::")
+AT_MOST_ONE_PREFIXES = ("engine::", "area::", "runtime::", "wg::")
 
 # Deterministic community-priority labels. Computed from engagement counts
 # (author + commenters + supporting reactions), excluding bots and anyone with

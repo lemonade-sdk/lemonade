@@ -1261,10 +1261,20 @@ class LemonadeAPI {
     url.pathname = path.startsWith('/') ? path : `/${path}`;
 
     const params = new URLSearchParams(query);
-    if (this.apiKey) params.set('api_key', this.apiKey);
     params.set('client_session_id', this.clientSessionId);
     url.search = params.toString();
     return url.toString();
+  }
+
+  private _webSocketProtocols(): string[] | undefined {
+    const apiKey = this.apiKey;
+    if (!apiKey) return undefined;
+    let binary = '';
+    for (const byte of new TextEncoder().encode(apiKey)) {
+      binary += String.fromCharCode(byte);
+    }
+    const credential = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return ['lemonade-realtime', `bearer.${credential}`];
   }
 
   private _openRealtimeSocket(
@@ -1276,7 +1286,7 @@ class LemonadeAPI {
     return new Promise((resolve, reject) => {
       let opened = false;
       let settled = false;
-      const socket = new WebSocket(wsUrl);
+      const socket = new WebSocket(wsUrl, this._webSocketProtocols());
       const send = (msg: object) => {
         if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
       };
@@ -1365,7 +1375,7 @@ class LemonadeAPI {
     return new Promise((resolve, reject) => {
       let opened = false;
       let settled = false;
-      const socket = new WebSocket(wsUrl);
+      const socket = new WebSocket(wsUrl, this._webSocketProtocols());
       const timer = window.setTimeout(() => {
         if (settled) return;
         settled = true;
