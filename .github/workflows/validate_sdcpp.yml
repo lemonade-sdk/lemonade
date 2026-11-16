@@ -453,9 +453,10 @@ jobs:
           cache-dir: ${{ env.LEMONADE_CI_CACHE_DIR }}
 
       - name: Re-record the API examples the new backend serves
-        # An example changes only when the new backend changes its response's shape,
-        # so the update PR carries no churn from new values.
+        # Keep documentation failures separate from inference validation.
+        id: record_api_examples
         if: matrix.label == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
@@ -463,13 +464,40 @@ jobs:
           & .\.venv\Scripts\python.exe docs\tools\gen_api_boilerplate.py --lemond build\Release\lemond.exe --refresh sd-cpp
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Verify recorded API examples
+        id: verify_api_examples
+        if: matrix.label == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.record_api_examples.outcome == 'success'
+        continue-on-error: true
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          & .\.venv\Scripts\python.exe docs\tools\gen_api_boilerplate.py --lemond build\Release\lemond.exe --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Record API documentation status
+        if: always() && matrix.label == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
+        shell: PowerShell
+        env:
+          RECORD_OUTCOME: ${{ steps.record_api_examples.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify_api_examples.outcome }}
+        run: |
+          $status = if ($env:RECORD_OUTCOME -eq 'success' -and $env:VERIFY_OUTCOME -eq 'success') { 'passed' } else { 'failed' }
+          Set-Content -Path docs\tools\api_examples_status.txt -Value $status -Encoding ascii -NoNewline
+          if ($status -ne 'passed') {
+            Write-Warning "API example recording or verification failed; the update PR must be a draft."
+            "### API documentation verification failed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
       - name: Upload recorded API examples
-        if: matrix.label == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        if: always() && matrix.label == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: api-examples
           path: |
             docs/tools/api_examples_cache.json
+            docs/tools/api_examples_status.txt
             docs/api/
           retention-days: 7
 
@@ -561,25 +589,50 @@ jobs:
 
   create-pr:
     name: Create update PR
-    needs: [discover-release, validate, verify-cuda-assets]
+    needs: [discover-release, build, validate, verify-cuda-assets, gpu-offload-gate]
     runs-on: ubuntu-latest
+    concurrency:
+      group: sdcpp-auto-update-${{ github.repository }}-${{ needs.discover-release.outputs.base_release }}-${{ needs.discover-release.outputs.cuda_release }}
+      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: write
     if: >-
+      always() &&
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.validate.result == 'success' &&
-      needs.verify-cuda-assets.result == 'success'
+      needs.discover-release.result == 'success' &&
+      needs.build.result == 'success' &&
+      needs.verify-cuda-assets.result == 'success' &&
+      needs.validate.result != 'cancelled'
     steps:
       - uses: actions/checkout@v5
 
       - name: Download recorded API examples
+        id: download_api_examples
+        continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           name: api-examples
-          path: docs
+          path: api-examples-artifact
+
+      - name: Install verified API documentation
+        id: api_docs
+        if: steps.download_api_examples.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat api-examples-artifact/tools/api_examples_status.txt)" = passed
+          test -s api-examples-artifact/tools/api_examples_cache.json
+          for page in docs/api/*.md; do
+            test -s "api-examples-artifact/api/${page##*/}"
+          done
+          cp api-examples-artifact/tools/api_examples_cache.json docs/tools/
+          cp -R api-examples-artifact/api/. docs/api/
 
       - name: Download validation evidence
+        id: download_validation
+        continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           pattern: sdcpp-validation-*
@@ -607,7 +660,12 @@ jobs:
           fi
 
       - name: Normalize validation evidence and generate PR body
-        if: steps.update-diff.outputs.has_update == 'true'
+        id: render_evidence
+        if: >-
+          steps.update-diff.outputs.has_update == 'true' &&
+          needs.validate.result == 'success' &&
+          steps.download_validation.outcome == 'success'
+        continue-on-error: true
         shell: bash
         env:
           BASE_RELEASE: ${{ needs.discover-release.outputs.base_release }}
@@ -616,7 +674,6 @@ jobs:
           CUDA_UPDATE_BACKENDS: ${{ needs.discover-release.outputs.cuda_update_backends }}
         run: |
           set -euo pipefail
-          UPDATE_BRANCH="auto/sdcpp-update-${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
           EVIDENCE_BRANCH="auto/sdcpp-validation-images"
           EVIDENCE_ROOT=".github/sdcpp-validation"
           EVIDENCE_NAME="${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
@@ -638,14 +695,17 @@ jobs:
             --sizes "${SDCPP_TEST_SIZES}" \
             --output pr_body.md
           {
-            echo "UPDATE_BRANCH=$UPDATE_BRANCH"
             echo "EVIDENCE_BRANCH=$EVIDENCE_BRANCH"
             echo "EVIDENCE_ROOT=$EVIDENCE_ROOT"
             echo "EVIDENCE_NAME=$EVIDENCE_NAME"
           } >> "$GITHUB_ENV"
 
       - name: Publish validation images
-        if: steps.update-diff.outputs.has_update == 'true'
+        id: publish_evidence
+        if: >-
+          steps.update-diff.outputs.has_update == 'true' &&
+          steps.render_evidence.outcome == 'success'
+        continue-on-error: true
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -730,6 +790,58 @@ jobs:
             git push origin "HEAD:refs/heads/$EVIDENCE_BRANCH"
           fi
 
+      - name: Report incomplete validation in PR and workflow
+        if: steps.update-diff.outputs.has_update == 'true'
+        shell: bash
+        env:
+          VALIDATION_RESULT: ${{ needs.validate.result }}
+          GPU_GATE_RESULT: ${{ needs.gpu-offload-gate.result }}
+          API_DOWNLOAD: ${{ steps.download_api_examples.outcome }}
+          API_DOCS: ${{ steps.api_docs.outcome }}
+          EVIDENCE_DOWNLOAD: ${{ steps.download_validation.outcome }}
+          RENDER_RESULT: ${{ steps.render_evidence.outcome }}
+          PUBLISH_RESULT: ${{ steps.publish_evidence.outcome }}
+          BASE_RELEASE: ${{ needs.discover-release.outputs.base_release }}
+          CUDA_RELEASE: ${{ needs.discover-release.outputs.cuda_release }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          problems=()
+          [[ "$VALIDATION_RESULT" == success ]] || problems+=("Validation matrix: $VALIDATION_RESULT")
+          [[ "$GPU_GATE_RESULT" == success ]] || problems+=("GPU offload gate: $GPU_GATE_RESULT")
+          [[ "$API_DOWNLOAD" == success && "$API_DOCS" == success ]] || problems+=("API docs recording, verification or artifact: failed")
+          [[ "$EVIDENCE_DOWNLOAD" == success ]] || problems+=("Validation evidence artifact: $EVIDENCE_DOWNLOAD")
+          [[ "$RENDER_RESULT" == success ]] || problems+=("Validation evidence report: $RENDER_RESULT")
+          [[ "$PUBLISH_RESULT" == success ]] || problems+=("Validation image publication: $PUBLISH_RESULT")
+          if [[ "$RENDER_RESULT" == success && ! -s pr_body.md ]]; then
+            problems+=("Validation evidence report body is missing")
+          fi
+
+          VALIDATED=true
+          if (( ${#problems[@]} > 0 )); then
+            VALIDATED=false
+            if [[ ! -s pr_body.md ]]; then
+              printf 'Candidate sd-cpp pins: base %s, CUDA %s.\n\nValidation did not complete.\n' \
+                "$BASE_RELEASE" "$CUDA_RELEASE" > pr_body.md
+            fi
+            printf '### sd-cpp update requires review\n' >> "$GITHUB_STEP_SUMMARY"
+            for problem in "${problems[@]}"; do
+              printf '::warning::sd-cpp auto-update: %s\n' "$problem"
+              printf -- '- %s\n' "$problem" >> "$GITHUB_STEP_SUMMARY"
+            done
+            {
+              printf '> [!CAUTION]\n'
+              printf '> **Validation is incomplete. This PR must remain a draft.**\n'
+              for problem in "${problems[@]}"; do
+                printf '> - %s\n' "$problem"
+              done
+              printf '> Workflow: %s\n\n' "$RUN_URL"
+              cat pr_body.md
+            } > pr_body_checked.md
+            mv pr_body_checked.md pr_body.md
+          fi
+          printf 'VALIDATED=%s\n' "$VALIDATED" >> "$GITHUB_ENV"
+
       - name: Create or update Pull Request
         if: steps.update-diff.outputs.has_update == 'true'
         shell: bash
@@ -739,31 +851,98 @@ jobs:
           CUDA_RELEASE: ${{ needs.discover-release.outputs.cuda_release }}
         run: |
           set -euo pipefail
-          BRANCH="$UPDATE_BRANCH"
+          BRANCH="auto/sdcpp-update-${BASE_RELEASE}-cuda-${CUDA_RELEASE}"
           TITLE="Update stable-diffusion.cpp to ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}"
+          if [[ "$VALIDATED" != true ]]; then
+            TITLE="[Validation failed] $TITLE"
+          fi
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git checkout -B "$BRANCH"
-          git add src/cpp/resources/backend_versions.json docs/tools/api_examples_cache.json docs/api
-          git commit -m "Update stable-diffusion.cpp pins to ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}"
-
-          REMOTE_SHA=$(git ls-remote origin "refs/heads/$BRANCH" | awk '{print $1}')
-          if [ -n "$REMOTE_SHA" ]; then
-            git push --force-with-lease="refs/heads/$BRANCH:$REMOTE_SHA" origin "$BRANCH"
-          else
-            git push origin "$BRANCH"
+          # Find all open bot PRs for this exact release pair, including retry
+          # branches. Both tags have a validated master-<num>-<hex> format.
+          EXISTING_ROW=$(gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" |
+            jq -r --arg repo "$GITHUB_REPOSITORY" --arg branch "$BRANCH" '
+              [.[][] |
+                select(.user.login == "app/github-actions" or .user.login == "github-actions[bot]") |
+                select(.head.repo.full_name == $repo and .base.ref == "main") |
+                select(.head.ref == $branch or
+                  ((.head.ref | startswith($branch + "-")) and
+                   (.head.ref | ltrimstr($branch + "-") | test("^[0-9]+-[0-9]+$"))))
+              ] | sort_by([(.head.ref != $branch), .created_at]) | first |
+              if . == null then empty else "\(.number) \(.head.ref)" end')
+          EXISTING_PR=""
+          if [[ -n "$EXISTING_ROW" ]]; then
+            EXISTING_PR="${EXISTING_ROW%% *}"
+            BRANCH="${EXISTING_ROW#* }"
+          fi
+          if [[ -n "$EXISTING_PR" ]]; then
+            was_draft=$(gh pr view "$EXISTING_PR" --json isDraft --jq .isDraft)
+            old_title=$(gh pr view "$EXISTING_PR" --json title --jq .title)
+            if [[ "$old_title" == 'HOLD:'* ]] ||
+               [[ "$was_draft" == true && "$old_title" != '[Validation failed] '* ]]; then
+              echo "PR #$EXISTING_PR is manually held; leaving it untouched."
+              exit 0
+            fi
+            if [[ "$VALIDATED" == true && "$was_draft" != true && "$old_title" != '[Validation failed] '* ]]; then
+              echo "Ready PR #$EXISTING_PR already exists; skipping repeat update."
+              exit 0
+            fi
+            if [[ "$VALIDATED" != true && "$was_draft" != true ]]; then
+              # Do not push unvalidated pins to a ready PR if this token cannot
+              # convert it to draft. Still make the warning visible.
+              if ! gh pr ready "$EXISTING_PR" --undo; then
+                echo "::error::Cannot convert PR #$EXISTING_PR to draft; no branch update pushed."
+                gh pr edit "$EXISTING_PR" --title "$TITLE" --body-file pr_body.md || true
+                exit 1
+              fi
+            fi
+          elif git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            # A closed PR left its old branch; start clean, never carry old commits.
+            BRANCH="${BRANCH}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           fi
 
-          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
-          if [ -n "$EXISTING_PR" ]; then
-            gh pr edit "$EXISTING_PR" \
-              --title "$TITLE" \
-              --body-file pr_body.md \
-              --base main
+          # Append without rewriting bot branch history or unrelated pin changes.
+          WORKTREE=$(mktemp -d)
+          trap 'git worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true; rm -rf "$WORKTREE"' EXIT
+          if [[ -n "$EXISTING_PR" ]]; then
+            git fetch --no-tags origin "refs/heads/$BRANCH"
+            git worktree add --detach "$WORKTREE" FETCH_HEAD
           else
-            gh pr create \
+            git worktree add --detach "$WORKTREE" HEAD
+          fi
+
+          python3 .github/scripts/update_sdcpp_versions.py \
+            --path "$WORKTREE/src/cpp/resources/backend_versions.json" \
+            --release "$BASE_RELEASE" --backends "$SDCPP_BASE_UPDATE_BACKENDS"
+          python3 .github/scripts/update_sdcpp_versions.py \
+            --path "$WORKTREE/src/cpp/resources/backend_versions.json" \
+            --release "$CUDA_RELEASE" --backends "$SDCPP_CUDA_UPDATE_BACKENDS"
+          git -C "$WORKTREE" add -- src/cpp/resources/backend_versions.json
+          if [[ "$VALIDATED" == true ]]; then
+            # Replay only verified changes, preserving branch-only documentation.
+            DOCS_PATCH=$(mktemp)
+            git add -N -- docs/api
+            git diff --binary HEAD -- docs/tools/api_examples_cache.json docs/api > "$DOCS_PATCH"
+            if [[ -s "$DOCS_PATCH" ]]; then
+              git -C "$WORKTREE" apply --3way --index "$DOCS_PATCH"
+            fi
+            rm -f "$DOCS_PATCH"
+          fi
+          if ! git -C "$WORKTREE" diff --cached --quiet; then
+            git -C "$WORKTREE" commit -m "Update stable-diffusion.cpp pins to ${BASE_RELEASE} and CUDA ${CUDA_RELEASE}"
+            git -C "$WORKTREE" push origin "HEAD:refs/heads/$BRANCH"
+          fi
+
+          if [[ -n "$EXISTING_PR" ]]; then
+            # Refresh stale warnings after success without auto-releasing drafts.
+            gh pr edit "$EXISTING_PR" --title "$TITLE" --body-file pr_body.md
+          else
+            pr_args=()
+            if [[ "$VALIDATED" != true ]]; then pr_args+=(--draft); fi
+            gh pr create "${pr_args[@]}" \
               --title "$TITLE" \
               --body-file pr_body.md \
               --base main \
