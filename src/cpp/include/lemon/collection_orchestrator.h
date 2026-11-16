@@ -6,7 +6,7 @@
 #include <vector>
 #include <httplib.h>
 #include <nlohmann/json.hpp>
-#include "model_manager.h"
+#include "lemon/model_manager_types.h"
 
 namespace lemon {
 

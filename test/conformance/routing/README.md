@@ -29,7 +29,7 @@ key order and formatting do not matter. It checks these fields:
 | `matched_rule` | The id of the rule that matched, or `""` when no rule matched. |
 | `default_used` | `true` when no rule matched and `default_model` was used. |
 | `outputs` | The matched rule's `outputs` object, copied as is (`{}` otherwise). |
-| `trace` | Only when the request sets `route_trace: true`: one entry per evaluated condition, with `condition`, `result`, and optionally `score`, `label`, `rationale`. |
+| `trace` | Only when the request sets `route_trace: true`: one entry per evaluated condition, with `condition`, `result`, and optionally `score`, `label`, `rationale`, `error`, `truncated`. |
 
 Every value must match exactly, with one exception: a `semantic_similarity` trace
 `score` may differ by up to `1e-12`. That score is computed (a cosine: dot
@@ -135,6 +135,11 @@ and fills it from the case's `services` object:
 "services": {
   "embed":          { "<model>": { "<text>": [numbers] | null } },
   "run_classifier": { "<model>": { "<label>": number } | null },
+  "run_zero_shot_classifier": {
+    "<model>": { "<label>": number }
+               | { "scores": { "<label>": number }, "truncated": bool }
+               | null
+  },
   "chat":           { "<model>": "<reply>" | null }
 }
 ```
@@ -143,6 +148,12 @@ and fills it from the case's `services` object:
   every reference phrase of the classifier and the routing input itself.
 - `run_classifier` (used by `classifier`) returns a label → score map. An empty
   map `{}` is a *successful* answer where every label scores 0.
+- `run_zero_shot_classifier` (used by `zero_shot`) returns the same map, but it
+  must name **exactly** the labels the classifier declared. Its wrapper
+  form adds `truncated`, the backend's report on whether it cut the input text
+  to fit its window; a case that uses the wrapper states `truncated` either way.
+  The bare map, and every `run_classifier` answer, report nothing, like
+  ort-server before 0.4.0.
 - `chat` (used by the `llm` router) returns the model's raw reply text.
 - `null` makes that call fail. The classifier then reports failure and its rule
   resolves through `on_error` (`match_false` by default, `match_true` if set).

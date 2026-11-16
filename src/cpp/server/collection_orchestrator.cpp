@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cmath>
 #include <ctime>
+#include <lemon/model_manager.h>
 #include <map>
 #include <optional>
 #include <regex>

@@ -409,7 +409,13 @@ function summarizeDevice(name: string, value: unknown): Record<string, unknown> 
   const details: string[] = [];
   if (record.cores) details.push(`${record.cores} cores`);
   if (record.threads) details.push(`${record.threads} threads`);
-  if (record.vram_gb) details.push(`${record.vram_gb} GB VRAM`);
+  if (name === 'amd_gpu' && record.integrated === true) {
+    details.push('Unified memory (shared with system RAM)');
+    if (record.vram_gb) details.push(`${record.vram_gb} GB reserved GPU memory`);
+    if (record.virtual_mem_gb) details.push(`${record.virtual_mem_gb} GB shared GPU memory (GTT)`);
+  } else if (record.vram_gb) {
+    details.push(`${record.vram_gb} GB VRAM`);
+  }
   if (record.tops_max_int) details.push(`${record.tops_max_int} TOPS`);
   return { type: name, name: label, available, details };
 }
@@ -450,6 +456,10 @@ function summarizeSystemInfo(info: Record<string, unknown>): Record<string, unkn
   return {
     os: cleanValue(info['OS Version']) || cleanValue(info.os_version) || undefined,
     lemonade_version: cleanValue(info.lemonade_version) || cleanValue(info.version) || undefined,
+    physical_memory:
+      cleanValue(info['Physical Memory']) === 'Physical memory information not found.'
+        ? undefined
+        : cleanValue(info['Physical Memory']) || undefined,
     devices: deviceSummary,
     recipes: recipeSummary,
     counts: {
@@ -466,6 +476,7 @@ function linesForSystemInfo(summary: Record<string, any>): string {
   const lines: string[] = [];
   if (summary.os) lines.push(`OS: ${summary.os}`);
   if (summary.lemonade_version) lines.push(`Lemonade: ${summary.lemonade_version}`);
+  if (summary.physical_memory) lines.push(`Physical memory: ${summary.physical_memory}`);
   const devices = summary.devices || {};
   for (const [kind, items] of Object.entries(devices)) {
     const labels = Array.isArray(items)

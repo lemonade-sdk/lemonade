@@ -152,6 +152,10 @@ module.exports = (env, argv) => {
     module: {
       rules: [
         {
+          test: /[\\/]vendor[\\/]model-viewer\.min\.js$/,
+          parser: { import: false },
+        },
+        {
           test: /\.tsx?$/,
           use: {
             loader: 'ts-loader',

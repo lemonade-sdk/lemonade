@@ -26,7 +26,8 @@ inline const std::set<std::string>& allowed_row_keys() {
 
 // The service names a row's "services" object may declare.
 inline const std::set<std::string>& allowed_service_names() {
-    static const std::set<std::string> names = {"embed", "run_classifier", "chat"};
+    static const std::set<std::string> names = {"embed", "run_classifier",
+                                                "run_zero_shot_classifier", "chat"};
     return names;
 }
 

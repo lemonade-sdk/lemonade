@@ -159,7 +159,7 @@ For example, to use your own Vulkan `llama-server` in place of Lemonade's:
     lemond.exe ./
 
     REM Set the llama-server vulkan binary path
-    lemonade.exe config set llamacpp.vulkan_bin C:\path\to\bins
+    lemonade.exe config set "llamacpp.vulkan_bin=C:\path\to\llama-server.exe"
     ```
 
 === "Linux (bash)"
@@ -169,7 +169,7 @@ For example, to use your own Vulkan `llama-server` in place of Lemonade's:
     ./lemond ./
 
     # Set the llama-server vulkan binary path
-    ./lemonade config set llamacpp.vulkan_bin /path/to/bins
+    ./lemonade config set llamacpp.vulkan_bin=/path/to/llama-server
     ```
 
 See the `*_bin` settings in the [Configuration Guide](../guide/configuration/README.md) for the full set of customization options.

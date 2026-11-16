@@ -7,11 +7,12 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
-#include "lemon/model_manager.h"
 #include "lemon/server/route_error.h"
 #include "lemon/server/server_context.h"
 
 namespace lemon {
+
+struct ModelInfo;
 
 using ModelOptionsMutation =
     std::function<bool(const std::string& model_key, ModelInfo& info, httplib::Response& res)>;

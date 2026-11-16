@@ -40,6 +40,7 @@ extern const RouteArg kUser;
 
 namespace openai::models {
 extern const RouteArg kId;
+extern const RouteArg kIncludePaths;
 } // namespace openai::models
 
 namespace gateway {
@@ -85,5 +86,9 @@ namespace inference {
 extern const RouteArg kSteps;
 extern const RouteArg kSeed;
 } // namespace inference
+
+namespace classification {
+extern const RouteArg kModel;
+} // namespace classification
 
 } // namespace lemon

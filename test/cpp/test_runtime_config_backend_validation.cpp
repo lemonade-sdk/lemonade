@@ -1,3 +1,6 @@
+#include <lemon/backends/llamacpp/llamacpp.h>
+#include <lemon/backends/thenoise/thenoise_server.h>
+#include <lemon/backends/whispercpp/whispercpp.h>
 #include <lemon/runtime_config.h>
 
 #include <nlohmann/json.hpp>
@@ -13,6 +16,18 @@ using nlohmann::json;
 namespace {
 
 int failures = 0;
+
+// A config that never named a setting has to answer with its default. Reaching for a
+// missing key through a const object reads past the end, and the model store reads
+// both of these on every rebuild.
+void expect_absent_key_answers_default(const std::string& key, bool answered) {
+    if (answered) {
+        std::printf("[FAIL] an absent %s did not answer its default\n", key.c_str());
+        ++failures;
+    } else {
+        std::printf("[PASS] an absent %s answers its default\n", key.c_str());
+    }
+}
 
 void expect_accepted(const std::string& section, const std::string& key, const json& value) {
     RuntimeConfig config(json::object());
@@ -48,9 +63,46 @@ void expect_unknown_key(const std::string& section, const std::string& key, cons
     expect_rejected(section, key, value, "Unknown key: '" + section + "." + key + "'");
 }
 
+void expect_args_variant(const lemon::BackendDescriptor& descriptor,
+                         const std::string& variant, const std::string& args) {
+    const std::string key = variant + "_args";
+    const json defaults = descriptor.config_defaults();
+    if (!defaults.contains(key) || defaults.at(key) != "") {
+        std::printf("[FAIL] %s.%s missing from defaults\n", descriptor.recipe.c_str(), key.c_str());
+        ++failures;
+    } else {
+        std::printf("[PASS] %s.%s in defaults\n", descriptor.recipe.c_str(), key.c_str());
+    }
+
+    RuntimeConfig config(json::object());
+    try {
+        config.set({{descriptor.effective_config_section(), {{key, args}}}});
+        const json resolved = config.recipe_options(variant);
+        const std::string option_key = descriptor.recipe + "_args";
+        if (resolved.value(option_key, std::string{}) == args) {
+            std::printf("[PASS] %s.%s resolves to %s\n",
+                        descriptor.recipe.c_str(), key.c_str(), option_key.c_str());
+        } else {
+            std::printf("[FAIL] %s.%s does not resolve to %s\n",
+                        descriptor.recipe.c_str(), key.c_str(), option_key.c_str());
+            ++failures;
+        }
+    } catch (const std::exception& error) {
+        std::printf("[FAIL] %s.%s could not be configured: %s\n",
+                    descriptor.recipe.c_str(), key.c_str(), error.what());
+        ++failures;
+    }
+}
+
 }  // namespace
 
 int main() {
+    {
+        RuntimeConfig config(json::object());
+        expect_absent_key_answers_default("disable_model_filtering", config.disable_model_filtering());
+        expect_absent_key_answers_default("enable_dgpu_gtt", config.enable_dgpu_gtt());
+    }
+
     try {
         RuntimeConfig::validate_backend_choice("llamacpp", "system");
 #ifdef __linux__
@@ -67,6 +119,10 @@ int main() {
         std::puts("[PASS] llamacpp system backend is rejected on unsupported platforms");
 #endif
     }
+
+    expect_args_variant(lemon::backends::llamacpp::descriptor, "cuda", "--threads 4");
+    expect_args_variant(lemon::backends::whispercpp::descriptor, "vulkan", "--convert");
+    expect_args_variant(lemon::backends::whispercpp::descriptor, "rocm", "--convert");
 
     // _bin / _args keys must name a backend variant the section actually has.
     expect_unknown_key("flm", "flm_bin", "builtin");
@@ -86,6 +142,32 @@ int main() {
     expect_accepted("flm", "args", "");
     expect_accepted("ryzenai", "server_bin", "latest");
     expect_accepted("hrx", "hrx_bin", "builtin");
+    expect_accepted("thenoise", "rocm_bin", "builtin");
+    expect_accepted("thenoise", "cuda_bin", "builtin");
+
+#if defined(__linux__) && defined(__x86_64__)
+    try {
+        const auto cuda = lemon::backends::TheNoiseServer::get_install_params("cuda", "test-tag");
+        if (cuda.repo == "lemonade-sdk/thenoise" &&
+            cuda.filename == "test-tag-cuda-x64.tar.gz") {
+            std::puts("[PASS] TheNoise CUDA uses the shared Linux release asset");
+        } else {
+            std::puts("[FAIL] TheNoise CUDA release asset name is incorrect");
+            ++failures;
+        }
+    } catch (const std::exception& e) {
+        std::printf("[FAIL] TheNoise CUDA install params failed: %s\n", e.what());
+        ++failures;
+    }
+#else
+    try {
+        (void)lemon::backends::TheNoiseServer::get_install_params("cuda", "test-tag");
+        std::puts("[FAIL] TheNoise CUDA is accepted outside Linux x86_64");
+        ++failures;
+    } catch (const std::runtime_error&) {
+        std::puts("[PASS] TheNoise CUDA is rejected outside Linux x86_64");
+    }
+#endif
 
     expect_rejected("llamacpp", "vulkan_bin", 1, "'llamacpp.vulkan_bin' must be a string");
     expect_rejected("llamacpp", "vulkan_args", 1, "'llamacpp.vulkan_args' must be a string");

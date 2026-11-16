@@ -19,10 +19,18 @@ inline const BackendDescriptor descriptor = {
     /*options*/ {
         {"openmoss_backend", "--openmoss", "", "BACKEND",
          "OpenMOSS TTS backend to use", "Text-to-Speech Options"},
+        {"pcm_sample_rate", "", 0, "SIZE", "Sample rate of the PCM this model emits, reported as X-MOSS-Sample-Rate (0 omits the header)", "Text-to-Speech Options", false},
+        {"pcm_channels", "", 0, "SIZE", "Channel count of the PCM this model emits, reported as X-MOSS-Channels (0 omits the header)", "Text-to-Speech Options", false},
     },
     /*support*/ {
         {"cuda", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
         {"vulkan", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
+    },
+    /*about*/ {
+        {"cuda", {"MOSS speech and sound-effect models in C++/GGML on top of llama.cpp, on NVIDIA GPUs.",
+                  "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "Apache-2.0", "https://github.com/pwilkin/openmoss"}},
+        {"vulkan", {"MOSS speech and sound-effect models in C++/GGML on top of llama.cpp, on Vulkan-capable GPUs.",
+                    "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "Apache-2.0", "https://github.com/pwilkin/openmoss"}},
     },
     /*supported_modes*/ {"tts", "audio-generation"},
     /*required_checkpoints*/ {"main"},

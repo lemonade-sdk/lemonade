@@ -440,6 +440,7 @@ export interface ModelListPanelProps {
   onOpenCustomModels?: () => void;
   onOpenRouter?: () => void;
   onUpdateAllModels?: () => void;
+  isUpdatingModels?: boolean;
   /** Lowercased server-owned pin state. Pinned running rows stay grouped at the top. */
   pinnedNames?: Set<string>;
   /** Lowercased set of favorited model names (distinct from pinned). Client-local. */
@@ -474,6 +475,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   onOpenCustomModels,
   onOpenRouter,
   onUpdateAllModels,
+  isUpdatingModels = false,
   pinnedNames,
   favoriteNames,
   onToggleFavorite,
@@ -718,8 +720,9 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               icon="rotate-ccw"
               iconOnly
               onClick={onUpdateAllModels}
+              disabled={isUpdatingModels}
               aria-label={t('Update all models')}
-              title={t('Update all downloaded models')}
+              title={isUpdatingModels ? t('Updating…') : t('Update all downloaded models')}
             />
           )}
 

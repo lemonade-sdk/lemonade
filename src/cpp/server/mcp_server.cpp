@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <lemon/model_manager.h>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -20,6 +21,7 @@
 #include "lemon/api_docs.h"
 #include "lemon/collection_orchestrator.h"
 #include "lemon/model_types.h"
+#include "lemon/models/store_snapshot.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
@@ -422,7 +424,7 @@ std::variant<std::string, json> McpServer::resolve_model_for_tool(
     // 1. Explicit model argument always wins.
     if (arguments.contains("model") && arguments["model"].is_string() &&
         !arguments["model"].get<std::string>().empty()) {
-        return arguments["model"].get<std::string>();
+        return model_manager_->canonical_for_request(arguments["model"].get<std::string>());
     }
 
     // 2. Reuse a model of the right type that's already loaded \u2014 zero cost.
@@ -434,8 +436,9 @@ std::variant<std::string, json> McpServer::resolve_model_for_tool(
     }
 
     // 3. Load a model of the right type that's already downloaded \u2014 no network.
-    for (const auto& [name, info] : model_manager_->get_downloaded_models()) {
-        if (info.type == want_type) return name;
+    const auto snapshot = model_manager_->snapshot();
+    for (const auto& [name, info] : snapshot->models) {
+        if (info.downloaded && info.type == want_type) return name;
     }
 
     // 4. Nothing local. Only fetch the default if the caller opted in;
@@ -788,10 +791,11 @@ json McpServer::tool_omni(const json& arguments) {
     std::string model;
     if (arguments.contains("model") && arguments["model"].is_string() &&
         !arguments["model"].get<std::string>().empty()) {
-        model = arguments["model"].get<std::string>();
+        model = model_manager_->canonical_for_request(arguments["model"].get<std::string>());
     } else {
-        for (const auto& [name, info] : model_manager_->get_downloaded_models()) {
-            if (is_omni_collection_recipe(info.recipe)) {
+        const auto snapshot = model_manager_->snapshot();
+        for (const auto& [name, info] : snapshot->models) {
+            if (info.downloaded && is_omni_collection_recipe(info.recipe)) {
                 model = name;
                 break;
             }

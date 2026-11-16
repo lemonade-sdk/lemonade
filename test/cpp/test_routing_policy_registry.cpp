@@ -9,6 +9,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 using lemon::Condition;
 using lemon::ConditionPtr;
@@ -93,6 +94,531 @@ static void test_make_classifier() {
     EvalContext ctx = make_eval_context(route, services);
     auto score = classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
     check("generic classifier calls run_classifier service", score.ok && score.score_of("PII") == 0.91);
+}
+
+static void test_make_zero_shot_classifier() {
+    json cfg = {
+        {"id", "route"},
+        {"type", "zero_shot"},
+        {"model", "lfm-prompt-router"},
+        {"labels", json::array({"coding", "cooking", "pii"})},
+    };
+    auto classifier = lemon::make_classifier(cfg);
+    check("make_classifier builds zero_shot classifier",
+          classifier->id() == "route" && classifier->type() == "zero_shot" &&
+              classifier->labels().size() == 3);
+
+    lemon::testing::FakeClassifierServices fake;
+    fake.set_zero_shot_scores("lfm-prompt-router",
+                              {{"coding", 0.02}, {"cooking", 0.93}, {"pii", 0.05}});
+    // Configured on the other service too: if the classifier reached
+    // run_classifier instead, the scores below would be the wrong ones.
+    fake.set_classifier_scores("lfm-prompt-router", {{"coding", 1.0}});
+    auto services = fake.make();
+    auto route = make_route_context();
+    EvalContext ctx = make_eval_context(route, services);
+    auto score = classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
+    check("zero_shot classifier calls run_zero_shot_classifier service",
+          score.ok && score.score_of("cooking") == 0.93);
+    check("zero_shot classifier sends its declared labels",
+          fake.last_zero_shot_labels() ==
+              std::vector<std::string>{"coding", "cooking", "pii"});
+}
+
+static void test_make_zero_shot_classifier_rejections() {
+    check("zero_shot rejects missing model",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "x"}, {"type", "zero_shot"},
+                                          {"labels", json::array({"a"})}});
+          }));
+    check("zero_shot rejects missing labels",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "x"}, {"type", "zero_shot"},
+                                          {"model", "m"}});
+          }));
+    check("zero_shot rejects empty labels",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "x"}, {"type", "zero_shot"},
+                                          {"model", "m"}, {"labels", json::array()}});
+          }));
+    check("zero_shot rejects prompt",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "x"}, {"type", "zero_shot"},
+                                          {"model", "m"},
+                                          {"labels", json::array({"a"})},
+                                          {"prompt", "pick one"}});
+          }));
+    check("zero_shot rejects reference_phrases",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "x"}, {"type", "zero_shot"},
+                                          {"model", "m"},
+                                          {"labels", json::array({"a"})},
+                                          {"reference_phrases", json{{"a", json::array({"p"})}}}});
+          }));
+}
+
+// An unconfigured run_zero_shot_classifier must surface as Score::ok=false so
+// the owning condition applies on_error, not as a throw out of evaluate().
+static void test_zero_shot_classifier_without_service_fails_soft() {
+    auto classifier = lemon::make_classifier(json{
+        {"id", "route"}, {"type", "zero_shot"}, {"model", "m"},
+        {"labels", json::array({"a", "b"})}});
+    lemon::ClassifierServices services;  // every service left unset
+    auto route = make_route_context();
+    EvalContext ctx = make_eval_context(route, services);
+    auto score = classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
+    check("zero_shot without service reports ok=false", !score.ok);
+}
+
+// Scores for any label set other than the declared one must fail the
+// classifier, so a protective rule applies on_error instead of silently missing.
+static void test_zero_shot_classifier_rejects_mismatched_label_set() {
+    auto classifier = lemon::make_classifier(json{
+        {"id", "route"}, {"type", "zero_shot"}, {"model", "m"},
+        {"labels", json::array({"pii", "chit-chat"})}});
+    auto route = make_route_context();
+
+    auto evaluate_with = [&](std::map<std::string, double> returned) {
+        lemon::testing::FakeClassifierServices fake;
+        fake.set_zero_shot_scores("m", std::move(returned));
+        auto services = fake.make();
+        EvalContext ctx = make_eval_context(route, services);
+        return classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
+    };
+
+    check("zero_shot fails on the backend's own label set",
+          !evaluate_with({{"LABEL_0", 0.9}, {"LABEL_1", 0.1}}).ok);
+    check("zero_shot fails when a declared label is missing",
+          !evaluate_with({{"chit-chat", 1.0}}).ok);
+    check("zero_shot fails when an undeclared label is returned",
+          !evaluate_with({{"pii", 0.2}, {"chit-chat", 0.7}, {"O", 0.1}}).ok);
+
+    auto exact = evaluate_with({{"pii", 0.8}, {"chit-chat", 0.2}});
+    check("zero_shot accepts exactly the declared label set",
+          exact.ok && exact.score_of("pii") == 0.8);
+}
+
+static lemon::Score evaluate_systemone(const lemon::ClassifierPtr& classifier, json answer,
+                                       nlohmann::ordered_json* asked = nullptr) {
+    lemon::testing::FakeClassifierServices fake;
+    fake.set_systemone_answer("decider", std::move(answer));
+    auto services = fake.make();
+    auto route = make_route_context();
+    EvalContext ctx = make_eval_context(route, services);
+    lemon::Score score = classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
+    if (asked) *asked = fake.last_systemone_question();
+    return score;
+}
+
+static void test_make_systemone_classifier() {
+    const json choice_question = {
+        {"type", "choice"},
+        {"instructions", "Which team should handle this?"},
+        {"criteria", json::array({"billing", json{{"shipping", "where an order is"}}})},
+    };
+    auto choice = lemon::make_classifier(json{
+        {"id", "team"}, {"type", "systemone"}, {"model", "decider"},
+        {"question", choice_question}});
+    check("make_classifier builds a systemone classifier",
+          choice->type() == "systemone" &&
+              choice->labels() == std::vector<std::string>{"billing", "shipping"});
+
+    nlohmann::ordered_json asked;
+    auto score = evaluate_systemone(
+        choice,
+        {{"type", "choice"}, {"choice", "billing"},
+         {"probabilities", {{"billing", 0.9}, {"shipping", 0.1}}}},
+        &asked);
+    json sent = choice_question;
+    sent["criteria"] = {{"billing", nullptr}, {"shipping", "where an order is"}};
+    check("systemone sends its declared question", json(asked) == sent);
+    check("systemone choice reports the option probabilities",
+          score.ok && score.score_of("billing") == 0.9 && score.score_of("shipping") == 0.1);
+
+    auto noul = lemon::make_classifier(json{
+        {"id", "pii"}, {"type", "systemone"}, {"model", "decider"},
+        {"question", {{"type", "noul"},
+                      {"instructions", "Does the message contain personal data?"}}}});
+    score = evaluate_systemone(noul, {{"type", "noul"}, {"noul", 0.75}});
+    check("systemone noul declares true and false",
+          noul->labels() == std::vector<std::string>{"true", "false"});
+    check("systemone noul reports true and its complement",
+          score.ok && score.score_of("true") == 0.75 && score.score_of("false") == 0.25);
+
+    auto level = lemon::make_classifier(json{
+        {"id", "urgency"}, {"type", "systemone"}, {"model", "decider"},
+        {"question", {{"type", "score"},
+                      {"instructions", "How urgent is this?"},
+                      {"criteria", json::array({"can wait", "today", "right now"})}}}});
+    score = evaluate_systemone(
+        level, {{"type", "score"}, {"score", 1.2},
+                {"probabilities", {{"0", 0.1}, {"1", 0.6}, {"2", 0.3}}}});
+    check("systemone score keys each level probability by its description",
+          score.ok && score.score_of("can wait") == 0.1 && score.score_of("today") == 0.6 &&
+              score.score_of("right now") == 0.3);
+}
+
+// A stored policy is json, which sorts object keys; the array form is how a
+// choice keeps the option order the model scores by.
+static void test_systemone_choice_array_keeps_option_order() {
+    auto choice = lemon::make_classifier(json{
+        {"id", "team"}, {"type", "systemone"}, {"model", "decider"},
+        {"question", {{"type", "choice"}, {"instructions", "Which team?"},
+                      {"criteria", json::array({"technical",
+                                                json{{"shipping", "where an order is"}},
+                                                "billing"})}}}});
+    check("a choice criteria array declares its options in array order",
+          choice->labels() ==
+              std::vector<std::string>{"technical", "shipping", "billing"});
+
+    nlohmann::ordered_json asked;
+    auto score = evaluate_systemone(
+        choice,
+        {{"probabilities", {{"technical", 0.1}, {"shipping", 0.2}, {"billing", 0.7}}}},
+        &asked);
+    check("a choice criteria array reaches the model as an object in array order",
+          asked["criteria"].dump() ==
+              R"({"technical":null,"shipping":"where an order is","billing":null})");
+    check("a choice criteria array is scored like an object",
+          score.ok && score.score_of("billing") == 0.7);
+}
+
+// An answer that does not cover the asked options must fail the
+// classifier, so a protective rule applies on_error instead of silently missing.
+static void test_systemone_classifier_rejects_mismatched_answer() {
+    auto choice = lemon::make_classifier(json{
+        {"id", "team"}, {"type", "systemone"}, {"model", "decider"},
+        {"question", {{"type", "choice"}, {"instructions", "Which team?"},
+                      {"criteria", json::array({"billing", "shipping"})}}}});
+    check("systemone fails on another option set",
+          !evaluate_systemone(choice, {{"probabilities", {{"LABEL_0", 1.0}}}}).ok);
+    check("systemone fails when an option is missing",
+          !evaluate_systemone(choice, {{"probabilities", {{"billing", 1.0}}}}).ok);
+    check("systemone fails on an empty answer", !evaluate_systemone(choice, json::object()).ok);
+    check("systemone fails on a probability outside [0, 1]",
+          !evaluate_systemone(choice,
+                              {{"probabilities", {{"billing", 1.5}, {"shipping", -0.5}}}}).ok);
+
+    auto level = lemon::make_classifier(json{
+        {"id", "urgency"}, {"type", "systemone"}, {"model", "decider"},
+        {"question", {{"type", "score"}, {"instructions", "How urgent?"},
+                      {"criteria", json::array({"low", "high"})}}}});
+    check("systemone score fails on a level index out of range",
+          !evaluate_systemone(level, {{"probabilities", {{"0", 0.5}, {"5", 0.5}}}}).ok);
+    for (const char* key : {"0extra", " 0", "+0"}) {
+        const std::string name = std::string("systemone score fails on the level key '") + key + "'";
+        check(name.c_str(),
+              !evaluate_systemone(level, {{"probabilities", {{key, 0.5}, {"1", 0.5}}}}).ok);
+    }
+
+    lemon::ClassifierServices no_services;
+    auto route = make_route_context();
+    EvalContext ctx = make_eval_context(route, no_services);
+    check("systemone without service reports ok=false",
+          !choice->evaluate(lemon::ClassifierContext{ctx.request, ctx.services}).ok);
+}
+
+// lemond adds `truncated` to each /v1/systemone answer, so a systemone guard can
+// fail closed on a cut input as a zero_shot one does.
+static void test_systemone_on_truncation() {
+    auto evaluate_with = [](const char* on_truncation, std::optional<bool> truncated) {
+        json cfg{{"id", "pii"}, {"type", "systemone"}, {"model", "decider"},
+                 {"question", {{"type", "noul"}, {"instructions", "Personal data?"}}}};
+        if (on_truncation != nullptr) cfg["on_truncation"] = on_truncation;
+        json answer = {{"type", "noul"}, {"noul", 0.2}};
+        if (truncated.has_value()) answer["truncated"] = *truncated;
+        return evaluate_systemone(lemon::make_classifier(cfg), answer);
+    };
+
+    const auto whole = evaluate_with("fail", false);
+    check("systemone carries truncated=false from the answer",
+          whole.ok && whole.truncated == false && whole.score_of("true") == 0.2);
+    const auto cut = evaluate_with("fail", true);
+    check("systemone on_truncation=fail turns a cut answer into a failure",
+          !cut.ok && cut.truncated == true);
+    check("systemone on_truncation=fail fails closed when the answer does not say",
+          !evaluate_with("fail", std::nullopt).ok);
+    const auto scored = evaluate_with(nullptr, true);
+    check("systemone on_truncation defaults to score",
+          scored.ok && scored.truncated == true && scored.score_of("true") == 0.2);
+    check("systemone without truncated reports nothing",
+          !evaluate_with(nullptr, std::nullopt).truncated.has_value());
+}
+
+static void test_make_systemone_classifier_rejections() {
+    auto make = [](json question, json extra = json::object()) {
+        json config = {{"id", "x"}, {"type", "systemone"}, {"model", "m"},
+                       {"question", std::move(question)}};
+        config.update(extra);
+        return throws_invalid_arg([config] { lemon::make_classifier(config); });
+    };
+    const json ok_question = {{"type", "noul"}, {"instructions", "Is it?"}};
+
+    check("systemone rejects a missing question",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{{"id", "x"}, {"type", "systemone"}, {"model", "m"}});
+          }));
+    check("systemone rejects a missing model",
+          throws_invalid_arg([&] {
+              lemon::make_classifier(json{{"id", "x"}, {"type", "systemone"},
+                                          {"question", ok_question}});
+          }));
+    check("systemone rejects labels", make(ok_question, {{"labels", json::array({"a"})}}));
+    check("systemone rejects prompt", make(ok_question, {{"prompt", "p"}}));
+    check("systemone rejects an unknown question type",
+          make({{"type", "rank"}, {"instructions", "?"}}));
+    check("systemone rejects a question without instructions", make({{"type", "noul"}}));
+    check("systemone rejects an unknown question key",
+          make({{"type", "noul"}, {"instructions", "?"}, {"options", json::array()}}));
+    check("systemone rejects an empty choice",
+          make({{"type", "choice"}, {"instructions", "?"}, {"criteria", json::array()}}));
+    check("systemone rejects an object-form choice, which would reach the model sorted", [] {
+        try {
+            lemon::make_classifier(json{
+                {"id", "x"}, {"type", "systemone"}, {"model", "m"},
+                {"question", {{"type", "choice"}, {"instructions", "?"},
+                              {"criteria", {{"shipping", nullptr}, {"billing", nullptr}}}}}});
+        } catch (const std::invalid_argument& e) {
+            return std::string(e.what()).find("must be an array") != std::string::npos;
+        }
+        return false;
+    }());
+    check("systemone rejects a one-level score",
+          make({{"type", "score"}, {"instructions", "?"}, {"criteria", json::array({"a"})}}));
+    check("systemone rejects duplicate score levels",
+          make({{"type", "score"}, {"instructions", "?"},
+                {"criteria", json::array({"a", "a"})}}));
+    check("systemone rejects a non-string score level",
+          make({{"type", "score"}, {"instructions", "?"}, {"criteria", json::array({"a", 2})}}));
+    check("systemone rejects noul criteria keys other than true and false",
+          make({{"type", "noul"}, {"instructions", "?"}, {"criteria", {{"maybe", "?"}}}}));
+    check("systemone rejects an empty choice array",
+          make({{"type", "choice"}, {"instructions", "?"}, {"criteria", json::array()}}));
+    check("systemone rejects a choice array that lists an option twice",
+          make({{"type", "choice"}, {"instructions", "?"},
+                {"criteria", json::array({"a", json{{"a", "again"}}})}}));
+    check("systemone rejects a choice array entry with two options",
+          make({{"type", "choice"}, {"instructions", "?"},
+                {"criteria", json::array({json{{"a", nullptr}, {"b", nullptr}}})}}));
+    check("systemone rejects a choice array entry that is not an option",
+          make({{"type", "choice"}, {"instructions", "?"}, {"criteria", json::array({"a", 3})}}));
+    check("systemone rejects a choice option with a control character",
+          make({{"type", "choice"}, {"instructions", "?"},
+                {"criteria", json::array({"billing\nteam", "shipping"})}}));
+    check("systemone rejects a score level with a control character",
+          make({{"type", "score"}, {"instructions", "?"},
+                {"criteria", json::array({"low\tlevel", "high"})}}));
+    check("systemone rejects a one-option choice",
+          make({{"type", "choice"}, {"instructions", "?"}, {"criteria", json::array({"a"})}}));
+    for (const json& bad : {json(""), json("   "), json(42), json(true), json::object(),
+                            json::array()}) {
+        const std::string name = "systemone rejects instructions " + bad.dump();
+        check(name.c_str(), make({{"type", "noul"}, {"instructions", bad}}));
+    }
+    check("systemone rejects a numeric choice description",
+          make({{"type", "choice"}, {"instructions", "?"},
+                {"criteria", json::array({json{{"a", 3}}, "b"})}}));
+    check("systemone rejects a boolean noul description",
+          make({{"type", "noul"}, {"instructions", "?"}, {"criteria", {{"true", false}}}}));
+
+    auto accepts = [](json question) {
+        return !throws_invalid_arg([question] {
+            lemon::make_classifier(json{{"id", "x"}, {"type", "systemone"}, {"model", "m"},
+                                        {"question", question}});
+        });
+    };
+    check("systemone accepts object instructions",
+          accepts({{"type", "noul"}, {"instructions", {{"task", "Is it urgent?"}}}}));
+    check("systemone accepts array instructions",
+          accepts({{"type", "noul"}, {"instructions", json::array({"Is it urgent?"})}}));
+    check("systemone accepts null and object choice descriptions",
+          accepts({{"type", "choice"}, {"instructions", "?"},
+                   {"criteria", json::array({json{{"a", nullptr}},
+                                             json{{"b", {{"means", "b"}}}}})}}));
+
+    for (const char* type : {"classifier", "zero_shot", "llm"}) {
+        json config = {{"id", "x"}, {"type", type}, {"model", "m"},
+                       {"labels", json::array({"a"})}, {"prompt", "p"}};
+        if (std::string(type) == "zero_shot") config.erase("prompt");
+        const bool accepted = !throws_invalid_arg([config] { lemon::make_classifier(config); });
+        config["question"] = ok_question;
+        const std::string name = std::string(type) + " rejects a question, which only systemone asks";
+        check(name.c_str(),
+              accepted && throws_invalid_arg([config] { lemon::make_classifier(config); }));
+    }
+}
+
+// The backend cuts the text, never the labels, so a truncated answer is still a
+// complete label set and must stay usable — carrying the cut forward, not failing.
+static void test_zero_shot_classifier_reports_truncation() {
+    auto classifier = lemon::make_classifier(json{
+        {"id", "route"}, {"type", "zero_shot"}, {"model", "m"},
+        {"labels", json::array({"pii", "chit-chat"})}});
+    auto route = make_route_context();
+
+    auto evaluate_with = [&](std::optional<bool> truncated) {
+        lemon::testing::FakeClassifierServices fake;
+        fake.set_zero_shot_scores("m", {{"pii", 0.8}, {"chit-chat", 0.2}}, truncated);
+        auto services = fake.make();
+        EvalContext ctx = make_eval_context(route, services);
+        return classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
+    };
+
+    auto cut = evaluate_with(true);
+    check("zero_shot carries the backend's truncation flag",
+          cut.ok && cut.truncated == true && cut.score_of("pii") == 0.8);
+    check("zero_shot reports false when the backend scored the whole input",
+          evaluate_with(false).truncated == false);
+    check("zero_shot reports nothing when the backend does not say",
+          !evaluate_with(std::nullopt).truncated.has_value());
+
+    lemon::testing::FakeClassifierServices fake;
+    fake.set_zero_shot_scores("m", {{"LABEL_0", 0.9}}, true);
+    auto services = fake.make();
+    EvalContext ctx = make_eval_context(route, services);
+    const auto mismatch = classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
+    check("zero_shot keeps the cut flag when the label set does not match",
+          !mismatch.ok && mismatch.truncated == true &&
+              mismatch.error.find("different label set") != std::string::npos);
+}
+
+// on_truncation=fail is the only way a rule reaches a cut input, because a score
+// computed from cut text is a SUCCESS and on_error never sees it.
+static void test_zero_shot_on_truncation() {
+    auto evaluate_with = [](const char* on_truncation, std::optional<bool> truncated) {
+        json cfg{{"id", "pii"}, {"type", "zero_shot"}, {"model", "m"},
+                 {"labels", json::array({"private", "public"})}};
+        if (on_truncation != nullptr) cfg["on_truncation"] = on_truncation;
+        auto classifier = lemon::make_classifier(cfg);
+        auto route = make_route_context();
+        lemon::testing::FakeClassifierServices fake;
+        fake.set_zero_shot_scores("m", {{"private", 0.1}, {"public", 0.9}}, truncated);
+        auto services = fake.make();
+        EvalContext ctx = make_eval_context(route, services);
+        return classifier->evaluate(lemon::ClassifierContext{ctx.request, ctx.services});
+    };
+
+    const auto cut_fail = evaluate_with("fail", true);
+    check("on_truncation=fail turns a cut answer into a failure", !cut_fail.ok);
+    check("on_truncation=fail names the cut as the reason",
+          cut_fail.error.find("cut the input text") != std::string::npos);
+    // The trace must still show WHY it failed, and failed_score() starts clean.
+    check("on_truncation=fail keeps the truncation flag for the trace",
+          cut_fail.truncated == true);
+    check("on_truncation=fail drops the scores computed from cut text",
+          cut_fail.score_of("public") == 0.0);
+
+    check("on_truncation=fail is inert when nothing was cut", evaluate_with("fail", false).ok);
+    const auto unknown_fail = evaluate_with("fail", std::nullopt);
+    check("on_truncation=fail fails closed when the backend does not say",
+          !unknown_fail.ok && !unknown_fail.truncated.has_value());
+    check("on_truncation=score uses an answer that does not say",
+          evaluate_with("score", std::nullopt).ok);
+
+    const auto cut_score = evaluate_with("score", true);
+    check("on_truncation=score keeps using a cut answer",
+          cut_score.ok && cut_score.truncated == true && cut_score.score_of("public") == 0.9);
+
+    const auto cut_default = evaluate_with(nullptr, true);
+    check("on_truncation defaults to score",
+          cut_default.ok && cut_default.score_of("public") == 0.9);
+}
+
+static void test_on_truncation_rejections() {
+    check("on_truncation rejects an unknown value",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{
+                  {"id", "x"}, {"type", "zero_shot"}, {"model", "m"},
+                  {"labels", json::array({"a"})}, {"on_truncation", "match_true"}});
+          }));
+    check("on_truncation=fail is accepted on classifier", [] {
+        try {
+            lemon::make_classifier(json{{"id", "x"},
+                                        {"type", "classifier"},
+                                        {"model", "m"},
+                                        {"labels", json::array({"a"})},
+                                        {"on_truncation", "fail"}});
+            return true;
+        } catch (const std::exception&) {
+            return false;
+        }
+    }());
+    check("classifier still rejects an unknown on_truncation",
+          throws_invalid_arg([] {
+              lemon::make_classifier(json{
+                  {"id", "x"}, {"type", "classifier"}, {"model", "m"},
+                  {"labels", json::array({"a"})}, {"on_truncation", "match_true"}});
+          }));
+
+    check("on_truncation=fail is accepted on systemone", [] {
+        try {
+            lemon::make_classifier(json{
+                {"id", "x"}, {"type", "systemone"}, {"model", "m"}, {"on_truncation", "fail"},
+                {"question", {{"type", "noul"}, {"instructions", "Is it?"}}}});
+            return true;
+        } catch (const std::exception&) {
+            return false;
+        }
+    }());
+
+    for (const char* type : {"llm", "semantic_similarity"}) {
+        const std::string label = std::string("on_truncation is rejected on ") + type;
+        check(label.c_str(), throws_invalid_arg([type] {
+                  json cfg{{"id", "x"}, {"type", type}, {"model", "m"},
+                           {"on_truncation", "fail"}};
+                  if (std::string(type) == "semantic_similarity") {
+                      cfg["reference_phrases"] = json{{"a", json::array({"p"})}};
+                  } else {
+                      cfg["labels"] = json::array({"a"});
+                      if (std::string(type) == "llm") cfg["prompt"] = "pick one";
+                  }
+                  lemon::make_classifier(cfg);
+              }));
+    }
+}
+
+static void test_label_list_rejections() {
+    auto classifier_with = [](const char* type, json labels) {
+        json cfg{{"id", "x"}, {"type", type}, {"model", "m"}, {"labels", std::move(labels)}};
+        if (std::string(type) == "llm") cfg["prompt"] = "pick one";
+        return [cfg] { lemon::make_classifier(cfg); };
+    };
+
+    for (const char* type : {"classifier", "zero_shot", "llm"}) {
+        const std::string prefix = std::string(type) + ": ";
+        const std::string dup = prefix + "rejects a duplicate label";
+        const std::string blank = prefix + "rejects a blank label";
+        const std::string tab = prefix + "rejects a tab-only label";
+        const std::string lf = prefix + "rejects a label holding a line feed";
+        const std::string crlf = prefix + "rejects a label holding a carriage return";
+        const std::string inner_tab = prefix + "rejects a label holding an inner tab";
+        const std::string del = prefix + "rejects a label holding DEL";
+        const std::string ok = prefix + "accepts distinct labels with inner spaces";
+        const std::string utf8 = prefix + "accepts a multi-byte UTF-8 label";
+        check(dup.c_str(),
+              throws_invalid_arg(classifier_with(type, json::array({"coding", "coding"}))));
+        check(blank.c_str(),
+              throws_invalid_arg(classifier_with(type, json::array({"coding", "   "}))));
+        check(tab.c_str(),
+              throws_invalid_arg(classifier_with(type, json::array({"coding", "\t"}))));
+        check(lf.c_str(),
+              throws_invalid_arg(classifier_with(type, json::array({"coding\ncooking"}))));
+        check(crlf.c_str(),
+              throws_invalid_arg(classifier_with(type, json::array({"coding\r\ncooking"}))));
+        // A tab is neither blank nor a line break, so it only fails once the
+        // rule covers every control character, as ort-server's does.
+        check(inner_tab.c_str(),
+              throws_invalid_arg(classifier_with(type, json::array({"coding\tcooking"}))));
+        check(del.c_str(),
+              throws_invalid_arg(classifier_with(type, json::array({"coding\x7F"}))));
+        check(ok.c_str(),
+              !throws_invalid_arg(
+                  classifier_with(type, json::array({"customer support", "billing"}))));
+        // The control-character scan walks bytes, so a continuation byte must
+        // not read as one.
+        check(utf8.c_str(),
+              !throws_invalid_arg(classifier_with(type, json::array({"café", "日本語"}))));
+    }
 }
 
 static void test_make_classifier_rejections() {
@@ -359,6 +885,19 @@ static void test_leaf_factory_classifier_and_deterministic_implicit_all() {
 
 int main() {
     test_make_classifier();
+    test_make_zero_shot_classifier();
+    test_make_zero_shot_classifier_rejections();
+    test_zero_shot_classifier_without_service_fails_soft();
+    test_zero_shot_classifier_rejects_mismatched_label_set();
+    test_make_systemone_classifier();
+    test_systemone_choice_array_keeps_option_order();
+    test_systemone_classifier_rejects_mismatched_answer();
+    test_make_systemone_classifier_rejections();
+    test_systemone_on_truncation();
+    test_zero_shot_classifier_reports_truncation();
+    test_zero_shot_on_truncation();
+    test_on_truncation_rejections();
+    test_label_list_rejections();
     test_make_classifier_rejections();
     test_make_classifiers();
     test_leaf_factory_classifier_refs();

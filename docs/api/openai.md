@@ -105,38 +105,38 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
 
 ```json
 {
-  "id": "chatcmpl-Ur8WXBSFmCy4xSW1gr9J6imPMcSBsmG7",
+  "id": "chatcmpl-cJjl2vW81HgtjvknoAdqxCGKeEtNOG4u",
   "object": "chat.completion",
-  "created": 1791990411,
+  "created": 1793827645,
   "model": "Qwen3-0.6B-GGUF",
-  "system_fingerprint": "b11393-dbe4c3ed4",
+  "system_fingerprint": "b12109-13ec8f614",
   "choices": [
     {
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "The population of Paris, France, is approximately **2,015,000**. This number reflects the city's size and population, making it one of the most populous cities in the world.",
-        "reasoning_content": "Okay, so I need to figure out the population of Paris. Let me think. First, I remember that Paris is a big city in France, right? I think it's the capital. But how do I find the exact population?\n\nWait, I think I heard that the population is around 2 million. But I'm not sure. Maybe I should check a reliable source. Oh, right! The official website of Paris might have the population numbers. Let me recall... Oh! Oh, right! The city's population is about 2,015,000. I think that's correct. But I'm a bit fuzzy on the exact number. Maybe I should confirm with another source. Wait, I'm not sure. Hmm. Let me think... Oh, yeah, I think it's 2,015,000. But sometimes people might say 2 million. But 2,015,000 is more accurate. So I'll go with that.\n"
+        "content": "The population of Paris, France, is approximately **1,215,000** as of the latest available data. This number reflects the city's significant size and historical importance as the capital of France.",
+        "reasoning_content": "Okay, so I need to find out the population of Paris. Let me think... I remember ... (1,176 characters)"
       },
       "finish_reason": "stop"
     }
   ],
   "usage": {
     "prompt_tokens": 15,
-    "completion_tokens": 255,
-    "total_tokens": 270,
+    "completion_tokens": 364,
+    "total_tokens": 379,
     "prompt_tokens_details": {"cached_tokens": 0}
   },
   "timings": {
     "cache_n": 0,
-    "predicted_ms": 756.876,
-    "predicted_n": 255,
-    "predicted_per_second": 335.5899777506487,
-    "predicted_per_token_ms": 2.9798267716535434,
-    "prompt_ms": 9.652,
+    "predicted_ms": 3151.928,
+    "predicted_n": 364,
+    "predicted_per_second": 115.16760535139127,
+    "predicted_per_token_ms": 8.682997245179063,
+    "prompt_ms": 220.395,
     "prompt_n": 15,
-    "prompt_per_second": 1554.0820555325322,
-    "prompt_per_token_ms": 0.6434666666666666
+    "prompt_per_second": 68.05962022731913,
+    "prompt_per_token_ms": 14.693000000000001
   }
 }
 ```
@@ -172,11 +172,11 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
 **Response:** `200 OK`
 
 ```text
-data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
-data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}]}
-data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990411, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}]}
+data: {"id": "chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1", "object": "chat.completion.chunk", "created": 1793827645, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
+data: {"id": "chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1", "object": "chat.completion.chunk", "created": 1793827645, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}]}
+data: {"id": "chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1", "object": "chat.completion.chunk", "created": 1793827645, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}]}
 ...
-data: {"id": "chatcmpl-VvTqNsZLc33H6Q9uQlBqRQ4sk3dvCSX5", "object": "chat.completion.chunk", "created": 1791990412, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 4.081, "prompt_per_token_ms": 4.081, "prompt_per_second": 245.03798088703746, "predicted_n": 392, "predicted_ms": 1176.378, "predicted_per_token_ms": 3.008639386189258, "predicted_per_second": 332.37615800363494}}
+data: {"id": "chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1", "object": "chat.completion.chunk", "created": 1793827647, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 13.334, "prompt_per_token_ms": 13.334, "prompt_per_second": 74.99625018749063, "predicted_n": 179, "predicted_ms": 1827.578, "predicted_per_token_ms": 10.267292134831461, "predicted_per_second": 97.39666378124491}}
 data: [DONE]
 ```
 
@@ -240,38 +240,38 @@ Asks a vision model what `image.png` shows. A `messages[*].content` array mixes 
 
 ```json
 {
-  "id": "chatcmpl-CXUhlv8GPMS7biiWtkuu27a3Gy3eNEUS",
+  "id": "chatcmpl-bykV6FdzHGGdiC5ePf9PBFOxRu0AFTBi",
   "object": "chat.completion",
-  "created": 1792076819,
+  "created": 1793827657,
   "model": "Qwen3.5-0.8B-GGUF",
-  "system_fingerprint": "b11393-dbe4c3ed4",
+  "system_fingerprint": "b12109-13ec8f614",
   "choices": [
     {
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "This image is a **minimalist graphic design**.\n\nHere are the specific details:\n\n*   **Central Element:** There is a solid **red circle** (often described as a \"dot\" or \"target\" symbol) centered on the image.\n*   **Background:** The background is a colorful gradient (transitioning from blue on the left, to grey in the middle, and to purple/grey on the right).\n*   **Style:** It is a simple, flat vector design—no shading, no textures—often used in interfaces or branding to draw immediate attention to a specific focus point.",
-        "reasoning_content": "The user is asking about the content of the image.\n\n1.  **Analyze the image:** T... (2,072 characters)"
+        "content": "This is a logo image featuring a solid red circle centered on a gradient background. The background transitions from a teal and green mix on the left to a grey on the right side.",
+        "reasoning_content": "The user wants me to identify the visual content of the provided image.\n\n1.  **A... (1,535 characters)"
       },
       "finish_reason": "stop"
     }
   ],
   "usage": {
     "prompt_tokens": 82,
-    "completion_tokens": 619,
-    "total_tokens": 701,
+    "completion_tokens": 405,
+    "total_tokens": 487,
     "prompt_tokens_details": {"cached_tokens": 0}
   },
   "timings": {
     "cache_n": 0,
-    "predicted_ms": 2706.181,
-    "predicted_n": 619,
-    "predicted_per_second": 228.36609968069394,
-    "predicted_per_token_ms": 4.378933656957929,
-    "prompt_ms": 52.671,
+    "predicted_ms": 1989.104,
+    "predicted_n": 405,
+    "predicted_per_second": 203.10652434462952,
+    "predicted_per_token_ms": 4.923524752475248,
+    "prompt_ms": 465.51,
     "prompt_n": 82,
-    "prompt_per_second": 1556.8339313853924,
-    "prompt_per_token_ms": 0.6423292682926829
+    "prompt_per_second": 176.15088827307684,
+    "prompt_per_token_ms": 5.676951219512195
   }
 }
 ```
@@ -414,6 +414,7 @@ Sent in place of the rest of the stream when the backend fails after the stream 
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is not an LLM, which is checked after it loads |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -489,15 +490,15 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 ```json
 {
-  "id": "chatcmpl-f4ExiyuFYahpItfZ9kgOsndtQcaHrBjz",
+  "id": "chatcmpl-yRFRUAekD8zEgLPHmtMKr50iJa1iKKUU",
   "object": "text_completion",
-  "created": 1791943134,
+  "created": 1793827667,
   "model": "Qwen3-0.6B-GGUF",
-  "system_fingerprint": "b11393-dbe4c3ed4",
+  "system_fingerprint": "b12109-13ec8f614",
   "choices": [
     {
       "index": 0,
-      "text": " And what does the Parisian metro system include?\n\nThe population of Paris is approximately 2 million people. The Parisian metro system includes the Paris Métro, the Paris Underground, and the Paris TGV, which is a train system.\n\nNow, the question is: What is the population of the city of Paris?\n\n",
+      "text": " And what are the characteristics of Paris? Also, what is the capital of France? What is the capital of Italy? What is the capital of Spain? What is the capital of Nigeria? And what is the capital of India?\n\nOkay, let's tackle these questions. First, the population of Paris. I remember that",
       "logprobs": null,
       "finish_reason": "length"
     }
@@ -510,14 +511,14 @@ Naming a `collection.router` model routes the request to one of its candidates; 
   },
   "timings": {
     "cache_n": 0,
-    "predicted_ms": 184.8,
+    "predicted_ms": 3637.764,
     "predicted_n": 64,
-    "predicted_per_second": 340.9090909090909,
-    "predicted_per_token_ms": 2.9333333333333336,
-    "prompt_ms": 6.219,
+    "predicted_per_second": 17.318330710843252,
+    "predicted_per_token_ms": 57.742285714285714,
+    "prompt_ms": 133.468,
     "prompt_n": 7,
-    "prompt_per_second": 1125.5828911400547,
-    "prompt_per_token_ms": 0.8884285714285715
+    "prompt_per_second": 52.44702850121378,
+    "prompt_per_token_ms": 19.066857142857142
   }
 }
 ```
@@ -555,11 +556,11 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 **Response:** `200 OK`
 
 ```text
-data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " What", "logprobs": null, "finish_reason": null}]}
-data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " is", "logprobs": null, "finish_reason": null}]}
-data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": " the", "logprobs": null, "finish_reason": null}]}
+data: {"id": "chatcmpl-NnGAa2fcrBou11qX4PgyeQCgXNJB9W6j", "object": "text_completion", "created": 1793827667, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "text": " And", "logprobs": null, "finish_reason": null}]}
+data: {"id": "chatcmpl-NnGAa2fcrBou11qX4PgyeQCgXNJB9W6j", "object": "text_completion", "created": 1793827667, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "text": " how", "logprobs": null, "finish_reason": null}]}
+data: {"id": "chatcmpl-NnGAa2fcrBou11qX4PgyeQCgXNJB9W6j", "object": "text_completion", "created": 1793827667, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "text": " is", "logprobs": null, "finish_reason": null}]}
 ...
-data: {"id": "chatcmpl-QP1hqogXI4lxTag36ZFzMXdKhpHcqVKv", "object": "text_completion", "created": 1791943134, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b11393-dbe4c3ed4", "choices": [{"index": 0, "text": "", "logprobs": null, "finish_reason": "length"}], "usage": {"prompt_tokens": 7, "completion_tokens": 64, "total_tokens": 71, "prompt_tokens_details": {"cached_tokens": 6}}, "timings": {"cache_n": 6, "prompt_n": 1, "prompt_ms": 3.04, "prompt_per_token_ms": 3.04, "prompt_per_second": 328.9473684210526, "predicted_n": 64, "predicted_ms": 184.45, "predicted_per_token_ms": 2.9277777777777776, "predicted_per_second": 341.5559772296015}}
+data: {"id": "chatcmpl-NnGAa2fcrBou11qX4PgyeQCgXNJB9W6j", "object": "text_completion", "created": 1793827670, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "text": "", "logprobs": null, "finish_reason": "length"}], "usage": {"prompt_tokens": 7, "completion_tokens": 64, "total_tokens": 71, "prompt_tokens_details": {"cached_tokens": 6}}, "timings": {"cache_n": 6, "prompt_n": 1, "prompt_ms": 5.813, "prompt_per_token_ms": 5.813, "prompt_per_second": 172.0282126268708, "predicted_n": 64, "predicted_ms": 3611.246, "predicted_per_token_ms": 57.32136507936508, "predicted_per_second": 17.445502189548982}}
 data: [DONE]
 ```
 
@@ -628,6 +629,7 @@ Sent in place of the rest of the stream when the backend fails after the stream 
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` is not an LLM, which is checked after it loads |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -692,7 +694,7 @@ Requires `LEMONADE_API_KEY` when it is set.
     {
       "object": "embedding",
       "index": 0,
-      "embedding": [0.03513138368725777, 0.0010724958265200257, 0.0043548960238695145, -0.024502824991941452, -0.02874191850423813, 0.029377534985542297, -0.01320538017898798, 0.01702793687582016, ... 760 more]
+      "embedding": [0.03605353832244873, 0.0006784393335692585, 0.004262526985257864, -0.02508561499416828, -0.028299998492002487, 0.030086658895015717, -0.012136111967265606, 0.01537393033504486, ... 760 more]
     },
     ... 1 more
   ],
@@ -721,6 +723,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model`'s backend cannot embed, such as a text-to-speech model |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -790,10 +793,10 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 ```json
 {
-  "id": "resp_UMCsVMSLV0H1cGKewMgTRY02v5PgKvr3",
+  "id": "resp_Cxow6uUoxWRLPnhhXU7QEvXjMrKaBGYi",
   "object": "response",
-  "created_at": 1791943139,
-  "completed_at": 1791943139,
+  "created_at": 1793827678,
+  "completed_at": 1793827678,
   "model": "Llama-3.2-1B-Instruct-GGUF",
   "status": "completed",
   "output": [
@@ -802,11 +805,11 @@ Naming a `collection.router` model routes the request to one of its candidates; 
         {
           "annotations": [],
           "logprobs": [],
-          "text": "As of my knowledge cutoff in December 2023, the estimated population of Paris, the capital city of France, is approximately 2.1 million people. However, please note that this information may have changed since my knowledge cutoff date.",
+          "text": "As of the latest available data from the French National Institute for Statistics and Economic Studies (Institut National de la Statistique et des Études Économiques, INSEE), the population of Paris is approximately 2.1 million people within the city limits and over 12 million people in the metropolitan area, which includes the surrounding suburbs and regions.",
           "type": "output_text"
         }
       ],
-      "id": "msg_10jrFYwxMq9LWHeZAWQTw2bwfytTnjmU",
+      "id": "msg_zkaZoMfka6ivKETrMiMf7f8NzXFj7FCQ",
       "role": "assistant",
       "status": "completed",
       "type": "message"
@@ -814,8 +817,8 @@ Naming a `collection.router` model routes the request to one of its candidates; 
   ],
   "usage": {
     "input_tokens": 42,
-    "output_tokens": 49,
-    "total_tokens": 91,
+    "output_tokens": 73,
+    "total_tokens": 115,
     "input_tokens_details": {"cached_tokens": 0}
   }
 }
@@ -853,14 +856,14 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 ```text
 event: response.created
-data: {"type": "response.created", "response": {"id": "resp_8drxh5e9wHyCQgOlZJEKtK6LYBvjZjhQ", "object": "response", "status": "in_progress"}}
+data: {"type": "response.created", "response": {"id": "resp_L7uzVj7alzqP0uYc4HYBpvdp60tAsd1Z", "object": "response", "status": "in_progress"}}
 event: response.in_progress
-data: {"type": "response.in_progress", "response": {"id": "resp_8drxh5e9wHyCQgOlZJEKtK6LYBvjZjhQ", "object": "response", "status": "in_progress"}}
+data: {"type": "response.in_progress", "response": {"id": "resp_L7uzVj7alzqP0uYc4HYBpvdp60tAsd1Z", "object": "response", "status": "in_progress"}}
 event: response.output_item.added
-data: {"type": "response.output_item.added", "item": {"content": [], "id": "msg_uHVyDCXC7R9egagst1wl8LBcZewNzxgB", "role": "assistant", "status": "in_progress", "type": "message"}}
+data: {"type": "response.output_item.added", "item": {"content": [], "id": "msg_depHpGR0ZqLNdgRXk7wGBHbhXKjkiC0M", "role": "assistant", "status": "in_progress", "type": "message"}, "output_index": 0}
 ...
 event: response.completed
-data: {"type": "response.completed", "response": {"id": "resp_8drxh5e9wHyCQgOlZJEKtK6LYBvjZjhQ", "object": "response", "created_at": 1791943139, "status": "completed", "model": "~/.cache/huggingface/hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF/snapshots/b69aef112e9f895e6f98d7ae0949f72ff09aa401/Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf", "output": [{"type": "message", "status": "completed", "id": "msg_uHVyDCXC7R9egagst1wl8LBcZewNzxgB", "content": [{"type": "output_text", "annotations": [], "logprobs": [], "text": "As of the latest available estimates, the population of Paris, the capital city of France, is approximately 2.1 million people within the city limits. However, the larger metropolitan area, which includes the surrounding regions, has a population of over 13.2 million people, according to the City of Paris's official statistics for 2020."}], "role": "assistant"}], "usage": {"input_tokens": 42, "output_tokens": 71, "total_tokens": 113, "input_tokens_details": {"cached_tokens": 41}}}, "timings": {"cache_n": 41, "prompt_n": 1, "prompt_ms": 4.586, "prompt_per_token_ms": 4.586, "prompt_per_second": 218.0549498473615, "predicted_n": 71, "predicted_ms": 310.157, "predicted_per_token_ms": 4.430814285714286, "predicted_per_second": 225.69214945978973}}
+data: {"type": "response.completed", "response": {"id": "resp_L7uzVj7alzqP0uYc4HYBpvdp60tAsd1Z", "object": "response", "created_at": 1793827678, "status": "completed", "model": "~/.cache/huggingface/hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF/snapshots/b69aef112e9f895e6f98d7ae0949f72ff09aa401/Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf", "output": [{"type": "message", "status": "completed", "id": "msg_depHpGR0ZqLNdgRXk7wGBHbhXKjkiC0M", "content": [{"type": "output_text", "annotations": [], "logprobs": [], "text": "As of my knowledge cutoff in December 2023, the population of Paris, France is approximately 2.1 million people within the city limits and 12.2 million people in the larger metropolitan area, according to official statistics from the French National Institute for Statistics and Economic Studies (INSEE)."}], "role": "assistant"}], "usage": {"input_tokens": 42, "output_tokens": 61, "total_tokens": 103, "input_tokens_details": {"cached_tokens": 41}}}, "timings": {"cache_n": 41, "prompt_n": 1, "prompt_ms": 16.128, "prompt_per_token_ms": 16.128, "prompt_per_second": 62.00396825396825, "predicted_n": 61, "predicted_ms": 375.356, "predicted_per_token_ms": 6.255933333333333, "predicted_per_second": 159.84825072730953}}
 data: [DONE]
 ```
 
@@ -893,6 +896,7 @@ An event of the response, passed through from the backend.
 - `type` - Event type, passed through from the backend, such as `response.created`, `response.output_text.delta` or `response.completed`; see OpenAI's [streaming reference](https://platform.openai.com/docs/api-reference/responses-streaming).
 - `response` - Lifecycle events, such as `response.created`, `response.in_progress` and `response.completed`, only: the response so far.
 - `item` - Output item events, such as `response.output_item.added`, only: the output item.
+- `output_index` - Zero-based index of the output item in the response's `output` array, on output-item and delta events.
 - `item_id` - Delta events only: the `id` of the output item the text belongs to.
 - `delta` - Delta events, such as `response.output_text.delta` and `response.reasoning_text.delta`, only: the next text.
 - `timings` - `response.completed` only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
@@ -916,6 +920,7 @@ Sent in place of the rest of the stream when the backend fails after the stream 
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The request does not stream and `model` is a FastFlowLM or cloud model, which has no Responses API |
 | `400` | `model_not_applicable` | The request does not stream and `model` is not an LLM |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -943,8 +948,6 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `response_format` | No | `json`, `verbose_json`, `text`, `srt` or `vtt`. Defaults to `json`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | No | Text to guide the transcription's style or continue a previous segment. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `temperature` | No | Sampling temperature. Defaults to `0` for whisper.cpp models, and to the backend's own for FastFlowLM models. Moonshine models ignore it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segments`.
 
 ### Examples
 
@@ -1011,7 +1014,8 @@ On FastFlowLM, which reports no segment timestamps, `verbose_json` has no `segme
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | `model` cannot transcribe, which is found after it loads; the error's `type` is `unsupported_operation` |
-| `400` |  | `response_format` is `srt` or `vtt` and `model` is a FastFlowLM model, which reports no segment timestamps |
+| `400` |  | `response_format` is `srt` or `vtt` and `model` is a FastFlowLM model |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1219,6 +1223,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `created` - Unix timestamp of when the image was generated.
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
+  - `generation_info` - Optional generation parameters and model metadata reported by the image backend.
 - `output_format` - File format of the images, such as `png`, when the backend reports it.
 
 ### Errors
@@ -1229,6 +1234,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1254,7 +1260,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `image` or `image[]` | Yes | PNG or JPEG image upload. For multiple references, repeat `image[]` in order. Files are forwarded without re-encoding. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mask` | No | A PNG mask: white areas are edited and black areas are kept. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `size` | No | Output size as `WIDTHxHEIGHT`, such as `512x512`. Defaults to the first reference image's size, scaled down to fit the model's `image_defaults.soft_pixel_cap` (2048x2048 pixels, about 4 MP, unless the model sets one). An explicit size skips that cap; backend limits still apply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `size` | No | Output size as `WIDTHxHEIGHT`, such as `512x512`. Defaults to the first reference image's size, scaled down to fit the model's `soft_pixel_cap` option (2048x2048 pixels, about 4 MP, unless the model sets one). An explicit size skips that cap; backend limits still apply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `n` | No | Number of images to generate, from `1` to `10`. Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Only `b64_json`, a base64-encoded image, is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `steps` | No | Number of inference steps. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -1330,6 +1336,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `created` - Unix timestamp of when the image was generated.
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
+  - `generation_info` - Optional generation parameters and model metadata reported by the image backend.
 - `output_format` - File format of the images, such as `png`, when the backend reports it.
 
 ### Errors
@@ -1341,6 +1348,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The form has files under both `image` and `image[]` |
 | `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1432,6 +1440,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `created` - Unix timestamp of when the image was generated.
 - `data` - The generated images, one entry per image.
   - `b64_json` - Base64-encoded PNG.
+  - `generation_info` - Optional generation parameters and model metadata reported by the image backend.
 - `output_format` - File format of the images, such as `png`, when the backend reports it.
 
 ### Errors
@@ -1442,6 +1451,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The backend's reply does not parse, or a request field not listed above has the wrong JSON type |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1455,7 +1465,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /v1/images/upscale`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Upscales an image with an upscaling model such as `RealESRGAN-x4plus`. The model sets the upscale factor, which its name usually states.
+Upscales an image with an upscaling model such as `RealESRGAN-x4plus`. The model sets the default upscale factor; TheNoise models also accept an optional `upscale_factor`.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1465,6 +1475,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `image` | Yes | Base64-encoded PNG image to upscale. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The upscaling model to use, such as `RealESRGAN-x4plus` or `Remacri-4x-TheNoise`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `upscale_factor` | No | Optional scale factor for TheNoise (up to the upscaler's native scale). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 The model is downloaded on first use.
 
@@ -1546,7 +1557,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `input` | Yes | The text to speak. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `speed` | No | Speaking speed. Defaults to `1.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `voice` | No | For `kokoro-v1`, a voice name: OpenAI's voices (`alloy`, `ash`, ...) or Kokoro's own (`af_sky`, `am_echo`, ...), defaulting to `shimmer`. For OpenMOSS models, a free-text voice or style instruction, e.g. `a calm, deep male narrator voice`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `voice` | No | For `kokoro-v1`, a voice name: OpenAI's voices (`alloy`, `ash`, ...) or Kokoro's own (`af_sky`, `am_echo`, ...), defaulting to `shimmer`. For OpenMOSS models, a free-text voice or style instruction, e.g. `a calm, deep male narrator voice`. An empty `voice` is the same as leaving it out. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `reference_wav_b64` | No | Lemonade extension (OpenMOSS voice cloning): base64-encoded WAV sample of the voice to clone. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `voice_design_description` | No | Lemonade extension (OpenMOSS voice design): a description of the voice to invent, e.g. `a warm low female voice with a British accent`. Lemonade renders a short sample in that voice and uses it as the reference, so the effect is the same as supplying `reference_wav_b64` yourself. Ignored when `reference_wav_b64` is also present. Only this field triggers design; `voice` never does. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Container for the returned audio. Defaults to `mp3` when buffered and `pcm` when streaming, or to the backend's first supported format when it cannot encode those. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
@@ -1634,6 +1645,7 @@ Accepted `response_format` values depend on the backend: `kokoro-v1` encodes `mp
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` | `model_not_applicable` | `model` is not a text-to-speech model, which is checked before it loads |
 | `400` |  | `response_format` is not a format `model`'s backend produces, or, when streaming, one it streams |
+| `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -1657,6 +1669,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `show_all` (query) | No | `true` also lists catalog models that are not downloaded. Defaults to `false`, which lists downloaded models only. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `include_paths` (query) | No | `true` adds each present checkpoint's absolute `path` to its `checkpoint_status` entry, which can reveal local usernames and the cache layout. Defaults to `false`. The files a model is made of have their own list, at [`GET /v1/models/{id}/files`](./openai.md#get-v1modelsidfiles). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A model alias whose target is listed appears too, as a copy of the target with the alias as its `id`.
 
@@ -1698,6 +1711,9 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
       "labels": ["classification"],
       "components": [],
       "checkpoints": {"main": "lemonade-sdk/phishing-email-detection-distilbert-ONNX"},
+      "checkpoint_status": [
+        {"type": "main", "present": true, "required": true, "registry": "huggingface"}
+      ],
       "source": "huggingface",
       "registry_source": "huggingface",
       "recipe_options": {}
@@ -1726,26 +1742,23 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
   - `update_available` - Whether the model's registry has a newer commit; `false` except for downloaded registry models.
   - `suggested` - Whether the model is recommended for general use.
   - `labels` - The model's capabilities and characteristics; see [Model Labels](./openai.md#model-labels).
-  - `image_defaults` - Image models only: default generation parameters.
-    - `steps` - Number of inference steps, such as `4` for turbo models or `20` for standard models.
-    - `cfg_scale` - Classifier-free guidance scale, such as `1.0` for turbo models or `7.5` for standard models.
-    - `width` - Default image width in pixels.
-    - `height` - Default image height in pixels.
-    - `sampling_method` - Default sampler, when the model sets one.
-    - `flow_shift` - Default flow shift, when the model sets one.
-    - `soft_pixel_cap` - Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted.
   - `components` - The names of a collection's component models, in order; empty for other models.
   - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
   - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
     - The checkpoint that fills the role named by its key.
+  - `checkpoint_status` - One entry per checkpoint of the model, answering whether its bytes are there.
+    - `type` - Checkpoint slot, e.g. `main`, `mmproj`, `vae`.
+    - `present` - `true` only when the checkpoint's bytes are complete and readable.
+    - `required` - A missing required checkpoint keeps the model undownloaded; an optional one, loaded lazily, does not.
+    - `registry` - Registry hosting the checkpoint; empty for local files and directories.
+    - `path` - Absolute path to the checkpoint file; present only with `include_paths=true` and when `present` is `true`.
   - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
   - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
-  - `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
+  - `recipe_options` - The model's own options: those its registry row authors, with what was saved in `recipe_options.json` on top.
   - `cloud_provider` - Cloud models only: the provider that serves the model.
   - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
   - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
   - `system_prompt` - Omni collections only: the collection's system prompt override.
-  - `audio_defaults` - Audio models only: default generation parameters.
   - `version` - Router collections only: the policy document's version.
   - `routing` - Router collections only: the routing policy.
 <!-- END GENERATED: openai.models -->
@@ -1778,9 +1791,10 @@ so on.
 Two label sets describe a model that cannot exist, and are refused rather than
 repaired:
 
-- **A mode the recipe's backend does not serve.** `/classify` is served only by
-  `onnxruntime`, so `labels: ["classification"]` on a `llamacpp` model is an
-  error; register it as the chat model it is.
+- **A mode the recipe's backend does not serve.** `/classify` is served by
+  `onnxruntime`, and by `llamacpp` only for a model that also has the
+  `systemone` label. `labels: ["classification"]` on a `llamacpp` model without
+  `systemone` is an error; register it as the chat model it is.
 - **Two different modes.** `labels: ["chat", "embeddings"]` on a `llamacpp` model
   is an error even though llama.cpp serves both: the subprocess is launched for
   one mode, so the second would name an endpoint it was never configured to
@@ -1798,6 +1812,12 @@ an error naming it; the file is left for you to correct.
 | `vision` | Accepts image attachments in chat messages. |
 | `chat-transcription` | Accepts audio attachments in chat messages and transcribes them as part of its answer (e.g. Qwen2.5-Omni). Like `vision`, this is something a chat model can do, not a deployment mode of its own; a model carrying it also carries `chat`. It is distinct from `transcription`, which deploys a dedicated ASR model on `/audio/transcriptions`. |
 
+**Classification capability labels:** carried alongside `classification`:
+
+| Label | Description |
+|-------|-------------|
+| `zero-shot` | Takes its labels from each `/classify` request instead of a fixed label set (e.g. `LFM2.5-Encoder-350M-Prompt-Router-ONNX`). A router policy must use such a model in a `zero_shot` classifier, and a fixed-label model in a `classifier`; registration refuses either mismatch. |
+
 **Streaming labels:** capability flags for real-time features:
 
 | Label | Description |
@@ -1809,6 +1829,12 @@ an error naming it; the file is left for you to correct.
 | Label | Description |
 |-------|-------------|
 | `mtp` | Enables llama.cpp MTP draft decoding defaults (`--spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75`); users can override these with `llamacpp_args`. |
+
+**Execution labels:** control how a model is invoked:
+
+| Label | Description |
+|-------|-------------|
+| `on-demand` | Runs through a task-specific endpoint without a resident model server, so `/v1/load` is not supported. Built-in upscalers use `/v1/images/upscale`. |
 
 **Image capability labels:** carried alongside `image`; they refine what the model is offered for without changing its deployment mode:
 
@@ -1838,7 +1864,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. A trailing `:latest`, the tag Ollama clients append, names the bare id when nothing is registered under the tagged name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `include_paths` (query) | No | `true` adds each present checkpoint's absolute `path` to its `checkpoint_status` entry, which can reveal local usernames and the cache layout. Defaults to `false`. The files a model is made of have their own list, at [`GET /v1/models/{id}/files`](./openai.md#get-v1modelsidfiles). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -1873,6 +1900,9 @@ Requires `LEMONADE_API_KEY` when it is set.
   "labels": ["chat", "reasoning", "tool-calling"],
   "components": [],
   "checkpoints": {"main": "unsloth/Qwen3-0.6B-GGUF:Q4_0"},
+  "checkpoint_status": [
+    {"type": "main", "present": true, "required": true, "registry": "huggingface"}
+  ],
   "source": "huggingface",
   "registry_source": "huggingface",
   "recipe_options": {}
@@ -1896,26 +1926,23 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `update_available` - Whether the model's registry has a newer commit; `false` except for downloaded registry models.
 - `suggested` - Whether the model is recommended for general use.
 - `labels` - The model's capabilities and characteristics; see [Model Labels](./openai.md#model-labels).
-- `image_defaults` - Image models only: default generation parameters.
-  - `steps` - Number of inference steps, such as `4` for turbo models or `20` for standard models.
-  - `cfg_scale` - Classifier-free guidance scale, such as `1.0` for turbo models or `7.5` for standard models.
-  - `width` - Default image width in pixels.
-  - `height` - Default image height in pixels.
-  - `sampling_method` - Default sampler, when the model sets one.
-  - `flow_shift` - Default flow shift, when the model sets one.
-  - `soft_pixel_cap` - Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted.
 - `components` - The names of a collection's component models, in order; empty for other models.
 - `models` - Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull).
 - `checkpoints` - Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.
   - The checkpoint that fills the role named by its key.
+- `checkpoint_status` - One entry per checkpoint of the model, answering whether its bytes are there.
+  - `type` - Checkpoint slot, e.g. `main`, `mmproj`, `vae`.
+  - `present` - `true` only when the checkpoint's bytes are complete and readable.
+  - `required` - A missing required checkpoint keeps the model undownloaded; an optional one, loaded lazily, does not.
+  - `registry` - Registry hosting the checkpoint; empty for local files and directories.
+  - `path` - Absolute path to the checkpoint file; present only with `include_paths=true` and when `present` is `true`.
 - `source` - Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`.
 - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
-- `recipe_options` - The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top.
+- `recipe_options` - The model's own options: those its registry row authors, with what was saved in `recipe_options.json` on top.
 - `cloud_provider` - Cloud models only: the provider that serves the model.
 - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
 - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
 - `system_prompt` - Omni collections only: the collection's system prompt override.
-- `audio_defaults` - Audio models only: default generation parameters.
 - `version` - Router collections only: the policy document's version.
 - `routing` - Router collections only: the routing policy.
 
@@ -1998,7 +2025,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. A trailing `:latest`, the tag Ollama clients append, names the bare id when nothing is registered under the tagged name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Per-architecture defaults are chosen by the architecture in the model's GGUF metadata, so a model that has not been downloaded yet shows every key with the value it has before those defaults apply.
 
@@ -2060,7 +2087,7 @@ Per-architecture defaults are chosen by the architecture in the model's GGUF met
 - `saved` - The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`.
 - `effective` - The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed.
 - `defaults` - What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically.
-- `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. `null` means automatic sizing found insufficient memory and no valid context is available.
+- `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
 
 ### Errors
 
@@ -2083,7 +2110,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. A trailing `:latest`, the tag Ollama clients append, names the bare id when nothing is registered under the tagged name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Context size: a positive whole number, or `-1` to size it automatically even when the server-wide `ctx_size` is a specific number. Only recipes that take a context size use it, such as `llamacpp`, `flm`, `ryzenai-llm` and `vllm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `dry_run` | No | `true` reports what the request would do without doing it. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model_name` | No | Ignored; the URL names the model. Accepted so `effective` can be posted back as is. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -2162,7 +2189,7 @@ A running model keeps its current options until it is next loaded.
 - `saved` - The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`.
 - `effective` - The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed.
 - `defaults` - What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically.
-- `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. `null` means automatic sizing found insufficient memory and no valid context is available.
+- `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
 
 ### Errors
 
@@ -2191,7 +2218,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `id` (path) | Yes | Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. A trailing `:latest`, the tag Ollama clients append, names the bare id when nothing is registered under the tagged name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -2253,7 +2280,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `saved` - The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`.
 - `effective` - The body a [`POST /v1/load`](./lemonade.md#post-v1load) for this model uses now: every option the recipe accepts, resolved through the full priority chain. Posting it back whole saves every resolved value as an override, so send only the options that changed.
 - `defaults` - What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically.
-- `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. `null` means automatic sizing found insufficient memory and no valid context is available.
+- `resolved_ctx_size` - The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`.
 
 ### Errors
 

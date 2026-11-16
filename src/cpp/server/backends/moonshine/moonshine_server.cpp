@@ -338,44 +338,8 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return make_server<MoonshineServer>(ctx);
 }
 
-
-namespace {
-class MoonshineOps : public BackendOps {
-public:
-    std::optional<std::vector<std::string>> select_checkpoint_files(
-        const std::string& main_variant, const std::vector<std::string>& repo_files) const override {
-        // A Moonshine variant names a directory (e.g. "medium-streaming-en/quantized");
-        // download every file under it.
-        std::string folder_prefix = main_variant;
-        if (!folder_prefix.empty() && folder_prefix.back() != '/') {
-            folder_prefix += "/";
-        }
-        auto starts_with_ci = [](const std::string& s, const std::string& p) {
-            if (s.size() < p.size()) return false;
-            for (size_t i = 0; i < p.size(); ++i) {
-                if (std::tolower(static_cast<unsigned char>(s[i])) !=
-                    std::tolower(static_cast<unsigned char>(p[i]))) {
-                    return false;
-                }
-            }
-            return true;
-        };
-        std::vector<std::string> files;
-        for (const auto& f : repo_files) {
-            if (starts_with_ci(f, folder_prefix)) {
-                files.push_back(f);
-            }
-        }
-        if (files.empty()) {
-            throw std::runtime_error("No Moonshine model files found in folder: " + main_variant);
-        }
-        return files;
-    }
-};
-}  // namespace
-
 const BackendSpec* spec() { return make_spec<MoonshineServer>(descriptor); }
-const BackendOps* ops() { return single_ops<MoonshineOps>(); }
+const BackendOps* ops() { return default_backend_ops(); }
 }  // namespace moonshine
 }  // namespace backends
 }  // namespace lemon

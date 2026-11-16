@@ -9,11 +9,13 @@ const connectPath = path.join(appRoot, 'src/components/ConnectView.tsx');
 const apiPath = path.join(appRoot, 'src/api.ts');
 const runtimeConfigPath = path.join(srcRoot, 'cpp/server/runtime_config.cpp');
 const modelManagerPath = path.join(srcRoot, 'cpp/server/model_manager.cpp');
+const scanCatalogPath = path.join(srcRoot, 'cpp/server/models/scan_catalog.cpp');
 
 const connectSource = fs.readFileSync(connectPath, 'utf8');
 const apiSource = fs.readFileSync(apiPath, 'utf8');
 const runtimeConfigSource = fs.readFileSync(runtimeConfigPath, 'utf8');
 const modelManagerSource = fs.readFileSync(modelManagerPath, 'utf8');
+const scanCatalogSource = fs.readFileSync(scanCatalogPath, 'utf8');
 
 for (const [filename, source] of [[connectPath, connectSource], [apiPath, apiSource]]) {
   const compiled = ts.transpileModule(source, {
@@ -52,10 +54,12 @@ assert.match(runtimeConfigSource, /fs::directory_iterator\{dir, read_ec\};/,
 assert.match(runtimeConfigSource, /not readable by the Lemonade server/,
   'permission failures must surface a user-facing server error');
 
-assert.match(modelManagerSource, /fs::directory_options::skip_permission_denied/,
+// Each C++ needle sits in the file that owns the behavior: the walk is ScanCatalog's, the
+// decision to keep the registered set when the walk fails is the cache rebuild's.
+assert.match(scanCatalogSource, /fs::directory_options::skip_permission_denied/,
   'extra-model discovery must skip inaccessible nested directories');
 assert.match(modelManagerSource,
-  /try \{\s*discovered_models = discover_extra_models\(registered_extra_paths\);\s*\} catch \(const std::exception& e\)/,
+  /try \{[\s\S]{0,240}?discover_extra_models\(registered_extra_paths\)[\s\S]{0,240}?\} catch \(const std::exception& e\)/,
   'optional extra-model discovery failures must not abort the registered model cache rebuild');
 assert.match(modelManagerSource, /keeping registered models/,
   'the cache fallback should document preservation of registered models');

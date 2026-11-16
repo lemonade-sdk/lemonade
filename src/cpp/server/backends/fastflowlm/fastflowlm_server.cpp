@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/systemone_classify.h"
 #include "lemon/audio_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
@@ -17,6 +18,7 @@
 #include <filesystem>
 #include <cstdlib>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 #include <chrono>
 #include <fstream>
@@ -67,7 +69,7 @@ FastFlowLMServer::FastFlowLMServer(const std::string& log_level, ModelManager* m
 }
 
 std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade,
-                                             RemoteRegistrySource source) {
+                                             RegistryId source) {
     LOG(INFO, "FastFlowLM") << "Pulling model with FLM: " << checkpoint << std::endl;
 
     std::string flm_path = get_flm_path();
@@ -171,9 +173,11 @@ void FastFlowLMServer::load(const std::string& model_name,
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
 
-    RemoteRegistrySource source = model_manager_
-        ? model_manager_->download_source_for(model_info)
-        : RemoteRegistrySource::HuggingFace;
+    if (model_manager_ == nullptr) {
+        throw std::runtime_error("Model manager is unavailable while resolving the download source for: " +
+                                 model_info.checkpoint());
+    }
+    const RegistryId source = model_manager_->download_source_for(model_info);
 
     download_model(model_info.checkpoint(), do_not_upgrade, source);
 
@@ -192,6 +196,13 @@ void FastFlowLMServer::load(const std::string& model_name,
         args = {
             "serve",
             "--embed", "1",
+            "--port", std::to_string(port_),
+            "--host", "127.0.0.1"
+        };
+    } else if (model_type_ == ModelType::CLASSIFICATION) {
+        args = {
+            "serve",
+            "--decision", model_info.checkpoint(),
             "--port", std::to_string(port_),
             "--host", "127.0.0.1"
         };
@@ -220,7 +231,8 @@ void FastFlowLMServer::load(const std::string& model_name,
     command.args = std::move(args);
     command.port = port_;
     // FLM has no /health route.
-    command.ready_endpoint = "/api/tags";
+    command.ready_endpoint = model_type_ == ModelType::CLASSIFICATION ? "/v1/systemone/models"
+                                                                      : "/api/tags";
     try {
         // 5 minutes: large models can take time to load
         start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}), command, 300);
@@ -235,7 +247,7 @@ void FastFlowLMServer::load(const std::string& model_name,
 }
 
 json FastFlowLMServer::chat_completion(const json& request) {
-    if (model_type_ == ModelType::TRANSCRIPTION || model_type_ == ModelType::EMBEDDING) {
+    if (!serves_text()) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Chat completion", "FLM " + model_type_to_string(model_type_) + " model")
         );
@@ -250,7 +262,7 @@ json FastFlowLMServer::chat_completion(const json& request) {
 }
 
 json FastFlowLMServer::completion(const json& request) {
-    if (model_type_ == ModelType::TRANSCRIPTION || model_type_ == ModelType::EMBEDDING) {
+    if (!serves_text()) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Text completion", "FLM " + model_type_to_string(model_type_) + " model")
         );
@@ -265,7 +277,7 @@ json FastFlowLMServer::completion(const json& request) {
 }
 
 json FastFlowLMServer::embeddings(const json& request) {
-    if (model_type_ == ModelType::TRANSCRIPTION) {
+    if (model_type_ == ModelType::TRANSCRIPTION || model_type_ == ModelType::CLASSIFICATION) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Embeddings", "FLM " + model_type_to_string(model_type_) + " model")
         );
@@ -280,15 +292,15 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
         );
     }
 
-    // FLM's transcription endpoint ignores response_format and always answers with
-    // the compact {model, text} JSON. Plain text can be derived from that; SRT and
-    // VTT cannot, because they need the per-segment timestamps FLM never returns.
+    // FLM sends text, SRT and VTT as text/plain, but forward_multipart_request reads
+    // only JSON. handle_audio_transcriptions() renders text from a JSON reply's "text"
+    // field; a JSON reply cannot carry SRT or VTT.
     const std::string requested_format = request.value("response_format", audio::ResponseFormat::JSON);
     if (requested_format == audio::ResponseFormat::SRT ||
         requested_format == audio::ResponseFormat::VTT) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("response_format '" + requested_format + "'",
-                                          "FLM transcription models (no segment timestamps)")
+                                          "FLM transcription models")
         );
     }
 
@@ -327,15 +339,14 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
         if (request.contains("prompt")) {
             fields.push_back({"prompt", request["prompt"].get<std::string>(), "", ""});
         }
-        if (request.contains("response_format")) {
-            fields.push_back({"response_format", request["response_format"].get<std::string>(), "", ""});
+        if (request.contains("response_format") &&
+            requested_format != audio::ResponseFormat::TEXT) {
+            fields.push_back({"response_format", requested_format, "", ""});
         }
         if (request.contains("temperature")) {
             fields.push_back({"temperature", std::to_string(request["temperature"].get<double>()), "", ""});
         }
 
-        // FLM always replies with JSON here, so the strict shared helper is correct:
-        // handle_audio_transcriptions() renders the "text" field for plain-text formats.
         return forward_multipart_request("/v1/audio/transcriptions", fields);
 
     } catch (const std::exception& e) {
@@ -346,6 +357,78 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
             }}
         };
     }
+}
+
+json FastFlowLMServer::classify(const json& request) {
+    if (model_type_ != ModelType::CLASSIFICATION) {
+        return unsupported_decision_request("Classification");
+    }
+    const json text = request.contains("text") ? request["text"] : request.value("input", json());
+    if (!text.is_string()) {
+        return systemone::invalid_decision_request(
+            "Missing 'input' (or 'text') string in classify request");
+    }
+    if (!request.contains("labels") || request["labels"].is_null()) {
+        return systemone::invalid_decision_request(
+            "this model scores a label list supplied per request; include a \"labels\" "
+            "array in the request body");
+    }
+
+    nlohmann::ordered_json body;
+    try {
+        body = systemone::build_classify_request(text.get<std::string>(), request["labels"]);
+    } catch (const std::invalid_argument& e) {
+        return systemone::invalid_decision_request(e.what());
+    }
+
+    const json response(decide(body));
+    if (response.contains("error")) {
+        return response;
+    }
+    const int top_k = request.contains("top_k") && request["top_k"].is_number_integer()
+                          ? request["top_k"].get<int>()
+                          : 0;
+    try {
+        return systemone::classify_response(response, request["labels"], top_k);
+    } catch (const std::exception& e) {
+        return ErrorResponse::create(e.what(), ErrorType::BACKEND_ERROR);
+    }
+}
+
+nlohmann::ordered_json FastFlowLMServer::systemone(const nlohmann::ordered_json& request) {
+    if (model_type_ != ModelType::CLASSIFICATION) {
+        return unsupported_decision_request("SystemOne");
+    }
+    // FLM ignores the request's `model` and answers with its own model id.
+    nlohmann::ordered_json response = decide(request);
+    if (response.is_object() && response.contains("model")) {
+        response["model"] = request.value("model", get_model_name());
+    }
+    return response;
+}
+
+nlohmann::ordered_json FastFlowLMServer::decide(const nlohmann::ordered_json& body) {
+    nlohmann::ordered_json response = forward_ordered_request("/v1/systemone", body);
+    if (response.contains("error")) {
+        return response;
+    }
+    if (const auto refusal = systemone::context_length_refusal(json(response))) {
+        return nlohmann::ordered_json(*refusal);
+    }
+    // FLM refuses a question that does not fit instead of cutting it, so every
+    // answer it gives read the whole state.
+    systemone::set_answers_truncated(response, false);
+    return response;
+}
+
+bool FastFlowLMServer::serves_text() const {
+    return model_type_ != ModelType::TRANSCRIPTION && model_type_ != ModelType::EMBEDDING &&
+           model_type_ != ModelType::CLASSIFICATION;
+}
+
+json FastFlowLMServer::unsupported_decision_request(const std::string& operation) const {
+    return ErrorResponse::from_exception(UnsupportedOperationException(
+        operation, "FLM model '" + get_model_name() + "', which is not a d3 decision model"));
 }
 
 json FastFlowLMServer::responses(const json& request) {
@@ -360,7 +443,7 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
                                                   bool sse,
                                                   long timeout_seconds,
                                                   TelemetryCallback telemetry_callback) {
-    if (model_type_ == ModelType::TRANSCRIPTION || model_type_ == ModelType::EMBEDDING) {
+    if (!serves_text()) {
         std::string error_msg = "data: {\"error\":{\"message\":\"Streaming not supported for FLM "
             + model_type_to_string(model_type_) + " model\",\"type\":\"unsupported_operation\"}}\n\n";
         sink.write(error_msg.c_str(), error_msg.size());
@@ -430,10 +513,16 @@ public:
 
     void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
                         const BackendOpsContext& ctx) const override {
-        RemoteRegistrySource source = ctx.model_manager
-            ? ctx.model_manager->download_source_for(info)
-            : RemoteRegistrySource::HuggingFace;
-        flm_download(info.checkpoint(), do_not_upgrade, progress, source);
+        if (ctx.fetch == nullptr) {
+            throw std::runtime_error("No fetch service while resolving the download source for: " +
+                                     info.checkpoint());
+        }
+        flm_download(info.checkpoint(), do_not_upgrade, progress,
+                     ctx.fetch->download_source_for(info));
+    }
+
+    void remove_self_managed_model(const ModelInfo& info) const override {
+        flm_remove(info.checkpoint());
     }
 
     bool invalidates_cache_after_download() const override { return true; }

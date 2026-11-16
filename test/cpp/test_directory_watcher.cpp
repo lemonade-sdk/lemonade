@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -117,7 +118,7 @@ static void test_nonexistent_dir(TestResult& r) {
     fs::remove_all(dir);
 
     std::atomic<int> call_count{0};
-    std::atomic<bool> done{false};
+    int writes = 0;
 
     {
         DirectoryWatcher watcher(dir.string());
@@ -133,18 +134,25 @@ static void test_nonexistent_dir(TestResult& r) {
         // Wait a bit for the watcher to detect the new dir and set up inotify
         std::this_thread::sleep_for(std::chrono::milliseconds(600));
 
-        // Create a file to trigger the callback
-        std::ofstream{dir / "file.txt"} << "data";
-
-        // Wait for debounce + detection
-        std::this_thread::sleep_for(std::chrono::milliseconds(800));
+        // On a loaded runner the watch can arm after a write, and that write
+        // is never reported, so retry with a fresh file.
+        // Each write gets a quiet wait: writing again sooner restarts the macOS debounce,
+        // and the watcher must stay alive or a pending change is dropped on stop.
+        while (call_count.load() == 0 && writes < 5) {
+            std::ofstream{dir / ("file" + std::to_string(writes++) + ".txt")} << "data";
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+            while (call_count.load() == 0 && std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+        }
     }
 
     int count = call_count.load();
+    std::string detail = "calls=" + std::to_string(count) + ", writes=" + std::to_string(writes);
     if (count > 0) {
-        r.ok("non-existent dir recovery (calls=" + std::to_string(count) + ")");
+        r.ok("non-existent dir recovery (" + detail + ")");
     } else {
-        r.fail("non-existent dir recovery (callback never fired)");
+        r.fail("non-existent dir recovery (callback never fired, " + detail + ")");
     }
 }
 

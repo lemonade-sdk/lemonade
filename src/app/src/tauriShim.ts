@@ -52,24 +52,38 @@ async function installTauriApi(): Promise<void> {
   // unlisten handle, we set the flag and run the unlisten immediately when the
   // promise eventually resolves. Without this, React effects that mount and
   // unmount synchronously would leak the underlying subscription.
-  function on<T>(channel: string, cb: (payload: T) => void): () => void {
+  //
+  // `ready` resolves once Rust has registered the listener. Tauri's `listen`
+  // is an async command, so an emit from a sync command invoked right after
+  // `listen()` can reach Rust first and is then dropped.
+  function subscribe<T>(
+    channel: string,
+    cb: (payload: T) => void,
+  ): { cleanup: () => void; ready: Promise<void> } {
     let unlisten: (() => void) | null = null;
     let cancelled = false;
-    listen<T>(channel, (event) => cb(event.payload)).then((fn) => {
+    const ready = listen<T>(channel, (event) => cb(event.payload)).then((fn) => {
       if (cancelled) {
         fn();
       } else {
         unlisten = fn;
       }
     });
-    return () => {
+    const cleanup = () => {
       cancelled = true;
       if (unlisten) {
         unlisten();
         unlisten = null;
       }
     };
+    return { cleanup, ready };
   }
+
+  function on<T>(channel: string, cb: (payload: T) => void): () => void {
+    return subscribe(channel, cb).cleanup;
+  }
+
+  let navigateListenerReady: Promise<void> = Promise.resolve();
 
   // Resolved synchronously at install time so consumers can read it as a
   // plain string field rather than a promise.
@@ -147,8 +161,17 @@ async function installTauriApi(): Promise<void> {
     // /system-info directly via serverConfig.fetch — see StatusBar.tsx and
     // AboutModal.tsx. The old Rust proxy (system_info.rs) was redundant.
     getLocalMarketplaceUrl: () => invoke<string | null>('get_local_marketplace_url'),
-    signalReady: fire('renderer_ready'),
-    onNavigate: (callback: (data: NavData) => void) => on<NavData>(EVT_NAVIGATE, callback),
+    signalReady: () => {
+      navigateListenerReady
+        .catch(() => undefined)
+        .then(() => invoke('renderer_ready'))
+        .catch((e) => console.warn('renderer_ready', e));
+    },
+    onNavigate: (callback: (data: NavData) => void) => {
+      const { cleanup, ready } = subscribe<NavData>(EVT_NAVIGATE, callback);
+      navigateListenerReady = ready;
+      return cleanup;
+    },
   };
 
   (window as unknown as { api: typeof api }).api = api;

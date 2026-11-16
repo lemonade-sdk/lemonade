@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -12,8 +14,9 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
-#include "lemon/model_manager.h"
+#include "lemon/models/download_progress.h"
 #include "lemon/server/route_error.h"
+#include "lemon/utils/cancel_token.h"
 
 namespace lemon {
 
@@ -22,14 +25,20 @@ namespace lemon {
 // install also send their progress as an event stream built here.
 class DownloadManager {
 public:
-    using Operation = std::function<void(DownloadProgressCallback)>;
+    using Operation = std::function<void(DownloadProgressCallback, utils::CancelToken)>;
 
     ~DownloadManager();
 
     // Starts operation on a worker thread under id, or returns the job already running
     // under that id. Returns the job's snapshot.
     nlohmann::json start(const std::string& id, const std::string& type,
-                         const std::string& display_name, Operation operation);
+                         const std::string& display_name, Operation operation,
+                         bool show_before_progress = true);
+
+    // Same server-owned job, but waits for an install required by a model load.
+    // No-op installations without a download stay hidden from the download list.
+    void run_tracked(const std::string& id, const std::string& type,
+                     const std::string& display_name, Operation operation);
 
     // Snapshots of every visible job, expiring completed jobs past their grace period.
     nlohmann::json list();
@@ -64,12 +73,16 @@ private:
         uint64_t current_file_bytes_total = 0;
         int current_file_index = -1;
         bool cancel_requested = false;
+        // The worker hands this flag to the transfer as a CancelToken, so a cancel
+        // stops bytes on the next socket tick, not only at the next progress report.
+        std::atomic<bool> cancel_flag{false};
         // Set by the worker's progress callback once the downloader has actually
         // observed a pause/cancel request and stopped before completion. This
         // prevents a late UI request from overriding a successful operation that
         // already returned normally.
         bool stop_acknowledged = false;
         bool running = false;
+        bool visible = true;
         std::chrono::steady_clock::time_point terminal_since;
         // Protects worker publication/join. A job can be visible in the registry
         // while start() is still joining the previous worker; removals and
@@ -85,6 +98,7 @@ private:
     static void join(const std::shared_ptr<Job>& job);
 
     std::mutex mutex_;
+    std::condition_variable completed_cv_;
     std::map<std::string, std::shared_ptr<Job>> jobs_;
 };
 

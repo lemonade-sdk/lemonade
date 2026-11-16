@@ -46,6 +46,14 @@ def _auth_headers():
     return {}
 
 
+def _admin_headers():
+    """Bearer-token header for /internal routes, which only the admin key opens."""
+    admin_key = os.environ.get("LEMONADE_ADMIN_API_KEY")
+    if admin_key:
+        return {"Authorization": f"Bearer {admin_key}"}
+    return _auth_headers()
+
+
 def _post(payload, timeout=TIMEOUT_DEFAULT):
     """POST a JSON-RPC body to /mcp and return the requests.Response."""
     return requests.post(
@@ -523,6 +531,120 @@ class McpGatewayTests(ServerTestBase):
         self.assertEqual(content[0]["type"], "text")
         # Some tiny test models emit empty strings — just assert the shape.
         self.assertIsInstance(content[0]["text"], str)
+
+    def test_031_chat_tool_resolves_a_model_alias(self):
+        """An alias must work as the `model` argument, as it does on the REST endpoints."""
+        alias = f"mcp-alias-{uuid.uuid4().hex[:8]}"
+        base = f"http://localhost:{PORT}"
+
+        registered = requests.post(
+            f"{base}/internal/aliases",
+            json={"alias": alias, "target": ENDPOINT_TEST_MODEL},
+            headers=_admin_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            registered.status_code,
+            200,
+            msg=f"could not register alias: {registered.text[:200]}",
+        )
+        self.addCleanup(
+            requests.delete,
+            f"{base}/internal/aliases/{alias}",
+            headers=_admin_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_chat",
+                    "arguments": {
+                        "model": alias,
+                        "messages": [
+                            {"role": "user", "content": "Say hello in 3 words."},
+                        ],
+                        "max_tokens": 16,
+                    },
+                },
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        body = response.json()
+        self.assertNotIn("error", body, msg=str(body))
+        self.assertFalse(
+            body["result"]["isError"],
+            msg=f"alias was not resolved: {body['result']}",
+        )
+
+    def test_032_omni_tool_resolves_a_model_alias(self):
+        """Omni resolves its explicit `model` on its own path, so it needs its own case."""
+        alias = f"mcp-alias-{uuid.uuid4().hex[:8]}"
+        base = f"http://localhost:{PORT}"
+
+        registered = requests.post(
+            f"{base}/internal/aliases",
+            json={"alias": alias, "target": ENDPOINT_TEST_MODEL},
+            headers=_admin_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            registered.status_code,
+            200,
+            msg=f"could not register alias: {registered.text[:200]}",
+        )
+        self.addCleanup(
+            requests.delete,
+            f"{base}/internal/aliases/{alias}",
+            headers=_admin_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        # The target is a plain LLM, so Omni rejects it. Which rejection comes
+        # back is the point: naming the target proves the alias was resolved,
+        # while "Unknown model '<alias>'" would mean it was passed through.
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_omni",
+                    "arguments": {
+                        "model": alias,
+                        "messages": [
+                            {"role": "user", "content": "Say hello in 3 words."},
+                        ],
+                    },
+                },
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        body = response.json()
+        self.assertNotIn("error", body, msg=str(body))
+        self.assertTrue(
+            body["result"]["isError"],
+            msg=f"a plain LLM should not be accepted as an Omni collection: {body['result']}",
+        )
+        text = body["result"]["content"][0]["text"]
+        self.assertIn(
+            "is not an Omni collection",
+            text,
+            msg=f"alias was not resolved before the recipe check: {text}",
+        )
+        self.assertIn(
+            ENDPOINT_TEST_MODEL,
+            text,
+            msg=f"error names the alias instead of its target: {text}",
+        )
+        self.assertNotIn(
+            alias,
+            text,
+            msg=f"error still refers to the unresolved alias: {text}",
+        )
 
 
 if __name__ == "__main__":

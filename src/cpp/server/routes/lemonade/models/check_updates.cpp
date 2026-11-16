@@ -60,7 +60,7 @@ public:
         }
 
         try {
-            auto check_res = ctx_.model_manager->check_for_model_updates();
+            auto check_res = ctx_.model_manager->check_updates();
 
             json response = {
                 {"status", check_res.failed_models.empty() ? "success" : "failed"},

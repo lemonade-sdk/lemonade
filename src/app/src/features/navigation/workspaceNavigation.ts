@@ -45,7 +45,7 @@ function defineWorkspace<
 }
 
 export const WORKSPACE_NAVIGATION = {
-  dashboard: defineWorkspace('dashboard', [
+  monitor: defineWorkspace('monitor', [
     defineSection('performance', 'Health and throughput', 'gauge'),
     defineSection('telemetry', 'Traces, replay and tuning', 'search-check'),
     defineSection('logs', 'Live server output', 'logs'),
@@ -62,11 +62,11 @@ export const WORKSPACE_NAVIGATION = {
 } as const;
 
 export type RoutedWorkspace = keyof typeof WORKSPACE_NAVIGATION;
-export type DashboardSection = typeof WORKSPACE_NAVIGATION.dashboard.sections[number]['id'];
+export type MonitorSection = typeof WORKSPACE_NAVIGATION.monitor.sections[number]['id'];
 export type ConnectSection = typeof WORKSPACE_NAVIGATION.connect.sections[number]['id'];
 
 export type WorkspaceRoute =
-  | { workspace: 'dashboard'; section: DashboardSection }
+  | { workspace: 'monitor'; section: MonitorSection }
   | { workspace: 'connect'; section: ConnectSection };
 
 export function isRoutedWorkspace(value: string): value is RoutedWorkspace {

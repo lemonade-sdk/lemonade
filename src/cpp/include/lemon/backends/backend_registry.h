@@ -5,14 +5,13 @@
 #include "lemon/backends/backend_descriptor.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
+#include "lemon/model_manager_types.h"
 
 namespace lemon {
 
 class WrappedServer;
-class ModelManager;
 class BackendManager;
 class CloudProviderRegistry;
-struct ModelInfo;
 
 namespace backends {
 

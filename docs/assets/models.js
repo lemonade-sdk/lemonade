@@ -7,12 +7,15 @@ const RECIPE_PRIORITY = [
   'acestep',
   'ds4',
   'flm',
+  'gufo',
+  'halogen',
   'llamacpp-hrx',
   'kokoro',
   'llamacpp',
   'moonshine',
   'onnxruntime',
   'openmoss',
+  'rocmfpx',
   'ryzenai-llm',
   'sd-cpp',
   'thenoise',
@@ -32,6 +35,7 @@ const RECIPE_DISPLAY_NAMES = {
   vllm: 'vLLM ROCm',
   thenoise: 'thenoise',
   ds4: 'DwarfStar4',
+  rocmfpx: 'ROCm FPX',
   thinksound: 'ThinkSound',
   acestep: 'ACE-Step',
   onnxruntime: 'ONNX Runtime',
@@ -192,6 +196,18 @@ function renderLabelButtons() {
   });
 }
 
+function appendOptionRows(rows, options) {
+  if (options.steps !== undefined) rows.push({ key: 'Default Steps', value: escapeHtml(options.steps) });
+  if (options.cfg_scale !== undefined) rows.push({ key: 'Default CFG Scale', value: escapeHtml(options.cfg_scale) });
+  if (options.width !== undefined && options.height !== undefined) {
+    rows.push({ key: 'Default Size', value: `${escapeHtml(options.width)}x${escapeHtml(options.height)}` });
+  }
+  const pcm = [];
+  if (options.pcm_sample_rate !== undefined) pcm.push(`${options.pcm_sample_rate} Hz`);
+  if (options.pcm_channels !== undefined) pcm.push(`${options.pcm_channels} ch`);
+  if (pcm.length) rows.push({ key: 'PCM Format', value: escapeHtml(pcm.join(', ')) });
+}
+
 function buildModelTableRows(name, details) {
   const rows = [];
   const singleCheckpoint = parseCheckpoint(name, details);
@@ -243,16 +259,18 @@ function buildModelTableRows(name, details) {
     if (['checkpoint', 'checkpoints', 'max_prompt_length', 'suggested', 'labels'].includes(key)) {
       continue;
     }
-    if (key === 'image_defaults' && value && typeof value === 'object') {
-      if (value.steps !== undefined) rows.push({ key: 'Default Steps', value: escapeHtml(value.steps) });
-      if (value.cfg_scale !== undefined) rows.push({ key: 'Default CFG Scale', value: escapeHtml(value.cfg_scale) });
-      if (value.width !== undefined && value.height !== undefined) {
-        rows.push({ key: 'Default Size', value: `${escapeHtml(value.width)}x${escapeHtml(value.height)}` });
-      }
+    // The retired block names stay in the list because the page reads the
+    // registry at a release tag, and an older tag still serves them.
+    if (['recipe_options', 'image_defaults', 'audio_defaults'].includes(key)
+        && value && typeof value === 'object') {
+      appendOptionRows(rows, value);
       continue;
     }
     if (key === 'size') {
       rows.push({ key: 'Size (GB)', value: escapeHtml(value) });
+      continue;
+    }
+    if (value === null || typeof value === 'object') {
       continue;
     }
     rows.push({ key: toTitle(key), value: escapeHtml(value) });

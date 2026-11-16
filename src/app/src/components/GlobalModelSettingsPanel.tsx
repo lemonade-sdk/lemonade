@@ -194,7 +194,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
     setSaved(false);
     if (section === 'chat') {
       setDraft(current => ({ ...current, collapseThinkingByDefault: DEFAULT_GLOBAL_MODEL_SETTINGS.collapseThinkingByDefault }));
-      setPersistHistory(false);
+      setPersistHistory(true);
       setTtsModel(null);
       setTtsReadMode('on-demand');
       return;

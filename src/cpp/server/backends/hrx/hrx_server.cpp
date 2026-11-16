@@ -1,6 +1,7 @@
 /**
  * HRX reuses llama-server's protocol but supports only its local-GGUF chat
- * startup branch. HF loading, vision/mmproj, drafting, embeddings, reranking,
+ * startup branch, including embedded MTP heads. HF loading, vision/mmproj,
+ * separate draft checkpoints, embeddings, reranking,
  * and generic GPU-runtime setup stay omitted because the qualified bundle owns
  * those choices. The test-visible launch builders remain local until both HRX
  * and llama.cpp can share a startup seam without either recipe's policy leaking
@@ -19,6 +20,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include <algorithm>
 #include <stdexcept>
 #include <vector>
 
@@ -146,6 +148,23 @@ namespace {
 
 class HrxOps : public BackendOps {
 public:
+    void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const override {
+        const json merge_args_value = options.get_option("merge_args");
+        const bool merge_args =
+            merge_args_value.is_boolean() ? merge_args_value.get<bool>() : true;
+        if (!merge_args) return;
+
+        const bool uses_mtp =
+            std::find(info.labels.begin(), info.labels.end(), "mtp") != info.labels.end();
+        if (!uses_mtp) return;
+
+        const json custom_args_value = options.get_option("hrx_args");
+        const std::string custom_args =
+            custom_args_value.is_string() ? custom_args_value.get<std::string>() : "";
+        options.set_option("hrx_args", utils::append_runtime_arg_defaults(
+            custom_args, {{"--spec-type draft-mtp", "--spec-type"}}));
+    }
+
     void populate_metadata(ModelInfo& info,
                            const BackendOpsContext& ctx) const override {
         llamacpp::ops()->populate_metadata(info, ctx);

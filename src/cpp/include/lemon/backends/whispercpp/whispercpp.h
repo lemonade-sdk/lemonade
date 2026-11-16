@@ -36,6 +36,18 @@ inline const BackendDescriptor descriptor = {
          {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
         {"cpu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
     },
+    /*about*/ {
+        {"npu", {"whisper.cpp with its encoder offloaded to the Ryzen AI NPU.",
+                 "ggml-org", "lemonade-sdk", "MIT", "https://github.com/ggml-org/whisper.cpp"}},
+        {"metal", {"whisper.cpp accelerated by Metal on Apple Silicon GPUs.",
+                   "ggml-org", "lemonade-sdk", "MIT", "https://github.com/ggml-org/whisper.cpp"}},
+        {"vulkan", {"Cross-platform whisper.cpp GPU runtime for most AMD and NVIDIA GPUs.",
+                    "ggml-org", "lemonade-sdk", "MIT", "https://github.com/ggml-org/whisper.cpp"}},
+        {"rocm", {"whisper.cpp specialized for AMD GPUs, built against ROCm from TheRock.",
+                  "ggml-org", "lemonade-sdk", "MIT", "https://github.com/ggml-org/whisper.cpp"}},
+        {"cpu", {"whisper.cpp on the CPU alone.",
+                 "ggml-org", "lemonade-sdk", "MIT", "https://github.com/ggml-org/whisper.cpp"}},
+    },
     /*supported_modes*/ {"transcription"},
     /*required_checkpoints*/ {"main"},  // npu_cache validated in load() (npu variant only)
     /*default_capabilities*/ {"realtime-transcription"},
@@ -46,7 +58,7 @@ inline const BackendDescriptor descriptor = {
     /*version_policy*/  VersionPolicy::Exact,
     /*self_manages_downloads*/ false,
     /*takes_args*/      true,
-    /*arg_variants*/    {"cpu", "npu"},
+    /*arg_variants*/    {"cpu", "npu", "vulkan", "rocm"},
     /*bin_variants*/    {"cpu", "npu"},
     /*config_extra*/    nlohmann::json::object(),
 };

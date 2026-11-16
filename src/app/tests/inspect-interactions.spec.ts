@@ -118,7 +118,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
     await page.addInitScript(() => {
       localStorage.setItem('lemonade:chat_last_ready_model', 'mock-tool-downloaded');
     });
-    await page.goto('/#/dashboard/telemetry');
+    await page.goto('/#/monitor/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
 
     await page.evaluate(() => {
@@ -178,7 +178,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
   });
 
   test('Closing optimization progress aborts the request and releases the GUI', async ({ page }) => {
-    await page.goto('/#/dashboard/telemetry');
+    await page.goto('/#/monitor/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
 
     await page.evaluate(() => {
@@ -267,7 +267,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
       });
     });
 
-    await page.goto('/#/dashboard/telemetry');
+    await page.goto('/#/monitor/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
     await page.evaluate(() => {
       (window as any).inspectStore.setState({
@@ -330,7 +330,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
       });
     });
 
-    await page.goto('/#/dashboard/telemetry');
+    await page.goto('/#/monitor/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
     await page.evaluate(() => {
       (window as any).inspectStore.setState({
@@ -393,7 +393,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
       });
     });
 
-    await page.goto('/#/dashboard/telemetry');
+    await page.goto('/#/monitor/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
     await page.evaluate(() => {
       (window as any).inspectStore.setState({
@@ -458,7 +458,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
       });
     });
 
-    await page.goto('/#/dashboard/telemetry');
+    await page.goto('/#/monitor/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
     await page.evaluate(() => {
       (window as any).inspectStore.setState({
@@ -492,7 +492,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
 
   test('Decoupled Keyboard Selection in Trace List', async ({ page }) => {
     // 1. Navigate to the inspect view directly
-    await page.goto('/#/dashboard/telemetry');
+    await page.goto('/#/monitor/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
 
     // 2. Put initial traces in the inspectStore
@@ -620,7 +620,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
 
   test('Combobox Input Focus Highlight', async ({ page }) => {
     // 1. Navigate to the inspect view directly
-    await page.goto('/#/dashboard/telemetry');
+    await page.goto('/#/monitor/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
 
     // Open Sim Create Modal
@@ -719,7 +719,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
     });
 
     // Navigate to inspect view
-    await page.goto('/#/dashboard/telemetry');
+    await page.goto('/#/monitor/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
 
     // Make sure capturing is set to true on store
@@ -830,7 +830,7 @@ test.describe('Session Inspector - Recent Improvements', () => {
     });
 
     // 1. Navigate to the inspect view
-    await page.goto('/#/dashboard/telemetry');
+    await page.goto('/#/monitor/telemetry');
     await expect(page.locator('.inspect-rail')).toBeVisible();
 
     // Make sure capturing is set to true on store

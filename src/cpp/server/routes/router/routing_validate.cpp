@@ -2,6 +2,7 @@
 #include <optional>
 #include <string>
 
+#include "lemon/error_types.h"
 #include "lemon/model_residency.h"
 #include "lemon/route_decision_response.h"
 #include "lemon/routing_classifier_services.h"
@@ -54,10 +55,13 @@ public:
             "downloaded, and registration's model-type checks, such as whether a "
             "`semantic_similarity` model can embed, do not run.",
             "Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, etc.) are "
-            "evaluated locally. Model-backed conditions (`semantic_similarity`, `classifier` and "
-            "`llm`, including `routing.router`) may load and run their models. A model failure "
-            "follows the classifier's `on_error` policy (`match_false` by default), so routing "
-            "continues to a later rule or to `default_model`.",
+            "evaluated locally. Model-backed conditions (`semantic_similarity`, `classifier`, "
+            "`zero_shot` and `llm`, including `routing.router`) may load and run their models. A "
+            "model failure follows the classifier's `on_error` policy (`match_false` by default), "
+            "so routing continues to a later rule or to `default_model`. A residency conflict is "
+            "the exception: when the classifier model cannot be resident alongside the models "
+            "already loaded, the request returns 409 and no decision is made, because the policy "
+            "cannot run on this machine in this combination.",
             "The example below uses explicit `routing.rules`, so its `normalized_policy` comes "
             "back unchanged. The `routing.router` shorthand is "
             "expanded into an `llm` classifier plus one rule per candidate, so a `routing` block "
@@ -152,7 +156,8 @@ public:
             "prompt": "please write a def to reverse a list"
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidPolicy};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidPolicy,
+                    ModelLoader::kRouterResidencyConflict};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -213,6 +218,12 @@ public:
                 {"normalized_policy", std::move(normalized_policy)},
             };
             res.set_content(response.dump(), "application/json");
+        } catch (const RouterResidencyConflictException& e) {
+            // The policy document is well-formed; the hardware just cannot host its
+            // classifier right now. Reporting that as 400 would send the caller off
+            // to debug a document that has nothing wrong with it.
+            write_openai_error(res, ModelLoader::kRouterResidencyConflict, e.what(),
+                               ErrorType::ROUTER_RESIDENCY_CONFLICT);
         } catch (const std::exception& e) {
             write_plain_error(res, kInvalidPolicy, std::string("Invalid routing policy: ") + e.what());
         }

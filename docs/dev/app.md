@@ -8,7 +8,7 @@ Tauri uses WebView2 on Windows, WKWebView on macOS, and webkit2gtk on Linux. It 
 
 - **Server (`lemond`):** downloaded and loaded models, backends, custom model definitions, persistent model load settings, and server configuration.
 - **Desktop host:** native window features, deep links (`lemonade://`), local server discovery via UDP beacon, and host settings such as the saved server endpoint and an API key when the user elects to remember it. The Rust host handles `app_settings.json` through `src-tauri/src/settings.rs`.
-- **React renderer:** client-local UI preferences, selected tools, Favorites, and opt-in browser chat history. Persistent history strips attached and generated media. These values are not server-side user accounts.
+- **React renderer:** client-local UI preferences, selected tools, Favorites, and browser chat history (enabled by default). Persistent history strips attached and generated media. These values are not server-side user accounts.
 
 The app connects to the saved endpoint or discovers a local server where possible; remote servers can be specified under **Settings > Server**. Server health and other API requests use the regular HTTP client, not a separate Rust-side proxy.
 

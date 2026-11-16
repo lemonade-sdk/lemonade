@@ -2,10 +2,16 @@
 Description=Lemonade Server (user)
 Documentation=https://lemonade-server.ai/docs/
 After=network-online.target
+# Container backends run through Podman's API service, outside this unit's
+# sandbox: rootless Podman needs the user namespaces and setuid newuidmap that
+# the sandbox below takes away.
+Wants=podman.socket
+After=podman.socket
 
 [Service]
 Type=simple
 WorkingDirectory=%h
+Environment=CONTAINER_HOST=unix://%t/podman/podman.sock
 # Optional env file for HF_TOKEN / LEMONADE_API_KEY / LEMONADE_ADMIN_API_KEY.
 # %E expands to $XDG_CONFIG_HOME (default ~/.config). `systemctl --user edit
 # lemond` drop-ins work too.

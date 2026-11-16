@@ -9,6 +9,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/error_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/server.h"
@@ -52,10 +53,10 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         return lemon::jobs::json::parse(response.dump());
     };
     providers.model_get = [model_manager, model_json](const std::string& id) -> lemon::jobs::json {
-        auto models = model_manager->get_supported_models();
-        auto it = models.find(id);
-        if (it == models.end()) return lemon::jobs::json(nullptr);
-        return lemon::jobs::json::parse(model_json->to_json(id, it->second).dump());
+        auto resolved = model_manager->resolve(id);
+        if (!resolved) return lemon::jobs::json(nullptr);
+        return lemon::jobs::json::parse(
+            model_json->to_json(resolved->wire_id, *resolved->info).dump());
     };
     providers.load_op = [router, model_manager, job_states, current_job, state_mutex](
                             const lemon::jobs::json& params,
@@ -76,6 +77,8 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         try {
             router->load_model(model, info, options, true, true, pinned,
                                LoadPurpose::UserInference, &cancel);
+        } catch (const ModelLoadRefusedException& e) {
+            throw lemon::jobs::JobError(400, e.what());
         } catch (const std::exception& e) {
             throw lemon::jobs::JobError(500, e.what());
         }

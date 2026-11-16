@@ -67,6 +67,7 @@ Use the smallest model that exercises the code path. Suites that run on GitHub-h
 | Changes WebSocket / Realtime behavior | `test/test_websocket_idle.py`, `test/server_websocket_auth.py` |
 | Changes streaming error handling | `test/server_streaming_errors.py` |
 | Changes model downloads or registry search | `test/server_downloads.py` |
+| Changes how container backends run (`ContainerManager`, `ContainerProcess`) | `test/cpp/test_container_manager.cpp`, and `test/server_containers.py`, which the `test-container-smoke` job runs against rootless Podman, rootful Podman and Docker on hosted runners |
 | Changes API key authentication | `test/server_cli_apikey.py`, `test/server_websocket_auth.py` |
 | Adds pure C++ logic (parsers, arg resolvers, utilities) | `test/cpp/test_<thing>.cpp`, declared via `add_cpp_ci_test()` in `CMakeLists.txt` |
 | Changes `server_models.json` | Update `test/utils/test_models.py` and `test/utils/capabilities.py` if tests reference the affected models |

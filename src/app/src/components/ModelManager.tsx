@@ -4,7 +4,7 @@ import { copyTextToClipboard } from '../clipboard';
 import { capabilityFromModelInfo, modelCapabilityTags, modelSupportsChatImageInput } from '../modelCapabilities';
 import { Icon } from './Icon';
 import { storageKey } from '../storage';
-import { CUSTOM_CAPABILITIES, CustomModelCapability, generatedLabelsFor, buildCustomModelRecord, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, exportCustomModelsPayload, parseCustomModelsImport, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
+import { CUSTOM_CAPABILITIES, CustomModelCapability, generatedLabelsFor, buildCustomModelRecord, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, customImageCompanionCheckpoints, customImagePurpose, customImageLabelsForPurpose, type CustomImagePurpose, exportCustomModelsPayload, parseCustomModelsImport, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
 import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import {
   detectHuggingFaceBackend,
@@ -13,6 +13,7 @@ import {
 } from '../features/models/huggingFaceSearch';
 import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
 import { DownloadListItem, activeDownloadForModel, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
+import { isModelSyncRunning, modelSyncFailureText, modelSyncStore, openServerLogs, type ModelSyncSnapshot } from '../features/models/modelSyncStore';
 import { ModelListPanel, capabilityTagIconTarget, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
 import type { FilterTab, PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
@@ -214,6 +215,10 @@ const CUSTOM_RECIPE_SUGGESTIONS: Record<string, CustomRecipeSuggestion> = {
     checkpoint: 'amd/Llama-3.2-1B-Instruct-onnx-ryzenai-1.7-hybrid',
     note: 'RyzenAI-compatible ONNX/HF checkpoint or local path.',
   },
+  thenoise: {
+    checkpoint: 'circlestone-labs/Anima:split_files/diffusion_models/anima-turbo-v1.1.safetensors',
+    note: 'DiT, VAE and text encoder must all be provided as separate checkpoints.',
+  },
   'sd-cpp': {
     checkpoint: 'unsloth/FLUX.2-klein-9B-GGUF:flux-2-klein-9b-Q8_0.gguf',
     note: 'Primary diffusion checkpoint. Extra fields below cover multi-file image models.',
@@ -294,7 +299,10 @@ const CUSTOM_RECIPE_OPTIONS: Record<CustomModelCapability, CustomRecipeOption[]>
   chat: CHAT_RECIPE_OPTIONS,
   omni: CHAT_RECIPE_OPTIONS,
   classification: [customRecipeOption('onnxruntime', 'ONNX Runtime', 'Text classification through /classify')],
-  image: [customRecipeOption('sd-cpp', 'Stable Diffusion', 'Stable Diffusion C++ backend')],
+  image: [
+    customRecipeOption('sd-cpp', 'Stable Diffusion', 'Stable Diffusion C++ backend'),
+    customRecipeOption('thenoise', 'TheNoise', 'PyTorch image generation backend'),
+  ],
   audio: [
     customRecipeOption('whispercpp', 'Whisper', 'Whisper C++ transcription backend'),
     customRecipeOption('moonshine', 'Moonshine', 'CPU streaming speech-to-text backend'),
@@ -337,6 +345,7 @@ const CUSTOM_RECIPE_CAPABILITIES: Record<string, CustomModelCapability[]> = {
   flm: ['chat', 'omni'],
   'ryzenai-llm': ['chat', 'omni'],
   'sd-cpp': ['image'],
+  thenoise: ['image'],
   whispercpp: ['audio'],
   moonshine: ['audio'],
   kokoro: ['tts'],
@@ -346,7 +355,21 @@ const CUSTOM_RECIPE_CAPABILITIES: Record<string, CustomModelCapability[]> = {
   trellis: ['model3d'],
 };
 
-function recipeCapabilities(recipe: string, backendNames: string[]): CustomModelCapability[] {
+function recipeCapabilities(recipe: string, backendNames: string[], supportedModes?: unknown): CustomModelCapability[] {
+  if (Array.isArray(supportedModes)) {
+    const byMode: Record<string, CustomModelCapability[]> = {
+      chat: ['chat', 'omni'],
+      embeddings: ['embedding'],
+      reranking: ['reranking'],
+      classification: ['classification'],
+      transcription: ['audio'],
+      image: ['image'],
+      tts: ['tts'],
+      'audio-generation': ['audio-generation'],
+      '3d': ['model3d'],
+    };
+    return [...new Set(supportedModes.flatMap(mode => byMode[String(mode).toLowerCase()] || []))];
+  }
   const explicit = CUSTOM_RECIPE_CAPABILITIES[recipe];
   if (explicit) return explicit;
   const key = recipe.toLowerCase();
@@ -427,7 +450,7 @@ function recipeOptionsFromSystemInfo(info: Record<string, unknown> | null): Part
     if (!backends.length) continue;
 
     const backendNames = backends.map(([name]) => name);
-    const capabilities = recipeCapabilities(recipe, backendNames);
+    const capabilities = recipeCapabilities(recipe, backendNames, raw.supported_modes);
     const option = customRecipeOption(
       recipe,
       recipeLabel(recipe),
@@ -476,6 +499,7 @@ const REMOTE_SEARCH_CACHE = new Map<string, HFModelResult[]>();
 const REMOTE_VARIANT_CACHE = new Map<string, PullVariantsResult | null>();
 const MODELSCOPE_RESULT_LIMIT = 10;
 const REMOTE_VARIANT_CONCURRENCY = 4;
+const FOCUS_SYSTEM_INFO_MAX_AGE_MS = 10_000;
 
 const providerKey = (provider: ModelRegistryProvider, modelId: string): string => `${provider}:${modelId}`;
 const providerSearchCacheKey = (provider: ModelRegistryProvider, query: string): string => `${provider}:${query.trim().toLowerCase()}`;
@@ -1076,9 +1100,34 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const loadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
   const connectionStatus = serverModelState.status;
   const modelsLoading = serverModelState.refreshing && !fullModelStateReady && fastLocalModels.length === 0;
-  const [loadingModel, setLoadingModel] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
+  const [busyModels, setBusyModels] = useState<ReadonlySet<string>>(() => new Set());
+  const markBusy = (name: string) => setBusyModels(prev => new Set(prev).add(name));
+  const clearBusy = (name: string) => setBusyModels(prev => {
+    if (!prev.has(name)) return prev;
+    const next = new Set(prev);
+    next.delete(name);
+    return next;
+  });
+  // Errors are keyed by model so overlapping operations keep each other's
+  // messages, and each auto-clear timer removes only the entry it created.
+  const [loadErrors, setLoadErrors] = useState<ReadonlyMap<string, { message: string }>>(() => new Map());
+  const clearModelError = (name: string, entry?: { message: string }) => setLoadErrors(prev => {
+    const current = prev.get(name);
+    if (!current || (entry && current !== entry)) return prev;
+    const next = new Map(prev);
+    next.delete(name);
+    return next;
+  });
+  const showModelError = (name: string, message: string, autoClearMs: number | null = 6000) => {
+    const entry = { message };
+    setLoadErrors(prev => new Map(prev).set(name, entry));
+    if (autoClearMs !== null) window.setTimeout(() => clearModelError(name, entry), autoClearMs);
+  };
+  // Loads can overlap and finish out of order; only the most recently requested
+  // one may move the user to Chat.
+  const latestLoadRequestRef = useRef<string | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
+  const [modelSync, setModelSync] = useState<ModelSyncSnapshot>(() => modelSyncStore.snapshot());
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const unknownActiveModelDownloadsRef = useRef<Set<string>>(new Set());
   const pullAbortRef = useRef<Record<string, AbortController>>({});
@@ -1146,7 +1195,37 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState<number>(DEFAULT_CONTEXT_SIZE);
 
-  useEffect(() => downloadStore.subscribe(setDownloadItems), []);
+  useEffect(() => {
+    const seenBackendDownloads = new Set<string>();
+    const refreshBackendInfo = (options: { afterPending?: boolean; maxAgeMs?: number }) => {
+      if (api.isConnected) void api.systemInfo(options).catch(() => undefined);
+    };
+    const unsubscribe = downloadStore.subscribe(items => {
+      setDownloadItems(items);
+      let changed = false;
+      for (const item of items) {
+        if (item.downloadType !== 'backend' || item.status !== 'completed' || isDownloadActive(item)) continue;
+        const key = `${item.id}:${item.createdAt}`;
+        if (seenBackendDownloads.has(key)) continue;
+        seenBackendDownloads.add(key);
+        changed = true;
+      }
+      if (changed) refreshBackendInfo({ afterPending: true });
+    });
+
+    const onFocus = () => {
+      if (document.hidden) return;
+      const recipes = systemRecipeEntries(api.systemInfoData) || [];
+      const updatePending = recipes.some(([, recipe]) => Object.values(rawBackendMap(recipe))
+        .some(info => ['update_required', 'update_available'].includes(backendState(info))));
+      refreshBackendInfo(updatePending ? {} : { maxAgeMs: FOCUS_SYSTEM_INFO_MAX_AGE_MS });
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
 
   useEffect(() => () => {
     if (externalModelDeleteNoticeTimerRef.current != null) {
@@ -1193,6 +1272,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     return () => { cancelled = true; };
   }, [visibleServerModels.length]);
 
+  const applySystemInfo = useCallback((info: Record<string, unknown>) => {
+    if (!api.isConnected) return;
+    const hasRecipeData = Boolean(systemRecipeEntries(info));
+    setSystemInfo(info);
+    setDynamicRecipeOptions(hasRecipeData ? recipeOptionsFromSystemInfo(info) : {});
+    setCustomRecipeAvailabilityLoaded(hasRecipeData);
+  }, []);
+
   const refreshCustomRecipeAvailability = useCallback(async () => {
     if (!api.isConnected) {
       setDynamicRecipeOptions({});
@@ -1201,18 +1288,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       return;
     }
 
+    const infoAtStart = api.systemInfoData;
     try {
-      const info = await api.systemInfo();
-      const hasRecipeData = Boolean(systemRecipeEntries(info));
-      setSystemInfo(info);
-      setDynamicRecipeOptions(hasRecipeData ? recipeOptionsFromSystemInfo(info) : {});
-      setCustomRecipeAvailabilityLoaded(hasRecipeData);
+      // The system-info subscriber applies the fresh snapshot to the model list.
+      await api.systemInfo();
     } catch {
+      if (!api.isConnected || api.systemInfoData !== infoAtStart) return;
       setSystemInfo(null);
       setDynamicRecipeOptions({});
       setCustomRecipeAvailabilityLoaded(false);
     }
   }, []);
+
+  useEffect(() => api.onSystemInfoChange(applySystemInfo), [applySystemInfo]);
 
   useEffect(() => {
     void refreshCustomRecipeAvailability();
@@ -1226,6 +1314,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       console.warn('Failed to refresh model list:', err);
     }
   }, []);
+
+  useEffect(() => modelSyncStore.subscribe(setModelSync), []);
 
   // App owns startup connection. This fallback supports isolated mounts without
   // creating a second request when the global refresh is already in flight.
@@ -1609,40 +1699,46 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
   const handleLoad = async (model: ModelInfo, overrideOptions?: Record<string, unknown>) => {
-    if (loadingModel) return;
     const name = modelName(model);
+    if (busyModels.has(name)) return;
     if (activeDownloadForModel(downloadStore.snapshot(), name)) {
-      setLoadError({ modelName: name, message: `${name} is still downloading. Wait for the download to finish before loading it.` });
-      window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+      showModelError(name, `${name} is still downloading. Wait for the download to finish before loading it.`);
       return;
     }
-    setLoadError(null);
-    setLoadingModel(name);
+    clearModelError(name);
+    markBusy(name);
+    latestLoadRequestRef.current = name;
     try {
       await loadModelRuntime(model, new Set<string>(), overrideOptions);
       await refresh();
-      onModelSelect(name);
+      if (latestLoadRequestRef.current === name) onModelSelect(name);
     } catch (err) {
       console.error('Load failed:', err);
-      const message = friendlyErrorMessage(err);
-      setLoadError({ modelName: name, message });
-      window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+      showModelError(name, friendlyErrorMessage(err));
     }
-    setLoadingModel(null);
+    clearBusy(name);
   };
 
   const handleUnload = async (model: LoadedModel) => {
-    setLoadingModel(model.model_name);
+    const name = model.model_name;
+    if (busyModels.has(name)) return;
+    clearModelError(name);
+    markBusy(name);
     const virtualComponents = Array.isArray(model.recipe_options?.components) && model.recipe_options?.virtual_collection === true
       ? model.recipe_options.components.filter((component): component is string => typeof component === 'string')
       : [];
-    if (virtualComponents.length > 0) {
-      await Promise.allSettled(virtualComponents.map(component => api.unloadModel(component)));
-    } else {
-      await api.unloadModel(model.model_name);
+    try {
+      if (virtualComponents.length > 0) {
+        await Promise.allSettled(virtualComponents.map(component => api.unloadModel(component)));
+      } else {
+        await api.unloadModel(name);
+      }
+    } catch (err) {
+      console.error('Unload failed:', err);
+      showModelError(name, friendlyErrorMessage(err));
     }
     await refresh();
-    setLoadingModel(null);
+    clearBusy(name);
   };
 
   // #2356 (simplified): a load-time template change needs a real reload. The
@@ -1655,9 +1751,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     model: LoadedModel,
     recipeOptions?: Record<string, unknown>,
   ) => {
-    const info = allModels.find(m => modelName(m) === model.model_name) ?? null;
-    await api.reloadModel(model.model_name, recipeOptions, info);
-    await refresh();
+    const name = model.model_name;
+    const info = allModels.find(m => modelName(m) === name) ?? null;
+    markBusy(name);
+    try {
+      await api.reloadModel(name, recipeOptions, info);
+    } finally {
+      await refresh();
+      clearBusy(name);
+    }
   };
 
   const handleDeleteRouterDefinition = async (name: string): Promise<void> => {
@@ -1700,6 +1802,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const handleDelete = async (model: ModelInfo) => {
     const name = modelName(model);
+    if (busyModels.has(name)) return;
     if (isExtraModelsDirModel(model)) {
       showExternalModelDeleteNotice(model);
       return;
@@ -1725,14 +1828,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       return;
     }
     if (!confirm(`Delete "${model.display_name || name}"? This removes the downloaded files. If the model is loaded, it will be unloaded first.`)) return;
-    setLoadingModel(name);
+    markBusy(name);
     try {
       await api.deleteModel(name);
       await refresh();
     } catch (err: any) {
       console.error('Delete failed:', err);
     }
-    setLoadingModel(null);
+    clearBusy(name);
   };
 
   const handlePull = async (model: ModelInfo) => {
@@ -1755,10 +1858,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         refresh();
       },
       onError: (err) => {
-        const message = friendlyErrorMessage(err);
         downloadStore.wake(name, 'model');
-        setLoadError({ modelName: name, message });
-        window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+        showModelError(name, friendlyErrorMessage(err));
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
       },
@@ -1793,6 +1894,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
     downloadStore.wake(name, 'model');
+    latestLoadRequestRef.current = name;
 
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
@@ -1802,26 +1904,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       onComplete: async (data) => {
         downloadStore.wake(name, 'model');
         delete pullAbortRef.current[name];
+        // Mark busy in the same tick the pull entry clears, so no Load click can
+        // land in between and start a second load of this model.
+        markBusy(name);
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
         await refresh();
-        setLoadingModel(name);
         try {
           await loadModelRuntime(model, new Set<string>(), overrideOptions);
           await refresh();
-          onModelSelect(name);
+          if (latestLoadRequestRef.current === name) onModelSelect(name);
         } catch (err) {
           console.error('Load after pull failed:', err);
-          const message = friendlyErrorMessage(err);
-          setLoadError({ modelName: name, message });
-          window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+          showModelError(name, friendlyErrorMessage(err));
         }
-        setLoadingModel(null);
+        clearBusy(name);
       },
       onError: (err) => {
-        const message = friendlyErrorMessage(err);
         downloadStore.wake(name, 'model');
-        setLoadError({ modelName: name, message });
-        window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
+        showModelError(name, friendlyErrorMessage(err));
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
       },
@@ -1877,10 +1977,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         refresh();
       },
       onError: (err) => {
-        const message = friendlyErrorMessage(err);
         downloadStore.wake(targetModelName, 'model');
-        setLoadError({ modelName: targetModelName, message });
-        window.setTimeout(() => setLoadError(prev => prev?.modelName === targetModelName ? null : prev), 6000);
+        showModelError(targetModelName, friendlyErrorMessage(err));
         console.error(`${PROVIDER_META[provider].label} pull failed:`, err);
         delete pullRemoteAbortRef.current[key];
         setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
@@ -2126,18 +2224,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const togglePinnedModel = async (name: string) => {
     const loaded = loadedModels.find(model => model.model_name.toLowerCase() === name.toLowerCase());
     if (!loaded) {
-      setLoadError({
-        modelName: name,
-        message: `Cannot change pin state for ${name}: the model is no longer loaded.`,
-      });
+      showModelError(name, `Cannot change pin state for ${name}: the model is no longer loaded.`, null);
       return;
     }
 
     try {
-      setLoadError(null);
+      clearModelError(name);
       await api.setModelPinned(name, loaded.pinned !== true);
     } catch (error) {
-      setLoadError({ modelName: name, message: friendlyErrorMessage(error) });
+      showModelError(name, friendlyErrorMessage(error), null);
     }
   };
 
@@ -2227,10 +2322,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       if (selectedRecipe === 'llamacpp' && supportsVisionProjectorField(customDraft.capability) && customDraft.mmproj.trim()) {
         extraCheckpoints.mmproj = customDraft.mmproj.trim();
       }
-      if (selectedRecipe === 'sd-cpp') {
-        if (customDraft.imageTextEncoder.trim()) extraCheckpoints.text_encoder = customDraft.imageTextEncoder.trim();
-        if (customDraft.imageVae.trim()) extraCheckpoints.vae = customDraft.imageVae.trim();
-      }
+      Object.assign(extraCheckpoints, customImageCompanionCheckpoints(
+        selectedRecipe, customDraft.labels.split(','), customDraft.imageTextEncoder, customDraft.imageVae,
+      ));
       const checkpoints = checkpoint && Object.keys(extraCheckpoints).length > 0
         ? { main: checkpoint, ...extraCheckpoints }
         : undefined;
@@ -2447,24 +2541,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const pinnedNameSet = useMemo(() => new Set(pinnedModels.map(name => name.toLowerCase())), [pinnedModels]);
   const favoriteNameSet = useMemo(() => new Set(favoriteModels.map(name => name.toLowerCase())), [favoriteModels]);
 
-  const handleUpdateAllModels = useCallback(async (): Promise<void> => {
-    const candidates = allModels.filter(model => {
-      const name = modelName(model);
-      if (!name || String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) return false;
-      return loadedNames.has(name)
-        || (isCollectionModel(model) ? isCollectionFullyDownloaded(model, allModels) : Boolean((model as any).downloaded));
-    });
-
-    for (const model of candidates) {
-      const name = modelName(model);
-      if (pulling[name] !== undefined || activeDownloadForModel(downloadItems, name)) {
-        continue;
-      }
-      void handlePull(model).catch(error => {
-        console.error(`Could not start update for ${name}:`, error);
-      });
-    }
-  }, [allModels, downloadItems, loadedNames, pulling]);
+  const modelSyncBusy = isModelSyncRunning(modelSync);
+  const modelSyncProgress = modelSync.active?.progress;
+  const modelSyncError = modelSync.error || modelSyncFailureText(modelSync.result);
+  const handleUpdateAllModels = useCallback(() => { void modelSyncStore.startSync(); }, []);
+  const handleUpdateModel = useCallback((model: ModelInfo) => {
+    void modelSyncStore.startSync([modelName(model)]);
+  }, []);
 
   const localRegistryRefs = useMemo(() => {
     const refs = new Set<string>();
@@ -2642,7 +2725,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const customRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
   const selectedCustomRecipe = customRecipeOptions.find(option => option.value === customDraft.recipe) || customRecipeOptions[0];
   const selectedCustomRecipeName = selectedCustomRecipe?.recipe || optionRecipe(customDraft.recipe);
-  const selectedCustomRecipeSuggestion = CUSTOM_RECIPE_SUGGESTIONS[selectedCustomRecipeName];
+  const imagePurpose = customImagePurpose(selectedCustomRecipeName, customDraft.labels.split(','));
+  const isStandaloneUpscaler = imagePurpose === 'upscaling';
+  const requiresTheNoiseCompanions = selectedCustomRecipeName === 'thenoise' && !isStandaloneUpscaler;
+  const missingTheNoiseCompanions = Boolean(customError?.startsWith('TheNoise requires a text encoder and VAE checkpoint'));
+  const selectedCustomRecipeSuggestion: CustomRecipeSuggestion | undefined = isStandaloneUpscaler
+    ? {
+        checkpoint: selectedCustomRecipeName === 'sd-cpp'
+          ? 'amd/realesrgan-x4plus:RealESRGAN_x4plus.pth'
+          : 'mikkoph/upscalers:esrgan/4x-remacri.safetensors',
+        note: 'Standalone pixel upscalers need only the main checkpoint.',
+      }
+    : CUSTOM_RECIPE_SUGGESTIONS[selectedCustomRecipeName];
   const primaryCheckpointPlaceholder = selectedCustomRecipeSuggestion?.checkpoint || t('org/model:Q4_K_M.gguf or /path/to/model.gguf');
   const mmprojCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'mmproj');
   const textEncoderCheckpointExample = selectedCustomRecipeSuggestion?.extraCheckpoints?.find(example => example.key === 'text_encoder');
@@ -2650,7 +2744,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const showLlamacppMmprojField = !isCustomOmniCollectionDraft
     && selectedCustomRecipeName === 'llamacpp'
     && supportsVisionProjectorField(customDraft.capability);
-  const showImageExtraCheckpointFields = !isCustomOmniCollectionDraft && selectedCustomRecipeName === 'sd-cpp';
+  const showImageExtraCheckpointFields = !isCustomOmniCollectionDraft
+    && ['sd-cpp', 'thenoise'].includes(selectedCustomRecipeName) && !isStandaloneUpscaler;
+  const updateImagePurpose = (purpose: CustomImagePurpose) => {
+    const labels = customImageLabelsForPurpose(customDraft.labels.split(','), purpose);
+    handleCustomDraftChange({ labels: labels.join(', ') });
+  };
   const updateOmniComponent = (role: OmniComponentRole, value: string) => {
     if (role === 'llm') {
       const selectedInfo = allModels.find(m => modelName(m) === value);
@@ -2758,6 +2857,28 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     >
       {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
       {customJsonNotice && <div className="manager__toast" role="status" aria-live="polite">{customJsonNotice}</div>}
+      {(modelSyncBusy || modelSyncError) && (
+        <div className="manager__toast manager__toast--sync" role={modelSyncError && !modelSyncBusy ? 'alert' : 'status'}>
+          <span className="manager__toast-message">
+            {modelSyncBusy ? (
+              <>
+                {t('Updating…')}
+                {modelSyncProgress?.current_model && ` ${modelSyncProgress.current_model}`}
+                {modelSyncProgress?.current_model && typeof modelSyncProgress.percent === 'number'
+                  && ` (${modelSyncProgress.percent.toFixed(0)}%)`}
+              </>
+            ) : modelSyncError}
+          </span>
+          {!modelSyncBusy && (
+            <>
+              <button type="button" className="manager__toast-action" onClick={openServerLogs}>{t('View logs')}</button>
+              <button type="button" className="manager__toast-dismiss" onClick={() => modelSyncStore.dismissResult()} aria-label={t('Dismiss notification')}>
+                <Icon name="x" size={14} aria-hidden="true" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {externalModelDeleteNotice && (
         <div className="manager__toast manager__toast--external-model" role="status" aria-live="polite" aria-atomic="true">
           <span className="manager__toast-message">
@@ -2853,7 +2974,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         tagFilters={tagFilters}
         searchInputRef={searchRef}
         onOpenRouter={() => openRouterEditor(selectedDetailModel)}
-        onUpdateAllModels={() => { void handleUpdateAllModels(); }}
+        onUpdateAllModels={handleUpdateAllModels}
+        isUpdatingModels={modelSyncBusy}
         onOpenCustomModels={() => openCustomForm('model')}
         pinnedNames={pinnedNameSet}
         favoriteNames={favoriteNameSet}
@@ -2950,7 +3072,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                 />
               </label>
               <label className="custom-model-form__field">Extra labels
-                <input className="input" value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder={t('tool-calling, reasoning')} />
+                <input className="input" value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder={customDraft.capability === 'image' ? 'edit' : t('tool-calling, reasoning')} />
               </label>
 
               {!isCustomOmniCollectionDraft && (
@@ -2974,6 +3096,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                         : customRecipeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
                   </label>
+                  {['sd-cpp', 'thenoise'].includes(selectedCustomRecipeName) && (
+                    <label className="custom-model-form__field">{t('Model purpose')}
+                      <select className="select" value={imagePurpose} onChange={e => updateImagePurpose(e.target.value as CustomImagePurpose)}>
+                        <option value="image">{t('Image generation')}</option>
+                        <option value="edit">{t('Image editing')}</option>
+                        <option value="upscaling">{t('Standalone upscaling')}</option>
+                      </select>
+                    </label>
+                  )}
                   <label className="custom-model-form__field custom-model-form__wide">Checkpoint, Hugging Face repo, or local path
                     {selectedCustomRecipeSuggestion && (
                       <InlineCheckpointExample
@@ -3004,7 +3135,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                   )}
                   {showImageExtraCheckpointFields && (
                     <>
-                      <label className="custom-model-form__field">Text encoder checkpoint
+                      <label className="custom-model-form__field">Text encoder checkpoint {requiresTheNoiseCompanions && `(${t('Required')})`}
                         <InlineCheckpointExample
                           checkpoint={textEncoderCheckpointExample?.checkpoint || 'repo/text-encoder:model.safetensors'}
                           note={textEncoderCheckpointExample?.note}
@@ -3013,10 +3144,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                           className="input"
                           value={customDraft.imageTextEncoder}
                           onChange={e => handleCustomDraftChange({ imageTextEncoder: e.target.value })}
-                          placeholder={t('Optional')}
+                          placeholder={requiresTheNoiseCompanions ? t('Required') : t('Optional')}
+                          aria-required={requiresTheNoiseCompanions}
+                          aria-invalid={missingTheNoiseCompanions && !customDraft.imageTextEncoder.trim()}
+                          aria-describedby={missingTheNoiseCompanions && !customDraft.imageTextEncoder.trim() ? 'custom-model-editor-error' : undefined}
                         />
                       </label>
-                      <label className="custom-model-form__field">VAE checkpoint
+                      <label className="custom-model-form__field">VAE checkpoint {requiresTheNoiseCompanions && `(${t('Required')})`}
                         <InlineCheckpointExample
                           checkpoint={vaeCheckpointExample?.checkpoint || 'repo/vae:model.safetensors'}
                           note={vaeCheckpointExample?.note}
@@ -3025,7 +3159,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                           className="input"
                           value={customDraft.imageVae}
                           onChange={e => handleCustomDraftChange({ imageVae: e.target.value })}
-                          placeholder={t('Optional')}
+                          placeholder={requiresTheNoiseCompanions ? t('Required') : t('Optional')}
+                          aria-required={requiresTheNoiseCompanions}
+                          aria-invalid={missingTheNoiseCompanions && !customDraft.imageVae.trim()}
+                          aria-describedby={missingTheNoiseCompanions && !customDraft.imageVae.trim() ? 'custom-model-editor-error' : undefined}
                         />
                       </label>
                     </>
@@ -3184,7 +3321,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
                   </details>
                 </>
               )}
-              {customError && <div className="custom-model-form__error"><Icon name="alert" size={14} /> {customError}</div>}
+              {customError && <div id="custom-model-editor-error" role="alert" className="custom-model-form__error"><Icon name="alert" size={14} /> {customError}</div>}
             </form>
             </div>
           <input
@@ -3216,13 +3353,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           loadedModel={selectedDetailModelId
             ? (displayLoadedModels.find(m => m.model_name === selectedDetailModelId) ?? null)
             : null}
-          loadingModel={loadingModel}
+          busyModels={busyModels}
           pulling={effectivePulling}
-          loadError={loadError}
+          loadErrors={loadErrors}
           onLoad={handleLoad}
           onUnload={handleUnload}
           onReloadModel={handleReloadModel}
           onPull={handlePull}
+          onUpdate={handleUpdateModel}
+          isUpdating={modelSyncBusy}
           onPullAndLoad={handlePullAndLoad}
           onDelete={handleDelete}
           onCancelPull={handleCancelPull}

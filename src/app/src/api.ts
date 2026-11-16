@@ -154,6 +154,12 @@ function normalizeHealth(data: unknown): HealthData {
     all_models_loaded: loaded,
     max_models: isObject(obj.max_models) ? obj.max_models as Record<string, number> : {},
     high_security: typeof obj.high_security === 'boolean' ? obj.high_security : undefined,
+    model_sync: isObject(obj.model_sync) ? {
+      status: String(obj.model_sync.status || 'idle') as HealthModelSync['status'],
+      sync_id: Number(obj.model_sync.sync_id || 0),
+      completed_sync_id: Number(obj.model_sync.completed_sync_id || 0),
+    } : undefined,
+    models_generation: typeof obj.models_generation === 'number' ? obj.models_generation : undefined,
   };
 }
 
@@ -193,7 +199,7 @@ function modelInfoKey(model: ModelInfo | null | undefined): string {
 }
 
 
-function blobFromDataUrl(dataUrl: string): Blob {
+export function blobFromDataUrl(dataUrl: string): Blob {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
   if (!match) throw new Error('Expected an image data URL for editing.');
   const mime = match[1] || 'image/png';
@@ -215,6 +221,8 @@ export interface HealthData {
   all_models_loaded: LoadedModel[];
   max_models: Record<string, number>;
   high_security?: boolean;
+  model_sync?: HealthModelSync;
+  models_generation?: number;
 }
 
 export interface LoadedModel {
@@ -258,6 +266,23 @@ export interface ModelInfo {
 
 export interface ModelsData {
   data: ModelInfo[];
+}
+
+/** Server-owned update job; unrelated to /api/v1/pull download jobs. */
+export interface ModelSyncStatus {
+  status: 'idle' | 'in_progress' | 'success' | 'failed' | 'not_found';
+  sync_id: number;
+  completed_sync_id?: number;
+  failed_models?: Record<string, string>;
+  terminal_error?: string;
+  progress?: { current_model?: string; percent?: number };
+}
+
+/** The `/health` summary of the server's model sync. */
+export interface HealthModelSync {
+  status: ModelSyncStatus['status'];
+  sync_id: number;
+  completed_sync_id: number;
 }
 
 /**
@@ -479,12 +504,24 @@ export interface StatsData {
   };
 }
 
+export interface SystemGpuStats {
+  id: string;
+  vendor: string;
+  name: string;
+  memory_type: 'dedicated' | 'shared' | 'unknown';
+  gpu_percent: number | null;
+  memory_total_gb: number | null;
+  memory_used_gb: number | null;
+}
+
 export interface SystemStatsData {
   cpu_percent: number | null;
   memory_gb: number | null;
   gpu_percent: number | null;
   vram_gb: number | null;
   npu_percent: number | null;
+  primary_gpu_id?: string | null;
+  gpus?: SystemGpuStats[];
 }
 
 export interface SlotTimings {
@@ -533,7 +570,7 @@ export interface SlotData {
   temperature: number;
   top_k: number;
   top_p: number;
-  cache_tokens: number[] | number;
+  cache_tokens?: number[] | number;
   n_cache_tokens?: number;
   timings?: SlotTimings;
   prompt: string;
@@ -541,13 +578,6 @@ export interface SlotData {
   stopped_eos: boolean;
   stopped_word: boolean;
   stopped_limit: boolean;
-}
-
-/** Get usable cache token count — prefers n_cache_tokens (number) over cache_tokens array length */
-export function getCacheTokenCount(s: SlotData): number {
-  if (typeof s.n_cache_tokens === 'number') return s.n_cache_tokens;
-  if (typeof s.cache_tokens === 'number') return s.cache_tokens;
-  return Array.isArray(s.cache_tokens) ? s.cache_tokens.length : 0;
 }
 
 export interface LogEntry {
@@ -700,16 +730,24 @@ function safeGetLocalStorage(key: string): string | null {
   }
 }
 
-function safeSetLocalStorage(key: string, value: string): void {
+function safeSetLocalStorage(key: string, value: string): boolean {
   try {
-    if (typeof localStorage !== 'undefined') localStorage.setItem(key, value);
-  } catch {}
+    if (typeof localStorage === 'undefined') return false;
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-function safeRemoveLocalStorage(key: string): void {
+function safeRemoveLocalStorage(key: string): boolean {
   try {
-    if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
-  } catch {}
+    if (typeof localStorage === 'undefined') return true;
+    localStorage.removeItem(key);
+    return localStorage.getItem(key) === null;
+  } catch {
+    return false;
+  }
 }
 
 function typedStringSetting(value: string): { value: string; useDefault: boolean } {
@@ -759,11 +797,15 @@ class LemonadeAPI {
   private _modelsChangedListeners: Array<() => void> = [];
   private _healthData: HealthData | null = null;
   private _healthDataSignature = '';
+  private _serverModelsGeneration: number | null = null;
   private _modelsData: ModelsData | null = null;
   private _modelsDataSignature = '';
   private _modelsFetchRevision = 0;
   private _systemInfoData: Record<string, unknown> | null = null;
+  private _systemInfoFetchedAt = 0;
+  private _systemInfoListeners = new Set<(info: Record<string, unknown>) => void>();
   private _systemInfoInFlight: Promise<Record<string, unknown>> | null = null;
+  private _systemInfoGeneration = 0;
   private _modelStateSnapshot: ModelStateSnapshot = {
     status: 'disconnected',
     health: null,
@@ -784,6 +826,7 @@ class LemonadeAPI {
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
   private _sessionApiKey = '';
   private _sessionAdminApiKey = '';
+  private _apiKeyPersisted = false;
   private _hostBaseUrl: string | null = null;
   private _connectionSettingsPromise: Promise<void> | null = null;
   public readonly clientSessionId: string = createSecureClientSessionId();
@@ -791,9 +834,9 @@ class LemonadeAPI {
   public onSessionHeadersFailed?: () => void;
 
   // ── Config ──────────────────────────────────────────────────────
-  // Non-secret connection settings may be persisted in browser storage.
-  // API keys are never stored in localStorage; in the desktop app they are
-  // persisted through Lemonade's native settings bridge (`window.api.saveSettings`).
+  // Remembered browser API keys belong to this browser origin's localStorage.
+  // The desktop app continues to use native app settings for remembered keys.
+  // Neither kind of client writes its connection key to the lemond server.
 
   get baseUrl(): string {
     try {
@@ -825,7 +868,6 @@ class LemonadeAPI {
   }
 
   get apiKey(): string {
-    safeRemoveLocalStorage(LS_API_KEY);
     return this._sessionApiKey;
   }
 
@@ -850,17 +892,36 @@ class LemonadeAPI {
     this._sessionAdminApiKey = key.trim();
   }
 
+  get isApiKeyPersisted(): boolean {
+    return this._apiKeyPersisted;
+  }
+
   get canPersistApiKey(): boolean {
     const hostApi = getHostSettingsApi();
-    return Boolean(hostApi?.getSettings && hostApi?.saveSettings && hostApi.isWebApp !== true);
+    if (hostApi && hostApi.isWebApp !== true) {
+      return Boolean(hostApi.getSettings && hostApi.saveSettings);
+    }
+    try {
+      if (typeof window === 'undefined' || typeof localStorage === 'undefined') return false;
+      localStorage.getItem(LS_API_KEY); // Storage access may throw in restricted browsers.
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async loadConnectionSettings(): Promise<void> {
-    safeRemoveLocalStorage(LS_API_KEY);
     if (this._connectionSettingsPromise) return this._connectionSettingsPromise;
 
     this._connectionSettingsPromise = (async () => {
       const hostApi = await waitForHostSettingsApi();
+      if (!hostApi || hostApi.isWebApp) {
+        this._sessionApiKey = safeGetLocalStorage(LS_API_KEY) || '';
+        this._apiKeyPersisted = Boolean(this._sessionApiKey);
+      } else {
+        // Native clients must continue to use their host settings, not browser storage.
+        safeRemoveLocalStorage(LS_API_KEY);
+      }
       if (!hostApi) return;
 
       if (hostApi.getSettings) {
@@ -881,7 +942,10 @@ class LemonadeAPI {
         if (hostApi.isWebApp && apiKey && hostApi.saveSettings) {
           await hostApi.saveSettings(mergeConnectionSettings(settings, resolvedUrl, ''));
         }
-        this._sessionApiKey = hostApi.isWebApp ? '' : apiKey;
+        if (!hostApi.isWebApp) {
+          this._sessionApiKey = apiKey;
+          this._apiKeyPersisted = Boolean(apiKey);
+        }
         return;
       }
 
@@ -892,9 +956,10 @@ class LemonadeAPI {
           safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
         }
       }
-      if (hostApi.getServerAPIKey) {
+      if (hostApi.getServerAPIKey && !hostApi.isWebApp) {
         const apiKey = await hostApi.getServerAPIKey();
         this._sessionApiKey = typeof apiKey === 'string' ? apiKey : '';
+        this._apiKeyPersisted = Boolean(this._sessionApiKey);
       }
     })().catch(err => {
       this._connectionSettingsPromise = null;
@@ -909,23 +974,42 @@ class LemonadeAPI {
     this._hostBaseUrl = normalized;
     this._sessionApiKey = apiKey;
     safeSetLocalStorage(LS_BASE_URL, normalized);
-    safeRemoveLocalStorage(LS_API_KEY);
 
     const hostApi = await waitForHostSettingsApi();
-    if (!hostApi?.getSettings || !hostApi?.saveSettings) {
-      return { apiKeyPersisted: false };
+    if (!hostApi || hostApi.isWebApp) {
+      // Browser secrets are opt-in and local to this browser origin. Never put
+      // them in the web host shim's general "lemonade-settings" object.
+      const saved = rememberApiKey && Boolean(apiKey) && this.canPersistApiKey
+        ? safeSetLocalStorage(LS_API_KEY, apiKey)
+        : false;
+      if (!saved && !safeRemoveLocalStorage(LS_API_KEY) && this._apiKeyPersisted) {
+        throw new Error('Could not remove the remembered API key from browser storage. Re-enable site storage or clear browser site data.');
+      }
+      this._apiKeyPersisted = saved;
+      if (hostApi?.getSettings && hostApi.saveSettings) {
+        const currentSettings = await hostApi.getSettings();
+        await hostApi.saveSettings(mergeConnectionSettings(currentSettings, normalized, ''));
+      }
+      return { apiKeyPersisted: saved };
     }
 
-    const persistedApiKey = rememberApiKey && !hostApi.isWebApp ? apiKey : '';
+    safeRemoveLocalStorage(LS_API_KEY);
+    if (!hostApi.getSettings || !hostApi.saveSettings) {
+      this._apiKeyPersisted = false;
+      return { apiKeyPersisted: false };
+    }
+    const persistedApiKey = rememberApiKey ? apiKey : '';
     const currentSettings = await hostApi.getSettings();
     await hostApi.saveSettings(mergeConnectionSettings(currentSettings, normalized, persistedApiKey));
-    return { apiKeyPersisted: Boolean(persistedApiKey) };
+    this._apiKeyPersisted = Boolean(persistedApiKey);
+    return { apiKeyPersisted: this._apiKeyPersisted };
   }
 
   async clearConnectionSettings(): Promise<void> {
     this._hostBaseUrl = null;
     this._sessionApiKey = '';
     this._sessionAdminApiKey = '';
+    this._apiKeyPersisted = false;
     safeRemoveLocalStorage(LS_BASE_URL);
     safeRemoveLocalStorage(LS_API_KEY);
 
@@ -960,7 +1044,6 @@ class LemonadeAPI {
 
   setSessionApiKey(key: string): void {
     this._sessionApiKey = key;
-    safeRemoveLocalStorage(LS_API_KEY);
   }
 
   clearStoredApiKey(): void {
@@ -1001,6 +1084,11 @@ class LemonadeAPI {
     return () => { this._modelsChangedListeners = this._modelsChangedListeners.filter(f => f !== fn); };
   }
 
+  onSystemInfoChange(fn: (info: Record<string, unknown>) => void): () => void {
+    this._systemInfoListeners.add(fn);
+    return () => { this._systemInfoListeners.delete(fn); };
+  }
+
   private _notifyModelsChanged(): void {
     this._modelsMutationRevision += 1;
     this._modelStateGeneration += 1;
@@ -1011,6 +1099,12 @@ class LemonadeAPI {
   private _setStatus(s: ConnectionStatus): void {
     const changed = this._status !== s;
     this._status = s;
+    if (changed && s === 'disconnected') {
+      this._serverModelsGeneration = null;
+      this._systemInfoGeneration++;
+      this._systemInfoInFlight = null;
+      this._systemInfoFetchedAt = 0;
+    }
     if (changed) this._listeners.forEach(fn => { try { fn(s); } catch {} });
     this._publishModelState();
   }
@@ -1337,6 +1431,14 @@ class LemonadeAPI {
       this._healthData = data;
       this._healthDataSignature = signature;
     }
+    const generation = data.models_generation;
+    if (generation !== undefined) {
+      const previous = this._serverModelsGeneration;
+      this._serverModelsGeneration = generation;
+      if (previous !== null && previous !== generation && this._modelsData) {
+        void this.models(true).catch(() => undefined);
+      }
+    }
     this._lastConnectionError = null;
     this._setStatus('connected');
     return this._healthData;
@@ -1450,9 +1552,38 @@ class LemonadeAPI {
       ...recipeOptions,
       save_options: false,
     };
-    const result = await this._json('/api/v1/load', { method: 'POST', body });
-    this._notifyModelsChanged();
-    return result;
+    let stopDownloadWatch: (() => void) | undefined;
+    try {
+      const { downloadStore } = await import(
+        /* webpackChunkName: "download-store" */ './features/downloadManager/downloadStore'
+      );
+      stopDownloadWatch = downloadStore.watchForModelLoad();
+    } catch (error) {
+      console.warn('Could not watch model load progress:', error);
+    }
+    try {
+      const result = await this._json('/api/v1/load', { method: 'POST', body });
+      this._notifyModelsChanged();
+      return result;
+    } finally {
+      stopDownloadWatch?.();
+      this._refreshBackendStatusAfterLoad(String(body.recipe || cachedRecipe).trim().toLowerCase(), body);
+    }
+  }
+
+  private _refreshBackendStatusAfterLoad(recipe: string, options: Record<string, unknown>): void {
+    const recipes = (this._systemInfoData as any)?.recipes;
+    if (!isObject(recipes)) return;
+    const recipeInfo = recipes[recipe];
+    if (!isObject(recipeInfo) || !isObject(recipeInfo.backends)) return;
+    const requested = String(options[`${recipe}_backend`] || options.backend || '').trim().toLowerCase();
+    const selected = requested && requested !== 'auto'
+      ? requested : String(recipeInfo.default_backend || '').trim().toLowerCase();
+    const backendInfo = recipeInfo.backends[selected];
+    const state = isObject(backendInfo) ? String(backendInfo.state || '').trim().toLowerCase() : '';
+    if (state !== 'installed' && state !== 'unsupported') {
+      void this.systemInfo({ afterPending: true }).catch(() => undefined);
+    }
   }
 
   async unloadModel(modelName?: string): Promise<unknown> {
@@ -1520,17 +1651,31 @@ class LemonadeAPI {
     return result;
   }
 
-  async systemInfo(): Promise<Record<string, unknown>> {
+  async systemInfo(options: { afterPending?: boolean; maxAgeMs?: number } = {}): Promise<Record<string, unknown>> {
     // Several views use the same expensive system-info endpoint. A workspace
     // preload and the view's first effect can overlap, so share the in-flight
     // request instead of making the server do the same discovery twice.
+    if (options.maxAgeMs !== undefined && this._systemInfoData
+      && Date.now() - this._systemInfoFetchedAt < options.maxAgeMs) {
+      return this._systemInfoData;
+    }
+    const generation = this._systemInfoGeneration;
+    if (options.afterPending && this._systemInfoInFlight) {
+      await this._systemInfoInFlight.catch(() => undefined);
+      if (generation !== this._systemInfoGeneration) {
+        throw new Error('Connection changed while waiting for system info');
+      }
+    }
     if (this._systemInfoInFlight) return this._systemInfoInFlight;
 
     const request = this._json<Record<string, unknown>>(
       '/api/v1/system-info',
       { cache: 'no-store' } as LemonadeRequestInit,
     ).then(data => {
+      if (generation !== this._systemInfoGeneration) return data;
       this._systemInfoData = data;
+      this._systemInfoFetchedAt = Date.now();
+      this._systemInfoListeners.forEach(fn => { try { fn(data); } catch {} });
       return data;
     }).finally(() => {
       if (this._systemInfoInFlight === request) this._systemInfoInFlight = null;
@@ -1751,11 +1896,11 @@ class LemonadeAPI {
     return { blob, url: URL.createObjectURL(blob), filename: `${model}.glb` };
   }
 
-  async imageUpscale(model: string, imageUrl: string): Promise<string> {
+  async imageUpscale(model: string, imageUrl: string, upscaleFactor?: number): Promise<string> {
     const image = imageUrl.replace(/^data:image\/[^;]+;base64,/, '');
     const data = await this._json<Record<string, any>>('/api/v1/images/upscale', {
       method: 'POST',
-      body: { model, image },
+      body: { model, image, ...(upscaleFactor === undefined ? {} : { upscale_factor: upscaleFactor }) },
     });
     const item = Array.isArray(data.data) ? data.data[0] : null;
     const url = item?.b64_json ? `data:image/png;base64,${item.b64_json}` : item?.url;
@@ -1776,9 +1921,13 @@ class LemonadeAPI {
     return { blob, url: URL.createObjectURL(blob) };
   }
 
-  async imageEdit(model: string, prompt: string, imageDataUrl: string, opts: Record<string, unknown> = {}): Promise<string[]> {
+  async imageEdit(
+    model: string, prompt: string, source: string | Blob | readonly (string | Blob)[],
+    opts: Record<string, unknown> = {},
+  ): Promise<string[]> {
     const requestedSize = typeof opts.size === 'string' && opts.size.trim() ? opts.size.trim() : '';
-    const imageBlob = blobFromDataUrl(imageDataUrl);
+    const sources: readonly (string | Blob)[] = typeof source === 'string' || source instanceof Blob ? [source] : source;
+    if (sources.length === 0) throw new Error('Image edit requires at least one source image.');
     const form = new FormData();
     form.append('model', model);
     form.append('prompt', prompt);
@@ -1791,7 +1940,25 @@ class LemonadeAPI {
         form.append(key, String(value));
       }
     });
-    form.append('image', imageBlob, 'image.png');
+    const maxRequestBytes = 128 * 1024 * 1024;
+    let requestBytes = 0;
+    const fieldName = sources.length === 1 ? 'image' : 'image[]';
+    sources.forEach((sourceImage, index) => {
+      const blob = typeof sourceImage === 'string' ? blobFromDataUrl(sourceImage) : sourceImage;
+      if (!(blob instanceof Blob) || !blob.type.startsWith('image/') || blob.size === 0) {
+        throw new Error(`Invalid image edit reference ${index + 1}.`);
+      }
+      requestBytes += blob.size;
+      if (requestBytes > maxRequestBytes) {
+        throw new Error('Image edit source images exceed the 128 MiB per-request limit.');
+      }
+      const extension = ({
+        'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
+        'image/gif': 'gif', 'image/bmp': 'bmp', 'image/avif': 'avif',
+      } as Record<string, string>)[blob.type.toLowerCase()] || 'img';
+      const filename = blob instanceof File && blob.name ? blob.name : `reference-${index + 1}.${extension}`;
+      form.append(fieldName, blob, filename);
+    });
 
     const data = await this._json<Record<string, any>>('/api/v1/images/edits', {
       method: 'POST',
@@ -1820,7 +1987,7 @@ class LemonadeAPI {
     return text;
   }
 
-  // ── Dashboard data ──────────────────────────────────────────────
+  // ── Monitor data ──────────────────────────────────────────────
 
   async stats(): Promise<StatsData> {
     return this._json<StatsData>('/api/v1/stats');
@@ -2249,6 +2416,23 @@ class LemonadeAPI {
     return result;
   }
 
+  // Model updates are checked and selected by lemond, not the GUI.
+  async startModelSync(models?: string[]): Promise<ModelSyncStatus> {
+    return this._json<ModelSyncStatus>('/internal/models/sync', {
+      method: 'POST',
+      body: { async: true, ...(models ? { models } : {}) },
+      auth: 'admin',
+      cache: 'no-store',
+    });
+  }
+
+  async getModelSyncStatus(): Promise<ModelSyncStatus> {
+    return this._json<ModelSyncStatus>('/internal/models/sync/status', {
+      auth: 'admin',
+      cache: 'no-store',
+    });
+  }
+
   // ── SSE: Pull (model download) ──────────────────────────────────
 
   async pullModel(modelName: string, callbacks: PullCallbacks = {}, opts?: Record<string, unknown>): Promise<void> {
@@ -2548,7 +2732,9 @@ class LemonadeAPI {
     model: string,
     messages: ChatMessage[],
     params: Record<string, unknown> = {},
+    signal?: AbortSignal,
   ): Promise<string> {
+    if (signal?.aborted) throw new DOMException('Chat completion was cancelled.', 'AbortError');
     const { samplingForModel } = await import(
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
@@ -2556,6 +2742,7 @@ class LemonadeAPI {
       method: 'POST',
       body: { model, messages, stream: false, ...samplingForModel(model, this.allModels.find(candidate => modelInfoKey(candidate).toLowerCase() === model.trim().toLowerCase()) || null), ...params },
       includeSessionHeaders: true,
+      signal,
     });
     if (data.error) {
       throw new Error(data.error?.message || 'Chat completion failed');

@@ -28,6 +28,7 @@ struct BenchScenario {
     std::string image_path;      // Path to image file for vision benchmarks (relative to scenario file)
     std::string source_file;     // The scenario JSON file path (for resolving relative image paths at run time)
     int max_tokens;
+    int minimum_ctx_size = 0;  // From optional context.target_tokens
     int warmup_runs = 0;
     int measurement_runs = 3;
 };
@@ -214,6 +215,8 @@ struct BenchCliOptions {
     std::vector<std::string> sdcpp_args;
     std::vector<std::string> whispercpp_args;
     int timeout = 300;
+    bool submit = false;
+    std::string submit_file;
 };
 
 // ============================================================
@@ -240,6 +243,8 @@ struct BenchConfig {
     // Each recipe can have multiple arg sets; all combinations are benchmarked.
     std::map<std::string, std::vector<std::string>> backend_args;
     int timeout = 300;
+    bool submit = false;
+    std::string submit_file;
 };
 
 // Main entry point for bench command

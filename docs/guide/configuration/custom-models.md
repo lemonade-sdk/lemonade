@@ -97,9 +97,9 @@ Supported registration flags:
 
 | Flag | Description |
 |------|-------------|
-| `--source SOURCE` | Remote registry for every checkpoint in this model: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. |
+| `--source SOURCE` | Remote registry for every checkpoint in this model: <!-- BEGIN GENERATED: remote-registry-tokens -->`huggingface` or `modelscope`<!-- END GENERATED: remote-registry-tokens -->. When omitted, the server's configured `default_model_source` applies. |
 | `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
-| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `llamacpp-hrx`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thenoise`, `ds4`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
+| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `llamacpp-hrx`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thenoise`, `ds4`, `rocmfpx`, `halogen`, `gufo`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
 | `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `chat`, `coding`, `dflash`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. When no [deployment label](../../api/openai.md#model-labels) is given, the recipe's default is added — `chat` for `llamacpp`, `flm`, `ryzenai-llm` and `vllm`; `transcription` for `whispercpp`; `image` for `sd-cpp`; and so on. |
 | `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
 
@@ -146,7 +146,7 @@ The editor also exposes a **System Prompt** field, pre-filled with the shipped d
 
 ### Pull from the API
 
-The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:
+The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to <!-- BEGIN GENERATED: remote-registry-tokens -->`huggingface` or `modelscope`<!-- END GENERATED: remote-registry-tokens -->; when omitted, the server's configured `default_model_source` applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:
 
 ```bash
 curl -X POST http://localhost:13305/v1/pull \
@@ -259,6 +259,23 @@ Lemonade tracks three sources of models. Every model has a **canonical ID** of t
 | `builtin.NAME`  | Model compiled into Lemonade's built-in catalog (`server_models.json`)   |
 
 The **bare name** `NAME` is an alias that always resolves to whichever source wins precedence for that name. Precedence is **registered > imported > built-in**.
+
+### Where the model set comes from
+
+Each catalog contributes entries to one build, and a later catalog cannot take a name an
+earlier one claimed.
+
+<!-- BEGIN GENERATED: model-catalogs -->
+| Catalog | Entries come from | Required | Config key |
+| --- | --- | --- | --- |
+| Built-in registry | The model list shipped with the server. | no | — |
+| Registrations | Every model the user pulled or registered. | no | — |
+| Extra models directory | A scan of the extra models directory; GGUF files are identified by their header, not their name. | no | `extra_models_dir` |
+<!-- END GENERATED: model-catalogs -->
+
+Which catalogs depend on what this machine has installed — a backend's own models, or a
+configured cloud provider's listing — is not listed here, because this page is the same on
+every machine.
 
 ### What the API emits
 
@@ -520,14 +537,13 @@ This file contains a JSON object where each key is a model name and each value d
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `source` | No | String | Remote registry: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. Persisted and used for variants, downloads, cache paths, links, and update checks. A `source`/`registry_source` that conflicts with a provider URL in the checkpoint is rejected with 400. |
+| `source` | No | String | Remote registry: <!-- BEGIN GENERATED: remote-registry-tokens -->`huggingface` or `modelscope`<!-- END GENERATED: remote-registry-tokens -->. When omitted, the server's configured `default_model_source` applies. Persisted and used for variants, downloads, cache paths, links, and update checks. A `source`/`registry_source` that conflicts with a provider URL in the checkpoint is rejected with 400. |
 | `checkpoint` | Yes* | String | Registry checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
 | `checkpoints` | Yes* | Object | Alternative to `checkpoint` for models with multiple files. See [Multi-file models](#multi-file-models). |
 | `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `collection.omni`. |
 | `components` | Yes** | Array | Components for a collection. Required when `recipe: "collection.omni"`. See [Collections](#collections). |
 | `size` | No | Number | Model size in GB. Informational only — displayed in the UI and used for RAM filtering. |
 | `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same registry repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
-| `image_defaults` | No | Object | Default image generation parameters for `sd-cpp` models. See [Image defaults](#image-defaults). |
 
 \* Either `checkpoint` or `checkpoints` is required, but not both.
 \*\* Required only when `recipe: "collection.omni"`. Collections do not use `checkpoint`/`checkpoints`.
@@ -584,13 +600,10 @@ Components must already be registered (built-in models, or other `user.*` entrie
 
 The equivalent CLI registration is shown in [Pull an Omni Collection](#pull-an-omni-collection).
 
-### Image defaults
+### Image generation options
 
-For image models (including `sd-cpp` and `thenoise`), you can specify default generation parameters.
-The optional `soft_pixel_cap` limits the **inferred output area** of `/images/edits` when
-`size` is omitted; Lemonade preserves the input aspect ratio. If this field is
-missing or zero, the global 4,194,304-pixel (~4 MP) fallback applies.
-Explicitly requested output sizes are not subject to this soft cap:
+An image model (`sd-cpp` or `thenoise`) sets its own generation parameters through
+`recipe_options`:
 
 ```json
 {
@@ -598,7 +611,7 @@ Explicitly requested output sizes are not subject to this soft cap:
         "checkpoint": "org/repo:model.safetensors",
         "recipe": "sd-cpp",
         "size": 5.2,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 20,
             "cfg_scale": 7.0,
             "width": 512,
@@ -608,6 +621,13 @@ Explicitly requested output sizes are not subject to this soft cap:
     }
 }
 ```
+
+`soft_pixel_cap` limits the **inferred output area** of `/images/edits` when `size`
+is omitted; Lemonade preserves the input aspect ratio. Missing or zero falls back to
+4,194,304 pixels (~4 MP). An explicit `size` is not subject to the cap.
+
+An entry written by an older version keeps these keys in an `image_defaults` block.
+It is still read, and `recipe_options` wins any key both name.
 
 ### Model naming
 

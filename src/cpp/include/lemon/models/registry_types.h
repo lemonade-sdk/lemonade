@@ -1,0 +1,192 @@
+#pragma once
+
+#include <lemon/models/registry_id.h>
+
+#include <nlohmann/json.hpp>
+
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+namespace lemon {
+
+// A registry is named by string, not by enum: the string is what user_models.json,
+// .lemonade_registry.json, POST /pull and the desktop app already carry.
+using models::RegistryId;
+
+// The wire facts every registry speaks: file trees, search results, and the
+// names that outlive any one provider. A model of a registry lives here; the
+// class that fetches one lives with the adapters.
+
+class RegistryNotFoundError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+// Throttling or an upstream outage, as opposed to a repository that does not
+// exist, so the caller should retry after retry_after_seconds().
+class RegistryRateLimitError : public std::runtime_error {
+public:
+    RegistryRateLimitError(int status_code, int retry_after_seconds, const std::string& message)
+        : std::runtime_error(message),
+          status_code_(status_code),
+          retry_after_seconds_(retry_after_seconds) {}
+
+    int status_code() const noexcept { return status_code_; }
+    int retry_after_seconds() const noexcept { return retry_after_seconds_; }
+
+private:
+    int status_code_;
+    int retry_after_seconds_;
+};
+
+// /pull attaches this on both its JSON and SSE error paths, so
+// clients can retry instead of treating the pull as permanently broken.
+constexpr const char* kRegistryUnavailableErrorCode = "registry_unavailable";
+
+class RegistrySearchError : public std::runtime_error {
+public:
+    RegistrySearchError(int status_code, const std::string& message)
+        : std::runtime_error(message), status_code_(status_code) {}
+
+    int status_code() const noexcept { return status_code_; }
+
+private:
+    int status_code_;
+};
+
+struct RegistrySearchResult {
+    std::string repo_id;
+    std::string display_name;
+    models::RegistryId source = models::huggingface_descriptor().id;
+    std::string repository_type = "model";
+    std::string description;
+    std::vector<std::string> tags;
+    std::string task;
+    std::uint64_t downloads = 0;
+    std::uint64_t likes = 0;
+    bool has_gguf = false;
+};
+
+struct RegistrySearchResponse {
+    std::vector<RegistrySearchResult> results;
+    std::uint64_t total = 0;
+};
+
+struct RegistryFile {
+    std::string path;
+    std::uint64_t size = 0;
+    std::string hash_algorithm;
+    std::string hash;
+    bool directory = false;
+};
+
+struct RegistryRepository {
+    std::string repo_id;
+    std::string revision;      // revision used by the remote download endpoint
+    std::string snapshot_id;   // immutable/local snapshot identifier stored in refs/main
+    std::vector<RegistryFile> files;
+    nlohmann::json raw_metadata;
+};
+
+// Written to disk, so a token never changes once shipped.
+namespace local_origin {
+inline constexpr const char upload[] = "local_upload";
+inline constexpr const char path[] = "local_path";
+inline constexpr const char extra_models_dir[] = "extra_models_dir";
+}  // namespace local_origin
+
+bool is_local_origin(const std::string& source);
+const std::vector<std::string>& local_origin_tokens();
+
+// Normalized registry names persisted in user_models.json and exposed by APIs.
+// Empty input intentionally maps to Hugging Face for backward compatibility.
+models::RegistryId parse_remote_registry_source(const std::string& source);
+std::string remote_registry_source_name(models::RegistryId source);
+std::string remote_registry_display_name(models::RegistryId source);
+
+struct ModelInfo;
+
+// A row's registry, normalized. Every read of ModelInfo::registry_source goes through this,
+// because a row may name the registry in any of its aliases.
+std::string registry_source_of(const ModelInfo& info);
+
+// Short form used when a registry is spelled as a URL scheme. The accepted
+// short aliases are the same ones parse_remote_registry_source() recognizes.
+std::string remote_registry_scheme_prefix(models::RegistryId source);
+bool is_remote_registry_source(const std::string& source);
+
+// Detects a Hugging Face or ModelScope model URL. On a match returns true, sets
+// `out_source` to the registry and `out_repo_id` to the `owner/repo` the URL
+// points at (query string, fragment and any deeper path are dropped). Non-URL
+// inputs return false and leave the outputs untouched. Shared by the CLI and
+// the server so both resolve provider URLs the same way.
+bool detect_registry_url(const std::string& value,
+                         models::RegistryId& out_source,
+                         std::string& out_repo_id);
+
+// True when a checkpoint is an `owner/repo` registry id (optionally with a
+// `:variant` suffix). Self-managed backend identifiers such as FLM tags
+// (`gemma3:4b`) have no owner segment and return false.
+bool checkpoint_looks_like_repo_id(const std::string& checkpoint);
+
+// Applies the default-source policy to a /pull request body in place. The
+// primary checkpoint follows the ModelManager precedence (`checkpoints.main`
+// when a `checkpoints` object is present, otherwise `checkpoint`):
+//   * A provider URL in any checkpoint is normalized to `owner/repo` and its
+//     registry recorded as `source` (unless the caller already named one). Every
+//     registry-backed checkpoint is normalized and must resolve to one registry.
+//   * An unqualified, registry-backed primary checkpoint inherits
+//     `default_source`.
+// Explicit `source`/`registry_source`, local imports, self-managed recipes
+// (`flm`, `cloud`), and non-registry checkpoints are left untouched, so a
+// registry source is only ever persisted for genuinely registry-backed pulls.
+// Throws std::invalid_argument when a provider URL conflicts with an explicit
+// source or when checkpoints disagree on the registry (callers map this to 400).
+void apply_default_pull_source(nlohmann::json& request_json,
+                               const std::string& default_source);
+
+// Normalize one provider-specific model-list entry into Lemonade's registry contract.
+// Exposed so fixture tests and future clients share the same field mapping.
+RegistrySearchResult normalize_registry_search_result(
+    models::RegistryId source,
+    const nlohmann::json& metadata);
+
+// Normalize and filter a provider response without performing network I/O.
+// This keeps provider field mapping and filtering deterministic and unit-testable.
+RegistrySearchResponse normalize_registry_search_response(
+    models::RegistryId source,
+    const nlohmann::json& body,
+    std::size_t limit = 12);
+
+bool registry_task_is_excluded(const std::string& task);
+
+bool is_official_huggingface_endpoint(const std::string& endpoint);
+std::string huggingface_repository_api_url(
+    const std::string& endpoint,
+    const std::string& repo_id,
+    const std::string& revision = "");
+std::optional<nlohmann::json> parse_huggingface_compatibility_response(
+    int status_code,
+    const std::string& body,
+    bool metadata_required);
+std::optional<nlohmann::json> fetch_huggingface_compatibility_metadata(
+    const std::string& repo_id,
+    const std::string& revision);
+
+// Deterministic snapshot id for providers whose download revision may remain
+// mutable. Ordering of files does not affect the result.
+std::string registry_tree_snapshot_id(models::RegistryId source,
+                                      const std::string& revision,
+                                      const std::vector<RegistryFile>& files);
+
+// Provider-qualified cache directory. Hugging Face keeps its historical layout;
+// ModelScope receives a distinct namespace so identical owner/repo ids never
+// collide while the snapshot/refs layout below it stays runtime-compatible.
+std::string registry_repo_cache_dir_name(const std::string& repo_id,
+                                         models::RegistryId source);
+
+}  // namespace lemon

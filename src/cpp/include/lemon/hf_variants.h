@@ -8,6 +8,11 @@
 
 namespace lemon {
 
+namespace models {
+class ArtifactSourceResolver;
+}  // namespace models
+
+
 // Single GGUF variant detected in a remote model registry repository.
 struct GgufVariant {
     // Display label and selector. Callers pull `checkpoint:name`, so this must
@@ -56,12 +61,14 @@ std::string llamacpp_gguf_incompatibility(
 // derives suggested labels from the repo id, and returns the response JSON.
 // Throws std::runtime_error on transport failure; sets `not_found` true if
 // the registry reports a missing/inaccessible repo so the caller can return HTTP 404.
-nlohmann::json fetch_pull_variants(const std::string& checkpoint,
+nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolver,
+                                   const std::string& checkpoint,
                                    const std::string& registry_source,
                                    bool& not_found);
 
-inline nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_found) {
-    return fetch_pull_variants(checkpoint, "huggingface", not_found);
+inline nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolver,
+                                          const std::string& checkpoint, bool& not_found) {
+    return fetch_pull_variants(resolver, checkpoint, "huggingface", not_found);
 }
 
 }  // namespace lemon

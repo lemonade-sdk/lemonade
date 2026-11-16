@@ -2,8 +2,8 @@
 
 #include <vector>
 
-#include "lemon/alias_manager.h"
-#include "lemon/model_registry.h"
+#include "lemon/model_manager.h"
+#include "lemon/models/registry_types.h"
 #include "lemon/router.h"
 
 namespace lemon {
@@ -24,8 +24,8 @@ std::string public_source(const ModelInfo& info) {
 
 } // namespace
 
-ModelJson::ModelJson(ModelManager* model_manager, Router* router, AliasManager* alias_manager)
-    : model_manager_(model_manager), router_(router), alias_manager_(alias_manager) {}
+ModelJson::ModelJson(ModelManager* model_manager, Router* router)
+    : model_manager_(model_manager), router_(router) {}
 
 int64_t ModelJson::resolve_context_length(const std::string& model_id, const ModelInfo& info) const {
     // ctx_size stores -1 for "size this automatically", so only a positive
@@ -36,12 +36,7 @@ int64_t ModelJson::resolve_context_length(const std::string& model_id, const Mod
     };
 
     if (router_) {
-        std::string loaded_name = model_id;
-        if (alias_manager_) {
-            if (auto target = alias_manager_->resolve_alias(model_id)) {
-                loaded_name = *target;
-            }
-        }
+        const std::string loaded_name = model_manager_->resolve_alias(model_id).value_or(model_id);
         const int64_t loaded_ctx = ctx_size_of(router_->get_model_recipe_options(loaded_name));
         if (loaded_ctx > 0) {
             return loaded_ctx;
@@ -58,7 +53,8 @@ int64_t ModelJson::resolve_context_length(const std::string& model_id, const Mod
     return info.max_context_window > 0 ? info.max_context_window : 0;
 }
 
-json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int depth) const {
+json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int depth,
+                       bool include_paths) const {
     std::vector<std::string> public_components;
     public_components.reserve(info.components.size());
     for (const auto& component : info.components) {
@@ -82,6 +78,24 @@ json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int 
         {"components", public_components},
         {"recipe_options", info.recipe_options.to_json()},
     };
+
+    json checkpoint_status = json::array();
+    for (const auto& status : model_manager_->checkpoint_status(info)) {
+        json entry{
+            {"type", status.type},
+            {"present", status.present},
+            {"required", status.required},
+            {"registry", status.registry.empty()
+                ? std::string()
+                : remote_registry_source_name(
+                    parse_remote_registry_source(status.registry.str()))},
+        };
+        if (include_paths && status.present) {
+            entry["path"] = status.path;
+        }
+        checkpoint_status.push_back(std::move(entry));
+    }
+    model_json["checkpoint_status"] = std::move(checkpoint_status);
 
     // The Model Manager buckets cloud models by provider. Local models omit the
     // field rather than carry an empty one.
@@ -119,27 +133,6 @@ json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int 
         model_json["system_prompt"] = info.system_prompt;
     }
 
-    auto audio_defaults = info.extras.find("audio_defaults");
-    if (audio_defaults != info.extras.end() && audio_defaults->second.is_object()) {
-        model_json["audio_defaults"] = audio_defaults->second;
-    }
-
-    if (info.image_defaults.has_defaults) {
-        json img_def = {
-            {"steps", info.image_defaults.steps},
-            {"cfg_scale", info.image_defaults.cfg_scale},
-            {"width", info.image_defaults.width},
-            {"height", info.image_defaults.height}
-        };
-        if (!info.image_defaults.sampling_method.empty())
-            img_def["sampling_method"] = info.image_defaults.sampling_method;
-        if (info.image_defaults.flow_shift > 0.0f)
-            img_def["flow_shift"] = info.image_defaults.flow_shift;
-        if (info.image_defaults.soft_pixel_cap > 0)
-            img_def["soft_pixel_cap"] = info.image_defaults.soft_pixel_cap;
-        model_json["image_defaults"] = img_def;
-    }
-
     if (is_router_collection_recipe(info.recipe)) {
         // The parser requires a root "version"; surface it alongside "routing"
         // so an exported router collection can be re-imported through /pull.
@@ -163,7 +156,8 @@ json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int 
             }
             auto comp_info = model_manager_->get_model_info(component);
             component_models.push_back(to_json(
-                model_manager_->get_public_model_name(component), comp_info, depth + 1));
+                model_manager_->get_public_model_name(component), comp_info, depth + 1,
+                include_paths));
         }
         model_json["models"] = component_models;
     }
@@ -217,32 +211,29 @@ nlohmann::ordered_json ModelJson::schema() {
             "update_available": {"type": "boolean", "description": "Whether the model's registry has a newer commit; `false` except for downloaded registry models."},
             "suggested": {"type": "boolean", "description": "Whether the model is recommended for general use."},
             "labels": {"type": "array", "items": {"type": "string"}, "description": "The model's capabilities and characteristics; see [Model Labels](./openai.md#model-labels)."},
-            "image_defaults": {
-                "type": "object",
-                "description": "Image models only: default generation parameters.",
-                "properties": {
-                    "steps": {"type": "integer", "description": "Number of inference steps, such as `4` for turbo models or `20` for standard models."},
-                    "cfg_scale": {"type": "number", "description": "Classifier-free guidance scale, such as `1.0` for turbo models or `7.5` for standard models."},
-                    "width": {"type": "integer", "description": "Default image width in pixels."},
-                    "height": {"type": "integer", "description": "Default image height in pixels."},
-                    "sampling_method": {"type": "string", "description": "Default sampler, when the model sets one."},
-                    "flow_shift": {"type": "number", "description": "Default flow shift, when the model sets one."},
-                    "soft_pixel_cap": {"type": "integer", "description": "Largest output area, in pixels, that `images/edits` infers from the first reference image when `size` is omitted."}
-                }
-            },
             "components": {"type": "array", "items": {"type": "string"}, "description": "The names of a collection's component models, in order; empty for other models."},
             "models": {"type": "array", "items": {"type": "object"},
                        "description": "Omni collections only: each component's full model object, in the order of `components`, so an exported collection can be imported elsewhere through [`/v1/pull`](./lemonade.md#post-v1pull)."},
             "checkpoints": {"type": "object", "description": "Every checkpoint by role, such as `main`, `mmproj`, `draft`, `text_encoder` or `vae`.",
                             "additionalProperties": {"type": "string", "description": "The checkpoint that fills the role named by its key."}},
+            "checkpoint_status": {"type": "array", "description": "One entry per checkpoint of the model, answering whether its bytes are there.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string", "description": "Checkpoint slot, e.g. `main`, `mmproj`, `vae`."},
+                        "present": {"type": "boolean", "description": "`true` only when the checkpoint's bytes are complete and readable."},
+                        "required": {"type": "boolean", "description": "A missing required checkpoint keeps the model undownloaded; an optional one, loaded lazily, does not."},
+                        "registry": {"type": "string", "description": "Registry hosting the checkpoint; empty for local files and directories."},
+                        "path": {"type": "string", "description": "Absolute path to the checkpoint file; present only with `include_paths=true` and when `present` is `true`."}
+                    }
+                }},
             "source": {"type": "string", "description": "Where the model came from: a registry name, `local_upload`, `local_path` or `extra_models_dir`."},
             "registry_source": {"type": "string", "description": "Remote registry the checkpoint downloads from: `huggingface` or `modelscope`."},
-            "recipe_options": {"type": "object", "description": "The model's own options: its image defaults and registry options, with what was saved in `recipe_options.json` on top."},
+            "recipe_options": {"type": "object", "description": "The model's own options: those its registry row authors, with what was saved in `recipe_options.json` on top."},
             "cloud_provider": {"type": "string", "description": "Cloud models only: the provider that serves the model."},
             "cost_input_per_million": {"type": "number", "description": "Cloud models only: USD per million input tokens, when the provider reports it."},
             "cost_output_per_million": {"type": "number", "description": "Cloud models only: USD per million output tokens, when the provider reports it."},
             "system_prompt": {"type": "string", "description": "Omni collections only: the collection's system prompt override."},
-            "audio_defaults": {"type": "object", "description": "Audio models only: default generation parameters."},
             "version": {"description": "Router collections only: the policy document's version."},
             "routing": {"type": "object", "description": "Router collections only: the routing policy."}
         }

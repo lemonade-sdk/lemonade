@@ -1,4 +1,4 @@
-#include "lemon/model_manager.h"
+#include "lemon/models/scan_catalog.h"
 #include "support/test_state_isolation.h"
 
 #include <algorithm>
@@ -9,8 +9,8 @@
 
 namespace fs = std::filesystem;
 using lemon::ModelInfo;
-using lemon::ModelManager;
 using lemon::ModelType;
+using lemon::models::ScanCatalog;
 using lemon::model_type_to_string;
 
 static int g_failures = 0;
@@ -92,8 +92,8 @@ static void test_root_files() {
     touch(dir / "bge-reranker-v2.gguf");
     touch(dir / "Qwen3-8B-Instruct.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     check_type(models, "root embedding filename defaults to LLM", "extra.nomic-embed-text-v2",
                ModelType::LLM, "chat");
@@ -110,8 +110,8 @@ static void test_split_variant_folder() {
     touch(dir / "reranking" / "MyModel" / "MyModel-Q4_K_M.gguf");
     touch(dir / "reranking" / "MyModel" / "MyModel-Q8_0.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     check_type(models, "split variant (Q4_K_M) inherits reranking", "extra.MyModel-Q4_K_M",
                ModelType::RERANKING, "reranking");
@@ -125,8 +125,8 @@ static void test_folder_model() {
     fs::path dir = make_temp_dir();
     touch(dir / "embeddings" / "my-model" / "model.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     check_type(models, "folder model inherits embeddings", "extra.my-model",
                ModelType::EMBEDDING, "embeddings");
@@ -138,8 +138,8 @@ static void test_filename_does_not_override_category() {
     fs::path dir = make_temp_dir();
     touch(dir / "embeddings" / "bge-reranker-v2.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     if (check_type(models, "reranker filename in embeddings stays EMBEDDING",
                    "extra.bge-reranker-v2", ModelType::EMBEDDING, "embeddings")) {
@@ -155,8 +155,8 @@ static void test_mixed_folder_is_one_model() {
     touch(dir / "mixed" / "a-embed-model.gguf");
     touch(dir / "mixed" / "z-rerank-model.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     check("mixed folder discovers one model", models.size() == 1);
     check_type(models, "ordinary folder defaults to chat", "extra.mixed",
@@ -171,8 +171,8 @@ static void test_multimodal_folder() {
     touch(dir / "chat" / "gemma-vision" / "gemma-vision-Q4_K_M.gguf");
     touch(dir / "chat" / "gemma-vision" / "mmproj-gemma-vision-f16.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     if (check_type(models, "multimodal folder stays LLM", "extra.gemma-vision",
                    ModelType::LLM, "chat")) {
@@ -190,8 +190,8 @@ static void test_direct_multimodal_model() {
     touch(dir / "chat" / "gemma.gguf");
     touch(dir / "chat" / "mmproj-gemma.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     const ModelInfo* info = find_model(models, "extra.gemma");
     check("direct multimodal model is discovered alone", models.size() == 1 && info != nullptr);
@@ -214,8 +214,8 @@ static void test_ambiguous_direct_mmproj_is_not_attached() {
     touch(dir / "chat" / "llama.gguf");
     touch(dir / "chat" / "mmproj.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     check("ambiguous direct models stay separate", models.size() == 2);
     for (const auto& model : models) {
@@ -234,8 +234,8 @@ static void test_direct_shards_with_independent_model() {
     touch(dir / "chat" / "large-Q4_K_M-00002-of-00002.gguf");
     touch(dir / "chat" / "small.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     check("direct shard set and independent model produce two models", models.size() == 2);
     check_type(models, "direct shards are grouped", "extra.large-Q4_K_M",
@@ -251,8 +251,8 @@ static void test_category_files_are_separate_models() {
     touch(dir / "embeddings" / "model-a.gguf");
     touch(dir / "embeddings" / "model-b.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     check("category files discover two models", models.size() == 2);
     check_type(models, "first category file is embedding", "extra.model-a",
@@ -267,8 +267,8 @@ static void test_category_names_are_case_sensitive() {
     fs::path dir = make_temp_dir();
     touch(dir / "Embeddings" / "model.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     check_type(models, "unreserved mixed-case directory defaults to chat", "extra.Embeddings",
                ModelType::LLM, "chat");
@@ -281,8 +281,8 @@ static void test_same_name_across_categories() {
     touch(dir / "embeddings" / "model.gguf");
     touch(dir / "reranking" / "model.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     check("same-named category files are both discovered", models.size() == 2);
     check_type(models, "embedding duplicate gets deterministic short id", "extra.model",
@@ -298,8 +298,8 @@ static void test_reserved_directory_keeps_folder_id() {
     touch(dir / "embeddings" / "all-MiniLM-L6-v2.gguf");
     touch(dir / "embeddings" / "nomic-embed-text-v2.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     const ModelInfo* first = find_model(models, "extra.all-MiniLM-L6-v2");
     const ModelInfo* second = find_model(models, "extra.nomic-embed-text-v2");
@@ -320,8 +320,8 @@ static void test_reserved_directory_model_cannot_claim_folder_id() {
     touch(dir / "embeddings" / "a.gguf");
     touch(dir / "embeddings" / "embeddings.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     const ModelInfo* first = find_model(models, "extra.a");
     const ModelInfo* colliding = find_model(models, "extra.embeddings-embeddings");
@@ -341,8 +341,8 @@ static void test_category_model_cannot_claim_another_folder_id() {
     touch(dir / "chat" / "embeddings.gguf");
     touch(dir / "embeddings" / "a.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     const ModelInfo* embedding = find_model(models, "extra.a");
     check("cross-category reserved id collision discovers both models", models.size() == 2);
@@ -359,8 +359,8 @@ static void test_nested_category_model_cannot_claim_folder_id() {
     touch(dir / "embeddings" / "a.gguf");
     touch(dir / "embeddings" / "embeddings" / "model.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     const ModelInfo* direct = find_model(models, "extra.a");
     check("nested reserved id collision discovers both models", models.size() == 2);
@@ -377,8 +377,8 @@ static void test_root_beats_category_for_short_id() {
     touch(dir / "nomic-embed-text-v2.gguf");
     touch(dir / "embeddings" / "nomic-embed-text-v2.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     check("root and category duplicates are both discovered", models.size() == 2);
     check_type(models, "root file keeps the short id", "extra.nomic-embed-text-v2",
@@ -394,8 +394,8 @@ static void test_non_normalized_search_path() {
     touch(dir / "embeddings" / "model-a.gguf");
     touch(dir / "embeddings" / "model-b.gguf");
 
-    ModelManager manager((dir / ".").string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir((dir / ".").string());
+    auto models = manager.enumerate({});
 
     check("non-normalized category path discovers two models", models.size() == 2);
     check_type(models, "first non-normalized path model is embedding", "extra.model-a",
@@ -420,8 +420,8 @@ static void test_discovery_is_independent_of_creation_order() {
     auto discover_in_order = [&](std::vector<fs::path> ordered_files) {
         fs::path dir = make_temp_dir();
         for (const auto& file : ordered_files) touch(dir / file);
-        ModelManager manager(dir.string());
-        auto signature = discovery_signature(manager.discover_extra_models_for_test());
+        ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+        auto signature = discovery_signature(manager.enumerate({}));
         fs::remove_all(dir);
         return signature;
     };
@@ -442,8 +442,8 @@ static void test_qualified_id_skips_kept_folder_name() {
     touch(dir / "a" / "beta-Shared" / "Mistral-Q8_0.gguf");
     touch(dir / "beta" / "Shared" / "Phi.gguf");
 
-    ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models_for_test();
+    ScanCatalog manager = ScanCatalog::for_dir(dir.string());
+    auto models = manager.enumerate({});
 
     const ModelInfo* owner = find_model(models, "extra.Mistral-Q4_K_M");
     check("earlier folder keeps its folder name",

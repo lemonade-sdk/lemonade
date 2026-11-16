@@ -15,7 +15,7 @@ use tauri::{Emitter, Manager, WindowEvent};
 const WINDOWS_ICON_BYTES: &[u8] = include_bytes!("../icons/icon.ico");
 
 fn parse_protocol_url(raw: &str) -> Option<serde_json::Value> {
-    // lemonade://open?view=dashboard/logs&model=foo
+    // lemonade://open?view=monitor/logs&model=foo
     // The url crate treats unknown schemes as opaque, so swap to http:// for
     // parsing and rely on query_pairs() instead of hand-splitting on '?'/'&'.
     let normalized = raw.strip_prefix("lemonade://")?;
@@ -188,8 +188,8 @@ mod tests {
 
     #[test]
     fn parse_protocol_url_extracts_view_and_model() {
-        let nav = parse_protocol_url("lemonade://open?view=dashboard/logs&model=foo").unwrap();
-        assert_eq!(nav.get("view").unwrap(), "dashboard/logs");
+        let nav = parse_protocol_url("lemonade://open?view=monitor/logs&model=foo").unwrap();
+        assert_eq!(nav.get("view").unwrap(), "monitor/logs");
         assert_eq!(nav.get("model").unwrap(), "foo");
     }
 

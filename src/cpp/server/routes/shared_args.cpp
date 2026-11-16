@@ -64,7 +64,15 @@ const RouteArg kUser{"user", ArgIn::Form, {{"type", "string"}}, false, Support::
 
 namespace openai::models {
 const RouteArg kId{"id", ArgIn::Path, {{"type", "string"}, {"pattern", ".+"}}, true, Support::Available,
-                   "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias."};
+                   "Model id, as listed by [`GET /v1/models`](#get-v1models), or an alias. A "
+                   "trailing `:latest`, the tag Ollama clients append, names the bare id when "
+                   "nothing is registered under the tagged name."};
+const RouteArg kIncludePaths{
+    "include_paths", ArgIn::Query, {{"type", "boolean"}}, false, Support::Available,
+    "`true` adds each present checkpoint's absolute `path` to its `checkpoint_status` entry, "
+    "which can reveal local usernames and the cache layout. Defaults to `false`. The files a "
+    "model is made of have their own list, at "
+    "[`GET /v1/models/{id}/files`](./openai.md#get-v1modelsidfiles)."};
 } // namespace openai::models
 
 namespace gateway {
@@ -137,5 +145,11 @@ const RouteArg kSteps{"steps", ArgIn::JsonBody, {{"type", "integer"}}, false, Su
 const RouteArg kSeed{"seed", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
                      "Random seed for reproducibility. Defaults to the backend's own."};
 } // namespace inference
+
+namespace classification {
+const RouteArg kModel{"model", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                      "The classification model. Optional when exactly one classification model is loaded; "
+                      "that model is used."};
+} // namespace classification
 
 } // namespace lemon

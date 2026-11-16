@@ -147,9 +147,23 @@ def _running_lemond(config=None, cache_prefix="lemond_test_", extra_env=None):
             try:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
+                _print_log_tail(log_path, "lemond did not exit within 10s of terminate")
                 proc.kill()
-                proc.wait(timeout=10)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    print(f"WARNING: lemond (pid {proc.pid}) not reaped 10s after kill")
         shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+def _print_log_tail(log_path, reason, lines=40):
+    print(f"WARNING: {reason}; last {lines} lines of {log_path}:")
+    try:
+        with open(log_path, encoding="utf-8", errors="replace") as f:
+            for line in f.readlines()[-lines:]:
+                print(f"    {line.rstrip()}")
+    except OSError as e:
+        print(f"    (could not read log: {e})")
 
 
 def _wait_until_healthy(proc, port, headers, timeout_s=60):
@@ -323,6 +337,9 @@ class EndpointTests(ServerTestBase):
             public_name = body.get("model_name")
             self.assertIsInstance(public_name, str)
             self.assertTrue(public_name)
+            registered = body.get("model")
+            self.assertIsInstance(registered, dict, f"echo of the row: {body}")
+            self.assertEqual(registered.get("checkpoint"), checkpoint)
 
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true",
@@ -734,6 +751,38 @@ class EndpointTests(ServerTestBase):
         # Verify our pulled model is in the list
         model_ids = [m["id"] for m in data["data"]]
         self.assertIn(ENDPOINT_TEST_MODEL, model_ids)
+
+        # checkpoint_status[] and update_available are part of the row contract.
+        pulled = next(m for m in data["data"] if m["id"] == ENDPOINT_TEST_MODEL)
+        self.assertIsInstance(pulled.get("checkpoint_status"), list)
+        self.assertTrue(
+            any(
+                entry.get("type") == "main"
+                and entry.get("present") is True
+                and entry.get("required") is True
+                for entry in pulled["checkpoint_status"]
+            ),
+            f"downloaded model reports its main checkpoint: {pulled['checkpoint_status']}",
+        )
+        # Filesystem paths are opt-in on every listing surface, as they are on
+        # /models/{id}/files.
+        self.assertFalse(
+            any("path" in entry for entry in pulled["checkpoint_status"]),
+            f"the default listing discloses paths: {pulled['checkpoint_status']}",
+        )
+        opted_in = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}?include_paths=true",
+            timeout=TIMEOUT_DEFAULT,
+        ).json()
+        self.assertTrue(
+            any(
+                entry.get("type") == "main" and entry.get("path")
+                for entry in opted_in.get("checkpoint_status", [])
+            ),
+            f"include_paths=true answers where the checkpoint is: "
+            f"{opted_in.get('checkpoint_status')}",
+        )
+        self.assertIsInstance(pulled.get("update_available"), bool)
 
         print(f"[OK] /models returned {len(data['data'])} downloaded models")
 
@@ -3429,12 +3478,10 @@ class EndpointTests(ServerTestBase):
         print(f"[OK] Pull (multicheckpoint): model={USER_MODEL_NAME}")
 
     def test_021a_pull_sdcpp_import_preserves_merged_recipe_options(self):
-        """Test /pull keeps image_defaults + recipe_options visible immediately.
+        """Test /pull folds a retired image_defaults block into recipe_options.
 
-        This exercises the import/warm-cache path for user models:
-        add_model_to_cache() builds merged recipe options from image_defaults and
-        JSON recipe_options, and download_model() must not overwrite that merged
-        state with only the import recipe_options payload.
+        A payload naming the same key in both blocks resolves to the
+        recipe_options one, and the persisted row carries only recipe_options.
         """
         if platform.system() == "Darwin":
             self.skipTest("sd-cpp pull tests are skipped on macOS in this suite")
@@ -3451,6 +3498,7 @@ class EndpointTests(ServerTestBase):
             "flow_shift": 1.25,
         }
         recipe_options = {
+            "steps": 40,
             "sd-cpp_backend": "cpu",
             "sdcpp_args": "--diffusion-fa 1 --offload-to-cpu 1",
         }
@@ -3487,12 +3535,19 @@ class EndpointTests(ServerTestBase):
             self.assertIn("recipe_options", model_data)
 
             actual_options = model_data["recipe_options"]
+            self.assertNotIn(
+                "image_defaults",
+                model_data,
+                "A pull should persist only the recipe_options key",
+            )
             for key, value in image_defaults.items():
                 self.assertIn(
                     key,
                     actual_options,
                     f"Expected image_defaults key '{key}' in recipe_options after pull",
                 )
+                if key in recipe_options:
+                    continue
                 self.assertEqual(
                     actual_options[key],
                     value,
@@ -3658,6 +3713,68 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(model_res_del.status_code, 404)
         print(f"[OK] /internal/aliases POST/GET/DELETE verified")
+
+    def test_021ab_alias_resolves_on_every_surface(self):
+        """An alias means the same model on OpenAI, Ollama and Anthropic surfaces."""
+        alias_name = "test-surface-alias"
+        target_model = ENDPOINT_TEST_MODEL
+
+        add_res = requests.post(
+            f"{self.internal_url}/aliases",
+            headers=_auth_headers(),
+            json={"alias": alias_name, "target": target_model},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(add_res.status_code, 200)
+
+        try:
+            model_res = requests.get(
+                f"{self.base_url}/models/{alias_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(model_res.status_code, 200)
+            self.assertEqual(model_res.json()["id"], alias_name)
+
+            ollama_res = requests.post(
+                f"http://localhost:{PORT}/api/chat",
+                json={
+                    "model": alias_name,
+                    "messages": [
+                        {"role": "user", "content": "Reply with the word ok."}
+                    ],
+                    "stream": False,
+                    "options": {"num_predict": 4},
+                },
+                timeout=240,
+            )
+            self.assertEqual(ollama_res.status_code, 200, ollama_res.text)
+            self.assertEqual(ollama_res.json()["model"], target_model)
+
+            anthropic_res = requests.post(
+                f"http://localhost:{PORT}/v1/messages",
+                headers=_auth_headers(),
+                json={
+                    "model": alias_name,
+                    "max_tokens": 4,
+                    "messages": [
+                        {"role": "user", "content": "Reply with the word ok."}
+                    ],
+                },
+                timeout=240,
+            )
+            self.assertEqual(anthropic_res.status_code, 200, anthropic_res.text)
+            self.assertEqual(anthropic_res.json()["model"], target_model)
+        finally:
+            requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+        gone_res = requests.get(
+            f"{self.base_url}/models/{alias_name}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(gone_res.status_code, 404)
+        print("[OK] alias resolves on OpenAI, Ollama and Anthropic surfaces")
 
     def test_021e_naming_spec_user_shadows_builtin(self):
         """Naming spec: a user.X registration shadows a built-in X.
@@ -6566,6 +6683,94 @@ class EndpointTests(ServerTestBase):
         )
         return prior
 
+    def _set_config_key(self, key, value):
+        """Set one config.json key through /internal/set; returns the prior value."""
+        prior = (
+            requests.get(
+                f"http://localhost:{PORT}/internal/config",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            .json()
+            .get(key)
+        )
+        response = requests.post(
+            f"http://localhost:{PORT}/internal/set",
+            json={key: value},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code, 200, f"/internal/set failed: {response.text}"
+        )
+        return prior
+
+    @contextlib.contextmanager
+    def _model_catalogs(self, catalogs):
+        """Run with config.json's model_catalogs set, then put back what it was."""
+        prior = self._set_config_key("model_catalogs", catalogs)
+        try:
+            yield
+        finally:
+            self._set_config_key("model_catalogs", prior if prior is not None else [])
+
+    def _catalog_sources(self):
+        """Every catalog GET /internal/model-sources says built the store."""
+        response = requests.get(
+            f"http://localhost:{PORT}/internal/model-sources",
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+        return {source["id"]: source for source in response.json()["catalogs"]}
+
+    def test_021n_configured_model_catalog(self):
+        """A registry named in config.json adds a model, and removing it takes it back."""
+        catalog_id = "endpoints-tmp-catalog"
+        model_name = "endpoints-tmp-configured-model"
+        directory = tempfile.mkdtemp(prefix=f"lemon_catalog_{self._testMethodName}_")
+        document = os.path.join(directory, "catalog.json")
+        with open(document, "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    model_name: {
+                        "recipe": "llamacpp",
+                        "labels": ["chat"],
+                        "checkpoints": {"main": "lemonade-tests/configured:main.gguf"},
+                    }
+                },
+                handle,
+            )
+        try:
+            with self._model_catalogs([{"id": catalog_id, "path": document}]):
+                self.assertIn(catalog_id, self._catalog_sources())
+                self.assertIn(model_name, self._listed_models())
+
+            # What is left of the set is what the catalogs say built it.
+            self.assertNotIn(catalog_id, self._catalog_sources())
+            self.assertNotIn(model_name, self._listed_models())
+            print(f"[OK] configured catalog {catalog_id} adds and removes a model")
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
+
+    def test_021n2_configured_model_catalog_rejects_unsafe_url(self):
+        """A plaintext catalog URL is refused rather than saved for later."""
+        with self._model_catalogs([]):
+            response = requests.post(
+                f"http://localhost:{PORT}/internal/set",
+                json={
+                    "model_catalogs": [
+                        {"id": "unsafe", "url": "http://example.invalid/models.json"}
+                    ]
+                },
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 400, response.text)
+            self.assertIn("allow_insecure_http", response.text)
+            self.assertNotIn("unsafe", self._catalog_sources())
+            print("[OK] a plaintext catalog url costs the setting")
+
     def _write_stub_gguf_file(self, path):
         """Write a tiny valid-enough GGUF file at an exact path."""
         import struct
@@ -6857,13 +7062,17 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(files_response.status_code, 200)
             files = files_response.json()["files"]
             main_files = [f for f in files if f["role"] == "main"]
-            self.assertEqual(len(main_files), 1)
-            self.assertEqual(main_files[0]["name"], os.path.basename(shard1))
             self.assertEqual(
-                main_files[0]["size_bytes"],
-                shard1_bytes,
-                "/files must report the individual file size, not the shard total",
+                [file["name"] for file in main_files],
+                [os.path.basename(shard1), os.path.basename(shard2)],
             )
+            for file, expected_bytes in zip(main_files, [shard1_bytes, shard2_bytes]):
+                self.assertTrue(file["exists"])
+                self.assertEqual(
+                    file["size_bytes"],
+                    expected_bytes,
+                    "/files must report the individual file size, not the shard total",
+                )
 
             print("[OK] sharded size sums shards while /files stays per-file")
 
@@ -7308,6 +7517,73 @@ class EndpointTests(ServerTestBase):
             self.assertTrue(info["downloaded"], f"moved Krea files not found: {info}")
             self.assertNotEqual(info.get("source"), "extra_models_dir")
 
+    def test_021ylb_incomplete_auxiliary_keeps_single_gguf(self):
+        """Missing companion must not hide an otherwise usable external GGUF."""
+        suffix = uuid.uuid4().hex[:8]
+        repo_name = f"MissingAux-{suffix}-GGUF"
+        repo = f"models--lemon-test--{repo_name}"
+        snap = f"{repo}/snapshots/active"
+        main_file = "Model-Q4_K_M.gguf"
+        mmproj_file = "mmproj-F16.gguf"
+        name = f"user.MissingAux-{suffix}"
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "recipe": "llamacpp",
+                "checkpoints": {
+                    "main": f"lemon-test/{repo_name}:{main_file}",
+                    "mmproj": f"lemon-test/{repo_name}:{mmproj_file}",
+                },
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            with self._extra_models_dir(
+                ggufs=[f"{snap}/{main_file}"], refs={repo: "active"}
+            ) as extra_dir:
+                self.assertFalse(self._get_model(name)["downloaded"])
+                self.assertExtraModelsListed(extra_dir, {repo_name: f"{snap}/"})
+                extra = self._get_model(repo_name)
+                self.assertTrue(extra["downloaded"])
+                self.assertEqual(extra["recipe"], "llamacpp")
+
+            # When the companion is present, the registered model owns both files.
+            with self._extra_models_dir(
+                ggufs=[f"{snap}/{main_file}", f"{snap}/{mmproj_file}"],
+                refs={repo: "active"},
+            ) as extra_dir:
+                self.assertTrue(self._get_model(name)["downloaded"])
+                self.assertExtraModelsListed(extra_dir, {})
+        finally:
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+    def test_021ylc_incomplete_flux_gguf_stays_visible(self):
+        """A FLUX image registration without its encoder must not claim its GGUF."""
+        name = "Flux-2-Klein-9B-GGUF"
+        catalog = self._listed_models()
+        if name not in catalog or catalog[name]["downloaded"]:
+            self.skipTest("FLUX image recipe unavailable or installed in managed cache")
+
+        repo = "models--unsloth--FLUX.2-klein-9B-GGUF"
+        snap = f"{repo}/snapshots/active"
+        main_file = "flux-2-klein-9b-Q8_0.gguf"
+        with self._extra_models_dir(
+            ggufs=[f"{snap}/{main_file}"], refs={repo: "active"}
+        ) as extra_dir:
+            registered = self._get_model(name)
+            self.assertEqual(registered["recipe"], "sd-cpp")
+            self.assertFalse(registered["downloaded"])
+            self.assertExtraModelsListed(
+                extra_dir, {"FLUX.2-klein-9B-GGUF": f"{snap}/"}
+            )
+
     def test_021ym_registered_shards_and_unrelated_quantization(self):
         """Every registered shard stays out of extra.*, other variants remain."""
         name = f"user.Shards-{uuid.uuid4().hex[:8]}"
@@ -7385,6 +7661,67 @@ class EndpointTests(ServerTestBase):
                     )
         finally:
             # Restore the original extra directory before removing registration.
+            response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+    def test_021ymb_empty_draft_does_not_expose_main_shards(self):
+        """An invalid auxiliary role must not expose registered main shards."""
+        suffix = uuid.uuid4().hex[:8]
+        model_base = f"EarlyAux-{suffix}"
+        repo_name = f"{model_base}-GGUF"
+        repo = f"models--lemon-test--{repo_name}"
+        snap = f"{repo}/snapshots/active"
+        first = f"{model_base}-Q4_K_M-00001-of-00002.gguf"
+        second = f"{model_base}-Q4_K_M-00002-of-00002.gguf"
+        other = f"{model_base}-Q8_0.gguf"
+        unrelated = f"{model_base}-Q5_K_M.gguf"
+        name = f"user.{model_base}"
+
+        response = requests.post(
+            f"{self.base_url}/models/register",
+            json={
+                "model_name": name,
+                "recipe": "llamacpp",
+                "checkpoints": {
+                    "draft": "",
+                    "main": f"lemon-test/{repo_name}:{first}",
+                },
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        try:
+            for main_files in ([first, second], [first]):
+                with self._extra_models_dir(
+                    ggufs=[
+                        f"{snap}/{file}" for file in [*main_files, other, unrelated]
+                    ],
+                    refs={repo: "active"},
+                ) as extra_dir:
+                    self.assertFalse(self._get_model(name)["downloaded"])
+                    self.assertExtraModelsListed(
+                        extra_dir,
+                        {
+                            f"{model_base}-Q8_0": f"{snap}/{other}",
+                            f"{model_base}-Q5_K_M": f"{snap}/{unrelated}",
+                        },
+                    )
+        finally:
+            # A blank draft checkpoint makes the registration undeletable.
+            response = requests.post(
+                f"{self.base_url}/models/register",
+                json={
+                    "model_name": name,
+                    "recipe": "llamacpp",
+                    "checkpoint": f"lemon-test/{repo_name}:{first}",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
             response = requests.post(
                 f"{self.base_url}/delete",
                 json={"model_name": name},

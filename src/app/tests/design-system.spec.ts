@@ -54,8 +54,8 @@ async function contrastFailures(page: import('@playwright/test').Page, tokens: s
 for (const theme of ['dark', 'light'] as const) {
   test(`identity and chart tokens clear 3:1 on the ${theme} canvas`, async ({ page }) => {
     await page.addInitScript(value => localStorage.setItem('lemonade_theme', value), theme);
-    await page.goto('/#/dashboard/performance');
-    await page.waitForSelector('[data-view="dashboard"]');
+    await page.goto('/#/monitor/performance');
+    await page.waitForSelector('[data-view="monitor"]');
 
     const failures = await contrastFailures(page, IDENTITY_TOKENS);
     expect(
@@ -67,7 +67,7 @@ for (const theme of ['dark', 'light'] as const) {
 
 test('log filters open as a modal with backdrop, focus trap, Escape and focus return', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/#/dashboard/logs');
+  await page.goto('/#/monitor/logs');
   await page.waitForSelector('.logs-main');
 
   const trigger = page.getByRole('button', { name: 'Open log filters', exact: true });
@@ -112,7 +112,7 @@ test('the log source list keeps the active filter reachable and reports what it 
     });
   });
 
-  await page.goto('/#/dashboard/logs');
+  await page.goto('/#/monitor/logs');
   await page.waitForSelector('.logs-rail');
 
   // "All sources" plus exactly the ten most active mocked sources.

@@ -3,6 +3,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/gateway_conversion.h"
@@ -93,10 +94,28 @@ const RouteArg kThink{"think", ArgIn::JsonBody,
                       "think regardless. Qwen3 models skip their reasoning when the prompt ends with "
                       "`/no_think`."};
 
-json convert_ollama_to_openai_chat(const RouteRequest& req) {
+const RouteError kNotChatModel{400, "",
+                               "`model` is any model other than an LLM, such as an image, embedding "
+                               "or transcription model, which is checked before it loads"};
+
+bool require_chat_model(ModelManager& model_manager, const std::string& model,
+                        httplib::Response& res) {
+    auto output = ollama_registered_output(model_manager, model);
+    if (!output || *output == OllamaOutput::Text) {
+        return true;
+    }
+    std::string message = "\"" + model + "\" does not support chat";
+    if (*output == OllamaOutput::Image) {
+        message += "; use /api/generate to generate images";
+    }
+    write_plain_error(res, kNotChatModel, message);
+    return false;
+}
+
+json convert_ollama_to_openai_chat(ServerContext& ctx, const RouteRequest& req) {
     json openai_req;
 
-    std::string model = strip_latest_tag(req.value(gateway::kModel, ""));
+    std::string model = canonical_model_name(ctx, req.value(gateway::kModel, ""));
     openai_req[model_loading::kModel.name] = model;
 
     if (req.has(kMessages)) {
@@ -304,6 +323,7 @@ ordered_json chat_response_schema(bool line) {
         }
     })");
     if (line) {
+        schema["title"] = "Line";
         schema["description"] = "Each line carries the next message piece with `done: false`. When "
                                 "the message ends, a line with `done: true` and the real "
                                 "`done_reason` follows, then a last `done: true` line with the token "
@@ -348,7 +368,8 @@ public:
 
         RouteResponse stream;
         stream.format = ResponseFormat::JsonLines;
-        stream.schema = chat_response_schema(true);
+        stream.schema = {{"description", "One JSON object per line."}, {"oneOf", ordered_json::array({
+            chat_response_schema(true), ollama_stream_error_schema()})}};
 
         s.responses = {full, stream};
 
@@ -371,7 +392,7 @@ public:
         })");
 
         s.examples = {full_example, stream_example};
-        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid}, gateway_load_errors(),
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNotChatModel}, gateway_load_errors(),
                                 {kOllamaBackendError, ApiRoute::kUnexpectedException}});
         s.request_format = RequestFormat::Json;
         return s;
@@ -379,7 +400,7 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            std::string model = strip_latest_tag(req.arg(gateway::kModel).get<std::string>());
+            std::string model = canonical_model_name(ctx_, req.arg(gateway::kModel).get<std::string>());
 
             auto messages = req.value(kMessages, json::array());
             if (messages.empty() && req.has(ollama::kKeepAlive) &&
@@ -401,6 +422,10 @@ public:
                 return;
             }
 
+            if (!require_chat_model(*ctx_.model_manager, model, res)) {
+                return;
+            }
+
             if (!gateway_ensure_loaded(*ctx_.model_loader, model,
                                        gateway_load_options(req.arg(kOptions), req.arg(model_loading::kCtxSize)),
                                        ErrorFormat::Plain, res)) {
@@ -409,7 +434,7 @@ public:
 
             bool stream = req.value(ollama::kStream, true);
 
-            auto openai_req = convert_ollama_to_openai_chat(req);
+            auto openai_req = convert_ollama_to_openai_chat(ctx_, req);
 
             bool has_tools = req.has(generation::kTools) &&
                              req.arg(generation::kTools).is_array() &&

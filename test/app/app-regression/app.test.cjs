@@ -233,7 +233,7 @@ const tests = [
       const tsPath = path.join(repoRoot, 'src', 'app', 'node_modules', 'typescript');
       try { require.resolve(tsPath); }
       catch (_) { return { skip: true, reason: "typescript not installed - run 'npm ci' in src/app first" }; }
-      require(path.join(repoRoot, 'src', 'app', 'tests', 'dashboard-throughput.runtime.cjs'));
+      require(path.join(repoRoot, 'src', 'app', 'tests', 'monitor-throughput.runtime.cjs'));
     },
   },
   {

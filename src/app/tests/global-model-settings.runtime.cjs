@@ -112,11 +112,13 @@ assert.equal(settings.autoCheckModelUpdatesFromConfig({ auto_check_model_updates
 assert.equal(settings.autoCheckModelUpdatesFromConfig({ auto_check_model_updates: true }), true);
 assert.equal(settings.autoCheckModelUpdatesFromConfig({}), true);
 
+const apiSource = fs.readFileSync(path.join(root, 'src/api.ts'), 'utf8');
 const listSource = fs.readFileSync(path.join(root, 'src/components/ModelListPanel.tsx'), 'utf8');
 const managerSource = fs.readFileSync(path.join(root, 'src/components/ModelManager.tsx'), 'utf8');
+const detailSource = fs.readFileSync(path.join(root, 'src/components/ModelDetailPanel.tsx'), 'utf8');
 const panelSource = fs.readFileSync(path.join(root, 'src/components/GlobalModelSettingsPanel.tsx'), 'utf8');
 const connectSource = fs.readFileSync(path.join(root, 'src/components/ConnectView.tsx'), 'utf8');
-const dashboardSource = fs.readFileSync(path.join(root, 'src/components/Dashboard.tsx'), 'utf8');
+const monitorSource = fs.readFileSync(path.join(root, 'src/components/Monitor.tsx'), 'utf8');
 const navigationSource = fs.readFileSync(path.join(root, 'src/features/navigation/workspaceNavigation.ts'), 'utf8');
 const stylesSource = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
 const chatSource = fs.readFileSync(path.join(root, 'src/components/ChatView.tsx'), 'utf8');
@@ -124,6 +126,18 @@ const settingsSource = fs.readFileSync(path.join(root, 'src/features/modelSettin
 
 assert.doesNotMatch(listSource, /onOpenGlobalSettings|Open global model settings|Global model settings/);
 assert.match(listSource, /onUpdateAllModels && \([\s\S]*?icon="rotate-ccw"[\s\S]*?Update all downloaded models/);
+assert.match(detailSource, /!isPulling && \(isDownloaded \|\| isLoaded\) && model\.update_available === true/);
+assert.match(detailSource, /icon="rotate-ccw"\s+onClick=\{\(\) => onUpdate\(model\)\}/);
+assert.match(detailSource, /disabled=\{isLoadingThis \|\| isUpdating\}/);
+assert.match(listSource, /disabled=\{isUpdatingModels\}/);
+assert.match(apiSource, /async startModelSync\(models\?: string\[\]\)[\s\S]*?'\/internal\/models\/sync'/);
+assert.match(apiSource, /async getModelSyncStatus\(\)[\s\S]*?'\/internal\/models\/sync\/status'/);
+assert.match(managerSource, /const handleUpdateAllModels = useCallback\(\(\) => \{ void modelSyncStore\.startSync\(\); \}/);
+assert.match(managerSource, /modelSyncStore\.startSync\(\[modelName\(model\)\]\)/);
+assert.match(managerSource, /modelSyncStore\.subscribe\(setModelSync\)/);
+assert.doesNotMatch(managerSource, /api\.getModelSyncStatus\(/, 'the Models view must not own sync polling');
+assert.doesNotMatch(managerSource, /handledModelSyncIds/);
+assert.doesNotMatch(managerSource, /const candidates = allModels\.filter\(model =>/);
 assert.doesNotMatch(managerSource, /showGlobalSettings|<GlobalModelSettingsPanel|loadWithGlobalModelPolicy|automaticUpdateIsDue|lastAutomaticUpdateAt/);
 assert.match(managerSource, /await loadModelRuntime\(model, new Set<string>\(\), overrideOptions\)/);
 assert.match(managerSource, /handleUpdateAllModels/);
@@ -184,17 +198,17 @@ assert.match(chatSource, /defaultThinkingOpen=\{!globalModelSettings\.collapseTh
 assert.match(chatSource, /GLOBAL_MODEL_SETTINGS_EVENT/);
 assert.doesNotMatch(chatSource, /loadWithGlobalModelPolicy|isMemoryPressureError|evictionPlanForLoad/);
 assert.match(chatSource, /return api\.loadModel\(modelName, recipeOptions, target\)/);
-assert.match(dashboardSource, /evictionRuntimeSettingsFromConfig/);
-assert.match(dashboardSource, /eviction\.autoEvict \? eviction\.autoEvictThresholdPercent : null/);
-assert.match(dashboardSource, /dash2-gauge__threshold/);
-assert.match(dashboardSource, /thresholdPercent=\{memoryTopology\.hostTotalGb != null \? evictionThresholdPercent : null\}/);
-assert.match(dashboardSource, /thresholdPercent=\{memoryTopology\.gpuTotalGb != null \? evictionThresholdPercent : null\}/);
-assert.match(dashboardSource, /memoryTopology\.hostTotalGb == null \? evictionThresholdText : null/);
-assert.match(dashboardSource, /memoryTopology\.gpuTotalGb == null \? evictionThresholdText : null/);
-assert.match(dashboardSource, /label=\{t\('RAM \/ VRAM'\)\}/);
+assert.match(monitorSource, /evictionRuntimeSettingsFromConfig/);
+assert.match(monitorSource, /eviction\.autoEvict \? eviction\.autoEvictThresholdPercent : null/);
+assert.match(monitorSource, /dash2-gauge__threshold/);
+assert.match(monitorSource, /thresholdPercent=\{memoryTopology\.hostTotalGb != null \? evictionThresholdPercent : null\}/);
+assert.match(monitorSource, /thresholdPercent=\{memoryTopology\.gpuTotalGb != null \? evictionThresholdPercent : null\}/);
+assert.match(monitorSource, /memoryTopology\.hostTotalGb == null \? evictionThresholdText : null/);
+assert.match(monitorSource, /memoryTopology\.gpuTotalGb == null \? evictionThresholdText : null/);
+assert.match(monitorSource, /label=\{t\('RAM \/ VRAM'\)\}/);
 assert.match(stylesSource, /\.dash2-gauge__threshold line/);
 
-const memoryTopologyFilename = path.join(root, 'src/features/dashboard/memoryTopology.ts');
+const memoryTopologyFilename = path.join(root, 'src/features/monitor/memoryTopology.ts');
 const memoryTopologyCompiled = ts.transpileModule(fs.readFileSync(memoryTopologyFilename, 'utf8'), {
   compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
   fileName: memoryTopologyFilename,
@@ -209,7 +223,7 @@ Function('exports', 'require', 'module', '__filename', '__dirname', memoryTopolo
   memoryTopologyFilename,
   path.dirname(memoryTopologyFilename),
 );
-assert.deepEqual(memoryTopologyModule.exports.dashboardMemoryTopology({
+assert.deepEqual(memoryTopologyModule.exports.monitorMemoryTopology({
   'Physical Memory': '32 GB',
   devices: {
     amd_igpu: { available: true, integrated: true, vram_gb: 4, virtual_mem_gb: 32 },

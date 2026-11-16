@@ -35,7 +35,7 @@ const BackendSpec* spec();
 const BackendOps* ops();
 constexpr uint32_t capabilities() {
     return capability_mask_of<HrxServer>() &
-           ~(CAP_EMBEDDINGS | CAP_RERANKING);
+           ~(CAP_EMBEDDINGS | CAP_RERANKING | CAP_CLASSIFICATION);
 }
 }  // namespace hrx
 

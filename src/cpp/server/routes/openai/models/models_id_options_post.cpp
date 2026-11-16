@@ -167,11 +167,12 @@ public:
                 }
 
                 if (dry_run) {
-                    info.recipe_options = model_manager->preview_saved_model_options(info, changes);
+                    info.recipe_options = RecipeOptions(
+                        info.recipe, model_manager->options(model_key, changes)["resolved_with"]);
                     return true;
                 }
                 if (!changes.empty()) {
-                    model_manager->update_saved_model_options(model_key, changes);
+                    model_manager->set_options(model_key, changes);
                 }
                 info = model_manager->get_model_info(model_key);
                 return true;

@@ -182,9 +182,10 @@ ordered_json system_info_schema() {
                         "display_name": {"type": "string", "description": "The recipe's name for people, such as `Llama.cpp GPU`."},
                         "web_display_name": {"type": "string", "description": "The recipe's name on the Lemonade website."},
                         "modality": {"type": "string", "description": "The kind of model the recipe mainly serves, such as `Text generation`."},
+                        "supported_modes": {"type": "array", "items": {"type": "string"}, "description": "Deployment modes the recipe serves (such as `chat` or `image`), distinct from model capability labels like `edit` and `upscaling`."},
                         "selectable_backend": {"type": "boolean", "description": "Whether a `<recipe>_backend` option chooses the recipe's backend."},
                         "uses_ctx_size": {"type": "boolean", "description": "Whether the recipe accepts the shared `ctx_size` option."},
-                        "slot_policy": {"enum": ["standard", "exclusive_npu", "coexist_by_type", "unmetered"], "description": "How the recipe's models count against loaded-model limits: `standard`, `exclusive_npu` (loading one evicts every NPU model), `coexist_by_type` (one per model type) or `unmetered` (never counted or evicted)."},
+                        "slot_policy": {"enum": ["standard", "exclusive_npu", "coexist_by_type", "exclusive_host", "unmetered"], "description": "How the recipe's models count against loaded-model limits: `standard`, `exclusive_npu` (loading one evicts every NPU model), `coexist_by_type` (one per model type), `exclusive_host` (shares the machine with no other local model) or `unmetered` (never counted or evicted)."},
                         "support": {"type": "array", "description": "Every backend's operating systems, devices and tier, the same on every host."},
                         "options": {"type": "array", "description": "The recipe's load options, with each one's CLI flag, default and help text."},
                         "backends": {
@@ -196,12 +197,18 @@ ordered_json system_info_schema() {
                                 "required": ["devices", "state", "tier", "format"],
                                 "properties": {
                                     "devices": {"type": "array", "items": {"type": "string"}, "description": "Devices **on this system** that support this backend; empty when none do."},
-                                    "state": {"enum": ["unsupported", "installable", "update_required", "update_available", "installed"], "description": "Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available` or `installed`."},
+                                    "state": {"enum": ["unsupported", "installable", "update_required", "update_available", "action_required", "installed"], "description": "Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available`, `action_required` or `installed`."},
                                     "message": {"type": "string", "description": "Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`."},
                                     "action": {"type": "string", "description": "An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL."},
+                                    "setup_checks": {"type": "array", "items": {"type": "string"}, "description": "For a container backend in the `action_required` state, the ids of its failed setup checks, in the order of `message`'s lines (for example `[\"container_tool\", \"device_groups\"]`). `message` then holds one failed check per line and `action` the numbered steps that fix them. See [Container Backends](../guide/configuration/container-backends.md)."},
                                     "version": {"type": "string", "description": "Installed or configured backend version (when available)"},
                                     "tier": {"enum": ["core", "experimental", "guest"], "description": "`core`, `experimental`, or `guest`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
                                     "format": {"enum": ["native", "python", "container"], "description": "`native`, `python`, or `container`. See [Backend Tiers and Formats](#backend-tiers-and-formats)."},
+                                    "description": {"type": "string", "description": "One or two sentences on what the backend is for."},
+                                    "author": {"type": "string", "description": "Who wrote the engine or fork the backend runs, such as `ggml-org`."},
+                                    "publisher": {"type": "string", "description": "Who builds the artifact Lemonade installs. Differs from `author` when someone other than the author builds it, as `lemonade-sdk` builds `llamacpp:rocm` from ggml-org's code."},
+                                    "license": {"type": "string", "description": "The author's license, as an SPDX id such as `MIT` or a license name. Empty when the author declares none."},
+                                    "project_url": {"type": "string", "description": "The upstream project's URL. Metadata may describe the upstream project rather than a custom or system-provided binary."},
                                     "release_url": {"type": "string", "description": "Where the backend's release asset downloads from."},
                                     "download_filename": {"type": "string", "description": "The release asset's filename."},
                                     "can_uninstall": {"type": "boolean", "description": "Whether the backend can be uninstalled. Lemonade sets it only on a backend that does not run on this operating system, always to `true`, so a missing value also means `true`."}
@@ -262,11 +269,11 @@ public:
             "`HEAD` returns `200 OK` with an empty body.",
             "### Backend Tiers and Formats\n"
             "\n"
-            "| Tier | Meaning |\n"
-            "|------|---------|\n"
-            "| `core` | Supported by Lemonade's maintainers for production use. |\n"
-            "| `experimental` | Provided by Lemonade's maintainers, not supported for production use. |\n"
-            "| `guest` | Developed and published outside Lemonade's maintainers. Use at your own risk. The models of a recipe whose only backends on this system are guest backends stay hidden from [`GET /v1/models`](./openai.md#get-v1models) with `show_all=true` until one of those backends is installed. |\n"
+            "A backend's tier is `core`, `experimental`, or `guest`, as defined by the "
+            "[backend support tier policy](../dev/adding-a-backend.md#support-tier). The models of "
+            "a recipe whose only backends on this system are guest backends stay hidden from "
+            "[`GET /v1/models`](./openai.md#get-v1models) with `show_all=true` until one of those "
+            "backends is installed.\n"
             "\n"
             "| Format | Meaning |\n"
             "|--------|---------|\n"
@@ -297,6 +304,15 @@ public:
         }
 
         json system_info = SystemInfoCache::get_system_info_with_cache();
+
+        // Container setup checks run on every request, so a completed setup step
+        // shows up without a restart.
+        if (system_info.contains("recipes") &&
+            SystemInfo::refresh_container_setup(system_info["recipes"])) {
+            SystemInfoCache::invalidate_recipes();
+            ctx_.model_manager->invalidate_models_cache();
+            system_info = SystemInfoCache::get_system_info_with_cache();
+        }
 
         if (system_info.contains("recipes")) {
             enrich_recipes(ctx_.backend_manager, system_info["recipes"]);

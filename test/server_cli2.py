@@ -191,7 +191,7 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
     else:
         resolved_cli_binary = shutil.which(cli_binary) or cli_binary
 
-    cmd = [resolved_cli_binary] + args
+    cmd = [resolved_cli_binary] + cli_args
     print(f"Running: {' '.join(cmd)}")
 
     result = subprocess.run(
@@ -618,6 +618,29 @@ sys.exit(0)
         """Test backends uninstall."""
         result = self.assertCommandSucceeds(["backends", "uninstall", "llamacpp:cpu"])
         print(f"Backends uninstall exit code: {result.returncode}")
+
+    def test_043_backends_info(self):
+        """Test backends info prints the backend's author, publisher and license."""
+        result = self.assertCommandSucceeds(["backends", "info", "llamacpp:rocm"])
+        output = result.stdout
+        self.assertIn("llamacpp:rocm", output)
+        self.assertRegex(output, r"Author\s+ggml-org")
+        self.assertRegex(output, r"Publisher\s+lemonade-sdk")
+        self.assertRegex(output, r"License\s+MIT")
+
+        response = requests.get(
+            f"http://localhost:{PORT}/api/v1/system-info",
+            headers=_auth_headers(),
+            timeout=10,
+        )
+        self.assertEqual(response.status_code, 200)
+        rocm = response.json()["recipes"]["llamacpp"]["backends"]["rocm"]
+        for key in ("description", "author", "publisher", "license", "project_url"):
+            self.assertTrue(rocm.get(key), f"/system-info is missing {key}")
+
+    def test_044_backends_info_unknown_backend(self):
+        """Test backends info rejects a backend the recipe does not have."""
+        self.assertCommandFails(["backends", "info", "llamacpp:no-such-backend"])
 
     # =============================================================================
     # Cloud Tests
@@ -3113,6 +3136,67 @@ class CLIUrlSchemeTests(unittest.TestCase):
         )
 
 
+class CLIConnectionErrorMessageTests(unittest.TestCase):
+    """The CLI must tell a closed connection apart from a server that is not running."""
+
+    @staticmethod
+    def _free_port():
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    def _run_status(self, port):
+        env = os.environ.copy()
+        env["LEMONADE_HOST"] = f"http://127.0.0.1:{port}"
+        result = run_cli_command(["status"], env=env, timeout=15)
+        self.assertNotEqual(result.returncode, 0)
+        return result.stdout + result.stderr
+
+    def test_connection_closed_by_server(self):
+        """A server that accepts then drops the connection is reported as busy, not stopped."""
+        import socket
+        import threading
+
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(5)
+        port = listener.getsockname()[1]
+        stop = threading.Event()
+
+        def drop_connections():
+            listener.settimeout(0.2)
+            while not stop.is_set():
+                try:
+                    conn, _ = listener.accept()
+                except socket.timeout:
+                    continue
+                except OSError:
+                    return
+                conn.close()
+
+        thread = threading.Thread(target=drop_connections, daemon=True)
+        thread.start()
+        try:
+            output = self._run_status(port)
+        finally:
+            stop.set()
+            thread.join()
+            listener.close()
+
+        self.assertIn("closed the connection", output)
+        self.assertNotIn("Make sure the server is running", output)
+
+    def test_server_not_running(self):
+        """Nothing listening keeps the original 'server is running' hint."""
+        output = self._run_status(self._free_port())
+        self.assertIn("Could not connect to Lemonade server", output)
+        self.assertIn("Make sure the server is running", output)
+        self.assertNotIn("closed the connection", output)
+
+
 def run_cli_client_tests():
     """Run CLI client tests based on command line arguments."""
     args = parse_cli_args()
@@ -3128,6 +3212,7 @@ def run_cli_client_tests():
     suite.addTests(loader.loadTestsFromTestCase(PersistentServerCLIClientTests))
     suite.addTests(loader.loadTestsFromTestCase(CLIHelpDocsConsistencyTests))
     suite.addTests(loader.loadTestsFromTestCase(CLIUrlSchemeTests))
+    suite.addTests(loader.loadTestsFromTestCase(CLIConnectionErrorMessageTests))
 
     runner = unittest.TextTestRunner(verbosity=2, buffer=False, failfast=True)
     result = runner.run(suite)

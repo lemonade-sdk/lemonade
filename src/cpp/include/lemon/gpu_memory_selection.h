@@ -101,8 +101,9 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
                 : -1.0;
         }
         const double total_gb = gpu.vram_gb + (unified ? gpu.virtual_gb : 0.0);
-        return GpuMemoryPool{total_gb, used_gb, label, vendor, unified,
-                             unified ? total_gb : 0.0};
+        // An iGPU's pool is its GTT window (half of RAM by default on Linux), not
+        // the RAM it shares, so physical RAM is left for the caller to measure.
+        return GpuMemoryPool{total_gb, used_gb, label, vendor, unified};
     };
     auto most_constrained = [](const std::vector<GpuMemoryPool>& pools) {
         GpuMemoryPool result;
@@ -120,8 +121,11 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
         return result;
     };
     auto select_amd = [&]() -> GpuMemoryPool {
+        // A UMA carve-out can be zero; the iGPU's pool is carve-out plus GTT.
+        const bool igpu_has_memory =
+            amd_igpu.available && amd_igpu.vram_gb + amd_igpu.virtual_gb > 0;
         std::vector<const GPUInfo*> devices;
-        if (amd_igpu.available && amd_igpu.vram_gb > 0) devices.push_back(&amd_igpu);
+        if (igpu_has_memory) devices.push_back(&amd_igpu);
         for (const auto& gpu : amd_dgpus)
             if (gpu.available && gpu.vram_gb > 0) devices.push_back(&gpu);
         auto target = gpu_indices_for_target(device, "ROCm");
@@ -140,12 +144,12 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
             }
             return most_constrained(pools);
         }
-        if (amd_igpu.available && amd_igpu.vram_gb > 0) {
-            return pool_for(amd_igpu, "AMD iGPU", GpuMemoryVendor::Amd, true);
-        }
         for (const auto& gpu : amd_dgpus) {
             if (gpu.available && gpu.vram_gb > 0)
                 return pool_for(gpu, "AMD dGPU", GpuMemoryVendor::Amd);
+        }
+        if (igpu_has_memory) {
+            return pool_for(amd_igpu, "AMD iGPU", GpuMemoryVendor::Amd, true);
         }
         return {};
     };
