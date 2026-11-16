@@ -1033,7 +1033,13 @@ int oneshot_blocking(lemonade::LemonadeClient& client, const std::string& model,
                              kExitFailure);
     }
     const json& message = choice["message"];
-
+    const bool has_content = message.contains("content") &&
+        (message["content"].is_string() || message["content"].is_null());
+    const bool has_tool_calls = message.contains("tool_calls") && message["tool_calls"].is_array();
+    if (!has_content && !has_tool_calls) {
+        return oneshot_error("server returned a response without an assistant message",
+                             kExitFailure);
+    }
     if (json_output) {
         json out;
         out["model"] = response.contains("model") && response["model"].is_string()
@@ -1063,11 +1069,13 @@ int oneshot_streaming(lemonade::LemonadeClient& client, json request_body) {
     request_body["stream_options"] = {{"include_usage", true}};
 
     bool done = false;
+    bool stdout_failed = false;
     std::string stream_error;
     char last_char = '\n';
     bool wrote_any = false;
 
     auto callback = [&](const std::string&, const std::string& event_data) {
+        if (stdout_failed) return;
         if (event_data == "[DONE]") {
             done = true;
             return;
@@ -1090,6 +1098,7 @@ int oneshot_streaming(lemonade::LemonadeClient& client, json request_body) {
                 const std::string piece = delta["content"].get<std::string>();
                 if (!piece.empty()) {
                     std::cout << piece << std::flush;
+                    if (std::cout.fail()) stdout_failed = true;
                     last_char = piece.back();
                     wrote_any = true;
                 }
@@ -1105,8 +1114,10 @@ int oneshot_streaming(lemonade::LemonadeClient& client, json request_body) {
                             "application/json", callback,
                             /*connection_timeout_ms=*/30000,
                             /*read_timeout_ms=*/600000,
-                            /*should_abort=*/[] { return false; });
-        if (!stream_error.empty()) {
+                            /*should_abort=*/[&] { return stdout_failed; });
+        if (stdout_failed) {
+            code = oneshot_error("failed to write to stdout", kExitFailure);
+        } else if (!stream_error.empty()) {
             code = oneshot_error(stream_error, kExitFailure);
         } else if (!done) {
             code = oneshot_error("response stream ended unexpectedly", kExitFailure);

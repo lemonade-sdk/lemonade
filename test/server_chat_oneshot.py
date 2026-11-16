@@ -11,9 +11,11 @@ Usage:
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -22,6 +24,7 @@ from utils.test_models import get_default_cli_binary
 _config = {"cli_binary": None}
 
 MODEL = "Mock-Model"
+LONG_STREAM_PIECES = 300
 
 
 class MockState:
@@ -29,6 +32,8 @@ class MockState:
     fail_stream = False
     fault = None
     last_chat_request = None
+    pieces_sent = 0
+    stream_finished = threading.Event()
 
 
 class MockHandler(BaseHTTPRequestHandler):
@@ -68,7 +73,21 @@ class MockHandler(BaseHTTPRequestHandler):
                 self._stream(req)
             else:
                 choice = {"finish_reason": "stop"}
-                if MockState.fault != "no_message":
+                if MockState.fault == "empty_message":
+                    choice["message"] = {}
+                elif MockState.fault == "tool_call":
+                    choice["message"] = {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {"name": "f", "arguments": "{}"},
+                            }
+                        ],
+                    }
+                elif MockState.fault != "no_message":
                     choice["message"] = {"role": "assistant", "content": "Hello there"}
                 self._send_json(
                     {
@@ -88,6 +107,20 @@ class MockHandler(BaseHTTPRequestHandler):
         def event(obj):
             self.wfile.write(f"data: {json.dumps(obj)}\n\n".encode())
             self.wfile.flush()
+
+        if MockState.fault == "long_stream":
+            try:
+                for _ in range(LONG_STREAM_PIECES):
+                    event({"choices": [{"delta": {"content": "word "}}]})
+                    MockState.pieces_sent += 1
+                    time.sleep(0.02)
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+            except OSError:
+                pass
+            finally:
+                MockState.stream_finished.set()
+            return
 
         for piece in ("Hello", " there"):
             event({"choices": [{"delta": {"content": piece}}]})
@@ -116,8 +149,10 @@ class ChatOneShotTests(unittest.TestCase):
         MockState.fail_stream = False
         MockState.fault = None
         MockState.last_chat_request = None
+        MockState.pieces_sent = 0
+        MockState.stream_finished.clear()
 
-    def chat(self, *args, stdin=""):
+    def chat(self, *args, stdin="", stdout=None):
         cmd = [
             _config["cli_binary"] or get_default_cli_binary(),
             "--no-discovery",
@@ -131,7 +166,8 @@ class ChatOneShotTests(unittest.TestCase):
         return subprocess.run(
             cmd,
             input=stdin,
-            capture_output=True,
+            stdout=stdout if stdout is not None else subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             timeout=60,
@@ -241,6 +277,32 @@ class ChatOneShotTests(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertTrue(r.stdout.startswith("Hello there"))
         self.assertIn("malformed", r.stderr)
+
+    def test_empty_message_object_fails(self):
+        MockState.fault = "empty_message"
+        for extra in ((), ("--json",)):
+            r = self.chat(MODEL, "-p", "hi", "--no-stream", *extra)
+            self.assertEqual(r.returncode, 1, r.stderr)
+            self.assertEqual(r.stdout, "")
+            self.assertIn("Error", r.stderr)
+
+    def test_tool_call_message_with_null_content_succeeds(self):
+        MockState.fault = "tool_call"
+        r = self.chat(MODEL, "-p", "hi", "--no-stream", "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        message = json.loads(r.stdout)["message"]
+        self.assertIsNone(message["content"])
+        self.assertEqual(message["tool_calls"][0]["id"], "call_1")
+
+    @unittest.skipUnless(os.path.exists("/dev/full"), "needs /dev/full")
+    def test_stdout_write_failure_aborts_stream(self):
+        MockState.fault = "long_stream"
+        with open("/dev/full", "wb") as full:
+            r = self.chat(MODEL, "-p", "hi", stdout=full)
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("failed to write to stdout", r.stderr)
+        MockState.stream_finished.wait(5)
+        self.assertLess(MockState.pieces_sent, LONG_STREAM_PIECES)
 
     def test_unreachable_server_fails(self):
         cmd = [
