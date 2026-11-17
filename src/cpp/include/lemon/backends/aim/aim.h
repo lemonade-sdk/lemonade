@@ -17,7 +17,7 @@ inline const BackendDescriptor descriptor = {
     /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,
     /*slot_policy*/     SlotPolicy::Standard,
-    /*selectable_backend*/ false,  // radeon is the only backend
+    /*selectable_backend*/ false,  // rocm is the only backend
     /*uses_ctx_size*/   true,
     /*dynamic_models*/  false,
     /*options*/ {
@@ -25,11 +25,11 @@ inline const BackendDescriptor descriptor = {
          "AIM profile to serve with, instead of the one AIM picks for this GPU", "AIM Options"},
     },
     /*support*/ {
-        {"radeon", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1201"}}},
+        {"rocm", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1201"}}},
          /*device_summary*/ "AMD Radeon AI PRO R9700"},
     },
     /*about*/ {
-        {"radeon", {"AMD's per-model vLLM microservices, each with profiles tuned for Radeon PRO GPUs.",
+        {"rocm", {"AMD's per-model vLLM microservices, each with profiles tuned for Radeon PRO GPUs.",
                     "AMD", "AMD (amdenterpriseai)", "Apache-2.0, MIT",
                     "https://enterprise-ai.docs.amd.com/en/latest/aims/overview.html"}},
     },
@@ -48,7 +48,7 @@ inline const BackendDescriptor descriptor = {
     /*config_extra*/    nlohmann::json::object(),
     /*streams_model_from_storage*/ false,
     /*containers*/ {
-        {"radeon", {
+        {"rocm", {
             /*image*/   "docker.io/amdenterpriseai/aim-radeon-base",
             /*devices*/ {"/dev/dri", "/dev/kfd"},
             /*cap_add*/ {},

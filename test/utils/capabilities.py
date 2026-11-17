@@ -161,7 +161,7 @@ CAPABILITIES = {
         },
         # vLLM reads thinking switches only from chat_template_kwargs.
         "aim": {
-            "backends": ["radeon"],
+            "backends": ["rocm"],
             "supports": {
                 "chat_completions": True,
                 "chat_completions_streaming": True,

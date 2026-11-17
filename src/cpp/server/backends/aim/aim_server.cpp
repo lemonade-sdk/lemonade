@@ -24,7 +24,7 @@ namespace backends {
 
 namespace {
 
-constexpr const char* kBackend = "radeon";
+constexpr const char* kBackend = "rocm";
 
 // vLLM compiles its kernels on the first start of each model and GPU, which
 // global_timeout does not describe, so it gets its own floor; a larger

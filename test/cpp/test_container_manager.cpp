@@ -755,7 +755,7 @@ void test_aim() {
     // copy of it, tens of GB, so every row must match the backend's pin.
     std::ifstream versions_in(BACKEND_VERSIONS_JSON_PATH);
     const auto base_pin = lemon::backends::parse_container_pin(
-        nlohmann::json::parse(versions_in)["aim"]["radeon"].get<std::string>());
+        nlohmann::json::parse(versions_in)["aim"]["rocm"].get<std::string>());
     std::ifstream models_in(SERVER_MODELS_JSON_PATH);
     const nlohmann::json models = nlohmann::json::parse(models_in);
     int rows = 0;

@@ -210,7 +210,7 @@ When the container tool is Docker or rootful Podman, `lemond` connects to the se
 
 The image reference is `<image>@<digest>`, from `ContainerPolicy.image` and the digest in the backend's pin (see [Version Pins](#version-pins)). Install pulls it, so a load never downloads anything.
 
-AIM is the exception: AMD publishes one image per model, each the `aim-radeon-base` image plus that model's tuned profiles. `aim:radeon` pins the base, and each model row names its own image in `aim_image` as `<repository>:<tag>@<digest>`. The first load of a model pulls its image, which costs only the profile layers once the base is installed. A unit test checks that every row's tag matches the base pin's, because an image built on another base release would pull a second copy of it.
+AIM is the exception: AMD publishes one image per model, each the `aim-radeon-base` image plus that model's tuned profiles. `aim:rocm` pins the base, and each model row names its own image in `aim_image` as `<repository>:<tag>@<digest>`. The first load of a model pulls its image, which costs only the profile layers once the base is installed. A unit test checks that every row's tag matches the base pin's, because an image built on another base release would pull a second copy of it.
 
 ### Program
 
