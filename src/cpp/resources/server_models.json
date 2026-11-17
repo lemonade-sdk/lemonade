@@ -2754,6 +2754,73 @@
             "soft_pixel_cap": 4194304
         }
     },
+    "MOSS-Image-SFT-8-Steps": {
+        "checkpoints": {
+            "main": "thenoise-ai/diffusion-models:moss_image_sft_bf16_8steps.safetensors",
+            "text_encoder": "Comfy-Org/MOSS-Image:text_encoders/qwen3.5_9b_int8_convrot.safetensors",
+            "vae": "Comfy-Org/MOSS-Image:vae/flux2-vae_small.safetensors"
+        },
+        "labels": [
+            "custom",
+            "image"
+        ],
+        "recipe": "thenoise",
+        "suggested": true,
+        "size": 18.86,
+        "recipe_options": {
+            "cfg_scale": 1,
+            "sampler": "euler",
+            "height": 1024,
+            "steps": 8,
+            "width": 1024,
+            "soft_pixel_cap": 4194304
+        }
+    },
+    "MOSS-Image-Base-8-Steps": {
+        "checkpoints": {
+            "main": "thenoise-ai/diffusion-models:moss_image_base_bf16_8steps.safetensors",
+            "text_encoder": "Comfy-Org/MOSS-Image:text_encoders/qwen3.5_9b_int8_convrot.safetensors",
+            "vae": "Comfy-Org/MOSS-Image:vae/flux2-vae_small.safetensors"
+        },
+        "labels": [
+            "custom",
+            "image"
+        ],
+        "recipe": "thenoise",
+        "suggested": true,
+        "size": 18.86,
+        "recipe_options": {
+            "cfg_scale": 1,
+            "sampler": "euler",
+            "height": 1024,
+            "steps": 8,
+            "width": 1024,
+            "soft_pixel_cap": 4194304
+        }
+    },
+    "H3-Image-INT8": {
+        "checkpoints": {
+            "main": "Comfy-Org/MiniMax-H3-Image:diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors",
+            "text_encoder": "Comfy-Org/MiniMax-H3-Image:text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+            "vae": "Comfy-Org/MiniMax-H3-Image:vae/minimax_h3_image_vae_fp16.safetensors"
+        },
+        "labels": [
+            "custom",
+            "image",
+            "edit"
+        ],
+        "recipe": "thenoise",
+        "suggested": true,
+        "size": 49.29,
+        "recipe_options": {
+            "cfg_scale": 1,
+            "sampler": "euler",
+            "height": 2048,
+            "steps": 6,
+            "width": 2048,
+            "soft_pixel_cap": 20971520
+        }
+    },
     "Z-Image-Turbo-TheNoise": {
         "checkpoints": {
             "main": "Comfy-Org/z_image_turbo:split_files/diffusion_models/z_image_turbo_bf16.safetensors",
