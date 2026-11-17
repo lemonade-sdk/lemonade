@@ -375,7 +375,7 @@ CAPABILITIES = {
                 "laya_decision_type": True,
             },
             "test_models": {
-                "systemone": "Julia-1-GGUF",
+                "systemone": "Laya-GGUF",
                 "systemone_router": "Laya-GGUF",
                 "llm": "Tiny-Test-Model-GGUF",
                 "llm_capable": "Qwen3-0.6B-GGUF",

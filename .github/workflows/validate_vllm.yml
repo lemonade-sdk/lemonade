@@ -233,19 +233,16 @@ jobs:
 
           exit $EXIT_CODE
 
-      - name: Record the API examples these pins invalidate
-        # The update PR carries examples recorded with the new backend, so the API
-        # reference keeps showing what lemond returns. When this fails, the PR's API
-        # docs check reports the stale examples instead.
+      - name: Re-record the API examples the new backend serves
+        # An example changes only when the new backend changes its response's shape,
+        # so the update PR carries no churn from new values.
         if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-        continue-on-error: true
         run: |
           cp build/resources/backend_versions.json src/cpp/resources/backend_versions.json
           .venv/bin/python docs/tools/gen_api_boilerplate.py --lemond build/lemond
 
       - name: Upload recorded API examples
         if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: api-examples
@@ -292,7 +289,6 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Download recorded API examples
-        continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           name: api-examples
