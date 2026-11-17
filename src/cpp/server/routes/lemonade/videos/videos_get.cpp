@@ -64,7 +64,13 @@ public:
         json out = {{"id", job->value("id", "")}, {"status", video_store::video_status(*job)}};
         if (job->contains("created_at")) out["created_at"] = (*job)["created_at"];
         if (job->contains("started_at")) out["started_at"] = (*job)["started_at"];
-        if (job->contains("finished_at")) out["completed_at"] = (*job)["finished_at"];
+        const std::string status = out["status"].get<std::string>();
+        if (job->contains("finished_at")) {
+            out["completed_at"] = (*job)["finished_at"];
+        } else if ((status == "canceled" || status == "failed" || status == "completed") &&
+                   job->contains("stopped_at")) {
+            out["completed_at"] = (*job)["stopped_at"];
+        }
         if (job->contains("steps") && (*job)["steps"].is_array() && !(*job)["steps"].empty()) {
             const auto& step = (*job)["steps"][0];
             if (step.contains("params") && step["params"].is_object())

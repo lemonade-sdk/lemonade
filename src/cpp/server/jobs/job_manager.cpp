@@ -134,6 +134,7 @@ void JobManager::load_from_disk() {
             }
             if (job.status == JobStatus::Running || job.status == JobStatus::Queued) {
                 job.status = JobStatus::Interrupted;
+                job.stopped_at = iso_now();
                 job.error = "server restarted while the job was active";
                 if (StepRecord* s = find_step(job, job.cursor))
                     if (s->status == StepStatus::Running) s->status = StepStatus::Pending;
@@ -304,6 +305,7 @@ bool JobManager::pause(const std::string& id) {
     if (it->second.status == JobStatus::Queued) {
         queue_.erase(std::remove(queue_.begin(), queue_.end(), id), queue_.end());
         it->second.status = JobStatus::Paused;
+        it->second.stopped_at = iso_now();
         persist_locked();
         LOG(INFO, "Jobs") << "paused queued job " << id << std::endl;
         return true;
@@ -322,6 +324,7 @@ bool JobManager::interrupt(const std::string& id) {
     if (it->second.status == JobStatus::Queued) {
         queue_.erase(std::remove(queue_.begin(), queue_.end(), id), queue_.end());
         it->second.status = JobStatus::Interrupted;
+        it->second.stopped_at = iso_now();
         persist_locked();
         LOG(INFO, "Jobs") << "interrupted queued job " << id << std::endl;
         return true;
@@ -348,6 +351,7 @@ bool JobManager::resume(const std::string& id) {
     ctrl->cancel.store(false);
     it->second.status = JobStatus::Queued;
     it->second.error.clear();
+    it->second.stopped_at.clear();
     enqueue_locked(id);
     persist_locked();
     cv_.notify_all();
@@ -492,6 +496,7 @@ void JobManager::worker_main() {
             auto it = jobs_.find(id);
             if (it != jobs_.end()) {
                 it->second.status = JobStatus::Interrupted;
+                it->second.stopped_at = iso_now();
                 if (stop_) it->second.error = kStoppedError;
                 persist_locked();
             }
@@ -548,6 +553,7 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
             if (ctrl->interrupt_requested.load()) {
                 if (StepRecord* s = find_step(job, job.cursor)) s->status = StepStatus::Pending;
                 job.status = JobStatus::Interrupted;
+                job.stopped_at = iso_now();
                 if (stop_) job.error = kStoppedError;
                 persist_locked();
                 LOG(INFO, "Jobs") << "job " << id << " interrupted at step '" << job.cursor << "'"
@@ -556,6 +562,7 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
             }
             if (ctrl->pause_requested.load()) {
                 job.status = JobStatus::Paused;
+                job.stopped_at = iso_now();
                 persist_locked();
                 LOG(INFO, "Jobs") << "job " << id << " paused before step '" << job.cursor << "'"
                                   << std::endl;
@@ -659,6 +666,7 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                 s->status = StepStatus::Pending;
                 s->error.clear();
                 job.status = JobStatus::Interrupted;
+                job.stopped_at = iso_now();
                 if (stop_) job.error = kStoppedError;
                 persist_locked();
                 LOG(INFO, "Jobs") << "job " << id << " interrupted during step '" << step_id << "'"

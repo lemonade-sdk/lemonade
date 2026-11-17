@@ -3504,6 +3504,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `created_at` - When the job was created, as an ISO 8601 UTC time.
 - `started_at` - When the job first ran, present once it has.
 - `finished_at` - When the job finished, present once it has.
+- `stopped_at` - When the job was last paused or interrupted. Cleared when it resumes.
 - `summary` - Summary text that Lemonade never writes itself: present only when the job's entry in `jobs.json`, in the Lemonade config directory, has one.
 - `error` - Why the job failed or was interrupted, present when known.
 
