@@ -46,6 +46,24 @@ void pull_model_image(const std::string& image) {
     manager.pull(image, nullptr);
 }
 
+// The context vLLM settled on, from ctx_size or the profile, or 0 when it
+// does not say.
+int64_t served_max_model_len(const std::string& base_url) {
+    try {
+        const auto response = utils::HttpClient::get(
+            base_url + "/v1/models", {}, 10, utils::HttpSecurityPolicy::TrustedLoopback);
+        if (response.status_code != 200) return 0;
+        const json models = json::parse(response.body);
+        for (const auto& model : models.value("data", json::array())) {
+            if (model.contains("max_model_len") && model["max_model_len"].is_number_integer()) {
+                return model["max_model_len"].get<int64_t>();
+            }
+        }
+    } catch (const std::exception&) {
+    }
+    return 0;
+}
+
 }  // namespace
 
 namespace aim {
@@ -90,15 +108,31 @@ std::vector<std::pair<std::string, std::string>> build_container_env(int port, i
     return env;
 }
 
+void translate_reply(json& reply, const std::string& model_name) {
+    if (!reply.is_object()) return;
+    if (reply.contains("model")) reply["model"] = model_name;
+    if (reply.contains("response") && reply["response"].is_object() &&
+        reply["response"].contains("model")) {
+        reply["response"]["model"] = model_name;
+    }
+    if (!reply.contains("choices") || !reply["choices"].is_array()) return;
+    for (auto& choice : reply["choices"]) {
+        for (const char* part : {"message", "delta"}) {
+            if (!choice.contains(part) || !choice[part].is_object()) continue;
+            json& body = choice[part];
+            if (!body.contains("reasoning")) continue;
+            json reasoning = std::move(body["reasoning"]);
+            body.erase("reasoning");
+            if (!body.contains("reasoning_content")) body["reasoning_content"] = std::move(reasoning);
+        }
+    }
+}
+
 }  // namespace aim
 
 AimServer::AimServer(const std::string& log_level, ModelManager* model_manager,
                      BackendManager* backend_manager)
-    : WrappedServer("aim", log_level, model_manager, backend_manager) {}
-
-AimServer::~AimServer() {
-    unload();
-}
+    : VLLMServer("aim", log_level, model_manager, backend_manager) {}
 
 void AimServer::load(const std::string& model_name, const ModelInfo& model_info,
                      const RecipeOptions& options, bool do_not_upgrade) {
@@ -128,8 +162,11 @@ void AimServer::load(const std::string& model_name, const ModelInfo& model_info,
                                  model_name + "'");
     }
 
+    // An automatic ctx_size is the router's estimate from the model's size,
+    // so the profile's tuned context stands instead.
     const json ctx_option = options.get_option("ctx_size");
-    const int ctx_size = ctx_option.is_number_integer() ? ctx_option.get<int>() : 0;
+    const int ctx_size =
+        !ctx_size_is_auto() && ctx_option.is_number_integer() ? ctx_option.get<int>() : 0;
     const json profile_option = options.get_option("aim_profile");
     const std::string profile = profile_option.is_string() ? profile_option.get<std::string>() : "";
 
@@ -152,10 +189,7 @@ void AimServer::load(const std::string& model_name, const ModelInfo& model_info,
                      model_name, *aim::descriptor.container_for(kBackend), image.image),
                  command,
                  (std::max)(kStartupTimeoutSeconds, utils::HttpClient::get_default_timeout()));
-}
-
-void AimServer::unload() {
-    stop_server();
+    max_model_len_ = served_max_model_len(get_base_url());
 }
 
 json AimServer::to_aim_request(const json& request) const {
@@ -164,23 +198,28 @@ json AimServer::to_aim_request(const json& request) const {
     return forwarded;
 }
 
-json AimServer::from_aim_response(json response) const {
-    if (response.is_object() && response.contains("model")) {
-        response["model"] = get_model_name();
-    }
-    return response;
-}
-
 json AimServer::chat_completion(const json& request) {
-    return from_aim_response(forward_request("/v1/chat/completions", to_aim_request(request)));
+    json reply = VLLMServer::chat_completion(to_aim_request(request));
+    aim::translate_reply(reply, get_model_name());
+    return reply;
 }
 
 json AimServer::completion(const json& request) {
-    return from_aim_response(forward_request("/v1/completions", to_aim_request(request)));
+    json reply = VLLMServer::completion(to_aim_request(request));
+    aim::translate_reply(reply, get_model_name());
+    return reply;
 }
 
 json AimServer::responses(const json& request) {
-    return from_aim_response(forward_request("/v1/responses", to_aim_request(request)));
+    json reply = VLLMServer::responses(to_aim_request(request));
+    aim::translate_reply(reply, get_model_name());
+    return reply;
+}
+
+StreamingProxy::ChunkRewriter AimServer::sse_chunk_rewriter() const {
+    return [model_name = get_model_name()](json& chunk) {
+        aim::translate_reply(chunk, model_name);
+    };
 }
 
 void AimServer::forward_streaming_request(const std::string& endpoint,
@@ -194,8 +233,8 @@ void AimServer::forward_streaming_request(const std::string& endpoint,
     } catch (const json::exception&) {
         // vLLM reports the malformed body itself.
     }
-    WrappedServer::forward_streaming_request(endpoint, body, sink, sse, timeout_seconds,
-                                             telemetry_callback);
+    VLLMServer::forward_streaming_request(endpoint, body, sink, sse, timeout_seconds,
+                                          telemetry_callback);
 }
 
 namespace aim {

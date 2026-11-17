@@ -141,7 +141,8 @@ void StreamingProxy::forward_sse_stream(
     std::function<void(const TelemetryData&)> on_complete,
     long timeout_seconds,
     std::function<void()> on_chunk,
-    long heartbeat_interval_ms) {
+    long heartbeat_interval_ms,
+    ChunkRewriter rewrite_chunk) {
 
     TelemetryData telemetry;
     try {
@@ -170,8 +171,28 @@ void StreamingProxy::forward_sse_stream(
     bool has_pending_data_field = false;
     bool forwarded_error_event = false;
 
+    // A rewriter needs whole events, so the stream is then forwarded line by
+    // line as process_sse_lines reassembles it, rather than as received.
+    bool client_gone = false;
+    auto forward_rewritten = [&sink, &rewrite_chunk, &client_gone](const std::string& line) {
+        if (client_gone) return;
+        std::string out = line;
+        const Field field = parse_field(line);
+        if (field.name == "data" && !field.value.empty() && field.value != "[DONE]") {
+            try {
+                auto chunk = json::parse(field.value.begin(), field.value.end());
+                rewrite_chunk(chunk);
+                out = "data: " + chunk.dump();
+            } catch (...) {}
+        }
+        out += "\n";
+        client_gone = !sink.write(out.data(), out.size());
+    };
+
     auto process_line = [&telemetry, &has_data_event, &has_pending_data_field,
-                         &forwarded_error_event](const std::string& line) {
+                         &forwarded_error_event, &rewrite_chunk,
+                         &forward_rewritten](const std::string& line) {
+        if (rewrite_chunk) forward_rewritten(line);
         if (line.empty()) {
             has_data_event = has_data_event || has_pending_data_field;
             has_pending_data_field = false;
@@ -208,7 +229,8 @@ void StreamingProxy::forward_sse_stream(
         backend_url,
         request_body,
         [&sink, &line_buffer, &has_done_marker, &has_first_token, &time_to_first_token,
-         &start_time, &last_activity_time, &on_chunk, &process_line, &backend_status, &error_body](const char* data, size_t length) {
+         &start_time, &last_activity_time, &on_chunk, &process_line, &backend_status, &error_body,
+         &rewrite_chunk, &client_gone](const char* data, size_t length) {
             last_activity_time = std::chrono::steady_clock::now();
 
             if (backend_status != 200) {
@@ -236,6 +258,9 @@ void StreamingProxy::forward_sse_stream(
                 has_done_marker = true;
             }
 
+            if (rewrite_chunk) {
+                return !client_gone;
+            }
             if (!sink.write(data, length)) {
                 return false;
             }

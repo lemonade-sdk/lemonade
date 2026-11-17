@@ -559,6 +559,11 @@ public:
     }
 
 protected:
+    // Edits each event of an SSE stream on its way to the client, for a
+    // backend whose events need translating. Default: none, so events pass
+    // through byte for byte.
+    virtual StreamingProxy::ChunkRewriter sse_chunk_rewriter() const { return nullptr; }
+
     struct BackendWatchdogPolicy {
         std::string health_endpoint = "/health";
         bool enabled = true;

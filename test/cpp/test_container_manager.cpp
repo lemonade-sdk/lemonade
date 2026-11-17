@@ -735,6 +735,22 @@ void test_aim() {
               tuned[4] == Env::value_type{"AIM_ENGINE_ARGS", "{\"max-model-len\":16384}"} &&
               tuned[5] == Env::value_type{"AIM_PROFILE_ID", "vllm-w7900-bf16-tp1-latency"});
 
+    using lemon::backends::aim::translate_reply;
+    nlohmann::json reply = nlohmann::json::parse(R"({"model":"Qwen/Qwen3.5-9B","choices":[
+        {"message":{"role":"assistant","content":"51","reasoning":"17*3"}},
+        {"delta":{"reasoning":"more"}}]})");
+    translate_reply(reply, "Qwen3.5-9B-AIM");
+    check("an AIM reply carries Lemonade's model name and reasoning_content",
+          reply["model"] == "Qwen3.5-9B-AIM" &&
+              reply["choices"][0]["message"]["reasoning_content"] == "17*3" &&
+              !reply["choices"][0]["message"].contains("reasoning") &&
+              reply["choices"][1]["delta"]["reasoning_content"] == "more");
+    nlohmann::json event = nlohmann::json::parse(
+        R"({"type":"response.created","response":{"model":"Qwen/Qwen3.5-9B"}})");
+    translate_reply(event, "Qwen3.5-9B-AIM");
+    check("a Responses API event names Lemonade's model",
+          event["response"]["model"] == "Qwen3.5-9B-AIM");
+
     // A model image built on another release of the base pulls a second
     // copy of it, tens of GB, so every row must match the backend's pin.
     std::ifstream versions_in(BACKEND_VERSIONS_JSON_PATH);

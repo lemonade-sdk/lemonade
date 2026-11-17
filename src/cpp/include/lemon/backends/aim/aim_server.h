@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lemon/backends/backend_registry.h"
-#include "lemon/wrapped_server.h"
+#include "lemon/backends/vllm/vllm_server.h"
 
 #include <string>
 #include <utility>
@@ -10,15 +10,15 @@
 namespace lemon {
 namespace backends {
 
-class AimServer : public WrappedServer {
+// AIM runs vLLM, so AimServer keeps VLLMServer's request handling and changes
+// only how the server starts and the names AIM uses.
+class AimServer : public VLLMServer {
 public:
     AimServer(const std::string& log_level, ModelManager* model_manager,
               BackendManager* backend_manager);
-    ~AimServer() override;
 
     void load(const std::string& model_name, const ModelInfo& model_info,
               const RecipeOptions& options, bool do_not_upgrade = false) override;
-    void unload() override;
 
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
@@ -28,10 +28,12 @@ public:
                                    long timeout_seconds = 0,
                                    TelemetryCallback telemetry_callback = nullptr) override;
 
+protected:
+    std::string served_model_name() const override { return served_model_; }
+    StreamingProxy::ChunkRewriter sse_chunk_rewriter() const override;
+
 private:
     json to_aim_request(const json& request) const;
-    json from_aim_response(json response) const;
-
     // AIM serves the model under its Hugging Face id, whatever Lemonade calls it.
     std::string served_model_;
 };
@@ -52,6 +54,11 @@ ModelImage parse_model_image(const std::string& pinned);
 // when not empty.
 std::vector<std::pair<std::string, std::string>> build_container_env(int port, int ctx_size,
                                                                      const std::string& profile);
+
+// Puts an AIM reply, whole or one stream event, in the terms Lemonade's
+// clients read: `model_name` for the model, and vLLM's `reasoning` as
+// `reasoning_content`.
+void translate_reply(json& reply, const std::string& model_name);
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();

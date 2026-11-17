@@ -3952,6 +3952,13 @@ if(BUILD_TESTING AND EXISTS "${_STREAMING_HEARTBEAT_TEST_SRC}")
     add_cpp_ci_test(StreamingHeartbeatTest CI ON COMMAND test_streaming_heartbeat)
 endif()
 
+set(_STREAMING_REWRITE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_rewrite.cpp")
+if(BUILD_TESTING AND EXISTS "${_STREAMING_REWRITE_TEST_SRC}")
+    add_executable(test_streaming_rewrite test/cpp/test_streaming_rewrite.cpp)
+    target_link_libraries(test_streaming_rewrite PRIVATE lemonade-server-core)
+    add_cpp_ci_test(StreamingRewriteTest CI ON COMMAND test_streaming_rewrite)
+endif()
+
 set(_STREAMING_SILENT_STREAM_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_silent_stream.cpp")
 if(BUILD_TESTING AND EXISTS "${_STREAMING_SILENT_STREAM_TEST_SRC}")
     add_executable(test_streaming_silent_stream test/cpp/test_streaming_silent_stream.cpp)

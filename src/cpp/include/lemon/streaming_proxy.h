@@ -48,6 +48,11 @@ public:
         }
     };
 
+    static constexpr long kHeartbeatIntervalMs = 1000;
+
+    // Edits one data event's JSON payload before the client sees it.
+    using ChunkRewriter = std::function<void(nlohmann::json& chunk)>;
+
     static nlohmann::ordered_json error_event_schema();
 
     // How much of a backend's error is kept for logs and the client's error event.
@@ -60,7 +65,8 @@ public:
         std::function<void(const TelemetryData&)> on_complete = nullptr,
         long timeout_seconds = 300,
         std::function<void()> on_chunk = nullptr,
-        long heartbeat_interval_ms = 1000
+        long heartbeat_interval_ms = kHeartbeatIntervalMs,
+        ChunkRewriter rewrite_chunk = nullptr
     );
 
     static void forward_byte_stream(
