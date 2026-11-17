@@ -46,6 +46,8 @@ GPU_FREE_ONLY = os.environ.get("LEMONADE_VIDEO_GPU_FREE_ONLY") == "1"
 def video_model():
     """The test video model; its catalog name when no backend config is set."""
     return "Wan2.1-T2V-1.3B" if GPU_FREE_ONLY else get_test_model("video")
+
+
 needs_video_model = unittest.skipIf(
     GPU_FREE_ONLY, "needs the video model and a GPU (LEMONADE_VIDEO_GPU_FREE_ONLY=1)"
 )
