@@ -104,13 +104,7 @@ void RequestMiddleware::install(httplib::Server& server) {
     });
 
     server.set_error_handler([](const httplib::Request& req, httplib::Response& res) {
-        // a 4xx is the client's request being refused, which is expected (the
-        // model search probes every candidate repository), so only 5xx is an error
-        if (res.status >= 500) {
-            LOG(ERROR, "Server") << "Error " << res.status << ": " << req.method << " " << req.path << std::endl;
-        } else {
-            LOG(WARNING, "Server") << "Error " << res.status << ": " << req.method << " " << req.path << std::endl;
-        }
+        LOG(ERROR, "Server") << "Error " << res.status << ": " << req.method << " " << req.path << std::endl;
 
         if (res.status == 404) {
             // Only set generic "endpoint not found" if no content was already set
@@ -126,7 +120,7 @@ void RequestMiddleware::install(httplib::Server& server) {
                 res.set_content(error.dump(), "application/json");
             }
         } else if (res.status == 400) {
-            LOG(WARNING, "Server") << "400 Bad Request details - Body length: " << req.body.length()
+            LOG(ERROR, "Server") << "400 Bad Request details - Body length: " << req.body.length()
                       << ", Content-Type: " << req.get_header_value("Content-Type") << std::endl;
             if (res.body.empty()) {
                 nlohmann::json error = {
