@@ -75,30 +75,28 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
 
 #### Non-streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/chat/completions" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the population of Paris?"}],
-          "stream": false
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/chat/completions" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "Qwen3-0.6B-GGUF",
+      "messages": [{"role": "user", "content": "What is the population of Paris?"}],
+      "stream": false
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/chat/completions \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the population of Paris?"}],
-          "stream": false
-        }'
+curl http://localhost:13305/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "Qwen3-0.6B-GGUF",
+      "messages": [{"role": "user", "content": "What is the population of Paris?"}],
+      "stream": false
+    }'
 ```
 
 **Response:** `200 OK`
@@ -143,30 +141,28 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
 
 #### Streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/chat/completions" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the population of Paris?"}],
-          "stream": true
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/chat/completions" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "Qwen3-0.6B-GGUF",
+      "messages": [{"role": "user", "content": "What is the population of Paris?"}],
+      "stream": true
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/chat/completions \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the population of Paris?"}],
-          "stream": true
-        }'
+curl http://localhost:13305/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "Qwen3-0.6B-GGUF",
+      "messages": [{"role": "user", "content": "What is the population of Paris?"}],
+      "stream": true
+    }'
 ```
 
 **Response:** `200 OK`
@@ -184,56 +180,54 @@ data: [DONE]
 
 Asks a vision model what `image.png` shows. A `messages[*].content` array mixes `text` and `image_url` items, with each image as a base64 data URL, such as one from `FileReader.readAsDataURL(...)` in a web app.
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    $image = [Convert]::ToBase64String([IO.File]::ReadAllBytes("image.png"))
-    $body = @"
-    {
-          "model": "Qwen3.5-0.8B-GGUF",
-          "messages": [
+$image = [Convert]::ToBase64String([IO.File]::ReadAllBytes("image.png"))
+$body = @"
+{
+      "model": "Qwen3.5-0.8B-GGUF",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {"type": "text", "text": "What is in this image?"},
             {
-              "role": "user",
-              "content": [
-                {"type": "text", "text": "What is in this image?"},
-                {
-                  "type": "image_url",
-                  "image_url": {"url": "data:image/png;base64,$image"}
-                }
-              ]
+              "type": "image_url",
+              "image_url": {"url": "data:image/png;base64,$image"}
             }
-          ],
-          "stream": false
+          ]
         }
-    "@
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/chat/completions" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body $body
+      ],
+      "stream": false
+    }
+"@
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/chat/completions" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body $body
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/chat/completions \
-      -H "Content-Type: application/json" \
-      -d "{
-          \"model\": \"Qwen3.5-0.8B-GGUF\",
-          \"messages\": [
+curl http://localhost:13305/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d "{
+      \"model\": \"Qwen3.5-0.8B-GGUF\",
+      \"messages\": [
+        {
+          \"role\": \"user\",
+          \"content\": [
+            {\"type\": \"text\", \"text\": \"What is in this image?\"},
             {
-              \"role\": \"user\",
-              \"content\": [
-                {\"type\": \"text\", \"text\": \"What is in this image?\"},
-                {
-                  \"type\": \"image_url\",
-                  \"image_url\": {\"url\": \"data:image/png;base64,$(base64 -w0 image.png)\"}
-                }
-              ]
+              \"type\": \"image_url\",
+              \"image_url\": {\"url\": \"data:image/png;base64,$(base64 -w0 image.png)\"}
             }
-          ],
-          \"stream\": false
-        }"
+          ]
+        }
+      ],
+      \"stream\": false
+    }"
 ```
 
 **Response:** `200 OK`
@@ -280,30 +274,28 @@ Asks a vision model what `image.png` shows. A `messages[*].content` array mixes 
 
 Runs the [server-side tools](#server-side-tools) loop on `LMX-Omni-5.5B-Lite`, whose image tool draws the requested picture.
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/chat/completions" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "LMX-Omni-5.5B-Lite",
-          "messages": [{"role": "user", "content": "Draw a red apple on a table."}],
-          "stream": false
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/chat/completions" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "LMX-Omni-5.5B-Lite",
+      "messages": [{"role": "user", "content": "Draw a red apple on a table."}],
+      "stream": false
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/chat/completions \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "LMX-Omni-5.5B-Lite",
-          "messages": [{"role": "user", "content": "Draw a red apple on a table."}],
-          "stream": false
-        }'
+curl http://localhost:13305/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "LMX-Omni-5.5B-Lite",
+      "messages": [{"role": "user", "content": "Draw a red apple on a table."}],
+      "stream": false
+    }'
 ```
 
 **Response:** `200 OK`
@@ -458,32 +450,30 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 #### Non-streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/completions" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "prompt": "What is the population of Paris?",
-          "stream": false,
-          "max_tokens": 64
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/completions" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "Qwen3-0.6B-GGUF",
+      "prompt": "What is the population of Paris?",
+      "stream": false,
+      "max_tokens": 64
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/completions \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "prompt": "What is the population of Paris?",
-          "stream": false,
-          "max_tokens": 64
-        }'
+curl http://localhost:13305/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "Qwen3-0.6B-GGUF",
+      "prompt": "What is the population of Paris?",
+      "stream": false,
+      "max_tokens": 64
+    }'
 ```
 
 **Response:** `200 OK`
@@ -525,32 +515,30 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 #### Streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/completions" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "prompt": "What is the population of Paris?",
-          "stream": true,
-          "max_tokens": 64
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/completions" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "Qwen3-0.6B-GGUF",
+      "prompt": "What is the population of Paris?",
+      "stream": true,
+      "max_tokens": 64
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/completions \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "prompt": "What is the population of Paris?",
-          "stream": true,
-          "max_tokens": 64
-        }'
+curl http://localhost:13305/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "Qwen3-0.6B-GGUF",
+      "prompt": "What is the population of Paris?",
+      "stream": true,
+      "max_tokens": 64
+    }'
 ```
 
 **Response:** `200 OK`
@@ -659,30 +647,28 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/embeddings" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "nomic-embed-text-v1-GGUF",
-          "input": ["Hello, world!", "How are you?"],
-          "encoding_format": "float"
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/embeddings" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "nomic-embed-text-v1-GGUF",
+      "input": ["Hello, world!", "How are you?"],
+      "encoding_format": "float"
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/embeddings \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "nomic-embed-text-v1-GGUF",
-          "input": ["Hello, world!", "How are you?"],
-          "encoding_format": "float"
-        }'
+curl http://localhost:13305/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "nomic-embed-text-v1-GGUF",
+      "input": ["Hello, world!", "How are you?"],
+      "encoding_format": "float"
+    }'
 ```
 
 **Response:** `200 OK`
@@ -763,30 +749,28 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 #### Non-streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/responses" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Llama-3.2-1B-Instruct-GGUF",
-          "input": "What is the population of Paris?",
-          "stream": false
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/responses" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "Llama-3.2-1B-Instruct-GGUF",
+      "input": "What is the population of Paris?",
+      "stream": false
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/responses \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Llama-3.2-1B-Instruct-GGUF",
-          "input": "What is the population of Paris?",
-          "stream": false
-        }'
+curl http://localhost:13305/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "Llama-3.2-1B-Instruct-GGUF",
+      "input": "What is the population of Paris?",
+      "stream": false
+    }'
 ```
 
 **Response:** `200 OK`
@@ -826,30 +810,28 @@ Naming a `collection.router` model routes the request to one of its candidates; 
 
 #### Streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/responses" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Llama-3.2-1B-Instruct-GGUF",
-          "input": "What is the population of Paris?",
-          "stream": true
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/responses" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "Llama-3.2-1B-Instruct-GGUF",
+      "input": "What is the population of Paris?",
+      "stream": true
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/responses \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Llama-3.2-1B-Instruct-GGUF",
-          "input": "What is the population of Paris?",
-          "stream": true
-        }'
+curl http://localhost:13305/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "Llama-3.2-1B-Instruct-GGUF",
+      "input": "What is the population of Paris?",
+      "stream": true
+    }'
 ```
 
 **Response:** `200 OK`
@@ -953,20 +935,18 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 #### Transcript
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    curl.exe http://localhost:13305/v1/audio/transcriptions `
-      -F "model=Whisper-Tiny" `
-      -F file=@speech.wav
+curl.exe http://localhost:13305/v1/audio/transcriptions `
+  -F "model=Whisper-Tiny" `
+  -F file=@speech.wav
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/audio/transcriptions \
-      -F "model=Whisper-Tiny" \
-      -F file=@speech.wav
+curl http://localhost:13305/v1/audio/transcriptions \
+  -F "model=Whisper-Tiny" \
+  -F file=@speech.wav
 ```
 
 **Response:** `200 OK`
@@ -977,22 +957,20 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 #### Plain text
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    curl.exe http://localhost:13305/v1/audio/transcriptions `
-      -F "model=Whisper-Tiny" `
-      -F "response_format=text" `
-      -F file=@speech.wav
+curl.exe http://localhost:13305/v1/audio/transcriptions `
+  -F "model=Whisper-Tiny" `
+  -F "response_format=text" `
+  -F file=@speech.wav
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/audio/transcriptions \
-      -F "model=Whisper-Tiny" \
-      -F "response_format=text" \
-      -F file=@speech.wav
+curl http://localhost:13305/v1/audio/transcriptions \
+  -F "model=Whisper-Tiny" \
+  -F "response_format=text" \
+  -F file=@speech.wav
 ```
 
 **Response:** `200 OK`
@@ -1174,34 +1152,32 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/images/generations" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "SD-Turbo",
-          "prompt": "A serene mountain landscape at sunset",
-          "size": "512x512",
-          "steps": 4,
-          "response_format": "b64_json"
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/images/generations" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "SD-Turbo",
+      "prompt": "A serene mountain landscape at sunset",
+      "size": "512x512",
+      "steps": 4,
+      "response_format": "b64_json"
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/images/generations \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "SD-Turbo",
-          "prompt": "A serene mountain landscape at sunset",
-          "size": "512x512",
-          "steps": 4,
-          "response_format": "b64_json"
-        }'
+curl http://localhost:13305/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "SD-Turbo",
+      "prompt": "A serene mountain landscape at sunset",
+      "size": "512x512",
+      "steps": 4,
+      "response_format": "b64_json"
+    }'
 ```
 
 **Response:** `200 OK`
@@ -1274,47 +1250,44 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Edit with the OpenAI Python Client
 
-=== "Python (OpenAI client)"
-
+**Python (OpenAI client)**
 ```python
-    from openai import OpenAI
-    client = OpenAI(base_url="http://localhost:13305/v1", api_key="not-needed")
-    with open("source_image.png", "rb") as image_file:
-        response = client.images.edit(
-            model="Flux-2-Klein-4B",
-            image=image_file,
-            prompt="Add a red barn and mountains in the background, photorealistic",
-            size="512x512",
-        )
-    import base64
-    image_data = base64.b64decode(response.data[0].b64_json)
-    open("edited_image.png", "wb").write(image_data)
+from openai import OpenAI
+client = OpenAI(base_url="http://localhost:13305/v1", api_key="not-needed")
+with open("source_image.png", "rb") as image_file:
+    response = client.images.edit(
+        model="Flux-2-Klein-4B",
+        image=image_file,
+        prompt="Add a red barn and mountains in the background, photorealistic",
+        size="512x512",
+    )
+import base64
+image_data = base64.b64decode(response.data[0].b64_json)
+open("edited_image.png", "wb").write(image_data)
 ```
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    curl.exe http://localhost:13305/v1/images/edits `
-      -F "model=Flux-2-Klein-4B" `
-      -F "prompt=Add a red barn and mountains in the background, photorealistic" `
-      -F "size=512x512" `
-      -F "n=1" `
-      -F "response_format=b64_json" `
-      -F image=@image.png
+curl.exe http://localhost:13305/v1/images/edits `
+  -F "model=Flux-2-Klein-4B" `
+  -F "prompt=Add a red barn and mountains in the background, photorealistic" `
+  -F "size=512x512" `
+  -F "n=1" `
+  -F "response_format=b64_json" `
+  -F image=@image.png
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/images/edits \
-      -F "model=Flux-2-Klein-4B" \
-      -F "prompt=Add a red barn and mountains in the background, photorealistic" \
-      -F "size=512x512" \
-      -F "n=1" \
-      -F "response_format=b64_json" \
-      -F image=@image.png
+curl http://localhost:13305/v1/images/edits \
+  -F "model=Flux-2-Klein-4B" \
+  -F "prompt=Add a red barn and mountains in the background, photorealistic" \
+  -F "size=512x512" \
+  -F "n=1" \
+  -F "response_format=b64_json" \
+  -F image=@image.png
 ```
 
 **Response:** `200 OK`
@@ -1380,45 +1353,42 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Create Variations with the OpenAI Python Client
 
-=== "Python (OpenAI client)"
-
+**Python (OpenAI client)**
 ```python
-    from openai import OpenAI
-    client = OpenAI(base_url="http://localhost:13305/v1", api_key="not-needed")
-    with open("source_image.png", "rb") as image_file:
-        response = client.images.create_variation(
-            model="Flux-2-Klein-4B",
-            image=image_file,
-            size="512x512",
-            n=1,
-        )
-    import base64
-    image_data = base64.b64decode(response.data[0].b64_json)
-    open("variation.png", "wb").write(image_data)
+from openai import OpenAI
+client = OpenAI(base_url="http://localhost:13305/v1", api_key="not-needed")
+with open("source_image.png", "rb") as image_file:
+    response = client.images.create_variation(
+        model="Flux-2-Klein-4B",
+        image=image_file,
+        size="512x512",
+        n=1,
+    )
+import base64
+image_data = base64.b64decode(response.data[0].b64_json)
+open("variation.png", "wb").write(image_data)
 ```
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    curl.exe http://localhost:13305/v1/images/variations `
-      -F "model=Flux-2-Klein-4B" `
-      -F "size=512x512" `
-      -F "n=1" `
-      -F "response_format=b64_json" `
-      -F image=@image.png
+curl.exe http://localhost:13305/v1/images/variations `
+  -F "model=Flux-2-Klein-4B" `
+  -F "size=512x512" `
+  -F "n=1" `
+  -F "response_format=b64_json" `
+  -F image=@image.png
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/images/variations \
-      -F "model=Flux-2-Klein-4B" \
-      -F "size=512x512" \
-      -F "n=1" \
-      -F "response_format=b64_json" \
-      -F image=@image.png
+curl http://localhost:13305/v1/images/variations \
+  -F "model=Flux-2-Klein-4B" \
+  -F "size=512x512" \
+  -F "n=1" \
+  -F "response_format=b64_json" \
+  -F image=@image.png
 ```
 
 **Response:** `200 OK`
@@ -1485,26 +1455,24 @@ To upscale an image from [`POST /v1/images/generations`](#post-v1imagesgeneratio
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    $image = [Convert]::ToBase64String([IO.File]::ReadAllBytes("image.png"))
-    $body = @"
-    {"image": "$image", "model": "RealESRGAN-x4plus"}
-    "@
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/images/upscale" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body $body
+$image = [Convert]::ToBase64String([IO.File]::ReadAllBytes("image.png"))
+$body = @"
+{"image": "$image", "model": "RealESRGAN-x4plus"}
+"@
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/images/upscale" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body $body
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/images/upscale \
-      -H "Content-Type: application/json" \
-      -d "{\"image\": \"$(base64 -w0 image.png)\", \"model\": \"RealESRGAN-x4plus\"}"
+curl http://localhost:13305/v1/images/upscale \
+  -H "Content-Type: application/json" \
+  -d "{\"image\": \"$(base64 -w0 image.png)\", \"model\": \"RealESRGAN-x4plus\"}"
 ```
 
 **Response:** `200 OK`
@@ -1570,68 +1538,64 @@ Accepted `response_format` values depend on the backend: `kokoro-v1` encodes `mp
 
 #### Non-streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/audio/speech" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "kokoro-v1",
-          "input": "Lemonade can speak!",
-          "speed": 1.0,
-          "response_format": "mp3"
-        }' `
-      -OutFile output.mp3
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/audio/speech" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "kokoro-v1",
+      "input": "Lemonade can speak!",
+      "speed": 1.0,
+      "response_format": "mp3"
+    }' `
+  -OutFile output.mp3
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/audio/speech \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "kokoro-v1",
-          "input": "Lemonade can speak!",
-          "speed": 1.0,
-          "response_format": "mp3"
-        }' \
-      --output output.mp3
+curl http://localhost:13305/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "kokoro-v1",
+      "input": "Lemonade can speak!",
+      "speed": 1.0,
+      "response_format": "mp3"
+    }' \
+  --output output.mp3
 ```
 
 **Response:** `200 OK`, `audio/mpeg`, 40,516 bytes
 
 #### Streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/audio/speech" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "kokoro-v1",
-          "input": "Lemonade can speak!",
-          "speed": 1.0,
-          "stream_format": "audio"
-        }' `
-      -OutFile output.l16
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/audio/speech" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "kokoro-v1",
+      "input": "Lemonade can speak!",
+      "speed": 1.0,
+      "stream_format": "audio"
+    }' `
+  -OutFile output.l16
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/audio/speech \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "kokoro-v1",
-          "input": "Lemonade can speak!",
-          "speed": 1.0,
-          "stream_format": "audio"
-        }' \
-      --output output.l16
+curl http://localhost:13305/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "kokoro-v1",
+      "input": "Lemonade can speak!",
+      "speed": 1.0,
+      "stream_format": "audio"
+    }' \
+  --output output.l16
 ```
 
 **Response:** `200 OK`, `audio/l16;rate=24000;endianness=little-endian`, 97,200 bytes
@@ -1679,16 +1643,14 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest -Uri "http://localhost:13305/v1/models"
+Invoke-WebRequest -Uri "http://localhost:13305/v1/models"
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/models
+curl http://localhost:13305/v1/models
 ```
 
 **Response:** `200 OK`
@@ -1869,16 +1831,14 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest -Uri "http://localhost:13305/v1/models/Qwen3-0.6B-GGUF"
+Invoke-WebRequest -Uri "http://localhost:13305/v1/models/Qwen3-0.6B-GGUF"
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF
+curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF
 ```
 
 **Response:** `200 OK`
@@ -1971,16 +1931,14 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest -Uri "http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/files"
+Invoke-WebRequest -Uri "http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/files"
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/files
+curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/files
 ```
 
 **Response:** `200 OK`
@@ -2031,16 +1989,14 @@ Per-architecture defaults are chosen by the architecture in the model's GGUF met
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest -Uri "http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options"
+Invoke-WebRequest -Uri "http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options"
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
+curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 ```
 
 **Response:** `200 OK`
@@ -2127,22 +2083,20 @@ A running model keeps its current options until it is next loaded.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/models/Qwen3-4B-GGUF/options" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"ctx_size": 8192}'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/models/Qwen3-4B-GGUF/options" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{"ctx_size": 8192}'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/models/Qwen3-4B-GGUF/options \
-      -H "Content-Type: application/json" \
-      -d '{"ctx_size": 8192}'
+curl http://localhost:13305/v1/models/Qwen3-4B-GGUF/options \
+  -H "Content-Type: application/json" \
+  -d '{"ctx_size": 8192}'
 ```
 
 **Response:** `200 OK`
@@ -2222,18 +2176,16 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/models/Qwen3-4B-GGUF/options" `
-      -Method DELETE
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/models/Qwen3-4B-GGUF/options" `
+  -Method DELETE
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl -X DELETE http://localhost:13305/v1/models/Qwen3-4B-GGUF/options
+curl -X DELETE http://localhost:13305/v1/models/Qwen3-4B-GGUF/options
 ```
 
 **Response:** `200 OK`

@@ -46,32 +46,30 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
 
 #### Non-streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/messages" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "max_tokens": 64,
-          "temperature": 0,
-          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}]
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/messages" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "Qwen3-0.6B-GGUF",
+      "max_tokens": 64,
+      "temperature": 0,
+      "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}]
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/messages \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "max_tokens": 64,
-          "temperature": 0,
-          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}]
-        }'
+curl http://localhost:13305/v1/messages \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "Qwen3-0.6B-GGUF",
+      "max_tokens": 64,
+      "temperature": 0,
+      "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}]
+    }'
 ```
 
 **Response:** `200 OK`
@@ -91,34 +89,32 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
 
 #### Streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/messages" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "max_tokens": 64,
-          "temperature": 0,
-          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
-          "stream": true
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/messages" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "Qwen3-0.6B-GGUF",
+      "max_tokens": 64,
+      "temperature": 0,
+      "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
+      "stream": true
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/messages \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "max_tokens": 64,
-          "temperature": 0,
-          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
-          "stream": true
-        }'
+curl http://localhost:13305/v1/messages \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "Qwen3-0.6B-GGUF",
+      "max_tokens": 64,
+      "temperature": 0,
+      "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
+      "stream": true
+    }'
 ```
 
 **Response:** `200 OK`

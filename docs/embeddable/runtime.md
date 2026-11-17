@@ -13,16 +13,14 @@ Contents:
 
 We recommend that your app launches `lemond` as a subprocess, using a command like this:
 
-=== "Windows (cmd.exe)"
-
+**Windows (cmd.exe)**
 ```cmd
-    set LEMONADE_API_KEY=KEY && lemond.exe ./ --port PORT
+set LEMONADE_API_KEY=KEY && lemond.exe ./ --port PORT
 ```
 
-=== "Linux (bash)"
-
+**Linux (bash)**
 ```bash
-    LEMONADE_API_KEY=KEY lemond ./ --port PORT
+LEMONADE_API_KEY=KEY lemond ./ --port PORT
 ```
 
 Breaking this down:
@@ -40,38 +38,34 @@ Authorization: Bearer KEY
 
 For example, with `curl`:
 
-=== "Windows (cmd.exe)"
-
+**Windows (cmd.exe)**
 ```cmd
-    curl http://localhost:8000/v1/health ^
-      -H "Authorization: Bearer KEY"
+curl http://localhost:8000/v1/health ^
+  -H "Authorization: Bearer KEY"
 ```
 
-=== "Linux (bash)"
-
+**Linux (bash)**
 ```bash
-    curl http://localhost:8000/v1/health \
-      -H "Authorization: Bearer KEY"
+curl http://localhost:8000/v1/health \
+  -H "Authorization: Bearer KEY"
 ```
 
 For JSON `POST` requests:
 
-=== "Windows (cmd.exe)"
-
+**Windows (cmd.exe)**
 ```cmd
-    curl -X POST http://localhost:8000/internal/set ^
-      -H "Authorization: Bearer KEY" ^
-      -H "Content-Type: application/json" ^
-      -d "{\"log_level\": \"debug\"}"
+curl -X POST http://localhost:8000/internal/set ^
+  -H "Authorization: Bearer KEY" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"log_level\": \"debug\"}"
 ```
 
-=== "Linux (bash)"
-
+**Linux (bash)**
 ```bash
-    curl -X POST http://localhost:8000/internal/set \
-      -H "Authorization: Bearer KEY" \
-      -H "Content-Type: application/json" \
-      -d '{"log_level": "debug"}'
+curl -X POST http://localhost:8000/internal/set \
+  -H "Authorization: Bearer KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"log_level": "debug"}'
 ```
 
 In JavaScript:

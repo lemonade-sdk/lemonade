@@ -26,16 +26,14 @@ Without this step, commands such as `lemonade pull` fail with "Could not connect
 
 ## Step 3: Choose your frontend
 
-=== "Web UI"
+**Web UI**
+Always available at [http://localhost:13305](http://localhost:13305).
 
-    Always available at [http://localhost:13305](http://localhost:13305).
+The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.
 
-    The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.
-
-=== "Lemonade Desktop package"
-
+**Lemonade Desktop package**
 ```
-    pacman -S lemonade-desktop
+pacman -S lemonade-desktop
 ```
 
-    For package details, see [lemonade-desktop](https://archlinux.org/packages/extra/x86_64/lemonade-desktop).
+For package details, see [lemonade-desktop](https://archlinux.org/packages/extra/x86_64/lemonade-desktop).

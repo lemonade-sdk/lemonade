@@ -99,58 +99,56 @@ Match `decision.matched_rule` against this document: a policy written with only 
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/routing/validate" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "policy": {
-            "version": "1",
-            "recipe": "collection.router",
-            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
-            "routing": {
-              "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
-              "default_model": "Qwen3-8B-GGUF",
-              "rules": [
-                {
-                  "id": "code-to-big",
-                  "match": {"keywords_any": ["def ", "function", "compile"]},
-                  "route_to": "vllm.qwen3-32b"
-                }
-              ]
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/routing/validate" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "policy": {
+        "version": "1",
+        "recipe": "collection.router",
+        "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+        "routing": {
+          "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+          "default_model": "Qwen3-8B-GGUF",
+          "rules": [
+            {
+              "id": "code-to-big",
+              "match": {"keywords_any": ["def ", "function", "compile"]},
+              "route_to": "vllm.qwen3-32b"
             }
-          },
-          "prompt": "please write a def to reverse a list"
-        }'
+          ]
+        }
+      },
+      "prompt": "please write a def to reverse a list"
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/routing/validate \
-      -H "Content-Type: application/json" \
-      -d '{
-          "policy": {
-            "version": "1",
-            "recipe": "collection.router",
-            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
-            "routing": {
-              "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
-              "default_model": "Qwen3-8B-GGUF",
-              "rules": [
-                {
-                  "id": "code-to-big",
-                  "match": {"keywords_any": ["def ", "function", "compile"]},
-                  "route_to": "vllm.qwen3-32b"
-                }
-              ]
+curl http://localhost:13305/v1/routing/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+      "policy": {
+        "version": "1",
+        "recipe": "collection.router",
+        "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+        "routing": {
+          "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+          "default_model": "Qwen3-8B-GGUF",
+          "rules": [
+            {
+              "id": "code-to-big",
+              "match": {"keywords_any": ["def ", "function", "compile"]},
+              "route_to": "vllm.qwen3-32b"
             }
-          },
-          "prompt": "please write a def to reverse a list"
-        }'
+          ]
+        }
+      },
+      "prompt": "please write a def to reverse a list"
+    }'
 ```
 
 **Response:** `200 OK`

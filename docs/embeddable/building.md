@@ -14,59 +14,53 @@ Contents:
 
 The `embeddable` CMake target builds the server, CLI, and required resource files, then packages them into a single archive. The [release workflow](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/cpp_server_build_test_release.yml) uses this target to produce the embeddable archives.
 
-=== "Windows (cmd.exe)"
-
+**Windows (cmd.exe)**
 ```cmd
-    cmake --preset windows -DBUILD_WEB_APP=OFF
-    cmake --build --preset windows --target embeddable
+cmake --preset windows -DBUILD_WEB_APP=OFF
+cmake --build --preset windows --target embeddable
 ```
 
-    This produces `build\lemonade-embeddable-{VERSION}-windows-x64.zip`.
+This produces `build\lemonade-embeddable-{VERSION}-windows-x64.zip`.
 
-=== "Linux (bash)"
-
+**Linux (bash)**
 ```bash
-    sudo apt-get update
-    sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
-    cmake --preset default -DBUILD_WEB_APP=OFF
-    cmake --build --preset default --target embeddable
+sudo apt-get update
+sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
+cmake --preset default -DBUILD_WEB_APP=OFF
+cmake --build --preset default --target embeddable
 ```
 
-    This produces `build/lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz` on x86_64 Linux and `build/lemonade-embeddable-{VERSION}-ubuntu-arm64.tar.gz` on ARM64 Linux.
+This produces `build/lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz` on x86_64 Linux and `build/lemonade-embeddable-{VERSION}-ubuntu-arm64.tar.gz` on ARM64 Linux.
 
-=== "macOS (bash)"
-
+**macOS (bash)**
 ```bash
-    brew install cmake ninja
-    cmake --preset default -DBUILD_WEB_APP=OFF
-    cmake --build --preset default --target embeddable
+brew install cmake ninja
+cmake --preset default -DBUILD_WEB_APP=OFF
+cmake --build --preset default --target embeddable
 ```
 
-    This produces `build/lemonade-embeddable-{VERSION}-macos-arm64.tar.gz`.
+This produces `build/lemonade-embeddable-{VERSION}-macos-arm64.tar.gz`.
 
 ## Include the Web App
 
 If you want the embeddable build to include the browser UI assets under `resources/web-app`, enable `BUILD_WEB_APP` and build the `web-app` target before `embeddable`:
 
-=== "Windows (cmd.exe)"
-
+**Windows (cmd.exe)**
 ```cmd
-    cmake --preset windows -DBUILD_WEB_APP=ON
-    cmake --build --preset windows --target web-app embeddable
+cmake --preset windows -DBUILD_WEB_APP=ON
+cmake --build --preset windows --target web-app embeddable
 ```
 
-=== "Linux (bash)"
-
+**Linux (bash)**
 ```bash
-    cmake --preset default -DBUILD_WEB_APP=ON
-    cmake --build --preset default --target web-app embeddable
+cmake --preset default -DBUILD_WEB_APP=ON
+cmake --build --preset default --target web-app embeddable
 ```
 
-=== "macOS (bash)"
-
+**macOS (bash)**
 ```bash
-    cmake --preset default -DBUILD_WEB_APP=ON
-    cmake --build --preset default --target web-app embeddable
+cmake --preset default -DBUILD_WEB_APP=ON
+cmake --build --preset default --target web-app embeddable
 ```
 
 ## Expected Outputs

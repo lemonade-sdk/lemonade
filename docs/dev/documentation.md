@@ -138,13 +138,11 @@ Annotate code sparingly — only when the command has a non-obvious flag or the 
 Use MkDocs tab syntax when a task has meaningfully different steps per OS. Keep the tab names consistent across documents: `Windows`, `Linux`, `macOS`.
 
 ````markdown
-=== "Linux"
-```bash
-    sudo apt install lemonade
+**Linux**```bash
+sudo apt install lemonade
 ```
 
-=== "Windows"
-    Download the installer from the releases page.
+**Windows**Download the installer from the releases page.
 ````
 
 Use tabs whenever the commands differ per platform, even for small differences like a single flag, so snippets remain copy-pastable. Use a `>` note only for differences that are purely informational (a different default path, a version caveat).

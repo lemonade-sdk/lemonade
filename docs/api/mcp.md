@@ -63,32 +63,30 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 
 #### Request
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/mcp" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "jsonrpc": "2.0",
-          "id": 1,
-          "method": "initialize",
-          "params": {"protocolVersion": "2025-06-18", "capabilities": {}}
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/mcp" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {"protocolVersion": "2025-06-18", "capabilities": {}}
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/mcp \
-      -H "Content-Type: application/json" \
-      -d '{
-          "jsonrpc": "2.0",
-          "id": 1,
-          "method": "initialize",
-          "params": {"protocolVersion": "2025-06-18", "capabilities": {}}
-        }'
+curl http://localhost:13305/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {"protocolVersion": "2025-06-18", "capabilities": {}}
+    }'
 ```
 
 **Response:** `200 OK`
@@ -107,22 +105,20 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 
 #### Notification
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/mcp" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/mcp" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/mcp \
-      -H "Content-Type: application/json" \
-      -d '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
+curl http://localhost:13305/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
 ```
 
 **Response:** `202 Accepted`

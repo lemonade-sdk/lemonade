@@ -14,17 +14,14 @@ Lemonade runs as a [lightweight local service](./concepts.md) on your computer a
 
 The simplest way to experience Lemonade is to explore the built-in GUI, which helps you manage models and try them out. See the [Lemonade App guide](app/README.md) for Chat, Models, Backends, and Settings.
 
-=== "Windows"
+**Windows**
+Click the 🍋 tray icon and select Open Lemonade App.
 
-    Click the 🍋 tray icon and select Open Lemonade App.
+**macOS**
+Run the Lemonade App from your apps folder.
 
-=== "macOS"
-
-    Run the Lemonade App from your apps folder.
-
-=== "Linux"
-
-    Open http://localhost:13305 in your browser.
+**Linux**
+Open http://localhost:13305 in your browser.
 
 
 

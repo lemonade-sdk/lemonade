@@ -642,22 +642,20 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 #### Non-streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/chat/completions" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}]}'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/chat/completions" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}]}'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/chat/completions \
-      -H "Content-Type: application/json" \
-      -d '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}]}'
+curl http://localhost:13305/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}]}'
 ```
 
 **Response:** `200 OK`
@@ -675,22 +673,20 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 #### Streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/chat/completions" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}], "stream": true}'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/chat/completions" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}], "stream": true}'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/chat/completions \
-      -H "Content-Type: application/json" \
-      -d '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}], "stream": true}'
+curl http://localhost:13305/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}], "stream": true}'
 ```
 
 **Response:** `200 OK`

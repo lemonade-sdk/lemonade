@@ -33,38 +33,36 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/rerank" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "bge-reranker-v2-m3-GGUF",
-          "query": "What is the capital of France?",
-          "documents": [
-            "Paris is the capital of France.",
-            "Berlin is the capital of Germany.",
-            "Madrid is the capital of Spain."
-          ]
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/rerank" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "bge-reranker-v2-m3-GGUF",
+      "query": "What is the capital of France?",
+      "documents": [
+        "Paris is the capital of France.",
+        "Berlin is the capital of Germany.",
+        "Madrid is the capital of Spain."
+      ]
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/rerank \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "bge-reranker-v2-m3-GGUF",
-          "query": "What is the capital of France?",
-          "documents": [
-            "Paris is the capital of France.",
-            "Berlin is the capital of Germany.",
-            "Madrid is the capital of Spain."
-          ]
-        }'
+curl http://localhost:13305/v1/rerank \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "bge-reranker-v2-m3-GGUF",
+      "query": "What is the capital of France?",
+      "documents": [
+        "Paris is the capital of France.",
+        "Berlin is the capital of Germany.",
+        "Madrid is the capital of Spain."
+      ]
+    }'
 ```
 
 **Response:** `200 OK`
@@ -139,54 +137,52 @@ Register the model with its projector file, for example on `/v1/pull`: `{"model_
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/systemone" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Laya-GGUF",
-          "state": "Customer message: I was charged twice for my order last week and nobody has replied.",
-          "questions": {
-            "route": {
-              "type": "choice",
-              "instructions": "Which team should handle this?",
-              "criteria": {"billing": null, "shipping": null, "technical": null}
-            },
-            "angry": {"type": "noul", "instructions": "Is the customer angry?"},
-            "urgency": {
-              "type": "score",
-              "instructions": "How urgent is this?",
-              "criteria": ["can wait", "this week", "today", "right now"]
-            }
-          }
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/systemone" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "Laya-GGUF",
+      "state": "Customer message: I was charged twice for my order last week and nobody has replied.",
+      "questions": {
+        "route": {
+          "type": "choice",
+          "instructions": "Which team should handle this?",
+          "criteria": {"billing": null, "shipping": null, "technical": null}
+        },
+        "angry": {"type": "noul", "instructions": "Is the customer angry?"},
+        "urgency": {
+          "type": "score",
+          "instructions": "How urgent is this?",
+          "criteria": ["can wait", "this week", "today", "right now"]
+        }
+      }
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/systemone \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Laya-GGUF",
-          "state": "Customer message: I was charged twice for my order last week and nobody has replied.",
-          "questions": {
-            "route": {
-              "type": "choice",
-              "instructions": "Which team should handle this?",
-              "criteria": {"billing": null, "shipping": null, "technical": null}
-            },
-            "angry": {"type": "noul", "instructions": "Is the customer angry?"},
-            "urgency": {
-              "type": "score",
-              "instructions": "How urgent is this?",
-              "criteria": ["can wait", "this week", "today", "right now"]
-            }
-          }
-        }'
+curl http://localhost:13305/v1/systemone \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "Laya-GGUF",
+      "state": "Customer message: I was charged twice for my order last week and nobody has replied.",
+      "questions": {
+        "route": {
+          "type": "choice",
+          "instructions": "Which team should handle this?",
+          "criteria": {"billing": null, "shipping": null, "technical": null}
+        },
+        "angry": {"type": "noul", "instructions": "Is the customer angry?"},
+        "urgency": {
+          "type": "score",
+          "instructions": "How urgent is this?",
+          "criteria": ["can wait", "this week", "today", "right now"]
+        }
+      }
+    }'
 ```
 
 **Response:** `200 OK`
@@ -267,16 +263,14 @@ This endpoint does not take any parameters.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest -Uri "http://localhost:13305/v1/slots"
+Invoke-WebRequest -Uri "http://localhost:13305/v1/slots"
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/slots
+curl http://localhost:13305/v1/slots
 ```
 
 **Response:** `200 OK`
@@ -403,22 +397,20 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
 
 #### Save
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/slots/0?action=save" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"filename": "my_conversation_cache.bin"}'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/slots/0?action=save" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{"filename": "my_conversation_cache.bin"}'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl "http://localhost:13305/v1/slots/0?action=save" \
-      -H "Content-Type: application/json" \
-      -d '{"filename": "my_conversation_cache.bin"}'
+curl "http://localhost:13305/v1/slots/0?action=save" \
+  -H "Content-Type: application/json" \
+  -d '{"filename": "my_conversation_cache.bin"}'
 ```
 
 **Response:** `200 OK`
@@ -435,22 +427,20 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
 
 #### Restore
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/slots/0?action=restore" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"filename": "my_conversation_cache.bin"}'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/slots/0?action=restore" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{"filename": "my_conversation_cache.bin"}'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl "http://localhost:13305/v1/slots/0?action=restore" \
-      -H "Content-Type: application/json" \
-      -d '{"filename": "my_conversation_cache.bin"}'
+curl "http://localhost:13305/v1/slots/0?action=restore" \
+  -H "Content-Type: application/json" \
+  -d '{"filename": "my_conversation_cache.bin"}'
 ```
 
 **Response:** `200 OK`
@@ -467,18 +457,16 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
 
 #### Erase
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/slots/0?action=erase" `
-      -Method POST
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/slots/0?action=erase" `
+  -Method POST
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl -X POST "http://localhost:13305/v1/slots/0?action=erase"
+curl -X POST "http://localhost:13305/v1/slots/0?action=erase"
 ```
 
 **Response:** `200 OK`
@@ -532,22 +520,20 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/tokenize" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"content": "This is a string to tokenize"}'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/v1/tokenize" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{"content": "This is a string to tokenize"}'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/v1/tokenize \
-      -H "Content-Type: application/json" \
-      -d '{"content": "This is a string to tokenize"}'
+curl http://localhost:13305/v1/tokenize \
+  -H "Content-Type: application/json" \
+  -d '{"content": "This is a string to tokenize"}'
 ```
 
 **Response:** `200 OK`

@@ -9,13 +9,13 @@ This guide focuses on the most common launch flows.
 1. Install Claude Code:
 
 ```bash
-    curl -fsSL https://claude.ai/install.sh | bash
+curl -fsSL https://claude.ai/install.sh | bash
 ```
 
     or:
 
 ```bash
-    npm install -g @anthropic-ai/claude-code
+npm install -g @anthropic-ai/claude-code
 ```
 
 2. Make sure Lemonade Server is running (`lemond`).

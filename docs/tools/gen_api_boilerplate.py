@@ -1445,10 +1445,6 @@ def oxford(items: list[str]) -> str:
     return ", ".join(items[:-1]) + " and " + items[-1]
 
 
-def indent(text: str, prefix: str = "    ") -> str:
-    return "\n".join(prefix + line if line else "" for line in text.splitlines())
-
-
 def fence(language: str, body: str) -> str:
     return f"```{language}\n{body}\n```"
 
@@ -1800,9 +1796,7 @@ def render_recorded(fmt: str, entry: dict, schema: dict) -> str:
 
 
 def render_tab(title: str, body: str) -> str:
-    indented_body = indent(body)
-    indented_body = re.sub(r"(?m)^    (```[^\n]*)$", r"\1", indented_body)
-    return f'=== "{title}"\n\n{indented_body}\n'
+    return f"**{title}**\n\n{body}\n"
 
 
 def like(template, value):

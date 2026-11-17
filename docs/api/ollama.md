@@ -53,30 +53,28 @@ A request with tools and streaming runs non-streaming on the backend and answers
 
 #### Non-streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/chat" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
-          "stream": false
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/api/chat" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "Qwen3-0.6B-GGUF",
+      "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
+      "stream": false
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/api/chat \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
-          "stream": false
-        }'
+curl http://localhost:13305/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "Qwen3-0.6B-GGUF",
+      "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
+      "stream": false
+    }'
 ```
 
 **Response:** `200 OK`
@@ -99,30 +97,28 @@ A request with tools and streaming runs non-streaming on the backend and answers
 
 #### Streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/chat" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
-          "stream": true
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/api/chat" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "Qwen3-0.6B-GGUF",
+      "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
+      "stream": true
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/api/chat \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
-          "stream": true
-        }'
+curl http://localhost:13305/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "Qwen3-0.6B-GGUF",
+      "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
+      "stream": true
+    }'
 ```
 
 **Response:** `200 OK`
@@ -231,32 +227,30 @@ Image generation never streams.
 
 #### Non-streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/generate" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "prompt": "The capital of France is",
-          "options": {"num_predict": 16},
-          "stream": false
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/api/generate" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "Qwen3-0.6B-GGUF",
+      "prompt": "The capital of France is",
+      "options": {"num_predict": 16},
+      "stream": false
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/api/generate \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "prompt": "The capital of France is",
-          "options": {"num_predict": 16},
-          "stream": false
-        }'
+curl http://localhost:13305/api/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "Qwen3-0.6B-GGUF",
+      "prompt": "The capital of France is",
+      "options": {"num_predict": 16},
+      "stream": false
+    }'
 ```
 
 **Response:** `200 OK`
@@ -280,32 +274,30 @@ Image generation never streams.
 
 #### Streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/generate" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-          "model": "Qwen3-0.6B-GGUF",
-          "prompt": "The capital of France is",
-          "options": {"num_predict": 16},
-          "stream": true
-        }'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/api/generate" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{
+      "model": "Qwen3-0.6B-GGUF",
+      "prompt": "The capital of France is",
+      "options": {"num_predict": 16},
+      "stream": true
+    }'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/api/generate \
-      -H "Content-Type: application/json" \
-      -d '{
-          "model": "Qwen3-0.6B-GGUF",
-          "prompt": "The capital of France is",
-          "options": {"num_predict": 16},
-          "stream": true
-        }'
+curl http://localhost:13305/api/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+      "model": "Qwen3-0.6B-GGUF",
+      "prompt": "The capital of France is",
+      "options": {"num_predict": 16},
+      "stream": true
+    }'
 ```
 
 **Response:** `200 OK`
@@ -387,16 +379,14 @@ This endpoint does not take any parameters.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest -Uri "http://localhost:13305/api/tags"
+Invoke-WebRequest -Uri "http://localhost:13305/api/tags"
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/api/tags
+curl http://localhost:13305/api/tags
 ```
 
 **Response:** `200 OK`
@@ -463,22 +453,20 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/show" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"model": "Qwen3-0.6B-GGUF"}'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/api/show" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{"model": "Qwen3-0.6B-GGUF"}'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/api/show \
-      -H "Content-Type: application/json" \
-      -d '{"model": "Qwen3-0.6B-GGUF"}'
+curl http://localhost:13305/api/show \
+  -H "Content-Type: application/json" \
+  -d '{"model": "Qwen3-0.6B-GGUF"}'
 ```
 
 **Response:** `200 OK`
@@ -551,22 +539,20 @@ Success answers `200` with an empty body, as Ollama does.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/delete" `
-      -Method DELETE `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"model": "RealESRGAN-x4plus-anime"}'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/api/delete" `
+  -Method DELETE `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{"model": "RealESRGAN-x4plus-anime"}'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl -X DELETE http://localhost:13305/api/delete \
-      -H "Content-Type: application/json" \
-      -d '{"model": "RealESRGAN-x4plus-anime"}'
+curl -X DELETE http://localhost:13305/api/delete \
+  -H "Content-Type: application/json" \
+  -d '{"model": "RealESRGAN-x4plus-anime"}'
 ```
 
 **Response:** `200 OK`
@@ -603,22 +589,20 @@ Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](
 
 #### Streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/pull" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"model": "Qwen3-0.6B-GGUF", "stream": true}'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/api/pull" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{"model": "Qwen3-0.6B-GGUF", "stream": true}'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/api/pull \
-      -H "Content-Type: application/json" \
-      -d '{"model": "Qwen3-0.6B-GGUF", "stream": true}'
+curl http://localhost:13305/api/pull \
+  -H "Content-Type: application/json" \
+  -d '{"model": "Qwen3-0.6B-GGUF", "stream": true}'
 ```
 
 **Response:** `200 OK`
@@ -634,22 +618,20 @@ Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](
 
 #### Non-streaming
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/pull" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"model": "RealESRGAN-x4plus-anime", "stream": false}'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/api/pull" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{"model": "RealESRGAN-x4plus-anime", "stream": false}'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/api/pull \
-      -H "Content-Type: application/json" \
-      -d '{"model": "RealESRGAN-x4plus-anime", "stream": false}'
+curl http://localhost:13305/api/pull \
+  -H "Content-Type: application/json" \
+  -d '{"model": "RealESRGAN-x4plus-anime", "stream": false}'
 ```
 
 **Response:** `200 OK`
@@ -705,22 +687,20 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/embed" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"model": "nomic-embed-text-v1-GGUF", "input": "Why is the sky blue?"}'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/api/embed" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{"model": "nomic-embed-text-v1-GGUF", "input": "Why is the sky blue?"}'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/api/embed \
-      -H "Content-Type: application/json" \
-      -d '{"model": "nomic-embed-text-v1-GGUF", "input": "Why is the sky blue?"}'
+curl http://localhost:13305/api/embed \
+  -H "Content-Type: application/json" \
+  -d '{"model": "nomic-embed-text-v1-GGUF", "input": "Why is the sky blue?"}'
 ```
 
 **Response:** `200 OK`
@@ -775,22 +755,20 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/api/embeddings" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{"model": "nomic-embed-text-v1-GGUF", "prompt": "Why is the sky blue?"}'
+Invoke-WebRequest `
+  -Uri "http://localhost:13305/api/embeddings" `
+  -Method POST `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{"model": "nomic-embed-text-v1-GGUF", "prompt": "Why is the sky blue?"}'
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/api/embeddings \
-      -H "Content-Type: application/json" \
-      -d '{"model": "nomic-embed-text-v1-GGUF", "prompt": "Why is the sky blue?"}'
+curl http://localhost:13305/api/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{"model": "nomic-embed-text-v1-GGUF", "prompt": "Why is the sky blue?"}'
 ```
 
 **Response:** `200 OK`
@@ -836,16 +814,14 @@ This endpoint does not take any parameters.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest -Uri "http://localhost:13305/api/ps"
+Invoke-WebRequest -Uri "http://localhost:13305/api/ps"
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/api/ps
+curl http://localhost:13305/api/ps
 ```
 
 **Response:** `200 OK`
@@ -912,16 +888,14 @@ This endpoint does not take any parameters.
 
 ### Example
 
-=== "PowerShell"
-
+**PowerShell**
 ```powershell
-    Invoke-WebRequest -Uri "http://localhost:13305/api/version"
+Invoke-WebRequest -Uri "http://localhost:13305/api/version"
 ```
 
-=== "Bash"
-
+**Bash**
 ```bash
-    curl http://localhost:13305/api/version
+curl http://localhost:13305/api/version
 ```
 
 **Response:** `200 OK`

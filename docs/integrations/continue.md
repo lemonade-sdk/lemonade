@@ -101,7 +101,7 @@ In this example, we'll use Plan mode to have the LLM analyze your code and provi
 1. **Load the model with a higher context size**: Open a terminal and run:
 
 ```bash
-    lemonade load <model-name> --ctx-size 8192
+lemonade load <model-name> --ctx-size 8192
 ```
 
     For persistent changes, see [Server Configuration](../guide/configuration/README.md).
@@ -129,7 +129,7 @@ Here, we can see that the agent edited the code in `main.py` to improve the game
 - **Pre-load Models**: Start Lemonade Server and load your models before coding sessions. This can easily be done using the Lemon tray icon and `Load`.
 - **Increase Context Size for Agent Mode**: For large code changes with GGUF models, load the model with a higher context size:
 ```bash
-    lemonade load <model-name> --ctx-size 8192
+lemonade load <model-name> --ctx-size 8192
 ```
 - **Customize Scoping**: See [Continue Customization](https://docs.continue.dev/customization/overview) for tips on effective model configuration and scoping.
 

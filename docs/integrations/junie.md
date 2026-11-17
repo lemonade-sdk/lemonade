@@ -11,13 +11,13 @@ This guide focuses on the most common launch flows.
     macOS and Linux:
 
 ```bash
-    curl -fsSL https://junie.jetbrains.com/install.sh | bash
+curl -fsSL https://junie.jetbrains.com/install.sh | bash
 ```
 
     Windows:
 
 ```powershell
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (irm 'https://junie.jetbrains.com/install.ps1')"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (irm 'https://junie.jetbrains.com/install.ps1')"
 ```
 
     Both installers put a `junie` launcher in `~/.local/bin`. See the [Junie CLI docs](https://junie.jetbrains.com/docs/junie-cli.html) for details.
