@@ -219,6 +219,8 @@ private:
     mutable std::string own_container_;
     mutable std::vector<OwnMount> own_mounts_;
     mutable std::string backend_network_;
+    // Podman's or Docker's UsernsMode for lemond's container, "" by default.
+    mutable std::string own_userns_mode_;
 };
 
 }  // namespace utils

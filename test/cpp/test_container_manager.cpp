@@ -724,7 +724,7 @@ FakeHost contained_host() {
         "/userdata/hostname /etc/hostname rw - ext4 /dev/x rw\n";
     host.files["/etc/hostname"] = "lemonade-box\n";
     host.containers[id] =
-        id + "|[{\"Type\":\"volume\",\"Name\":\"lemonade-cache\","
+        id + "||[{\"Type\":\"volume\",\"Name\":\"lemonade-cache\","
              "\"Source\":\"/home/user/.local/share/containers/storage/volumes/lemonade-cache/_data\","
              "\"Destination\":\"/opt/lemonade/.cache/huggingface\"},"
              "{\"Type\":\"bind\",\"Source\":\"/srv/models\",\"Destination\":\"/models\"},"
@@ -785,7 +785,7 @@ void test_in_container() {
 
     FakeHost hostname_only = contained_host();
     hostname_only.files.erase("/proc/self/mountinfo");
-    hostname_only.containers = {{"lemonade-box", "bbbb|[]|null"}};
+    hostname_only.containers = {{"lemonade-box", "bbbb||[]|null"}};
     check("lemond falls back to its hostname to find its container",
           ContainerManager(hostname_only.host()).own_container() == "bbbb");
 
@@ -800,13 +800,13 @@ void test_in_container() {
                   std::string::npos);
 
     FakeHost pasta = contained_host();
-    pasta.containers[id] = id + "|[]|null";
+    pasta.containers[id] = id + "||[]|null";
     check("under pasta, lemond is on no internal network",
           ContainerManager(pasta.host()).backend_network().empty());
 
     FakeHost two_internal = contained_host();
     two_internal.containers[id] =
-        id + "|[]|{\"aaa-internal\":{\"IPAddress\":\"10.90.0.2\"},"
+        id + "||[]|{\"aaa-internal\":{\"IPAddress\":\"10.90.0.2\"},"
              "\"lemonade-backends\":{\"IPAddress\":\"10.89.0.2\"}}";
     two_internal.internal_networks = {{"aaa-internal", "true"}, {"lemonade-backends", "true"}};
     check("of several internal networks, lemonade-backends is the backends' network",
@@ -814,7 +814,7 @@ void test_in_container() {
 
     FakeHost only_other = contained_host();
     only_other.containers[id] =
-        id + "|[]|{\"podman\":{\"IPAddress\":\"10.88.0.5\"},"
+        id + "||[]|{\"podman\":{\"IPAddress\":\"10.88.0.5\"},"
              "\"other-internal\":{\"IPAddress\":\"10.90.0.2\"}}";
     only_other.internal_networks = {{"other-internal", "true"}};
     const ContainerManager other_manager(only_other.host());
@@ -823,12 +823,24 @@ void test_in_container() {
           other_manager.backend_network().empty() && other_failures.size() == 1 &&
               other_failures[0].id == "backend_network");
 
+    // Podman reports --userns=keep-id:uid=0,gid=0 as "private", with lemond root.
     FakeHost keep_id = contained_host();
-    keep_id.root = false;
+    keep_id.containers[id].replace(keep_id.containers[id].find("||"), 2, "|private|");
     const auto keep_id_failures = ContainerManager(keep_id.host()).check_host();
-    check("under rootless Podman, lemond not running as root, as with --userns=keep-id, fails",
+    check("under rootless Podman, lemond in its own user namespace fails even as root",
           keep_id_failures.size() == 1 && keep_id_failures[0].id == "container_user" &&
               keep_id_failures[0].steps[0].find("--user 0:0") != std::string::npos);
+    FakeHost keep_id_user = contained_host();
+    keep_id_user.root = false;
+    keep_id_user.containers[id].replace(keep_id_user.containers[id].find("||"), 2,
+                                        "|keep-id:uid=10001,gid=10001|");
+    check("under rootless Podman, --userns=keep-id fails",
+          !ContainerManager(keep_id_user.host()).check_host().empty() &&
+              ContainerManager(keep_id_user.host()).check_host()[0].id == "container_user");
+    FakeHost host_mode = contained_host();
+    host_mode.containers[id].replace(host_mode.containers[id].find("||"), 2, "|host|");
+    check("under rootless Podman, lemond in Podman's own user namespace passes",
+          ContainerManager(host_mode.host()).check_host().empty());
     FakeHost rootful = contained_host();
     rootful.root = false;
     rootful.podman_rootless = "false";
@@ -882,7 +894,7 @@ void test_in_container_docker() {
     host.files["/proc/self/mountinfo"] =
         "1 2 0:1 /var/lib/docker/containers/" + id + "/hostname /etc/hostname rw - ext4 /dev/x rw\n";
     host.containers[id] =
-        id + "|[{\"Type\":\"volume\",\"Name\":\"lemonade-cache\","
+        id + "||[{\"Type\":\"volume\",\"Name\":\"lemonade-cache\","
              "\"Source\":\"/var/lib/docker/volumes/lemonade-cache/_data\","
              "\"Destination\":\"/opt/lemonade/.cache/huggingface\"}]"
              "|{\"bridge\":{\"IPAddress\":\"172.17.0.2\"},\"lemonade-backends\":{\"IPAddress\":\"172.18.0.3\"}}";

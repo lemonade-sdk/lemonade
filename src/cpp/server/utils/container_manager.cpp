@@ -374,14 +374,19 @@ std::optional<SetupFailure> ContainerManager::check_container() const {
                             {"Mount the socket of the Podman or Docker that runs lemond's container" + docs},
                             ""};
     }
-    // Under --userns=keep-id, lemond's user namespace belongs to the host
-    // account its backends' root maps to, which then holds every capability
-    // over lemond, its memory and its mounted socket included.
-    if (rootless_podman() && !host_.is_root()) {
+    // Any user namespace of lemond's own, as --userns=keep-id makes even with
+    // uid=0, belongs to the host account its backends' root maps to, which
+    // then holds every capability over lemond, its mounted socket included.
+    std::string userns_mode;
+    {
+        std::lock_guard<std::mutex> lock(own_container_mutex_);
+        userns_mode = own_userns_mode_;
+    }
+    if (rootless_podman() && !userns_mode.empty() && userns_mode != "host") {
         return SetupFailure{"container_user",
-                            "Under rootless Podman, lemond's container must run as root, which is "
-                            "your own account on the host",
-                            {"Start lemond's container with --user 0:0 instead of --userns=keep-id"},
+                            "Under rootless Podman, lemond's container must share Podman's user "
+                            "namespace, not have its own (--userns=" + userns_mode + ")",
+                            {"Start lemond's container with --user 0:0 and no --userns option"},
                             ""};
     }
     if (backend_network().empty()) {
@@ -821,16 +826,18 @@ std::string ContainerManager::own_container() const {
     for (const auto& candidate : own_container_candidates()) {
         const CommandResult result =
             invoke({"inspect", "--type", "container", "--format",
-                    "{{.Id}}|{{json .Mounts}}|{{json .NetworkSettings.Networks}}", candidate},
+                    "{{.Id}}|{{.HostConfig.UsernsMode}}|{{json .Mounts}}|{{json .NetworkSettings.Networks}}",
+                    candidate},
                    kCommandTimeoutSeconds, /*capture_stderr=*/false);
         if (result.exit_code != 0) continue;
         const std::string output = trim(result.output);
         const auto bar = output.find('|');
+        const auto mode_end = bar == std::string::npos ? bar : output.find('|', bar + 1);
         // Under pasta, Podman reports the networks as null rather than {}.
         const auto bar2 = output.rfind('|');
-        if (bar == std::string::npos || bar2 == bar) continue;
+        if (mode_end == std::string::npos || bar2 == mode_end) continue;
         std::vector<OwnMount> mounts;
-        const auto parsed = nlohmann::json::parse(output.substr(bar + 1, bar2 - bar - 1), nullptr, false);
+        const auto parsed = nlohmann::json::parse(output.substr(mode_end + 1, bar2 - mode_end - 1), nullptr, false);
         if (parsed.is_array()) {
             for (const auto& mount : parsed) {
                 const std::string source = mount.value("Source", "");
@@ -870,6 +877,7 @@ std::string ContainerManager::own_container() const {
             }
         }
         own_container_ = output.substr(0, bar);
+        own_userns_mode_ = output.substr(bar + 1, mode_end - bar - 1);
         own_mounts_ = std::move(mounts);
         backend_network_ = backend_network;
         set_refused_local_addresses(backend_network.empty() ? std::vector<std::string>()
