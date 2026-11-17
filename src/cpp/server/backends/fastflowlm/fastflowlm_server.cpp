@@ -8,6 +8,7 @@
 #include "lemon/backends/systemone_classify.h"
 #include "lemon/audio_types.h"
 #include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/error_types.h"
 #include "lemon/utils/process_manager.h"
@@ -60,6 +61,9 @@ InstallParams FastFlowLMServer::get_install_params(const std::string& backend, c
     params.filename = "fastflowlm_" + bare_version + "_linux.tar.gz";
 #endif
 
+    if (auto* cfg = RuntimeConfig::global(); cfg && cfg->backend_string("flm", "runtime") == "hrx") {
+        params.filename = "HRX_" + params.filename;
+    }
     return params;
 }
 

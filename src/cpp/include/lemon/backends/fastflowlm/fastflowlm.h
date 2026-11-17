@@ -48,7 +48,7 @@ inline const BackendDescriptor descriptor = {
     /*takes_args*/      true,
     /*arg_variants*/    {},
     /*bin_variants*/    {},
-    /*config_extra*/    {{"prefer_system", false}},
+    /*config_extra*/    {{"prefer_system", false}, {"runtime", "xrt"}},
     /*streams_model_from_storage*/ false,
     /*containers*/ {},
     // see ISystemOneServer

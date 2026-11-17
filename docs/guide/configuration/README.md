@@ -63,7 +63,8 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "extra_models_dir": "",
   "flm": {
     "args": "",
-    "prefer_system": false
+    "prefer_system": false,
+    "runtime": "xrt"
   },
   "global_timeout": 600,
   "gufo": {

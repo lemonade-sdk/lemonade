@@ -41,6 +41,8 @@ std::string find_flm_in_path();
 // Locate the flm executable: config override, PATH, then install dir ("" if not found).
 std::string find_flm_executable();
 
+void validate_flm_build_change();
+
 // Run `flm validate` and report readiness; error_message on failure.
 bool run_flm_validate(const std::string& flm_path, std::string& error_message);
 

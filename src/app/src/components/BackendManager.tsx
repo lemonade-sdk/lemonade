@@ -822,6 +822,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<Record<string, unknown>>({});
+  const [savingFlmBuild, setSavingFlmBuild] = useState(false);
   const backendTunings = useMemo<Record<string, BackendTuning>>(
     () => backendTuningsFromServerConfig(runtimeConfig, sysInfo),
     [runtimeConfig, sysInfo],
@@ -1057,6 +1058,18 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     }
   }, [fetchInfo, syncBackendStatus, toast]);
 
+  const handleFlmBuildChange = useCallback(async (runtime: string) => {
+    setSavingFlmBuild(true);
+    try {
+      await api.setRuntimeConfig({ flm_runtime: runtime });
+      await fetchInfo(false);
+    } catch (err) {
+      toast(friendlyErrorMessage(err));
+    } finally {
+      setSavingFlmBuild(false);
+    }
+  }, [fetchInfo, toast]);
+
   const handleUninstall = useCallback(async (recipe: string, backend: string) => {
     const key = backendKey(recipe, backend);
     try {
@@ -1229,7 +1242,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             const badge = stateBadge(info.state);
             const cellKey = backendKey(recipe, backend);
             const canEditArgs = backendArgsTarget(runtimeConfig, cellKey) !== null;
-            const isInstalling = installing === cellKey;
+            const isInstalling = installing === cellKey || (recipe === 'flm' && savingFlmBuild);
             const backendDownload = downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
             const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
             const tuning = backendTunings[cellKey] || null;
@@ -1336,6 +1349,21 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                   )}
                 </div>
 
+                {recipe === 'flm' && backend === 'npu' && (
+                  <label className="backend-card__variant-meta" title={t('Uninstall FastFlowLM before changing its build.')}>
+                    <span>{t('Build')}</span>
+                    <select
+                      className="select"
+                      aria-label={t('FastFlowLM build')}
+                      value={backendRuntimeRecord(runtimeConfig.flm)?.runtime === 'hrx' ? 'hrx' : 'xrt'}
+                      disabled={isInstalling || showBackendProgress || info.state !== 'installable' || !runtimeConfig.flm}
+                      onChange={event => void handleFlmBuildChange(event.target.value)}
+                    >
+                      <option value="xrt">{t('XRT (default)')}</option>
+                      <option value="hrx">HRX</option>
+                    </select>
+                  </label>
+                )}
                 {description && <p className="backend-card__description">{description}</p>}
                 {provenance && <p className="backend-card__provenance">{provenance}</p>}
 
@@ -1437,7 +1465,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         </div>
       </article>
     );
-  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, runtimeConfig, showLogos, showTech, sysInfo]);
+  }, [backendTunings, downloadItems, handleAction, handleFlmBuildChange, handleInstall, handleUninstall, installing, runtimeConfig, savingFlmBuild, showLogos, showTech, sysInfo]);
 
 
   const isUpdatesView = viewFilter === 'updates';

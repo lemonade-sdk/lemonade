@@ -5,8 +5,14 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/fastflowlm/fastflowlm_server.h"
 #include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
+#include "lemon/utils/path_utils.h"
+#include <chrono>
 #include <cstdio>
+#include <filesystem>
 #include <set>
 #include <string>
 #include "lemon/backends/vllm/vllm_server.h"
@@ -260,6 +266,97 @@ int run() {
 
 }  // namespace backend_about
 
+namespace flm_installation {
+
+namespace fs = std::filesystem;
+using lemon::backends::BackendUtils;
+using nlohmann::json;
+
+int failures = 0;
+
+void check(const std::string& name, bool ok) {
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name.c_str());
+    if (!ok) ++failures;
+}
+
+class Fixture {
+public:
+    Fixture()
+        : previous_cache_(lemon::utils::get_cache_dir()),
+          previous_config_(lemon::RuntimeConfig::global()),
+          config_({{"flm", json::object()}}) {
+        root_ = fs::temp_directory_path() /
+            ("lemonade_flm_install_" + std::to_string(
+                std::chrono::steady_clock::now().time_since_epoch().count()));
+        fs::create_directories(root_);
+        lemon::utils::set_cache_dir(root_.string());
+        lemon::RuntimeConfig::set_global(&config_);
+    }
+
+    ~Fixture() {
+        lemon::RuntimeConfig::set_global(previous_config_);
+        lemon::utils::set_cache_dir(previous_cache_);
+        std::error_code ec;
+        fs::remove_all(root_, ec);
+    }
+
+private:
+    fs::path root_;
+    std::string previous_cache_;
+    lemon::RuntimeConfig* previous_config_;
+    lemon::RuntimeConfig config_;
+};
+
+int run() {
+    Fixture fixture;
+    auto* config = lemon::RuntimeConfig::global();
+    const auto xrt = lemon::backends::FastFlowLMServer::get_install_params("npu", "v1.0.11");
+    config->set({{"flm", {{"runtime", "xrt"}}}});
+    check("XRT is used when no runtime is configured",
+          lemon::backends::FastFlowLMServer::get_install_params("npu", "v1.0.11").filename == xrt.filename);
+    config->set({{"flm", {{"runtime", "hrx"}}}});
+    const auto hrx = lemon::backends::FastFlowLMServer::get_install_params("npu", "v1.0.11");
+    check("HRX uses the matching prefixed release asset",
+          hrx.repo == xrt.repo && hrx.filename == "HRX_" + xrt.filename);
+
+    for (const std::string suffix : {"", ".staging"}) {
+        const fs::path install_dir = BackendUtils::get_install_directory("flm", "npu") + suffix;
+        for (const std::string runtime : {"hrx", "xrt"}) {
+            const std::string alternate = runtime == "hrx" ? "xrt" : "hrx";
+            config->set({{"flm", {{"runtime", runtime}}}});
+            fs::create_directories(install_dir);
+            config->set({{"flm", {{"runtime", runtime}}}});
+            bool rejected = false;
+            try {
+                config->set({{"flm", {{"runtime", alternate}}}});
+            } catch (const std::invalid_argument& error) {
+                rejected = std::string(error.what()).find("Uninstall FastFlowLM") != std::string::npos;
+            }
+            check("changing builds requires uninstalling the current build",
+                  rejected && config->backend_string("flm", "runtime") == runtime);
+            fs::remove_all(install_dir);
+            config->set({{"flm", {{"runtime", alternate}}}});
+            check("uninstalling allows switching builds",
+                  config->backend_string("flm", "runtime") == alternate);
+        }
+    }
+
+    for (const json invalid : {json(true), json(""), json("XRT"), json("other")}) {
+        const std::string previous = config->backend_string("flm", "runtime");
+        bool rejected = false;
+        try {
+            config->set({{"flm", {{"runtime", invalid}}}});
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        check("the runtime setting rejects invalid values without changing selection",
+              rejected && config->backend_string("flm", "runtime") == previous);
+    }
+    return failures == 0 ? 0 : 1;
+}
+
+}  // namespace flm_installation
+
 int main() {
     int failures = 0;
     std::printf("\n=== download policy ===\n");
@@ -270,5 +367,7 @@ int main() {
     failures |= flm_pull_args::run();
     std::printf("\n=== backend about ===\n");
     failures |= backend_about::run();
+    std::printf("\n=== flm installation ===\n");
+    failures |= flm_installation::run();
     return failures;
 }

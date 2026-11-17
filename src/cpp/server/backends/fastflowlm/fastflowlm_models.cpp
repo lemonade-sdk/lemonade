@@ -669,6 +669,14 @@ std::string find_flm_executable() {
     return "";
 }
 
+void validate_flm_build_change() {
+    const std::string install_dir = BackendUtils::get_install_directory("flm", "npu");
+    if (fs::exists(install_dir) || fs::exists(install_dir + ".staging")) {
+        throw std::invalid_argument(
+            "Uninstall FastFlowLM before changing its build (lemonade backends uninstall flm:npu).");
+    }
+}
+
 bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
     std::string flm_exe = flm_path.empty() ? find_flm_executable() : flm_path;
     if (flm_exe.empty()) {
