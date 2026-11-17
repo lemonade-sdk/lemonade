@@ -43,18 +43,18 @@ inline const BackendDescriptor descriptor = {
          "amdgpu://1 selects the next one",
          "Loom Options"},
         {"loom_memory_bytes", "--loom-memory-bytes", "", "BYTES",
-         "Device pool size, e.g. 16gib; empty uses the bundle's card on Strix Halo and a fixed "
-         "pool on the R9700",
+         "Device pool size, e.g. 16gib, served as an elastic pool; empty serves the bundle "
+         "as its card does, with a fixed pool sized by the card's preset",
          "Loom Options"},
         {"loom_args", "--loom-args", "", "ARGS",
          "Custom arguments to pass to loom-serve", "Loom Options"},
     },
     /*support*/ {
-        // gfx120X because Windows names the R9700 by family only; load() turns
+        // gfx120X because Windows names the R9700 and RX 9070 by family only; load() turns
         // away the gfx1200 parts the family also covers.
         {"rocm", BackendTier::Experimental, BackendFormat::Native, {"windows", "linux"},
          {{"amd_gpu", {"gfx1151", "gfx120X"}}},
-         "AMD Strix Halo (gfx1151), Radeon AI PRO R9700 (gfx1201)",
+         "AMD Strix Halo (gfx1151), Radeon AI PRO R9700 and RX 9070 XT (gfx1201)",
          {{"gfx1151", {/*os*/ {"windows", "linux"}, /*channels*/ {}}},
           {"gfx120X", {/*os*/ {"windows", "linux"}, /*channels*/ {}}}}},
     },

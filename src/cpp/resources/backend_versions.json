@@ -49,9 +49,9 @@
         }
       },
       "ROCm/hrx-system": {
-        "v0.1.0": {
-          "hrx_loom-0.1.0-py3-none-win_amd64.whl": "sha256:d368cf8be58f00f3e9c765df4031964d2fc07fb086a9b5241830f05e95725f83",
-          "hrx_loom-0.1.0-py3-none-manylinux_2_39_x86_64.whl": "sha256:4d3897b83cc0857723593487a4372a31d203944a1637e5e3143cad1d0583b98b"
+        "v0.2.0": {
+          "hrx_loom-0.2.0-py3-none-win_amd64.whl": "sha256:14c133b032eb3b9c9b59b2092b7f564699fd2ec69fc8c1d04874e74be30664fa",
+          "hrx_loom-0.2.0-py3-none-manylinux_2_39_x86_64.whl": "sha256:5148f9e3a264af400ec4bae38bd7b06bf551d28cc33b7a61d67f7bcefa590438"
         }
       }
     }
@@ -70,7 +70,7 @@
     "hrx": "hrx-b129"
   },
   "loom": {
-    "rocm": "v0.1.0"
+    "rocm": "v0.2.0"
   },
   "whispercpp": {
     "cpu": "v1.8.4",

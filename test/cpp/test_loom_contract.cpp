@@ -112,6 +112,11 @@ void check_bundle_plan() {
     check("A card with several presets still runs chat",
           loom::plan_bundle(several_presets, kLock).preset == "chat");
 
+    json gpu_variant_only = kCard;
+    gpu_variant_only["presets"] = {{"vision", json::object()}, {"vision-r9700", json::object()}};
+    check("A card without chat runs its one preset that is not a GPU variant",
+          loom::plan_bundle(gpu_variant_only, kLock).preset == "vision");
+
     json no_chat = kCard;
     no_chat["presets"] = {{"a", json::object()}, {"b", json::object()}};
     check("A card with several presets and no chat leaves the choice to loom-serve",
@@ -166,30 +171,31 @@ void check_launch_contract() {
         "--workers=4",
     };
     check("Launch argv binds loopback and appends benign custom flags",
-          loom::build_server_argv("/run", 14123, "vision-mtp", "amdgpu://", "57000000000", "",
-                                  "--workers=4") == expected);
-    check("Launch argv omits unset preset, memory and pool backing",
-          loom::build_server_argv("/run", 1, "", "amdgpu://", "", "", "") ==
+          loom::build_server_argv("/run", 14123, "vision-mtp", "amdgpu://",
+                                  {"--memory_bytes=57000000000"}, "--workers=4") == expected);
+    check("Launch argv omits an unset preset and serve flags",
+          loom::build_server_argv("/run", 1, "", "amdgpu://", {}, "") ==
               std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1",
                                         "--device=amdgpu://"}));
-    check("A fixed pool backing is passed through",
-          loom::build_server_argv("/run", 1, "", "amdgpu://", "", "fixed", "") ==
+    check("Serve flags are passed through in order",
+          loom::build_server_argv("/run", 1, "", "amdgpu://",
+                                  {"--pool_backing=fixed", loom::kPreloadFlag}, "") ==
               std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1",
-                                        "--device=amdgpu://", "--pool_backing=fixed"}));
+                                        "--device=amdgpu://", "--pool_backing=fixed",
+                                        "--parameter_mode=preload"}));
 
     for (const std::string custom : {"--listen=0.0.0.0:80", "--model=other.json", "--device=task",
                                      "--devices=d.json", "--memory_bytes=1", "--preset=x",
                                      "--flagfile=f", "--listen 0.0.0.0:80"}) {
         check("Reserved custom argument is rejected: " + custom, throws_exception([&] {
-                  (void)loom::build_server_argv("/run", 1, "", "amdgpu://", "", "", custom);
+                  (void)loom::build_server_argv("/run", 1, "", "amdgpu://", {}, custom);
               }));
     }
     check("A device with whitespace is rejected", throws_exception([] {
-              (void)loom::build_server_argv("/run", 1, "", "amdgpu:// --listen=0.0.0.0:1", "", "",
-                                            "");
+              (void)loom::build_server_argv("/run", 1, "", "amdgpu:// --listen=0.0.0.0:1", {}, "");
           }));
     check("An empty device is rejected",
-          throws_exception([] { (void)loom::build_server_argv("/run", 1, "", "", "", "", ""); }));
+          throws_exception([] { (void)loom::build_server_argv("/run", 1, "", "", {}, ""); }));
 }
 
 void check_device_targets() {
@@ -199,6 +205,12 @@ void check_device_targets() {
           loom::device_target("gfx1201", "120001") == loom::kRadeonR9700Target);
     check("A Windows R9700 named by family runs the radeon-r9700 build",
           loom::device_target("gfx120X", "AMD Radeon AI PRO R9700") == loom::kRadeonR9700Target);
+    check("A gfx1201 ISA with 32 GB runs the radeon-r9700 build",
+          loom::device_target("gfx1201", "120001", 31.9) == loom::kRadeonR9700Target);
+    check("A gfx1201 ISA with 16 GB runs the radeon-rx9070xt build",
+          loom::device_target("gfx1201", "120001", 15.9) == loom::kRadeonRx9070XtTarget);
+    check("A Windows RX 9070 XT named by family runs the radeon-rx9070xt build",
+          loom::device_target("gfx120X", "AMD Radeon RX 9070 XT") == loom::kRadeonRx9070XtTarget);
     check("A gfx1200 card has no build", loom::device_target("gfx1200", "120000").empty());
     check("A Windows RX 9060 named by family has no build",
           loom::device_target("gfx120X", "AMD Radeon RX 9060 XT").empty());
@@ -210,6 +222,9 @@ void check_device_targets() {
     check("A gated target is supported", loom::bundle_supports_target(info, loom::kStrixHaloTarget));
     check("A target marked unsupported is refused",
           !loom::bundle_supports_target(info, loom::kRadeonR9700Target));
+    check("A GPU the card marks as not a target is refused",
+          !loom::bundle_supports_target(json::parse(R"({"devices":{"strix-halo":{"state":"not_a_target"}}})"),
+                                        loom::kStrixHaloTarget));
     check("A target the bundle does not list is refused",
           !loom::bundle_supports_target(json::parse(R"({"devices":{"strix-halo":{}}})"),
                                         loom::kRadeonR9700Target));
@@ -287,19 +302,48 @@ void check_card_metadata() {
         "image_input":{"status":"yes"},"tool_calling":{"status":"yes"},
         "thinking":{"status":"yes"},"audio":{"status":"n/a"},
         "speculative_decoding":{"status":"yes","value":{"method":"dflash"}}}}})");
-    check("Card memory becomes the pool budget", loom::card_memory_bytes(info) == "57000000000");
-    check("A card without memory leaves the budget to loom-serve",
-          loom::card_memory_bytes(json::object()).empty());
+    using Args = std::vector<std::string>;
+    check("Strix Halo serves a fixed pool and preloads a package that fits beside it",
+          loom::serve_args(loom::kStrixHaloTarget, info, 23000000000ull, "", true) ==
+              Args({"--pool_backing=fixed", "--parameter_mode=preload"}));
+    check("Strix Halo keeps the default parameter mode above 40 GB of weights",
+          loom::serve_args(loom::kStrixHaloTarget, info, 80400000000ull, "", true) ==
+              Args({"--pool_backing=fixed"}));
+    check("The R9700 serves a fixed pool and preloads any package",
+          loom::serve_args(loom::kRadeonR9700Target, info, 80400000000ull, "", true) ==
+              Args({"--pool_backing=fixed", "--parameter_mode=preload"}));
+    check("The RX 9070 XT serves its 15 GB budget and small slabs, and preloads",
+          loom::serve_args(loom::kRadeonRx9070XtTarget, info, 1, "", true) ==
+              Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib",
+                    "--weight_slab_bytes=64mib", "--parameter_mode=preload"}));
+    check("No preload where the host has no memlock problem",
+          loom::serve_args(loom::kRadeonR9700Target, info, 1, "", false) ==
+              Args({"--pool_backing=fixed"}));
+    check("A requested size serves an elastic pool of that size",
+          loom::serve_args(loom::kRadeonR9700Target, info, 1, "16gib", true) ==
+              Args({"--parameter_mode=preload", "--memory_bytes=16gib"}));
+    const json recorded = json::parse(
+        R"({"devices":{"strix-halo":{"serve_args":["--memory_bytes=15000000000","--state_slab_bytes=4mib"]}}})");
+    check("Flags the card records for a GPU are served as they are",
+          loom::serve_args(loom::kStrixHaloTarget, recorded, 1, "", true) ==
+              Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib"}));
+    check("A size the user asks for replaces the recorded one",
+          loom::serve_args(loom::kStrixHaloTarget, recorded, 1, "8gib", true) ==
+              Args({"--state_slab_bytes=4mib", "--memory_bytes=8gib"}));
 
-    const auto halo = loom::pool_settings(loom::kStrixHaloTarget, "", info);
-    check("Strix Halo sizes an elastic pool from the card",
-          halo.memory_bytes == "57000000000" && halo.pool_backing.empty());
-    const auto r9700 = loom::pool_settings(loom::kRadeonR9700Target, "", info);
-    check("The R9700 backs the pool with fixed VRAM and no card budget",
-          r9700.memory_bytes.empty() && r9700.pool_backing == "fixed");
-    const auto sized = loom::pool_settings(loom::kRadeonR9700Target, "16gib", info);
-    check("A requested size keeps the R9700 pool elastic",
-          sized.memory_bytes == "16gib" && sized.pool_backing.empty());
+    json r9700_card = kCard;
+    r9700_card["presets"]["chat-r9700"] = {{"execution", json::object()}};
+    check("The R9700 runs the card's -r9700 preset",
+          loom::target_preset(r9700_card, "chat", loom::kRadeonR9700Target) == "chat-r9700");
+    r9700_card["presets"]["chat-9070xt"] = {{"execution", json::object()}};
+    check("The RX 9070 XT runs the card's -9070xt preset",
+          loom::target_preset(r9700_card, "chat", loom::kRadeonRx9070XtTarget) == "chat-9070xt");
+    check("Strix Halo runs the base preset",
+          loom::target_preset(r9700_card, "chat", loom::kStrixHaloTarget) == "chat");
+    check("The R9700 runs the base preset when the card has no variant",
+          loom::target_preset(kCard, "chat", loom::kRadeonR9700Target) == "chat");
+    check("Parameter bytes sum the origin files",
+          loom::parameter_bytes(loom::plan_bundle(kCard, kLock)) == 19095766304ull + 1033066592ull);
     check("Verified features become catalog labels",
           loom::suggested_labels(info, "Qwen3.6-27B-Loom") ==
               std::vector<std::string>({"chat", "vision", "tool-calling", "reasoning", "dflash"}));
@@ -311,34 +355,34 @@ void check_card_metadata() {
 
 void check_installer_contract() {
 #if defined(_WIN32)
-    const auto params = LoomServer::get_install_params("rocm", "v0.1.0");
+    const auto params = LoomServer::get_install_params("rocm", "v0.2.0");
     check("Windows installs the win_amd64 wheel",
-          params.filename == "hrx_loom-0.1.0-py3-none-win_amd64.whl");
+          params.filename == "hrx_loom-0.2.0-py3-none-win_amd64.whl");
 #elif defined(__linux__) && (defined(__x86_64__) || defined(__amd64__))
-    const auto params = LoomServer::get_install_params("rocm", "v0.1.0");
+    const auto params = LoomServer::get_install_params("rocm", "v0.2.0");
     check("Linux installs the manylinux wheel",
-          params.filename == "hrx_loom-0.1.0-py3-none-manylinux_2_39_x86_64.whl");
+          params.filename == "hrx_loom-0.2.0-py3-none-manylinux_2_39_x86_64.whl");
 #endif
 #if defined(_WIN32) || (defined(__linux__) && (defined(__x86_64__) || defined(__amd64__)))
     check("The wheel comes from the hrx-system release", params.repo == "ROCm/hrx-system");
     check("Only the wheel's scripts directory is installed",
-          params.archive_subdir == "hrx_loom-0.1.0.data/scripts");
+          params.archive_subdir == "hrx_loom-0.2.0.data/scripts");
 #endif
     check("Another backend is rejected",
-          throws_exception([] { (void)LoomServer::get_install_params("vulkan", "v0.1.0"); }));
+          throws_exception([] { (void)LoomServer::get_install_params("vulkan", "v0.2.0"); }));
 
     const fs::path staging = fs::temp_directory_path() / "lemonade-loom-contract.staging";
     std::error_code ec;
     fs::remove_all(staging, ec);
-    fs::create_directories(staging / "hrx_loom-0.1.0.data" / "scripts");
+    fs::create_directories(staging / "hrx_loom-0.2.0.data" / "scripts");
     fs::create_directories(staging / "loom");
-    std::ofstream(staging / "hrx_loom-0.1.0.data" / "scripts" / "loom-serve") << "binary";
+    std::ofstream(staging / "hrx_loom-0.2.0.data" / "scripts" / "loom-serve") << "binary";
     std::ofstream(staging / "loom" / "dsl.py") << "python";
     lemon::backends::BackendUtils::keep_archive_subdir(staging.string(),
-                                                       "hrx_loom-0.1.0.data/scripts");
+                                                       "hrx_loom-0.2.0.data/scripts");
     check("The kept directory becomes the install root",
           fs::exists(staging / "loom-serve") && !fs::exists(staging / "loom") &&
-              !fs::exists(staging / "hrx_loom-0.1.0.data"));
+              !fs::exists(staging / "hrx_loom-0.2.0.data"));
     check("An escaping subdirectory is rejected", throws_exception([&] {
               lemon::backends::BackendUtils::keep_archive_subdir(staging.string(), "../x");
           }));
@@ -360,6 +404,11 @@ void check_descriptor_contract() {
                   gpus->second.count("gfx1151") == 1 && gpus->second.count("gfx120X") == 1);
     }
     check("Loom pulls its own bundles", loom::descriptor.self_manages_downloads);
+
+    std::ifstream versions_stream(LOOM_TEST_BACKEND_VERSIONS_PATH);
+    const auto versions = json::parse(versions_stream);
+    check("Bundles are fetched for the pinned Loom release",
+          versions["loom"]["rocm"] == loom::kBundleRevision);
 }
 
 void check_catalog_contract() {

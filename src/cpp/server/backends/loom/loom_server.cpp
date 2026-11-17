@@ -54,11 +54,21 @@ json read_json_file(const fs::path& path) {
     return json::parse(stream);
 }
 
+// A run folder fetched for another Loom release holds a card this loom-serve
+// rejects (0.2.0 refuses 0.1.0's `pool_capacity`), so it counts as missing.
 bool bundle_complete(const std::string& checkpoint) {
     std::error_code ec;
     const fs::path dir = run_dir(checkpoint);
-    return fs::is_regular_file(dir / loom::kCompleteMarker, ec) &&
-           fs::is_regular_file(dir / loom::kCardFile, ec);
+    if (!fs::is_regular_file(dir / loom::kCompleteMarker, ec) ||
+        !fs::is_regular_file(dir / loom::kCardFile, ec)) {
+        return false;
+    }
+    try {
+        return read_json_file(dir / loom::kCompleteMarker).value("loom", "") ==
+               loom::kBundleRevision;
+    } catch (const std::exception&) {
+        return false;
+    }
 }
 
 bool file_matches(const fs::path& path, std::uint64_t size, const std::string& algorithm,
@@ -154,7 +164,7 @@ public:
 
         std::ofstream marker(dir_ / loom::kCompleteMarker, std::ios::binary | std::ios::trunc);
         marker << json{{"repo_id", repo_id_}, {"revision", listing.revision.id},
-                       {"model_id", bundle.model_id}}.dump(2);
+                       {"model_id", bundle.model_id}, {"loom", loom::kBundleRevision}}.dump(2);
         if (!marker.good()) throw std::runtime_error("Cannot record the completed Loom bundle");
         marker.close();
 
@@ -236,7 +246,7 @@ std::string require_supported_gpu() {
         for (const auto& gpu : gpus) {
             if (!gpu.available) continue;
             const std::string arch = identify_rocm_arch_from_name(gpu.name);
-            const std::string target = loom::device_target(arch, gpu.name);
+            const std::string target = loom::device_target(arch, gpu.name, gpu.vram_gb);
             if (!target.empty()) return target;
             if (!arch.empty()) found.push_back(arch);
         }
@@ -245,7 +255,8 @@ std::string require_supported_gpu() {
     std::string detail;
     for (const auto& arch : found) detail += (detail.empty() ? ", found " : ", ") + arch;
     throw std::runtime_error(
-        "Loom requires an AMD Strix Halo (gfx1151) or Radeon AI PRO R9700 (gfx1201) GPU" + detail);
+        "Loom requires an AMD Strix Halo (gfx1151), Radeon AI PRO R9700 or Radeon RX 9070 "
+        "(gfx1201) GPU" + detail);
 }
 
 // The server process does not keep its console output, so a failed start is
@@ -316,8 +327,8 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
         BundleFetcher(model_manager_->resolver().repository_for(ref, {}), nullptr, {}, target).run();
     }
     const fs::path dir = run_dir(checkpoint);
-    const loom::BundlePlan plan = loom::plan_bundle(read_json_file(dir / loom::kCardFile),
-                                                    read_json_file(dir / loom::kLockFile));
+    const json card = read_json_file(dir / loom::kCardFile);
+    const loom::BundlePlan plan = loom::plan_bundle(card, read_json_file(dir / loom::kLockFile));
     served_model_id_ = plan.model_id;
 
     const json info = fs::exists(dir / loom::kInfoFile) ? read_json_file(dir / loom::kInfoFile) : json();
@@ -325,15 +336,22 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
         throw std::runtime_error(model_name + " is not supported on this GPU (" + target + ")");
     }
 
-    const loom::PoolSettings pool = loom::pool_settings(
-        target, options.get_option("loom_memory_bytes").get<std::string>(), info);
+#if defined(__linux__)
+    constexpr bool kPreload = true;  // ROCm/hrx-system#3332 is the Linux memlock limit
+#else
+    constexpr bool kPreload = false;
+#endif
+    const std::vector<std::string> serve_args = loom::serve_args(
+        target, info, loom::parameter_bytes(plan),
+        options.get_option("loom_memory_bytes").get<std::string>(), kPreload);
 
     port_ = choose_port();
     ServerCommand command;
     command.program = BackendUtils::get_backend_binary_path(*loom::spec(), kBackend);
-    command.args = loom::build_server_argv(utils::path_to_utf8(dir), port_, plan.preset,
+    command.args = loom::build_server_argv(utils::path_to_utf8(dir), port_,
+                                           loom::target_preset(card, plan.preset, target),
                                            options.get_option("loom_device").get<std::string>(),
-                                           pool.memory_bytes, pool.pool_backing,
+                                           serve_args,
                                            options.get_option("loom_args").get<std::string>());
     command.port = port_;
     command.ready_endpoint = "/readyz";
