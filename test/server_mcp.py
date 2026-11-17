@@ -343,8 +343,10 @@ class McpGatewayTests(ServerTestBase):
 
         model3d = next(t for t in tools if t["name"] == "lemonade_generate_3d")
         schema3d = model3d["inputSchema"]
-        self.assertEqual(len(schema3d.get("oneOf", [])), 2)
-        for key in ("image", "prompt", "image_model", "model"):
+        self.assertEqual(schema3d["required"], ["image"])
+        self.assertNotIn("prompt", schema3d["properties"])
+        self.assertNotIn("image_model", schema3d["properties"])
+        for key in ("image", "model", "resolution", "bg_removal", "seed", "uv"):
             self.assertIn(key, schema3d["properties"])
         self.assertEqual(
             schema3d["properties"]["resolution"]["enum"], [512, 1024, 1536]

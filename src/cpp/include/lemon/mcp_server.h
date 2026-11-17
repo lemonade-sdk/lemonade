@@ -9,7 +9,6 @@
 #include <nlohmann/json.hpp>
 
 #include "mcp_tool.h"
-#include "lemon/mcp_3d_orchestrator.h"
 #include "lemon/model_manager_types.h"
 #include "router.h"
 
@@ -23,11 +22,12 @@ public:
     using EnsureLoadedFn = std::function<void(const std::string&)>;
     using ServerToolFn = std::function<json(const std::string&, const json&)>;
 
+    using Generate3dFn = std::function<httplib::Response(const json&)>;
+
     McpServer(Router* router, ModelManager* model_manager,
               EnsureLoadedFn ensure_loaded,
               ServerToolFn server_tool,
-              mcp_3d::GenerationFn image_generation,
-              mcp_3d::GenerationFn generation_3d);
+              Generate3dFn generation_3d);
     ~McpServer();
 
     // Returns the JSON-RPC reply, or an empty string when every message was a
@@ -84,8 +84,7 @@ private:
     ModelManager* model_manager_;
     EnsureLoadedFn ensure_loaded_;
     ServerToolFn server_tool_;
-    mcp_3d::GenerationFn image_generation_;
-    mcp_3d::GenerationFn generation_3d_;
+    Generate3dFn generation_3d_;
     std::vector<McpTool> tools_;
 };
 

@@ -24,7 +24,6 @@
 #include "lemon/server/route_registry.h"
 
 #include <stdexcept>
-#include <utility>
 
 namespace lemon {
 namespace {
@@ -376,24 +375,18 @@ nlohmann::json call_mcp_server_capability(ServerContext& ctx,
     }
 }
 
-// Reuse the HTTP generation routes in-process. Their model loading, input
-// validation and error handling remain authoritative for MCP calls as well.
-mcp_3d::GenerationResponse run_internal_generation(
-    RouteRegistry* registry, const char* path, const json& body) {
+// Reuse the existing 3D route in-process; it owns validation and model loading.
+httplib::Response run_internal_3d(RouteRegistry* registry, const json& body) {
     httplib::Request request;
     request.method = "POST";
-    request.path = path;
+    request.path = "/api/v1/3d/generations";
     request.body = body.dump();
     request.headers.emplace("Content-Type", "application/json");
     httplib::Response response;
     if (!registry->dispatch(request, response)) {
-        throw std::runtime_error(std::string("Missing internal generation route: ") + path);
+        throw std::runtime_error("Missing internal 3D generation route");
     }
-    return {
-        response.status > 0 ? response.status : 200,
-        response.get_header_value("Content-Type"),
-        std::move(response.body),
-    };
+    return response;
 }
 
 class McpRpcRoute : public ApiRoute {
@@ -408,12 +401,7 @@ public:
                    return call_mcp_server_capability(ctx, name, args);
                },
                [registry = ctx.registry](const json& body) {
-                   return run_internal_generation(
-                       registry, "/api/v1/images/generations", body);
-               },
-               [registry = ctx.registry](const json& body) {
-                   return run_internal_generation(
-                       registry, "/api/v1/3d/generations", body);
+                   return run_internal_3d(registry, body);
                }) {}
 
     RouteSpec spec() const override {

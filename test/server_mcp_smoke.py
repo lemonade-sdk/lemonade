@@ -232,12 +232,13 @@ def smoke_generate_image_dispatch(mcp_url, _cfg):
 
 
 def smoke_generate_3d_dispatch(mcp_url, _cfg):
-    """Input XOR validation must fail before model loading."""
-    result = tools_call(mcp_url, "lemonade_generate_3d", {})
-    assert result.get("isError") is True, f"expected isError: {result}"
-    text = assert_text_content(result)
-    assert "exactly one" in text.lower(), f"unexpected text: {text}"
-    detail(f"structured error: {truncate(text, 120)}")
+    """Missing image or obsolete prompt input must fail before model loading."""
+    for arguments in ({}, {"prompt": "a chair"}):
+        result = tools_call(mcp_url, "lemonade_generate_3d", arguments)
+        assert result.get("isError") is True, f"expected isError: {result}"
+        text = assert_text_content(result)
+        assert "image" in text.lower(), f"unexpected text: {text}"
+        detail(f"structured error: {truncate(text, 120)}")
 
 
 def smoke_omni_dispatch(mcp_url, _cfg):

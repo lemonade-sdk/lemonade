@@ -10,8 +10,6 @@ on:
       - "src/cpp/server/mcp_server.cpp"
       - "src/cpp/server/routes/mcp/rpc.cpp"
       - "src/cpp/include/lemon/mcp_server.h"
-      - "src/cpp/server/mcp_3d_orchestrator.cpp"
-      - "src/cpp/include/lemon/mcp_3d_orchestrator.h"
       - "src/cpp/server/routes/mcp/rpc.cpp"
       - "src/cpp/include/lemon/mcp_tool.h"
       - "src/cpp/server/server.cpp"
@@ -27,7 +25,6 @@ on:
       - "tools/version.py"
       - "test/server_mcp_smoke.py"
       - "test/server_mcp.py"
-      - "test/cpp/test_mcp_3d_orchestrator.cpp"
       - ".github/workflows/mcp-smoke-test.yml"
   push:
     branches: ["main"]

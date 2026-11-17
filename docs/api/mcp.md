@@ -486,22 +486,20 @@ Without `output_path` or `output_dir`, success returns one native MCP `image` co
 
 ### `lemonade_generate_3d`
 
-Create a GLB from exactly one of `image` or `prompt`. With `image`, reconstruction uses the existing 3D server path directly. With `prompt`, Lemonade first generates one reconstruction-oriented 1024x1024 image, then passes it into the same 3D path. An optional `image_model` must already be loaded or downloaded; otherwise a loaded image model, then a downloaded one, is selected. No image model is downloaded automatically.
+Reconstruct a GLB from an explicitly supplied image using the existing 3D generation route. Pass base64 PNG, JPEG, BMP or GIF, or a base64 data URL. To start from text, call lemonade_generate_image first and pass its output image here. No 3D model is downloaded implicitly.
 
 **Returns**
 
-Returns a short text block and the GLB in `structuredContent.data_base64` (`mime_type`: model/gltf-binary). Prompt calls also include a native MCP reference-image block and `reference_generated`, `image_model`, and `model` metadata. Failures distinguish reference-image generation from 3D reconstruction.
+Returns a text confirmation and a GLB in structuredContent.data_base64 (mime_type: model/gltf-binary). Errors return isError=true. No prompt-to-3D orchestration.
 
 | Argument | Required | Schema | Description |
 |---|:---:|---|---|
-| `bg_removal` | no | `{"enum":["threshold","birefnet"],"type":"string"}` | Background removal mode for 3D reconstruction. |
-| `image` | no | `{"type":"string"}` | Base64 PNG/JPEG/BMP/GIF image or base64 data: URL. Use exactly one of image/prompt. |
-| `image_model` | no | `{"type":"string"}` | Prompt path only. Optional local image-generation model; never auto-downloaded. |
-| `model` | no | `{"type":"string"}` | Optional 3D reconstruction model; omit to reuse a loaded or downloaded mesh model. |
-| `prompt` | no | `{"type":"string"}` | Text prompt used to generate one 1024x1024 reference image. Use exactly one of image/prompt. |
-| `resolution` | no | `{"enum":[512,1024,1536],"type":"integer"}` | 3D reconstruction resolution; independent of the reference-image size. |
+| `bg_removal` | no | `{"enum":["threshold","birefnet"],"type":"string"}` | Background removal mode for reconstruction. |
+| `image` | yes | `{"type":"string"}` | Required base64 PNG/JPEG/BMP/GIF image or base64 data URL. |
+| `model` | no | `{"type":"string"}` | Optional registered 3D model; otherwise reuse a loaded/downloaded mesh model. |
+| `resolution` | no | `{"enum":[512,1024,1536],"type":"integer"}` | Reconstruction resolution (512, 1024 or 1536). |
 | `seed` | no | `{"type":"integer"}` | Optional reconstruction seed. |
-| `uv` | no | `{"enum":["box","xatlas"],"type":"string"}` | 3D UV atlas method. |
+| `uv` | no | `{"enum":["box","xatlas"],"type":"string"}` | UV atlas method for reconstruction. |
 
 ### `lemonade_omni`
 
