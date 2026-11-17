@@ -71,6 +71,37 @@ static void test_remove_all_except() {
     check("prune: a file it did not make stays", fs::exists(store::dir() / "notes.txt"));
 }
 
+static void test_reservations() {
+    const std::string written = store::new_file_name();
+    store::write(written, "taken");
+    const std::string preferred = store::new_file_name();
+    check("reserve: a free preferred name is kept", store::reserve_file_name(preferred) == preferred);
+    const std::string second = store::reserve_file_name(preferred);
+    check("reserve: a reserved name is not handed out again",
+          second != preferred && store::is_valid_file_name(second));
+    const std::string third = store::reserve_file_name(written);
+    check("reserve: an existing clip's name is not reused", third != written);
+    const std::string fourth = store::reserve_file_name("../escape");
+    check("reserve: an invalid name is replaced", store::is_valid_file_name(fourth));
+
+    store::write(second, "being published");
+    store::remove_all_except({});
+    check("reserve: a reserved clip survives a clean-up", fs::exists(store::dir() / second));
+    check("reserve: an unreferenced written clip goes", !fs::exists(store::dir() / written));
+
+    store::remove_all_except({second});
+    store::remove_all_except({});
+    check("reserve: a clean-up that sees the clip in a job drops the reservation",
+          !fs::exists(store::dir() / second));
+
+    store::write(third, "failed run");
+    store::release(third);
+    store::remove_all_except({});
+    check("reserve: a released name is cleaned up", !fs::exists(store::dir() / third));
+    store::release(preferred);
+    store::release(fourth);
+}
+
 static void test_is_video_job() {
     using nlohmann::json;
     const json video_step = {{"id", "video"}, {"op", "generate_video"}, {"params", json::object()}};
@@ -109,6 +140,7 @@ int main() {
     test_file_names();
     test_write_read();
     test_remove_all_except();
+    test_reservations();
     test_is_video_job();
     test_video_status();
     if (g_failures) {

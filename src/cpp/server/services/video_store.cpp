@@ -4,6 +4,7 @@
 #include <cctype>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -21,6 +22,16 @@ namespace fs = std::filesystem;
 namespace {
 const std::string kPrefix = "video-";
 constexpr size_t kHexLength = 32;
+
+std::mutex& reservation_mutex() {
+    static std::mutex m;
+    return m;
+}
+
+std::set<std::string>& reserved() {
+    static std::set<std::string> names;
+    return names;
+}
 } // namespace
 
 fs::path dir() {
@@ -71,11 +82,26 @@ bool exists(const std::string& name) {
     return is_valid_file_name(name) && fs::exists(dir() / name, ec);
 }
 
+std::string reserve_file_name(const std::string& preferred) {
+    std::lock_guard<std::mutex> lock(reservation_mutex());
+    std::string name = preferred;
+    while (!is_valid_file_name(name) || reserved().count(name) || exists(name)) name = new_file_name();
+    reserved().insert(name);
+    return name;
+}
+
+void release(const std::string& name) {
+    std::lock_guard<std::mutex> lock(reservation_mutex());
+    reserved().erase(name);
+}
+
 void remove_all_except(const std::set<std::string>& keep) {
+    std::lock_guard<std::mutex> lock(reservation_mutex());
+    for (const auto& name : keep) reserved().erase(name);
     std::error_code ec;
     for (fs::directory_iterator it(dir(), ec), end; !ec && it != end; it.increment(ec)) {
         const std::string name = utils::path_to_utf8(it->path().filename());
-        if (!is_valid_file_name(name) || keep.count(name)) continue;
+        if (!is_valid_file_name(name) || keep.count(name) || reserved().count(name)) continue;
         std::error_code rm;
         fs::remove(it->path(), rm);
         if (rm) LOG(WARNING, "Videos") << "Could not remove " << name << ": " << rm.message() << std::endl;

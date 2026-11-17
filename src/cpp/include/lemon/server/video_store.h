@@ -26,6 +26,17 @@ bool read(const std::string& name, std::string& bytes);
 
 bool exists(const std::string& name);
 
+// Reserves `preferred` when it is a valid name that no file or other reservation uses,
+// otherwise a new name, and returns the reserved one. A reservation keeps the clip safe
+// from remove_all_except() from before it is written until a clean-up sees its name in
+// a job record, which closes the gap between writing a clip and the job recording it.
+std::string reserve_file_name(const std::string& preferred);
+
+// Drops a reservation whose clip was never written, such as after a failed generation.
+void release(const std::string& name);
+
+// Removes every clip that is neither in `keep` nor reserved, and drops the reservations
+// that `keep` now covers.
 void remove_all_except(const std::set<std::string>& keep);
 
 // Video ids are job ids, so without this check the video routes would report on, or

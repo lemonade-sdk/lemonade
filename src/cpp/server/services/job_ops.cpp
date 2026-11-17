@@ -155,6 +155,17 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         -> lemon::jobs::json {
         nlohmann::json request = nlohmann::json::parse(params.dump());
         const std::string model = request.value("model", std::string());
+        // clip_file comes from the job's params, which a generic job can leave out or fill
+        // with another video's name, so the op always writes to a name it reserved itself.
+        const std::string file = video_store::reserve_file_name(request.value("clip_file", std::string()));
+        bool published = false;
+        struct ReleaseUnpublished {
+            const std::string& file;
+            const bool& published;
+            ~ReleaseUnpublished() {
+                if (!published) video_store::release(file);
+            }
+        } release_unpublished{file, published};
         std::map<std::string, int> loaded_here;
         auto unload_if_interrupted = [&] {
             if (cancel.load() && !loaded_here.empty())
@@ -184,12 +195,8 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
             throw lemon::jobs::JobError(424, msg);
         }
         if (response.contains("b64_json") && response["b64_json"].is_string()) {
-            std::string file = request.value("clip_file", std::string());
-            // clip_file comes from the job's params, which a generic job can fill with
-            // another video's name: writing there would replace that video's clip.
-            if (!video_store::is_valid_file_name(file) || video_store::exists(file))
-                file = video_store::new_file_name();
             video_store::write(file, utils::JsonUtils::base64_decode(response["b64_json"].get<std::string>()));
+            published = true;
             response.erase("b64_json");
             response["clip_file"] = file;
         }
