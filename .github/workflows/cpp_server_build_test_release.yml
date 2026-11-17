@@ -2317,6 +2317,8 @@ jobs:
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu jobs"
           .venv/bin/python test/server_jobs.py --lemond-binary lemond
+          # Videos are jobs too; only the tests that need no video model or GPU run here.
+          LEMONADE_VIDEO_GPU_FREE_ONLY=1 .venv/bin/python test/server_video.py --cli-binary lemonade
 
       - name: Test eviction
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}

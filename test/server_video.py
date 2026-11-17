@@ -10,11 +10,17 @@ Usage:
 Video generation is slow, so the generation test asks for the shortest clip
 that still exercises the frame loop. The negative tests run first and never
 pull the model; only the generation tests download it.
+
+With LEMONADE_VIDEO_GPU_FREE_ONLY=1, only the tests that need no video model run,
+which is how CI runs this file:
+    LEMONADE_VIDEO_GPU_FREE_ONLY=1 python server_video.py
 """
 
 import base64
 import io
+import os
 import time
+import unittest
 
 import requests
 
@@ -33,6 +39,16 @@ TIMEOUT_VIDEO_GENERATION = 3600
 
 # Far less than the canceled clip in test_012 would take to finish.
 TIMEOUT_CANCELED_CLIP_RELEASED = 180
+
+GPU_FREE_ONLY = os.environ.get("LEMONADE_VIDEO_GPU_FREE_ONLY") == "1"
+
+
+def video_model():
+    """The test video model; its catalog name when no backend config is set."""
+    return "Wan2.1-T2V-1.3B" if GPU_FREE_ONLY else get_test_model("video")
+needs_video_model = unittest.skipIf(
+    GPU_FREE_ONLY, "needs the video model and a GPU (LEMONADE_VIDEO_GPU_FREE_ONLY=1)"
+)
 
 # WebM/Matroska magic. Enough to prove real container bytes came back rather
 # than some other payload.
@@ -53,6 +69,9 @@ class VideoGenerationTests(ServerTestBase):
 
     @classmethod
     def tearDownClass(cls):
+        if GPU_FREE_ONLY:
+            super().tearDownClass()
+            return
         try:
             response = unload_model(get_test_model("video"))
             if response.status_code not in (200, 404):
@@ -146,7 +165,7 @@ class VideoGenerationTests(ServerTestBase):
 
     def test_001_missing_prompt_rejected(self):
         """A request without a prompt is refused before any model load."""
-        self._assert_rejected({"model": get_test_model("video")}, "missing prompt")
+        self._assert_rejected({"model": video_model()}, "missing prompt")
 
     def test_002_missing_model_rejected(self):
         """A request without a model is refused before any model load."""
@@ -180,8 +199,59 @@ class VideoGenerationTests(ServerTestBase):
         self.assertEqual(response.status_code, 409, response.text[:200])
         self._wait(job_id, timeout=TIMEOUT_MODEL_OPERATION)
 
+    def test_006_non_video_model_fails_before_loading(self):
+        """A chat model is refused before it is downloaded or loaded."""
+        model = "Qwen3-0.6B-GGUF"
+
+        def loaded():
+            health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            return [m.get("model_name") for m in health.get("all_models_loaded", [])]
+
+        was_loaded = model in loaded()
+        job_id = self._create({"model": model, "prompt": "a cat"})
+        payload = self._wait(job_id, timeout=TIMEOUT_MODEL_OPERATION)
+        self.assertEqual(payload["status"], "failed", payload)
+        self.assertIn("is not a video model", str(payload.get("error")), payload)
+        if not was_loaded:
+            self.assertNotIn(model, loaded(), "the chat model was loaded anyway")
+
+    def test_007_numbers_are_checked_and_normalized(self):
+        """Integer-valued floats are accepted; fractions and huge values are not."""
+        job_id = self._create(
+            {
+                "model": "user.does-not-exist",
+                "prompt": "a cat",
+                "video_frames": 9.0,
+                "fps": 8.0,
+            }
+        )
+        self._wait(job_id, timeout=TIMEOUT_MODEL_OPERATION)
+        base = {"model": "user.does-not-exist", "prompt": "a cat"}
+        for bad in (
+            {"video_frames": 9.5},
+            {"video_frames": 2147483648},
+            {"fps": 1000},
+            {"width": 100000},
+            {"steps": 10**12},
+            {"duration": 100000},
+        ):
+            self._assert_rejected({**base, **bad}, f"{bad}")
+
+    def test_008_finished_videos_report_completed_at(self):
+        """A canceled or failed video says when it ended."""
+        job_id = self._create({"model": "user.does-not-exist", "prompt": "a cat"})
+        requests.post(
+            f"{self.base_url}/videos/{job_id}/cancel", timeout=TIMEOUT_DEFAULT
+        )
+        payload = self._wait(job_id, timeout=TIMEOUT_MODEL_OPERATION)
+        self.assertIn(payload["status"], ("canceled", "failed"), payload)
+        self.assertIn("completed_at", payload, payload)
+
     # --- generation ---
 
+    @needs_video_model
     def test_010_generates_a_video(self):
         """A prompt produces a decodable clip with the requested frame count.
 
@@ -252,6 +322,7 @@ class VideoGenerationTests(ServerTestBase):
             f"@ {payload['fps']} fps"
         )
 
+    @needs_video_model
     def test_011_frame_default_applies_without_recipe_options(self):
         """A video model carrying no recipe options still returns a clip.
 
@@ -317,6 +388,7 @@ class VideoGenerationTests(ServerTestBase):
         )
         print(f"[OK] default frame count reached the backend: {payload['frame_count']}")
 
+    @needs_video_model
     def test_013_duration_sets_the_frame_count(self):
         """A duration in seconds becomes the nearest frame count the model takes.
 
@@ -346,6 +418,7 @@ class VideoGenerationTests(ServerTestBase):
             f"{payload['duration']}s"
         )
 
+    @needs_video_model
     def test_012_cancel_releases_a_running_generation(self):
         """Cancelling a clip that is generating stops it on the GPU.
 
@@ -400,6 +473,7 @@ class VideoGenerationTests(ServerTestBase):
         elapsed = time.time() - canceled_at
         print(f"[OK] canceled, and the next clip finished {elapsed:.1f}s later")
 
+    @needs_video_model
     def test_014_other_models_keep_serving_during_a_video(self):
         """A chat request on another model answers while a clip is generating."""
         self._ensure_model_pulled()
@@ -452,6 +526,7 @@ class VideoGenerationTests(ServerTestBase):
             self._wait(job_id, timeout=TIMEOUT_MODEL_OPERATION)
             unload_model(chat_model)
 
+    @needs_video_model
     def test_015_image_endpoints_reject_a_video_model(self):
         """A video model is refused by image generation, edits and variations."""
         self._ensure_model_pulled()
