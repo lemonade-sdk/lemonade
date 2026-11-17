@@ -197,7 +197,7 @@ if(APPLE AND CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 # Create symlink in standard bin path only if not installing to /usr
-if(UNIX AND NOT APPLE AND NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+if(LEMONADE_LINK_INTO_USR)
     install(CODE "
         file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
         execute_process(

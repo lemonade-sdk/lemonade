@@ -188,9 +188,30 @@ endif()
 if(APPLE)
     set(CMAKE_IGNORE_PATH "/opt/homebrew/lib" "/opt/homebrew/include")
 endif()
+option(LEMONADE_USER_INSTALL
+    "Linux: install for the current user (default prefix ~/.local, systemd --user service, no root needed)" OFF)
+if(LEMONADE_USER_INSTALL AND (APPLE OR NOT UNIX))
+    message(WARNING "LEMONADE_USER_INSTALL is only supported on Linux; ignoring it")
+    set(LEMONADE_USER_INSTALL OFF CACHE BOOL "" FORCE)
+endif()
+
 # Set default install prefix to /opt on Linux if not specified
 if(UNIX AND NOT APPLE AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX "/opt" CACHE PATH "Install prefix" FORCE)
+endif()
+# "/opt" is matched as well so that turning the option on in an existing build tree
+# moves off the system default that the block above already wrote into the cache.
+if(LEMONADE_USER_INSTALL AND (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT OR CMAKE_INSTALL_PREFIX STREQUAL "/opt"))
+    set(CMAKE_INSTALL_PREFIX "$ENV{HOME}/.local" CACHE PATH "Install prefix" FORCE)
+endif()
+
+# Installs outside /usr normally symlink their binaries, desktop entries and systemd
+# units into /usr so they are found on the default search paths. A user install
+# must not write outside the user's home, so it relies on ~/.local paths instead.
+if(UNIX AND NOT APPLE AND NOT LEMONADE_USER_INSTALL AND NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+    set(LEMONADE_LINK_INTO_USR ON)
+else()
+    set(LEMONADE_LINK_INTO_USR OFF)
 endif()
 
 # Include GNUInstallDirs for standard installation directories
@@ -1743,7 +1764,7 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
             DESTINATION share/metainfo
         )
         # Create symlink in standard applications path only if not installing to /usr
-        if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+        if(LEMONADE_LINK_INTO_USR)
             install(CODE "
                 file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/applications\")
                 execute_process(
@@ -1758,7 +1779,7 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
             RENAME lemonade-app.svg
         )
         # Create symlink in standard pixmaps path only if not installing to /usr
-        if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+        if(LEMONADE_LINK_INTO_USR)
             install(CODE "
                 file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/pixmaps\")
                 execute_process(
@@ -1774,7 +1795,7 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
             PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
         )
         # Create symlink in standard bin path only if not installing to /usr
-        if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+        if(LEMONADE_LINK_INTO_USR)
             install(CODE "
                 file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
                 execute_process(
@@ -2136,54 +2157,81 @@ if(UNIX AND NOT APPLE)
         ")
     endfunction()
 
-    # Configure systemd service file (uses CMAKE_INSTALL_FULL_* variables)
-    configure_file(
-        ${CMAKE_SOURCE_DIR}/data/lemond.service.in
-        ${CMAKE_BINARY_DIR}/lemond.service
-        @ONLY
-    )
-
-    # Install systemd service file
-    install(FILES ${CMAKE_BINARY_DIR}/lemond.service
-        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
-    )
-    # Create symlinks in standard systemd search paths only if not installing to /usr
-    # (if prefix is /usr, the service is already in the standard location)
-    if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-        lemonade_install_systemd_symlink(
-            "/usr/lib/systemd/system/lemond.service"
-            "${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemond.service"
-        )
-        lemonade_install_systemd_symlink(
-            "/usr/lib/systemd/user/lemond.service"
-            "${CMAKE_INSTALL_PREFIX}/lib/systemd/user/lemond.service"
-        )
-    endif()
-
-    # Install sysusers.d snippet so the 'lemonade' system user is created
-    install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.sysusers
-        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/sysusers.d
-        RENAME lemonade.conf
-    )
-
-    # Configure + install the user-mode systemd unit
     configure_file(
         ${CMAKE_SOURCE_DIR}/data/lemond-user.service.in
         ${CMAKE_BINARY_DIR}/lemond-user.service
         @ONLY
     )
-    install(FILES ${CMAKE_BINARY_DIR}/lemond-user.service
-        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/user
-        RENAME lemond.service
-    )
 
-    # Install the optional environment-file template loaded by the unit via
-    # EnvironmentFile=-/etc/default/lemond (LEMONADE_API_KEY and other secrets).
-    install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
-        DESTINATION /etc/default
-        RENAME lemond
-        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ
-    )
+    if(LEMONADE_USER_INSTALL)
+        install(FILES ${CMAKE_BINARY_DIR}/lemond-user.service
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/systemd/user
+            RENAME lemond.service
+        )
+
+        if(DEFINED ENV{XDG_DATA_HOME} AND NOT "$ENV{XDG_DATA_HOME}" STREQUAL "")
+            set(_lemonade_xdg_data_home "$ENV{XDG_DATA_HOME}")
+        else()
+            set(_lemonade_xdg_data_home "$ENV{HOME}/.local/share")
+        endif()
+        set(LEMONADE_USER_UNIT_PATH "${CMAKE_INSTALL_FULL_DATADIR}/systemd/user/lemond.service")
+        # Only $XDG_DATA_HOME/systemd/user is on the systemd --user search path, so a
+        # unit installed under any other prefix has to be linked in with `systemctl link`.
+        if("${CMAKE_INSTALL_FULL_DATADIR}" STREQUAL "${_lemonade_xdg_data_home}")
+            set(LEMONADE_USER_UNIT_NEEDS_LINK OFF)
+        else()
+            set(LEMONADE_USER_UNIT_NEEDS_LINK ON)
+        endif()
+
+        find_program(LEMONADE_SYSTEMCTL systemctl)
+        configure_file(
+            ${CMAKE_SOURCE_DIR}/cmake/RegisterUserService.cmake.in
+            ${CMAKE_BINARY_DIR}/RegisterUserService.cmake
+            @ONLY
+        )
+        install(SCRIPT ${CMAKE_BINARY_DIR}/RegisterUserService.cmake)
+
+        message(STATUS "User install: prefix ${CMAKE_INSTALL_PREFIX}, lemond registered as a systemd --user service on install")
+    else()
+        configure_file(
+            ${CMAKE_SOURCE_DIR}/data/lemond.service.in
+            ${CMAKE_BINARY_DIR}/lemond.service
+            @ONLY
+        )
+        install(FILES ${CMAKE_BINARY_DIR}/lemond.service
+            DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
+        )
+        # A /usr prefix already puts the units on the standard systemd search paths.
+        if(LEMONADE_LINK_INTO_USR)
+            lemonade_install_systemd_symlink(
+                "/usr/lib/systemd/system/lemond.service"
+                "${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemond.service"
+            )
+            lemonade_install_systemd_symlink(
+                "/usr/lib/systemd/user/lemond.service"
+                "${CMAKE_INSTALL_PREFIX}/lib/systemd/user/lemond.service"
+            )
+        endif()
+
+        # Install sysusers.d snippet so the 'lemonade' system user is created
+        install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.sysusers
+            DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/sysusers.d
+            RENAME lemonade.conf
+        )
+
+        install(FILES ${CMAKE_BINARY_DIR}/lemond-user.service
+            DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/user
+            RENAME lemond.service
+        )
+
+        # Install the optional environment-file template loaded by the unit via
+        # EnvironmentFile=-/etc/default/lemond (LEMONADE_API_KEY and other secrets).
+        install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
+            DESTINATION /etc/default
+            RENAME lemond
+            PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ
+        )
+    endif()
 
     # Create symlinks for KaTeX fonts if they exist on the system
     # Check if fonts-katex package fonts are available
@@ -2271,7 +2319,7 @@ if(UNIX AND NOT APPLE)
                 DESTINATION share/metainfo
             )
             # Create symlink in standard applications path only if not installing to /usr
-            if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+            if(LEMONADE_LINK_INTO_USR)
                 install(CODE "
                     file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/applications\")
                     execute_process(
@@ -2287,7 +2335,7 @@ if(UNIX AND NOT APPLE)
             )
 
             # Create symlink in standard pixmaps path only if not installing to /usr
-            if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+            if(LEMONADE_LINK_INTO_USR)
                 install(CODE "
                     file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/share/pixmaps\")
                     execute_process(
@@ -2298,7 +2346,7 @@ if(UNIX AND NOT APPLE)
                 ")
             endif()
             # Create symlink in standard bin path only if not installing to /usr
-            if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+            if(LEMONADE_LINK_INTO_USR)
                 install(CODE "
                     file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
                     execute_process(
