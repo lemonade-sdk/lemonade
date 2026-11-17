@@ -159,6 +159,28 @@ CAPABILITIES = {
             "chat_extra_body": {"enable_thinking": False},
             "responses_extra_body": {"reasoning": {"effort": "none"}},
         },
+        # vLLM reads thinking switches only from chat_template_kwargs.
+        "aim": {
+            "backends": ["radeon"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "multi_model": True,
+                "stop_parameter": True,
+            },
+            "test_models": {
+                "llm": "Qwen3.5-9B-AIM",
+            },
+            "chat_extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+        },
         # A reasoning model, with thinking turned off for the run: the tests'
         # small token budgets would otherwise land entirely in reasoning.
         "ds4": {

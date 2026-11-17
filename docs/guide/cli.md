@@ -462,6 +462,13 @@ The following options are available depending on the recipe being used:
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--gufo-args ARGS` | Custom arguments to pass to gufo serve llm | `""` |
 
+#### AMD Inference Microservice (`aim` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--aim-profile PROFILE` | AIM profile to serve with, instead of the one AIM picks for this GPU | `""` |
+
 #### ThinkSound (`thinksound` recipe)
 
 | Option | Description | Default |

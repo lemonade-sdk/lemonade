@@ -24,7 +24,6 @@ using utils::ProcessManager;
 
 namespace {
 
-constexpr const char* kModelsDir = "/mnt/models";
 constexpr int kAddressTimeoutSeconds = 30;
 constexpr int kClientExitSeconds = 5;
 
@@ -138,15 +137,23 @@ std::string ContainerProcess::start(const ServerCommand& command) {
     // container sees exactly what the command names.
     std::map<std::string, std::string> inside;  // path as the command names it -> path inside
     std::set<std::string> destinations;
+    for (const auto& [model_file, relative] : command.model_files_at) {
+        const std::string destination = std::string(kContainerModelsDir) + "/" + relative;
+        destinations.insert(destination);
+        for (auto& mount : ContainerManager::model_mounts(model_file, destination)) {
+            spec.mounts.push_back(std::move(mount));
+        }
+        inside[model_file] = destination;
+    }
     for (const auto& model_file : command.model_files) {
         if (model_file.empty() || inside.count(model_file)) continue;
         fs::path named(model_file);
         if (!named.has_filename()) named = named.parent_path();
         const std::string file_name = named.filename().string();
-        std::string destination = std::string(kModelsDir) + "/" + file_name;
+        std::string destination = std::string(kContainerModelsDir) + "/" + file_name;
         // Two files can share a name; the second gets a numbered directory.
         for (int n = 2; destinations.count(destination); ++n) {
-            destination = std::string(kModelsDir) + "/" + std::to_string(n) + "/" + file_name;
+            destination = std::string(kContainerModelsDir) + "/" + std::to_string(n) + "/" + file_name;
         }
         destinations.insert(destination);
         for (auto& mount : ContainerManager::model_mounts(model_file, destination)) {

@@ -236,6 +236,7 @@ set(LEMON_BACKENDS
     "rocmfpx|rocmfpx"
     "halogen|halogen"
     "gufo|gufo"
+    "aim|aim"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
@@ -2777,6 +2778,7 @@ if(BUILD_TESTING AND EXISTS "${_CONTAINER_MANAGER_TEST_SRC}")
     target_link_libraries(test_container_manager PRIVATE lemonade-server-core)
     target_compile_definitions(test_container_manager PRIVATE
         BACKEND_VERSIONS_JSON_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backend_versions.json"
+        SERVER_MODELS_JSON_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/server_models.json"
     )
     add_cpp_ci_test(ContainerManagerTest CI ON COMMAND test_container_manager)
 endif()

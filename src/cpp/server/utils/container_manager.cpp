@@ -693,7 +693,8 @@ std::string ContainerManager::install_command(const std::string& os_release,
 }
 
 bool ContainerManager::allowed_image(const std::string& image) {
-    for (const std::string prefix : {"docker.io/kyuz0/", "ghcr.io/peonist-ai/", "ghcr.io/gufo-org/"}) {
+    for (const std::string prefix :
+         {"docker.io/amdenterpriseai/", "docker.io/kyuz0/", "ghcr.io/peonist-ai/", "ghcr.io/gufo-org/"}) {
         if (image.size() > prefix.size() && image.compare(0, prefix.size(), prefix) == 0) {
             return true;
         }

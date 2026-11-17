@@ -31,6 +31,7 @@ Lemonade follows [Ramalama](https://github.com/containers/ramalama)'s container 
   - Donato's [Docker Hub account](https://hub.docker.com/u/kyuz0) for rocmfpx, nathanw, and ds4.
   - Peonist's [ghcr.io account](https://github.com/orgs/peonist-ai/packages) for Halogen.
   - Gufo's [ghcr.io account](https://github.com/orgs/gufo-org/packages) for Gufo, built by [gufo-org/toolboxes](https://github.com/gufo-org/toolboxes).
+  - AMD's [Docker Hub account](https://hub.docker.com/u/amdenterpriseai) for AIM.
 - **Models.** Downloaded by Lemonade and mounted read-only. Mounts and privileges are Lemonade's to set.
 - **Packaging.**
   - The PPA, the GitHub release .deb and .rpm, source builds and the embedded SDK tarball will natively support the container backends.
@@ -101,7 +102,7 @@ Each `BackendDescriptor` contains the information needed to install and launch t
 
 | Field | Required | Meaning | Adds to the run command |
 | --- | --- | --- | --- |
-| `image` | Yes | Where the image is published. Only `docker.io/kyuz0/*`, `ghcr.io/peonist-ai/*` and `ghcr.io/gufo-org/*` are allowed. | The image reference (see [Image](#image)) |
+| `image` | Yes | Where the image is published. Only `docker.io/amdenterpriseai/*`, `docker.io/kyuz0/*`, `ghcr.io/peonist-ai/*` and `ghcr.io/gufo-org/*` are allowed. | The image reference (see [Image](#image)) |
 | `devices` | Yes | Device nodes the container can open, such as `{"/dev/dri"}`. | One `--device` per node, and `--group-add` (see [Run Options](#run-options)) |
 | `cap_add` | No | Linux capabilities to give back after `--cap-drop=all`, such as `{"SYS_PTRACE"}`. | One `--cap-add` per capability |
 | `user` | No | The numeric UID and GID the image runs as, such as `{1000, 1000}` for Gufo's image. Unset for an image that runs as root. | `--userns=keep-id` on rootless Podman (see [Run Options](#run-options)) |
@@ -206,6 +207,8 @@ When the container tool is Docker or rootful Podman, `lemond` connects to the se
 ### Image
 
 The image reference is `<image>@<digest>`, from `ContainerPolicy.image` and the digest in the backend's pin (see [Version Pins](#version-pins)). Install pulls it, so a load never downloads anything.
+
+AIM is the exception: AMD publishes one image per model, each the `aim-radeon-base` image plus that model's tuned profiles. `aim:radeon` pins the base, and each model row names its own image in `aim_image` as `<repository>:<tag>@<digest>`. The first load of a model pulls its image, which costs only the profile layers once the base is installed. A unit test checks that every row's tag matches the base pin's, because an image built on another base release would pull a second copy of it.
 
 ### Program
 

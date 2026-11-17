@@ -2936,6 +2936,18 @@
         "size": 118.81,
         "min_resident_gb": 33.0
     },
+    "Qwen3.5-9B-AIM": {
+        "checkpoint": "Qwen/Qwen3.5-9B",
+        "recipe": "aim",
+        "aim_image": "docker.io/amdenterpriseai/aim-radeon-qwen-qwen3-5-9b:2026.11.0@sha256:12f469a59f155b0696074bbd791203a938483d56d831c12e4d3c2b004bf1282b",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 19.3
+    },
     "Qwen3.8-27B-Gufo": {
         "checkpoints": {
             "main": "unsloth/Qwen3.8-27B-GGUF:Qwen3.8-27B-UD-Q4_K_XL.gguf",

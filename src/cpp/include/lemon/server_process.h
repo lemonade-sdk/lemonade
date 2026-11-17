@@ -9,11 +9,17 @@
 
 namespace lemon {
 
+// Where a container backend's model files appear inside its container.
+inline constexpr const char* kContainerModelsDir = "/mnt/models";
+
 struct ServerCommand {
     std::string program;
     std::vector<std::string> args;
     std::vector<std::pair<std::string, std::string>> env;
     std::vector<std::string> model_files;
+    // {host path, path under kContainerModelsDir}: model files a container
+    // sees at a path the backend chooses rather than under their own name.
+    std::vector<std::pair<std::string, std::string>> model_files_at;
     int port = 0;
     // Polled until it answers before the load completes, then polled by the
     // backend watchdog for as long as the server runs.

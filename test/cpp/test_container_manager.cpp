@@ -2,6 +2,8 @@
 // against ContainerManager, with a fake host in place of Podman and Docker, and
 // checks every container backend's descriptor and pin.
 
+#include "lemon/backends/aim/aim.h"
+#include "lemon/backends/aim/aim_server.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
@@ -20,6 +22,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 using lemon::utils::ContainerHost;
@@ -555,10 +558,13 @@ void test_helpers() {
     check("permissive SELinux passes the SELinux check",
           !ContainerManager(fedora.host()).check_selinux());
 
+    check("AMD's AIM images are allowed",
+          ContainerManager::allowed_image("docker.io/amdenterpriseai/aim-radeon-base"));
     check("other publishers are refused",
           !ContainerManager::allowed_image("docker.io/library/ubuntu") &&
               !ContainerManager::allowed_image("docker.io/kyuz0x/image") &&
-              !ContainerManager::allowed_image("docker.io/kyuz0/"));
+              !ContainerManager::allowed_image("docker.io/kyuz0/") &&
+              !ContainerManager::allowed_image("docker.io/amdenterpriseaix/aim-radeon-base"));
 
     const std::string digest =
         "sha256:e79f876de3be84200172552b7abe5686a230f1fce02caa65dbba90372e3255c6";
@@ -686,6 +692,64 @@ void test_ds4_memory_plan() {
           !memory_plan(115.0, 100.0).resident);
 }
 
+void test_aim() {
+    using lemon::backends::aim::build_container_env;
+    using lemon::backends::aim::parse_model_image;
+    const std::string digest =
+        "sha256:12f469a59f155b0696074bbd791203a938483d56d831c12e4d3c2b004bf1282b";
+    const auto image =
+        parse_model_image("docker.io/amdenterpriseai/aim-radeon-qwen-qwen3-5-9b:2026.11.0@" + digest);
+    check("an AIM model image runs by digest and keeps its release tag",
+          image.image == "docker.io/amdenterpriseai/aim-radeon-qwen-qwen3-5-9b@" + digest &&
+              image.tag == "2026.11.0");
+    for (const std::string& bad : std::vector<std::string>{
+             "docker.io/amdenterpriseai/aim-radeon-qwen-qwen3-5-9b@" + digest,
+             "docker.io/amdenterpriseai/aim-radeon-qwen-qwen3-5-9b:2026.11.0",
+             "docker.io/amdenterpriseai/aim-radeon-qwen-qwen3-5-9b:2026.11.0@sha256:12f4",
+             "docker.io/library/ubuntu:24.04@" + digest}) {
+        bool threw = false;
+        try {
+            parse_model_image(bad);
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        check("an AIM model image is refused: " + bad, threw);
+    }
+
+    using Env = std::vector<std::pair<std::string, std::string>>;
+    check("AIM serves the mounted model offline on Lemonade's port, tuned for latency",
+          build_container_env(8001, 0, "") == Env({{"AIM_CACHE_PATH", "/mnt/models"},
+                                                   {"AIM_PORT", "8001"},
+                                                   {"AIM_METRIC", "latency"},
+                                                   {"HF_HUB_OFFLINE", "1"}}));
+    const Env tuned = build_container_env(8001, 16384, "vllm-w7900-bf16-tp1-latency");
+    check("ctx_size becomes vLLM's max-model-len and aim_profile picks the profile",
+          tuned.size() == 6 &&
+              tuned[4] == Env::value_type{"AIM_ENGINE_ARGS", "{\"max-model-len\":16384}"} &&
+              tuned[5] == Env::value_type{"AIM_PROFILE_ID", "vllm-w7900-bf16-tp1-latency"});
+
+    // A model image built on another release of the base pulls a second
+    // copy of it, tens of GB, so every row must match the backend's pin.
+    std::ifstream versions_in(BACKEND_VERSIONS_JSON_PATH);
+    const auto base_pin = lemon::backends::parse_container_pin(
+        nlohmann::json::parse(versions_in)["aim"]["radeon"].get<std::string>());
+    std::ifstream models_in(SERVER_MODELS_JSON_PATH);
+    const nlohmann::json models = nlohmann::json::parse(models_in);
+    int rows = 0;
+    for (const auto& [name, row] : models.items()) {
+        if (row.value("recipe", "") != "aim") continue;
+        ++rows;
+        bool same_release = false;
+        try {
+            same_release = base_pin &&
+                           parse_model_image(row.value("aim_image", "")).tag == base_pin->tag;
+        } catch (const std::invalid_argument&) {
+        }
+        check(name + " names an AIM image from the pinned base's release", same_release);
+    }
+    check("server_models.json has AIM models", rows > 0);
+}
+
 void test_descriptors_and_pins() {
     std::ifstream in(BACKEND_VERSIONS_JSON_PATH);
     const nlohmann::json versions = nlohmann::json::parse(in);
@@ -731,6 +795,7 @@ int main() {
     test_halogen_kernel_check();
     test_gufo_argv();
     test_ds4_memory_plan();
+    test_aim();
     test_descriptors_and_pins();
 
     if (failures == 0) {
