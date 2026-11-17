@@ -1434,7 +1434,7 @@ json Router::get_all_loaded_models() const {
             ? "unmetered"
             : residency_pool_to_string(
                   server->get_model_type(), server->get_residency_class());
-        model_info["device"] = device_type_to_string(server->get_device_type());
+        model_info["device"] = device_type_to_string(server->get_reported_device());
         model_info["backend_url"] = server->get_address();  // For debugging port issues
         const WrappedServer::ProcessInfo process_info = server->get_process_info();
         model_info["pid"] = process_info.pid;
@@ -2587,7 +2587,7 @@ ModelTelemetryIdentity Router::get_telemetry_identity(WrappedServer* server) con
         server->get_model_name(),
         server->get_checkpoint(),
         model_type_to_string(server->get_model_type()),
-        device_type_to_string(server->get_device_type()),
+        device_type_to_string(server->get_reported_device()),
         recipe_options.get_recipe()
     };
 }

@@ -1,6 +1,8 @@
-// Proves the ryzenai-llm device reporting follows the model variant. The backend
-// descriptor declares DEVICE_NPU for the whole recipe, so without this mapping a
-// -CPU model and a -Hybrid model both report the same device as a -NPU one.
+// Proves the device a ryzenai-llm model reports follows the model variant. The
+// backend descriptor declares DEVICE_NPU for the whole recipe, so without this
+// mapping a -CPU model and a -Hybrid model both report the same device as a -NPU
+// one. The value only feeds what clients see: the router keeps using
+// device_type_ for NPU exclusivity and eviction.
 
 #include "lemon/backends/ryzenai/ryzenai.h"
 #include "lemon/model_types.h"
