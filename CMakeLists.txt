@@ -3775,6 +3775,13 @@ if(BUILD_TESTING AND EXISTS "${_AUTO_TUNE_TEST_SRC}")
     add_cpp_ci_test(AutoTuneTest CI ON COMMAND test_auto_tune)
 endif()
 
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_auto_context_admission.cpp")
+    add_executable(test_auto_context_admission test/cpp/test_auto_context_admission.cpp)
+    target_include_directories(test_auto_context_admission PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    add_cpp_ci_test(AutoContextAdmissionTest CI ON COMMAND test_auto_context_admission)
+endif()
+
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_auto_context_flow.cpp")
     add_executable(test_auto_context_flow test/cpp/test_auto_context_flow.cpp)
     target_link_libraries(test_auto_context_flow PRIVATE lemonade-server-core)

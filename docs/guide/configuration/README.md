@@ -46,6 +46,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   },
   "allowed_origins": "",
   "auto_check_model_updates": true,
+  "auto_context_safer": false,
   "auto_evict": false,
   "auto_evict_threshold_pct": 0.9,
   "auto_update_models": false,
@@ -230,6 +231,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond`. See [Imported models](./custom-models.md#imported-models-extra_models_dir) |
 | `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
+| `auto_context_safer` | bool | false | Opt into stricter admission when reliable memory measurements exist. Default llama.cpp GPU loads may still try 4k when weights fit but the estimated KV budget is short. Missing measurements retain the best-effort fallback; explicit context sizes bypass admission. |
 | `default_model_source` | string | "huggingface" | Remote registry policy for checkpoints without a source. Accepts `huggingface`, `modelscope`, or `auto`. |
 | `backend_source` | string | "github" | Where backend binaries are downloaded from: `github` (GitHub Releases) or `modelscope` (the [`lemonade-sdk/backends`](https://modelscope.cn/datasets/lemonade-sdk/backends) mirror on ModelScope, for networks that cannot reach GitHub reliably). See [Downloading backends from ModelScope](#downloading-backends-from-modelscope). |
 | `download_rate_limit` | string | "" | Caps model/backend download speed. Byte rate with curl-style suffixes: `512`, `100K`, `10M`, etc. Use `""` for unlimited download speed. A non-empty value also serializes concurrent transfers. |
@@ -268,6 +270,24 @@ lemonade config set default_model_source=modelscope
 When a pin changes on `main`, a workflow uploads the new release to the mirror and opens a PR that adds its GitHub digests to `checksums.modelscope`. Until that PR merges, ModelScope refuses the new version; GitHub is unaffected.
 
 Both `models_dir` and `extra_models_dir` can be changed at runtime through [`POST /internal/set`](../../api/internal.md#post-internalset). Existing `extra_models_dir` paths are preflighted as directories and must be enumerable by the `lemond` process. Nonexistent paths are accepted so the directory watcher can observe them if they are created later.
+
+### Stricter automatic context admission
+
+`auto_context_safer` defaults to `false`. Set it with
+`lemonade config set auto_context_safer=true` to reject insufficient *measured*
+automatic-context budgets. If device memory cannot be measured reliably, even
+safer mode preserves the legacy best-effort fallback rather than disabling
+all auto-sized loads on that platform. In default mode, non-llama.cpp recipes
+retain main's behavior: a positive estimated context stays positive, without
+being inflated to 4096. Standard llama.cpp GPU loads reject clearly oversized
+weights but deliberately try the minimum when weights fit even if estimated
+KV capacity is lower; that attempt can OOM. CPU-only llama.cpp remains
+best-effort by default. Where a minimum-context fallback applies, it is
+`min(max_context_window, 4096)` for text models with a known trained window,
+4096 if unknown, and 8192 for embeddings; positive non-strict estimates may
+be smaller. Explicit `ctx_size` overrides remain the user's responsibility.
+A streaming backend's positive KV estimate is used directly; zero estimates
+retain the legacy fallback outside strict admission.
 
 ### Backend Configuration
 

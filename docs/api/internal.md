@@ -182,6 +182,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `acestep` | No | `acestep` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `allowed_origins` | No | Defaults to `""`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `auto_check_model_updates` | No | Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `auto_context_safer` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `auto_evict` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `auto_evict_threshold_pct` | No | Defaults to `0.9`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `auto_update_models` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

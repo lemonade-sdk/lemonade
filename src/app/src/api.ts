@@ -252,7 +252,7 @@ export interface ModelOptions {
   saved: Record<string, unknown>;
   effective: Record<string, unknown>;
   defaults: Record<string, unknown>;
-  resolved_ctx_size: number;
+  resolved_ctx_size: number | null;
   load_command: string;
 }
 

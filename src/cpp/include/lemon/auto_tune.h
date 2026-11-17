@@ -9,6 +9,7 @@
 #include <system_error>
 #include <lemon/auto_context_budget.h>
 #include <lemon/backends/backend_descriptor_registry.h>
+#include <lemon/runtime_config.h>
 #include <lemon/backends/backend_ops.h>
 #include <lemon/backends/backend_registry.h>
 #include <lemon/backends/llamacpp/llamacpp_rulehead.h>
@@ -28,6 +29,8 @@ constexpr int64_t EMBEDDING_CTX_SIZE = 8192;
 
 // Fallback context size when auto-resolution cannot be computed
 constexpr int64_t AUTO_CTX_FALLBACK = 4096;
+// Auto-sizing failed after checking all supported memory placements.
+constexpr int64_t AUTO_CTX_NO_CAPACITY = 0;
 
 // Hard cap on context size when the model's max context window is unknown.
 // No modern model supports less than this, and it prevents runaway allocation.
@@ -174,7 +177,8 @@ inline double get_available_memory_gb(DeviceType device_type,
             if (memory_known_out) *memory_known_out = true;
             if (physical_free_gb_out &&
                 (!pool.unified || pool.vendor == GpuMemoryVendor::Amd)) {
-                // The CPU can hold non-offloaded layers on either UMA or a dGPU.
+                // Do not change main's Metal/unified-NVIDIA context budget:
+                // the physical-RAM output also selects a different KV reserve.
                 double total_ram_gb = physical_total_gb;
                 if (total_ram_gb <= 0.0) {
                     auto metrics = create_metrics_platform();
@@ -267,12 +271,15 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                           bool unified_gpu,
                                           double physical_free_gb,
                                           bool bounded_swa,
+                                          bool safer,
+                                          bool cpu_offload_runtime_compatible,
                                           double kv_bytes_ratio) {
     const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE :
         (model_info.max_context_window > 0
              ? (std::min)(model_info.max_context_window, AUTO_CTX_FALLBACK)
              : AUTO_CTX_FALLBACK);
     if (available_memory_gb <= 0 && physical_free_gb < 0.0) {
+        if (safer) return AUTO_CTX_NO_CAPACITY;
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — not enough memory, returning " << fallback << " ";
         return fallback;
@@ -337,7 +344,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         }
     }
     if (kv_bytes_per_token <= 0) {
-        return fallback;
+        return safer ? AUTO_CTX_NO_CAPACITY : fallback;
     }
 
     // The GGUF slope and bounded SWA profile above assume F16 K and V.
@@ -375,7 +382,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         model_info.size, file_gib(model_info.resolved_path()),
         file_gib(mmproj_path), file_gib(draft_path));
     if (model_weight_gb <= 0.0)
-        return fallback;
+        return safer ? AUTO_CTX_NO_CAPACITY : fallback;
 
     const bool uses_mtp = std::find(model_info.labels.begin(), model_info.labels.end(),
                                     "mtp") != model_info.labels.end();
@@ -437,14 +444,75 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     const double fixed_swa_gib = swa_profile && max_ctx_from_memory > 0
         ? static_cast<double>(swa_profile->swa_cells(max_ctx_from_memory)) *
           swa_bytes_per_cell / BYTES_PER_GIB : 0.0;
-    // Only unknown/zero capacity uses the legacy fallback here. Positive
-    // estimates remain exact; the minimum-load policy belongs to admission.
-    if (max_ctx_from_memory <= 0) {
-        LOG(DEBUG, "AutoTune") << "compute_auto_context_size: "
-                               << model_info.model_name
-                               << " — no estimated KV capacity, returning "
-                               << fallback;
-        return fallback;
+    // A model with a smaller trained window does not need 4096 KV cells;
+    // embedding backends require the full 8192-token fallback.
+    // Treat the bounded SWA minimum as fixed memory, charging only the
+    // remaining full-attention (plus draft) slope in the offload check.
+    const double effective_weights_gib = model_weight_gb +
+        (swa_profile ? static_cast<double>(swa_profile->swa_cells(fallback)) *
+            swa_bytes_per_cell / BYTES_PER_GIB : 0.0);
+    const bool gpu = (model_info.device & DEVICE_GPU) != 0;
+    const bool cpu_offload = gpu && model_info.recipe == "llamacpp" &&
+        cpu_offload_runtime_compatible;
+    const double workspace_gib = (gpu ? (unified_gpu ? AUTO_CTX_UNIFIED_GPU_RESERVE
+        : AUTO_CTX_DISCRETE_GPU_RESERVE) : AUTO_CTX_HOST_RESERVE)
+        .compute_workspace.estimate(model_weight_gb);
+    const double speculative_gib = speculative ? AUTO_CTX_SPECULATIVE_WORKSPACE_GIB : 0.0;
+    // On UMA the physical RAM reserve and GTT allocation cap are different pools.
+    const bool direct_weights_fit = available_memory_gb > 0.0 && (
+        (gpu && unified_gpu && physical_free_gb >= 0.0)
+        ? (available_memory_gb >= model_weight_gb + workspace_gib + speculative_gib &&
+           physical_free_gb >= model_weight_gb + budget.reserve_gib)
+        : available_memory_gb >= model_weight_gb + budget.reserve_gib);
+    const bool offloaded_weights_fit = auto_context_cpu_offload_weights_fit(
+        available_memory_gb, physical_free_gb, effective_weights_gib,
+        speculative, unified_gpu, cpu_offload);
+    const bool weights_fit = backend_kv_gib.has_value()
+        ? (std::isfinite(*backend_kv_gib) && *backend_kv_gib >= 0.0)
+        : (direct_weights_fit || offloaded_weights_fit);
+    if (max_ctx_from_memory < fallback) {
+        if (!auto_context_strict_admission_for_recipe(model_info.recipe, gpu, safer)) {
+            // Preserve main's positive estimate for non-strict backends. A
+            // fallback must not turn 1200 measured tokens into a 4096-token
+            // allocation. Embeddings retain their required 8192-token floor.
+            if (max_ctx_from_memory > 0 && !is_embedding)
+                return auto_context_clamp_tokens(max_ctx_from_memory,
+                                                 model_info.max_context_window,
+                                                 AUTO_CTX_UNKNOWN_MAX);
+            LOG(DEBUG, "AutoTune") << "Best-effort auto context for " << model_info.model_name
+                                   << " (" << model_info.recipe << "): estimated="
+                                   << max_ctx_from_memory << ", fallback=" << fallback;
+            return fallback;
+        }
+        // CPU placement can salvage a minimum context, unless the user pinned
+        // device placement. A backend-owned KV estimate cannot be overridden.
+        const int64_t offload_ctx = backend_kv_gib.has_value() ? 0 :
+            auto_context_cpu_offload_fallback(
+                max_ctx_from_memory, available_memory_gb, physical_free_gb,
+                effective_weights_gib, full_slope,
+                speculative, unified_gpu, cpu_offload, fallback);
+        const bool offload_measured = unified_gpu || physical_free_gb >= 0.0;
+        const bool unmeasured_host_offload = cpu_offload && !unified_gpu &&
+            physical_free_gb < 0.0;
+        const bool require_measured = safer;
+        const int64_t admitted = auto_context_minimum_admission(
+            max_ctx_from_memory, fallback, weights_fit,
+            offload_ctx > 0 && offload_measured, unmeasured_host_offload,
+            require_measured, backend_kv_gib.has_value());
+        if (admitted <= 0) {
+            LOG(WARNING, "AutoTune") << "Auto context cannot admit "
+                                      << model_info.model_name << " (" << model_info.recipe
+                                      << "): available=" << available_memory_gb
+                                      << " GiB, physical_free=" << physical_free_gb
+                                      << " GiB, weights=" << effective_weights_gib
+                                      << " GiB, estimated_ctx=" << max_ctx_from_memory
+                                      << ", minimum_ctx=" << fallback
+                                      << ", backend_kv_known=" << backend_kv_gib.has_value();
+            return AUTO_CTX_NO_CAPACITY;
+        }
+        return auto_context_clamp_tokens(admitted, model_info.max_context_window,
+                                         AUTO_CTX_UNKNOWN_MAX,
+                                         is_embedding ? EMBEDDING_CTX_SIZE : 0);
     }
 
     const int64_t runtime_minimum = is_embedding ? EMBEDDING_CTX_SIZE : 0;
@@ -455,7 +523,8 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — budget fits " << max_ctx_from_memory
                                << " tokens, runtime requires " << runtime_minimum;
-        return fallback;
+        return auto_context_strict_admission_for_recipe(model_info.recipe, gpu, safer)
+            ? AUTO_CTX_NO_CAPACITY : fallback;
     }
 
     LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
@@ -504,9 +573,11 @@ inline std::string auto_context_llamacpp_device(
 inline DeviceType auto_context_device(const ModelInfo& model_info,
                                       const std::string& recipe,
                                       const std::string& backend,
-                                      const std::string& device) {
+                                      const std::string& device,
+                                      bool host_only_placement = false) {
     if (recipe == "llamacpp" && (gpu_memory_ascii_lower(backend) == "cpu" ||
-                                 gpu_memory_ascii_lower(device) == "none")) {
+                                 gpu_memory_ascii_lower(device) == "none" ||
+                                 host_only_placement)) {
         return DEVICE_CPU;
     }
     return model_info.device;
@@ -533,13 +604,13 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         return -2;  // Explicit value, no auto-resolution needed
     }
 
-    if (is_encoder_decision_model(model_info)) {
-        return model_info.max_context_window;
-    }
-
-    if (is_rule_head_router_model(model_info)) {
-        return backends::llamacpp::RULE_HEAD_ROUTER_CTX_SIZE;
-    }
+    const RuntimeConfig* runtime = RuntimeConfig::global();
+    const bool safer = runtime && runtime->auto_context_safer();
+    const bool fixed_encoder = is_encoder_decision_model(model_info);
+    const bool fixed_rule_head = !fixed_encoder && is_rule_head_router_model(model_info);
+    const int64_t fixed_window = fixed_encoder ? model_info.max_context_window
+        : fixed_rule_head ? backends::llamacpp::RULE_HEAD_ROUTER_CTX_SIZE : 0;
+    if (fixed_window > 0 && !safer) return fixed_window;
 
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);
     std::string backend;
@@ -552,14 +623,19 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     const json llama_args = effective_options.get_option("llamacpp_args");
     const std::string llama_args_str = llama_args.is_string()
         ? llama_args.get<std::string>() : "";
+    const auto placement = auto_context_llamacpp_placement(llama_args_str);
+    const bool cpu_offload_runtime_compatible = placement.adaptive_cpu_offload;
     bool ctx_unified_gpu = false;
     bool memory_known = false;
     double physical_free_gb = -1.0;
     double carveout_free_gb = 0.0;
-    ModelInfo sized_info = model_info;
-    sized_info.device = auto_context_device(model_info, recipe, backend, device);
+    ModelInfo admission_info = model_info;
+    // Do not assume auxiliary GPU placement from the main model layer flags.
+    const bool host_only = placement.host_only && model_info.checkpoint("mmproj").empty() &&
+                           model_info.checkpoint("draft").empty();
+    admission_info.device = auto_context_device(model_info, recipe, backend, device, host_only);
     double available_gb = get_available_memory_gb(
-        sized_info.device, gpu_memory_vendor_for_target(backend, device), device,
+        admission_info.device, gpu_memory_vendor_for_target(backend, device), device,
         backend, &ctx_unified_gpu, &memory_known, &physical_free_gb, &carveout_free_gb);
     // The OS-visible RAM excludes the carve-out, but a full offload can use it.
     if (physical_free_gb >= 0.0 &&
@@ -569,26 +645,64 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     }
 
     if (available_gb <= 0) {
-        const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE :
+        const int64_t fallback = fixed_window > 0 ? fixed_window :
+            is_embedding ? EMBEDDING_CTX_SIZE :
             (model_info.max_context_window > 0
-                ? (std::min)(model_info.max_context_window, AUTO_CTX_FALLBACK)
-                : AUTO_CTX_FALLBACK);
-        LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: "
-                               << model_info.model_name
-                               << " — no available memory budget, returning "
-                               << fallback;
-        return fallback;
+                 ? (std::min)(model_info.max_context_window, AUTO_CTX_FALLBACK)
+                 : AUTO_CTX_FALLBACK);
+        if (!memory_known) {
+            // Unknown telemetry is not evidence of zero capacity. Even safer
+            // mode must not disable auto-sized loads on unmeasurable devices.
+            LOG(WARNING, "AutoTune") << "No reliable memory telemetry for "
+                                     << model_info.model_name
+                                     << "; using best-effort context " << fallback;
+            return fallback;
+        }
+        if (!auto_context_strict_admission_for_recipe(
+                recipe, (admission_info.device & DEVICE_GPU) != 0, safer))
+            return fallback;
+        // A measured zero GPU budget cannot safely start a GPU backend,
+        // even if the CPU could hold the weights in theory.
+        return AUTO_CTX_NO_CAPACITY;
     }
 
+    if (fixed_encoder) {
+        // Encoder SystemOne has a fixed window but no growing KV cache.
+        // Only in safer mode, require measured space for its complete weights.
+        auto file_gib = [](const std::string& path) -> double {
+            if (path.empty()) return 0.0;
+            std::error_code ec;
+            const auto bytes = std::filesystem::file_size(utils::path_from_utf8(path), ec);
+            return ec ? 0.0 : static_cast<double>(bytes) / BYTES_PER_GIB;
+        };
+        const double weights_gib = auto_context_total_weights_gib(
+            model_info.size, file_gib(model_info.resolved_path()),
+            file_gib(model_info.resolved_path("mmproj")),
+            file_gib(model_info.resolved_path("draft")));
+        const bool gpu = (admission_info.device & DEVICE_GPU) != 0;
+        return auto_context_fixed_weights_fit(
+            available_gb, physical_free_gb, weights_gib, gpu, ctx_unified_gpu,
+            gpu && recipe == "llamacpp" && cpu_offload_runtime_compatible)
+            ? fixed_window : AUTO_CTX_NO_CAPACITY;
+    }
+
+    if (fixed_rule_head) {
+        // The GGUF reports the *base* model's 128k window. Admit only the
+        // router's actual 2048 tokens, then preserve that exact fixed window.
+        admission_info.max_context_window = fixed_window;
+    }
     const json hrx_args = effective_options.get_option("hrx_args");
     const bool bounded_swa = bounded_swa_runtime_compatible_for_recipe(
         recipe, llama_args_str,
         hrx_args.is_string() ? hrx_args.get<std::string>() : "", backend);
     const double kv_bytes_ratio = auto_context_llamacpp_kv_bytes_ratio(
         recipe, llama_args_str);
-    int64_t result = compute_auto_context_size(sized_info, available_gb,
+    int64_t result = compute_auto_context_size(admission_info, available_gb,
                                                is_embedding, ctx_unified_gpu,
-                                               physical_free_gb, bounded_swa, kv_bytes_ratio);
+                                               physical_free_gb, bounded_swa, safer,
+                                               cpu_offload_runtime_compatible, kv_bytes_ratio);
+    if (fixed_rule_head)
+        result = result >= fixed_window ? fixed_window : AUTO_CTX_NO_CAPACITY;
     LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
                            << " → ctx_size=" << result;
     return result;
