@@ -46,6 +46,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   },
   "allowed_origins": "",
   "auto_check_model_updates": true,
+  "auto_context_safer": false,
   "auto_evict": false,
   "auto_evict_threshold_pct": 0.9,
   "auto_update_models": false,
@@ -225,6 +226,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond`. See [Imported models](./custom-models.md#imported-models-extra_models_dir) |
 | `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
+| `auto_context_safer` | bool | false | Opt into strict auto-context admission for all recipes. In normal mode, non-llama.cpp backends retain best-effort fallback; standard llama.cpp still checks measured memory. Explicit context sizes bypass the estimator. |
 | `default_model_source` | string | "huggingface" | Remote registry used to pull checkpoints when a request does not name one (`huggingface` or `modelscope`). Explicit `--source`, a `source`/`registry_source` field, or a provider URL always overrides it. |
 | `download_rate_limit` | string | "" | Caps model/backend download speed. Byte rate with curl-style suffixes: `512`, `100K`, `10M`, etc. Use `""` for unlimited download speed. A non-empty value also serializes concurrent transfers. |
 | `offline` | bool | false | Skip model downloads |
@@ -236,6 +238,17 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
 | `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
 | `rocm_install_method` | string | "auto" | How to install the bundled ROCm runtime: "auto" (pip wheels, tarball fallback), "wheel" (wheels only), or "tarball" (no Python/pip). See [llama.cpp Backend](./llamacpp.md#choosing-the-rocm-install-method) for details |
+
+### Stricter automatic context admission
+
+`auto_context_safer` defaults to `false`. Set it with
+`lemonade config set auto_context_safer=true` to reject insufficient automatic
+context estimates for every recipe. Otherwise non-llama.cpp recipes retain the
+previous best-effort load behavior, while standard llama.cpp checks memory and
+eligible CPU offload before rejecting. The minimum is
+`min(max_context_window, 4096)` for text models with a known trained window,
+4096 if unknown, and 8192 for embeddings. Explicit `ctx_size` overrides remain
+the user's responsibility. A streaming backend supplies its own KV budget.
 
 FLM manages its own model storage, so it does not persist a registry source with each model. An FLM pull follows the current `default_model_source` unless that request supplies an explicit `--source`; changing the default therefore changes the registry used by later FLM pulls and upgrades.
 
