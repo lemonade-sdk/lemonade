@@ -113,20 +113,45 @@ int main() {
     const json large = {{"mime_type", "audio/wav"}, {"data", ""},
                         {"size", std::numeric_limits<size_t>::max()}};
     const json extracts = {{"copy", "YWJj"}, {"other", "abc"}};
-    const auto next = next_media_extracts(image, extracts, {});
+    const auto next = next_media_extracts(image, extracts, {}, "step");
     check("extracts: media adds keys", next == std::map<std::string, size_t>{{"copy", 4}, {"other", 3}});
     check("extracts: ordinary output adds nothing",
-          next_media_extracts(ordinary_step.output, extracts, {}).empty());
+          next_media_extracts(ordinary_step.output, extracts, {}, "step").empty());
     check("extracts: no extracts preserves tally",
-          next_media_extracts(ordinary_step.output, json::object(), next) == next);
+          next_media_extracts(ordinary_step.output, json::object(), next, "step") == next);
     check("extracts: non-media replacement removes key",
-          next_media_extracts(ordinary_step.output, json{{"copy", "new"}}, next) ==
+          next_media_extracts(ordinary_step.output, json{{"copy", "new"}}, next, "step") ==
               std::map<std::string, size_t>{{"other", 3}});
-    const auto replaced = next_media_extracts(image, json{{"copy", "ab"}}, next);
+    const auto replaced = next_media_extracts(image, json{{"copy", "ab"}}, next, "step");
     check("extracts: media replacement updates size",
           replaced == std::map<std::string, size_t>{{"copy", 2}, {"other", 3}});
-    const auto scalars = next_media_extracts(image, json{{"numbers", json::array({1, 2})}}, {});
+    const auto scalars = next_media_extracts(image, json{{"numbers", json::array({1, 2})}}, {}, "step");
     check("extracts: numeric array counts", scalars.at("numbers") == 2 * sizeof(json));
+    check("extracts: step output drops colliding key without extracts",
+          next_media_extracts(ordinary_step.output, json::object(), next, "copy") ==
+              std::map<std::string, size_t>{{"other", 3}});
+    check("extracts: own step id is charged after dropping old entry",
+          next_media_extracts(image, json{{"copy", "ab"}}, next, "copy") ==
+              std::map<std::string, size_t>{{"copy", 2}, {"other", 3}});
+    check("extracts: dropping step id leaves current tally unchanged",
+          next == std::map<std::string, size_t>{{"copy", 4}, {"other", 3}});
+    Job clobbered;
+    StepRecord six_mib_audio;
+    six_mib_audio.output = {{"mime_type", "audio/wav"},
+                            {"data", std::string(8u * 1024u * 1024u, 'A')}};
+    clobbered.steps.push_back(six_mib_audio);
+    const auto before_pause = next_media_extracts(
+        six_mib_audio.output, json{{"pause", six_mib_audio.output["data"]}}, {}, "audio");
+    check("clobbered: first audio and extract retain 14 MiB",
+          projected_media_bytes(clobbered, json::object(), before_pause) ==
+              14u * 1024u * 1024u);
+    const auto after_pause = next_media_extracts(
+        ordinary_step.output, json::object(), before_pause, "pause");
+    check("clobbered: pause drops its old 8 MiB extract", after_pause.empty());
+    const json& final_audio = boundary_media;
+    check("clobbered: final audio fits with 14 MiB retained",
+          projected_media_bytes(clobbered, final_audio, after_pause) ==
+              14u * 1024u * 1024u);
     job.media_extract_bytes = next;
     check("retained: extract tally included", retained_media_bytes(job) == 7 + 4 + 3);
     check("projected: outputs and next tally",
@@ -138,7 +163,7 @@ int main() {
     check("projected: output without extracts", projected_media_bytes(Job{}, image, {}) == 3);
     check("projected: overflow saturates",
           projected_media_bytes(job, large, next) == std::numeric_limits<size_t>::max());
-    const auto overflowing = next_media_extracts(image, json{{"copy", nested}}, {});
+    const auto overflowing = next_media_extracts(image, json{{"copy", nested}}, {}, "step");
     check("projected: extract overflow saturates",
           projected_media_bytes(Job{}, image, overflowing) == std::numeric_limits<size_t>::max());
     Job tally_only;
@@ -157,12 +182,12 @@ int main() {
                                    {"e", step_one_extracts["b"]},
                                    {"f", step_one_extracts["c"]}};
     Job cumulative;
-    const auto first = next_media_extracts(small_media, step_one_extracts, {});
+    const auto first = next_media_extracts(small_media, step_one_extracts, {}, "step");
     check("cumulative: first step fits",
           projected_media_bytes(cumulative, small_media, first) <= kMaxJobMediaStoreBytes);
     check("cumulative: second step alone fits",
           projected_media_bytes(Job{}, small_media,
-                                next_media_extracts(small_media, step_two_extracts, {})) <=
+                                next_media_extracts(small_media, step_two_extracts, {}, "step")) <=
               kMaxJobMediaStoreBytes);
     StepRecord first_step;
     first_step.output = small_media;
@@ -172,15 +197,15 @@ int main() {
           retained_media_bytes(cumulative) == 3 + 9u * 1024u * 1024u);
     check("cumulative: combined steps exceed budget",
           projected_media_bytes(cumulative, small_media,
-                                next_media_extracts(small_media, step_two_extracts, first)) >
+                                next_media_extracts(small_media, step_two_extracts, first, "step")) >
               kMaxJobMediaStoreBytes);
     check("cumulative: replacing keys fits",
           projected_media_bytes(cumulative, small_media,
-                                next_media_extracts(small_media, step_one_extracts, first)) <=
+                                next_media_extracts(small_media, step_one_extracts, first, "step")) <=
               kMaxJobMediaStoreBytes);
     const json large_chat = {{"response", std::string(kMaxJobMediaStoreBytes + 1, 'x')}};
     check("extracts: non-media response beyond budget is unrestricted",
-          next_media_extracts(large_chat, large_chat, {}).empty() &&
+          next_media_extracts(large_chat, large_chat, {}, "step").empty() &&
               projected_media_bytes(Job{}, large_chat, {}) == 0);
     const auto exact = std::map<std::string, size_t>{{"copy", kMaxJobMediaStoreBytes - 3}};
     check("projected: exact budget", projected_media_bytes(Job{}, image, exact) == kMaxJobMediaStoreBytes);

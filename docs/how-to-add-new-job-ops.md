@@ -142,7 +142,8 @@ all `b64_json` images and gain a `size` field when they contain image bytes.
 A job has a 16 MiB media budget. The budget counts media retained in step
 outputs plus the payload bytes of context copies extracted from a media
 result. The job tracks these copies per context key across steps and recounts
-the budget for each step, adjusting the size when a key is replaced. Extracts
+the budget for each step, adjusting the size when a key is replaced and dropping
+an entry when a step's own output overwrites that context key. Extracts
 from non-media steps are unrestricted; overwriting a key removes its previous
 media-copy size from the budget. The per-result limit rejects the result
 with `JobError(413, ...)` before the engine stores it.

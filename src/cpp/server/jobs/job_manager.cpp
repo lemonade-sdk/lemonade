@@ -685,7 +685,7 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
 
             std::map<std::string, size_t> next;
             if (ok) {
-                next = next_media_extracts(output, resolved_extracts, job.media_extract_bytes);
+                next = next_media_extracts(output, resolved_extracts, job.media_extract_bytes, step_id);
                 if (projected_media_bytes(job, output, next) > kMaxJobMediaStoreBytes) {
                     ok = false;
                     run_error = op + " output would exceed the per-job media store limit of " +

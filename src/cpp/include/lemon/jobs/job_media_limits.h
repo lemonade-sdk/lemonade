@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <limits>
+#include <string>
 #include <string_view>
 
 namespace lemon::jobs {
@@ -77,8 +78,10 @@ inline size_t payload_bytes(const json& value) {
 
 inline std::map<std::string, size_t> next_media_extracts(
     const json& output, const json& resolved_extracts,
-    const std::map<std::string, size_t>& current) {
+    const std::map<std::string, size_t>& current, const std::string& step_id) {
     auto next = current;
+    // The step output overwrites this context key before its extracts are stored.
+    next.erase(step_id);
     const bool media = media_result_bytes(output) != 0;
     for (auto extract = resolved_extracts.begin(); extract != resolved_extracts.end(); ++extract) {
         if (media) next[extract.key()] = payload_bytes(extract.value());
