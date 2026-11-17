@@ -393,7 +393,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--loom-device URI` | HAL device URI loom-serve runs the bundle on. amdgpu:// is amdgpu://0, the first GPU loom-serve supports in its own enumeration order (not a DRM card or HIP device index); amdgpu://1 selects the next one | `amdgpu://` |
-| `--loom-memory-bytes BYTES` | Device pool size, e.g. 16gib; empty uses the bundle's card on Strix Halo and a fixed pool on the R9700 | `""` |
+| `--loom-memory-bytes BYTES` | Device pool size, e.g. 16gib, served as an elastic pool; empty serves the bundle as its card does, with a fixed pool sized by the card's preset | `""` |
 | `--loom-args ARGS` | Custom arguments to pass to loom-serve | `""` |
 
 #### Whisper.cpp (`whispercpp` recipe)

@@ -6,7 +6,9 @@
 #include <algorithm>
 #include <cctype>
 #include <functional>
+#include <limits>
 #include <map>
+#include <set>
 #include <stdexcept>
 
 namespace lemon {
@@ -83,6 +85,51 @@ void visit_file_references(const json& node,
     }
 }
 
+// What each GPU's card Quick start serves it with (loom-skills device.json
+// card.serve_args and card.preload_max_weight_bytes).
+struct TargetProfile {
+    const char* target;
+    const char* preset_suffix;
+    std::vector<std::string> args;
+    // Largest parameter_bytes whose preloaded host copy still fits beside the
+    // GPU's memory; Strix Halo shares one RAM between both.
+    std::uint64_t preload_max_bytes;
+};
+
+const std::vector<TargetProfile>& target_profiles() {
+    static const std::vector<TargetProfile> profiles = {
+        {kStrixHaloTarget, "", {"--pool_backing=fixed"}, 40000000000ull},
+        {kRadeonR9700Target, "-r9700", {"--pool_backing=fixed"},
+         std::numeric_limits<std::uint64_t>::max()},
+        {kGfx120116gbTarget, "-16gb",
+         {"--memory_bytes=15000000000", "--state_slab_bytes=4mib", "--weight_slab_bytes=64mib"},
+         std::numeric_limits<std::uint64_t>::max()},
+    };
+    return profiles;
+}
+
+const TargetProfile* profile_for(const std::string& target) {
+    for (const auto& profile : target_profiles()) {
+        if (target == profile.target) return &profile;
+    }
+    return nullptr;
+}
+
+bool is_gpu_variant(const std::string& preset) {
+    for (const auto& profile : target_profiles()) {
+        const std::string suffix = profile.preset_suffix;
+        if (!suffix.empty() && preset.size() > suffix.size() &&
+            preset.compare(preset.size() - suffix.size(), suffix.size(), suffix) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool starts_with(const std::string& text, const std::string& prefix) {
+    return text.rfind(prefix, 0) == 0;
+}
+
 bool is_repo_id_char(char c) {
     return std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.';
 }
@@ -115,6 +162,13 @@ BundlePlan plan_bundle(const json& card, const json& lock) {
             plan.preset = "chat";
         } else if (presets->size() == 1) {
             plan.preset = presets->begin().key();
+        } else {
+            std::vector<std::string> base;
+            for (const auto& [name, preset] : presets->items()) {
+                (void)preset;
+                if (!is_gpu_variant(name)) base.push_back(name);
+            }
+            if (base.size() == 1) plan.preset = base.front();
         }
     }
 
@@ -172,33 +226,82 @@ std::string store_dir_name(const std::string& repo_id) {
     return repo_id.substr(0, slash) + "--" + repo_id.substr(slash + 1);
 }
 
-std::string device_target(const std::string& arch, const std::string& gpu_name) {
+std::string device_target(const std::string& arch, const std::string& gpu_name, double vram_gb) {
     if (arch == "gfx1151") return kStrixHaloTarget;
-    if (arch == "gfx1201") return kRadeonR9700Target;
-    if (arch == "gfx120X") {
-        std::string lower = gpu_name;
-        std::transform(lower.begin(), lower.end(), lower.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (lower.find("r9700") != std::string::npos || lower.find("9070") != std::string::npos) {
-            return kRadeonR9700Target;
-        }
-    }
-    return "";
+    std::string lower = gpu_name;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    // Windows reports only the gfx120X family; the RX 9060 (gfx1200) is not Navi 48.
+    const bool navi48 = arch == "gfx1201" ||
+                        (arch == "gfx120X" && lower.find("9060") == std::string::npos);
+    if (!navi48) return "";
+    if (vram_gb <= 0.0 || vram_gb >= 30.0) return kRadeonR9700Target;
+    return vram_gb >= 14.0 ? kGfx120116gbTarget : "";
 }
 
 bool bundle_supports_target(const json& info, const std::string& target) {
     const auto devices = info.is_object() ? info.find("devices") : info.end();
     if (!info.is_object() || devices == info.end() || !devices->is_object()) return true;
     const auto entry = devices->find(target);
-    return entry != devices->end() && entry->is_object() &&
-           string_field(*entry, "state") != "unsupported";
+    if (entry == devices->end() || !entry->is_object()) return false;
+    const std::string state = string_field(*entry, "state");
+    return state != "unsupported" && state != "not_a_target";
+}
+
+std::string target_preset(const json& card, const std::string& preset, const std::string& target) {
+    const TargetProfile* profile = profile_for(target);
+    if (preset.empty() || profile == nullptr || *profile->preset_suffix == '\0') return preset;
+    const std::string variant = preset + profile->preset_suffix;
+    const auto presets = card.is_object() ? card.find("presets") : card.end();
+    if (card.is_object() && presets != card.end() && presets->is_object() &&
+        presets->contains(variant)) {
+        return variant;
+    }
+    return preset;
+}
+
+std::uint64_t parameter_bytes(const BundlePlan& plan) {
+    std::uint64_t total = 0;
+    std::set<std::string> seen;
+    for (const auto& file : plan.origin_files) {
+        if (seen.insert(file.path).second) total += file.size;
+    }
+    return total;
+}
+
+std::vector<std::string> serve_args(const std::string& target, const json& info,
+                                    std::uint64_t parameter_bytes,
+                                    const std::string& requested_memory_bytes, bool preload) {
+    std::vector<std::string> args;
+    const auto devices = info.is_object() ? info.find("devices") : info.end();
+    const json device = info.is_object() && devices != info.end() && devices->is_object()
+                            ? devices->value(target, json::object())
+                            : json::object();
+    const auto recorded = device.is_object() ? device.find("serve_args") : device.end();
+    if (device.is_object() && recorded != device.end() && recorded->is_array()) {
+        for (const auto& arg : *recorded) {
+            if (arg.is_string()) args.push_back(arg.get<std::string>());
+        }
+    } else if (const TargetProfile* profile = profile_for(target)) {
+        args = profile->args;
+        if (preload && parameter_bytes <= profile->preload_max_bytes) args.push_back(kPreloadFlag);
+    }
+    if (!requested_memory_bytes.empty()) {
+        args.erase(std::remove_if(args.begin(), args.end(),
+                                  [](const std::string& arg) {
+                                      return starts_with(arg, "--pool_backing=") ||
+                                             starts_with(arg, "--memory_bytes=");
+                                  }),
+                   args.end());
+        args.push_back("--memory_bytes=" + requested_memory_bytes);
+    }
+    return args;
 }
 
 std::vector<std::string> build_server_argv(const std::string& model_dir, int port,
                                            const std::string& preset,
                                            const std::string& device,
-                                           const std::string& memory_bytes,
-                                           const std::string& pool_backing,
+                                           const std::vector<std::string>& serve_args,
                                            const std::string& custom_args) {
     if (device.empty() ||
         std::any_of(device.begin(), device.end(),
@@ -211,8 +314,7 @@ std::vector<std::string> build_server_argv(const std::string& model_dir, int por
         "--device=" + device,
     };
     if (!preset.empty()) argv.push_back("--preset=" + preset);
-    if (!memory_bytes.empty()) argv.push_back("--memory_bytes=" + memory_bytes);
-    if (!pool_backing.empty()) argv.push_back("--pool_backing=" + pool_backing);
+    argv.insert(argv.end(), serve_args.begin(), serve_args.end());
 
     if (!custom_args.empty()) {
         const std::string error =
@@ -289,22 +391,6 @@ std::string startup_failure_detail(const std::vector<std::string>& output_lines)
     }
     if (detail.size() > kMaxChars) detail = "..." + detail.substr(detail.size() - kMaxChars);
     return detail;
-}
-
-std::string card_memory_bytes(const json& info) {
-    if (!info.is_object()) return "";
-    const json card = info.value("card", json::object());
-    const auto it = card.is_object() ? card.find("memory_bytes") : card.end();
-    if (!card.is_object() || it == card.end() || !it->is_number_unsigned()) return "";
-    const auto bytes = it->get<std::uint64_t>();
-    return bytes == 0 ? "" : std::to_string(bytes);
-}
-
-PoolSettings pool_settings(const std::string& target, const std::string& requested_memory_bytes,
-                           const json& info) {
-    if (!requested_memory_bytes.empty()) return {requested_memory_bytes, ""};
-    if (target == kRadeonR9700Target) return {"", "fixed"};
-    return {card_memory_bytes(info), ""};
 }
 
 std::vector<std::string> suggested_labels(const json& info, const std::string& name) {
