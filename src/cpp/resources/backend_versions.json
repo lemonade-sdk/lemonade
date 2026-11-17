@@ -4,8 +4,8 @@
     "comment": "Expected SHA-256 of downloaded GitHub release assets, verified after download (see BackendUtils::lookup_expected_asset_hash). Keyed by checksums.github.<owner/repo>.<tag>.<asset>. Values are the sha256:<hex> digests GitHub publishes for each asset. Update alongside the matching version pin below.",
     "github": {
       "lemonade-sdk/ryzenai-server": {
-        "medusa-v1.0": {
-          "medusa-server.zip": "sha256:daabb9d48bb1c73caad8beabb98b9e1cea244bc24fb064baff3e5db79553aa47"
+        "medusa-v1.0.1": {
+          "medusa-server.zip": "sha256:26e13eddb386f32981559f2eb4b05ba19c379de7fe67471629c4ff6f40cb974b"
         }
       },
       "pwilkin/openmoss": {
@@ -161,10 +161,10 @@
     "npu": "v1.7.0"
   },
   "ryzenai-llm-medusa": {
-    "npu": "medusa-v1.0"
+    "npu": "medusa-v1.0.1"
   },
   "flm": {
-    "comment": "'npu' pins the public FastFlowLM release. 'npu_arch_overrides' pins per detected NPU family; XDNA3 (Medusa) builds are not published and install from the archive at flm.xdna3_archive in config.json. Bump the XDNA3 pin when swapping in a new archive so Lemonade reinstalls it.",
+    "comment": "'npu' pins the public FastFlowLM release. 'npu_arch_overrides' pins per detected NPU family; XDNA3 (Medusa) builds are not published: the user either sets flm.npu_bin to a build's flm.exe (run in place, unversioned, takes priority) or flm.xdna3_archive to its zip (installed like a download). Bump the XDNA3 pin when swapping in a new archive so Lemonade reinstalls it.",
     "npu": "v1.0.11",
     "npu_arch_overrides": {
       "XDNA3": "v1.0.12"
