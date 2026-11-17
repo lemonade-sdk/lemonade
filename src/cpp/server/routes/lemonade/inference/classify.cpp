@@ -50,10 +50,11 @@ public:
         s.description =
             "Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on "
             "a string and returns a score for each label. It serves `onnxruntime` sequence "
-            "classifiers (one label set), token classifiers (aggregated span labels) and zero-shot "
-            "models (labels sent with each request), and llama.cpp and FastFlowLM decision models, "
-            "which are zero-shot. It provides the classification that the router's `classifier` and "
-            "`zero_shot` conditions use.";
+            "classifiers (one label set) and token classifiers (aggregated span labels), and "
+            "zero-shot models that take `labels` with each request: `onnxruntime` zero-shot "
+            "models, llama.cpp and FastFlowLM decision models, and llama.cpp prompt-router "
+            "encoders with a `rulehead` checkpoint. It provides the classification that the "
+            "router's `classifier` and `zero_shot` conditions use.";
         s.notes = {
             "A malformed request, such as one with a blank `input`, a non-positive `top_k`, or a "
             "`labels` entry that is blank, repeated or holds a control character, is rejected "
@@ -73,7 +74,25 @@ public:
             "declares `problem_type: multi_label_classification` in its config or ships a "
             "`manifest.json`.\n\n"
             "Zero-shot family: LFM2 (`Lfm2BidirForSequenceRouting`), such as "
-            "`LFM2.5-Encoder-350M-Prompt-Router-ONNX`. Every request to it carries `labels`.",
+            "`LFM2.5-Encoder-350M-Prompt-Router-ONNX`. Every request to it carries `labels`.\n\n"
+            "The same family as a GGUF runs on `llamacpp`, on the GPU too. Its GGUF holds only the "
+            "encoder, and its head ships beside it as `rulehead.bin`. Register the GGUF with the "
+            "labels `classification` and `zero-shot`: `{\"model_name\": \"user.my-router\", "
+            "\"recipe\": \"llamacpp\", \"checkpoint\": \"<repo>:<file>-f16.gguf\", "
+            "\"labels\": [\"classification\", \"zero-shot\"]}`. Lemonade downloads `rulehead.bin` "
+            "from the same repository and refuses the model when the file is missing; a head "
+            "stored elsewhere is named as the `rulehead` checkpoint, from the same kind of place "
+            "as the GGUF (both in repositories, or both on disk). A GGUF on disk is registered "
+            "with `\"source\": \"local_path\"` and the file's absolute path as `checkpoint`; its head is "
+            "`rulehead.bin` in the same folder. llama-server returns one vector per token and "
+            "lemond applies the head. "
+            "A long text is cut as ort-server cuts it, so the GGUF and the ONNX export score "
+            "the same tokens: the labels are never cut, and the text keeps a third of what "
+            "they leave of the window from its start and the rest from its end, with "
+            "`\\n...\\n` between them. The response then carries `truncated: true`. The window "
+            "is 2048 tokens, as in the ONNX export's manifest; `ctx_size` 0 means the same, "
+            "another `ctx_size` changes it; `-b` and `-ub` cap it, and so does `-np` above 1 "
+            "without `--kv-unified`, which gives each slot its share of `ctx_size`.",
             "Some upstream models declare only generic `LABEL_<n>` label names; their model card "
             "explains them.",
         };

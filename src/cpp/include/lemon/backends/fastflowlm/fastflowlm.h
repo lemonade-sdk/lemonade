@@ -52,7 +52,7 @@ inline const BackendDescriptor descriptor = {
     /*streams_model_from_storage*/ false,
     /*containers*/ {},
     // see ISystemOneServer
-    /*mode_capability_requirements*/ {{"classification", "systemone"}},
+    /*mode_capability_requirements*/ {{"classification", {"systemone"}}},
 };
 
 }  // namespace fastflowlm

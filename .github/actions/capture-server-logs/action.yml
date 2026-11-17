@@ -95,9 +95,10 @@ runs:
 
     - name: Upload server logs
       if: always()
+      continue-on-error: true
       uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.artifact-name }}
         path: server-logs/
-        retention-days: 7
+        retention-days: 30
         if-no-files-found: ignore

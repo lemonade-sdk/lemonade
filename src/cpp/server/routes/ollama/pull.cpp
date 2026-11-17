@@ -78,7 +78,15 @@ public:
 
     void handle(RouteRequest& req, httplib::Response& res) override {
         try {
-            std::string name = strip_latest_tag(req.arg(ollama::management::kModel).get<std::string>());
+            std::string requested = req.arg(ollama::management::kModel).get<std::string>();
+            // A model or alias name can itself end in ":latest", so the tag is only stripped from
+            // a name that is neither; stripping it first would name another model.
+            const bool registered = ctx_.model_manager->model_exists(requested);
+            if (!registered && ctx_.model_manager->resolve_alias(requested)) {
+                write_plain_error(res, kOllamaModelNotFound, "model '" + requested + "' not found");
+                return;
+            }
+            std::string name = registered ? requested : strip_latest_tag(requested);
             if (!ollama_model_registered(*ctx_.model_manager, name, res)) {
                 return;
             }
