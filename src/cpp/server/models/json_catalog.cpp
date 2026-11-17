@@ -20,6 +20,7 @@ std::string describe_illegal_labels(const std::string& model_name, const std::st
 }
 
 std::set<std::string> normalized_definition_labels(const nlohmann::json& model_data,
+                                                  const std::string& model_name,
                                                   std::string* illegal) {
     const std::string recipe = model_data.value("recipe", std::string());
     std::vector<std::string> labels = {"custom"};
@@ -30,6 +31,44 @@ std::set<std::string> normalized_definition_labels(const nlohmann::json& model_d
     if (model_data.value("vision", false)) add_label_once(labels, "vision");
     if (model_data.value("embedding", false)) add_label_once(labels, "embeddings");
     if (model_data.value("reranking", false)) add_label_once(labels, "reranking");
+
+    ModelType declared_mode = ModelType::LLM;
+    if (!find_deployment_mode(labels, declared_mode)) {
+        // Read the checkpoint the loader reads (ingest.cpp registration): a
+        // string checkpoints.main wins over the legacy checkpoint field — even
+        // an empty one, which must not resurrect a checkpoint the model never
+        // loads. Fall back to the legacy field only when checkpoints has no
+        // string main; value() throws on null, so it is read null-safely.
+        const auto checkpoints_it = model_data.find("checkpoints");
+        const bool has_string_main =
+            checkpoints_it != model_data.end() && checkpoints_it->is_object() &&
+            checkpoints_it->contains("main") &&
+            (*checkpoints_it)["main"].is_string();
+        std::string checkpoint;
+        if (has_string_main) {
+            checkpoint = (*checkpoints_it)["main"].get<std::string>();
+        } else {
+            checkpoint = utils::JsonUtils::get_or_default<std::string>(
+                model_data, "checkpoint", "");
+        }
+        const auto inferred = infer_labels_from_name(model_name, checkpoint);
+        const auto& supported_modes = backends::supported_modes_for(recipe);
+        // A model deploys in exactly one mode; a name matching two (e.g. an
+        // "embed-and-rerank" checkpoint) must fall back to the default mode,
+        // not register an illegal pair the user never authored.
+        std::vector<std::string> served;
+        for (const auto& label : inferred) {
+            ModelType inferred_mode = ModelType::LLM;
+            if (!supported_modes.empty() &&
+                deployment_mode_of(label, inferred_mode) &&
+                backends::backend_serves_mode(recipe, inferred_mode)) {
+                served.push_back(label);
+            }
+        }
+        if (served.size() == 1) {
+            add_label_once(labels, served.front());
+        }
+    }
 
     if (illegal != nullptr) {
         *illegal = backends::illegal_deployment_labels(labels, recipe);

@@ -1,5 +1,11 @@
 #include <lemon/hf_variants.h>
 
+#include <lemon/models/artifact_resolver.h>
+#include <lemon/models/fetchable_repository.h>
+#include <lemon/models/registry_id.h>
+#include <lemon/models/registry_types.h>
+
+#include <algorithm>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -366,6 +372,84 @@ int main() {
                       set.variants.size() == 1 && set.variants[0].name == "Q8_0" &&
                           set.draft_files.empty(),
                       "got " + join_names(set));
+    }
+
+    // Suggested labels from /pull/variants, through a mock repository. The
+    // suggestion must carry a single deployment mode: a checkpoint matching
+    // two modes suggests neither, and the default mode applies at pull time.
+    {
+        using namespace lemon::models;
+        class ListingRepository : public FetchableRepository {
+          public:
+            ListingRepository(ArtifactRef ref, SourcePlacement placement,
+                              std::vector<std::string> files)
+                : FetchableRepository(std::move(ref), placement),
+                  files_(std::move(files)) {}
+
+            ArtifactKind kind() const override { return ArtifactKind::Registry; }
+            std::string resolve() const override { return ""; }
+            Presence present() const override { return Presence{}; }
+            Acquisition acquisition() const override { return Acquisition{}; }
+            Deletion deletion() const override { return Deletion{}; }
+            RegistryId id() const override { return RegistryId("modelscope"); }
+            Revision default_revision() const override { return Revision{"master", false}; }
+            RepoListing list(const std::string& repo_id, const std::string&) const override {
+                RepoListing listing;
+                listing.repo_id = repo_id;
+                for (const std::string& path : files_) {
+                    RegistryFile file;
+                    file.path = path;
+                    file.size = 1024;
+                    listing.files.push_back(file);
+                }
+                return listing;
+            }
+            std::string file_url(const RepoRef& ref) const override { return ref.path; }
+            bool can_go_stale() const override { return false; }
+            Revision active_revision(const LocalRef&) const override { return Revision{}; }
+            void set_active_revision(const LocalRef&, const Revision&) override {}
+            Staleness compare(const LocalRef&, const RepoListing&) const override {
+                return Staleness{};
+            }
+            void commit(const LocalRef&, const Revision&) override {}
+            std::string cache_dir_name(const std::string& repo_id) const override {
+                return repo_id;
+            }
+
+          private:
+            std::vector<std::string> files_;
+        };
+
+        ArtifactSourceResolver::Hooks hooks;
+        hooks.repository_for = [](const RegistryId&, const ArtifactRef& ref,
+                                  const SourcePlacement& placement)
+            -> std::unique_ptr<FetchableRepository> {
+            return std::make_unique<ListingRepository>(ref, placement,
+                                                       std::vector<std::string>{"model.gguf"});
+        };
+        const ArtifactSourceResolver resolver(hooks);
+        const auto has_mode = [](const nlohmann::json& labels, const char* mode) {
+            return std::find(labels.begin(), labels.end(), mode) != labels.end();
+        };
+
+        bool not_found = true;
+        auto both = lemon::fetch_pull_variants(resolver, "owner/embed-and-rerank",
+                                               "modelscope", not_found);
+        result.expect("dual-mode checkpoint suggests no deployment mode",
+                      !not_found && std::find(both["suggested_labels"].begin(),
+                                              both["suggested_labels"].end(),
+                                              "embeddings") == both["suggested_labels"].end() &&
+                          std::find(both["suggested_labels"].begin(),
+                                    both["suggested_labels"].end(), "reranking") ==
+                              both["suggested_labels"].end(),
+                      "labels: " + both["suggested_labels"].dump());
+
+        auto embed = lemon::fetch_pull_variants(resolver, "owner/nomic-embed-model",
+                                                "modelscope", not_found);
+        result.expect("embedding checkpoint name suggests the embeddings label",
+                      !not_found && has_mode(embed["suggested_labels"], "embeddings") &&
+                          !has_mode(embed["suggested_labels"], "reranking"),
+                      "labels: " + embed["suggested_labels"].dump());
     }
 
     printf("\n%d passed, %d failed\n", result.passed, result.failed);

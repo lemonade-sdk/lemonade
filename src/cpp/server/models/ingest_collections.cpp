@@ -356,7 +356,7 @@ std::optional<std::string> IngestCollections::validate(
             // it here, where the import can still be refused whole.
             if (!deps_.store->exists(bare) && def != nullptr) {
                 std::string illegal;
-                normalized_definition_labels(*def, &illegal);
+                normalized_definition_labels(*def, bare, &illegal);
                 if (!illegal.empty()) {
                     return describe_illegal_labels(component_name, illegal);
                 }
@@ -405,7 +405,7 @@ std::optional<std::string> IngestCollections::validate(
                 if (!def) {
                     return std::nullopt;
                 }
-                std::set<std::string> label_set = normalized_definition_labels(*def);
+                std::set<std::string> label_set = normalized_definition_labels(*def, bare_component_name(name));
                 const std::vector<std::string> labels(label_set.begin(), label_set.end());
                 return routing_model_facts(get_model_type_from_labels(labels), labels,
                                            def->value("recipe", std::string()));

@@ -545,10 +545,13 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
             case DraftKind::None: break;
         }
     }
-    {
-        std::string id_lower = to_lower(checkpoint);
-        if (id_lower.find("embed") != std::string::npos) add_label_once(labels, "embeddings");
-        if (id_lower.find("rerank") != std::string::npos) add_label_once(labels, "reranking");
+    // A checkpoint matching two deployment modes (e.g. "embed-and-rerank")
+    // must not suggest the illegal pair the pull body would then carry -
+    // register_user_model() rejects a pair, which would fail the pull. Leave
+    // both off; ensure_deployment_label() applies the default mode.
+    const auto inferred_labels = infer_labels_from_name("", checkpoint);
+    if (inferred_labels.size() == 1) {
+        add_label_once(labels, inferred_labels.front());
     }
     backends::ensure_deployment_label(labels, "llamacpp");
 
