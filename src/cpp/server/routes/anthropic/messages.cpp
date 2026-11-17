@@ -18,6 +18,7 @@
 #include "lemon/server/gateway_conversion.h"
 #include "lemon/server/openai_args.h"
 #include "lemon/server/shared_args.h"
+#include "lemon/thinking_controls.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/session_utils.h"
 
@@ -58,9 +59,8 @@ const RouteArg kToolChoice{"tool_choice", ArgIn::JsonBody, {{"type", "object"}},
 const RouteArg kOutputConfig{"output_config", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
                              "`format` of type `json_schema` (with a `schema`) or `json_object` constrains the "
                              "reply."};
-const RouteArg kThinking{"thinking", ArgIn::JsonBody, {{"type", "object"}}, false, Support::NotAvailable,
-                         "Not applied to local models: reasoning models think regardless. Qwen3 models "
-                         "skip their reasoning when the prompt ends with `/no_think`."};
+const RouteArg kThinking{"thinking", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Partial,
+                         "`type: disabled` turns reasoning off. `budget_tokens` is ignored."};
 const RouteArg kMetadata{"metadata", ArgIn::JsonBody, {{"type", "object"}}, false, Support::NotAvailable,
                          "Ignored for local models, with a warning."};
 const RouteArg kContextManagement{"context_management", ArgIn::JsonBody, {{"type", "object"}}, false, Support::NotAvailable,
@@ -684,6 +684,8 @@ json convert_anthropic_to_openai_chat(ServerContext& ctx, const RouteRequest& re
     }
 
     openai_req[common::kStream.name] = req.value(common::kStream, false);
+
+    normalize_thinking_controls(openai_req);
 
     return openai_req;
 }

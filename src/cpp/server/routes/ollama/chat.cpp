@@ -9,6 +9,7 @@
 #include "lemon/server/gateway_conversion.h"
 #include "lemon/server/openai_args.h"
 #include "lemon/server/shared_args.h"
+#include "lemon/thinking_controls.h"
 
 namespace lemon {
 namespace {
@@ -89,10 +90,9 @@ const RouteArg kFormat{"format", ArgIn::JsonBody, {{"type", json::array({"string
 const RouteArg kThink{"think", ArgIn::JsonBody,
                       {{"type", json::array({"boolean", "string"})},
                        {"enum", json::array({true, false, "low", "medium", "high", "max"})}},
-                      false, Support::NotAvailable,
-                      "`true`, `false`, `low`, `medium`, `high` or `max`. Not applied: reasoning models "
-                      "think regardless. Qwen3 models skip their reasoning when the prompt ends with "
-                      "`/no_think`."};
+                      false, Support::Available,
+                      "`true`, `false`, `low`, `medium`, `high` or `max`. `false` turns reasoning off; an "
+                      "effort level is passed to the backend as `reasoning_effort`."};
 
 const RouteError kNotChatModel{400, "",
                                "`model` is any model other than an LLM, such as an image, embedding "
@@ -185,11 +185,18 @@ json convert_ollama_to_openai_chat(ServerContext& ctx, const RouteRequest& req) 
     }
 
     if (req.has(kThink)) {
-        openai_req[openai::chat::kEnableThinking.name] = req.arg(kThink);
+        const json& think = req.arg(kThink);
+        if (think.is_string()) {
+            openai_req[openai::chat::kReasoningEffort.name] = think;
+        } else {
+            openai_req[openai::chat::kEnableThinking.name] = think;
+        }
     }
 
     // The caller decides whether to stream.
     openai_req[common::kStream.name] = false;
+
+    normalize_thinking_controls(openai_req);
 
     return openai_req;
 }

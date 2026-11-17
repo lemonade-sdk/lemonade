@@ -32,7 +32,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `tools` | No | Tools the model may call, each with a `name`, `description` and `input_schema`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `tool_choice` | No | `{"type": "auto"}`, `any`, `none`, or `tool` with a `name`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `output_config` | No | `format` of type `json_schema` (with a `schema`) or `json_object` constrains the reply. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `thinking` | No | Not applied to local models: reasoning models think regardless. Qwen3 models skip their reasoning when the prompt ends with `/no_think`. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
+| `thinking` | No | `type: disabled` turns reasoning off. `budget_tokens` is ignored. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `metadata` | No | Ignored for local models, with a warning. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `context_management` | No | Ignored for local models, with a warning. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

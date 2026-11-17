@@ -135,6 +135,9 @@ const RouteArg kMaxCompletionTokens{"max_completion_tokens", ArgIn::JsonBody, {{
 const RouteArg kEnableThinking{"enable_thinking", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                                "Lemonade extension: `false` turns off reasoning on models that think. `thinking: "
                                "false` does the same, and `enable_thinking` wins when both are sent."};
+const RouteArg kReasoningEffort{"reasoning_effort", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                                "How much the model reasons, in OpenAI's format, such as `low` or `high`. "
+                                "llama.cpp treats `none` as turning reasoning off.", {}, true};
 
 } // namespace openai::chat
 
@@ -193,7 +196,7 @@ public:
             generation::kTemperature, openai::text::kRepeatPenalty, openai::text::kFrequencyPenalty,
             openai::text::kSeed, generation::kTopK, generation::kTopP, generation::kTools,
             kToolChoice, kResponseFormat, openai::text::kMaxTokens, kMaxCompletionTokens,
-            kEnableThinking, openai::text::kRouteTrace, model_loading::kCtxSize
+            kEnableThinking, kReasoningEffort, openai::text::kRouteTrace, model_loading::kCtxSize
         };
 
         RouteResponse completion;

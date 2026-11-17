@@ -14,6 +14,7 @@ extern const RouteArg kToolChoice;
 extern const RouteArg kResponseFormat;
 extern const RouteArg kMaxCompletionTokens;
 extern const RouteArg kEnableThinking;
+extern const RouteArg kReasoningEffort;
 } // namespace chat
 
 namespace completions {

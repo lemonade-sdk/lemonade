@@ -3,8 +3,10 @@
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/openai_args.h"
 #include "lemon/server/shared_args.h"
 #include "lemon/streaming_proxy.h"
+#include "lemon/thinking_controls.h"
 
 namespace lemon {
 namespace {
@@ -104,7 +106,7 @@ public:
         s.args = {
             kInput, model_loading::kModel, kMaxOutputTokens, generation::kTemperature,
             openai::text::kRepeatPenalty, generation::kTopK, generation::kTopP, common::kStream,
-            openai::text::kRouteTrace, model_loading::kCtxSize
+            openai::text::kRouteTrace, model_loading::kCtxSize, openai::chat::kEnableThinking
         };
 
         RouteResponse response;
@@ -158,6 +160,9 @@ protected:
 
     void run(RouteRequest& req, httplib::Response& res) override {
         bool is_streaming = req.value(common::kStream, false);
+
+        normalize_thinking_controls(req.body);
+
         if (is_streaming) {
             LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
             Router* router = ctx_.router;
