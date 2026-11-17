@@ -1368,6 +1368,16 @@ if(BUILD_TESTING AND EXISTS "${LLAMACPP_SYSTEMONE_TEST_SOURCE}")
     add_cpp_ci_test(llamacpp_systemone CI ON COMMAND test_llamacpp_systemone)
 endif()
 
+set(LLAMACPP_RULEHEAD_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_rulehead.cpp")
+if(BUILD_TESTING AND EXISTS "${LLAMACPP_RULEHEAD_TEST_SOURCE}")
+    add_executable(test_llamacpp_rulehead
+        ${LLAMACPP_RULEHEAD_TEST_SOURCE}
+        src/cpp/server/backends/llamacpp/llamacpp_rulehead.cpp
+    )
+    target_link_libraries(test_llamacpp_rulehead PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(llamacpp_rulehead CI ON COMMAND test_llamacpp_rulehead)
+endif()
+
 set(FLM_MODEL_LABELS_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_flm_model_labels.cpp")
 if(BUILD_TESTING AND EXISTS "${FLM_MODEL_LABELS_TEST_SOURCE}")
     add_executable(test_flm_model_labels
@@ -3966,6 +3976,13 @@ if(BUILD_TESTING AND EXISTS "${_STREAMING_SILENT_STREAM_TEST_SRC}")
     add_cpp_ci_test(StreamingSilentStreamTest CI ON COMMAND test_streaming_silent_stream)
 endif()
 
+set(_OLLAMA_STREAM_ERROR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ollama_stream_error.cpp")
+if(BUILD_TESTING AND EXISTS "${_OLLAMA_STREAM_ERROR_TEST_SRC}")
+    add_executable(test_ollama_stream_error test/cpp/test_ollama_stream_error.cpp)
+    target_link_libraries(test_ollama_stream_error PRIVATE lemonade-server-core)
+    add_cpp_ci_test(OllamaStreamErrorTest CI ON COMMAND test_ollama_stream_error)
+endif()
+
 set(_CLOUD_DISCOVERY_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_discovery_policy.cpp")
 if(BUILD_TESTING AND EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
     add_executable(test_cloud_discovery_policy test/cpp/test_cloud_discovery_policy.cpp)
@@ -3992,6 +4009,20 @@ if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_ERROR_TEST_SRC}")
     add_executable(test_anthropic_error test/cpp/test_anthropic_error.cpp)
     target_link_libraries(test_anthropic_error PRIVATE lemonade-server-core)
     add_cpp_ci_test(AnthropicErrorTest CI ON COMMAND test_anthropic_error)
+endif()
+
+set(_OLLAMA_OUTPUT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ollama_output.cpp")
+if(BUILD_TESTING AND EXISTS "${_OLLAMA_OUTPUT_TEST_SRC}")
+    add_executable(test_ollama_output test/cpp/test_ollama_output.cpp)
+    target_link_libraries(test_ollama_output PRIVATE lemonade-server-core)
+    add_cpp_ci_test(OllamaOutputTest CI ON COMMAND test_ollama_output)
+endif()
+
+set(_OLLAMA_GENERATE_CHUNK_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ollama_generate_chunk.cpp")
+if(BUILD_TESTING AND EXISTS "${_OLLAMA_GENERATE_CHUNK_TEST_SRC}")
+    add_executable(test_ollama_generate_chunk test/cpp/test_ollama_generate_chunk.cpp)
+    target_link_libraries(test_ollama_generate_chunk PRIVATE lemonade-server-core)
+    add_cpp_ci_test(OllamaGenerateChunkTest CI ON COMMAND test_ollama_generate_chunk)
 endif()
 
 set(_ANTHROPIC_RELAY_HEADERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_anthropic_relay_headers.cpp")

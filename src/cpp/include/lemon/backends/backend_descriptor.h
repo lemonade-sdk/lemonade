@@ -150,10 +150,10 @@ struct BackendDescriptor {
     // The backends in `support` that run from an OCI image, keyed by backend name.
     std::map<std::string, ContainerPolicy> containers;
 
-    // {mode, capability}: a mode from supported_modes this backend serves only
-    // for models that also carry the capability label, and the only mode such a
-    // model may deploy in. Registration refuses the mode without the label.
-    std::vector<std::pair<std::string, std::string>> mode_capability_requirements;
+    // {mode, capabilities}: a mode from supported_modes this backend serves only
+    // for models that also carry one of the capability labels, and the only mode
+    // such a model may deploy in. Registration refuses the mode without one.
+    std::vector<std::pair<std::string, std::vector<std::string>>> mode_capability_requirements;
 
     const ContainerPolicy* container_for(const std::string& backend) const {
         auto it = containers.find(backend);
