@@ -22,6 +22,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, vulkan |
 | `rocmfpx` | ROCm FPX | no | yes | rocm |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
+| `ryzenai-llm-medusa` | Ryzen AI LLM (Medusa) | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
 | `thenoise` | TheNoise | yes | no | cuda, rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
@@ -41,7 +42,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `acestep` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `acestep` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `ds4` | rocm | guest | container | linux | amd_gpu (gfx1151) |
-| `flm` | npu | core | native | linux, windows | amd_npu (XDNA2) |
+| `flm` | npu | core | native | linux, windows | amd_npu (XDNA2, XDNA3) |
 | `gufo` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `halogen` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `kokoro` | metal | core | native | macos | metal |
@@ -65,6 +66,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `openmoss` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `rocmfpx` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `ryzenai-llm` | npu | core | native | windows | amd_npu (XDNA2) |
+| `ryzenai-llm-medusa` | npu | core | native | windows | amd_npu (XDNA3) |
 | `sd-cpp` | metal | core | native | macos | metal |
 | `sd-cpp` | cuda | core | native | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `sd-cpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
