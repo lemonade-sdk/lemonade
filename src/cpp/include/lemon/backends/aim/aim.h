@@ -25,8 +25,8 @@ inline const BackendDescriptor descriptor = {
          "AIM profile to serve with, instead of the one AIM picks for this GPU", "AIM Options"},
     },
     /*support*/ {
-        {"radeon", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1100", "gfx1201"}}},
-         /*device_summary*/ "AMD Radeon AI PRO R9700, Radeon PRO W7900"},
+        {"radeon", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1201"}}},
+         /*device_summary*/ "AMD Radeon AI PRO R9700"},
     },
     /*about*/ {
         {"radeon", {"AMD's per-model vLLM microservices, each with profiles tuned for Radeon PRO GPUs.",

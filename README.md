@@ -239,7 +239,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     <tr>
       <td rowspan="1"><code>aim</code></td>
       <td><code>radeon</code>‡</td>
-      <td>AMD Radeon AI PRO R9700, Radeon PRO W7900</td>
+      <td>AMD Radeon AI PRO R9700</td>
       <td>Linux</td>
     </tr>
     <tr>
