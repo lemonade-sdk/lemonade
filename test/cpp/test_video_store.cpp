@@ -1,5 +1,6 @@
 #include "lemon/server/video_store.h"
 
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -102,6 +103,34 @@ static void test_reservations() {
     store::release(fourth);
 }
 
+static void test_normalize_request() {
+    using nlohmann::json;
+    json request = {{"video_frames", 9.0}, {"fps", 8.0}, {"steps", 20}, {"seed", -1.0}, {"duration", 1.5}};
+    check("numbers: integer-valued floats are accepted", store::normalize_request(request).empty());
+    check("numbers: 9.0 frames becomes the integer 9",
+          request["video_frames"].is_number_integer() && request["video_frames"].get<int>() == 9);
+    check("numbers: 8.0 fps becomes the integer 8",
+          request["fps"].is_number_integer() && request["fps"].get<int>() == 8);
+    check("numbers: -1.0 seed becomes the integer -1",
+          request["seed"].is_number_integer() && request["seed"].get<int64_t>() == -1);
+
+    for (const json& bad : {json{{"video_frames", 9.5}}, json{{"video_frames", 0}},
+                            json{{"video_frames", 2147483648.0}}, json{{"video_frames", "9"}},
+                            json{{"fps", 1000}}, json{{"width", 100000}}, json{{"steps", 1e12}},
+                            json{{"duration", -1}}, json{{"duration", 1e9}}, json{{"seed", 1.5}},
+                            json{{"cfg_scale", "high"}}}) {
+        json copy = bad;
+        if (store::normalize_request(copy).empty()) {
+            check(("numbers: rejects " + bad.dump()).c_str(), false);
+            return;
+        }
+    }
+    check("numbers: rejects fractions, out-of-range values and non-numbers", true);
+
+    json absent = {{"prompt", "a cat"}, {"video_frames", nullptr}};
+    check("numbers: absent and null fields are left alone", store::normalize_request(absent).empty());
+}
+
 static void test_is_video_job() {
     using nlohmann::json;
     const json video_step = {{"id", "video"}, {"op", "generate_video"}, {"params", json::object()}};
@@ -141,6 +170,7 @@ int main() {
     test_write_read();
     test_remove_all_except();
     test_reservations();
+    test_normalize_request();
     test_is_video_job();
     test_video_status();
     if (g_failures) {

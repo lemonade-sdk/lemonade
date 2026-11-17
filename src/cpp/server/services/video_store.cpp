@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <cstdint>
+#include <limits>
 #include <fstream>
 #include <iterator>
 #include <mutex>
@@ -106,6 +109,59 @@ void remove_all_except(const std::set<std::string>& keep) {
         fs::remove(it->path(), rm);
         if (rm) LOG(WARNING, "Videos") << "Could not remove " << name << ": " << rm.message() << std::endl;
     }
+}
+
+std::string normalize_request(nlohmann::json& request) {
+    struct IntegerField {
+        const char* name;
+        double min;
+        double max;
+    };
+    const IntegerField integers[] = {
+        {"video_frames", 1, kMaxVideoFrames},
+        {"fps", 1, kMaxFps},
+        {"width", 1, kMaxDimension},
+        {"height", 1, kMaxDimension},
+        {"steps", 1, kMaxSteps},
+        {"seed", static_cast<double>(std::numeric_limits<int64_t>::min()),
+         static_cast<double>(std::numeric_limits<int64_t>::max())},
+    };
+    for (const auto& field : integers) {
+        if (!request.contains(field.name) || request[field.name].is_null()) continue;
+        auto& value = request[field.name];
+        if (!value.is_number()) return std::string("'") + field.name + "' must be an integer";
+        if (value.is_number_integer()) {
+            const double number = value.get<double>();
+            if (number < field.min || number > field.max)
+                return std::string("'") + field.name + "' is out of range";
+            continue;
+        }
+        const double number = value.get<double>();
+        if (!std::isfinite(number) || std::floor(number) != number)
+            return std::string("'") + field.name + "' must be an integer";
+        if (number < field.min || number > field.max)
+            return std::string("'") + field.name + "' is out of range";
+        value = static_cast<int64_t>(number);
+    }
+    struct NumberField {
+        const char* name;
+        double min;
+        double max;
+    };
+    const NumberField numbers[] = {
+        {"duration", 0, kMaxDuration},
+        {"cfg_scale", -std::numeric_limits<double>::max(), std::numeric_limits<double>::max()},
+        {"flow_shift", -std::numeric_limits<double>::max(), std::numeric_limits<double>::max()},
+    };
+    for (const auto& field : numbers) {
+        if (!request.contains(field.name) || request[field.name].is_null()) continue;
+        const auto& value = request[field.name];
+        if (!value.is_number() || !std::isfinite(value.get<double>()))
+            return std::string("'") + field.name + "' must be a number";
+        if (value.get<double>() < field.min || value.get<double>() > field.max)
+            return std::string("'") + field.name + "' is out of range";
+    }
+    return "";
 }
 
 bool is_video_job(const nlohmann::json& job) {

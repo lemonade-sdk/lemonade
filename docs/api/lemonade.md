@@ -1528,7 +1528,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `fps` | No | Frames per second of the returned clip. Defaults to the model's `fps` recipe option, else `16`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `width` | No | Output width in pixels. Video models are sensitive to resolutions they were not trained on. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `height` | No | Output height in pixels. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `steps` | No | Number of inference steps; lower is faster, higher can improve quality. Defaults to the model's own setting, else the backend's. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `steps` | No | Number of sampling steps. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `cfg_scale` | No | Classifier-free guidance scale. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `sampling_method` | No | Sampler name, such as `euler`. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `flow_shift` | No | Flow shift, used by flow-matching models such as Wan. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

@@ -20,22 +20,29 @@ const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Su
                        "The text description of the video to generate."};
 const RouteArg kNegativePrompt{"negative_prompt", ArgIn::JsonBody, {{"type", "string"}}, false,
                                Support::Available, "Text describing what to avoid."};
-const RouteArg kVideoFrames{"video_frames", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}}, false,
+const RouteArg kVideoFrames{"video_frames", ArgIn::JsonBody,
+                            {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxVideoFrames}}, false,
                             Support::Available,
                             "Number of frames to generate. Defaults to the model's `video_frames` recipe "
                             "option, else `33`."};
-const RouteArg kFps{"fps", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}}, false, Support::Available,
+const RouteArg kFps{"fps", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxFps}},
+                    false, Support::Available,
                     "Frames per second of the returned clip. Defaults to the model's `fps` recipe option, "
                     "else `16`."};
-const RouteArg kDuration{"duration", ArgIn::JsonBody, {{"type", "number"}, {"minimum", 0}}, false,
+const RouteArg kDuration{"duration", ArgIn::JsonBody,
+                         {{"type", "number"}, {"minimum", 0}, {"maximum", video_store::kMaxDuration}}, false,
                          Support::Available,
                          "Length of the clip in seconds. Approximate: it is converted to frames at `fps` and "
                          "rounded to the nearest count the model takes, which is 4n+1 for Wan. "
                          "`video_frames` wins when both are given."};
-const RouteArg kWidth{"width", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+const RouteArg kWidth{"width", ArgIn::JsonBody,
+                      {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxDimension}}, false,
+                      Support::Available,
                       "Output width in pixels. Video models are sensitive to resolutions they were not "
                       "trained on. Defaults to the model's own."};
-const RouteArg kHeight{"height", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+const RouteArg kHeight{"height", ArgIn::JsonBody,
+                       {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxDimension}}, false,
+                       Support::Available,
                        "Output height in pixels. Defaults to the model's own."};
 const RouteArg kCfgScale{"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
                          "Classifier-free guidance scale. Defaults to the model's own."};
@@ -43,6 +50,9 @@ const RouteArg kSamplingMethod{"sampling_method", ArgIn::JsonBody, {{"type", "st
                                Support::Available, "Sampler name, such as `euler`. Defaults to the model's own."};
 const RouteArg kFlowShift{"flow_shift", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
                           "Flow shift, used by flow-matching models such as Wan. Defaults to the model's own."};
+const RouteArg kVideoSteps{"steps", ArgIn::JsonBody,
+                           {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxSteps}}, false,
+                           Support::Available, "Number of sampling steps. Defaults to the model's own."};
 const RouteArg kOutputFormat{"output_format", ArgIn::JsonBody, {{"enum", json::array({"webm", "webp", "avi"})}},
                              false, Support::Available,
                              "Container format of the clip: `webm`, `webp` or `avi`. Defaults to `webm`."};
@@ -78,7 +88,7 @@ public:
         };
         s.args = {
             kPrompt, model_loading::kModel, kNegativePrompt, kDuration, kVideoFrames, kFps, kWidth, kHeight,
-            inference::kSteps, kCfgScale, kSamplingMethod, kFlowShift, inference::kSeed, kOutputFormat
+            kVideoSteps, kCfgScale, kSamplingMethod, kFlowShift, inference::kSeed, kOutputFormat
         };
 
         RouteResponse response;
@@ -115,6 +125,10 @@ public:
             const std::string model =
                 canonical_model_name(ctx_, req.arg(model_loading::kModel).get<std::string>());
             req.body[model_loading::kModel.name] = model;
+            if (const std::string error = video_store::normalize_request(req.body); !error.empty()) {
+                write_openai_error(res, kArgInvalid, error);
+                return;
+            }
             // Set here, never taken from the client, and named before the job runs so
             // the clean-up below cannot remove a clip that is still being written.
             req.body["clip_file"] = video_store::new_file_name();

@@ -626,8 +626,8 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
     // A negative seed means random, as for images; sd-server would otherwise
     // fall back to its fixed default and give every clip the same noise.
     if (request.contains("seed") && request["seed"].is_number_integer()) {
-        int seed = request["seed"].get<int>();
-        body["seed"] = seed >= 0 ? seed : generate_random_seed();
+        const int64_t seed = request["seed"].get<int64_t>();
+        body["seed"] = seed >= 0 ? seed : static_cast<int64_t>(generate_random_seed());
     }
     if (request.contains("output_format") && request["output_format"].is_string()) {
         body["output_format"] = request["output_format"];
@@ -647,7 +647,10 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
         return std::nullopt;
     };
     if (auto steps = sampling("steps", "steps")) {
-        sample_params["sample_steps"] = static_cast<int>(*steps);
+        // A recipe option is not range-checked like a request, and casting a double
+        // outside int's range is undefined.
+        if (*steps >= 1 && *steps <= std::numeric_limits<int>::max())
+            sample_params["sample_steps"] = static_cast<int>(*steps);
     }
     if (auto flow_shift = sampling("flow_shift", "flow_shift")) {
         sample_params["flow_shift"] = *flow_shift;

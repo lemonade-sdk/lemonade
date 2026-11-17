@@ -154,6 +154,8 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
                                                 lemon::jobs::CancelFlag& cancel)
         -> lemon::jobs::json {
         nlohmann::json request = nlohmann::json::parse(params.dump());
+        if (const std::string error = video_store::normalize_request(request); !error.empty())
+            throw lemon::jobs::JobError(400, error);
         const std::string model = request.value("model", std::string());
         // clip_file comes from the job's params, which a generic job can leave out or fill
         // with another video's name, so the op always writes to a name it reserved itself.

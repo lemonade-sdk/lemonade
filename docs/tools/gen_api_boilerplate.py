@@ -605,20 +605,6 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
-            "Ollama's generate applies it only to image models",
-            [
-                "routes/lemonade/videos/videos_create.cpp:kWidth",
-                "routes/ollama/generate.cpp:kWidth",
-            ],
-        ),
-        (
-            "Ollama's generate applies it only to image models",
-            [
-                "routes/lemonade/videos/videos_create.cpp:kHeight",
-                "routes/ollama/generate.cpp:kHeight",
-            ],
-        ),
-        (
             "A video id is a job id, but one created by POST /v1/videos",
             [
                 "routes/lemonade/videos/video_shared.cpp:video_routes::kId",

@@ -39,6 +39,20 @@ void release(const std::string& name);
 // that `keep` now covers.
 void remove_all_except(const std::set<std::string>& keep);
 
+// Upper bounds for a video request's numbers, shared by the route's documented schema
+// and normalize_request().
+inline constexpr int kMaxVideoFrames = 1024;
+inline constexpr int kMaxFps = 120;
+inline constexpr int kMaxDimension = 4096;
+inline constexpr int kMaxSteps = 1000;
+inline constexpr double kMaxDuration = 600.0;
+
+// Checks the request's numbers once, for both the /videos route and a generic
+// generate_video job. An integer-valued float such as 9.0 is stored as the integer 9,
+// so the backend never mistakes it for a missing value. Returns an error message, or an
+// empty string when the request is usable.
+std::string normalize_request(nlohmann::json& request);
+
 // Video ids are job ids, so without this check the video routes would report on, or
 // cancel, any job.
 bool is_video_job(const nlohmann::json& job);
