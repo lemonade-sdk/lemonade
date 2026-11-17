@@ -30,7 +30,7 @@ void ModelLoader::ensure_loaded(const std::string& requested_model, const json& 
     // A live process follows its current use without a reload: routing work
     // promotes it to RoutingHelper, while direct inference demotes it into the
     // counted Standard pool. Destination-pool admission remains authoritative.
-    if (router_->ensure_loaded_model_residency(requested_model, load_purpose)) {
+    if (router_->ensure_loaded_model_residency(requested_model, load_purpose, cancel)) {
         LOG(DEBUG, "Server")
             << "Model already loaded: " << requested_model
             << " (residency="

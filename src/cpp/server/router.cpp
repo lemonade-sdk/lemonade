@@ -19,6 +19,8 @@
 #include "lemon/auto_tune.h"
 #include "telemetry.h"
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <iostream>
 #include <lemon/model_manager.h>
@@ -35,6 +37,23 @@
 namespace lemon {
 
 namespace {
+
+// Waits like cv.wait(lock, ready), but in short slices when there is a cancel flag, so
+// a canceled caller stops waiting instead of blocking until another client's load
+// finishes. Returns false when canceled; the load being waited on is not affected.
+template <class Ready>
+bool wait_unless_canceled(std::condition_variable& cv, std::unique_lock<std::mutex>& lock,
+                          Ready ready, std::atomic<bool>* cancel) {
+    if (!cancel) {
+        cv.wait(lock, ready);
+        return true;
+    }
+    while (!ready()) {
+        if (cancel->load()) return false;
+        cv.wait_for(lock, std::chrono::milliseconds(25));
+    }
+    return true;
+}
 
 // RAII: holds a suspend-inhibitor refcount for the duration of one inference,
 // but only when the feature is enabled in config. Released on scope exit so all
@@ -407,23 +426,26 @@ void Router::transition_server_residency_locked(
 
 bool Router::ensure_loaded_model_residency(
     const std::string& model_name,
-    LoadPurpose load_purpose) {
+    LoadPurpose load_purpose,
+    std::atomic<bool>* cancel) {
     return ensure_loaded_model_residency_canonical(
-        resolve_model_name(model_name), load_purpose);
+        resolve_model_name(model_name), load_purpose, cancel);
 }
 
 bool Router::ensure_loaded_model_residency_canonical(
     const std::string& canonical_model_name,
-    LoadPurpose load_purpose) {
+    LoadPurpose load_purpose,
+    std::atomic<bool>* cancel) {
     const ResidencyClass requested_residency_class =
         residency_class_for_load_purpose(load_purpose);
 
     std::unique_lock<std::mutex> lock(load_mutex_);
-    load_cv_.wait(lock, [&] {
+    const bool ready = wait_unless_canceled(load_cv_, lock, [&] {
         return !is_loading_ &&
                (!exclusive_active_ ||
                 exclusive_owner_ == std::this_thread::get_id());
-    });
+    }, cancel);
+    if (!ready) throw std::runtime_error("load cancelled");
 
     prune_unavailable_servers_locked();
 
@@ -880,10 +902,11 @@ void Router::load_model(const std::string& model_name,
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
 
-    load_cv_.wait(lock, [&] {
+    const bool ready = wait_unless_canceled(load_cv_, lock, [&] {
         return !is_loading_
                && (!exclusive_active_ || exclusive_owner_ == std::this_thread::get_id());
-    });
+    }, cancel_flag);
+    if (!ready) throw std::runtime_error("load cancelled");
 
     is_loading_ = true;
 
