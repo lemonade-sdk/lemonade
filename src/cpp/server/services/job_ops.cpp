@@ -150,7 +150,7 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     // generate_video does not take the router's exclusive slot, so a clip does not
     // hold up other models; the slot is also what records job-owned models, so
     // the op unloads a model it loaded itself when it is interrupted.
-    providers.video_op = [router, model_loader](const lemon::jobs::json& params,
+    providers.video_op = [router, model_loader, model_manager](const lemon::jobs::json& params,
                                                 lemon::jobs::CancelFlag& cancel)
         -> lemon::jobs::json {
         nlohmann::json request = nlohmann::json::parse(params.dump());
@@ -174,6 +174,16 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
                 router->unload_job_models(loaded_here, {});
         };
         if (!model.empty()) {
+            // Checked before loading: naming a chat model would otherwise download it and
+            // evict a loaded model before the router turns it away. An unknown model is
+            // left to the load, which reports it.
+            std::optional<ModelInfo> info;
+            try {
+                info = model_manager->get_model_info(model);
+            } catch (const std::exception&) {
+            }
+            if (info && get_model_type_from_labels(info->labels) != ModelType::VIDEO)
+                throw lemon::jobs::JobError(400, "model '" + model + "' is not a video model");
             const bool was_loaded = router->is_model_loaded(model);
             model_loader->ensure_loaded(
                 model, ModelLoader::load_options(request.value("ctx_size", nlohmann::json())),
