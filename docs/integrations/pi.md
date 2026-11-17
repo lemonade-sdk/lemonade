@@ -8,9 +8,9 @@ This guide focuses on the most common launch flows.
 
 1. Install Pi:
 
-```bash
-npm install -g @earendil-works/pi-coding-agent
-```
+    ```bash
+    npm install -g @earendil-works/pi-coding-agent
+    ```
 
     `--mcp` needs Pi 1.0 or newer, and `--codemode` needs Pi 1.1 or newer. Launch checks this when you pass either flag: it stops with an older Pi for `--codemode` and warns for `--mcp`. Check with `pi --version`, and update with the same install command.
 

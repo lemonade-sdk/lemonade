@@ -23,17 +23,17 @@ title="YouTube video player" frameborder="0" allowfullscreen></iframe>
 
 1. We recommend installing Open WebUI into a dedicated Python environment using the following commands:
 
-```bash
-pip install open-webui
-```
+    ```bash
+    pip install open-webui
+    ```
 
     > Note: Open WebUI also provides a variety of other installation options, such as Docker, on [their GitHub](https://github.com/open-webui/open-webui#how-to-install-).
 
 2. Run this command to launch the Open WebUI HTTP server:
 
-```bash
-open-webui serve
-```
+    ```bash
+    open-webui serve
+    ```
 
 3. In a browser, navigate to <http://localhost:8080/>
 
@@ -81,13 +81,13 @@ The simplest way to get **image generation, image editing, and text-to-speech** 
 
 1. Install an LMX-Omni model. On systems with sufficient RAM, install **LMX-Omni-52B-Halo** for the highest quality; otherwise use the lighter **LMX-Omni-5.5B-Lite**. Either open the Lemonade Model Manager at <http://localhost:13305>, find a model with the **OMNI** label, and click download; or pull it from the command line:
 
-```bash
-# High quality; requires ample RAM
-lemonade pull LMX-Omni-52B-Halo
+    ```bash
+    # High quality; requires ample RAM
+    lemonade pull LMX-Omni-52B-Halo
 
-# Lighter; for smaller systems
-lemonade pull LMX-Omni-5.5B-Lite
-```
+    # Lighter; for smaller systems
+    lemonade pull LMX-Omni-5.5B-Lite
+    ```
 
 2. In Open WebUI, open the model dropdown in the top-left and select your LMX-Omni model (it appears automatically once all of its components are downloaded, using the connection you configured above).
 
