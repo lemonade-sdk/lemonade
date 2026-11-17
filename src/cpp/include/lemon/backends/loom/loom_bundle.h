@@ -97,9 +97,11 @@ inline constexpr const char* kPreloadFlag = "--parameter_mode=preload";
 
 // The loom-serve flags the bundle's card serves `target` with: the flags its
 // info.json records for that GPU, else the GPU's own (a fixed pool on Strix Halo
-// and the 32 GB class, plus kPreloadFlag where `preload` and the host copy of
-// `parameter_bytes` fits). loom-serve rejects a memory limit on a fixed pool, so
-// a size the user asks for replaces the backing with an elastic pool of that size.
+// and the 32 GB class). Recorded flags are limited to pool, memory, slab and
+// parameter-mode settings; any other throws. kPreloadFlag is added where `preload`,
+// the host copy of `parameter_bytes` fits, and no parameter mode is recorded.
+// loom-serve rejects a memory limit on a fixed pool, so a size the user asks for
+// replaces the backing with an elastic pool of that size.
 std::vector<std::string> serve_args(const std::string& target, const json& info,
                                     std::uint64_t parameter_bytes,
                                     const std::string& requested_memory_bytes, bool preload);

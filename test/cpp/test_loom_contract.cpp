@@ -331,11 +331,34 @@ void check_card_metadata() {
     const json recorded = json::parse(
         R"({"devices":{"strix-halo":{"serve_args":["--memory_bytes=15000000000","--state_slab_bytes=4mib"]}}})");
     check("Flags the card records for a GPU are served as they are",
+          loom::serve_args(loom::kStrixHaloTarget, recorded, 1, "", false) ==
+              Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib"}));
+    check("Recorded flags without a parameter mode gain the preload flag",
           loom::serve_args(loom::kStrixHaloTarget, recorded, 1, "", true) ==
+              Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib",
+                    "--parameter_mode=preload"}));
+    check("Recorded flags keep the default parameter mode above the GPU's preload limit",
+          loom::serve_args(loom::kStrixHaloTarget, recorded, 80400000000ull, "", true) ==
               Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib"}));
     check("A size the user asks for replaces the recorded one",
           loom::serve_args(loom::kStrixHaloTarget, recorded, 1, "8gib", true) ==
-              Args({"--state_slab_bytes=4mib", "--memory_bytes=8gib"}));
+              Args({"--state_slab_bytes=4mib", "--parameter_mode=preload", "--memory_bytes=8gib"}));
+    const json recorded_mode = json::parse(
+        R"({"devices":{"strix-halo":{"serve_args":["--pool_backing=fixed","--parameter_mode=mmap"]}}})");
+    check("A recorded parameter mode is kept",
+          loom::serve_args(loom::kStrixHaloTarget, recorded_mode, 1, "", true) ==
+              Args({"--pool_backing=fixed", "--parameter_mode=mmap"}));
+    for (const std::string bad :
+         {"\"--listen=0.0.0.0:18080\"", "\"--model=other.json\"", "\"--device=amdgpu://1\"",
+          "\"--devices=d.json\"", "\"--flagfile=f\"", "\"--preset=x\"", "\"--listen\"",
+          "\"0.0.0.0:80\"", "\"--memory_bytes=\"", "\"--memory_bytes=1 --listen=0.0.0.0:1\"", "1"}) {
+        const json info_with_bad = json::parse(
+            R"({"devices":{"strix-halo":{"serve_args":["--memory_bytes=1",)" + bad + "]}}}");
+        check("A recorded serve argument outside the allowlist is rejected: " + bad,
+              throws_exception([&] {
+                  (void)loom::serve_args(loom::kStrixHaloTarget, info_with_bad, 1, "", true);
+              }));
+    }
 
     json r9700_card = kCard;
     r9700_card["presets"]["chat-r9700"] = {{"execution", json::object()}};

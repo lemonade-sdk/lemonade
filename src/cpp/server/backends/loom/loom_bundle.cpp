@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <map>
@@ -128,6 +129,24 @@ bool is_gpu_variant(const std::string& preset) {
 
 bool starts_with(const std::string& text, const std::string& prefix) {
     return text.rfind(prefix, 0) == 0;
+}
+
+// info.json is bundle data, so it may only size and back the pool. A listener,
+// model, device or flagfile flag from it would escape Lemonade's auth and routing.
+bool is_recordable_serve_arg(const std::string& arg) {
+    static const char* const kPrefixes[] = {
+        "--memory_bytes=", "--parameter_mode=", "--pool_backing=",
+        "--state_slab_bytes=", "--weight_slab_bytes=",
+    };
+    for (const char* prefix : kPrefixes) {
+        const std::string value = arg.substr(std::min(arg.size(), std::strlen(prefix)));
+        if (starts_with(arg, prefix) && !value.empty() &&
+            std::all_of(value.begin(), value.end(),
+                        [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; })) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool is_repo_id_char(char c) {
@@ -277,12 +296,25 @@ std::vector<std::string> serve_args(const std::string& target, const json& info,
     const json device = info.is_object() && devices != info.end() && devices->is_object()
                             ? devices->value(target, json::object())
                             : json::object();
+    const TargetProfile* profile = profile_for(target);
     const auto recorded = device.is_object() ? device.find("serve_args") : device.end();
     if (device.is_object() && recorded != device.end() && recorded->is_array()) {
         for (const auto& arg : *recorded) {
-            if (arg.is_string()) args.push_back(arg.get<std::string>());
+            const std::string text = arg.is_string() ? arg.get<std::string>() : "";
+            if (!is_recordable_serve_arg(text)) {
+                throw std::runtime_error("Loom bundle records a serve argument Lemonade does not "
+                                         "allow for " + target + ": " + (arg.is_string() ? text : arg.dump()));
+            }
+            args.push_back(text);
         }
-    } else if (const TargetProfile* profile = profile_for(target)) {
+        const bool sets_parameter_mode =
+            std::any_of(args.begin(), args.end(),
+                        [](const std::string& arg) { return starts_with(arg, "--parameter_mode="); });
+        if (preload && !sets_parameter_mode &&
+            (profile == nullptr || parameter_bytes <= profile->preload_max_bytes)) {
+            args.push_back(kPreloadFlag);
+        }
+    } else if (profile != nullptr) {
         args = profile->args;
         if (preload && parameter_bytes <= profile->preload_max_bytes) args.push_back(kPreloadFlag);
     }
