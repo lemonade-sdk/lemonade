@@ -52,6 +52,10 @@ inline const BackendDescriptor descriptor = {
             /*image*/   "docker.io/amdenterpriseai/aim-radeon-base",
             /*devices*/ {"/dev/dri", "/dev/kfd"},
             /*cap_add*/ {},
+            /*user*/    std::nullopt,
+            // Every AIM profile runs vLLM's multiprocess executor, even on one
+            // GPU, and its message queues take about 400 MiB of /dev/shm.
+            /*shm_size*/ "1g",
         }},
     },
 };

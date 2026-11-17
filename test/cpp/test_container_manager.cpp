@@ -155,6 +155,13 @@ void test_run_command() {
           podman_command == "podman" + common + " --group-add keep-groups" + mount_and_home +
                                 " -p 127.0.0.1:8001:8001" + image_and_program);
 
+    ContainerRunSpec shm = example_spec();
+    shm.shm_size = "1g";
+    const std::string shm_command = join(ContainerManager(podman.host()).run_command(shm));
+    check("a policy's shm_size sizes the container's /dev/shm",
+          shm_command.find(" --shm-size=1g ") != std::string::npos &&
+              podman_command.find("--shm-size") == std::string::npos);
+
     FakeHost user_socket;
     user_socket.tools = {"podman"};
     user_socket.env = {{"CONTAINER_HOST", "unix:///run/user/1000/podman/podman.sock"},

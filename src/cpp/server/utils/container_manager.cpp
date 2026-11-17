@@ -469,6 +469,9 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         argv.push_back("--cap-add");
         argv.push_back(capability);
     }
+    if (!spec.shm_size.empty()) {
+        argv.push_back("--shm-size=" + spec.shm_size);
+    }
     for (const auto& mount : spec.mounts) {
         // -v splits its argument on ':'.
         if (mount.source.find(':') != std::string::npos) {

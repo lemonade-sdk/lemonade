@@ -40,6 +40,7 @@ struct ContainerRunSpec {
     std::vector<std::string> devices;
     std::vector<std::string> cap_add;
     std::optional<ContainerUser> user;  // nullopt when the image runs as root
+    std::string shm_size;  // "" keeps the tool's default
     std::vector<ContainerMount> mounts;
     std::vector<std::pair<std::string, std::string>> env;
     std::string image;                 // <image>@<digest>

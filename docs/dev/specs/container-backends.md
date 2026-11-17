@@ -106,6 +106,7 @@ Each `BackendDescriptor` contains the information needed to install and launch t
 | `devices` | Yes | Device nodes the container can open, such as `{"/dev/dri"}`. | One `--device` per node, and `--group-add` (see [Run Options](#run-options)) |
 | `cap_add` | No | Linux capabilities to give back after `--cap-drop=all`, such as `{"SYS_PTRACE"}`. | One `--cap-add` per capability |
 | `user` | No | The numeric UID and GID the image runs as, such as `{1000, 1000}` for Gufo's image. Unset for an image that runs as root. | `--userns=keep-id` on rootless Podman (see [Run Options](#run-options)) |
+| `shm_size` | No | Size of the container's `/dev/shm`, such as `"1g"`, for engines that need more than the tool's 64 MiB default. | `--shm-size` |
 
 Halogen's `BackendDescriptor` declares one container backend, `rocm`, for Strix Halo (`gfx1151`):
 
@@ -187,6 +188,7 @@ These options are the same for Podman and Docker:
 | `--env HIP_VISIBLE_DEVICES` | Index of the GPU whose arch is `SystemInfo::get_rocm_arch()`, only when `devices` includes `/dev/kfd` | `lemond` reads each node's `gfx_target_version` under `/sys/devices/virtual/kfd/kfd/topology/nodes` and picks the one equal to `SystemInfo::get_rocm_arch()` † |
 | `--env` | Any other variables the engine needs, such as `ROCBLAS_USE_HIPBLASLT=1` or Halogen's `HALOGEN_CTX` | `ServerCommand.env`, set by the `WrappedServer` subclass |
 | `--cap-add` | One per capability, only when `ContainerPolicy` sets `cap_add` ‡ | `ContainerPolicy.cap_add` |
+| `--shm-size` | Only when `ContainerPolicy` sets `shm_size` | `ContainerPolicy.shm_size` |
 
 Only rootless Podman can publish a port from an `--internal` network.
 
