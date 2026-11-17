@@ -1600,6 +1600,7 @@ GPU only, in practice. With `Wan2.1-T2V-1.3B` on a Radeon AI PRO R9700, a 33-fra
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `missing_argument` | A required argument is missing |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
+| `429` |  | All 50 jobs in the store are still active or resumable |
 | `500` |  | The request fails unexpectedly |
 | `503` |  | The server is shutting down |
 <!-- END GENERATED: lemonade.videos_create -->

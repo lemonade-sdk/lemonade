@@ -15,6 +15,7 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kShuttingDown{503, "", "The server is shutting down"};
+const RouteError kJobLimit{429, "", "All 50 jobs in the store are still active or resumable"};
 
 const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
                        "The text description of the video to generate."};
@@ -114,7 +115,7 @@ public:
             "fps": 16
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kShuttingDown, kUnexpectedException};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kJobLimit, kShuttingDown, kUnexpectedException};
         s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
@@ -154,6 +155,10 @@ public:
             const auto* job_error = dynamic_cast<const lemon::jobs::JobError*>(&e);
             if (job_error && job_error->status == kShuttingDown.status) {
                 write_openai_error(res, kShuttingDown, e.what(), "server_error");
+                return;
+            }
+            if (job_error && job_error->status == kJobLimit.status) {
+                write_openai_error(res, kJobLimit, e.what(), "rate_limit_error");
                 return;
             }
             LOG(ERROR, "Server") << "ERROR in videos_create: " << e.what() << std::endl;
