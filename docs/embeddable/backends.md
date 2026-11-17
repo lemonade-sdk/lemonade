@@ -29,23 +29,23 @@ Follow these instructions if you want backends to be bundled into your app's ins
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     REM Start lemond to download backends to ./bin/
     lemond.exe ./
 
     REM Download llama.cpp with the Vulkan backend to ./bin/llamacpp/vulkan
     lemonade.exe backends install llamacpp:vulkan
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     # Start lemond to download backends to ./bin/
     ./lemond ./
 
     # Download llama.cpp with the Vulkan backend to ./bin/llamacpp/vulkan
     ./lemonade backends install llamacpp:vulkan --force
-    ```
+```
 
 > Note: by default, `lemond backends install` will only install backends that are compatible with your current system. The `--force` option ignores these compatibility checks, which enables you to package on a VM and then deploy to a specific system.
 
@@ -73,15 +73,15 @@ For example:
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     curl http://localhost:8000/v1/system-info
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     curl http://localhost:8000/v1/system-info
-    ```
+```
 
 If the response shows ROCm support:
 
@@ -104,15 +104,15 @@ Install ROCm:
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     curl -X POST http://localhost:8000/v1/install ^
       -H "Content-Type: application/json" ^
       -d "{\"recipe\": \"llamacpp\", \"backend\": \"rocm\", \"stream\": false}"
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     curl -X POST http://localhost:8000/v1/install \
       -H "Content-Type: application/json" \
       -d '{
@@ -120,21 +120,21 @@ Install ROCm:
         "backend": "rocm",
         "stream": false
       }'
-    ```
+```
 
 Otherwise, install Vulkan:
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     curl -X POST http://localhost:8000/v1/install ^
       -H "Content-Type: application/json" ^
       -d "{\"recipe\": \"llamacpp\", \"backend\": \"vulkan\", \"stream\": false}"
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     curl -X POST http://localhost:8000/v1/install \
       -H "Content-Type: application/json" \
       -d '{
@@ -142,7 +142,7 @@ Otherwise, install Vulkan:
         "backend": "vulkan",
         "stream": false
       }'
-    ```
+```
 
 See the [Endpoints Spec](../api/README.md) for endpoint details.
 
@@ -154,22 +154,22 @@ For example, to use your own Vulkan `llama-server` in place of Lemonade's:
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     REM Start lemond to update configuration
     lemond.exe ./
 
     REM Set the llama-server vulkan binary path
     lemonade.exe config set "llamacpp.vulkan_bin=C:\path\to\llama-server.exe"
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     # Start lemond to update configuration
     ./lemond ./
 
     # Set the llama-server vulkan binary path
     ./lemonade config set llamacpp.vulkan_bin=/path/to/llama-server
-    ```
+```
 
 See the `*_bin` settings in the [Configuration Guide](../guide/configuration/README.md) for the full set of customization options.

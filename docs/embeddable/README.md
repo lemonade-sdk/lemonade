@@ -64,7 +64,7 @@ Once you've finished customization, you'll have a portable Lemonade folder ready
 
 === "Windows (cmd.exe)"
 
-    ```text
+```text
     lemond.exe                      # App runs lemond as a subprocess
     lemonade.exe                    # Optional: CLI management for lemond
     LICENSE                         # Lemonade license file
@@ -90,11 +90,11 @@ Once you've finished customization, you'll have a portable Lemonade folder ready
         |- models--unsloth--Qwen3-0.6B-GGUF\
     extra_models\                   # Additional GGUF files
         |- my_custom_model.gguf
-    ```
+```
 
 === "Linux (bash)"
 
-    ```text
+```text
     lemond                          # App runs lemond as a subprocess
     lemonade                        # Optional: CLI management for lemond
     LICENSE                         # Lemonade license file
@@ -120,7 +120,7 @@ Once you've finished customization, you'll have a portable Lemonade folder ready
         |- models--unsloth--Qwen3-0.6B-GGUF/
     extra_models/                   # Additional GGUF files
         |- my_custom_model.gguf
-    ```
+```
 
 ## In-Depth Customization
 

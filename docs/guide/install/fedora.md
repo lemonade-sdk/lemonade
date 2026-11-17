@@ -7,18 +7,18 @@ Lemonade is built for Fedora 43 and 44.
     Get the RPM from the [latest release](https://github.com/lemonade-sdk/lemonade/releases):
     `lemonade-server-<version>-fc43.x86_64.rpm`
 
-    ```bash
+```bash
     sudo dnf install ./lemonade-server-*-fc43.x86_64.rpm
-    ```
+```
 
 === "Fedora 44"
 
     Get the RPM from the [latest release](https://github.com/lemonade-sdk/lemonade/releases):
     `lemonade-server-<version>-fc44.x86_64.rpm`
 
-    ```bash
+```bash
     sudo dnf install ./lemonade-server-*-fc44.x86_64.rpm
-    ```
+```
 
 Enable and start the service:
 

@@ -35,7 +35,7 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/rerank" `
       -Method POST `
@@ -49,11 +49,11 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
             "Madrid is the capital of Spain."
           ]
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/rerank \
       -H "Content-Type: application/json" \
       -d '{
@@ -65,7 +65,7 @@ Also served at `/v1/reranking` and `/v1/reranker`. Requires `LEMONADE_API_KEY` w
             "Madrid is the capital of Spain."
           ]
         }'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -141,7 +141,7 @@ Register the model with its projector file, for example on `/v1/pull`: `{"model_
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/systemone" `
       -Method POST `
@@ -163,11 +163,11 @@ Register the model with its projector file, for example on `/v1/pull`: `{"model_
             }
           }
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/systemone \
       -H "Content-Type: application/json" \
       -d '{
@@ -187,7 +187,7 @@ Register the model with its projector file, for example on `/v1/pull`: `{"model_
             }
           }
         }'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -269,15 +269,15 @@ This endpoint does not take any parameters.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/v1/slots"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/slots
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -405,21 +405,21 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/slots/0?action=save" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"filename": "my_conversation_cache.bin"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl "http://localhost:13305/v1/slots/0?action=save" \
       -H "Content-Type: application/json" \
       -d '{"filename": "my_conversation_cache.bin"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -437,21 +437,21 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/slots/0?action=restore" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"filename": "my_conversation_cache.bin"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl "http://localhost:13305/v1/slots/0?action=restore" \
       -H "Content-Type: application/json" \
       -d '{"filename": "my_conversation_cache.bin"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -469,17 +469,17 @@ Every action needs llama.cpp started with `--slot-save-path`. Set it for every l
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/slots/0?action=erase" `
       -Method POST
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl -X POST "http://localhost:13305/v1/slots/0?action=erase"
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -534,21 +534,21 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/tokenize" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"content": "This is a string to tokenize"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/tokenize \
       -H "Content-Type: application/json" \
       -d '{"content": "This is a string to tokenize"}'
-    ```
+```
 
 **Response:** `200 OK`
 

@@ -34,8 +34,8 @@ Without this step, commands such as `lemonade pull` fail with "Could not connect
 
 === "Lemonade Desktop package"
 
-    ```
+```
     pacman -S lemonade-desktop
-    ```
+```
 
     For package details, see [lemonade-desktop](https://archlinux.org/packages/extra/x86_64/lemonade-desktop).

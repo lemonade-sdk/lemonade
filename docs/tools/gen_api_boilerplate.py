@@ -1800,7 +1800,9 @@ def render_recorded(fmt: str, entry: dict, schema: dict) -> str:
 
 
 def render_tab(title: str, body: str) -> str:
-    return f'=== "{title}"\n\n{indent(body)}\n'
+    indented_body = indent(body)
+    indented_body = re.sub(r"(?m)^    (```[^\n]*)$", r"\1", indented_body)
+    return f'=== "{title}"\n\n{indented_body}\n'
 
 
 def like(template, value):

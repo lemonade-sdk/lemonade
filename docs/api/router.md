@@ -101,7 +101,7 @@ Match `decision.matched_rule` against this document: a policy written with only 
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/routing/validate" `
       -Method POST `
@@ -125,11 +125,11 @@ Match `decision.matched_rule` against this document: a policy written with only 
           },
           "prompt": "please write a def to reverse a list"
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/routing/validate \
       -H "Content-Type: application/json" \
       -d '{
@@ -151,7 +151,7 @@ Match `decision.matched_rule` against this document: a policy written with only 
           },
           "prompt": "please write a def to reverse a list"
         }'
-    ```
+```
 
 **Response:** `200 OK`
 

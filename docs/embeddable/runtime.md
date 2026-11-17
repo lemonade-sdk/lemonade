@@ -15,15 +15,15 @@ We recommend that your app launches `lemond` as a subprocess, using a command li
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     set LEMONADE_API_KEY=KEY && lemond.exe ./ --port PORT
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     LEMONADE_API_KEY=KEY lemond ./ --port PORT
-    ```
+```
 
 Breaking this down:
 - `LEMONADE_API_KEY=KEY` sets an API key for `lemond` known only to your app. This locks out other apps, as well as users, from interfacing directly with `lemond`'s endpoints.
@@ -42,37 +42,37 @@ For example, with `curl`:
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     curl http://localhost:8000/v1/health ^
       -H "Authorization: Bearer KEY"
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     curl http://localhost:8000/v1/health \
       -H "Authorization: Bearer KEY"
-    ```
+```
 
 For JSON `POST` requests:
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     curl -X POST http://localhost:8000/internal/set ^
       -H "Authorization: Bearer KEY" ^
       -H "Content-Type: application/json" ^
       -d "{\"log_level\": \"debug\"}"
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     curl -X POST http://localhost:8000/internal/set \
       -H "Authorization: Bearer KEY" \
       -H "Content-Type: application/json" \
       -d '{"log_level": "debug"}'
-    ```
+```
 
 In JavaScript:
 

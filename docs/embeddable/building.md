@@ -16,31 +16,31 @@ The `embeddable` CMake target builds the server, CLI, and required resource file
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     cmake --preset windows -DBUILD_WEB_APP=OFF
     cmake --build --preset windows --target embeddable
-    ```
+```
 
     This produces `build\lemonade-embeddable-{VERSION}-windows-x64.zip`.
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     sudo apt-get update
     sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
     cmake --preset default -DBUILD_WEB_APP=OFF
     cmake --build --preset default --target embeddable
-    ```
+```
 
     This produces `build/lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz` on x86_64 Linux and `build/lemonade-embeddable-{VERSION}-ubuntu-arm64.tar.gz` on ARM64 Linux.
 
 === "macOS (bash)"
 
-    ```bash
+```bash
     brew install cmake ninja
     cmake --preset default -DBUILD_WEB_APP=OFF
     cmake --build --preset default --target embeddable
-    ```
+```
 
     This produces `build/lemonade-embeddable-{VERSION}-macos-arm64.tar.gz`.
 
@@ -50,24 +50,24 @@ If you want the embeddable build to include the browser UI assets under `resourc
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     cmake --preset windows -DBUILD_WEB_APP=ON
     cmake --build --preset windows --target web-app embeddable
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     cmake --preset default -DBUILD_WEB_APP=ON
     cmake --build --preset default --target web-app embeddable
-    ```
+```
 
 === "macOS (bash)"
 
-    ```bash
+```bash
     cmake --preset default -DBUILD_WEB_APP=ON
     cmake --build --preset default --target web-app embeddable
-    ```
+```
 
 ## Expected Outputs
 

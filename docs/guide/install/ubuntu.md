@@ -8,16 +8,16 @@ To build from source, see the [development](../../dev/README.md) guide.
 
 === "Stable PPA"
 
-    ```
+```
     sudo add-apt-repository ppa:lemonade-team/stable
     sudo apt install lemonade-server
-    ```
+```
 
 === "Snap"
 
-    ```
+```
     sudo snap install lemonade-server
-    ```
+```
 
 ## Step 2: Choose your frontend
 
@@ -31,14 +31,14 @@ To build from source, see the [development](../../dev/README.md) guide.
 
     Launches the web ui in chromium.
 
-    ```
+```
     sudo apt install lemonade-desktop
-    ```
+```
 
 === "Snap"
 
     Fully sandboxed desktop app.
 
-    ```
+```
     sudo snap install lemonade
-    ```
+```

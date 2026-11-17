@@ -32,39 +32,39 @@ You can keep models completely private to your `lemond` instance by changing `mo
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     REM Start lemond for configuration
     lemond.exe ./
 
     REM Set models_dir to be inside the lemond directory
     lemonade.exe config set models_dir="./models"
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     # Start lemond for configuration
     ./lemond ./
 
     # Set models_dir to be inside the lemond directory
     ./lemonade config set models_dir="./models"
-    ```
+```
 
 You can test whether models end up at the desired location with a pull command:
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     lemonade.exe pull Qwen3-0.6B-GGUF
     dir models
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     ./lemonade pull Qwen3-0.6B-GGUF
     ls models
-    ```
+```
 
 Which should return a Hugging Face cache directory:
 
@@ -100,17 +100,17 @@ For example, let's copy the GGUF file from the [Private Models](#private-models)
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     mkdir example_extra_models_dir
     copy models\models--unsloth--Qwen3-0.6B-GGUF\snapshots\50968a4468ef4233ed78cd7c3de230dd1d61a56b\Qwen3-0.6B-Q4_0.gguf example_extra_models_dir\my_custom_model.gguf
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     mkdir example_extra_models_dir
     cp models/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf example_extra_models_dir/my_custom_model.gguf
-    ```
+```
 
 Now we have a GGUF, `my_custom_model.gguf`, in a non-standard directory layout with a non-standard name.
 
@@ -118,37 +118,37 @@ To import it into `lemond`:
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     REM Start lemond for configuration
     lemond.exe ./
 
     REM Set the extra_models_dir search path
     lemonade.exe config set extra_models_dir="./example_extra_models_dir"
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     # Start lemond for configuration
     ./lemond ./
 
     # Set the extra_models_dir search path
     ./lemonade config set extra_models_dir="./example_extra_models_dir"
-    ```
+```
 
 You can test whether it worked like this:
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     lemonade.exe list | findstr custom
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     ./lemonade list | grep custom
-    ```
+```
 
 Which should return:
 
@@ -170,19 +170,19 @@ You can print the list with:
 
 === "Windows (cmd.exe)"
 
-    ```cmd
+```cmd
     lemond.exe ./
 
     lemonade.exe list
-    ```
+```
 
 === "Linux (bash)"
 
-    ```bash
+```bash
     ./lemond ./
 
     ./lemonade list
-    ```
+```
 
 You can customize this list at packaging time by editing `server_models.json`. You can remove any entry to make it inaccessible to your users, or you can add entries to introduce new options.
 

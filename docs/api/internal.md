@@ -44,17 +44,17 @@ Backend processes such as `llama-server` have exited by the time the caller read
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/internal/shutdown" `
       -Method POST
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl -X POST http://localhost:13305/internal/shutdown
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -85,17 +85,17 @@ A batch the collector rejects or does not receive is dropped without further ret
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/internal/telemetry/flush" `
       -Method POST
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl -X POST http://localhost:13305/internal/telemetry/flush
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -129,21 +129,21 @@ A [`POST /v1/load`](./lemonade.md#post-v1load) or inference request that needs a
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/internal/pin" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model_name": "Qwen3-0.6B-GGUF", "pinned": true}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/internal/pin \
       -H "Content-Type: application/json" \
       -d '{"model_name": "Qwen3-0.6B-GGUF", "pinned": true}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -238,21 +238,21 @@ Settings with a runtime effect apply immediately, such as `port` and `host`, whi
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/internal/set" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"log_level": "info"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/internal/set \
       -H "Content-Type: application/json" \
       -d '{"log_level": "info"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -294,15 +294,15 @@ See the [Settings Reference](../guide/configuration/README.md#settings-reference
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/internal/config"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/internal/config
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -344,15 +344,15 @@ The per-backend sections come from the backend descriptors, so this is the autho
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/internal/config/defaults"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/internal/config/defaults
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -396,21 +396,21 @@ An orphan is a non-`main` checkpoint file, such as an `mmproj` from a different 
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/internal/cleanup-cache" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"dry_run": true}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/internal/cleanup-cache \
       -H "Content-Type: application/json" \
       -d '{"dry_run": true}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -460,21 +460,21 @@ The answer comes after the evaluation finishes, so a test can check the outcome 
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/internal/simulate-vram-pressure" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"pct": 0.5}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/internal/simulate-vram-pressure \
       -H "Content-Type: application/json" \
       -d '{"pct": 0.5}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -523,21 +523,21 @@ See Model Synchronization & Auto-Updates in [Server Configuration](../guide/conf
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/internal/models/sync" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"models": ["Qwen3-0.6B-GGUF"], "dry_run": true}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/internal/models/sync \
       -H "Content-Type: application/json" \
       -d '{"models": ["Qwen3-0.6B-GGUF"], "dry_run": true}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -614,15 +614,15 @@ A `sync_id` that is neither running nor recorded answers `200` with `status: "no
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/internal/models/sync/status"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/internal/models/sync/status
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -699,15 +699,15 @@ An alias stands in for its target in the `model` field of inference requests on 
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/internal/aliases"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/internal/aliases
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -758,21 +758,21 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/internal/aliases" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"alias": "my-alias-1", "target": "user.custom-llama"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/internal/aliases \
       -H "Content-Type: application/json" \
       -d '{"alias": "my-alias-1", "target": "user.custom-llama"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -819,17 +819,17 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/internal/aliases/my-alias-1" `
       -Method DELETE
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl -X DELETE http://localhost:13305/internal/aliases/my-alias-1
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -870,15 +870,15 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/internal/routes?id=internal.telemetry_flush"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl "http://localhost:13305/internal/routes?id=internal.telemetry_flush"
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -977,15 +977,15 @@ A catalog answers `host_specific: true` when its rows depend on this machine: a 
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/internal/model-sources"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/internal/model-sources
-    ```
+```
 
 **Response:** `200 OK`
 

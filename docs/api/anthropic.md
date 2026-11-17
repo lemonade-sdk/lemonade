@@ -48,7 +48,7 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/messages" `
       -Method POST `
@@ -59,11 +59,11 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
           "temperature": 0,
           "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}]
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/messages \
       -H "Content-Type: application/json" \
       -d '{
@@ -72,7 +72,7 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
           "temperature": 0,
           "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}]
         }'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -93,7 +93,7 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/messages" `
       -Method POST `
@@ -105,11 +105,11 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
           "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
           "stream": true
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/messages \
       -H "Content-Type: application/json" \
       -d '{
@@ -119,7 +119,7 @@ Errors use Anthropic's shape, `{"type": "error", "error": {"type", "message"}}`.
           "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
           "stream": true
         }'
-    ```
+```
 
 **Response:** `200 OK`
 

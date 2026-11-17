@@ -65,7 +65,7 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/mcp" `
       -Method POST `
@@ -76,11 +76,11 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
           "method": "initialize",
           "params": {"protocolVersion": "2025-06-18", "capabilities": {}}
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/mcp \
       -H "Content-Type: application/json" \
       -d '{
@@ -89,7 +89,7 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
           "method": "initialize",
           "params": {"protocolVersion": "2025-06-18", "capabilities": {}}
         }'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -109,21 +109,21 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/mcp" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/mcp \
       -H "Content-Type: application/json" \
       -d '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
-    ```
+```
 
 **Response:** `202 Accepted`
 

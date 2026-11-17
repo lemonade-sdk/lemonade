@@ -55,7 +55,7 @@ A request with tools and streaming runs non-streaming on the backend and answers
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/api/chat" `
       -Method POST `
@@ -65,11 +65,11 @@ A request with tools and streaming runs non-streaming on the backend and answers
           "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
           "stream": false
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/api/chat \
       -H "Content-Type: application/json" \
       -d '{
@@ -77,7 +77,7 @@ A request with tools and streaming runs non-streaming on the backend and answers
           "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
           "stream": false
         }'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -101,7 +101,7 @@ A request with tools and streaming runs non-streaming on the backend and answers
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/api/chat" `
       -Method POST `
@@ -111,11 +111,11 @@ A request with tools and streaming runs non-streaming on the backend and answers
           "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
           "stream": true
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/api/chat \
       -H "Content-Type: application/json" \
       -d '{
@@ -123,7 +123,7 @@ A request with tools and streaming runs non-streaming on the backend and answers
           "messages": [{"role": "user", "content": "What is the capital of France? /no_think"}],
           "stream": true
         }'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -233,7 +233,7 @@ Image generation never streams.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/api/generate" `
       -Method POST `
@@ -244,11 +244,11 @@ Image generation never streams.
           "options": {"num_predict": 16},
           "stream": false
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/api/generate \
       -H "Content-Type: application/json" \
       -d '{
@@ -257,7 +257,7 @@ Image generation never streams.
           "options": {"num_predict": 16},
           "stream": false
         }'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -282,7 +282,7 @@ Image generation never streams.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/api/generate" `
       -Method POST `
@@ -293,11 +293,11 @@ Image generation never streams.
           "options": {"num_predict": 16},
           "stream": true
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/api/generate \
       -H "Content-Type: application/json" \
       -d '{
@@ -306,7 +306,7 @@ Image generation never streams.
           "options": {"num_predict": 16},
           "stream": true
         }'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -389,15 +389,15 @@ This endpoint does not take any parameters.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/api/tags"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/api/tags
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -465,21 +465,21 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/api/show" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model": "Qwen3-0.6B-GGUF"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/api/show \
       -H "Content-Type: application/json" \
       -d '{"model": "Qwen3-0.6B-GGUF"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -553,21 +553,21 @@ Success answers `200` with an empty body, as Ollama does.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/api/delete" `
       -Method DELETE `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model": "RealESRGAN-x4plus-anime"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl -X DELETE http://localhost:13305/api/delete \
       -H "Content-Type: application/json" \
       -d '{"model": "RealESRGAN-x4plus-anime"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -605,21 +605,21 @@ Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/api/pull" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model": "Qwen3-0.6B-GGUF", "stream": true}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/api/pull \
       -H "Content-Type: application/json" \
       -d '{"model": "Qwen3-0.6B-GGUF", "stream": true}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -636,21 +636,21 @@ Only models already in Lemonade's registry can be pulled; use [`POST /v1/pull`](
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/api/pull" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model": "RealESRGAN-x4plus-anime", "stream": false}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/api/pull \
       -H "Content-Type: application/json" \
       -d '{"model": "RealESRGAN-x4plus-anime", "stream": false}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -707,21 +707,21 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/api/embed" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model": "nomic-embed-text-v1-GGUF", "input": "Why is the sky blue?"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/api/embed \
       -H "Content-Type: application/json" \
       -d '{"model": "nomic-embed-text-v1-GGUF", "input": "Why is the sky blue?"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -777,21 +777,21 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/api/embeddings" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model": "nomic-embed-text-v1-GGUF", "prompt": "Why is the sky blue?"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/api/embeddings \
       -H "Content-Type: application/json" \
       -d '{"model": "nomic-embed-text-v1-GGUF", "prompt": "Why is the sky blue?"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -838,15 +838,15 @@ This endpoint does not take any parameters.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/api/ps"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/api/ps
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -914,15 +914,15 @@ This endpoint does not take any parameters.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/api/version"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/api/version
-    ```
+```
 
 **Response:** `200 OK`
 

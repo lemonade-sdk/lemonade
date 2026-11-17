@@ -139,9 +139,9 @@ Use MkDocs tab syntax when a task has meaningfully different steps per OS. Keep 
 
 ````markdown
 === "Linux"
-    ```bash
+```bash
     sudo apt install lemonade
-    ```
+```
 
 === "Windows"
     Download the installer from the releases page.

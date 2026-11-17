@@ -8,20 +8,20 @@ Lemonade is built for Debian 13 (Trixie).
     default repositories (it ships `libcpp-httplib0.18` only). You must enable the
     [Debian Backports](https://backports.debian.org/) repository first:
 
-    ```bash
+```bash
     # Add the backports repository
     echo "deb http://deb.debian.org/debian trixie-backports main" | sudo tee /etc/apt/sources.list.d/backports.list
     sudo apt update
-    ```
+```
 
 === "Installation"
 
     Get the `.deb` from the [latest release](https://github.com/lemonade-sdk/lemonade/releases):
     `lemonade-server_<version>-debian13_amd64.deb`
 
-    ```bash
+```bash
     sudo apt install ./lemonade-server_*-debian13_amd64.deb
-    ```
+```
 
 Enable and start the service:
 

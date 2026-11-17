@@ -644,21 +644,21 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/chat/completions" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}]}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/chat/completions \
       -H "Content-Type: application/json" \
       -d '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}]}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -677,21 +677,21 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/chat/completions" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}], "stream": true}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/chat/completions \
       -H "Content-Type: application/json" \
       -d '{"model": "Qwen3-0.6B-GGUF", "messages": [{"role": "user", "content": "What is the capital of France?"}], "stream": true}'
-    ```
+```
 
 **Response:** `200 OK`
 

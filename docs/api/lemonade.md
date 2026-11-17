@@ -83,7 +83,7 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/classify" `
       -Method POST `
@@ -92,18 +92,18 @@ Some upstream models declare only generic `LABEL_<n>` label names; their model c
           "model": "Phishing-Email-Detection-ONNX",
           "input": "Please verify your account at http://secure-login.example now."
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/classify \
       -H "Content-Type: application/json" \
       -d '{
           "model": "Phishing-Email-Detection-ONNX",
           "input": "Please verify your account at http://secure-login.example now."
         }'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -164,17 +164,17 @@ The `lemonade check-updates` command uses this endpoint.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/models/check-updates" `
       -Method POST
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl -X POST http://localhost:13305/v1/models/check-updates
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -221,7 +221,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/models/register" `
       -Method POST `
@@ -231,11 +231,11 @@ Requires `LEMONADE_API_KEY` when it is set.
           "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Q3_K_M",
           "recipe": "llamacpp"
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/models/register \
       -H "Content-Type: application/json" \
       -d '{
@@ -243,7 +243,7 @@ Requires `LEMONADE_API_KEY` when it is set.
           "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Q3_K_M",
           "recipe": "llamacpp"
         }'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -383,21 +383,21 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/pull" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model_name": "Qwen3-0.6B-GGUF", "stream": true, "subscribe": false}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/pull \
       -H "Content-Type: application/json" \
       -d '{"model_name": "Qwen3-0.6B-GGUF", "stream": true, "subscribe": false}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -427,21 +427,21 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/pull" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model_name": "Qwen3-0.6B-GGUF"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/pull \
       -H "Content-Type: application/json" \
       -d '{"model_name": "Qwen3-0.6B-GGUF"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -453,21 +453,21 @@ Files written by `lemonade export` and the desktop app's Export button are `/v1/
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/pull" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model_name": "Qwen3-0.6B-GGUF", "stream": true}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/pull \
       -H "Content-Type: application/json" \
       -d '{"model_name": "Qwen3-0.6B-GGUF", "stream": true}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -490,7 +490,7 @@ Registers `user.Qwen3-0.6B-Q4` from a Hugging Face checkpoint and downloads it.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/pull" `
       -Method POST `
@@ -500,11 +500,11 @@ Registers `user.Qwen3-0.6B-Q4` from a Hugging Face checkpoint and downloads it.
           "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
           "recipe": "llamacpp"
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/pull \
       -H "Content-Type: application/json" \
       -d '{
@@ -512,7 +512,7 @@ Registers `user.Qwen3-0.6B-Q4` from a Hugging Face checkpoint and downloads it.
           "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
           "recipe": "llamacpp"
         }'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -526,7 +526,7 @@ Registers `user.MyKit`, an omni collection of three built-in models, and pulls e
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/pull" `
       -Method POST `
@@ -536,11 +536,11 @@ Registers `user.MyKit`, an omni collection of three built-in models, and pulls e
           "recipe": "collection.omni",
           "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/pull \
       -H "Content-Type: application/json" \
       -d '{
@@ -548,7 +548,7 @@ Registers `user.MyKit`, an omni collection of three built-in models, and pulls e
           "recipe": "collection.omni",
           "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
         }'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -642,15 +642,15 @@ Active, paused, cancelled and failed jobs stay listed until a client removes the
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/v1/downloads"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/downloads
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -734,21 +734,21 @@ A `pause` or `cancel` for a job that already finished leaves it as it is.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/downloads/control" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"id": "model:Qwen3-0.6B-GGUF", "action": "pause"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/downloads/control \
       -H "Content-Type: application/json" \
       -d '{"id": "model:Qwen3-0.6B-GGUF", "action": "pause"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -778,21 +778,21 @@ A `pause` or `cancel` for a job that already finished leaves it as it is.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/downloads/control" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"id": "model:Qwen3-1.7B-GGUF", "action": "remove"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/downloads/control \
       -H "Content-Type: application/json" \
       -d '{"id": "model:Qwen3-1.7B-GGUF", "action": "remove"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -864,15 +864,15 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/v1/registry/search?source=modelscope&query=qwen&format=gguf"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl "http://localhost:13305/v1/registry/search?source=modelscope&query=qwen&format=gguf"
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -963,15 +963,15 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/v1/pull/variants?checkpoint=unsloth/Qwen3-8B-GGUF"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl "http://localhost:13305/v1/pull/variants?checkpoint=unsloth/Qwen3-8B-GGUF"
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -1051,21 +1051,21 @@ A file still held open, for example by a download that was just cancelled, is re
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/delete" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model_name": "user.Phi-4-Mini-GGUF"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/delete \
       -H "Content-Type: application/json" \
       -d '{"model_name": "user.Phi-4-Mini-GGUF"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -1159,21 +1159,21 @@ Every option the model's recipe accepts can be passed; the [Backend Reference](.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/load" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model_name": "Qwen3-0.6B-GGUF"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/load \
       -H "Content-Type: application/json" \
       -d '{"model_name": "Qwen3-0.6B-GGUF"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -1190,21 +1190,21 @@ Every option the model's recipe accepts can be passed; the [Backend Reference](.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/load" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model_name": "LMX-Omni-5.5B-Lite"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/load \
       -H "Content-Type: application/json" \
       -d '{"model_name": "LMX-Omni-5.5B-Lite"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -1265,21 +1265,21 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/unload" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"model_name": "Qwen3-0.6B-GGUF"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/unload \
       -H "Content-Type: application/json" \
       -d '{"model_name": "Qwen3-0.6B-GGUF"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -1346,7 +1346,7 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/audio/generations" `
       -Method POST `
@@ -1358,11 +1358,11 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
           "seed": 42
         }' `
       -OutFile output.wav
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/audio/generations \
       -H "Content-Type: application/json" \
       -d '{
@@ -1372,7 +1372,7 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
           "seed": 42
         }' \
       --output output.wav
-    ```
+```
 
 **Response:** `200 OK`, `audio/wav`, 884,780 bytes
 
@@ -1380,7 +1380,7 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/audio/generations" `
       -Method POST `
@@ -1393,11 +1393,11 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
           "seed": 42
         }' `
       -OutFile output.wav
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/audio/generations \
       -H "Content-Type: application/json" \
       -d '{
@@ -1408,7 +1408,7 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
           "seed": 42
         }' \
       --output output.wav
-    ```
+```
 
 **Response:** `200 OK`, `audio/wav`, 8,593,964 bytes
 
@@ -1460,7 +1460,7 @@ Errors carry a JSON `error` object.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     $image = [Convert]::ToBase64String([IO.File]::ReadAllBytes("image.png"))
     $body = @"
     {"model": "TRELLIS-3D", "image": "$image", "resolution": 512, "seed": 42}
@@ -1471,16 +1471,16 @@ Errors carry a JSON `error` object.
       -Headers @{ "Content-Type" = "application/json" } `
       -Body $body `
       -OutFile output.glb
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/3d/generations \
       -H "Content-Type: application/json" \
       -d "{\"model\": \"TRELLIS-3D\", \"image\": \"$(base64 -w0 image.png)\", \"resolution\": 512, \"seed\": 42}" \
       --output output.glb
-    ```
+```
 
 **Response:** `200 OK`, `model/gltf-binary`, 4,453,452 bytes
 
@@ -1520,15 +1520,15 @@ This endpoint does not take any parameters.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/v1/docs"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/docs
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -1591,15 +1591,15 @@ The same files are installed on disk, so they can be read without a running serv
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/v1/docs/api/lemonade"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/docs/api/lemonade
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -1652,15 +1652,15 @@ This endpoint does not take any parameters.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/v1/health"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/health
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -1799,15 +1799,15 @@ This endpoint does not take any parameters.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/v1/stats"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/stats
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -1878,15 +1878,15 @@ GPU, VRAM and NPU telemetry depends on the operating system and installed driver
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/v1/system-stats"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/system-stats
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -1967,15 +1967,15 @@ Lemonade starts llama.cpp backends with metrics enabled and, for each loaded `ll
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/metrics"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/metrics
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -2040,15 +2040,15 @@ The same backend can carry different labels on different operating systems. Each
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/v1/system-info"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/system-info
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -2252,21 +2252,21 @@ Optional fields are applied only when present in the request body. Re-installing
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/install" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"recipe": "llamacpp", "backend": "cpu"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/install \
       -H "Content-Type: application/json" \
       -d '{"recipe": "llamacpp", "backend": "cpu"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -2278,21 +2278,21 @@ Optional fields are applied only when present in the request body. Re-installing
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/install" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"recipe": "llamacpp", "backend": "vulkan", "stream": true}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/install \
       -H "Content-Type: application/json" \
       -d '{"recipe": "llamacpp", "backend": "vulkan", "stream": true}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -2305,21 +2305,21 @@ data: {"file": "llama-b11393-bin-ubuntu-vulkan-x64.tar.gz", "file_index": 1, "to
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/install" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"recipe": "llamacpp", "backend": "vulkan", "stream": true, "subscribe": false}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/install \
       -H "Content-Type: application/json" \
       -d '{"recipe": "llamacpp", "backend": "vulkan", "stream": true, "subscribe": false}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -2349,7 +2349,7 @@ data: {"file": "llama-b11393-bin-ubuntu-vulkan-x64.tar.gz", "file_index": 1, "to
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/install" `
       -Method POST `
@@ -2359,11 +2359,11 @@ data: {"file": "llama-b11393-bin-ubuntu-vulkan-x64.tar.gz", "file_index": 1, "to
           "provider": "fireworks",
           "base_url": "https://api.fireworks.ai/inference/v1"
         }'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/install \
       -H "Content-Type: application/json" \
       -d '{
@@ -2371,7 +2371,7 @@ data: {"file": "llama-b11393-bin-ubuntu-vulkan-x64.tar.gz", "file_index": 1, "to
           "provider": "fireworks",
           "base_url": "https://api.fireworks.ai/inference/v1"
         }'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -2512,21 +2512,21 @@ Lemonade does not check that the asset exists; fetch `url`, or its split-archive
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/install/dry-run" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"recipe": "whispercpp", "backend": "rocm", "arch": "gfx1201"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/install/dry-run \
       -H "Content-Type: application/json" \
       -d '{"recipe": "whispercpp", "backend": "rocm", "arch": "gfx1201"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -2593,21 +2593,21 @@ Removes the provider record from `config.json`, drops its in-memory API key, if 
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/uninstall" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"recipe": "llamacpp", "backend": "cpu"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/uninstall \
       -H "Content-Type: application/json" \
       -d '{"recipe": "llamacpp", "backend": "cpu"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -2619,21 +2619,21 @@ Removes the provider record from `config.json`, drops its in-memory API key, if 
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/uninstall" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"backend": "cloud", "provider": "fireworks"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/uninstall \
       -H "Content-Type: application/json" \
       -d '{"backend": "cloud", "provider": "fireworks"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -2693,21 +2693,21 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/cloud/auth" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"provider": "fireworks", "api_key": "fw-XXXXX"}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/cloud/auth \
       -H "Content-Type: application/json" \
       -d '{"provider": "fireworks", "api_key": "fw-XXXXX"}'
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -2762,17 +2762,17 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/cloud/auth/fireworks" `
       -Method DELETE
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl -X DELETE http://localhost:13305/v1/cloud/auth/fireworks
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -2910,15 +2910,15 @@ This endpoint does not take any parameters.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/live"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/live
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -2962,21 +2962,21 @@ A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/jobs" `
       -Method POST `
       -Headers @{ "Content-Type" = "application/json" } `
       -Body '{"name": "example", "steps": [{"id": "wait", "op": "sleep", "params": {"ms": 30000}}]}'
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/jobs \
       -H "Content-Type: application/json" \
       -d '{"name": "example", "steps": [{"id": "wait", "op": "sleep", "params": {"ms": 30000}}]}'
-    ```
+```
 
 **Response:** `202 Accepted`
 
@@ -3014,15 +3014,15 @@ This endpoint does not take any parameters.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/v1/jobs"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/jobs
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -3075,17 +3075,17 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/jobs/job-20261007-171503-000003/pause" `
       -Method POST
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl -X POST http://localhost:13305/v1/jobs/job-20261007-171503-000003/pause
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -3122,17 +3122,17 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/jobs/job-20261007-171503-000004/interrupt" `
       -Method POST
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl -X POST http://localhost:13305/v1/jobs/job-20261007-171503-000004/interrupt
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -3169,17 +3169,17 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/jobs/job-20261007-171503-000006/resume" `
       -Method POST
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl -X POST http://localhost:13305/v1/jobs/job-20261007-171503-000006/resume
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -3216,15 +3216,15 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest -Uri "http://localhost:13305/v1/jobs/job-20261007-171503-000007"
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl http://localhost:13305/v1/jobs/job-20261007-171503-000007
-    ```
+```
 
 **Response:** `200 OK`
 
@@ -3296,17 +3296,17 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 === "PowerShell"
 
-    ```powershell
+```powershell
     Invoke-WebRequest `
       -Uri "http://localhost:13305/v1/jobs/job-20261007-171503-000008" `
       -Method DELETE
-    ```
+```
 
 === "Bash"
 
-    ```bash
+```bash
     curl -X DELETE http://localhost:13305/v1/jobs/job-20261007-171503-000008
-    ```
+```
 
 **Response:** `200 OK`
 
