@@ -1145,7 +1145,6 @@ set(SOURCES_CORE
     src/cpp/server/backends/systemone_classify.cpp
     src/cpp/server/backend_manager.cpp
     src/cpp/server/mcp_server.cpp
-    src/cpp/server/mcp_3d_orchestrator.cpp
     src/cpp/server/streaming_audio_buffer.cpp
     src/cpp/server/vad.cpp
     src/cpp/server/realtime_session.cpp
@@ -2788,24 +2787,6 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_contr
     target_compile_definitions(test_hrx_contract PRIVATE
         HRX_TEST_CATALOG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/server_models.json")
     add_cpp_ci_test(HrxContractTest CI ON COMMAND test_hrx_contract)
-endif()
-
-# Prompt-to-3D orchestration uses injected callbacks: no GPU or server needed.
-set(_MCP_3D_ORCHESTRATOR_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_mcp_3d_orchestrator.cpp"
-)
-if(BUILD_TESTING AND EXISTS "${_MCP_3D_ORCHESTRATOR_TEST_SRC}")
-    add_executable(test_mcp_3d_orchestrator
-        test/cpp/test_mcp_3d_orchestrator.cpp
-        src/cpp/server/mcp_3d_orchestrator.cpp
-    )
-    target_include_directories(test_mcp_3d_orchestrator PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
-    )
-    target_link_libraries(test_mcp_3d_orchestrator PRIVATE
-        nlohmann_json::nlohmann_json
-    )
-    add_cpp_ci_test(Mcp3dOrchestratorTest CI ON COMMAND test_mcp_3d_orchestrator)
 endif()
 
 # Job engine pure core: the `when`/`branch` expression evaluator + reference
