@@ -1,4 +1,5 @@
 #include "lemon/backends/fastflowlm/fastflowlm_models.h"
+#include "lemon/backends/fastflowlm/fastflowlm.h"
 #include "lemon/backends/fastflowlm/flm_model_labels.h"
 
 #include <algorithm>
@@ -142,6 +143,7 @@ int64_t read_flm_max_context_window(const ModelInfo& info) {
 }
 
 std::string find_flm_binary() {
+    validate_flm_runtime();
     try {
         const backends::BackendSpec* spec = try_get_spec_for_recipe("flm");
         if (!spec) {
@@ -649,6 +651,8 @@ std::string find_flm_executable() {
         return path;
     }
 
+    validate_flm_runtime();
+
 #ifdef _WIN32
     const std::string binary_name = "flm.exe";
 #else
@@ -674,6 +678,37 @@ void validate_flm_build_change() {
     if (fs::exists(install_dir) || fs::exists(install_dir + ".staging")) {
         throw std::invalid_argument(
             "Uninstall FastFlowLM before changing its build (lemonade backends uninstall flm:npu).");
+    }
+}
+
+void validate_flm_runtime() {
+    if (!BackendUtils::find_external_backend_binary("flm", "npu").empty() ||
+        !find_flm_in_path().empty()) {
+        return;
+    }
+    const std::string install_dir = BackendUtils::get_install_directory("flm", "npu");
+    if (BackendUtils::find_executable_in_install_dir(install_dir, descriptor.binary).empty()) {
+        return;
+    }
+    bool installed_hrx = false;
+    for (const auto& entry : fs::recursive_directory_iterator(install_dir)) {
+        const std::string filename = entry.path().filename().string();
+#ifdef _WIN32
+        const bool hrx_library = filename == "hrx.dll";
+#else
+        const bool hrx_library = filename == "libhrx.so" || filename.rfind("libhrx.so.", 0) == 0;
+#endif
+        if (hrx_library && entry.is_regular_file()) {
+            installed_hrx = true;
+            break;
+        }
+    }
+    auto* cfg = RuntimeConfig::global();
+    const bool selected_hrx = cfg && cfg->backend_string("flm", "runtime") == "hrx";
+    if (installed_hrx != selected_hrx) {
+        throw std::invalid_argument(
+            "Installed FastFlowLM build does not match 'flm.runtime'. "
+            "Uninstall FastFlowLM first (lemonade backends uninstall flm:npu).");
     }
 }
 

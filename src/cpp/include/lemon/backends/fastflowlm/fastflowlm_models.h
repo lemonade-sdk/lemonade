@@ -43,6 +43,8 @@ std::string find_flm_executable();
 
 void validate_flm_build_change();
 
+void validate_flm_runtime();
+
 // Run `flm validate` and report readiness; error_message on failure.
 bool run_flm_validate(const std::string& flm_path, std::string& error_message);
 

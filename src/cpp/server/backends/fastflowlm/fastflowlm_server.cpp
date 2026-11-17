@@ -47,6 +47,7 @@ InstallParams FastFlowLMServer::get_install_params(const std::string& backend, c
         return params;
     }
 
+    fastflowlm::validate_flm_runtime();
     params.repo = "ROCm/FastFlowLM";
 
     // Release asset filenames use bare version numbers (no 'v' prefix)
@@ -540,7 +541,19 @@ public:
     }
 
     InstallCheck check_install(const std::string&, bool binary_found) const override {
-        return {!find_flm_executable().empty(), ""};
+        try {
+            return {!find_flm_executable().empty(), ""};
+        } catch (const std::invalid_argument& error) {
+            return {false, error.what()};
+        }
+    }
+
+    std::optional<UnavailableState> classify_unavailable(
+        const std::string&, const std::string& install_error, const std::string&) const override {
+        if (install_error.empty()) return std::nullopt;
+        // Keep the installed-build uninstall action available in clients.
+        return UnavailableState{"update_required", install_error,
+                                "lemonade backends uninstall flm:npu"};
     }
 
 };
