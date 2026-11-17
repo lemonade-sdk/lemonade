@@ -135,7 +135,21 @@ std::function<json(const json& params, const json& context, CancelFlag& cancel)>
 | `audio_generations` | yes | lambda in `services/job_ops.cpp` | Negotiates `response_format`; base64 media (size-capped); cancellable |
 | `model_3d_generations` | yes | lambda in `services/job_ops.cpp` | Returns base64 GLB (size-capped); cancellable |
 
-### Media outputs
+### Media inputs and outputs
+
+Job image inputs use `image` and `mask`, each a bare base64 string or a `data:`
+URI. A later step can reuse an earlier image with `"image": "${a.data.0.b64_json}"`.
+Image edits and variations map these fields to `image_data` and `mask_data`,
+strip data URI prefixes, and supply missing filename and image content type
+metadata. Explicit backend fields take precedence. `image_files` passes through
+untouched. 3D generation uses `image` and also accepts `image_data` when `image`
+is absent.
+
+Audio jobs drop `stream` and `stream_format` because a job always buffers its
+result. Speech jobs also drop an empty `voice`, like the HTTP speech route.
+PCM outputs use the backend's content type and preserve its format headers in
+the result's `headers` object (for example, `X-MOSS-Sample-Rate` and
+`X-MOSS-Channels`). Results omit `headers` when the backend supplies none.
 
 Each media result has an 8 MiB limit. Image results count decoded bytes across
 all `b64_json` images and gain a `size` field when they contain image bytes.

@@ -1796,6 +1796,37 @@ class JobEngineTests(unittest.TestCase):
             )
         self.assertEqual(self.step_by_id(done, "done")["status"], "completed")
 
+    def test_audio_streaming_selectors_without_backend(self):
+        steps = []
+        for op in ("audio_speech", "audio_generations"):
+            for streaming in (False, True):
+                params = {
+                    "model": "no-such-job-media-model",
+                    "input": "hi",
+                    "prompt": "hi",
+                }
+                if streaming:
+                    params.update(stream=True, stream_format="audio", voice="")
+                steps.append(
+                    {
+                        "id": f"{op}_{streaming}",
+                        "op": op,
+                        "params": params,
+                        "on_fail": "continue",
+                    }
+                )
+        job = self.create_job("audio-streaming-no-backend", steps)
+        done = self.poll_status(job["id"], "completed", timeout=60)
+        for op in ("audio_speech", "audio_generations"):
+            baseline = self.step_by_id(done, f"{op}_False")
+            streaming = self.step_by_id(done, f"{op}_True")
+            self.assertEqual(baseline["status"], "failed")
+            self.assertEqual(streaming["status"], "failed")
+            self.assertIn("no-such-job-media-model", baseline.get("error", ""))
+            self.assertEqual(streaming.get("error"), baseline.get("error"))
+            self.assertNotIn(baseline["id"], done["context"])
+            self.assertNotIn(streaming["id"], done["context"])
+
     def test_audio_op_rejects_unknown_format(self):
         """response_format validation runs before the backend, so an unknown
         format fails the step with a format error even with no backend loaded."""
