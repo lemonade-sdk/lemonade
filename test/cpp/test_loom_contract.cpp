@@ -207,10 +207,16 @@ void check_device_targets() {
           loom::device_target("gfx120X", "AMD Radeon AI PRO R9700") == loom::kRadeonR9700Target);
     check("A gfx1201 ISA with 32 GB runs the radeon-r9700 build",
           loom::device_target("gfx1201", "120001", 31.9) == loom::kRadeonR9700Target);
-    check("A gfx1201 ISA with 16 GB runs the radeon-rx9070xt build",
-          loom::device_target("gfx1201", "120001", 15.9) == loom::kRadeonRx9070XtTarget);
-    check("A Windows RX 9070 XT named by family runs the radeon-rx9070xt build",
-          loom::device_target("gfx120X", "AMD Radeon RX 9070 XT") == loom::kRadeonRx9070XtTarget);
+    check("A gfx1201 ISA with 16 GB runs the gfx1201-16gb build",
+          loom::device_target("gfx1201", "120001", 15.9) == loom::kGfx120116gbTarget);
+    check("A gfx1201 ISA with 14 GiB is the 16 GB class",
+          loom::device_target("gfx1201", "120001", 14.0) == loom::kGfx120116gbTarget);
+    check("A gfx1201 ISA with 30 GiB is the 32 GB class",
+          loom::device_target("gfx1201", "120001", 30.0) == loom::kRadeonR9700Target);
+    check("A gfx1201 ISA below 14 GiB has no build",
+          loom::device_target("gfx1201", "120001", 8.0).empty());
+    check("A Windows gfx120X family with 16 GB runs the gfx1201-16gb build",
+          loom::device_target("gfx120X", "AMD Radeon RX 9070 XT", 16.0) == loom::kGfx120116gbTarget);
     check("A gfx1200 card has no build", loom::device_target("gfx1200", "120000").empty());
     check("A Windows RX 9060 named by family has no build",
           loom::device_target("gfx120X", "AMD Radeon RX 9060 XT").empty());
@@ -312,8 +318,8 @@ void check_card_metadata() {
     check("The R9700 serves a fixed pool and preloads any package",
           loom::serve_args(loom::kRadeonR9700Target, info, 80400000000ull, "", true) ==
               Args({"--pool_backing=fixed", "--parameter_mode=preload"}));
-    check("The RX 9070 XT serves its 15 GB budget and small slabs, and preloads",
-          loom::serve_args(loom::kRadeonRx9070XtTarget, info, 1, "", true) ==
+    check("The 16 GB class serves its 15 GB budget and small slabs, and preloads",
+          loom::serve_args(loom::kGfx120116gbTarget, info, 1, "", true) ==
               Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib",
                     "--weight_slab_bytes=64mib", "--parameter_mode=preload"}));
     check("No preload where the host has no memlock problem",
@@ -335,9 +341,9 @@ void check_card_metadata() {
     r9700_card["presets"]["chat-r9700"] = {{"execution", json::object()}};
     check("The R9700 runs the card's -r9700 preset",
           loom::target_preset(r9700_card, "chat", loom::kRadeonR9700Target) == "chat-r9700");
-    r9700_card["presets"]["chat-9070xt"] = {{"execution", json::object()}};
-    check("The RX 9070 XT runs the card's -9070xt preset",
-          loom::target_preset(r9700_card, "chat", loom::kRadeonRx9070XtTarget) == "chat-9070xt");
+    r9700_card["presets"]["chat-16gb"] = {{"execution", json::object()}};
+    check("The 16 GB class runs the card's -16gb preset",
+          loom::target_preset(r9700_card, "chat", loom::kGfx120116gbTarget) == "chat-16gb");
     check("Strix Halo runs the base preset",
           loom::target_preset(r9700_card, "chat", loom::kStrixHaloTarget) == "chat");
     check("The R9700 runs the base preset when the card has no variant",

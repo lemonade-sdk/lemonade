@@ -54,7 +54,7 @@ inline const BackendDescriptor descriptor = {
         // away the gfx1200 parts the family also covers.
         {"rocm", BackendTier::Experimental, BackendFormat::Native, {"windows", "linux"},
          {{"amd_gpu", {"gfx1151", "gfx120X"}}},
-         "AMD Strix Halo (gfx1151), Radeon AI PRO R9700 and RX 9070 XT (gfx1201)",
+         "AMD Strix Halo (gfx1151), Radeon gfx1201 32 GB (AI PRO R9700), Radeon gfx1201 16 GB (RX 9070 XT, RX 9070)",
          {{"gfx1151", {/*os*/ {"windows", "linux"}, /*channels*/ {}}},
           {"gfx120X", {/*os*/ {"windows", "linux"}, /*channels*/ {}}}}},
     },

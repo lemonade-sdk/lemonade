@@ -26,7 +26,9 @@ inline constexpr const char* kBundleRevision = "v0.2.0";
 // Keys of info.json's `devices` map, one per GPU a bundle is built and gated for.
 inline constexpr const char* kStrixHaloTarget = "strix-halo";
 inline constexpr const char* kRadeonR9700Target = "radeon-r9700";
-inline constexpr const char* kRadeonRx9070XtTarget = "radeon-rx9070xt";
+// gfx1201 is configured by VRAM class: radeon-r9700 is the 32 GB class (R9700),
+// gfx1201-16gb the 16 GB class (RX 9070 XT, RX 9070).
+inline constexpr const char* kGfx120116gbTarget = "gfx1201-16gb";
 
 // A parameter the card places in the run folder but takes from a pinned
 // revision of another repository.
@@ -49,7 +51,7 @@ struct LockedFile {
 struct BundlePlan {
     std::string model_id;
     // "chat" when the card has it, else the card's only preset that is not a
-    // GPU variant (`<preset>-r9700`); "" leaves the choice to loom-serve.
+    // GPU variant (`<preset>-r9700` or `<preset>-16gb`); "" leaves the choice to loom-serve.
     std::string preset;
     std::vector<OriginFile> origin_files;
     std::vector<LockedFile> locked_files;
@@ -69,9 +71,10 @@ std::string store_dir_name(const std::string& repo_id);
 // The device target a GPU runs, or "" when Loom has no build for it. `arch` is
 // what identify_rocm_arch_from_name gives for `gpu_name`: the exact ISA on Linux,
 // but only the gfx120X family on Windows, where the name tells gfx1201 (Navi 48:
-// R9700, RX 9070) from gfx1200 (RX 9060). The R9700 and the RX 9070 share
-// gfx1201; the name, else the 16 GB of VRAM (`vram_gb`, 0 when unknown), tells
-// the RX 9070, whose cards serve a smaller preset and budget.
+// R9700, RX 9070) from gfx1200 (RX 9060). gfx1201 is chosen by VRAM class
+// (`vram_gb`, 0 when unknown): >= 30 GiB is the 32 GB class (radeon-r9700),
+// 14 to 30 GiB the 16 GB class (gfx1201-16gb), less has no build. An unknown
+// size is taken as the 32 GB class.
 std::string device_target(const std::string& arch, const std::string& gpu_name,
                           double vram_gb = 0.0);
 
@@ -80,8 +83,8 @@ std::string device_target(const std::string& arch, const std::string& gpu_name,
 // bundle without that map is left to loom-serve.
 bool bundle_supports_target(const json& info, const std::string& target);
 
-// The preset a GPU runs: the card's `<preset>-r9700` variant on the R9700 when
-// the card has one (a larger prefill chunk, same programs), else `preset`.
+// The preset a GPU runs: the card's `<preset>-r9700` (32 GB class) or `<preset>-16gb`
+// (16 GB class) variant when the card has one (a larger prefill chunk, same programs), else `preset`.
 std::string target_preset(const json& card, const std::string& preset, const std::string& target);
 
 // The bytes of the parameter files a bundle loads from its origins.
@@ -94,7 +97,7 @@ inline constexpr const char* kPreloadFlag = "--parameter_mode=preload";
 
 // The loom-serve flags the bundle's card serves `target` with: the flags its
 // info.json records for that GPU, else the GPU's own (a fixed pool on Strix Halo
-// and the R9700, plus kPreloadFlag where `preload` and the host copy of
+// and the 32 GB class, plus kPreloadFlag where `preload` and the host copy of
 // `parameter_bytes` fits). loom-serve rejects a memory limit on a fixed pool, so
 // a size the user asks for replaces the backing with an elastic pool of that size.
 std::vector<std::string> serve_args(const std::string& target, const json& info,

@@ -101,7 +101,7 @@ const std::vector<TargetProfile>& target_profiles() {
         {kStrixHaloTarget, "", {"--pool_backing=fixed"}, 40000000000ull},
         {kRadeonR9700Target, "-r9700", {"--pool_backing=fixed"},
          std::numeric_limits<std::uint64_t>::max()},
-        {kRadeonRx9070XtTarget, "-9070xt",
+        {kGfx120116gbTarget, "-16gb",
          {"--memory_bytes=15000000000", "--state_slab_bytes=4mib", "--weight_slab_bytes=64mib"},
          std::numeric_limits<std::uint64_t>::max()},
     };
@@ -231,11 +231,12 @@ std::string device_target(const std::string& arch, const std::string& gpu_name, 
     std::string lower = gpu_name;
     std::transform(lower.begin(), lower.end(), lower.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    const bool rx9070 = lower.find("9070") != std::string::npos;
+    // Windows reports only the gfx120X family; the RX 9060 (gfx1200) is not Navi 48.
     const bool navi48 = arch == "gfx1201" ||
-                        (arch == "gfx120X" && (rx9070 || lower.find("r9700") != std::string::npos));
+                        (arch == "gfx120X" && lower.find("9060") == std::string::npos);
     if (!navi48) return "";
-    return rx9070 || (vram_gb > 0.0 && vram_gb < 24.0) ? kRadeonRx9070XtTarget : kRadeonR9700Target;
+    if (vram_gb <= 0.0 || vram_gb >= 30.0) return kRadeonR9700Target;
+    return vram_gb >= 14.0 ? kGfx120116gbTarget : "";
 }
 
 bool bundle_supports_target(const json& info, const std::string& target) {

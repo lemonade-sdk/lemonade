@@ -255,8 +255,8 @@ std::string require_supported_gpu() {
     std::string detail;
     for (const auto& arch : found) detail += (detail.empty() ? ", found " : ", ") + arch;
     throw std::runtime_error(
-        "Loom requires an AMD Strix Halo (gfx1151), Radeon AI PRO R9700 or Radeon RX 9070 "
-        "(gfx1201) GPU" + detail);
+        "Loom requires an AMD Strix Halo (gfx1151), Radeon gfx1201 32 GB (AI PRO R9700) or "
+        "Radeon gfx1201 16 GB (RX 9070 XT, RX 9070) GPU" + detail);
 }
 
 // The server process does not keep its console output, so a failed start is
