@@ -877,6 +877,10 @@ void test_in_container() {
     check("on the host, lemond is in no container and runs no inspect",
           !host_manager.in_container() && host_manager.own_container().empty() &&
               on_host.commands == 0);
+    check("a backend that adds no capability joins lemond's PID namespace",
+          ContainerManager::joins_lemond_pid_namespace({}));
+    check("a backend that adds a capability, such as SYS_PTRACE, keeps its own PID namespace",
+          !ContainerManager::joins_lemond_pid_namespace({"SYS_PTRACE"}));
     check("container names take lemond's container ID as the instance",
           ContainerManager::container_name("aaaaaaaaaaaa", "llamacpp", "nathanw", "m") ==
               "lemonade-aaaaaaaaaaaa-llamacpp-nathanw-m");

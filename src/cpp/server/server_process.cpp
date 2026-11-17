@@ -181,19 +181,22 @@ std::string ContainerProcess::start(const ServerCommand& command) {
     // From inside its own container, lemond reaches its backends on the
     // internal network it shares with them, which has no route out; lemond
     // refuses connections arriving on it, so a backend cannot use lemond's API
-    // to reach the internet either. The backend joins lemond's PID namespace,
-    // so the kernel kills it when lemond dies, even by SIGKILL.
+    // to reach the internet either. A backend that adds no capability joins
+    // lemond's PID namespace, so the kernel kills it when lemond dies, even by
+    // SIGKILL.
     if (own_container.empty()) {
         manager.create_network(name_);
         spec.network = name_;
     } else {
         spec.network = manager.backend_network();
-        spec.pid = "container:" + own_container;
+        if (ContainerManager::joins_lemond_pid_namespace(policy_.cap_add)) {
+            spec.pid = "container:" + own_container;
 #ifdef __linux__
-        // A backend in lemond's PID namespace, as the same host account under
-        // rootless Podman, could otherwise read lemond's memory.
-        ::prctl(PR_SET_DUMPABLE, 0);
+            // A backend in lemond's PID namespace, as the same host account
+            // under rootless Podman, could otherwise read lemond's memory.
+            ::prctl(PR_SET_DUMPABLE, 0);
 #endif
+        }
     }
 
     std::vector<std::string> command_line = manager.run_command(spec);

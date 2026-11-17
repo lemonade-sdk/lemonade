@@ -173,6 +173,11 @@ public:
     static std::string install_command(const std::string& os_release, const std::string& package,
                                        const std::string& name);
     static bool allowed_image(const std::string& image);
+    // Whether a backend that adds these capabilities may join lemond's PID
+    // namespace from inside lemond's container. Capabilities such as
+    // SYS_PTRACE would let it reach lemond's processes, and through them
+    // lemond's mounted socket.
+    static bool joins_lemond_pid_namespace(const std::vector<std::string>& cap_add);
     // Read-only mounts that put `host_path` at `destination`, each source
     // resolved through symlinks. A directory becomes one mount per file inside
     // it, because a Hugging Face cache's links point into a blobs/ folder the
