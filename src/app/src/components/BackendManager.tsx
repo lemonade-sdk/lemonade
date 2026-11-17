@@ -831,6 +831,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const terminalBackendRefreshRef = useRef<Set<string>>(new Set());
   const systemInfoRequestRef = useRef(0);
+  const runtimeConfigRequestRef = useRef(0);
   const pendingBackendActionsRef = useRef<Map<string, PendingBackendAction>>(new Map());
   const backendSyncPromisesRef = useRef<Map<string, Promise<BackendSyncResult>>>(new Map());
   const toastTimerRef = useRef<number | null>(null);
@@ -864,6 +865,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   }, []);
 
   const fetchInfo = useCallback(async (showSpinner = true) => {
+    const configRequestId = ++runtimeConfigRequestRef.current;
     try {
       if (showSpinner) setLoading(true);
       setError(null);
@@ -872,7 +874,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         loadSystemInfo(),
         api.getRuntimeConfig(),
       ]);
-      setRuntimeConfig(config);
+      if (configRequestId === runtimeConfigRequestRef.current) {
+        setRuntimeConfig(config);
+      }
     } catch (err) {
       setError(friendlyErrorMessage(err));
     } finally {
@@ -1060,8 +1064,14 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
   const handleFlmBuildChange = useCallback(async (runtime: string) => {
     setSavingFlmBuild(true);
+    runtimeConfigRequestRef.current += 1;
     try {
       await api.setRuntimeConfig({ flm_runtime: runtime });
+      runtimeConfigRequestRef.current += 1;
+      setRuntimeConfig(current => ({
+        ...current,
+        flm: { ...backendRuntimeRecord(current.flm), runtime },
+      }));
       await fetchInfo(false);
     } catch (err) {
       toast(friendlyErrorMessage(err));

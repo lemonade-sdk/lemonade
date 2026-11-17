@@ -1186,8 +1186,13 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
         if (!value.is_string() || (value != "xrt" && value != "hrx")) {
             throw std::invalid_argument("'flm.runtime' must be 'xrt' or 'hrx'");
         }
-        const json* current = find_backend_value(config_, backend, key);
-        if (value != (current ? *current : json("xrt"))) {
+        bool runtime_changed;
+        {
+            std::shared_lock lock(mutex_);
+            const json* current = find_backend_value(config_, backend, key);
+            runtime_changed = value != (current ? *current : json("xrt"));
+        }
+        if (runtime_changed) {
             backends::fastflowlm::validate_flm_build_change();
         }
     }
