@@ -2456,15 +2456,13 @@
             "video"
         ],
         "size": 8.8,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 20,
             "cfg_scale": 6.0,
             "width": 832,
             "height": 480,
             "sampling_method": "euler",
-            "flow_shift": 3.0
-        },
-        "recipe_options": {
+            "flow_shift": 3.0,
             "video_frames": 33,
             "fps": 16
         }
