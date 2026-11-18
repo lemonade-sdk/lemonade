@@ -92,6 +92,8 @@ MCP_HUB_EXPECTED_TOOLS = {
     "lemonade_list_backends",
     "lemonade_install_backend",
     "lemonade_generate_image",
+    "lemonade_generate_audio",
+    "lemonade_text_to_speech",
     "lemonade_transcribe_audio",
     "lemonade_chat",
     "lemonade_omni",
@@ -906,6 +908,8 @@ class McpGatewayTests(ServerTestBase):
             "lemonade_pull_model": {"model_name": ""},
             "lemonade_delete_model": {"model_name": "", "confirm": True},
             "lemonade_install_backend": {"recipe": "", "backend": ""},
+            "lemonade_generate_audio": {"prompt": "", "model": "nonexistent"},
+            "lemonade_text_to_speech": {"input": "", "model": "nonexistent"},
         }
         for index, (name, arguments) in enumerate(safe_probes.items(), start=121):
             self.assertIn(name, listed_names)

@@ -396,6 +396,42 @@ Returns a result from lemonade_install_backend, including structured content on 
 | `force` | no | `{"type":"boolean"}` | Override an unsupported-state guard when the underlying API permits it. |
 | `recipe` | yes | `{"pattern":"\\S","type":"string"}` | Argument recipe for the lemonade_install_backend tool. |
 
+### `lemonade_generate_audio`
+
+Generate music or a sound effect with a Lemonade audio-generation model using the same server generation path as POST /api/v1/audio/generations. When model is omitted, reuse a loaded/downloaded audio-generation model.
+
+**Returns**
+
+Returns a result from lemonade_generate_audio, including structured content on success.
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `cfg` | no | `{"type":"number"}` | Argument cfg for the lemonade_generate_audio tool. |
+| `duration` | no | `{"type":"number"}` | Argument duration for the lemonade_generate_audio tool. |
+| `lyrics` | no | `{"type":"string"}` | Argument lyrics for the lemonade_generate_audio tool. |
+| `model` | no | `{"type":"string"}` | Argument model for the lemonade_generate_audio tool. |
+| `prompt` | yes | `{"type":"string"}` | Argument prompt for the lemonade_generate_audio tool. |
+| `response_format` | no | `{"type":"string"}` | Argument response_format for the lemonade_generate_audio tool. |
+| `seed` | no | `{"type":"integer"}` | Argument seed for the lemonade_generate_audio tool. |
+| `steps` | no | `{"minimum":1,"type":"integer"}` | Argument steps for the lemonade_generate_audio tool. |
+| `vocal_language` | no | `{"type":"string"}` | Argument vocal_language for the lemonade_generate_audio tool. |
+
+### `lemonade_text_to_speech`
+
+Convert text to speech using the same server generation path as POST /api/v1/audio/speech. When model is omitted, reuse a loaded/downloaded TTS model.
+
+**Returns**
+
+Returns a result from lemonade_text_to_speech, including structured content on success.
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `input` | yes | `{"type":"string"}` | Argument input for the lemonade_text_to_speech tool. |
+| `model` | no | `{"type":"string"}` | Argument model for the lemonade_text_to_speech tool. |
+| `response_format` | no | `{"type":"string"}` | Argument response_format for the lemonade_text_to_speech tool. |
+| `speed` | no | `{"type":"number"}` | Argument speed for the lemonade_text_to_speech tool. |
+| `voice` | no | `{"type":"string"}` | Argument voice for the lemonade_text_to_speech tool. |
+
 ### `lemonade_list_models`
 
 List models known to the Lemonade server. ALWAYS call this first if you don't already know the exact model name to use for chat/transcribe/image — passing a wrong name may trigger a multi-GB download. Returns a summary text block plus a JSON block with `{loaded, available, suggested_to_pull, recommended_chat_model}`.
@@ -536,6 +572,7 @@ tools reuse Lemonade's existing server implementations:
 | Health | `lemonade_get_server_health` |
 | Hardware / backends | `lemonade_get_system_info`, `lemonade_list_backends` |
 | Backend installation | `lemonade_install_backend` |
+| Audio generation / TTS | `lemonade_generate_audio`, `lemonade_text_to_speech` |
 
 Lifecycle actions can change local model state and consume resources.
 MCP annotations and `confirm: true` for model deletion help clients
