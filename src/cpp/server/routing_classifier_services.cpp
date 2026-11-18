@@ -8,7 +8,6 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
-#include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
 namespace {
@@ -627,13 +626,8 @@ CostInfo resolve_cost_info(std::optional<double> cost_input_per_million,
     }
 
     const std::string tier = extras_get<std::string>(extras, kCostTierKey, "");
-    if (!tier.empty()) {
-        if (is_cost_tier(tier)) {
-            out.cost_tier = tier;
-        } else {
-            LOG(DEBUG, "Routing") << "Ignoring unrecognized cost_tier '" << tier
-                                  << "' (expected free|low|medium|high)" << std::endl;
-        }
+    if (is_cost_tier(tier)) {
+        out.cost_tier = tier;
     }
 
     out.latency_ms_hint = extras_get_nonneg(extras, kLatencyMsHintKey);

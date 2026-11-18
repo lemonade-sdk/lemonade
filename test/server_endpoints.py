@@ -347,10 +347,14 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(models_response.status_code, 200, models_response.text)
             entry = next(
-                model
-                for model in models_response.json()["data"]
-                if model["id"] == public_name
+                (
+                    model
+                    for model in models_response.json()["data"]
+                    if model["id"] == public_name
+                ),
+                None,
             )
+            self.assertIsNotNone(entry, f"{public_name} missing from /models")
             self.assertEqual(entry.get("checkpoint"), checkpoint)
             self.assertEqual(entry.get("recipe"), "llamacpp")
             self.assertFalse(entry.get("downloaded"))
@@ -394,10 +398,14 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(models_response.status_code, 200, models_response.text)
             entry = next(
-                model
-                for model in models_response.json()["data"]
-                if model["id"] == public_name
+                (
+                    model
+                    for model in models_response.json()["data"]
+                    if model["id"] == public_name
+                ),
+                None,
             )
+            self.assertIsNotNone(entry, f"{public_name} missing from /models")
             for key, value in cost.items():
                 self.assertEqual(entry.get(key), value, f"{key} in {entry}")
         finally:
