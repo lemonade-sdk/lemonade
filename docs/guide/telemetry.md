@@ -199,7 +199,7 @@ lemonade config set telemetry.usage_log.enabled=true
 |-----|------|---------|-------------|
 | `telemetry.usage_log.enabled` | boolean | `false` | Turns the usage log on. |
 | `telemetry.usage_log.path` | string | `""` | Directory for the files. Empty means `<config dir>/usage/`. |
-| `telemetry.usage_log.content` | string | `"none"` | `"none"` logs counts only. `"full"` also logs prompts and responses. |
+| `telemetry.usage_log.content` | string | `"none"` | `"none"` logs counts only. `"full"` also logs prompts (`input`) and responses (`output`). `input` is cut to `telemetry.max_attribute_length` bytes; `output` is kept whole. |
 | `telemetry.usage_log.max_size_mb` | int | `100` | Total disk cap. Oldest days are deleted first. `-1` for unlimited. |
 | `telemetry.usage_log.max_days` | int | `90` | Days older than this are deleted. `-1` for unlimited. |
 
@@ -218,6 +218,7 @@ There is one file per day, named `usage-YYYY-MM-DD.jsonl` (UTC). Files are only 
 | `tokens_reported` | `false` when the backend returned no counts. Token fields are then `null`, not `0`. |
 | `tokens_estimated` | `true` when the client disconnected mid-stream; `output_tokens` is the number of chunks relayed before the disconnect. |
 | `host` | The machine running Lemonade, even for remote clients. |
+| `input`, `output` | Only with `content: "full"`. `input` is the request's messages or prompt as JSON text. Past `telemetry.max_attribute_length` bytes (default 4096) it is cut and ends with `... [TRUNCATED]`; raise that setting to keep longer prompts. `output` is the full response text. |
 | `session_id`, `client_ip` | Filled when available. Session IDs come from the headers described in [Session Tracking](#session-tracking--client-identification). |
 
 Records are written by a background thread, so a slow disk never delays a request. If writing falls behind, records are dropped and a `{"dropped": N}` line is written once it catches up. If a write fails (disk full, directory removed), the log disables itself and logs one warning.

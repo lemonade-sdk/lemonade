@@ -393,7 +393,7 @@ A chunk of the assistant's message.
     - `reasoning_content` - Reasoning models only: the next part of the model's thinking.
     - `tool_calls` - Parts of calls to the request's tools, matched by `index`: a call's first part carries its `id` and `function.name`, and later parts carry the next piece of `function.arguments`.
   - `finish_reason` - Why generation stopped, such as `stop`, `length` or `tool_calls`, on the choice's last chunk; `null` before it.
-- `usage` - Token counts for the request, on an extra last chunk with an empty `choices`. Sent when the request sets `stream_options.include_usage`, and always by vLLM models.
+- `usage` - Token counts for the request, on an extra last chunk with an empty `choices`. Sent when the request sets `stream_options.include_usage`, and always by vLLM and FastFlowLM models.
 - `timings` - Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp.
 - `x_lemonade_route` - The routing decision, when `model` names a `collection.router` model. See [Routing](./router.md#routing-collectionrouter) for the decision object.
 

@@ -225,6 +225,14 @@ int main() {
             check_int("extract_telemetry: responses prompt from input", tel.prompt_tokens, 30);
             check_int("extract_telemetry: responses cached via input_tokens_details", tel.cache_tokens, 12);
             check_int("extract_telemetry: responses output_tokens", tel.output_tokens, 40);
+            check_bool("extract_telemetry: responses usage sets tokens_reported", tel.tokens_reported, true);
+        }
+        {
+            nlohmann::json responses_body = nlohmann::json::parse(
+                "{\"object\": \"response\", \"error\": null, \"output\": []}");
+            auto tel = lemon::StreamingProxy::extract_telemetry(responses_body);
+            check_bool("extract_telemetry: responses without usage leaves tokens_reported false",
+                       tel.tokens_reported, false);
         }
 
         // 1a'. accumulate_telemetry across a stream: content chunks counted, usage flags reporting

@@ -356,7 +356,7 @@ Set the value with `POST /internal/set` — the model set rebuilds and every con
 |-----|------|---------|-------------|
 | `enabled` | bool | false | Append one JSON line per LLM request to a local file. Independent of `telemetry.enabled`. |
 | `path` | string | "" | Directory for the files. Empty means `<config dir>/usage/`. |
-| `content` | string | "none" | `"none"` logs counts only. `"full"` also logs prompts and responses. |
+| `content` | string | "none" | `"none"` logs counts only. `"full"` also logs prompts and responses. Prompts longer than `telemetry.max_attribute_length` bytes are truncated. |
 | `max_size_mb` | int | 100 | Total disk cap. Oldest days are deleted first. `-1` for unlimited. |
 | `max_days` | int | 90 | Days older than this are deleted. `-1` for unlimited. |
 

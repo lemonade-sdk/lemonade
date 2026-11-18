@@ -456,6 +456,14 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
     try {
         json request = json::parse(request_body);
         request["model"] = checkpoint_;
+        // FLM reports token usage on a stream only when asked.
+        if (sse && (endpoint == "/v1/chat/completions" || endpoint == "/v1/completions")) {
+            json& stream_options = request["stream_options"];
+            if (!stream_options.is_object()) {
+                stream_options = json::object();
+            }
+            stream_options["include_usage"] = true;
+        }
         std::string modified_body = request.dump();
 
         WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse,
