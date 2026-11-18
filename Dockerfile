@@ -55,6 +55,7 @@ RUN apt-get update && apt-get install -y \
     libgomp1 \
     libatomic1 \
     libreadline8 \
+    tini \
     && rm -rf /var/lib/apt/lists/*
 
 # Container backends run beside this container on the host's Podman or Docker,
@@ -139,3 +140,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # publishing to host loopback (-p 127.0.0.1:13305:13305) and/or setting
 # LEMONADE_API_KEY. See docs/guide/install/docker.md.
 CMD ["./lemond", "--host", "0.0.0.0"]
+
+# Container backends join lemond's PID namespace, so processes they orphan
+# reparent to its PID 1, which must reap them; lemond reaps only its own children.
+ENTRYPOINT ["/usr/bin/tini", "--"]

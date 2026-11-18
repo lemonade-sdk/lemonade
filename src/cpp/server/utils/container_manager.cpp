@@ -569,8 +569,8 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         "--pull=never",
         "--network=" + spec.network,
     };
-    // The namespace's PID 1 reaps for a container that joins it, and Podman
-    // refuses --init there.
+    // The image's tini, PID 1 of lemond's namespace, reaps for a container
+    // that joins it, and Podman refuses --init there.
     if (spec.pid.empty()) {
         argv.insert(argv.begin() + 3, "--init");
     } else {
