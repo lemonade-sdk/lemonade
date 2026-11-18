@@ -321,8 +321,11 @@ int main() {
     huge_heads.oversized_int_array("gemma4.attention.head_count_kv", uint64_t{1} << 40);
     huge_heads.write(path);
     lemon::GgufMetadata huge_heads_meta;
-    check(!lemon::read_gguf_metadata(huge_heads_meta, path.string()),
-          "oversized GGUF KV-head count is rejected before allocation");
+    huge_heads_meta.architecture = "sentinel";
+    huge_heads_meta.block_count = 77;
+    check(!lemon::read_gguf_metadata(huge_heads_meta, path.string()) &&
+          huge_heads_meta.architecture == "sentinel" && huge_heads_meta.block_count == 77,
+          "malformed GGUF must leave caller metadata untouched");
 
     // Mixed recurrent/attention architectures may have zero KV heads on
     // recurrent layers. This is not a corrupt GGUF header.
@@ -345,8 +348,10 @@ int main() {
     huge_blocks.int32("gemma4.attention.head_count_kv", 8);
     huge_blocks.write(path);
     lemon::GgufMetadata huge_blocks_meta;
-    check(!lemon::read_gguf_metadata(huge_blocks_meta, path.string()),
-          "oversized GGUF scalar block count is rejected before allocation");
+    huge_blocks_meta.architecture = "sentinel";
+    check(!lemon::read_gguf_metadata(huge_blocks_meta, path.string()) &&
+          huge_blocks_meta.architecture == "sentinel",
+          "scalar-block failure must not expose partial GGUF metadata");
 
     std::filesystem::remove_all(dir);
     std::cout << (failures == 0 ? "PASSED: all checks passed\n" : "FAILED: some checks failed\n");

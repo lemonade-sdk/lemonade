@@ -62,22 +62,26 @@ struct ArchitectureLayout {
 };
 
 // Layout defaults are a compatibility fallback for GGUFs without explicit
-// SWA patterns (bundled llama.cpp b12223/b12233/b1372).
-// Explicit, validated SWA patterns are handled generically below.
-// Gemma4 and attention.shared_kv_layers exist in upstream b12233
-// (src/models/gemma4.cpp), not just in a private Lemonade fork.
-// HRX hrx-b129 is packaged by ROCm/ggml-staging-automation; matching ISWA
-// allocation behavior is assumed, not independently verified here. Reaudit
-// each row and the cache allocator whenever ANY backend version pin changes.
-// Absent architectures use unbounded KV accounting. Gemma4 requires explicit
-// per-layer GGUF metadata; shared-KV-layer models conservatively opt out.
+// SWA patterns. Reaudit them and the allocator whenever a bundled backend
+// version changes (see backend_versions.json). Missing layouts and shared-KV
+// layers conservatively use unbounded KV accounting.
 inline std::optional<ArchitectureLayout> layout_for(const GgufMetadata& m,
                                                      const std::string& recipe) {
+    // The HRX ISWA cache is bounded too, but only audited architecture
+    // layouts should receive the optimized estimate.
     if (recipe != "llamacpp" && recipe != "llamacpp-hrx") return std::nullopt;
-    // Use the explicit, per-layer GGUF pattern rather than model-name rules.
-    // No new assumption is made for HRX: its allocator is not verified here.
-    // Remaining guards in compute_bounded_swa_profile check the metadata,
-    // dimensions, and runtime compatibility before using the bounded cache.
+    // GGUF metadata is not proof that the architecture uses ISWA at runtime.
+    // The bundled phi3 loader, for example, explicitly disables SWA. Keep
+    // the per-layer calculation generic, but gate it on audited loaders.
+    const bool iswa_loader =
+        m.architecture == "gemma2" || m.architecture == "gemma3" ||
+        m.architecture == "gemma4" || m.architecture == "gpt-oss" ||
+        m.architecture == "cohere2" || m.architecture == "cohere2moe" ||
+        m.architecture == "olmo2" || m.architecture == "exaone4" ||
+        m.architecture == "granite_swa" || m.architecture == "flint";
+    if (!iswa_loader) return std::nullopt;
+    // Only bundled llama.cpp accepts a generic explicit-pattern fallback.
+    // HRX retains the existing, known architecture-specific layout rules.
     if (recipe == "llamacpp" && m.sliding_window > 0 &&
         !m.sliding_window_pattern.empty())
         return ArchitectureLayout{-1, false, 0};
@@ -123,7 +127,7 @@ inline std::optional<BoundedSwaProfile> compute_bounded_swa_profile(
         return std::nullopt;
 
     const int64_t window = m.sliding_window > 0 ? m.sliding_window : layout->default_window;
-    if (window <= 0 || window > INT32_MAX) return std::nullopt;
+    if (window <= 0 || window > (std::numeric_limits<int32_t>::max)()) return std::nullopt;
 
     const bool explicit_array = !m.sliding_window_pattern.empty();
     if (explicit_array &&
@@ -169,10 +173,10 @@ inline std::optional<BoundedSwaProfile> compute_bounded_swa_profile(
     bool any_swa = false;
     for (size_t i = 0; i < pattern.size(); ++i) {
         const int64_t heads = m.head_count_kv_per_layer[i];
-        if (heads <= 0 || heads > INT32_MAX ||
+        if (heads <= 0 || heads > (std::numeric_limits<int32_t>::max)() ||
             heads > (std::numeric_limits<int64_t>::max)() / (std::max)(value_full, value_swa))
             return std::nullopt;
-        if (head_sum > INT64_MAX - heads) return std::nullopt;
+        if (head_sum > (std::numeric_limits<int64_t>::max)() - heads) return std::nullopt;
         head_sum += heads;
         max_v_gqa = (std::max)(max_v_gqa,
             heads * (pattern[i] ? value_swa : value_full));
@@ -213,7 +217,8 @@ inline int64_t bounded_swa_context_limit(const BoundedSwaProfile& profile,
         return cells > 0 && base > 0 &&
             full_bytes_per_token * base + swa_bytes_per_cell * cells <= budget_bytes;
     };
-    int64_t low = 0, high = (std::min)(max_context, static_cast<int64_t>(INT32_MAX));
+    int64_t low = 0, high = (std::min)(max_context,
+        static_cast<int64_t>((std::numeric_limits<int32_t>::max)()));
     while (low < high) {
         const int64_t mid = low + (high - low + 1) / 2;
         if (fits(mid)) low = mid;
@@ -256,11 +261,13 @@ inline bool bounded_swa_runtime_compatible(const std::string& custom_args) {
 inline bool bounded_swa_runtime_compatible_for_recipe(
     const std::string& recipe, const std::string& llamacpp_args,
     const std::string& hrx_args, const std::string& backend = "") {
-    if (recipe == "llamacpp")
-        return backend != "system" &&
-            bounded_swa_runtime_compatible(llamacpp_args);
-    if (recipe == "llamacpp-hrx") return bounded_swa_runtime_compatible(hrx_args);
-    return false;
+    if (recipe == "llamacpp-hrx")
+        return bounded_swa_runtime_compatible(hrx_args);
+    if (recipe != "llamacpp") return false;
+    // System binaries and third-party nathanw/halobox forks are unverified.
+    const bool supported = backend == "cpu" || backend == "cuda" ||
+        backend == "metal" || backend == "rocm" || backend == "vulkan";
+    return supported && bounded_swa_runtime_compatible(llamacpp_args);
 }
 
 } // namespace lemon

@@ -411,7 +411,9 @@ static void test_auto_context_budget() {
     check("auto ctx: CPU budget ignores any UMA GPU hint",
           cpu_budget.max_tokens == cpu_with_uma_hint.max_tokens);
     check("auto ctx: host workspace minimum is 0.5 GiB",
-          approx_eq(cpu_budget.reserve_gib, 1.5));
+          approx_eq(cpu_budget.reserve_gib,
+              lemon::AUTO_CTX_HOST_RESERVE.memory_headroom.estimate(16.0) +
+              lemon::AUTO_CTX_HOST_RESERVE.compute_workspace.estimate(5.0)));
     check("auto ctx: dGPU headroom is fixed at 1 GiB",
           approx_eq(lemon::AUTO_CTX_DISCRETE_GPU_RESERVE.memory_headroom.estimate(8.0), 1.0) &&
           approx_eq(lemon::AUTO_CTX_DISCRETE_GPU_RESERVE.memory_headroom.estimate(32.0), 1.0) &&
@@ -441,61 +443,11 @@ static void test_auto_context_budget() {
                                                      true, false, true, 116.0);
     check("auto ctx: UMA GPU-only budget retains workspace reserve",
           gtt_pressure.max_tokens == 0);
-    using lemon::auto_context_cpu_offload_fallback;
     // GPT-OSS MXFP4 exceeds the default GTT once the GPU workspace is included.
     auto mxfp4_gpu = estimate_auto_context_budget(64.0, 63.4, 65536.0,
                                                   true, false, true, 116.0);
     check("auto ctx: default GTT cannot fully host 63.4 GiB weights",
           mxfp4_gpu.max_tokens == 0);
-    check("auto ctx: UMA permits CPU spill with a small context",
-          auto_context_cpu_offload_fallback(
-              mxfp4_gpu.max_tokens, 64.0, 116.0, 63.4, 65536.0,
-              false, true, true) == 4096);
-    check("auto ctx: UMA can use CPU when GTT pool is fully occupied",
-          auto_context_cpu_offload_fallback(
-              0, 0.0, 116.0, 63.4, 65536.0,
-              false, true, true) == 4096);
-    check("auto ctx: GPU-first policy does not spill when GPU fits",
-          auto_context_cpu_offload_fallback(
-              strix64.max_tokens, 64.0, 116.0, 58.5, 65536.0,
-              false, true, true) == 0);
-    check("auto ctx: positive but too-small GPU context tries CPU offload",
-          auto_context_cpu_offload_fallback(819, 8.0, 48.0, 6.7,
-                                            65536.0, false, false, true) == 4096);
-    check("auto ctx: GPU context at minimum keeps GPU-first placement",
-          auto_context_cpu_offload_fallback(4096, 8.0, 48.0, 6.7,
-                                            65536.0, false, false, true) == 0);
-    check("auto ctx: dGPU may spill when VRAM does not fit model",
-          auto_context_cpu_offload_fallback(
-              0, 22.0, 48.0, 60.0, 65536.0, false, false, true) == 4096);
-    check("auto ctx: dGPU may spill even with no VRAM left",
-          auto_context_cpu_offload_fallback(
-              0, 0.0, 68.0, 60.0, 65536.0, false, false, true) == 4096);
-    check("auto ctx: borderline dGPU split respects both reserves",
-          auto_context_cpu_offload_fallback(
-              0, 24.0, 36.5, 60.0, 65536.0, false, false, true) == 0);
-    check("auto ctx: dGPU split fits after both reserves",
-          auto_context_cpu_offload_fallback(
-              0, 24.0, 44.0, 60.0, 65536.0, false, false, true) == 4096);
-    check("auto ctx: host-only spill rejects missing runtime headroom",
-          auto_context_cpu_offload_fallback(
-              0, 0.0, 4.0, 3.6, 65536.0, false, false, true) == 0);
-    check("auto ctx: dGPU cannot use unavailable combined RAM/VRAM",
-          auto_context_cpu_offload_fallback(
-              0, 8.0, 12.0, 60.0, 65536.0, false, false, true) == 0);
-    check("auto ctx: unmeasured dGPU RAM lets llama.cpp try",
-          auto_context_cpu_offload_fallback(
-              0, 8.0, -1.0, 60.0, 65536.0, false, false, true) == 4096);
-    check("auto ctx: non-llama backends retain zero-capacity failure",
-          auto_context_cpu_offload_fallback(
-              0, 22.0, 48.0, 60.0, 65536.0, false, false, false) == 0);
-    check("auto ctx: UMA rejects CPU spill under physical RAM pressure",
-          auto_context_cpu_offload_fallback(
-              0, 64.0, 67.0, 63.4, 65536.0, false, true, true) == 0);
-    check("auto ctx: UMA embeds require sufficient physical RAM for 8192 tokens",
-          auto_context_cpu_offload_fallback(
-              0, 64.0, 116.0, 63.4, 65536.0,
-              false, true, true, 8192) == 8192);
 
     auto small_mac = estimate_auto_context_budget(3.2, 0.73, 128.0 * 1024.0,
                                                    true, false, true);
@@ -680,14 +632,17 @@ static void test_llamacpp_kv_cache_formats() {
 
 static void test_bounded_swa_architectures() {
     using lemon::compute_bounded_swa_profile;
-    // No architecture-specific opt-in: explicit per-layer metadata is enough.
+    // Even an explicit pattern is insufficient for an unverified loader.
     auto explicit_layout = make_swa_fixture("unlisted-bounded-swa", 6);
     explicit_layout.sliding_window_pattern = {true, false, true, true, false, true};
+    check("unknown architecture keeps unbounded KV despite explicit pattern",
+          !compute_bounded_swa_profile(explicit_layout, "llamacpp"));
+    explicit_layout.architecture = "flint"; // Generic formula, verified loader.
     auto generic = compute_bounded_swa_profile(explicit_layout, "llamacpp");
-    check("unknown architecture with an explicit SWA pattern uses bounded ISWA",
+    check("audited Flint loader uses generic explicit-pattern ISWA estimate",
           generic && approx_eq(generic->full_bytes_per_token, 4096.0) &&
           approx_eq(generic->swa_bytes_per_cell, 8192.0));
-    check("unknown architecture does not assume HRX allocator compatibility",
+    check("HRX Flint remains disabled without verified loader",
           !compute_bounded_swa_profile(explicit_layout, "llamacpp-hrx"));
     // The main F16 slope and fixed F16 SWA cells must be scaled together.
     const double q8_ratio = lemon::auto_context_llamacpp_kv_bytes_ratio(
@@ -698,7 +653,7 @@ static void test_bounded_swa_architectures() {
               generic->swa_bytes_per_cell * q8_ratio,
               generic->full_bytes_per_token * q8_ratio));
     explicit_layout.sliding_window_pattern.clear();
-    check("unknown architecture without explicit pattern stays conservative",
+    check("Flint without explicit pattern stays conservative",
           !compute_bounded_swa_profile(explicit_layout, "llamacpp"));
 
     auto m = make_swa_fixture("gemma2", 4);
@@ -831,6 +786,10 @@ static void test_bounded_swa_fallbacks_and_runtime() {
     m = make_swa_fixture("phi3", 4);
     check("Phi3 without an explicit pattern is not assumed to use ISWA",
           !compute_bounded_swa_profile(m, "llamacpp"));
+    m.sliding_window_pattern = {true, false, true, false};
+    check("Phi3 with an explicit pattern still uses unbounded KV",
+          !compute_bounded_swa_profile(m, "llamacpp"));
+    m.sliding_window_pattern.clear();
     m.architecture = "llama4";
     check("Llama4 without an explicit pattern stays conservative",
           !compute_bounded_swa_profile(m, "llamacpp"));
@@ -873,22 +832,28 @@ static void test_bounded_swa_fallbacks_and_runtime() {
           lemon::bounded_swa_runtime_compatible_for_recipe(
               "llamacpp-hrx", "--parallel 2", "--parallel 1") &&
           !lemon::bounded_swa_runtime_compatible_for_recipe(
-              "llamacpp", "--swa-full", "--parallel 1"));
-    check("default single-slot independent of merge_args",
+              "llamacpp", "--swa-full", "--parallel 1", "rocm"));
+    check("default single-slot with a verified backend",
           lemon::bounded_swa_runtime_compatible_for_recipe(
-              "llamacpp", "", "") &&
+              "llamacpp", "", "", "rocm") &&
           lemon::bounded_swa_runtime_compatible_for_recipe(
-              "llamacpp", "-np 1", "") &&
+              "llamacpp", "-np 1", "", "cuda") &&
           !lemon::bounded_swa_runtime_compatible_for_recipe(
-              "llamacpp", "-np 2", ""));
-    check("unknown system llama.cpp disables bounded SWA",
+              "llamacpp", "-np 2", "", "vulkan"));
+    check("only audited bundled builds enable bounded SWA",
           !lemon::bounded_swa_runtime_compatible_for_recipe(
               "llamacpp", "--parallel 1", "", "system") &&
+          !lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "--parallel 1", "", "nathanw") &&
+          !lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "--parallel 1", "", "halobox") &&
+          !lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "--parallel 1", "", "") &&
           lemon::bounded_swa_runtime_compatible_for_recipe(
               "llamacpp", "--parallel 1", "", "rocm") &&
           lemon::bounded_swa_runtime_compatible_for_recipe(
-              "llamacpp-hrx", "", "", "system"));
-    check("both recipe types use one SWA profile",
+              "llamacpp-hrx", "", "", "hrx"));
+    check("both recipe types use one verified SWA profile",
           compute_bounded_swa_profile(make_swa_fixture("gemma3", 6), "llamacpp") &&
           compute_bounded_swa_profile(make_swa_fixture("gemma3", 6), "llamacpp-hrx"));
 

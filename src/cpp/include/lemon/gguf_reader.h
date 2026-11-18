@@ -15,6 +15,7 @@
 #include <ios>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 #include <lemon/gguf_capabilities.h>
 #include <lemon/models/model_info.h>
@@ -189,7 +190,7 @@ inline bool has_gguf_magic(const std::string& path) {
 ///
 /// Returns true on success (out is populated).  Returns false if the file
 /// cannot be opened or does not have a valid GGUF header.
-inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
+inline bool parse_gguf_metadata(GgufMetadata& out, const std::string& path) {
     std::ifstream in(lemon::utils::path_from_utf8(path), std::ios::binary);
     if (!in) return false;
 
@@ -529,6 +530,14 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
             if (v) out.swa_layer_count++;
     }
 
+    return true;
+}
+
+// Never expose partially parsed GGUF metadata to callers that ignore failure.
+inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
+    GgufMetadata parsed;
+    if (!parse_gguf_metadata(parsed, path)) return false;
+    out = std::move(parsed);
     return true;
 }
 

@@ -9,12 +9,12 @@
 #include <system_error>
 #include <lemon/auto_context_budget.h>
 #include <lemon/backends/backend_ops.h>
-#include <lemon/backends/llamacpp/llamacpp_rulehead.h>
 #include <lemon/backends/backend_registry.h>
+#include <lemon/backends/llamacpp/llamacpp_rulehead.h>
 #include <lemon/gguf_reader.h>
-#include <lemon/swa_cache_profile.h>
 #include <lemon/gpu_memory_selection.h>
 #include <lemon/models/model_info.h>
+#include <lemon/swa_cache_profile.h>
 #include <lemon/system_info.h>
 #include <lemon/system_metrics_platform.h>
 #include <lemon/utils/aixlog.hpp>
@@ -156,6 +156,7 @@ inline double get_available_memory_gb(DeviceType device_type,
                 }
                 const double used_ram_gb = pool.unified
                     ? ram_used_gb : get_used_memory_gb(DEVICE_CPU);
+                // The metrics API also returns 0 when RAM usage is unknown.
                 if (std::isfinite(total_ram_gb) && total_ram_gb > 0.0 &&
                     std::isfinite(used_ram_gb) && used_ram_gb > 0.0)
                     *physical_free_gb_out = (std::max)(0.0, total_ram_gb - used_ram_gb);
@@ -410,12 +411,12 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     const double fixed_swa_gib = swa_profile && max_ctx_from_memory > 0
         ? static_cast<double>(swa_profile->swa_cells(max_ctx_from_memory)) *
           swa_bytes_per_cell / BYTES_PER_GIB : 0.0;
-    // This estimate is best-effort: a short memory budget alone does not
-    // prevent loading when runtime placement could differ from the estimate.
-    if (max_ctx_from_memory < fallback) {
+    // Only unknown/zero capacity uses the legacy fallback here. Positive
+    // estimates remain exact; the minimum-load policy belongs to admission.
+    if (max_ctx_from_memory <= 0) {
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: "
                                << model_info.model_name
-                               << " — short memory estimate, returning "
+                               << " — no estimated KV capacity, returning "
                                << fallback;
         return fallback;
     }

@@ -40,6 +40,11 @@ static int64_t resolve(const ModelInfo& info, double free_gib,
 }
 
 int main() {
+    // A positive estimate must not be increased to the 4k load-policy floor.
+    // 3 GiB weights + 1.5 GiB reserves + 1200 * 128 KiB KV = 4.646484375 GiB.
+    const auto short_ctx = fixture("llamacpp", 3.0, DEVICE_GPU);
+    CHECK(resolve(short_ctx, 4.646484375) == 1200);
+
     // The actual production estimator must still exploit Gemma4's bounded
     // KV cache rather than charge all sliding layers for every token.
     auto gemma = fixture("llamacpp", 7.75, DEVICE_GPU);
