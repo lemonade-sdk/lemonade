@@ -50,6 +50,9 @@ public:
 
     static nlohmann::ordered_json error_event_schema();
 
+    // How much of a backend's error is kept for logs and the client's error event.
+    static constexpr size_t kMaxErrorBodyBytes = 64 * 1024;
+
     static void forward_sse_stream(
         const std::string& backend_url,
         const std::string& request_body,

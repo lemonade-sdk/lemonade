@@ -1,5 +1,5 @@
 {
-  "af08d27707754c8644b19790adfb7cefc8d73223995f1bcd1c83d9634de38293": {
+  "6d06d2f3352fc25f796a5fcd8b62324c9e3937dea61da1fac03b693ff7bb0d8e": {
     "route": "anthropic.messages",
     "format": "EventStream",
     "request": {
@@ -36,7 +36,7 @@
       "count": 14
     }
   },
-  "dea13d7a4609b04151478e0b0864a72dfb1b8a222fc577aa28358c6a48a327f0": {
+  "239badf0529485d0f78af3e4f6f9c8369f5a5b6b88d314e6d867a430a193b96d": {
     "route": "anthropic.messages",
     "format": "Json",
     "request": {
@@ -80,7 +80,7 @@
       }
     }
   },
-  "c13bd252f7689ed0ed6e2b1e2fa818af53ff5fc06fbc97bc3606731954ee40f3": {
+  "e87fa4dd0ebbdb7948928019ca455dac644d0264aaeaa163e44033024ba30513": {
     "route": "internal.aliases_create",
     "format": "Json",
     "request": {
@@ -104,7 +104,7 @@
       }
     }
   },
-  "5cacfe6ccc9a0da372e88cf3955fe65e42d2b31b01547eb35ad767a0db25d78a": {
+  "bd6c249e913e888ac5a7faab0706c970c3859ab9a0d80f72e0ed70adb7e0e2e0": {
     "route": "internal.aliases_delete",
     "format": "Json",
     "request": {
@@ -124,7 +124,7 @@
       }
     }
   },
-  "5b789fbfacdd06530615f7a04aef6e6a00dc035e8b260856e353940cc57886d7": {
+  "40fffd6a6ed40a94770909c748c2f58bcd040df05afb7f3f6065f0d943dc5524": {
     "route": "internal.aliases_list",
     "format": "Json",
     "request": {
@@ -150,7 +150,7 @@
       }
     }
   },
-  "b8ebbb26efd0ad43b1baf5bcaeaa0013203253fa8ce97a91ddb6aaeeb95eb64f": {
+  "fe6aa75616f574b0bf49d11d27e9208dcfdc7b00d0816e1bd3105f9524dd8638": {
     "route": "internal.cleanup_cache",
     "format": "Json",
     "request": {
@@ -173,7 +173,7 @@
       }
     }
   },
-  "e014c1a6306a8ac42fbf3f36580319eab0addeb1247035dc209eef048ad916e1": {
+  "755b202ae2c77af26e4f0c27ef3f9cf91d7d2934b912055935451d0d80a4c10f": {
     "route": "internal.config",
     "format": "Json",
     "request": {
@@ -345,7 +345,7 @@
       }
     }
   },
-  "f727d220422bd9d8580ae7894c74f05f216bceecc115eeac3d4dd09234fe3a69": {
+  "c9b90960cc9cde4665d087aded2c6637c97908489dec6058be3422de526bb24b": {
     "route": "internal.config_defaults",
     "format": "Json",
     "request": {
@@ -517,7 +517,7 @@
       }
     }
   },
-  "60e14fe3ad42fd15de522b596208dfbed0e406f950a675b68949683b3a9d08fc": {
+  "e32e1891ee2e06dea0fe879097d1a05f2535a4cb7946a4cb03f08919d7457472": {
     "route": "internal.model_sources",
     "format": "Json",
     "request": {
@@ -680,7 +680,7 @@
       }
     }
   },
-  "a8553cab2255ff220def7e7cd7c319116a78a02d4120cf82d15d01fc42a3b687": {
+  "d62de2f2238df65dcfb6e95a193971bd195f48065490530e7762a49f13d89158": {
     "route": "internal.models_sync",
     "format": "Json",
     "request": {
@@ -715,7 +715,7 @@
       }
     }
   },
-  "8c6bc6cc4dba81385230d62c9b127770a8ad4ceb579cc9930a540f89f7c63774": {
+  "0bd737cec0f520e5e840fadf16bad5b9db8f78700c41abdf5a10f8a8f0de1793": {
     "route": "internal.models_sync_status",
     "format": "Json",
     "request": {
@@ -747,7 +747,7 @@
       }
     }
   },
-  "2df95625ac66d7676a2da9c29d213a3ac43d4b0a3c8b95cde17e559b2313498d": {
+  "c90944f6ed935a258d1e5664bcf3741c40034b80d9f4911f59fac41058d0e582": {
     "route": "internal.pin",
     "format": "Json",
     "request": {
@@ -771,7 +771,7 @@
       }
     }
   },
-  "5661c1f8c710e62f2763d608176fa1c32422fab95b2bd774d62c729eb5bcc913": {
+  "485d5cbcac9236142cb9e07bc3fe4c7a4a3530bdc8aed86554cb2d86af695371": {
     "route": "internal.routes",
     "format": "Json",
     "request": {
@@ -839,7 +839,7 @@
       ]
     }
   },
-  "5da319858501c853da649a27a37b444a5054051d574081c2bdc68025baa363a4": {
+  "259dc8114bb56d9c43bfe8cea485bd8c75737a50e0c1c551b57e15a92b42159c": {
     "route": "internal.set",
     "format": "Json",
     "request": {
@@ -863,7 +863,7 @@
       }
     }
   },
-  "fca399e55faa10fa134d664fd8af677bd1d6cf186f8d7878c2c6264464784b4a": {
+  "81f1a348cd245da7f32652e7b422cb5ba78337c6c53ad56a7ab3c84b12529962": {
     "route": "internal.shutdown",
     "format": "Json",
     "request": {
@@ -882,7 +882,7 @@
       }
     }
   },
-  "161319007b0f259fd235be3d794f9824304e1b32c9164427c4d45a871234b6e9": {
+  "4bd995e897ae92d53a14cf066359fc61cfe5f59e090a3e19d5092efd68f947f2": {
     "route": "internal.simulate_vram_pressure",
     "format": "Json",
     "request": {
@@ -903,7 +903,7 @@
       }
     }
   },
-  "36fb2c5e8776b4ae189f176aa10db1040b86c62de00161757960400bea4d9e4b": {
+  "7bce3f475cc07ef054a768e7504ec928ad7fc30d7d9c8a114d54eab65df2f931": {
     "route": "internal.telemetry_flush",
     "format": "Json",
     "request": {
@@ -922,7 +922,7 @@
       }
     }
   },
-  "39039e20691972db87aa212fde223a7a1f556aeacdd6a5a4364445ad027bc073": {
+  "8f656fb6ad0dced4acbed0d226ffd195c014ea2576b1218759351d873b2a30a5": {
     "route": "lemonade.3d_generations",
     "format": "Binary",
     "request": {
@@ -944,7 +944,7 @@
       "bytes": 4453452
     }
   },
-  "ef19a068886c2ac92937213d9d7bf0ff4a2695c112d5cf81d78e9217d1bc4784": {
+  "42420a73df151c833e5c2e6a8a0c603c4f08a281d0f22f381a29bf681f34b887": {
     "route": "lemonade.audio_generations",
     "format": "Binary",
     "request": {
@@ -967,7 +967,7 @@
       "bytes": 8593964
     }
   },
-  "204810b5025ebac94883a81a51034a5258f47458789e607159848e8054dd6a1c": {
+  "0bd53b8209068e3c669748f781bdfb5c5a6105eb5387dad31a73104180ede723": {
     "route": "lemonade.audio_generations",
     "format": "Binary",
     "request": {
@@ -989,7 +989,7 @@
       "bytes": 884780
     }
   },
-  "5edf6f16fedcea8f06a94123596c9ced6f9d8089ee82d526eb70024df6a63895": {
+  "724390ece79ee8dedee6baedfb4c894d30b17bf73017ddf5a1723e0bb69e4758": {
     "route": "lemonade.classify",
     "format": "Json",
     "request": {
@@ -1019,7 +1019,7 @@
       }
     }
   },
-  "add5081820c9abc63f50237e66669273b5782560ce88b084308b7af7c5250718": {
+  "713dda39a66ff715d1c3387542b28bbea668771a478c4ffa3a424589a5820b53": {
     "route": "lemonade.cloud_auth",
     "format": "Json",
     "request": {
@@ -1047,7 +1047,7 @@
       }
     }
   },
-  "1cfb1543cbd72fc81580542efda79373425119bf873ca7ac08e21445f627c88d": {
+  "998547587785854baca62bc4c35ea8a9f03d14142658de6d458361ea79b8977f": {
     "route": "lemonade.cloud_auth_provider",
     "format": "Json",
     "request": {
@@ -1071,7 +1071,7 @@
       }
     }
   },
-  "3e657506d7282b198a14bb88abebf0ddc6da8df712268686f91cdd920ce57c05": {
+  "3504177d841952b3d3dfa514c32ce3a29db21aa822288f6bf88aee8d2ab5cfad": {
     "route": "lemonade.delete",
     "format": "Json",
     "request": {
@@ -1093,7 +1093,7 @@
       }
     }
   },
-  "ae3c905bb615b0e6218a98591c07a2fc8951a280466af2e9e20848bf621e0960": {
+  "458f045e7f75fd7d21493bbdec480b1e3f5d86e31b0db637a25e9a5dd05613fe": {
     "route": "lemonade.docs",
     "format": "Json",
     "request": {
@@ -1169,7 +1169,7 @@
       }
     }
   },
-  "5778e5b3c93f57785e54a2cced24cdfbb69e11fb3d67f895df7666f45db480b1": {
+  "1fd9f2c2bf9c91dad1dba8616c0ca12ed4a0b0a387e082858236196ee37a9c83": {
     "route": "lemonade.docs_page",
     "format": "Text",
     "request": {
@@ -1208,7 +1208,7 @@
       "line_count": 4453
     }
   },
-  "8590d8ec445af30860a7f5d6e7c66f19d27e4538f0cdcfe66f63ab693172df8b": {
+  "c1446ffec9bfc9c7c35b79d8ac6374c33c0e18e6a86934763b7e38ccbc6a7788": {
     "route": "lemonade.downloads",
     "format": "Json",
     "request": {
@@ -1245,7 +1245,7 @@
       ]
     }
   },
-  "12facce97bf4da76cb5942d8ef08c507389f50a8b2903a4de089bc07574438a1": {
+  "34cb201bcc6c6c722aa39472676b5a9d2b6a83eb64de79289d082e8c0fafef08": {
     "route": "lemonade.downloads_control",
     "format": "Json",
     "request": {
@@ -1283,7 +1283,7 @@
       }
     }
   },
-  "e46d6e438e363efd4ea5ba880a0163e1d60249812e1b2cc547fe9cba98cf86c6": {
+  "ab3ff94026b7524f667fdde4ebf6822849a3175c9039314cbe5a59e95d69cb9b": {
     "route": "lemonade.downloads_control",
     "format": "Json",
     "request": {
@@ -1306,7 +1306,7 @@
       }
     }
   },
-  "6722b813adb73eda1d78649275ae4a326eeaad12877359c096a9bccc6169dba6": {
+  "40b165b7c5f9b738b6ba123bfedc8a7a8cc01e339bebfcbb3fffdd2e623f074c": {
     "route": "lemonade.health",
     "format": "Json",
     "request": {
@@ -1454,7 +1454,7 @@
       }
     }
   },
-  "1745dcfda3bde7f0ca399fa264071c682f0e78fb5121bb7a426946f70dcfc7c3": {
+  "5ad206ab97749ee291ae2cea688c84d53f7e8c741eab0d38fda30c3f461b7141": {
     "route": "lemonade.install",
     "format": "EventStream",
     "request": {
@@ -1479,7 +1479,7 @@
       "count": 1
     }
   },
-  "9f56bcca93f186b71feea24cd17d040912e9d85de8687b054da33d3de37b755b": {
+  "3ed9cd96e0df1d0db50b3fedae4424926cf49da5fe8a6181bcd7388c0bcad8f5": {
     "route": "lemonade.install",
     "format": "Json",
     "request": {
@@ -1514,7 +1514,7 @@
       }
     }
   },
-  "0d39634e91c94ea68250342140d89a3d2d91f327808da3b28ffe8e728d9e7729": {
+  "1771a2d474dda4ecf2a3e13f9550ab5883b468dc3b072aadeb0743876a046652": {
     "route": "lemonade.install",
     "format": "Json",
     "request": {
@@ -1538,7 +1538,7 @@
       }
     }
   },
-  "b95549bb27bdf7ed5fda7cb4dac5fc4e8809b5ed19e658da5670c1f62ba06dac": {
+  "049db549b72307ae33127250afac1a5d620e34a66b072c24477d08bb033a7fba": {
     "route": "lemonade.install",
     "format": "Json",
     "request": {
@@ -1578,7 +1578,7 @@
       }
     }
   },
-  "fae740166915e6e3a3e646946f8bc54f737061a7bbce34d64232f061a14a2c52": {
+  "3c8b8ba1fa681618891b28e37f2a4c3c816056206ff2ee210f3b87a9f4815283": {
     "route": "lemonade.install_dry_run",
     "format": "Json",
     "request": {
@@ -1609,7 +1609,7 @@
       }
     }
   },
-  "7ef64e6d07148fd793e6f75855dc511a47ea95666040b1fb4b419188d42b4ecd": {
+  "1a5669f1a6fab2b2811331eed17f1077905b10d69ccb0f0cbabea911f002cce5": {
     "route": "lemonade.jobs_create",
     "format": "Json",
     "request": {
@@ -1639,7 +1639,7 @@
       }
     }
   },
-  "b9ee06a4cb938d6b8d8c9ba38a8810c5c2caea083c2386472a4145acaad95e6f": {
+  "8feb7c7233cd6e51c57447a161d4f58891e4dbba8e11c08e8dc8b85141544c50": {
     "route": "lemonade.jobs_delete",
     "format": "Json",
     "request": {
@@ -1658,7 +1658,7 @@
       }
     }
   },
-  "17e03f4a50ac3e086a42c659759bdf68306848abf0067a44375211abf7d4e068": {
+  "e82cc8d87a8865e991148b75e41dd12262ce24bedcb4a3d3d732c5009b6de098": {
     "route": "lemonade.jobs_get",
     "format": "Json",
     "request": {
@@ -1696,7 +1696,7 @@
       }
     }
   },
-  "08c179567e8b957731db969284fab57e5a1df788cd5dbd97f7edf4fc703e79cb": {
+  "632d1f3469c2d9bee11a4f853f73e728c98a3c3521ce3c30f10fa4c8d35f3504": {
     "route": "lemonade.jobs_interrupt",
     "format": "Json",
     "request": {
@@ -1715,7 +1715,7 @@
       }
     }
   },
-  "6c3d84755a3a9d29c4adcd4b5507aa521cb2b30c2dc4952e9823082d90735ac7": {
+  "70c1791d1e0725b134c557020e9d140a14fe853e4ddf2589b044c1e720465504": {
     "route": "lemonade.jobs_list",
     "format": "Json",
     "request": {
@@ -1757,7 +1757,7 @@
       }
     }
   },
-  "de9be2ccab235accda16dfa4442db2ca5f4b4adf256af3b6585460465d2c202c": {
+  "fee9946a6e30dd0fba02a12b29f60de44e66a95c69cb6c52505de53d18fe0d6b": {
     "route": "lemonade.jobs_pause",
     "format": "Json",
     "request": {
@@ -1776,7 +1776,7 @@
       }
     }
   },
-  "89629345fc253278ac0c3d073d9c2b0d2c945796795d815839b32c36f83c0f9d": {
+  "5a0c49ae12048ebce59ffa09dbbc421a15b2cfeb5e56cd48fc892fb08174e355": {
     "route": "lemonade.jobs_resume",
     "format": "Json",
     "request": {
@@ -1795,7 +1795,7 @@
       }
     }
   },
-  "640d1b493fdcebe1d9da1502fb03450c15174241d3fc11e03256d63ceef7d6b5": {
+  "8962996c055843e0184ad40ca2eda22a5248bc57347cb99d1e39cd5b921b3744": {
     "route": "lemonade.live",
     "format": "Json",
     "request": {
@@ -1814,7 +1814,7 @@
       }
     }
   },
-  "dd30b36585ddf29005426076f1db876391c8cd6794429b24c831420717d45d0f": {
+  "726fa0d083f0e89ef3d371d15838d07ae399ff560f1c50481b20065a49652998": {
     "route": "lemonade.load",
     "format": "Json",
     "request": {
@@ -1837,7 +1837,7 @@
       }
     }
   },
-  "1cb4edd0f22a0b17ba11e7893d853db3165f4f551867bdd59c77625bada37b11": {
+  "a5560fbe2b9ec09683c4bc90e9aca8ca951e741c44957d307af0b7331ce6cef4": {
     "route": "lemonade.load",
     "format": "Json",
     "request": {
@@ -1861,7 +1861,7 @@
       }
     }
   },
-  "db886189c36b018bf7e53ce6183542fa00859de6b1b1c2b4194798309d976e04": {
+  "514c99fd7dcdf0a7f76c1c5706f3fd7ebee937725725499f997d9dda592e87f2": {
     "route": "lemonade.metrics",
     "format": "Text",
     "request": {
@@ -1900,7 +1900,7 @@
       "line_count": 186
     }
   },
-  "857ab3a191609f47569b3850f4cfb359cd6132eeb9d98e8d2450433afd48bb3f": {
+  "cd00c713391c4ae99e5d1738f59341a55a99dfa99b0d481911af5a179189efc6": {
     "route": "lemonade.models_check_updates",
     "format": "Json",
     "request": {
@@ -1922,7 +1922,7 @@
       }
     }
   },
-  "4217c30eb0449e6aefa5681bc90551c67c3f44f192558e91139c123d1bdb0303": {
+  "cf4e13bd91dc47f3e86c114802cb883f5a546c0248ff1bfa3e78037f16618f4c": {
     "route": "lemonade.models_register",
     "format": "Json",
     "request": {
@@ -1977,7 +1977,7 @@
       }
     }
   },
-  "f5a633c768db90c36ca66c4c6b728312b9e68d5e8ad9d510ca5284e4e64b022c": {
+  "47e9fd37f7b3936664367c47e79b342651c6a54a0da8966bf125b006607281de": {
     "route": "lemonade.pull",
     "format": "EventStream",
     "request": {
@@ -2005,7 +2005,7 @@
       "count": 5
     }
   },
-  "28979c813ec5a3dfb2a3763afee72d74e1251ffba6e4405930c65f6990acdb94": {
+  "ffa89d472e2cfdcffff481e021955318ad94921f844599c529e51f05dcd2820d": {
     "route": "lemonade.pull",
     "format": "Json",
     "request": {
@@ -2029,7 +2029,7 @@
       }
     }
   },
-  "9f434fead2a1d8c40b99413d31afd0d1ea36ca6140e5db68d18b79d2919f4faf": {
+  "8daeb549d3387bfb8bd8d60a12bc4c1135f82b19d7b6529bdebed7eaa6f02c27": {
     "route": "lemonade.pull",
     "format": "Json",
     "request": {
@@ -2057,7 +2057,7 @@
       }
     }
   },
-  "09d94e1d19a3cfd081443607ad00fc2679a7ef6338a588d3313b5a9431b25589": {
+  "e9437352723fdb0029a5f4148ac6f061dd03cf760e307a3b805324c093a49ba1": {
     "route": "lemonade.pull",
     "format": "Json",
     "request": {
@@ -2096,7 +2096,7 @@
       }
     }
   },
-  "efa28bf1537097a92b4964d39c20a826a900592e370c103457edb8e419f9f045": {
+  "ae3e0835fcd39987d954edb2cc60e7216ce4891faac3e7f3e0ff819081516c6c": {
     "route": "lemonade.pull",
     "format": "Json",
     "request": {
@@ -2118,7 +2118,7 @@
       }
     }
   },
-  "8f4275ba22b46b5e0c58235fbe2321fc889239d27081bbfed40361bcaae770f0": {
+  "2e8893e584203899472604ddf86e27e63e4aae57ae5ad90676e60466ae05dca8": {
     "route": "lemonade.pull_variants",
     "format": "Json",
     "request": {
@@ -2375,7 +2375,7 @@
       }
     }
   },
-  "145d89582dc2c41ad0f3bdb3c8ad92e5069df8599285837ebcc340d9defc43f5": {
+  "c1e02510c07ef15e2ebd180488f178602a9cb630e546a301903fc4b22d298717": {
     "route": "lemonade.registry_search",
     "format": "Json",
     "request": {
@@ -2655,7 +2655,7 @@
       }
     }
   },
-  "6cc9ee0bb8cee551bbaca653b5dd017ebc68327d03581ef2629e37207df481f0": {
+  "b63f8551f5a66458fe49fabd89085c3282d5ae34ef67019adc999d1e359c9be5": {
     "route": "lemonade.stats",
     "format": "Json",
     "request": {
@@ -2690,7 +2690,7 @@
       }
     }
   },
-  "f835fa8d17640b9e0685d6ebb926114aea23b6a1593e4f8dff8a33b0a4e300cd": {
+  "448af0f075b62944cc79a8404fee80864b4b21b427129026455262773e141545": {
     "route": "lemonade.system_info",
     "format": "Json",
     "request": {
@@ -4582,7 +4582,7 @@
       }
     }
   },
-  "d189131312e9594f5f1ce997712c34741c4fd03cb22fb2e91d057ffb1122d4ff": {
+  "0b2d7ef51641f83959b58945682b3190def070040323ac82f19969d972cff9e3": {
     "route": "lemonade.system_stats",
     "format": "Json",
     "request": {
@@ -4617,7 +4617,7 @@
       }
     }
   },
-  "5ee373a52dbbbe7e35a72e0729a79ece8b368eeedb2931e34c800236f20c709b": {
+  "d0f6795c9dd6cbbc565340a3ad4781bd2864a26ec08a19553d92e36dc7473b5c": {
     "route": "lemonade.uninstall",
     "format": "Json",
     "request": {
@@ -4642,7 +4642,7 @@
       }
     }
   },
-  "42d00b34746a98180cadb6781400cf5a87de0d1c79fda0316bc6af2995eee85c": {
+  "066882e2b47395019bd6f0b9efbcb17a535ddf7ffc7bc8c591cb399a6065671e": {
     "route": "lemonade.uninstall",
     "format": "Json",
     "request": {
@@ -4666,7 +4666,7 @@
       }
     }
   },
-  "e6524a6c46846dff4df941e70778aee08428a06bab7236fd762053099d50b22f": {
+  "0a1cf6d6450e0b03aec3cbe429737a42c53c57982bfca285233a4189cb89af95": {
     "route": "lemonade.unload",
     "format": "Json",
     "request": {
@@ -4689,7 +4689,7 @@
       }
     }
   },
-  "5abfad7a2675e5fe85a457a2246d1a02043bd6b6c91afded15e4213d8be8a20c": {
+  "cd51000c6b239ba2e16e67af0c4f95a05a77aa86d4478e7cbaae952a91efcd4b": {
     "route": "llamacpp.rerank",
     "format": "Json",
     "request": {
@@ -4735,7 +4735,7 @@
       }
     }
   },
-  "e1843b9c31495e65c8d19d3ca853ef1b018b9af1d702aae642db7e1b797386e6": {
+  "d3e83c02502c75b7ba94858b9baf9a4e0517217541479cf1a736889242afd0aa": {
     "route": "llamacpp.slots",
     "format": "Json",
     "request": {
@@ -4825,7 +4825,7 @@
       ]
     }
   },
-  "0794136275baad33ca8174034a8c62a8abb4c198f587c0171c9f758637db73ff": {
+  "8676f927d1c0a8fe52b10d5abddc0b4cf8c6738b3bbbe9b755171789ce5af27f": {
     "route": "llamacpp.slots_action",
     "format": "Json",
     "request": {
@@ -4847,7 +4847,7 @@
       }
     }
   },
-  "d6a62da396393a5d358f80d8055b339132f9080245ca01bac0a854e6ad1c3b54": {
+  "ed2f023fb391f3d4690d1bd3560bcc597d37db59820f6decf2a835363462a872": {
     "route": "llamacpp.slots_action",
     "format": "Json",
     "request": {
@@ -4876,7 +4876,7 @@
       }
     }
   },
-  "2fa29dbf9d74914930328d1d1d3924fadc729c31eaff780018b6b2d58304a9c4": {
+  "bd97b9235b1991d9430930fc986cb3c3385abbb4ba89f1a4830ab901920a17cb": {
     "route": "llamacpp.slots_action",
     "format": "Json",
     "request": {
@@ -4905,7 +4905,7 @@
       }
     }
   },
-  "8c51004e49deb39b0e222db54d21445458736e6a6dee7e58bf0ff27894a122b4": {
+  "f21243c97c248d1a84b538956f73e911aeb9be99a75f3183cbf15026846231f5": {
     "route": "llamacpp.systemone",
     "format": "Json",
     "request": {
@@ -4992,7 +4992,7 @@
       }
     }
   },
-  "1a6468706980440dd66216be6fd5e9d981fe020cabf4b6eb34c614482c27007e": {
+  "c148def7351512eab3492009682e77017bb0da7e2914f9bff9dcb96fbd362cc4": {
     "route": "llamacpp.tokenize",
     "format": "Json",
     "request": {
@@ -5020,7 +5020,7 @@
       }
     }
   },
-  "c5880a668cc49380432c128fd17b0f05eea4e8444a39bc6d90f2f35838417639": {
+  "e1fe6ab7dcfeaf6c6c1990ddfab0a439e1a8e9d535d0e1afced456b0347d232d": {
     "route": "mcp.rpc",
     "format": "Empty",
     "request": {
@@ -5039,7 +5039,7 @@
       "content_type": ""
     }
   },
-  "947b0ac697c034c844ce113054e2adaa2068e13e603bde846b0ac2f192cd6de3": {
+  "aeb4773fc81618adb15fe9071f2a82507fa66fdd7e080f9ee4ef57e48c0551c3": {
     "route": "mcp.rpc",
     "format": "Json",
     "request": {
@@ -5077,7 +5077,7 @@
       }
     }
   },
-  "e59d4057460ae8a004910ecf7b6d7513a53b4fb1c5622332b7d4c80bc026edce": {
+  "4587b5eae520e06eb3e5e0335f9993706cd6850990723a613cf5502febc71890": {
     "route": "ollama.chat",
     "format": "Json",
     "request": {
@@ -5118,7 +5118,7 @@
       }
     }
   },
-  "7e0ffe6fe1f8e21288439107af9f3ce4ea8959926c5cc895dbebeda616bc7182": {
+  "b81d0d7d8300a95667cb0656a0dc97fc205c0c7e238ac0901f2099dc9a60d259": {
     "route": "ollama.chat",
     "format": "JsonLines",
     "request": {
@@ -5153,7 +5153,7 @@
       "count": 12
     }
   },
-  "6f2203df5109cc116e095c130c71bd797efe0a1b6f6e6dade2533b175faa4ee8": {
+  "ff9022b946860f529d1057b64e353a03ad3ad199561524be43b546c72dbce592": {
     "route": "ollama.delete",
     "format": "Empty",
     "request": {
@@ -5171,7 +5171,7 @@
       "content_type": ""
     }
   },
-  "f4415d594cc2f1c234b1ca9e6c99a6d2e5e13233004e8bf6b3148ba930c98b86": {
+  "285ed2249ad8fad2e3b008105da376e49dd29a03b69a97f1ad4a6261a66e72b8": {
     "route": "ollama.embed",
     "format": "Json",
     "request": {
@@ -5968,7 +5968,7 @@
       }
     }
   },
-  "c9b0c8b64f1ba14a2faa8ef3cd048df9f0e33059ea8b6158b1e338b6960df6b1": {
+  "3aea5e5f44ad4b16826abae039c31b4275acfeac53a12cfee93060183cb71a13": {
     "route": "ollama.embeddings",
     "format": "Json",
     "request": {
@@ -6760,7 +6760,7 @@
       }
     }
   },
-  "5ba7760d3c78d0a5699eed05e6969df7fc727fa66609cd0ae57258081a7c8408": {
+  "1954c6afec3f69f11c0ac35b1f579c376295469aed4d6601f9986cc9549915e6": {
     "route": "ollama.generate",
     "format": "Json",
     "request": {
@@ -6797,7 +6797,7 @@
       }
     }
   },
-  "43b6bf82f85bf3d05c651149bb0abc4de74d58ca751639598fde7614451d0f36": {
+  "e297c5ebf31dacfad0b61eaeb82b659e93dd69ced860b812c35617605d69f7a4": {
     "route": "ollama.generate",
     "format": "JsonLines",
     "request": {
@@ -6830,7 +6830,7 @@
       "count": 18
     }
   },
-  "1c59d52033956f2f223cfb84ca9cb91bd14158818e8ee7582aaad731c6128c21": {
+  "5e16c5dece9ac52d76776a59c555c3e9606c7b1eea741332bc2835de80c55872": {
     "route": "ollama.ps",
     "format": "Json",
     "request": {
@@ -6922,7 +6922,7 @@
       }
     }
   },
-  "0422fd16fc19c6c26111988fd738013d77fffe573894b8c68a74ececa340a717": {
+  "c082257914d361fb26cf68152a23199ee9686a85384f0e7ccecda5b6d72a8971": {
     "route": "ollama.pull",
     "format": "Json",
     "request": {
@@ -6944,7 +6944,7 @@
       }
     }
   },
-  "5fbfcaabe248c261662605162c94b339a8643528b3aa6bf3c07ee542888dc8b2": {
+  "9b1d170412334e4d224c9534e24e9ccbb04686b2a65ba84a71750e20f7b49bba": {
     "route": "ollama.pull",
     "format": "JsonLines",
     "request": {
@@ -6973,7 +6973,7 @@
       "count": 7
     }
   },
-  "d0564fd0699c8375ea0c3af673981bb69d20791c86adbb969bffb0590a9f7599": {
+  "6fcb0a73bafab2babbfe5a1f37f11e52ac646994b652ebb6068106a53e2ea885": {
     "route": "ollama.show",
     "format": "Json",
     "request": {
@@ -7018,7 +7018,7 @@
       }
     }
   },
-  "e191a3b4e0d0d57aa9ac9a707f106fde7af08aa4c4d41bcbb1bfd7bbf0566bd5": {
+  "49e881b91930f30e9ce69a873748627533ac76f9ec123ccc6b5405c7a4e092ee": {
     "route": "ollama.tags",
     "format": "Json",
     "request": {
@@ -7225,7 +7225,7 @@
       }
     }
   },
-  "e865435b113fd759aca7c36ad2d23e91946f421773c77c3c73d190a8f503bab2": {
+  "b777585b6d48aaab08c55de559ed8d209787cec93547f1071577ba810342b35b": {
     "route": "ollama.version",
     "format": "Json",
     "request": {
@@ -7244,7 +7244,7 @@
       }
     }
   },
-  "9b19823137caf48b77a529685fbf296ef6fdbf76e4b51f89aa24dc9bee49ecfb": {
+  "3d92c7cc4fc540ba21ba3934814558c67d0aa868c652d8361095ae6ad2e9726d": {
     "route": "openai.audio_speech",
     "format": "Binary",
     "request": {
@@ -7266,7 +7266,7 @@
       "bytes": 40516
     }
   },
-  "b0f88b38c3508e0fba4bace0246983e5faffb21d4fe1d7906e775bca057f1ac2": {
+  "a1d5a7df30e5641ae0960fec76726fc8d08da60053c0af11175d95f9d9df320a": {
     "route": "openai.audio_speech",
     "format": "BinaryStream",
     "request": {
@@ -7288,7 +7288,7 @@
       "bytes": 97200
     }
   },
-  "769ae5ec5732094059a5a6733798d11536a6749d0954030235d2f3bfe68996b3": {
+  "aa35fa3a340a67083e8d883341a87c0f5f4388cba9dbde1dde7dfe2b2f0fbfc5": {
     "route": "openai.audio_transcriptions",
     "format": "Json",
     "request": {
@@ -7311,7 +7311,7 @@
       }
     }
   },
-  "60070ec49d4e5ea68de66c040452705e108303fa944c4c384f7679108da9825c": {
+  "9c78cfe6a46564413e8a83fe1d9f7fa8d0b2c1e8b94d054835141ea1cec709cc": {
     "route": "openai.audio_transcriptions",
     "format": "Text",
     "request": {
@@ -7336,7 +7336,7 @@
       "line_count": 1
     }
   },
-  "44808bad3c3ef0b29125693b752dfcac244660ca7480c4d717068cb5373c7207": {
+  "28f4d621894629858dd04de17ac62e982eaa3e2d2a393a76f8e0d544cd60bd08": {
     "route": "openai.chat_completions",
     "format": "EventStream",
     "request": {
@@ -7371,7 +7371,7 @@
       "count": 177
     }
   },
-  "97e6314155061d1a9b3cce50e84da8d432fd2334adee1c732035504a07e5a8b3": {
+  "f403a5c1aa4f51bfa025cc5b27b0c2e150ac0f5f244ee9e89eb3bff6dbbb962b": {
     "route": "openai.chat_completions",
     "format": "Json",
     "request": {
@@ -7434,7 +7434,7 @@
       }
     }
   },
-  "7c2372f858d5b83a9c7ad0b8936a210afe56315b339898f6901fcb9933a71a61": {
+  "bbd620f15460cc97fc2592f8f631031b70647d65b32d27d5c450b477a98e845c": {
     "route": "openai.chat_completions",
     "format": "Json",
     "request": {
@@ -7496,7 +7496,7 @@
       }
     }
   },
-  "f3bd3c9bfe7a6ceac3fbeb872e50db37d210dc32f295b3f6373b7b00a5d09267": {
+  "ab9bdf2c1a340303540c5cd117e23f0f64caafc7b8f6cdc4f022da2d1284f3b3": {
     "route": "openai.chat_completions",
     "format": "Json",
     "request": {
@@ -7569,7 +7569,7 @@
       }
     }
   },
-  "a9b1920fbcc798b0d6a2d4c3a8ea2e39fc7ecd3d5bac44cbdc06030d7e6157c7": {
+  "1c42573a3b1be872b8112b2ba064aa5de5e6a7b46b78231d1a5f0e0736308c75": {
     "route": "openai.completions",
     "format": "EventStream",
     "request": {
@@ -7600,7 +7600,7 @@
       "count": 66
     }
   },
-  "974026ae12b8d0c5f41dfe0bae5f76d5c5bff226a34b6c9cef15b6ff75675367": {
+  "1b300ef09b6e5327c83463187d91cd1283bbd363239f5bf6da584364ffc0b10c": {
     "route": "openai.completions",
     "format": "Json",
     "request": {
@@ -7655,7 +7655,7 @@
       }
     }
   },
-  "2b4b3cc8af4d18cfa697136584d082e20ce1380ee86d43aa05dc29788447f3bf": {
+  "2a1943ebb484d05eb45932031b8f5b1278457636bd256f12ae1be46a43e2071e": {
     "route": "openai.embeddings",
     "format": "Json",
     "request": {
@@ -9236,7 +9236,7 @@
       }
     }
   },
-  "4b819dd527b5006e711a2a6799f3db06e85837cd13e45eca466e7e27d5a4a0e8": {
+  "8745650871d8c65f7494f983c7b7f99e393612694199c1f105dfe014ea8ac198": {
     "route": "openai.images_edits",
     "format": "Json",
     "request": {
@@ -9269,7 +9269,7 @@
       }
     }
   },
-  "b7092ae0f861ec80e1acab13c2f15087dd79440967a2439a22fac249439209e8": {
+  "b92bf160bef0ac9e4cbb7a5a0f2aa295867d59d43fd660428d38805ed0d4d506": {
     "route": "openai.images_generations",
     "format": "Json",
     "request": {
@@ -9300,7 +9300,7 @@
       }
     }
   },
-  "45c3d966efc0a2387b2292a5b97e586acfa9a96da9ce7aa24301b5ab9da9603c": {
+  "bee10aba4bbf485633d40e20d96e86a84c789487045ac5b29a04ee661bec7e76": {
     "route": "openai.images_upscale",
     "format": "Json",
     "request": {
@@ -9327,7 +9327,7 @@
       }
     }
   },
-  "ae8882d22202091a0c23830fe3e158bb3d937ef1a6893494c2576df9e0978a93": {
+  "3ff666a1831f5c0a439125e031067b6ccfc8af771eda7779a1e57e93e003bf0d": {
     "route": "openai.images_variations",
     "format": "Json",
     "request": {
@@ -9359,7 +9359,7 @@
       }
     }
   },
-  "2b320fb5e408603b17ba8c4c9aade9246c7f710345639d2a8430f25df5706fa0": {
+  "406d4dabcb1d22bf1297fa7d3604fbce96019c980ba6eed990867a7fa722af45": {
     "route": "openai.models",
     "format": "Json",
     "request": {
@@ -9739,7 +9739,7 @@
       }
     }
   },
-  "7aeda2fd1b93196d35708d091a954ac2826e2da4e4a3b14317a1318ffa1fb86c": {
+  "5d690829f2f7964f9c02049bf6b0e70ec5e69b515cd25bf2dc4aa30d07bf671f": {
     "route": "openai.models_id",
     "format": "Json",
     "request": {
@@ -9789,7 +9789,7 @@
       }
     }
   },
-  "9baf6b09e8cd52becd87228587e1f30eba16b0881d4f9b2006040a8e4d5affe9": {
+  "7d545dfb08e9bed3490aeb47e11feddea56b8ab473f1ef1be907a11779766783": {
     "route": "openai.models_id_files",
     "format": "Json",
     "request": {
@@ -9816,7 +9816,7 @@
       }
     }
   },
-  "98877f863b1f229d3fe93bd4a672b3c0777ebcee016abfd243e42825894a2348": {
+  "390794d8ee4818d545c8c33ebdf6e04a241229367924e7df98994c14f6f2728d": {
     "route": "openai.models_id_options_delete",
     "format": "Json",
     "request": {
@@ -9864,7 +9864,7 @@
       }
     }
   },
-  "6be372a820848f1cbe5aadde1ec5c82988c611dba8ef10e909757e6ac85b2785": {
+  "9c22f4e216a3ffb3c9969d09bef38bfd6820e874c3baef4138b468aa078aae4e": {
     "route": "openai.models_id_options_get",
     "format": "Json",
     "request": {
@@ -9912,7 +9912,7 @@
       }
     }
   },
-  "62f815f7f62e0460ed9b2e8b49c3c1a682ffa1c47156b2611bc972ba1a8cc0ad": {
+  "bf5ce9eedd66509943eeeb155def8395920113e7ad4265b54255007c3b03313d": {
     "route": "openai.models_id_options_post",
     "format": "Json",
     "request": {
@@ -9964,7 +9964,7 @@
       }
     }
   },
-  "b5115e1db967bd0c4b17890c167b077f0627d67da447dc454fcb0f94d4338265": {
+  "c57c3db546f83fe78d552247b152aef1025655e25da41a4daa645376f0a72e5e": {
     "route": "openai.responses",
     "format": "EventStream",
     "request": {
@@ -9994,7 +9994,7 @@
       "count": 69
     }
   },
-  "d31b8f27eabe7c67a93040b0817c848bcf26d13d993c5cd2d4487e0fa700039c": {
+  "1e9b58604695ca076e0b836f2d2d1f5e36b66a899fc579a82d7200486ecaf830": {
     "route": "openai.responses",
     "format": "Json",
     "request": {
@@ -10046,7 +10046,7 @@
       }
     }
   },
-  "0ce62c2a14bcd87cf608e9c57e0e6f3abacadafb825c8c553daecb5401a99279": {
+  "0b788c345a6c2763416bbdccba5200abdeed62bd1d61354be981d03ca2674bcf": {
     "route": "router.routing_validate",
     "format": "Json",
     "request": {

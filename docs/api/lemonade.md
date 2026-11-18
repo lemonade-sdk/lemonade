@@ -347,7 +347,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model_name` or `model` | Yes | A [registered model](https://lemonade-server.ai/models.html) to install, or a new `user.*` name to register, such as `user.Phi-4-Mini-GGUF`. The `user.` namespace keeps registered models from colliding with built-in ones. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `recipe` | No | Required when registering: the recipe that loads and runs the model, such as `llamacpp`, or `collection.omni` for an omni collection. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `checkpoint` | No | The `main` checkpoint to install. A Hugging Face or ModelScope URL is normalized to `owner/repo` and selects its registry. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `checkpoints` | No | Checkpoints by role, for multi-checkpoint models: `main`, plus `mmproj` for vision, `draft` for dflash, eagle and multi-token prediction, and `text_encoder` and `vae` for image generation, each when `main` does not embed it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `checkpoints` | No | Checkpoints by role, for multi-checkpoint models: `main`, plus `mmproj` for vision, `draft` for dflash, eagle and multi-token prediction, `lora` for a llama.cpp GGUF LoRA adapter, and `text_encoder` and `vae` for image generation, each when `main` does not embed it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `reasoning` | No | `true` adds the `reasoning` label, for a reasoning model such as DeepSeek. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `vision` | No | `true` adds the `vision` label, for a model that accepts images. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `embedding` | No | `true` adds the `embeddings` label. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -1027,10 +1027,10 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` |  | `checkpoint` is missing or empty |
 | `400` |  | `checkpoint` is a URL whose registry disagrees with `source` |
 | `400` |  | `checkpoint` does not contain `/` |
-| `400` |  | `source` names an unsupported registry, or the Hugging Face GGUF repository is one llama.cpp cannot run |
+| `400` |  | `source` names an unsupported registry, the repository has no GGUF, ONNX RyzenAI or collection files, its collection manifest is invalid or too large, or the Hugging Face GGUF repository is one llama.cpp cannot run |
 | `400` | `lemond_offline` | `offline` is set to `true` |
 | `404` |  | The registry has no such checkpoint |
-| `500` |  | Another failure occurs, for example a repository with no GGUF, ONNX RyzenAI or collection files, or a network error |
+| `500` |  | Another failure occurs, for example a network error |
 <!-- END GENERATED: lemonade.pull_variants -->
 
 <!-- BEGIN GENERATED: lemonade.delete -->
@@ -2172,6 +2172,7 @@ The same backend can carry different labels on different operating systems. Each
     - `display_name` - The recipe's name for people, such as `Llama.cpp GPU`.
     - `web_display_name` - The recipe's name on the Lemonade website.
     - `modality` - The kind of model the recipe mainly serves, such as `Text generation`.
+    - `supported_modes` - Deployment modes the recipe serves (such as `chat` or `image`), distinct from model capability labels like `edit` and `upscaling`.
     - `selectable_backend` - Whether a `<recipe>_backend` option chooses the recipe's backend.
     - `uses_ctx_size` - Whether the recipe accepts the shared `ctx_size` option.
     - `slot_policy` - How the recipe's models count against loaded-model limits: `standard`, `exclusive_npu` (loading one evicts every NPU model), `coexist_by_type` (one per model type), `exclusive_host` (shares the machine with no other local model) or `unmetered` (never counted or evicted).

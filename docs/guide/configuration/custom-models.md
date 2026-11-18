@@ -584,6 +584,7 @@ Supported checkpoint keys:
 |-----|---------|-------------|
 | `main` | All | Primary model file |
 | `npu_cache` | whispercpp | NPU-accelerated encoder cache |
+| `lora` | llamacpp | GGUF LoRA adapter applied over `main` with `--lora` |
 | `text_encoder` | sd-cpp | Text encoder for image generation models |
 | `vae` | sd-cpp | VAE for image generation models |
 
