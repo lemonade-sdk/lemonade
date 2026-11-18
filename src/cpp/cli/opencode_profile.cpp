@@ -3,11 +3,16 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string>
+#include <utility>
 
 namespace fs = std::filesystem;
 
 namespace lemon_cli {
 namespace {
+
+constexpr const char* kPlaceholderApiKey = "lemonade";
+constexpr const char* kMcpServerName = "lemonade";
+constexpr const char* kMcpKeyHeader = "Bearer {env:LEMONADE_API_KEY}";
 
 std::string resolve_opencode_config_path() {
     const char* xdg = std::getenv("XDG_CONFIG_HOME");
@@ -15,17 +20,15 @@ std::string resolve_opencode_config_path() {
     if (xdg && xdg[0] != '\0') {
         base = xdg;
     } else {
+        // opencode reads ~/.config on Windows too, not %APPDATA%.
 #ifdef _WIN32
-        const char* appdata = std::getenv("APPDATA");
-        if (appdata && appdata[0] != '\0') {
-            base = appdata;
-        }
+        const char* home = std::getenv("USERPROFILE");
 #else
         const char* home = std::getenv("HOME");
+#endif
         if (home && home[0] != '\0') {
             base = (fs::path(home) / ".config").string();
         }
-#endif
     }
 
     if (base.empty()) {
@@ -45,25 +48,37 @@ nlohmann::json build_opencode_provider_block(
 
     nlohmann::json options = nlohmann::json::object();
     options["baseURL"] = base_url;
-    if (!api_key.empty()) {
-        options["apiKey"] = api_key;
-    }
+    // A real key is referenced from the environment that launch exports, so
+    // it never lands on disk.
+    options["apiKey"] = api_key.empty() ? kPlaceholderApiKey : "{env:LEMONADE_API_KEY}";
     provider_block["options"] = std::move(options);
 
     nlohmann::json models_json = nlohmann::json::object();
     for (const auto& model : models) {
         nlohmann::json model_entry = nlohmann::json::object();
         model_entry["name"] = model.display_name;
-        model_entry["limit"] = nlohmann::json::object({
-            {"context", model.context_window},
-            {"output", model.context_window / 3}
-        });
+        if (model.context_window > 0) {
+            model_entry["limit"] = nlohmann::json::object({
+                {"context", model.context_window},
+                {"output", model.context_window / 3}
+            });
+        }
+        // opencode assumes a model without modalities takes images.
+        if (!model.labels.empty()) {
+            model_entry["modalities"] = {
+                {"input", has_label(model, "vision") ? nlohmann::json::array({"text", "image"})
+                                                     : nlohmann::json::array({"text"})},
+                {"output", nlohmann::json::array({"text"})},
+            };
+        }
         models_json[model.id] = std::move(model_entry);
     }
     provider_block["models"] = std::move(models_json);
 
     return provider_block;
 }
+
+const nlohmann::json::json_pointer kMcpServerPointer("/mcp/servers/lemonade");
 
 } // namespace
 
@@ -77,6 +92,94 @@ const AgentConfigProfile& opencode_profile() {
     };
 
     return profile;
+}
+
+bool opencode_has_mcp_server() {
+    nlohmann::json config;
+    std::string ignored;
+    return read_json_object(resolve_opencode_config_path(), config, ignored) &&
+           config.contains(kMcpServerPointer);
+}
+
+bool sync_opencode_mcp_server(const std::string& server_origin,
+                              bool has_api_key,
+                              std::string& error_out) {
+    const std::string config_path = resolve_opencode_config_path();
+    if (config_path.empty()) {
+        error_out = "Could not resolve opencode.json path";
+        return false;
+    }
+
+    nlohmann::json config;
+    if (!read_json_object(config_path, config, error_out)) {
+        return false;
+    }
+    if (!config.contains("mcp") || !config["mcp"].is_object()) {
+        config["mcp"] = nlohmann::json::object();
+    }
+    nlohmann::json& mcp = config["mcp"];
+    if (!mcp.contains("servers") || !mcp["servers"].is_object()) {
+        mcp["servers"] = nlohmann::json::object();
+    }
+    nlohmann::json* server = &mcp["servers"][kMcpServerName];
+    if (!server->is_object()) {
+        *server = nlohmann::json::object();
+    }
+
+    // Leftover local keys would make the entry look like a command.
+    for (const char* local_key : {"command", "environment", "cwd"}) {
+        server->erase(local_key);
+    }
+    (*server)["type"] = "remote";
+    sync_mcp_server_connection(*server, server_origin + "/mcp", kMcpKeyHeader, has_api_key);
+
+    // Without oauth:false opencode probes the server for OAuth. Code Mode
+    // stays off unless launch turns it on with --codemode.
+    if (!server->contains("oauth")) {
+        (*server)["oauth"] = false;
+    }
+    if (!server->contains("codemode")) {
+        (*server)["codemode"] = false;
+    }
+
+    return write_json_atomic(config_path, config, error_out);
+}
+
+bool remove_opencode_mcp_server(std::string& error_out) {
+    const std::string config_path = resolve_opencode_config_path();
+    if (config_path.empty() || !fs::exists(config_path)) {
+        return true;
+    }
+
+    nlohmann::json config;
+    if (!read_json_object(config_path, config, error_out)) {
+        return false;
+    }
+    if (!config.contains(kMcpServerPointer)) {
+        return true;
+    }
+    nlohmann::json& servers = config["mcp"]["servers"];
+    servers.erase(kMcpServerName);
+    if (servers.empty()) {
+        config["mcp"].erase("servers");
+    }
+
+    return write_json_atomic(config_path, config, error_out);
+}
+
+nlohmann::json opencode_codemode_config() {
+    nlohmann::json config;
+    std::string ignored;
+    if (!read_json_object(resolve_opencode_config_path(), config, ignored)) {
+        return nullptr;
+    }
+    if (!config.contains(kMcpServerPointer) || !config[kMcpServerPointer].is_object()) {
+        return nullptr;
+    }
+    // opencode ignores a partial entry here, so the whole entry is passed.
+    nlohmann::json server = config[kMcpServerPointer];
+    server["codemode"] = true;
+    return {{"mcp", {{"servers", {{kMcpServerName, std::move(server)}}}}}};
 }
 
 } // namespace lemon_cli
