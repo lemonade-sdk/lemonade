@@ -19,13 +19,13 @@ const RouteError kSourceMismatch{
 const RouteError kMalformedCheckpoint{400, "", "`checkpoint` does not contain `/`"};
 const RouteError kUnsupportedRepo{
     400, "",
-    "`source` names an unsupported registry, or the Hugging Face GGUF repository is one "
-    "llama.cpp cannot run"};
+    "`source` names an unsupported registry, the repository has no GGUF, ONNX RyzenAI or "
+    "collection files, its collection manifest is invalid or too large, or the Hugging Face "
+    "GGUF repository is one llama.cpp cannot run"};
 const RouteError kCheckpointNotFound{404, "", "The registry has no such checkpoint"};
 const RouteError kVariantsFailed{
     500, "",
-    "Another failure occurs, for example a repository with no GGUF, ONNX RyzenAI or collection "
-    "files, or a network error"};
+    "Another failure occurs, for example a network error"};
 
 const RouteArg kCheckpoint{"checkpoint", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
                            "Repository id, e.g. `unsloth/Qwen3-8B-GGUF`. A Hugging Face or ModelScope URL is "
