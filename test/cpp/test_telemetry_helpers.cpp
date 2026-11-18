@@ -264,6 +264,23 @@ int main() {
         {
             lemon::StreamingProxy::TelemetryData tel;
             lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"choices\": [], \"usage\": {\"prompt_tokens\": 7}}"), tel);
+            auto usage = lemon::StreamingProxy::usage_payload(tel);
+            check_int("usage_payload: reported input kept", usage.value("prompt_tokens", -1), 7);
+            check_bool("usage_payload: unreported output left out", usage.contains("completion_tokens"), false);
+        }
+        {
+            lemon::StreamingProxy::TelemetryData tel;
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"timings\": {\"prompt_n\": 5, \"predicted_n\": 0}}"), tel);
+            auto usage = lemon::StreamingProxy::usage_payload(tel);
+            check_int("usage_payload: reported zero output kept", usage.value("completion_tokens", -1), 0);
+            check_bool("usage_payload: nothing reported is empty",
+                       lemon::StreamingProxy::usage_payload(lemon::StreamingProxy::TelemetryData{}).empty(), true);
+        }
+        {
+            lemon::StreamingProxy::TelemetryData tel;
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
                 "{\"choices\": [{\"delta\": {\"tool_calls\": [{\"index\": 0, \"function\": {\"arguments\": \"{\\\"q\\\"\"}}]}}]}"), tel);
             check_int("accumulate_telemetry: tool call chunks count as output", tel.output_chunks, 1);
         }

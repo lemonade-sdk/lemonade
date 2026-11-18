@@ -27,6 +27,8 @@ public:
         double time_to_first_token = 0.0;
         double tokens_per_second = 0.0;
         bool tokens_reported = false;
+        bool input_reported = false;
+        bool output_reported = false;
         // Content-bearing chunks relayed; the output estimate when a client disconnects mid-stream.
         int output_chunks = 0;
         bool client_disconnected = false;
@@ -90,6 +92,9 @@ public:
 
     // Fold one SSE chunk into a running stream's telemetry (usage, timings, output chunk count).
     static void accumulate_telemetry(const nlohmann::json& chunk, TelemetryData& telemetry);
+
+    // Usage counts for the inference span; a count the backend did not report is left out.
+    static nlohmann::json usage_payload(const TelemetryData& telemetry);
 
     static void accumulate_responses_delta(const nlohmann::json& parsed, std::string& accumulated_text);
 

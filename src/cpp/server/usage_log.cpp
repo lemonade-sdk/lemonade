@@ -5,6 +5,7 @@
 #include <cmath>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
 #include <regex>
 #include <vector>
 
@@ -14,6 +15,7 @@
 #endif
 #include <windows.h>
 #else
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
@@ -27,6 +29,40 @@ namespace fs = std::filesystem;
 namespace lemon::usage {
 
 namespace {
+
+// A failed or interrupted write can leave half a record at the end of the file.
+// Appending after it would make the next record unreadable too.
+void trim_partial_record(const fs::path& path) {
+    std::error_code ec;
+    uint64_t size = fs::file_size(path, ec);
+    if (ec || size == 0) return;
+    uint64_t keep = 0;
+    {
+        std::ifstream in(path, std::ios::binary);
+        if (!in) return;
+        char buf[4096];
+        uint64_t end = size;
+        bool found = false;
+        while (end > 0 && !found) {
+            uint64_t start = end > sizeof(buf) ? end - sizeof(buf) : 0;
+            in.seekg(static_cast<std::streamoff>(start));
+            in.read(buf, static_cast<std::streamsize>(end - start));
+            if (!in) return;
+            for (uint64_t i = end - start; i > 0; --i) {
+                if (buf[i - 1] == '\n') {
+                    keep = start + i;
+                    found = true;
+                    break;
+                }
+            }
+            end = start;
+        }
+    }
+    if (keep == size) return;
+    LOG(WARNING, "UsageLog") << "Removing an incomplete record from the end of " << utils::path_to_utf8(path)
+                             << std::endl;
+    fs::resize_file(path, keep, ec);
+}
 
 std::string local_hostname() {
 #ifdef _WIN32
@@ -272,6 +308,15 @@ void UsageLog::write(const UsageLogOptions& opts, const nlohmann::ordered_json& 
         }
         fs::path path = dir / file_name(date);
         bool new_file = !fs::exists(path, ec);
+        if (new_file) {
+#ifndef _WIN32
+            // Create with 0600 so the file is never readable by others, even briefly.
+            int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+            if (fd >= 0) ::close(fd);
+#endif
+        } else {
+            trim_partial_record(path);
+        }
         file_.open(path, std::ios::binary | std::ios::app);
         if (!file_) throw std::runtime_error("cannot open " + utils::path_to_utf8(path));
         if (new_file) {

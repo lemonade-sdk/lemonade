@@ -308,6 +308,34 @@ static void test_write_failure_is_retried() {
     check("retry: records are written again", read_lines(blocker / "usage-2026-09-28.jsonl").size() == 1);
 }
 
+static void test_partial_record_trimmed_before_append() {
+    auto dir = fresh_dir("partial");
+    fs::create_directories(dir);
+    std::ofstream(dir / "usage-2026-09-28.jsonl", std::ios::binary) << "{\"n\":1}\n{\"n\":2,\"tru";
+    UsageLog log([&] { return roomy(dir); });
+    log.start();
+    log.push(record_on("2026-09-28", 3));
+    log.flush();
+    auto lines = read_lines(dir / "usage-2026-09-28.jsonl");
+    bool all_parse = true;
+    for (const auto& l : lines) all_parse = all_parse && nlohmann::json::accept(l);
+    check("partial: incomplete tail removed, new record appended", lines.size() == 2 && all_parse);
+    check("partial: earlier record kept", lines.size() == 2 && nlohmann::json::parse(lines[0])["n"] == 1);
+}
+
+static void test_tail_without_newline_only_record() {
+    auto dir = fresh_dir("partial_only");
+    fs::create_directories(dir);
+    std::ofstream(dir / "usage-2026-09-28.jsonl", std::ios::binary) << "{\"n\":";
+    UsageLog log([&] { return roomy(dir); });
+    log.start();
+    log.push(record_on("2026-09-28", 4));
+    log.flush();
+    auto lines = read_lines(dir / "usage-2026-09-28.jsonl");
+    check("partial: file holding only half a record starts clean",
+          lines.size() == 1 && nlohmann::json::parse(lines[0])["n"] == 4);
+}
+
 int main() {
     std::printf("=== RUNNING USAGE LOG C++ TESTS ===\n");
     test_record_format();
@@ -330,6 +358,8 @@ int main() {
     test_queue_full_writes_dropped_marker();
     test_write_failure_disables_log();
     test_write_failure_is_retried();
+    test_partial_record_trimmed_before_append();
+    test_tail_without_newline_only_record();
     std::printf("=== %s (%d failures) ===\n", g_failures ? "FAILED" : "ALL PASSED", g_failures);
     return g_failures ? 1 : 0;
 }

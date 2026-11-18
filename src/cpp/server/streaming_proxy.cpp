@@ -1,4 +1,5 @@
 #include "lemon/streaming_proxy.h"
+#include <algorithm>
 #include <sstream>
 #include <iostream>
 #include <chrono>
@@ -62,8 +63,12 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
     }
 
     if (usage.is_object()) {
-        if (usage.contains("prompt_tokens") || usage.contains("input_tokens") ||
-            usage.contains("completion_tokens") || usage.contains("output_tokens")) {
+        if (usage.contains("prompt_tokens") || usage.contains("input_tokens")) {
+            telemetry.input_reported = true;
+            telemetry.tokens_reported = true;
+        }
+        if (usage.contains("completion_tokens") || usage.contains("output_tokens")) {
+            telemetry.output_reported = true;
             telemetry.tokens_reported = true;
         }
         if (usage.contains("prompt_tokens")) {
@@ -105,14 +110,15 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
     }
 
     if (timings.is_object()) {
-        if (timings.contains("prompt_n") || timings.contains("predicted_n")) {
-            telemetry.tokens_reported = true;
-        }
         if (timings.contains("prompt_n")) {
             telemetry.input_tokens = timings["prompt_n"].get<int>();
+            telemetry.input_reported = true;
+            telemetry.tokens_reported = true;
         }
         if (timings.contains("predicted_n")) {
             telemetry.output_tokens = timings["predicted_n"].get<int>();
+            telemetry.output_reported = true;
+            telemetry.tokens_reported = true;
         }
         if (timings.contains("prompt_ms")) {
             telemetry.time_to_first_token = timings["prompt_ms"].get<double>() / 1000.0;
@@ -533,6 +539,24 @@ void StreamingProxy::forward_byte_stream(
 
 void StreamingProxy::accumulate_telemetry(const nlohmann::json& chunk, TelemetryData& telemetry) {
     extract_telemetry_from_chunk(chunk, telemetry);
+}
+
+nlohmann::json StreamingProxy::usage_payload(const TelemetryData& telemetry) {
+    nlohmann::json usage = nlohmann::json::object();
+    if (telemetry.input_reported) {
+        usage["prompt_tokens"] = telemetry.input_tokens;
+        // llama.cpp timings count only newly processed prompt tokens; usage.prompt_tokens includes the cache.
+        usage["prompt_tokens_total"] = telemetry.prompt_tokens >= 0
+            ? telemetry.prompt_tokens
+            : telemetry.input_tokens + std::max(telemetry.cache_tokens, 0);
+    }
+    if (telemetry.output_reported) {
+        usage["completion_tokens"] = telemetry.output_tokens;
+    }
+    if (!usage.empty() && telemetry.cache_tokens >= 0) {
+        usage["cached_tokens"] = telemetry.cache_tokens;
+    }
+    return usage;
 }
 
 StreamingProxy::TelemetryData StreamingProxy::extract_telemetry(const nlohmann::json& payload) {

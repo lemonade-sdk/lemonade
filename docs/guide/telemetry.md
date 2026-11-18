@@ -223,7 +223,7 @@ On Linux and macOS, when Lemonade creates the log directory or a log file, only 
 | `input`, `output` | Only with `content: "full"`. `input` is the request's messages or prompt as JSON text. Past `telemetry.max_attribute_length` bytes (default 4096) it is cut and ends with `... [TRUNCATED]`; raise that setting to keep longer prompts. `output` is the full response text. `telemetry.hide_inputs`, `hide_outputs` and `hide_thinking` apply here too: hidden text is written as `[REDACTED]`, and hidden thinking is removed from `output`. |
 | `session_id`, `client_ip` | Filled when available. Session IDs come from the headers described in [Session Tracking](#session-tracking--client-identification). |
 
-Records are written by a background thread, so a slow disk never delays a request. If writing falls behind, records are dropped and a `{"dropped": N}` line is written once it catches up. If a write fails (disk full, directory removed), the log logs a warning and drops records for 5 minutes, then tries again; `failed` in `/health` is `true` meanwhile. A fixed `path` or freed disk is picked up on that retry.
+Records are written by a background thread, so a slow disk never delays a request. If writing falls behind, records are dropped and a `{"dropped": N}` line is written once it catches up. If a write fails (disk full, directory removed), the log logs a warning and drops records for 5 minutes, then tries again; `failed` in `/health` is `true` meanwhile. A fixed `path` or freed disk is picked up on that retry. If a failed write or a crash left half a record at the end of a file, it is removed when the log reopens that file.
 
 `GET /api/v1/health` reports the log's state under `telemetry.usage_log`. To total output tokens for a month:
 

@@ -317,20 +317,6 @@ static void apply_timings(const json& response, nlohmann::json& usage_payload, t
     }
 }
 
-static nlohmann::json stream_usage_payload(const StreamingProxy::TelemetryData& telemetry) {
-    if (!telemetry.tokens_reported) return nlohmann::json::object();
-    nlohmann::json usage = {
-        {"prompt_tokens", telemetry.input_tokens},
-        {"completion_tokens", telemetry.output_tokens}
-    };
-    if (telemetry.cache_tokens >= 0) usage["cached_tokens"] = telemetry.cache_tokens;
-    // llama.cpp timings count only newly processed prompt tokens; usage.prompt_tokens includes the cache.
-    usage["prompt_tokens_total"] = telemetry.prompt_tokens >= 0
-        ? telemetry.prompt_tokens
-        : telemetry.input_tokens + std::max(telemetry.cache_tokens, 0);
-    return usage;
-}
-
 int Router::count_servers_in_pool(ModelType type,
                                   ResidencyClass residency_class,
                                   const std::string& model_name) const {
@@ -2451,7 +2437,7 @@ json Router::responses(const json& request) {
                     span->set_attribute("llm.performance.tokens_per_second", perf.tokens_per_second);
                 }
 
-                telemetry::end_llm_span_async(span, metrics_url, metrics_parser, stream_usage_payload(perf),
+                telemetry::end_llm_span_async(span, metrics_url, metrics_parser, StreamingProxy::usage_payload(perf),
                                               responses_output_text(response));
             }
         }
@@ -2901,7 +2887,7 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
                     record_request_telemetry_for_model(identity, telemetry);
 
                     if (span) {
-                        nlohmann::json usage_payload = stream_usage_payload(telemetry);
+                        nlohmann::json usage_payload = StreamingProxy::usage_payload(telemetry);
                         span->set_attribute("llm.performance.time_to_first_token", telemetry.time_to_first_token);
                         span->set_attribute("llm.performance.tokens_per_second", telemetry.tokens_per_second);
                         std::string final_output = *accumulated_text;
@@ -3026,7 +3012,7 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
                     record_request_telemetry_for_model(identity, telemetry);
 
                     if (span) {
-                        nlohmann::json usage_payload = stream_usage_payload(telemetry);
+                        nlohmann::json usage_payload = StreamingProxy::usage_payload(telemetry);
                         span->set_attribute("llm.performance.time_to_first_token", telemetry.time_to_first_token);
                         span->set_attribute("llm.performance.tokens_per_second", telemetry.tokens_per_second);
 
@@ -3137,7 +3123,7 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
                     record_request_telemetry_for_model(identity, telemetry);
 
                     if (span) {
-                        nlohmann::json usage_payload = stream_usage_payload(telemetry);
+                        nlohmann::json usage_payload = StreamingProxy::usage_payload(telemetry);
                         span->set_attribute("llm.performance.time_to_first_token", telemetry.time_to_first_token);
                         span->set_attribute("llm.performance.tokens_per_second", telemetry.tokens_per_second);
 
