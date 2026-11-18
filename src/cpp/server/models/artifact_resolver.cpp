@@ -81,6 +81,17 @@ std::vector<ArtifactRef> ArtifactSourceResolver::refs_for(const ModelInfo& info)
 
     std::vector<ArtifactRef> refs;
 
+    // Registration strips a scheme; a row that kept one would download from a
+    // repository named after the scheme, so it is refused in words instead.
+    for (const auto& [type, checkpoint] : info.checkpoints) {
+        RegistryId scheme_host;
+        if (host_of_scheme_prefix(checkpoint, scheme_host) != nullptr) {
+            throw RegistrationError("the '" + type + "' checkpoint '" + checkpoint +
+                                    "' keeps its registry scheme; register it as "
+                                    "'org/repo:file' with that registry as its source");
+        }
+    }
+
     ArtifactRef main_ref;
     main_ref.registry = source;
     main_ref.checkpoint_type = "main";

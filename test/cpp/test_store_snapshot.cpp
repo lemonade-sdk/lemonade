@@ -299,6 +299,46 @@ static void test_list_model_files(ModelManager& manager, const Fixture& fx) {
           !manager.get_model_info("user.zz-corrupt").downloaded);
 }
 
+static void test_list_sharded_model_files(ModelManager& manager, const Fixture& fx) {
+    const fs::path dir = fx.root / "imported" / path_from_utf8(u8"sharded-\u017c\u00f3\u0142w");
+    const fs::path first = dir / "model-00001-of-00003.gguf";
+    const fs::path second = dir / "model-00002-of-00003.gguf";
+    const fs::path third = dir / "model-00003-of-00003.gguf";
+    write_file(third, std::string(kGguf) + "ab");
+    write_file(first, kGguf);
+    write_file(second, std::string(kGguf) + "a");
+    write_file(dir / "model-00001-of-00002.gguf", kGguf);
+    write_file(dir / "other-00001-of-00003.gguf", kGguf);
+    write_file(dir / "model-00002-of-00003.gguf.partial", kGguf);
+
+    manager.register_user_model(
+        "zz-sharded",
+        json{{"checkpoints", json{{"main", path_to_utf8(first)},
+                                  {"mmproj", path_to_utf8(fx.local_file)}}},
+             {"recipe", "llamacpp"}},
+        "local_path");
+
+    const auto files = manager.list_model_files("user.zz-sharded");
+    check("local split GGUF lists every shard and the auxiliary checkpoint", files.size() == 4);
+    const std::vector<fs::path> expected = {first, second, third, fx.local_file};
+    bool metadata_ok = files.size() == expected.size();
+    for (size_t i = 0; i < files.size() && i < expected.size(); ++i) {
+        const auto& file = files[i];
+        metadata_ok = metadata_ok && file.name == path_to_utf8(expected[i].filename()) &&
+                      path_from_utf8(file.path) == expected[i] && file.exists &&
+                      file.role == (i < 3 ? "main" : "mmproj") &&
+                      file.size_bytes == (i < 3 ? kGgufSize + i : kGgufSize);
+    }
+    check("shards are ordered with individual paths, sizes and checkpoint roles", metadata_ok);
+
+    fs::remove(first);
+    const auto missing = manager.list_model_files("user.zz-sharded");
+    check("a missing first shard stays absent alongside the remaining shards",
+          missing.size() == 4 && missing[0].name == first.filename().string() &&
+              !missing[0].exists && missing[0].size_bytes == 0 &&
+              missing[1].exists && missing[2].exists);
+}
+
 static void test_cleanup_orphaned_cache(ModelManager& manager, const Fixture& fx) {
     json dry = manager.cleanup_orphaned_cache(true);
     const auto& found = dry["orphaned_files"];
@@ -343,6 +383,7 @@ int main() {
         test_precedence_and_public_naming(manager, fx);
         test_public_names_resolve(manager);
         test_list_model_files(manager, fx);
+        test_list_sharded_model_files(manager, fx);
         test_cleanup_orphaned_cache(manager, fx);
     }
 

@@ -46,6 +46,18 @@ struct ContainerPolicy {
     std::vector<std::string> cap_add;   // capabilities given back after --cap-drop=all
 };
 
+// What one backend is and where it comes from, shown to people choosing among
+// backends. The author wrote the engine or fork; the publisher builds the
+// artifact Lemonade installs, which is often someone else (llamacpp:rocm is
+// ggml-org's code built by lemonade-sdk).
+struct BackendAbout {
+    std::string description;  // one or two sentences on what the backend is for
+    std::string author;
+    std::string publisher;
+    std::string license;      // SPDX id or license name; "" when upstream declares none
+    std::string project_url;  // the author's project, where its license file lives
+};
+
 inline const char* slot_policy_to_string(SlotPolicy p) {
     switch (p) {
         case SlotPolicy::Standard:      return "standard";
@@ -74,6 +86,10 @@ struct BackendDescriptor {
 
     std::vector<BackendOption>    options;                       // backend-specific knobs (common ones are automatic)
     std::vector<BackendSupport>   support;                       // which OS / GPU families it runs on ({} = no local gating)
+
+    // One entry per backend named in `support`, keyed by that name.
+    // BackendContractsTest fails a support row without one.
+    std::map<std::string, BackendAbout> about;
 
     // Every deployment mode this backend can serve, most-default first. A model
     // whose labels name no mode falls back to supported_modes[0]; a model whose
@@ -134,10 +150,10 @@ struct BackendDescriptor {
     // The backends in `support` that run from an OCI image, keyed by backend name.
     std::map<std::string, ContainerPolicy> containers;
 
-    // {mode, capability}: a mode from supported_modes this backend serves only
-    // for models that also carry the capability label, and the only mode such a
-    // model may deploy in. Registration refuses the mode without the label.
-    std::vector<std::pair<std::string, std::string>> mode_capability_requirements;
+    // {mode, capabilities}: a mode from supported_modes this backend serves only
+    // for models that also carry one of the capability labels, and the only mode
+    // such a model may deploy in. Registration refuses the mode without one.
+    std::vector<std::pair<std::string, std::vector<std::string>>> mode_capability_requirements;
 
     const ContainerPolicy* container_for(const std::string& backend) const {
         auto it = containers.find(backend);

@@ -24,6 +24,7 @@ except ImportError:
 from utils.server_base import (
     ServerTestBase,
     model_recipe_options,
+    pull_model_with_retry,
     run_server_tests,
     unload_all_models,
 )
@@ -86,23 +87,13 @@ class OllamaTests(ServerTestBase):
     def ensure_model_pulled(self):
         """Ensure the test model is downloaded."""
         if not OllamaTests._model_pulled:
-            response = requests.post(
-                f"{self.base_url}/pull",
-                json={"model_name": ENDPOINT_TEST_MODEL, "stream": False},
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(response.status_code, 200)
+            pull_model_with_retry(ENDPOINT_TEST_MODEL)
             OllamaTests._model_pulled = True
 
     def ensure_tool_calling_model_pulled(self):
         """Ensure the tool-calling model is downloaded."""
         if not OllamaTests._tool_calling_model_pulled:
-            response = requests.post(
-                f"{self.base_url}/pull",
-                json={"model_name": TOOL_CALLING_MODEL, "stream": False},
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(response.status_code, 200)
+            pull_model_with_retry(TOOL_CALLING_MODEL)
             OllamaTests._tool_calling_model_pulled = True
 
     # ========================================================================
@@ -679,13 +670,7 @@ class OllamaTests(ServerTestBase):
         """Test /api/chat with image input (vision) using a vision model."""
         if sys.platform == "darwin":
             self.skipTest("Vision model not supported on macOS")
-        # Pull the vision model
-        response = requests.post(
-            f"{self.base_url}/pull",
-            json={"model_name": VISION_MODEL, "stream": False},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200)
+        pull_model_with_retry(VISION_MODEL)
 
         # 10x10 red PNG to avoid backend assertions on tiny images.
         png_b64 = (
@@ -720,13 +705,7 @@ class OllamaTests(ServerTestBase):
             self.skipTest("sd-cpp not supported on macOS")
         if sys.platform == "linux" and platform.machine() == "aarch64":
             self.skipTest("sd-cpp not supported on Linux ARM64")
-        # Pull the SD model first
-        response = requests.post(
-            f"{self.base_url}/pull",
-            json={"model_name": SD_MODEL, "stream": False},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200)
+        pull_model_with_retry(SD_MODEL)
 
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/generate",

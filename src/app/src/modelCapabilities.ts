@@ -117,6 +117,14 @@ export function isRouterRecipe(recipe?: string | null): boolean {
   return modelStructure(recipe) === 'router';
 }
 
+export function isOnDemandModelInfo(model?: ModelInfo | null): boolean {
+  if (!model) return false;
+  const fallbackRecipe = model.recipes?.[0]?.recipe;
+  const recipe = typeof model.recipe === 'string' ? model.recipe : (typeof fallbackRecipe === 'string' ? fallbackRecipe : '');
+  return !isRouterRecipe(recipe) &&
+    normalizedStringList(model.labels).includes('on-demand');
+}
+
 export function isCollectionRecipe(recipe?: string | null): boolean {
   return modelStructure(recipe) !== 'single';
 }

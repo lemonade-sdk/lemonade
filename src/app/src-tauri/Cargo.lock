@@ -2228,6 +2228,7 @@ dependencies = [
  "objc2-web-kit",
  "serde",
  "serde_json",
+ "socket2",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",

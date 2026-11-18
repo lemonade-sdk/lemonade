@@ -245,6 +245,16 @@ int main() {
            "raising one flag sizes the one lemond adds");
     expect(plan_single_batch(2048, {}).batch_size == 2048,
            "a context below 4096 keeps the batch at the context");
+    expect(plan_single_batch(2048, {"--parallel", "4"}).max_input_tokens == 512 &&
+               plan_single_batch(2048, {"-np=2"}).max_input_tokens == 1024,
+           "split slots each read their share of the context");
+    expect(plan_single_batch(2048, {"--parallel", "1"}).max_input_tokens == 2048 &&
+               plan_single_batch(2048, {"-np", "-1"}).max_input_tokens == 2048 &&
+               plan_single_batch(2048, {"-np", "4", "--kv-unified"}).max_input_tokens == 2048,
+           "one slot, an auto count, or a unified KV buffer reads the whole context");
+    expect(plan_single_batch(2048, {"-np", "4", "-kvu", "--no-kv-unified"}).max_input_tokens ==
+               512,
+           "the last KV spelling wins");
 
     expect(decision_model_load_refusal("Laya", false, "modern-bert", "laya").empty(),
            "a decision GGUF loads");

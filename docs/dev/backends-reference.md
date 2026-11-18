@@ -13,7 +13,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `ds4` | DwarfStar4 | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `gufo` | Gufo | no | yes | rocm |
-| `halogen` | Halogen Flash | no | yes | rocm |
+| `halogen` | Halogen | no | yes | rocm |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, halobox, metal, nathanw, rocm, system, vulkan |
 | `llamacpp-hrx` | HRX GPU | no | yes | hrx |
