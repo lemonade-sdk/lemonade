@@ -29,7 +29,7 @@ inline const BackendDescriptor descriptor = {
          /*device_summary*/ "AMD Radeon AI PRO R9700"},
     },
     /*about*/ {
-        {"rocm", {"AMD's per-model vLLM microservices, each with profiles tuned for Radeon PRO GPUs.",
+        {"rocm", {"AMD's per-model microservices, each with profiles tuned for Radeon PRO GPUs.",
                     "AMD", "AMD (amdenterpriseai)", "Apache-2.0, MIT",
                     "https://enterprise-ai.docs.amd.com/en/latest/aims/overview.html"}},
     },
