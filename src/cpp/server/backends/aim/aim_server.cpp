@@ -26,9 +26,9 @@ namespace {
 
 constexpr const char* kBackend = "rocm";
 
-// vLLM compiles its kernels on the first start of each model and GPU, which
-// global_timeout does not describe, so AIM gets its own floor; a larger
-// global_timeout still raises it.
+// vLLM in AIM compiles its kernels on every start, since the container's caches
+// go with it (about 2.5 minutes of a 3.5-minute load on an R9700). global_timeout
+// does not describe that, so AIM gets its own floor; a larger one still raises it.
 constexpr long kStartupTimeoutSeconds = 1800;
 
 // A model image is the pinned base plus a few layers of profiles; this pulls

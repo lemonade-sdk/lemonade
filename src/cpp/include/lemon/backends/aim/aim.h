@@ -6,14 +6,15 @@ namespace lemon {
 namespace backends {
 namespace aim {
 
-// AMD Inference Microservices: vLLM images AMD publishes per model. Every
-// Radeon AIM is the aim-radeon-base image plus that model's tuned profiles, so
-// the backend pins the base and each model row names its own image in
-// `aim_image`, which then costs only those few layers to pull.
+// AMD Inference Microservices: images AMD publishes per model, each running
+// an inference engine with profiles tuned for the GPU. Every Radeon AIM is the
+// aim-radeon-base image plus its model's profiles, so the backend pins the base
+// and each model row names its own image in `aim_image` and its engine in
+// `aim_engine`.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "aim",
     /*display_name*/    "AMD Inference Microservice",
-    /*binary*/          "",  // the image's entrypoint picks a profile and starts vLLM
+    /*binary*/          "",  // the image's entrypoint picks a profile and starts the engine
     /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,
     /*slot_policy*/     SlotPolicy::Standard,
@@ -53,7 +54,7 @@ inline const BackendDescriptor descriptor = {
             /*devices*/ {"/dev/dri", "/dev/kfd"},
             /*cap_add*/ {},
             /*user*/    std::nullopt,
-            // Every AIM profile runs vLLM's multiprocess executor, even on one
+            // AIM's vLLM profiles run vLLM's multiprocess executor even on one
             // GPU, and its message queues take about 400 MiB of /dev/shm.
             /*shm_size*/ "1g",
         }},
