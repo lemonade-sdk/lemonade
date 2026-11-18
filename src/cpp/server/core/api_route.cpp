@@ -671,6 +671,7 @@ void ModelRoute::handle(RouteRequest& req, httplib::Response& res) {
                 : telemetry::TelemetryTracker::start_span(load_span_name.kind,
                                                           load_span_name.name, req.model,
                                                           req.body);
+            if (span) telemetry::apply_route_attributes(*span);
             try {
                 ctx_.model_loader->ensure_loaded(req.model,
                                                  ModelLoader::load_options(req.arg(model_loading::kCtxSize)));

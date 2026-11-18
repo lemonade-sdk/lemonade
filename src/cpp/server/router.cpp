@@ -1860,6 +1860,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
 json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
     std::string requested_model = request.value("model", "");
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request);
+    if (span) telemetry::apply_route_attributes(*span);
 
     std::optional<WrappedServer::RequestCancelScope> cancel_scope;
     if (cancel) {
@@ -1880,7 +1881,6 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                 if (request.contains("top_p")) span->set_attribute("llm.config.top_p", request["top_p"]);
                 if (request.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request["max_tokens"]);
                 if (request.contains("max_completion_tokens")) span->set_attribute("llm.config.max_completion_tokens", request["max_completion_tokens"]);
-                telemetry::apply_route_attributes(*span);
             }
             return server->chat_completion(request);
         });
@@ -1985,6 +1985,7 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
 json Router::completion(const json& request) {
     std::string requested_model = request.value("model", "");
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request);
+    if (span) telemetry::apply_route_attributes(*span);
 
     try {
         WrappedServer* active_server = nullptr;
@@ -1999,7 +2000,6 @@ json Router::completion(const json& request) {
                 if (request.contains("temperature")) span->set_attribute("llm.config.temperature", request["temperature"]);
                 if (request.contains("top_p")) span->set_attribute("llm.config.top_p", request["top_p"]);
                 if (request.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request["max_tokens"]);
-                telemetry::apply_route_attributes(*span);
             }
             return server->completion(request);
         });
@@ -2677,6 +2677,7 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request_json);
+    if (span) telemetry::apply_route_attributes(*span);
     auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;
@@ -2776,7 +2777,6 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
                 if (request_json.contains("top_p")) span->set_attribute("llm.config.top_p", request_json["top_p"]);
                 if (request_json.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request_json["max_tokens"]);
                 if (request_json.contains("max_completion_tokens")) span->set_attribute("llm.config.max_completion_tokens", request_json["max_completion_tokens"]);
-                telemetry::apply_route_attributes(*span);
             }
 
             server->forward_streaming_request("/v1/chat/completions", request_body, telemetry_sink, true, 0,
@@ -2834,6 +2834,7 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request_json);
+    if (span) telemetry::apply_route_attributes(*span);
     auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;
@@ -2903,7 +2904,6 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
                 if (request_json.contains("temperature")) span->set_attribute("llm.config.temperature", request_json["temperature"]);
                 if (request_json.contains("top_p")) span->set_attribute("llm.config.top_p", request_json["top_p"]);
                 if (request_json.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request_json["max_tokens"]);
-                telemetry::apply_route_attributes(*span);
             }
 
             server->forward_streaming_request("/v1/completions", request_body, telemetry_sink, true, 0,
@@ -2952,6 +2952,7 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "responses", requested_model, request_json);
+    if (span) telemetry::apply_route_attributes(*span);
     auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;
@@ -3016,7 +3017,6 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
                 if (request_json.contains("temperature")) span->set_attribute("llm.config.temperature", request_json["temperature"]);
                 if (request_json.contains("top_p")) span->set_attribute("llm.config.top_p", request_json["top_p"]);
                 if (request_json.contains("max_tokens")) span->set_attribute("llm.config.max_tokens", request_json["max_tokens"]);
-                telemetry::apply_route_attributes(*span);
             }
 
             server->forward_streaming_request("/v1/responses", request_body, telemetry_sink, true, 0,

@@ -17,6 +17,31 @@ namespace lemon {
 
 using json = nlohmann::json;
 
+json route_span_payload(const RouterDispatchResult& result) {
+    // estimated_cost is flattened because a span attribute should be a scalar,
+    // and each field is optional, so an absent one simply is not emitted.
+    json route_attrs = {
+        {"collection", result.requested_model},
+        {"to", result.selected_model},
+        {"matched_rule", result.decision.matched_rule},
+        {"default_used", result.decision.default_used},
+    };
+    const auto cost_it = result.decision.outputs.find("estimated_cost");
+    if (cost_it != result.decision.outputs.end() && cost_it->is_object()) {
+        for (const auto& [key, value] : cost_it->items()) {
+            // A policy author may set outputs["estimated_cost"] themselves, so
+            // its keys are arbitrary and must not shadow the decision's own.
+            if (route_attrs.contains(key)) {
+                continue;
+            }
+            if (value.is_string() || value.is_number() || value.is_boolean()) {
+                route_attrs[key] = value;
+            }
+        }
+    }
+    return route_attrs;
+}
+
 std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::string& model,
                                                     bool want_trace, json& body) {
     if (model.empty()) {
@@ -61,30 +86,7 @@ std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::str
         ctx.router->note_route_decision(utils::conversation_fingerprint(body),
                                         result.selected_model);
 
-        // Every dispatch path reaches this one function, so publishing here covers
-        // chat, completions and responses without three call sites drifting apart.
-        // estimated_cost is flattened because a span attribute should be a scalar,
-        // and each field is optional, so an absent one simply is not emitted.
-        json route_attrs = {
-            {"collection", result.requested_model},
-            {"to", result.selected_model},
-            {"matched_rule", result.decision.matched_rule},
-            {"default_used", result.decision.default_used},
-        };
-        const auto cost_it = result.decision.outputs.find("estimated_cost");
-        if (cost_it != result.decision.outputs.end() && cost_it->is_object()) {
-            for (const auto& [key, value] : cost_it->items()) {
-                // A policy author may set outputs["estimated_cost"] themselves, so
-                // its keys are arbitrary and must not shadow the decision's own.
-                if (route_attrs.contains(key)) {
-                    continue;
-                }
-                if (value.is_string() || value.is_number() || value.is_boolean()) {
-                    route_attrs[key] = value;
-                }
-            }
-        }
-        telemetry::g_current_route_decision = route_attrs.dump();
+        telemetry::g_current_route_decision = route_span_payload(result).dump();
 
         LOG(INFO, "Server") << "Router collection '" << requested_model << "' -> '"
                             << result.selected_model << "'" << std::endl;
