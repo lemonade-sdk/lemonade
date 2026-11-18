@@ -47,7 +47,6 @@ InstallParams FastFlowLMServer::get_install_params(const std::string& backend, c
         return params;
     }
 
-    fastflowlm::validate_flm_runtime();
     params.repo = "ROCm/FastFlowLM";
 
     // Release asset filenames use bare version numbers (no 'v' prefix)
@@ -161,14 +160,7 @@ void FastFlowLMServer::load(const std::string& model_name,
     // We use checkpoint_ (base class field) for FLM API calls
 
     if (fastflowlm::find_flm_in_path().empty()) {
-        try {
-            backend_manager_->install_backend(fastflowlm::spec()->recipe, "npu");
-        } catch (const std::exception&) {
-            if (fastflowlm::find_flm_executable().empty()) {
-                throw;
-            }
-            LOG(DEBUG, "FastFlowLM") << "Using system FLM from PATH" << std::endl;
-        }
+        backend_manager_->install_backend(fastflowlm::spec()->recipe, "npu");
     }
 
     std::string flm_path = get_flm_path();
@@ -473,6 +465,9 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
 }
 
 std::string FastFlowLMServer::get_flm_path() {
+    if (!fastflowlm::flm_runtime_matches()) {
+        throw std::runtime_error("Update FastFlowLM before running the selected build.");
+    }
     std::string flm_path = fastflowlm::find_flm_executable();
     if (!flm_path.empty()) {
         LOG(INFO, "FastFlowLM") << "Found flm at: " << flm_path << std::endl;
@@ -540,26 +535,27 @@ public:
         return file_version;
     }
 
-    InstallCheck check_install(const std::string&, bool binary_found) const override {
-        try {
-            return {!find_flm_executable().empty(), ""};
-        } catch (const std::invalid_argument& error) {
-            return {false, error.what()};
+    InstallCheck check_install(const std::string&, bool) const override {
+        if (!flm_runtime_matches()) {
+            return {false, "Installed FastFlowLM build does not match 'flm.runtime'."};
         }
+        return {!find_flm_executable().empty(), ""};
     }
 
     std::optional<UnavailableState> classify_unavailable(
-        const std::string&, const std::string& install_error, const std::string&) const override {
+        const std::string&, const std::string& install_error, const std::string& install_command) const override {
         if (install_error.empty()) return std::nullopt;
-        // Keep the installed-build uninstall action available in clients.
-        return UnavailableState{"update_required", install_error,
-                                "lemonade backends uninstall flm:npu"};
+        return UnavailableState{"update_required", install_error, install_command, true};
     }
 
 };
 }  // namespace
 
-const BackendSpec* spec() { return make_spec<FastFlowLMServer>(descriptor); }
+const BackendSpec* spec() {
+    static const BackendSpec spec(descriptor.recipe, descriptor.binary,
+                                 FastFlowLMServer::get_install_params, false, flm_build_matches);
+    return &spec;
+}
 const BackendOps* ops() { return single_ops<FlmOps>(); }
 }  // namespace fastflowlm
 }  // namespace backends

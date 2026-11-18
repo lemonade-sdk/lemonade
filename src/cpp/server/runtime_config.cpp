@@ -1,6 +1,5 @@
 #include "lemon/runtime_config.h"
 #include "lemon/backends/backend_descriptor_registry.h"
-#include "lemon/backends/fastflowlm/fastflowlm_models.h"
 #include "lemon/models/configured_catalog.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
@@ -1185,15 +1184,6 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
     else if (backend == "flm" && key == "runtime") {
         if (!value.is_string() || (value != "xrt" && value != "hrx")) {
             throw std::invalid_argument("'flm.runtime' must be 'xrt' or 'hrx'");
-        }
-        bool runtime_changed;
-        {
-            std::shared_lock lock(mutex_);
-            const json* current = find_backend_value(config_, backend, key);
-            runtime_changed = value != (current ? *current : json("xrt"));
-        }
-        if (runtime_changed) {
-            backends::fastflowlm::validate_flm_build_change();
         }
     }
     else if (key == "prefer_system") {

@@ -48,6 +48,14 @@ assert.match(installBlock, /const synced = await syncBackendStatus\(recipe, back
 assert.match(source, /BACKEND_STATUS_RETRY_DELAYS_MS/);
 assert.match(source, /backendActionIsReflected/);
 
+const flmBuildSelector = source.match(
+  /recipe === 'flm' && backend === 'npu' && \([\s\S]*?<select[\s\S]*?<\/select>/,
+)?.[0];
+assert.ok(flmBuildSelector, 'FastFlowLM build selector not found');
+assert.match(flmBuildSelector, /disabled=\{isInstalling \|\| showBackendProgress \|\| !runtimeConfig\.flm\}/);
+assert.doesNotMatch(flmBuildSelector, /info\.state|Uninstall FastFlowLM before changing its build/);
+assert.match(flmBuildSelector, /Changing the build takes effect after the next update/);
+
 // Concurrent refreshes may not overwrite the newest system-info snapshot.
 assert.match(source, /const requestId = \+\+systemInfoRequestRef\.current/);
 assert.match(source, /requestId === systemInfoRequestRef\.current/);

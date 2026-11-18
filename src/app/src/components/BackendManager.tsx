@@ -1360,13 +1360,13 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                 </div>
 
                 {recipe === 'flm' && backend === 'npu' && (
-                  <label className="backend-card__variant-meta" title={t('Uninstall FastFlowLM before changing its build.')}>
+                  <label className="backend-card__variant-meta" title={t('Changing the build takes effect after the next update.')}>
                     <span>{t('Build')}</span>
                     <select
                       className="select"
                       aria-label={t('FastFlowLM build')}
                       value={backendRuntimeRecord(runtimeConfig.flm)?.runtime === 'hrx' ? 'hrx' : 'xrt'}
-                      disabled={isInstalling || showBackendProgress || info.state !== 'installable' || !runtimeConfig.flm}
+                      disabled={isInstalling || showBackendProgress || !runtimeConfig.flm}
                       onChange={event => void handleFlmBuildChange(event.target.value)}
                     >
                       <option value="xrt">{t('XRT (default)')}</option>

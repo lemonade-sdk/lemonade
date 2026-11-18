@@ -281,9 +281,9 @@ Backend-specific settings are nested under their backend name:
 |-----|---------|-------------|
 | `args` | "" | Custom arguments to pass to flm serve |
 | `prefer_system` | false | Prefer system-installed FLM (on PATH) over auto-installed portable binary |
-| `runtime` | "xrt" | Managed binary build: "xrt" or "hrx". Uninstall FastFlowLM before switching. |
+| `runtime` | "xrt" | Managed binary build: "xrt" or "hrx". A different installed build requires an update. |
 
-Lemonade checks the installed managed build against `flm.runtime`, including after a restart. If they differ, uninstall `flm:npu` and then install the selected build; editing `config.json` does not replace an installed binary.
+Changing `flm.runtime` leaves the installed build untouched. Updating `flm:npu` or loading a FastFlowLM model downloads and verifies the selected build before replacing the old one. If the update fails, the old build stays on disk but is not used to load a model with the new selection. You can switch back to the installed build without downloading it again.
 
 **ryzenai** — RyzenAI NPU inference:
 | Key | Default | Description |

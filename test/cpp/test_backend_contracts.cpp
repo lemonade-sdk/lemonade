@@ -2,6 +2,7 @@
 // directories and its own failure count; the only shared state is the process-wide
 // models directory, which every suite sets on entry.
 
+#include "lemon/backend_manager.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
@@ -285,7 +286,7 @@ public:
     Fixture()
         : previous_cache_(lemon::utils::get_cache_dir()),
           previous_config_(lemon::RuntimeConfig::global()),
-          config_({{"flm", json::object()}}) {
+          config_({{"flm", json::object()}, {"offline", true}, {"no_fetch_executables", false}}) {
         root_ = fs::temp_directory_path() /
             ("lemonade_flm_install_" + std::to_string(
                 std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -320,28 +321,6 @@ int run() {
     check("HRX uses the matching prefixed release asset",
           hrx.repo == xrt.repo && hrx.filename == "HRX_" + xrt.filename);
 
-    for (const std::string suffix : {"", ".staging"}) {
-        const fs::path install_dir = BackendUtils::get_install_directory("flm", "npu") + suffix;
-        for (const std::string runtime : {"hrx", "xrt"}) {
-            const std::string alternate = runtime == "hrx" ? "xrt" : "hrx";
-            config->set({{"flm", {{"runtime", runtime}}}});
-            fs::create_directories(install_dir);
-            config->set({{"flm", {{"runtime", runtime}}}});
-            bool rejected = false;
-            try {
-                config->set({{"flm", {{"runtime", alternate}}}});
-            } catch (const std::invalid_argument& error) {
-                rejected = std::string(error.what()).find("Uninstall FastFlowLM") != std::string::npos;
-            }
-            check("changing builds requires uninstalling the current build",
-                  rejected && config->backend_string("flm", "runtime") == runtime);
-            fs::remove_all(install_dir);
-            config->set({{"flm", {{"runtime", alternate}}}});
-            check("uninstalling allows switching builds",
-                  config->backend_string("flm", "runtime") == alternate);
-        }
-    }
-
     for (const json invalid : {json(true), json(""), json("XRT"), json("other")}) {
         const std::string previous = config->backend_string("flm", "runtime");
         bool rejected = false;
@@ -354,7 +333,10 @@ int run() {
               rejected && config->backend_string("flm", "runtime") == previous);
     }
 
+    lemon::BackendManager manager;
+    const auto* ops = lemon::backends::fastflowlm::ops();
     for (const std::string runtime : {"xrt", "hrx"}) {
+        const std::string alternate = runtime == "hrx" ? "xrt" : "hrx";
         config->set({{"flm", {{"runtime", runtime}}}});
         const fs::path install_dir = BackendUtils::get_install_directory("flm", "npu");
         fs::create_directories(install_dir / "lib");
@@ -368,38 +350,32 @@ int run() {
             std::ofstream(install_dir / "lib" / "libhrx.so.1") << "runtime";
 #endif
         }
-        check("a matching installed runtime is usable",
-              lemon::backends::fastflowlm::ops()->check_install("npu", true).installed);
-        check("a matching runtime permits installation checks",
-              !lemon::backends::FastFlowLMServer::get_install_params("npu", "v1.0.11").filename.empty());
+        config->set({{"flm", {{"runtime", alternate}}}});
+        const auto status = ops->check_install("npu", true);
+        const std::string update_command = "lemonade backends install flm:npu";
+        const auto unavailable = ops->classify_unavailable("npu", status.error, update_command);
+        check("a different selected build requires updating even at the same version",
+              !status.installed && unavailable && unavailable->state == "update_required" &&
+              unavailable->action == update_command);
+        const auto selected = lemon::backends::FastFlowLMServer::get_install_params("npu", "v1.0.11");
+        check("the installed build does not match the same-version replacement asset",
+              !spec->build_matches(install_dir, selected.filename));
 
-        lemon::RuntimeConfig restarted({{"flm", {{"runtime", runtime == "hrx" ? "xrt" : "hrx"}}}});
-        lemon::RuntimeConfig::set_global(&restarted);
-        const auto status = lemon::backends::fastflowlm::ops()->check_install("npu", true);
-        check("a restart with a different configured runtime rejects the installed build",
-              !status.installed && status.error.find("Uninstall FastFlowLM") != std::string::npos);
-        const auto unavailable = lemon::backends::fastflowlm::ops()->classify_unavailable(
-            "npu", status.error, "");
-        check("a runtime mismatch preserves the uninstall action",
-              unavailable && unavailable->state == "update_required");
         bool rejected = false;
         try {
-            lemon::backends::FastFlowLMServer::get_install_params("npu", "v1.0.11");
-        } catch (const std::invalid_argument&) {
-            rejected = true;
+            manager.install_backend("flm", "npu");
+        } catch (const std::runtime_error& error) {
+            rejected = std::string(error.what()).find("offline mode") != std::string::npos;
         }
-        check("the same release version cannot hide a runtime mismatch", rejected);
-        rejected = false;
-        try {
-            lemon::backends::fastflowlm::find_flm_executable();
-        } catch (const std::invalid_argument&) {
-            rejected = true;
-        }
-        check("a mismatched runtime cannot be selected for execution", rejected);
+        const auto& original = runtime == "hrx" ? hrx : xrt;
+        check("offline update fails and leaves the original install intact",
+              rejected && fs::exists(install_dir / spec->binary) &&
+              fs::exists(install_dir / "version.txt") && spec->build_matches(install_dir, original.filename));
+        config->set({{"flm", {{"runtime", runtime}}}});
+        manager.install_backend("flm", "npu");
+        check("switching back restores installed status without a download",
+              ops->check_install("npu", true).installed);
         fs::remove_all(install_dir);
-        check("uninstalling clears the runtime mismatch",
-              !lemon::backends::FastFlowLMServer::get_install_params("npu", "v1.0.11").filename.empty());
-        lemon::RuntimeConfig::set_global(config);
     }
     return failures == 0 ? 0 : 1;
 }
