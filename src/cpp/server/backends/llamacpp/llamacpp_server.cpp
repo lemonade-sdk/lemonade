@@ -342,6 +342,7 @@ void LlamaCppServer::load(const std::string& model_name,
     // Get mmproj path for vision models and drafter path for mtp or other drafting strategies
     std::string mmproj_path = model_info.resolved_path("mmproj");
     std::string draft_path = model_info.resolved_path("draft");
+    std::string lora_path = model_info.resolved_path("lora");
 
     port_ = choose_port();
 
@@ -472,6 +473,13 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_reserved(reserved_flags, "--model-draft", std::vector<std::string>{"-md", "--spec-draft-model"});
 
+    // Not reserved: llama-server stacks repeated --lora flags, so llamacpp_args
+    // can still add adapters on top of the registered one.
+    if (!lora_path.empty()) {
+        args.push_back("--lora");
+        args.push_back(lora_path);
+    }
+
     // Add embeddings support if the model supports it
     if (supports_embeddings || rule_head_) {
         LOG(INFO, "LlamaCpp") << "Model supports embeddings, adding --embeddings flag" << std::endl;
@@ -537,7 +545,8 @@ void LlamaCppServer::load(const std::string& model_name,
         command.program = llamacpp::descriptor.binary;
         command.args = std::move(args);
         for (const std::string& path : {gguf_path, mmproj_path,
-                                        use_draft_checkpoint ? draft_path : std::string()}) {
+                                        use_draft_checkpoint ? draft_path : std::string(),
+                                        lora_path}) {
             if (!path.empty()) {
                 const auto files = gguf_files(path);
                 command.model_files.insert(command.model_files.end(), files.begin(), files.end());

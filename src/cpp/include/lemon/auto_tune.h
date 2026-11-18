@@ -170,9 +170,23 @@ inline double get_available_memory_gb(DeviceType device_type,
         return available;
     }
 
+    if (auto metrics = create_metrics_platform()) {
+        const double physical_total_gb = metrics->get_memory_total_gb();
+        const double ram_used_gb = metrics->get_memory_usage_gb();
+        if (physical_total_gb > 0 && ram_used_gb > 0) {
+            if (memory_known_out) *memory_known_out = true;
+            double available = (std::max)(0.0, physical_total_gb - ram_used_gb);
+            LOG(DEBUG, "AutoTune") << "get_available_memory_gb: CPU/NPU (physical RAM) total="
+                                   << std::fixed << std::setprecision(2) << physical_total_gb
+                                   << " GB, used=" << ram_used_gb
+                                   << " GB → " << available << " GB available"  << " ";
+            return available;
+        }
+    }
+
     // On unified-memory systems (APU), the iGPU vram_gb + virtual_gb approximates system RAM
     auto amd_igpu = si->get_amd_igpu_device();
-    if (amd_igpu.available && amd_igpu.vram_gb > 0) {
+    if (amd_igpu.available && amd_igpu.vram_gb + amd_igpu.virtual_gb > 0) {
         if (memory_known_out) *memory_known_out = true;
         double total_gb = amd_igpu.vram_gb + amd_igpu.virtual_gb;
         double available = (std::max)(0.0, total_gb - used_gb);
