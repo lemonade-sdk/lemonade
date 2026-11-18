@@ -74,7 +74,7 @@ struct FakeHost {
     std::map<std::string, std::string> env;
     std::set<std::string> paths;  // what exists() finds
     std::string gpu_group;        // owner of the GPU device nodes
-    // `inspect` answers for these names, as {{.Id}}|{{json .Mounts}}.
+    // `inspect` answers for these names, as Id|UsernsMode|Mounts|Networks.
     std::map<std::string, std::string> containers;
     // `network inspect`'s .Internal answer by network name; unlisted ones are false.
     std::map<std::string, std::string> internal_networks;
@@ -121,6 +121,14 @@ struct FakeHost {
                 const auto it = containers.find(argv.back());
                 result.exit_code = it == containers.end() ? 1 : 0;
                 if (it != containers.end()) result.output = it->second + "\n";
+                // The answer holds both formats lemond asks for, split at its last '|'.
+                if (it != containers.end() && argv.size() > 5) {
+                    const auto networks = it->second.rfind('|');
+                    result.output = (argv[5] == "{{json .NetworkSettings.Networks}}"
+                                         ? it->second.substr(networks + 1)
+                                         : it->second.substr(0, networks)) +
+                                    "\n";
+                }
             } else if (argv.front() == "getsubids") {
                 const auto it = subids.find(join({argv.begin() + 1, argv.end()}));
                 result.exit_code = it == subids.end() ? 1 : 0;
@@ -791,13 +799,32 @@ void test_in_container() {
 
     FakeHost no_internal = contained_host();
     no_internal.internal_networks = {};
-    const auto network_failures = ContainerManager(no_internal.host()).check_host();
+    const ContainerManager no_internal_manager(no_internal.host());
+    const auto network_failures = no_internal_manager.check_host();
     check("with no internal network, the failure says to create one and start lemond on it",
           network_failures.size() == 1 && network_failures[0].id == "backend_network" &&
               network_failures[0].steps[0] ==
                   "podman network create --internal --disable-dns lemonade-backends" &&
               network_failures[0].steps[1].find("--network podman --network lemonade-backends") !=
                   std::string::npos);
+    no_internal.internal_networks = contained_host().internal_networks;
+    check("creating the backends' network as internal clears the failure without restarting lemond",
+          no_internal_manager.check_host().empty());
+
+    FakeHost changing = contained_host();
+    const ContainerManager changing_manager(changing.host());
+    changing_manager.backend_network();
+    changing.internal_networks["lemonade-backends"] = "false";
+    check("a backends' network that stops being internal is no longer used",
+          changing_manager.backend_network().empty());
+    changing.internal_networks["lemonade-backends"] = "true";
+    changing.containers[id] = id + "||[]|{\"podman\":{\"IPAddress\":\"10.88.0.5\"}}";
+    check("a backends' network lemond leaves is no longer used",
+          !changing_manager.check_host().empty() && changing_manager.backend_network().empty());
+    changing.containers[id] = contained_host().containers[id];
+    check("joining the backends' network clears the failure without restarting lemond",
+          changing_manager.check_host().empty() &&
+              changing_manager.backend_network() == "lemonade-backends");
 
     FakeHost pasta = contained_host();
     pasta.containers[id] = id + "||[]|null";
@@ -1026,6 +1053,23 @@ void test_refused_connections() {
     if (own) {
         check("a connection from lemond's own address, as a port forwarder makes, is answered", !*own);
     }
+    lemon::utils::set_refused_local_addresses({});
+
+    // lemond's address on the backends' network can change while it runs.
+    FakeHost host = contained_host();
+    const std::string id(64, 'a');
+    const auto on_backends = [&](const char* address) {
+        host.containers[id] = id + "||[]|{\"lemonade-backends\":{\"IPAddress\":\"" + address + "\"}}";
+    };
+    const ContainerManager manager(host.host());
+    on_backends("127.0.0.1");
+    manager.backend_network();
+    const auto before = accept_from("127.0.0.2");
+    if (before) check("lemond's address on the backends' network is refused", *before);
+    on_backends("127.0.0.3");
+    manager.backend_network();
+    const auto after = accept_from("127.0.0.2");
+    if (after) check("lemond's old address on the backends' network is answered once it changes", !*after);
     lemon::utils::set_refused_local_addresses({});
     ::close(listener);
 }

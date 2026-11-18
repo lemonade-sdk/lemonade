@@ -828,20 +828,17 @@ std::string ContainerManager::own_container() const {
     if (!own_container_.empty()) return own_container_;
     if (!tool()) return "";
     for (const auto& candidate : own_container_candidates()) {
-        const CommandResult result =
-            invoke({"inspect", "--type", "container", "--format",
-                    "{{.Id}}|{{.HostConfig.UsernsMode}}|{{json .Mounts}}|{{json .NetworkSettings.Networks}}",
-                    candidate},
-                   kCommandTimeoutSeconds, /*capture_stderr=*/false);
+        const CommandResult result = invoke(
+            {"inspect", "--type", "container", "--format",
+             "{{.Id}}|{{.HostConfig.UsernsMode}}|{{json .Mounts}}", candidate},
+            kCommandTimeoutSeconds, /*capture_stderr=*/false);
         if (result.exit_code != 0) continue;
         const std::string output = trim(result.output);
         const auto bar = output.find('|');
         const auto mode_end = bar == std::string::npos ? bar : output.find('|', bar + 1);
-        // Under pasta, Podman reports the networks as null rather than {}.
-        const auto bar2 = output.rfind('|');
-        if (mode_end == std::string::npos || bar2 == mode_end) continue;
+        if (mode_end == std::string::npos) continue;
         std::vector<OwnMount> mounts;
-        const auto parsed = nlohmann::json::parse(output.substr(mode_end + 1, bar2 - mode_end - 1), nullptr, false);
+        const auto parsed = nlohmann::json::parse(output.substr(mode_end + 1), nullptr, false);
         if (parsed.is_array()) {
             for (const auto& mount : parsed) {
                 const std::string source = mount.value("Source", "");
@@ -851,54 +848,49 @@ std::string ContainerManager::own_container() const {
                 }
             }
         }
-        // Which of lemond's networks are internal, and lemond's addresses on them.
-        std::map<std::string, std::vector<std::string>> addresses;
-        const auto networks = nlohmann::json::parse(output.substr(bar2 + 1), nullptr, false);
-        if (networks.is_object()) {
-            for (const auto& [name, settings] : networks.items()) {
-                auto& list = addresses[name];
-                for (const char* key : {"IPAddress", "GlobalIPv6Address"}) {
-                    const std::string address =
-                        settings.is_object() ? settings.value(key, "") : std::string();
-                    if (!address.empty()) list.push_back(address);
-                }
-            }
-        }
-        std::string backend_network;
-        if (!addresses.empty()) {
-            std::vector<std::string> args = {"network", "inspect", "--format",
-                                             "{{.Name}} {{.Internal}}"};
-            for (const auto& [name, _] : addresses) args.push_back(name);
-            const CommandResult inspected =
-                invoke(args, kCommandTimeoutSeconds, /*capture_stderr=*/false);
-            for (const auto& line : lines_of(inspected.output)) {
-                std::istringstream words(line);
-                std::string name;
-                std::string internal;
-                words >> name >> internal;
-                if (internal != "true" || !addresses.count(name)) continue;
-                if (name == kBackendNetwork) backend_network = name;
-            }
-        }
         own_container_ = output.substr(0, bar);
         own_userns_mode_ = output.substr(bar + 1, mode_end - bar - 1);
         own_mounts_ = std::move(mounts);
-        backend_network_ = backend_network;
-        set_refused_local_addresses(backend_network.empty() ? std::vector<std::string>()
-                                                            : addresses[backend_network]);
-        LOG(INFO, "Container") << "lemond runs in container " << own_container_
-                               << "; container backends run beside it on "
-                               << (backend_network.empty() ? "no internal network" : backend_network)
-                               << std::endl;
+        LOG(INFO, "Container") << "lemond runs in container " << own_container_ << std::endl;
         return own_container_;
     }
     return "";
 }
 
 std::string ContainerManager::backend_network() const {
-    if (own_container().empty()) return "";
+    const std::string own = own_container();
+    if (own.empty()) return "";
+    // lemond's networks, and its addresses on them, can change while it runs.
+    const CommandResult result =
+        invoke({"inspect", "--type", "container", "--format", "{{json .NetworkSettings.Networks}}", own},
+               kCommandTimeoutSeconds, /*capture_stderr=*/false);
+    if (result.exit_code != 0) return "";
+    std::vector<std::string> addresses;
+    // Under pasta, Podman reports the networks as null rather than {}.
+    const auto networks = nlohmann::json::parse(trim(result.output), nullptr, false);
+    const bool attached = networks.is_object() && networks.contains(kBackendNetwork);
+    if (attached && networks[kBackendNetwork].is_object()) {
+        for (const char* key : {"IPAddress", "GlobalIPv6Address"}) {
+            const std::string address = networks[kBackendNetwork].value(key, "");
+            if (!address.empty()) addresses.push_back(address);
+        }
+    }
+    std::string network;
+    if (attached) {
+        const CommandResult inspected =
+            invoke({"network", "inspect", "--format", "{{.Name}} {{.Internal}}", kBackendNetwork},
+                   kCommandTimeoutSeconds, /*capture_stderr=*/false);
+        if (inspected.exit_code != 0) return "";
+        if (trim(inspected.output) == std::string(kBackendNetwork) + " true") network = kBackendNetwork;
+    }
+    set_refused_local_addresses(network.empty() ? std::vector<std::string>() : addresses);
     std::lock_guard<std::mutex> lock(own_container_mutex_);
-    return backend_network_;
+    if (network != backend_network_) {
+        LOG(INFO, "Container") << "Container backends run beside lemond on "
+                               << (network.empty() ? "no internal network" : network) << std::endl;
+        backend_network_ = network;
+    }
+    return network;
 }
 
 std::string ContainerManager::host_path(const std::string& path) const {
