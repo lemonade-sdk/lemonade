@@ -15,6 +15,7 @@
 #include "lemon/server/model_json.h"
 #include "lemon/server/server_context.h"
 #include "lemon/server.h"
+#include "lemon/utils/json_utils.h"
 
 #include <lemon/utils/aixlog.hpp>
 
@@ -195,6 +196,58 @@ nlohmann::json call_mcp_server_capability(ServerContext& ctx,
         return mcp_model_http_result(response);
     };
 
+    auto call_binary_handler = [&call_rest](const nlohmann::json& body,
+                                           const char* path,
+                                           const std::string& label,
+                                           const std::string& fallback_mime_type) {
+        httplib::Response response;
+        call_rest("POST", path, body, response);
+        if (response.status >= 400) return mcp_model_http_result(response);
+        std::string mime_type = response.get_header_value("Content-Type");
+        if (mime_type.empty()) {
+            mime_type = fallback_mime_type.empty()
+                ? "application/octet-stream" : fallback_mime_type;
+        }
+        const std::string encoded = utils::JsonUtils::base64_encode(response.body);
+        nlohmann::json payload = {{"mime_type", mime_type}, {"data_base64", encoded}};
+        nlohmann::json content = nlohmann::json::array();
+        if (mime_type.rfind("audio/", 0) == 0) {
+            content.push_back({{"type", "audio"}, {"data", encoded}, {"mimeType", mime_type}});
+        } else if (mime_type.rfind("image/", 0) == 0) {
+            content.push_back({{"type", "image"}, {"data", encoded}, {"mimeType", mime_type}});
+        } else {
+            content.push_back({{"type", "text"}, {"text", label}});
+        }
+        return nlohmann::json{{"content", std::move(content)},
+                              {"structuredContent", std::move(payload)},
+                              {"isError", false}};
+    };
+
+    auto resolve_media_model = [&ctx](const nlohmann::json& args,
+                                      ModelType type,
+                                      const char* type_name) -> std::string {
+        if (args.contains("model")) {
+            if (!args["model"].is_string()) {
+                throw std::invalid_argument("model must be a string");
+            }
+            std::string model = args["model"].get<std::string>();
+            if (!model.empty()) return model;
+        }
+        const std::string wanted_type = model_type_to_string(type);
+        for (const auto& loaded : ctx.router->get_all_loaded_models()) {
+            if (loaded.value("type", std::string()) == wanted_type) {
+                const std::string model = loaded.value("model_name", std::string());
+                if (!model.empty()) return model;
+            }
+        }
+        for (const auto& [name, info] : ctx.model_manager->get_downloaded_models()) {
+            if (info.type == type) return name;
+        }
+        throw std::invalid_argument(
+            std::string("No loaded/downloaded ") + type_name +
+            " model is available; pass an explicit model or pull one first");
+    };
+
     try {
         if (tool_name == "lemonade_get_model_info") {
             validate_mcp_model_arguments(arguments, {"model_name"});
@@ -364,6 +417,53 @@ nlohmann::json call_mcp_server_capability(ServerContext& ctx,
                 body["force"] = arguments["force"];
             }
             return call_json_handler(body, "/api/v1/install");
+        }
+
+        if (tool_name == "lemonade_generate_audio") {
+            validate_mcp_model_arguments(
+                arguments, {"prompt", "model", "duration", "steps", "cfg", "seed",
+                            "lyrics", "vocal_language", "response_format"});
+            nlohmann::json body = {
+                {"model", resolve_media_model(
+                    arguments, ModelType::AUDIO_GENERATION, "audio-generation")},
+                {"prompt", required_mcp_model_string(arguments, "prompt")},
+            };
+            for (const char* key : {"duration", "steps", "cfg", "seed", "lyrics",
+                                    "vocal_language", "response_format"}) {
+                if (arguments.contains(key)) body[key] = arguments[key];
+            }
+            return call_binary_handler(
+                body, "/api/v1/audio/generations", "Generated audio.", "audio/wav");
+        }
+
+        if (tool_name == "lemonade_text_to_speech") {
+            validate_mcp_model_arguments(
+                arguments, {"input", "model", "voice", "speed", "response_format"});
+            nlohmann::json body = {
+                {"model", resolve_media_model(arguments, ModelType::TTS, "TTS")},
+                {"input", required_mcp_model_string(arguments, "input")},
+                {"stream", false},
+            };
+            for (const char* key : {"voice", "speed", "response_format"}) {
+                if (arguments.contains(key)) body[key] = arguments[key];
+            }
+            std::string fallback_mime_type = "audio/mpeg";
+            const std::string response_format =
+                body.value("response_format", std::string("mp3"));
+            if (response_format == "wav") {
+                fallback_mime_type = "audio/wav";
+            } else if (response_format == "opus") {
+                fallback_mime_type = "audio/ogg";
+            } else if (response_format == "aac") {
+                fallback_mime_type = "audio/aac";
+            } else if (response_format == "flac") {
+                fallback_mime_type = "audio/flac";
+            } else if (response_format == "pcm") {
+                fallback_mime_type = "audio/l16";
+            }
+            return call_binary_handler(
+                body, "/api/v1/audio/speech", "Generated speech audio.",
+                fallback_mime_type);
         }
 
         return mcp_model_tool_result({{"error", "Unknown Lemonade server tool: " + tool_name}}, true);
