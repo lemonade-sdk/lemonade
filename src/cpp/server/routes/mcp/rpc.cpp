@@ -210,6 +210,18 @@ nlohmann::json call_mcp_server_capability(ServerContext& ctx,
         }
         const std::string encoded = utils::JsonUtils::base64_encode(response.body);
         nlohmann::json payload = {{"mime_type", mime_type}, {"data_base64", encoded}};
+        if (body.contains("model") && body["model"].is_string()) {
+            payload["model"] = body["model"];
+        }
+        if (mime_type == "audio/pcm") {
+            if (response.has_header("X-MOSS-Sample-Rate")) {
+                payload["sample_rate"] =
+                    std::stoi(response.get_header_value("X-MOSS-Sample-Rate"));
+            }
+            if (response.has_header("X-MOSS-Channels")) {
+                payload["channels"] = std::stoi(response.get_header_value("X-MOSS-Channels"));
+            }
+        }
         nlohmann::json content = nlohmann::json::array();
         if (mime_type.rfind("audio/", 0) == 0) {
             content.push_back({{"type", "audio"}, {"data", encoded}, {"mimeType", mime_type}});
