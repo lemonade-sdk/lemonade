@@ -598,6 +598,10 @@ tools reuse Lemonade's existing server implementations:
 | Backend installation | `lemonade_install_backend` |
 | Audio generation / TTS | `lemonade_generate_audio`, `lemonade_text_to_speech` |
 
+Binary audio tool results return the resolved `model`, `mime_type`, and `data_base64`
+in `structuredContent`. For `audio/pcm`, OpenMOSS's `sample_rate` and `channels`
+are included when the backend supplies them.
+
 Lifecycle actions can change local model state and consume resources.
 MCP annotations and `confirm: true` for model deletion help clients
 present approvals, but are not authorization controls. Clients should
