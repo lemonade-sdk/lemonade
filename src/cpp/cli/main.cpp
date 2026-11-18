@@ -10,6 +10,7 @@
 #include <lemon/models/registry_types.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
+#include "manual_launch_shell.h"
 #include <lemon_cli/junie_profile.h>
 #include <lemon_cli/opencode_profile.h>
 #include <lemon_cli/pi_profile.h>
@@ -777,7 +778,11 @@ static bool check_pi_version_for_flags(const std::string& pi_binary, const CliCo
 // when the sync already loaded the launched model.
 static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                          const CliConfig& config,
-                                         bool* model_loaded = nullptr) {
+                                         bool* model_loaded = nullptr,
+                                         bool* manual_config_synced = nullptr) {
+    if (manual_config_synced != nullptr) {
+        *manual_config_synced = true;
+    }
     constexpr int default_context_window = 40960;
     // A window of 0 marks a model without a saved size until the fallback is applied.
     std::vector<lemon_cli::AgentModelEntry> models = fetch_llm_models_for_sync(client, 0);
@@ -866,6 +871,9 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                               config.model,
                                               context_window,
                                               junie_error)) {
+            if (manual_config_synced != nullptr) {
+                *manual_config_synced = false;
+            }
             std::cerr << "Warning: Failed to sync junie config: " << junie_error << std::endl;
             std::cerr << "Continuing with launch anyway..." << std::endl;
         }
@@ -906,6 +914,9 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                            config_api_key,
                                            models,
                                            error_message)) {
+        if (manual_config_synced != nullptr) {
+            *manual_config_synced = false;
+        }
         if (pi_with_key) {
             std::cerr << "Error: Failed to sync pi config: " << error_message << std::endl;
             std::cerr << pi_key_stop << std::endl;
@@ -981,76 +992,13 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     return true;
 }
 
-static std::string manual_shell_quote(const std::string& value) {
-    std::string quoted = "'";
-    for (size_t i = 0; i < value.size(); ++i) {
-        const char ch = value[i];
-#ifdef _WIN32
-        // PowerShell also treats U+2018/U+2019 as quote delimiters.
-        if (value.compare(i, 3, "\xE2\x80\x98") == 0 ||
-            value.compare(i, 3, "\xE2\x80\x99") == 0) {
-            quoted += value.substr(i, 3);
-            quoted += value.substr(i, 3);
-            i += 2;
-            continue;
-        }
-#endif
-        if (ch == '\'') {
-#ifdef _WIN32
-            quoted += "''";
-#else
-            quoted += "'\\''";
-#endif
-        } else {
-            quoted += ch;
-        }
+// Respect the same admin-key override that the normal launch path applies.
+static std::string manual_key_env(const CliConfig& config) {
+    const char* admin = std::getenv("LEMONADE_ADMIN_API_KEY");
+    if (admin != nullptr && admin[0] != '\0' && config.api_key == admin) {
+        return "LEMONADE_ADMIN_API_KEY";
     }
-    return quoted + "'";
-}
-
-// Substitute the configured key as shell data, never as quoted source text.
-static std::string manual_shell_quote_arg(const std::string& value,
-                                          const std::string& api_key) {
-    if (api_key.empty() || value.find(api_key) == std::string::npos) {
-        return manual_shell_quote(value);
-    }
-#ifdef _WIN32
-    if (value == api_key) return "$env:LEMONADE_API_KEY";
-    std::string result = "(";
-    bool first = true;
-#else
-    if (value == api_key) return "\"${LEMONADE_API_KEY}\"";
-    std::string result;
-#endif
-    size_t begin = 0;
-    size_t pos = 0;
-    while ((pos = value.find(api_key, begin)) != std::string::npos) {
-#ifdef _WIN32
-        if (pos > begin) {
-            if (!first) result += " + ";
-            result += manual_shell_quote(value.substr(begin, pos - begin));
-            first = false;
-        }
-        if (!first) result += " + ";
-        result += "$env:LEMONADE_API_KEY";
-        first = false;
-#else
-        result += manual_shell_quote(value.substr(begin, pos - begin));
-        result += "\"${LEMONADE_API_KEY}\"";
-#endif
-        begin = pos + api_key.size();
-    }
-    if (begin < value.size()) {
-#ifdef _WIN32
-        if (!first) result += " + ";
-#endif
-        result += manual_shell_quote(value.substr(begin));
-    }
-#ifdef _WIN32
-    return result + ")";
-#else
-    return result;
-#endif
+    return "LEMONADE_API_KEY";
 }
 
 static void print_manual_agent_launch(const lemon_tray::AgentConfig& agent_config,
@@ -1061,54 +1009,8 @@ static void print_manual_agent_launch(const lemon_tray::AgentConfig& agent_confi
                      "invocation with the same options before starting Pi manually.\n";
         return;
     }
-#ifdef _WIN32
-    std::cout << "\nManual launch (PowerShell):\n";
-#else
-    std::cout << "\nManual launch (POSIX shell):\n";
-#endif
-    if (!config.api_key.empty()) {
-        std::cout << "Set LEMONADE_API_KEY securely in this shell before running "
-                     "the commands below; do not paste the key into them.\n";
-    }
-    std::cout << "Environment variables:\n";
-    if (!config.api_key.empty()) {
-#ifdef _WIN32
-        std::cout << "  if (-not $env:LEMONADE_API_KEY) { throw 'Set LEMONADE_API_KEY first' }\n";
-#else
-        std::cout << "  : \"${LEMONADE_API_KEY:?Set LEMONADE_API_KEY first}\"\n";
-#endif
-    }
-    for (const auto& [key, value] : agent_config.env_vars) {
-        if (!config.api_key.empty() && key == "LEMONADE_API_KEY" &&
-            value == config.api_key) {
-            continue;  // Already provided by the user's shell.
-        }
-#ifdef _WIN32
-        std::cout << "  $env:" << key << " = "
-                  << manual_shell_quote_arg(value, config.api_key) << '\n';
-#else
-        std::cout << "  export " << key << '='
-                  << manual_shell_quote_arg(value, config.api_key) << '\n';
-#endif
-    }
-    std::cout << "Command:\n  ";
-#ifdef _WIN32
-    std::cout << "& ";
-#endif
-    std::cout << manual_shell_quote(agent_config.binary_name);
-    for (const auto& arg : agent_config.extra_args) {
-        std::cout << ' ' << manual_shell_quote_arg(arg, config.api_key);
-    }
-    std::cout << '\n';
-#ifdef _WIN32
-    if (!agent_config.binary_alternatives.empty()) {
-        std::cout << "Use the installed entry point (" << agent_config.binary_name;
-        for (const auto& alternative : agent_config.binary_alternatives) {
-            std::cout << ", " << alternative;
-        }
-        std::cout << ") in the command.\n";
-    }
-#endif
+    lemon_cli::print_manual_shell_recipe(agent_config, config.api_key,
+                                         manual_key_env(config), std::cout);
 
     if (config.agent == "opencode" || config.agent == "junie") {
         const std::string endpoint = lemon_tray::build_agent_server_base_url(
@@ -1116,6 +1018,8 @@ static void print_manual_agent_launch(const lemon_tray::AgentConfig& agent_confi
             (config.agent == "junie" ? "/v1/chat/completions" : "/v1");
         std::cout << "Lemonade provider: " << endpoint
                   << " (model: " << config.model << ")\n";
+        std::cout << "Provider config may change on a later launch; rerun the original "
+                     "launch invocation before reusing this command.\n";
     }
     std::cout << "For remote connections, adjust localhost URLs in the environment "
                  "or provider configuration.\n";
@@ -1140,8 +1044,9 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     // Pi's config sync can load the model, so it waits until pi is found.
     const bool needs_config_sync = lemon_tray::agent_needs_config_sync(config.agent);
     const bool sync_after_binary_check = config.agent == "pi";
+    bool manual_config_synced = true;
     if (needs_config_sync && !sync_after_binary_check &&
-        !sync_agent_config_for_launch(client, config)) {
+        !sync_agent_config_for_launch(client, config, nullptr, &manual_config_synced)) {
         return 1;
     }
 
@@ -1183,7 +1088,18 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         if (!agent_config.install_instructions.empty()) {
             LOG(ERROR, "AgentBuilder") << agent_config.install_instructions << std::endl;
         }
-        print_manual_agent_launch(agent_config, config);
+        if (!manual_config_synced) {
+            std::cout << "Agent provider config could not be updated. Fix the error above "
+                         "and rerun the original launch invocation with the same options "
+                         "before starting the agent manually.\n";
+        } else {
+            print_manual_agent_launch(agent_config, config);
+        }
+        if (config.recipe_options.is_object() && !config.recipe_options.empty()) {
+            std::cout << "Launch-time model options were not applied because the agent "
+                         "is missing. Install it and rerun your original launch invocation "
+                         "with the same options.\n";
+        }
         return 1;
     }
 
