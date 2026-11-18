@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <system_error>
 
 namespace fs = std::filesystem;
 using lemon::ModelManager;
@@ -35,13 +36,21 @@ static bool approx_equal(const std::optional<double>& a, double b) {
     return a.has_value() && approx_equal(*a, b);
 }
 
-static fs::path make_temp_dir() {
-    fs::path dir = fs::temp_directory_path();
-    dir /= "model_manager_cost_props_" +
-           std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    fs::create_directories(dir);
-    return dir;
-}
+struct TempDir {
+    fs::path path;
+
+    TempDir() {
+        path = fs::temp_directory_path() /
+               ("model_manager_cost_props_" +
+                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        fs::create_directories(path);
+    }
+
+    ~TempDir() {
+        std::error_code ec;
+        fs::remove_all(path, ec);
+    }
+};
 
 static json priced_model(const std::string& name) {
     return json{
@@ -86,6 +95,28 @@ static void test_router_resolves_registered_cost(ModelManager& manager) {
           approx_equal(cost.cost_output_per_million, 1.5));
     check("router resolves a registered model's latency hint",
           approx_equal(cost.latency_ms_hint, 120.0));
+}
+
+static void test_cost_cache_sees_new_price(ModelManager& manager) {
+    int resolves = 0;
+    const lemon::CostServices services = lemon::make_cached_cost_services(
+        [&manager] { return manager.models_generation(); },
+        [&manager, &resolves](const std::string& candidate) {
+            ++resolves;
+            return lemon::resolve_model_cost_info(manager.get_model_info(candidate));
+        });
+
+    check("cost_of returns the registered price",
+          approx_equal(services.cost_of("user.PricedModel").cost_input_per_million, 0.25));
+    services.cost_of("user.PricedModel");
+    check("a second cost_of is served from the cache", resolves == 1);
+
+    json repriced = priced_model("user.PricedModel");
+    repriced["cost_input_per_million"] = 0.75;
+    manager.register_user_model("user.PricedModel", repriced, "test");
+
+    check("cost_of returns the new price after re-registration",
+          approx_equal(services.cost_of("user.PricedModel").cost_input_per_million, 0.75));
 }
 
 static void test_typed_price_wins_over_extras() {
@@ -147,24 +178,40 @@ static void test_import_keeps_cost_props() {
         check((std::string("import keeps ") + key).c_str(), doc.contains(key));
     }
     check("import still drops unknown keys", !doc.contains("not_a_model_key"));
+
+    json collection = {
+        {"model_name", "ImportedPricedCollection"},
+        {"recipe", "collection.omni"},
+        {"components", json::array({"PricedComponent"})},
+        {"models", json::array({priced_model("PricedComponent")})},
+    };
+    collection["models"][0]["not_a_model_key"] = 1;
+    check("an imported collection file is accepted",
+          lemon_cli::validate_and_transform_model_json(collection));
+    const json& component = collection["models"][0];
+    for (const char* key : lemon::kCostMetadataKeys) {
+        check((std::string("import keeps a component's ") + key).c_str(),
+              component.contains(key));
+    }
+    check("import still drops a component's unknown keys",
+          !component.contains("not_a_model_key"));
 }
 
 int main() {
-    fs::path temp = make_temp_dir();
-    lemon::utils::set_cache_dir((temp / "cache").string());
-    lemon::utils::set_config_dir((temp / "config").string());
+    TempDir temp;
+    lemon::utils::set_cache_dir((temp.path / "cache").string());
+    lemon::utils::set_config_dir((temp.path / "config").string());
 
     {
         ModelManager manager;
         test_registration_preserves_cost_props(manager);
         test_router_resolves_registered_cost(manager);
+        test_cost_cache_sees_new_price(manager);
         test_unusable_values_are_dropped_on_read(manager);
     }
     test_typed_price_wins_over_extras();
     test_unusable_cost_metadata_names_bad_keys();
     test_import_keeps_cost_props();
-
-    fs::remove_all(temp);
 
     if (g_failures == 0) {
         std::printf("All model manager cost prop tests passed.\n");
