@@ -220,10 +220,10 @@ On Linux and macOS, when Lemonade creates the log directory or a log file, only 
 | `tokens_reported` | `false` when the backend returned no counts. Counts it did not report are `null`, not `0`; an aborted record still carries the estimated `output_tokens` (see `tokens_estimated`). |
 | `tokens_estimated` | `true` when the client disconnected mid-stream; `output_tokens` is the number of chunks relayed before the disconnect. |
 | `host` | The machine running Lemonade, even for remote clients. |
-| `input`, `output` | Only with `content: "full"`. `input` is the request's messages or prompt as JSON text. Past `telemetry.max_attribute_length` bytes (default 4096) it is cut and ends with `... [TRUNCATED]`; raise that setting to keep longer prompts. `output` is the full response text. |
+| `input`, `output` | Only with `content: "full"`. `input` is the request's messages or prompt as JSON text. Past `telemetry.max_attribute_length` bytes (default 4096) it is cut and ends with `... [TRUNCATED]`; raise that setting to keep longer prompts. `output` is the full response text. `telemetry.hide_inputs`, `hide_outputs` and `hide_thinking` apply here too: hidden text is written as `[REDACTED]`, and hidden thinking is removed from `output`. |
 | `session_id`, `client_ip` | Filled when available. Session IDs come from the headers described in [Session Tracking](#session-tracking--client-identification). |
 
-Records are written by a background thread, so a slow disk never delays a request. If writing falls behind, records are dropped and a `{"dropped": N}` line is written once it catches up. If a write fails (disk full, directory removed), the log disables itself and logs one warning.
+Records are written by a background thread, so a slow disk never delays a request. If writing falls behind, records are dropped and a `{"dropped": N}` line is written once it catches up. If a write fails (disk full, directory removed), the log logs a warning and drops records for 5 minutes, then tries again; `failed` in `/health` is `true` meanwhile. A fixed `path` or freed disk is picked up on that retry.
 
 `GET /api/v1/health` reports the log's state under `telemetry.usage_log`. To total output tokens for a month:
 

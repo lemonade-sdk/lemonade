@@ -292,6 +292,22 @@ static void test_write_failure_disables_log() {
     fs::remove(blocker);
 }
 
+static void test_write_failure_is_retried() {
+    auto blocker = fresh_dir("retry");
+    std::ofstream(blocker) << "not a directory";
+    UsageLog log([&] { return roomy(blocker); }, 10000, std::chrono::hours(1), std::chrono::milliseconds(20));
+    log.start();
+    log.push(record_on("2026-09-28"));
+    log.flush();
+    check("retry: log paused after failure", log.failed());
+    fs::remove(blocker);
+    for (int i = 0; i < 250 && log.failed(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    check("retry: failure clears after the retry interval", !log.failed());
+    log.push(record_on("2026-09-28", 1));
+    log.flush();
+    check("retry: records are written again", read_lines(blocker / "usage-2026-09-28.jsonl").size() == 1);
+}
+
 int main() {
     std::printf("=== RUNNING USAGE LOG C++ TESTS ===\n");
     test_record_format();
@@ -313,6 +329,7 @@ int main() {
 #endif
     test_queue_full_writes_dropped_marker();
     test_write_failure_disables_log();
+    test_write_failure_is_retried();
     std::printf("=== %s (%d failures) ===\n", g_failures ? "FAILED" : "ALL PASSED", g_failures);
     return g_failures ? 1 : 0;
 }

@@ -1351,8 +1351,12 @@ void InferenceSpan::record_usage(const std::string& status, int input_tokens, in
     e.output_estimated = estimated;
     e.session_id = session_id_;
     e.client_ip = client_ip_;
-    e.input = request_dump_;
-    e.output = output;
+    auto* config = RuntimeConfig::global();
+    const bool hide_inputs = config && config->telemetry_hide_inputs();
+    const bool hide_outputs = config && config->telemetry_hide_outputs();
+    const bool hide_thinking = config && config->telemetry_hide_thinking();
+    e.input = hide_inputs ? "[REDACTED]" : request_dump_;
+    e.output = hide_outputs ? "[REDACTED]" : hide_thinking ? strip_thinking(output) : output;
     usage::record(e);
 }
 

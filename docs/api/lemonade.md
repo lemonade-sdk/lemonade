@@ -1781,7 +1781,7 @@ This endpoint does not take any parameters.
     - `enabled` - Whether `telemetry.usage_log.enabled` is set
     - `path` - Directory the files are written to
     - `disk_usage_bytes` - Total size of the usage files in `path`
-    - `failed` - `true` if a write failed and the log disabled itself
+    - `failed` - `true` after a write failed: records are dropped until the log retries, 5 minutes later
 - `pinned_helper_models` - Loaded pinned routing-helper models, counted per model type.
   - How many pinned routing-helper models of this type are loaded.
 <!-- END GENERATED: lemonade.health -->

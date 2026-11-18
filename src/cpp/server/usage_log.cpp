@@ -145,8 +145,9 @@ nlohmann::ordered_json make_record(const UsageEvent& e, bool include_content) {
 }
 
 UsageLog::UsageLog(std::function<UsageLogOptions()> options, size_t queue_capacity,
-                   std::chrono::milliseconds retention_interval)
-    : options_(std::move(options)), capacity_(queue_capacity), retention_interval_(retention_interval) {}
+                   std::chrono::milliseconds retention_interval, std::chrono::milliseconds retry_interval)
+    : options_(std::move(options)), capacity_(queue_capacity), retention_interval_(retention_interval),
+      retry_interval_(retry_interval) {}
 
 UsageLog::~UsageLog() {
     {
@@ -211,9 +212,15 @@ void UsageLog::run() {
         bool active = false;
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            // The timeout runs age retention while no requests arrive.
-            cv_.wait_for(lock, retention_interval_, [this] { return stop_ || !queue_.empty() || dropped_ > 0; });
+            // The timeout runs age retention while no requests arrive, and
+            // retries a failed log, which may have a new path or free disk by then.
+            bool woken = cv_.wait_for(lock, failed_ ? retry_interval_ : retention_interval_,
+                                      [this] { return stop_ || !queue_.empty() || dropped_ > 0; });
             if (stop_ && queue_.empty() && dropped_ == 0) return;
+            if (failed_ && !woken) {
+                failed_ = false;
+                LOG(INFO, "UsageLog") << "Retrying the usage log after a write failure" << std::endl;
+            }
             batch.swap(queue_);
             dropped = std::exchange(dropped_, 0);
             active = !failed_;
@@ -231,7 +238,7 @@ void UsageLog::run() {
                 }
                 prune(opts);
             } catch (const std::exception& e) {
-                LOG(WARNING, "UsageLog") << "Usage log disabled after write failure: " << e.what() << std::endl;
+                LOG(WARNING, "UsageLog") << "Usage log paused after write failure: " << e.what() << std::endl;
                 file_.close();
                 std::lock_guard<std::mutex> lock(mutex_);
                 failed_ = true;

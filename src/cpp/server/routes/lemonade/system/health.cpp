@@ -103,7 +103,7 @@ ordered_json health_schema() {
                             "enabled": {"type": "boolean", "description": "Whether `telemetry.usage_log.enabled` is set"},
                             "path": {"type": "string", "description": "Directory the files are written to"},
                             "disk_usage_bytes": {"type": "integer", "description": "Total size of the usage files in `path`"},
-                            "failed": {"type": "boolean", "description": "`true` if a write failed and the log disabled itself"}
+                            "failed": {"type": "boolean", "description": "`true` after a write failed: records are dropped until the log retries, 5 minutes later"}
                         }
                     }
                 }
