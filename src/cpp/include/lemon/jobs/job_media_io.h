@@ -1,12 +1,85 @@
 #pragma once
 
+#include "lemon/jobs/job_media_limits.h"
+#include "lemon/jobs/job_ops.h"
 #include "lemon/jobs/job_types.h"
 
 #include <map>
+#include <optional>
 #include <string>
+#include <string_view>
 
 namespace lemon {
 namespace jobs {
+
+class MediaSinkCapture {
+public:
+    explicit MediaSinkCapture(const CancelFlag& cancel) : cancel_(cancel) {}
+
+    bool write(const char* data, size_t len) {
+        if (!writable()) return false;
+        if (len == 0) return true;
+        // A byte stream reports failure by writing the error object after the media,
+        // so chunk-level detection catches it before it becomes part of the output.
+        if (len <= 64u * 1024u) {
+            std::string_view chunk(data, len);
+            const auto start = chunk.find_first_not_of(" \r\n");
+            if (start != std::string_view::npos) {
+                chunk.remove_prefix(start);
+                if (chunk.front() == '{' || chunk.rfind("data: ", 0) == 0) {
+                    if (chunk.front() != '{') chunk.remove_prefix(6);
+                    auto payload = nlohmann::json::parse(chunk, nullptr, false);
+                    if (payload.is_object() && payload.contains("error")) {
+                        stream_error_ = std::move(payload);
+                        return false;
+                    }
+                }
+            }
+        }
+        if (!sse_.has_value()) {
+            const std::string_view chunk(data, len);
+            sse_ = chunk.rfind("event: ", 0) == 0 || chunk.rfind("data: ", 0) == 0;
+        }
+        if (len > kMaxJobMediaOutputBytes - buffer_.size()) {
+            overflow_ = true;
+            return false;
+        }
+        buffer_.append(data, len);
+        if (*sse_) {
+            partial_line_.append(data, len);
+            size_t start = 0;
+            size_t end;
+            while ((end = partial_line_.find('\n', start)) != std::string::npos) {
+                const std::string line = partial_line_.substr(start, end - start);
+                start = end + 1;
+                if (line.rfind("data: ", 0) != 0) continue;
+                auto payload = nlohmann::json::parse(line.substr(6), nullptr, false);
+                if (payload.is_object() && payload.contains("error")) {
+                    stream_error_ = std::move(payload);
+                    return false;
+                }
+            }
+            partial_line_.erase(0, start);
+        }
+        return true;
+    }
+
+    bool writable() const {
+        return !cancel_.load() && !overflow_ && stream_error_.is_null();
+    }
+
+    const std::string& buffer() const { return buffer_; }
+    bool overflowed() const { return overflow_; }
+    const nlohmann::json& stream_error() const { return stream_error_; }
+
+private:
+    const CancelFlag& cancel_;
+    std::string buffer_;
+    bool overflow_ = false;
+    std::optional<bool> sse_;
+    std::string partial_line_;
+    nlohmann::json stream_error_;
+};
 
 inline std::string data_uri_payload(const std::string& value, std::string* content_type,
                                    bool* is_base64 = nullptr) {

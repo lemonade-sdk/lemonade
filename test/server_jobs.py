@@ -1750,7 +1750,9 @@ class JobEngineTests(unittest.TestCase):
             )
             self.assertTrue(job.get("id"), f"job creation for {op} returned no id")
             done = self.poll_status(job["id"], "completed", timeout=60)
-            self.assertEqual(self.step_by_id(done, "s")["op"], op)
+            step = self.step_by_id(done, "s")
+            self.assertEqual(step["op"], op)
+            self.assertNotIn("unknown op", step.get("error", "").lower(), step)
 
     def test_generation_op_fails_without_backend(self):
         """Generation ops fail gracefully when no backend supports them."""

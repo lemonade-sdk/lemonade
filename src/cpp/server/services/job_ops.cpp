@@ -7,7 +7,6 @@
 #include <optional>
 #include <set>
 #include <string>
-#include <string_view>
 
 #include <lemon/utils/aixlog.hpp>
 
@@ -77,77 +76,28 @@ lemon::jobs::json media_op_result(const std::string& op, lemon::jobs::CancelFlag
                                   const std::string& mime_type,
                                   const std::string& response_format,
                                   const std::map<std::string, std::string>& headers = {}) {
-    std::string buf;
-    bool overflow = false;
-    std::optional<bool> sse;
-    std::string partial_line;
-    nlohmann::json stream_error;
+    lemon::jobs::MediaSinkCapture capture(cancel);
     httplib::DataSink sink;
-    sink.write = [&](const char* data, size_t len) {
-        if (cancel.load() || overflow || !stream_error.is_null()) return false;
-        if (len == 0) return true;
-        // A byte stream reports failure by writing the error object after the media,
-        // so chunk-level detection catches it before it becomes part of the output.
-        if (len <= 64u * 1024u) {
-            std::string_view chunk(data, len);
-            const auto start = chunk.find_first_not_of(" \r\n");
-            if (start != std::string_view::npos) {
-                chunk.remove_prefix(start);
-                if (chunk.front() == '{' || chunk.rfind("data: ", 0) == 0) {
-                    if (chunk.front() != '{') chunk.remove_prefix(6);
-                    auto payload = nlohmann::json::parse(chunk, nullptr, false);
-                    if (payload.is_object() && payload.contains("error")) {
-                        stream_error = std::move(payload);
-                        return false;
-                    }
-                }
-            }
-        }
-        if (!sse.has_value()) {
-            const std::string_view chunk(data, len);
-            sse = chunk.rfind("event: ", 0) == 0 || chunk.rfind("data: ", 0) == 0;
-        }
-        if (len > lemon::jobs::kMaxJobMediaOutputBytes - buf.size()) {
-            overflow = true;
-            return false;
-        }
-        buf.append(data, len);
-        if (*sse) {
-            partial_line.append(data, len);
-            size_t start = 0;
-            size_t end;
-            while ((end = partial_line.find('\n', start)) != std::string::npos) {
-                const std::string line = partial_line.substr(start, end - start);
-                start = end + 1;
-                if (line.rfind("data: ", 0) != 0) continue;
-                auto payload = nlohmann::json::parse(line.substr(6), nullptr, false);
-                if (payload.is_object() && payload.contains("error")) {
-                    stream_error = std::move(payload);
-                    return false;
-                }
-            }
-            partial_line.erase(0, start);
-        }
-        return true;
-    };
-    sink.is_writable = [&]() { return !cancel.load() && !overflow && stream_error.is_null(); };
+    sink.write = [&](const char* data, size_t len) { return capture.write(data, len); };
+    sink.is_writable = [&]() { return capture.writable(); };
     sink.done = []() {};
     {
         WrappedServer::RequestCancelScope cancel_scope(utils::RequestCancelToken{&cancel});
         generate(sink);
     }
     throw_if_cancelled(cancel);
-    if (!stream_error.is_null())
-        throw lemon::jobs::JobError(424, error_message(stream_error, op + " failed"));
-    if (overflow) {
+    if (!capture.stream_error().is_null())
+        throw lemon::jobs::JobError(424, error_message(capture.stream_error(), op + " failed"));
+    if (capture.overflowed()) {
         throw lemon::jobs::JobError(413, op + " output exceeds the job media output limit of " +
                                              std::to_string(lemon::jobs::kMaxJobMediaOutputBytes) + " bytes");
     }
-    if (buf.empty()) throw lemon::jobs::JobError(502, op + " produced no output");
-    if (auto error_payload = extract_error_payload(buf); !error_payload.is_null())
+    if (capture.buffer().empty()) throw lemon::jobs::JobError(502, op + " produced no output");
+    if (auto error_payload = extract_error_payload(capture.buffer()); !error_payload.is_null())
         throw lemon::jobs::JobError(424, error_message(error_payload, op + " failed"));
     return lemon::jobs::media_result_json(
-        lemon::utils::JsonUtils::base64_encode(buf), buf.size(), mime_type, response_format, headers);
+        lemon::utils::JsonUtils::base64_encode(capture.buffer()), capture.buffer().size(),
+        mime_type, response_format, headers);
 }
 
 } // namespace

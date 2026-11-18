@@ -11,7 +11,97 @@ static void check(const char* name, bool ok) {
     if (!ok) ++g_failures;
 }
 
+static void test_media_sink_capture() {
+    CancelFlag cancel{false};
+    const std::string audio("RIFF\0\x01\xff\nWAVE", 12);
+    {
+        MediaSinkCapture capture(cancel);
+        check("capture: initially writable", capture.writable());
+        check("capture: empty write accepted", capture.write(nullptr, 0));
+        check("capture: audio accepted", capture.write(audio.data(), audio.size()));
+        check("capture: audio bytes unchanged", capture.buffer() == audio);
+        check("capture: audio remains writable", capture.writable() &&
+                  !capture.overflowed() && capture.stream_error().is_null());
+        const std::string tail = "event: error\ndata: {\"error\":\"inside binary\"}\n\n";
+        check("capture: first chunk fixes binary framing", capture.write(tail.data(), tail.size()) &&
+                  capture.buffer() == audio + tail && capture.stream_error().is_null());
+    }
+    {
+        MediaSinkCapture capture(cancel);
+        const std::string bytes(kMaxJobMediaOutputBytes, 'a');
+        check("capture: exactly 8 MiB accepted", capture.write(bytes.data(), bytes.size()) &&
+                  capture.buffer() == bytes && !capture.overflowed() && capture.writable());
+        check("capture: one byte over rejected", !capture.write("b", 1) && capture.overflowed());
+        check("capture: overflow preserves accepted bytes", capture.buffer() == bytes);
+        check("capture: overflow stops writability", !capture.writable());
+        check("capture: overflow stops subsequent writes", !capture.write("c", 1) &&
+                  !capture.write(nullptr, 0) && capture.buffer() == bytes);
+    }
+    {
+        MediaSinkCapture capture(cancel);
+        const std::string bytes(kMaxJobMediaOutputBytes + 1, 'a');
+        check("capture: oversized first chunk rejected", !capture.write(bytes.data(), bytes.size()) &&
+                  capture.overflowed() && capture.buffer().empty() && !capture.writable());
+    }
+    for (const std::string error_chunk : {
+             "{\"error\":{\"message\":\"backend failed\"}}",
+             " \r\ndata: {\"error\":{\"message\":\"backend failed\"}}\n\n"}) {
+        MediaSinkCapture capture(cancel);
+        const bool accepted = capture.write(audio.data(), audio.size());
+        check("capture: error after audio stops write",
+              accepted && !capture.write(error_chunk.data(), error_chunk.size()));
+        check("capture: error after audio recorded", capture.stream_error() ==
+                  nlohmann::json{{"error", {{"message", "backend failed"}}}});
+        check("capture: error chunk excluded from media", capture.buffer() == audio);
+        check("capture: stream error stops writability", !capture.writable());
+        check("capture: stream error stops subsequent writes", !capture.write("more", 4) &&
+                  !capture.write(nullptr, 0) && capture.buffer() == audio);
+    }
+    for (const std::string first : {"event: audio\n", "data: {\"audio\":\"YWJj\"}\n\n"}) {
+        MediaSinkCapture capture(cancel);
+        const std::string media = "data: {\"audio\":\"YWJj\"}\n\n";
+        check("capture: empty write does not choose framing", capture.write(nullptr, 0));
+        check("capture: ordinary SSE event/data frames accepted",
+              capture.write(first.data(), first.size()) && capture.write(media.data(), media.size()) &&
+                  capture.buffer() == first + media && capture.stream_error().is_null() &&
+                  capture.writable());
+        const std::string prefix = "event: error\ndata: {\"err";
+        const std::string suffix = "or\":{\"message\":\"split failure\"}}\r\n\n";
+        check("capture: partial SSE error line accepted", capture.write(prefix.data(), prefix.size()) &&
+                  capture.stream_error().is_null() && capture.writable());
+        check("capture: split SSE error line stops write", !capture.write(suffix.data(), suffix.size()));
+        check("capture: split SSE error recorded", capture.stream_error() ==
+                  nlohmann::json{{"error", {{"message", "split failure"}}}});
+        check("capture: scanned SSE bytes retained", capture.buffer() == first + media + prefix + suffix);
+        check("capture: scanned SSE error stops writability", !capture.writable());
+        check("capture: scanned SSE error stops later writes", !capture.write("more", 4) &&
+                  capture.buffer() == first + media + prefix + suffix);
+    }
+    {
+        MediaSinkCapture capture(cancel);
+        const std::string media = "event: audio\ndata: {\"audio\":\"YWJj\"}\n\n";
+        const std::string error = "event: error\ndata: {\"error\":\"frame failure\"}\n\n";
+        check("capture: media SSE frame accepted", capture.write(media.data(), media.size()));
+        check("capture: later complete SSE error frame rejected", !capture.write(error.data(), error.size()));
+        check("capture: later SSE error frame recorded with media retained",
+              capture.stream_error() == nlohmann::json{{"error", "frame failure"}} &&
+                  capture.buffer() == media + error && !capture.writable());
+    }
+    {
+        MediaSinkCapture capture(cancel);
+        check("capture: audio before cancellation accepted", capture.write(audio.data(), audio.size()));
+        cancel.store(true);
+        check("capture: cancellation stops writability", !capture.writable());
+        check("capture: cancellation stops writes", !capture.write("more", 4) &&
+                  !capture.write(nullptr, 0) && capture.buffer() == audio);
+        check("capture: cancellation does not set error or overflow",
+              capture.stream_error().is_null() && !capture.overflowed());
+    }
+}
+
 int main() {
+    test_media_sink_capture();
+
     bool is_base64 = false;
     std::string content_type = "unchanged";
     check("data URI: base64 payload",
