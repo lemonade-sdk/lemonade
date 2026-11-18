@@ -588,11 +588,19 @@ namespace lemon::backends {
             LOG(INFO, spec.log_name()) << "Installing " << spec.binary << " (version: "
                     << expected_version << ")" << std::endl;
 
-            // Resolve any '*' wildcard in the asset name (e.g. the macOS runner
-            // version in sd-cpp's Darwin asset) to the concrete published name
-            // before building any download URL. No-op when there is no wildcard.
-            const std::string filename =
-                resolve_asset_wildcard(repo, expected_version, asset_pattern, spec);
+            // sd-cpp Linux assets have two known Ubuntu names. Try the original
+            // 24.04 name directly; a 404 can fall back to 26.04 without a
+            // rate-limited GitHub Releases API call. Other wildcards are unchanged.
+            std::string filename = asset_pattern;
+            const std::string ubuntu_marker = "Linux-Ubuntu-*";
+            const auto ubuntu_pos = filename.find(ubuntu_marker);
+            const bool sdcpp_ubuntu_asset = spec.recipe == "sd-cpp" &&
+                                             ubuntu_pos != std::string::npos;
+            if (sdcpp_ubuntu_asset) {
+                filename.replace(ubuntu_pos, ubuntu_marker.size(), "Linux-Ubuntu-24.04");
+            } else {
+                filename = resolve_asset_wildcard(repo, expected_version, asset_pattern, spec);
+            }
 
             // Stage the new install in a sibling directory so the currently
             // installed (working) binary is left untouched until the download is
@@ -741,6 +749,16 @@ namespace lemon::backends {
 
                 auto download_result = utils::HttpClient::download_file(
                     url, zip_path, http_progress_cb, {}, archive_download_opts);
+                if (!download_result.success && download_result.http_code == 404 && sdcpp_ubuntu_asset) {
+                    const std::string old_ubuntu = "Ubuntu-24.04";
+                    filename.replace(filename.find(old_ubuntu), old_ubuntu.size(), "Ubuntu-26.04");
+                    url = base_download_url + filename;
+                    archive_download_opts.expected_hash = lookup_expected_asset_hash(
+                        spec.recipe, backend, expected_version, repo, filename);
+                    LOG(INFO, spec.log_name()) << "Trying Ubuntu 26.04 asset: " << filename << std::endl;
+                    download_result = utils::HttpClient::download_file(
+                        url, zip_path, http_progress_cb, {}, archive_download_opts);
+                }
 
                 if (!download_result.success) {
                     throw std::runtime_error("Failed to download " + spec.binary + " from: " + url +
