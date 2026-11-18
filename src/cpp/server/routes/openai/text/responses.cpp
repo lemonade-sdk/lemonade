@@ -1,6 +1,6 @@
-#include <lemon/utils/aixlog.hpp>
-
 #include <algorithm>
+
+#include <lemon/utils/aixlog.hpp>
 
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
@@ -97,7 +97,10 @@ const RouteArg kPreviousResponseId{
 
 bool non_empty(const json& value) {
     if (value.is_string()) return !value.get_ref<const std::string&>().empty();
-    if (value.is_object()) return !value.empty();
+    if (value.is_object()) {
+        const auto id = value.find("id");
+        return id != value.end() && non_empty(*id);
+    }
     return false;
 }
 
@@ -146,9 +149,9 @@ public:
             "A request that continues earlier responses, through `previous_response_id`, "
             "`conversation` or an `item_reference` input, is rejected on a `collection.router` "
             "model, since the candidate picked for this turn may not be the one holding them. "
-            "Resend the full `input`, or send the request to the candidate named in the earlier "
-            "response's `x_lemonade_route.route_to`, which a streamed response carries on its first "
-            "event.",
+            "Resend the full `input`. If the candidate named in the earlier response's "
+            "`x_lemonade_route.route_to` (on the first event of a streamed response) supports "
+            "continuation, the request can also go to it directly; llama.cpp does not.",
         };
         s.args = {
             kInput, model_loading::kModel, kMaxOutputTokens, kPreviousResponseId, generation::kTemperature,
@@ -204,7 +207,9 @@ protected:
         std::optional<ModelInfo> collection;
         try {
             collection = router_collection_info(ctx_, req.model);
-        } catch (const std::exception&) {
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Router collection dispatch failed for '" << req.model
+                                   << "': " << e.what() << std::endl;
         }
         if (collection && collection->route_policy && references_backend_state(req.body)) {
             LOG(INFO, "Server") << "Rejected /responses continuing earlier responses on router "
@@ -213,9 +218,9 @@ protected:
                 res, kRouterResponseChain,
                 "This request continues earlier responses, which are held by the backend that "
                 "served them, and router collection '" + req.model + "' may select a different "
-                "candidate for this turn. Resend the full 'input', or send the request to the "
-                "candidate named in the earlier response's 'x_lemonade_route.route_to' (on the "
-                "first event when it was streamed).");
+                "candidate for this turn. Resend the full 'input'. If the candidate named in the "
+                "earlier response's 'x_lemonade_route.route_to' supports continuation, the request "
+                "can also go to it directly.");
             return false;
         }
         // Router policies call backends here, before run() does.
