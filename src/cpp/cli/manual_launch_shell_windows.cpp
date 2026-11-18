@@ -67,10 +67,6 @@ void print_manual_shell_recipe(const lemon_tray::AgentConfig& agent_config,
                "the commands below; do not paste the key into them.\n";
     }
     out << "Environment variables:\n";
-    if (!api_key.empty()) {
-        out << "  if (-not $env:" << key_env << ") { throw 'Set "
-            << key_env << " first' }\n";
-    }
     for (const auto& [key, value] : agent_config.env_vars) {
         if (!api_key.empty() && key == key_env && value == api_key) {
             continue;  // The caller supplies the effective credential.

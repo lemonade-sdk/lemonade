@@ -1030,8 +1030,6 @@ static void print_manual_agent_launch(const lemon_tray::AgentConfig& agent_confi
         std::cout << "Provider config may change on a later launch; rerun the original "
                      "launch invocation before reusing this command.\n";
     }
-    std::cout << "For remote connections, adjust localhost URLs in the environment "
-                 "or provider configuration.\n";
 }
 
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {

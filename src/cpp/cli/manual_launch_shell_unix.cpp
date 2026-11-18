@@ -49,7 +49,6 @@ void print_manual_shell_recipe(const lemon_tray::AgentConfig& agent_config,
     }
     out << "Environment variables:\n";
     if (!api_key.empty()) {
-        out << "  : \"${" << key_env << ":?Set " << key_env << " first}\"\n";
         out << "  export " << key_env << '\n';
     }
     for (const auto& [key, value] : agent_config.env_vars) {
