@@ -22,6 +22,7 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <chrono>
@@ -1013,7 +1014,8 @@ static void print_manual_agent_launch(const lemon_tray::AgentConfig& agent_confi
     if (config.agent == "junie") {
         const char* junie_home = std::getenv("JUNIE_HOME");
         if (junie_home && *junie_home) {
-            manual_config.env_vars.emplace_back("JUNIE_HOME", junie_home);
+            manual_config.env_vars.emplace_back(
+                "JUNIE_HOME", std::filesystem::absolute(junie_home).string());
         }
     }
     lemon_cli::print_manual_shell_recipe(manual_config, config.api_key,
