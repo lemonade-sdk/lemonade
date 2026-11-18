@@ -1557,10 +1557,16 @@ jobs:
               git add -N -- docs/api
               git diff --binary HEAD -- docs/tools/api_examples_cache.json docs/api > "$docs_patch"
               if [[ -s "$docs_patch" ]] &&
-                 ! git -C "$worktree" apply --3way --index "$docs_patch"; then
-                # Generated-file conflicts use the recorded candidate only for
-                # conflicted paths; non-conflicting branch edits stay intact.
-                mapfile -d '' -t conflicts < <(git -C "$worktree" diff --name-only --diff-filter=U -z -- docs/tools/api_examples_cache.json docs/api)
+                 ! apply_output=$(git -C "$worktree" apply --3way --index "$docs_patch" 2>&1); then
+                printf '%s\n' "$apply_output" >&2
+                if [[ "$apply_output" == *'does not exist in index'* ]]; then
+                  # The bot branch may lack a generated page added on main.
+                  # Use recorded versions only for files changed by this patch.
+                  mapfile -d '' -t conflicts < <(git diff --name-only -z HEAD -- docs/tools/api_examples_cache.json docs/api)
+                else
+                  # Ordinary 3-way conflicts: preserve cleanly merged branch edits.
+                  mapfile -d '' -t conflicts < <(git -C "$worktree" diff --name-only --diff-filter=U -z -- docs/tools/api_examples_cache.json docs/api)
+                fi
                 if (( ${#conflicts[@]} == 0 )); then
                   echo "::error::API docs replay failed without resolvable conflicts."
                   exit 1
@@ -1571,7 +1577,7 @@ jobs:
                     cp -- "$file" "$worktree/$file"
                     git -C "$worktree" add -- "$file"
                   else
-                    git -C "$worktree" rm -f -- "$file"
+                    git -C "$worktree" rm -f --ignore-unmatch -- "$file"
                   fi
                 done
               fi
