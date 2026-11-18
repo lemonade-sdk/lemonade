@@ -691,8 +691,13 @@ std::vector<ContainerMount> ContainerManager::model_mounts(const std::string& ho
     if (ec) {
         throw std::runtime_error("Model file '" + host_path + "' does not exist");
     }
-    if (!fs::is_directory(source, ec)) {
+    if (fs::is_regular_file(source, ec)) {
         return {{source.string(), destination}};
+    }
+    // A socket or FIFO would pass a channel, such as the container tool's own
+    // socket, into the backend; a read-only mount does not stop connect().
+    if (!fs::is_directory(source, ec)) {
+        throw std::runtime_error("Model file '" + host_path + "' is not a regular file");
     }
     std::vector<ContainerMount> mounts;
     const fs::path named = fs::path(host_path).lexically_normal();
