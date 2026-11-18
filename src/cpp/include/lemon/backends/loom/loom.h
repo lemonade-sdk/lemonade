@@ -52,15 +52,15 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         // gfx120X because Windows names the R9700 and RX 9070 by family only; load() turns
         // away the gfx1200 parts the family also covers.
-        {"rocm", BackendTier::Experimental, BackendFormat::Native, {"windows", "linux"},
+        {"hrx", BackendTier::Experimental, BackendFormat::Native, {"windows", "linux"},
          {{"amd_gpu", {"gfx1151", "gfx120X"}}},
          "AMD Strix Halo (gfx1151), Radeon gfx1201 32 GB (AI PRO R9700), Radeon gfx1201 16 GB (RX 9070 XT, RX 9070)",
          {{"gfx1151", {/*os*/ {"windows", "linux"}, /*channels*/ {}}},
           {"gfx120X", {/*os*/ {"windows", "linux"}, /*channels*/ {}}}}},
     },
     /*about*/ {
-        {"rocm", {"AMD's experimental HRX Loom runtime, serving compiled Loom model bundles.",
-                 "AMD Loom", "AMD Loom", "Apache-2.0", "https://github.com/ROCm/hrx-system"}},
+        {"hrx", {"AMD's experimental HRX Loom runtime, serving compiled Loom model bundles.",
+                "AMD Loom", "AMD Loom", "Apache-2.0", "https://github.com/ROCm/hrx-system"}},
     },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
@@ -73,7 +73,7 @@ inline const BackendDescriptor descriptor = {
     /*self_manages_downloads*/ true,  // a bundle pulls GGUFs from the repos its card pins
     /*takes_args*/      true,
     /*arg_variants*/    {},
-    /*bin_variants*/    {"rocm"},
+    /*bin_variants*/    {"hrx"},
     /*config_extra*/    nlohmann::json::object(),
 };
 

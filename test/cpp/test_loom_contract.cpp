@@ -384,11 +384,11 @@ void check_card_metadata() {
 
 void check_installer_contract() {
 #if defined(_WIN32)
-    const auto params = LoomServer::get_install_params("rocm", "v0.2.0");
+    const auto params = LoomServer::get_install_params("hrx", "v0.2.0");
     check("Windows installs the win_amd64 wheel",
           params.filename == "hrx_loom-0.2.0-py3-none-win_amd64.whl");
 #elif defined(__linux__) && (defined(__x86_64__) || defined(__amd64__))
-    const auto params = LoomServer::get_install_params("rocm", "v0.2.0");
+    const auto params = LoomServer::get_install_params("hrx", "v0.2.0");
     check("Linux installs the manylinux wheel",
           params.filename == "hrx_loom-0.2.0-py3-none-manylinux_2_39_x86_64.whl");
 #endif
@@ -424,7 +424,7 @@ void check_installer_contract() {
 void check_descriptor_contract() {
     const auto& support = loom::descriptor.support;
     check("Loom has one experimental native variant",
-          support.size() == 1 && support[0].backend == "rocm" &&
+          support.size() == 1 && support[0].backend == "hrx" &&
               support[0].tier == lemon::BackendTier::Experimental);
     if (support.size() == 1) {
         const auto gpus = support[0].devices.find("amd_gpu");
@@ -437,7 +437,7 @@ void check_descriptor_contract() {
     std::ifstream versions_stream(LOOM_TEST_BACKEND_VERSIONS_PATH);
     const auto versions = json::parse(versions_stream);
     check("Bundles are fetched for the pinned Loom release",
-          versions["loom"]["rocm"] == loom::kBundleRevision);
+          versions["loom"]["hrx"] == loom::kBundleRevision);
 }
 
 void check_catalog_contract() {

@@ -196,7 +196,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     </tr>
     <tr>
       <td rowspan="1"><code>loom</code></td>
-      <td><code>rocm</code>†</td>
+      <td><code>hrx</code>†</td>
       <td>AMD Strix Halo (gfx1151), Radeon gfx1201 32 GB (AI PRO R9700), Radeon gfx1201 16 GB (RX 9070 XT, RX 9070)</td>
       <td>Windows, Linux</td>
     </tr>

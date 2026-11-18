@@ -17,7 +17,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, halobox, metal, nathanw, rocm, system, vulkan |
 | `llamacpp-hrx` | HRX GPU | no | yes | hrx |
-| `loom` | Loom | no | no | rocm |
+| `loom` | Loom | no | no | hrx |
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, vulkan |
@@ -56,7 +56,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `llamacpp` | nathanw | guest | container | linux | amd_gpu (gfx1151) |
 | `llamacpp` | halobox | guest | container | linux | amd_gpu (gfx1151) |
 | `llamacpp-hrx` | hrx | experimental | native | linux | amd_gpu (gfx1100, gfx1151) |
-| `loom` | rocm | experimental | native | linux, windows | amd_gpu (gfx1151, gfx120X) |
+| `loom` | hrx | experimental | native | linux, windows | amd_gpu (gfx1151, gfx120X) |
 | `moonshine` | cpu | core | python | windows | cpu (x86_64) |
 | `moonshine` | cpu | core | python | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | core | python | macos | cpu (arm64) |

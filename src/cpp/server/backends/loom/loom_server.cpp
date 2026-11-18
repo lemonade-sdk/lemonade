@@ -37,7 +37,7 @@ namespace backends {
 
 namespace {
 
-constexpr const char* kBackend = "rocm";
+constexpr const char* kBackend = "hrx";
 constexpr long kBundleTimeoutSeconds = 3600;
 
 fs::path store_root() {
