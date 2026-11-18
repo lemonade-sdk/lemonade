@@ -15,6 +15,10 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace lemon {
@@ -119,7 +123,10 @@ std::string ContainerProcess::start(const ServerCommand& command) {
                                  ", which is not one Lemonade runs container backends from");
     }
     const RuntimeConfig* config = RuntimeConfig::global();
-    const int instance = config ? config->port() : 0;
+    const std::string own_container = manager.own_container();
+    const std::string instance = own_container.empty()
+                                     ? std::to_string(config ? config->port() : 0)
+                                     : own_container.substr(0, 12);
     name_ = ContainerManager::container_name(instance, recipe_, backend_, model_);
     manager.remove_container(name_);
 
@@ -171,15 +178,34 @@ std::string ContainerProcess::start(const ServerCommand& command) {
         spec.command.push_back(rewrite(arg));
     }
 
-    manager.create_network(name_);
-    spec.network = name_;
+    // From inside its own container, lemond reaches its backends on the
+    // internal network it shares with them, which has no route out; lemond
+    // refuses connections arriving on it, so a backend cannot use lemond's API
+    // to reach the internet either. A backend that adds no capability joins
+    // lemond's PID namespace, so the kernel kills it when lemond dies, even by
+    // SIGKILL; one that adds any, such as SYS_PTRACE, could reach lemond's
+    // processes there, and through them lemond's mounted socket.
+    if (own_container.empty()) {
+        manager.create_network(name_);
+        spec.network = name_;
+    } else {
+        spec.network = manager.backend_network();
+        if (policy_.cap_add.empty()) {
+            spec.pid = "container:" + own_container;
+#ifdef __linux__
+            // A backend in lemond's PID namespace, as the same host account
+            // under rootless Podman, could otherwise read lemond's memory.
+            ::prctl(PR_SET_DUMPABLE, 0);
+#endif
+        }
+    }
 
     std::vector<std::string> command_line = manager.run_command(spec);
     LOG(INFO, "ContainerProcess") << "Starting " << name_ << ": "
                                   << join_command_line(command_line) << std::endl;
     spawn(std::move(command_line), "", {});
 
-    if (manager.rootless_podman()) {
+    if (own_container.empty() && manager.rootless_podman()) {
         return "127.0.0.1";
     }
     // The tool attaches the container's address asynchronously after `run` starts.

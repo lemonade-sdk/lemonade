@@ -7,12 +7,16 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <nlohmann/json.hpp>
+#include <regex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
 
 #include "lemon/model_manager.h"
+#include "lemon/utils/network_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 
@@ -21,6 +25,7 @@
 #ifndef _WIN32
 #include <grp.h>
 #include <pwd.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -38,6 +43,9 @@ constexpr int kCommandTimeoutSeconds = 60;
 constexpr int kDockerInfoTimeoutSeconds = 10;
 constexpr int kPullTimeoutSeconds = 3 * 3600;
 constexpr const char* kRelogin = "Log out and back in";
+constexpr const char* kBackendNetwork = "lemonade-backends";
+constexpr const char* kContainerDocs =
+    "https://lemonade-server.ai/docs/guide/install/docker/#container-backends";
 
 std::string trim(const std::string& value) {
     const auto first = value.find_first_not_of(" \t\r\n");
@@ -87,6 +95,26 @@ bool account_opens_gpu_devices() {
         if (fs::exists(node, ec) && ::access(node.c_str(), R_OK | W_OK) != 0) return false;
     }
     return true;
+}
+
+std::string gpu_node_group() {
+    std::vector<fs::path> nodes = {"/dev/kfd"};
+    std::error_code ec;
+    std::vector<fs::path> render;
+    for (const auto& entry : fs::directory_iterator("/dev/dri", ec)) {
+        if (entry.path().filename().string().rfind("renderD", 0) == 0) {
+            render.push_back(entry.path());
+        }
+    }
+    std::sort(render.begin(), render.end());
+    nodes.insert(nodes.end(), render.begin(), render.end());
+    for (const auto& node : nodes) {
+        struct stat info = {};
+        if (::stat(node.c_str(), &info) == 0) {
+            return std::to_string(static_cast<unsigned long>(info.st_gid));
+        }
+    }
+    return "";
 }
 
 std::string process_account() {
@@ -155,12 +183,18 @@ std::string name_token(const std::string& token) {
 ContainerHost ContainerHost::real() {
     ContainerHost host;
     host.on_path = [](const std::string& name) { return !find_executable_in_path(name).empty(); };
+    host.exists = [](const std::string& path) {
+        std::error_code ec;
+        return fs::exists(path, ec);
+    };
 #ifdef _WIN32
     host.gpu_devices_accessible = []() { return false; };
+    host.gpu_device_group = []() { return std::string(); };
     host.account = []() { return std::string(); };
     host.group_id = [](const std::string&) { return std::string(); };
 #else
     host.gpu_devices_accessible = account_opens_gpu_devices;
+    host.gpu_device_group = gpu_node_group;
     host.account = process_account;
     host.group_id = host_group_id;
 #endif
@@ -185,7 +219,28 @@ ContainerManager& ContainerManager::global() {
     return instance;
 }
 
+std::optional<ContainerTool> ContainerManager::mounted_socket() const {
+    const auto given = [this](const std::string& url, const std::string& fallback) {
+        if (url.empty()) return host_.exists(fallback);
+        if (url.rfind("unix://", 0) != 0) return true;
+        return host_.exists(url.substr(7));
+    };
+    if (host_.on_path("podman") && !host_.env("CONTAINER_HOST").empty() &&
+        given(host_.env("CONTAINER_HOST"), "")) {
+        return ContainerTool::Podman;
+    }
+    if (host_.on_path("docker") && given(host_.env("DOCKER_HOST"), "/var/run/docker.sock")) {
+        return ContainerTool::Docker;
+    }
+    return std::nullopt;
+}
+
 std::optional<ContainerTool> ContainerManager::tool() const {
+    // The image carries both clients; only the mounted socket says which host
+    // tool there is.
+    if (in_container()) {
+        if (const auto socket = mounted_socket()) return socket;
+    }
     if (host_.on_path("podman")) return ContainerTool::Podman;
     if (host_.on_path("docker")) return ContainerTool::Docker;
     return std::nullopt;
@@ -243,6 +298,15 @@ bool ContainerManager::own_podman_socket() const {
 
 std::vector<SetupFailure> ContainerManager::check_host() const {
     std::vector<SetupFailure> failures;
+    // In a container, the image's own account, groups and os-release say
+    // nothing about the host; of the host checks, only Docker's still apply.
+    if (in_container()) {
+        if (auto failure = check_container()) {
+            failures.push_back(*failure);
+            return failures;
+        }
+        if (tool() != ContainerTool::Docker) return failures;
+    }
     const bool service = host_.account() == kServiceAccount;
     const std::string member = service ? kServiceAccount : "$USER";
     const std::string apply = service ? "sudo systemctl restart lemond" : kRelogin;
@@ -280,11 +344,91 @@ std::vector<SetupFailure> ContainerManager::check_host() const {
     return failures;
 }
 
+std::optional<SetupFailure> ContainerManager::check_container() const {
+    const std::string docs = std::string(", as ") + kContainerDocs + " shows";
+    if (own_container().empty()) {
+        const std::optional<ContainerTool> socket = mounted_socket();
+        if (!socket) {
+            return SetupFailure{
+                "own_container", "No Podman or Docker socket is mounted into lemond's container",
+                {"Start lemond's container with the host's Podman or Docker socket mounted" + docs},
+                ""};
+        }
+        const bool docker = *socket == ContainerTool::Docker;
+        const std::string name = docker ? "Docker" : "Podman";
+        const bool answers =
+            docker ? host_.run({"docker", "info", "--format", "{{.ID}}"}, kDockerInfoTimeoutSeconds,
+                               /*capture_stderr=*/false)
+                             .exit_code == 0
+                   : podman_info_rootless().has_value();
+        if (!answers) {
+            return SetupFailure{
+                "socket_access", "lemond cannot use the mounted " + name + " socket",
+                {docker ? "Start lemond's container with --group-add $(getent group docker | cut -d: -f3)"
+                        : "Start lemond's container with --user 0:0, which runs it as the account "
+                          "that owns the socket"},
+                ""};
+        }
+        return SetupFailure{"socket_daemon",
+                            "The " + name + " behind the mounted socket does not run lemond's container",
+                            {"Mount the socket of the Podman or Docker that runs lemond's container" + docs},
+                            ""};
+    }
+    // Any user namespace of lemond's own, as --userns=keep-id makes even with
+    // uid=0, belongs to the host account its backends' root maps to, which
+    // then holds every capability over lemond, its mounted socket included.
+    std::string userns_mode;
+    {
+        std::lock_guard<std::mutex> lock(own_container_mutex_);
+        userns_mode = own_userns_mode_;
+    }
+    if (!userns_mode.empty() && userns_mode != "host") {
+        const bool rootless = rootless_podman();
+        return SetupFailure{"container_user",
+                            std::string("lemond's container must share the user namespace of ") +
+                                (rootless ? "Podman" : "its backends") +
+                                ", not have its own (--userns=" + userns_mode + ")",
+                            {rootless ? "Start lemond's container with --user 0:0 and no --userns option"
+                                      : "Start lemond's container with no --userns, --uidmap or "
+                                        "--gidmap option"},
+                            ""};
+    }
+    if (backend_network().empty()) {
+        std::vector<std::string> steps;
+        std::string usual = "podman";
+        if (tool() == ContainerTool::Docker) {
+            // Docker refuses its default bridge alongside a user-defined network.
+            usual = "lemonade";
+            steps = {std::string("docker network create --internal ") + kBackendNetwork,
+                     "docker network create " + usual};
+        } else {
+            // lemond connects by address, and rootless Podman's DNS server needs
+            // a systemd user manager (see create_network).
+            steps = {std::string("podman network create --internal --disable-dns ") + kBackendNetwork};
+        }
+        steps.push_back("Start lemond's container with --network " + usual + " --network " +
+                        kBackendNetwork + docs);
+        return SetupFailure{"backend_network",
+                            std::string("lemond's container is not on an internal network named ") +
+                                kBackendNetwork,
+                            steps, ""};
+    }
+    // Docker and rootful Podman add the render group by number (see run_command).
+    if (!rootless_podman() && render_group_id().empty()) {
+        return SetupFailure{
+            "render_group", "lemond cannot tell the host's render group ID from inside its container",
+            {"Start lemond's container with -e LEMONADE_RENDER_GID=$(getent group render | cut -d: -f3)"},
+            ""};
+    }
+    return std::nullopt;
+}
+
 std::optional<SetupFailure> ContainerManager::check_podman() const {
     if (tool() != ContainerTool::Podman) return std::nullopt;
     // Only local rootless Podman maps container IDs onto lemonade's own ranges;
     // a root or remote Podman behind CONTAINER_HOST uses its own.
-    if (host_.account() == kServiceAccount && expect_rootless() && host_.on_path("getsubids")) {
+    if (host_.account() == kServiceAccount && !in_container() && expect_rootless() &&
+        host_.on_path("getsubids")) {
         const auto has_range = [this](const std::vector<std::string>& argv) {
             const CommandResult result =
                 host_.run(argv, kCommandTimeoutSeconds, /*capture_stderr=*/false);
@@ -414,7 +558,7 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
     const bool rootless = rootless_podman();
 
     std::vector<std::string> argv = {
-        tool_name(*chosen), "run", "--rm", "--init", "--name", spec.name,
+        tool_name(*chosen), "run", "--rm", "--name", spec.name,
         "--label", kLabel,
         "--label", std::string(kLabel) + ".recipe=" + spec.recipe,
         "--label", std::string(kLabel) + ".backend=" + spec.backend,
@@ -425,6 +569,13 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         "--pull=never",
         "--network=" + spec.network,
     };
+    // The image's tini, PID 1 of lemond's namespace, reaps for a container
+    // that joins it, and Podman refuses --init there.
+    if (spec.pid.empty()) {
+        argv.insert(argv.begin() + 3, "--init");
+    } else {
+        argv.push_back("--pid=" + spec.pid);
+    }
 
     for (const auto& device : spec.devices) {
         argv.push_back("--device");
@@ -441,7 +592,7 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         } else {
             // Docker resolves a group name in the image's /etc/group, where it
             // may be missing or numbered differently from the device nodes.
-            const std::string gid = host_.group_id("render");
+            const std::string gid = render_group_id();
             if (!gid.empty()) {
                 argv.push_back("--group-add");
                 argv.push_back(gid);
@@ -452,14 +603,16 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         argv.push_back("--cap-add");
         argv.push_back(capability);
     }
+    const bool contained = !own_container().empty();
     for (const auto& mount : spec.mounts) {
+        const std::string source = contained ? host_path(mount.source) : mount.source;
         // -v splits its argument on ':'.
-        if (mount.source.find(':') != std::string::npos) {
-            throw std::runtime_error("Cannot mount " + mount.source +
+        if (source.find(':') != std::string::npos) {
+            throw std::runtime_error("Cannot mount " + source +
                                      " into a container: its path contains ':'");
         }
         argv.push_back("-v");
-        argv.push_back(mount.source + ":" + mount.destination + ":ro,z");
+        argv.push_back(source + ":" + mount.destination + ":ro,z");
     }
     argv.push_back("--env");
     argv.push_back("HOME=/tmp");
@@ -468,8 +621,9 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         argv.push_back(key + "=" + value);
     }
     // lemond reaches a rootless container through this published port and a
-    // rootful one at the container's address on its network.
-    if (rootless) {
+    // rootful one at the container's address on its network. From its own
+    // container, lemond reaches every backend at its address.
+    if (rootless && !contained) {
         const std::string port = std::to_string(spec.port);
         argv.push_back("-p");
         argv.push_back("127.0.0.1:" + port + ":" + port);
@@ -637,10 +791,133 @@ std::string ContainerManager::address(const std::string& name) const {
     return result.exit_code == 0 ? trim(result.output) : "";
 }
 
-std::string ContainerManager::container_name(int instance, const std::string& recipe,
+bool ContainerManager::in_container() const {
+    return host_.exists && (host_.exists("/run/.containerenv") || host_.exists("/.dockerenv"));
+}
+
+std::string ContainerManager::render_group_id() const {
+    if (!in_container()) return host_.group_id("render");
+    const std::string given = trim(host_.env("LEMONADE_RENDER_GID"));
+    if (!given.empty()) return given;
+    return host_.gpu_device_group ? host_.gpu_device_group() : "";
+}
+
+std::vector<std::string> ContainerManager::own_container_candidates() const {
+    std::vector<std::string> candidates;
+    // The container's /etc/hostname and friends are bind mounts out of the
+    // tool's per-container directory, .../containers/<id>/ under Docker and
+    // .../overlay-containers/<id>/userdata/ under Podman, which holds even when
+    // --hostname replaces the default short ID.
+    static const std::regex kContainerDir("containers/([0-9a-f]{64})/");
+    const std::string mountinfo = host_.read_file("/proc/self/mountinfo");
+    for (std::sregex_iterator it(mountinfo.begin(), mountinfo.end(), kContainerDir), end;
+         it != end; ++it) {
+        const std::string id = (*it)[1].str();
+        if (std::find(candidates.begin(), candidates.end(), id) == candidates.end()) {
+            candidates.push_back(id);
+        }
+    }
+    const std::string hostname = trim(host_.read_file("/etc/hostname"));
+    if (!hostname.empty()) candidates.push_back(hostname);
+    return candidates;
+}
+
+std::string ContainerManager::own_container() const {
+    if (!in_container()) return "";
+    std::lock_guard<std::mutex> lock(own_container_mutex_);
+    if (!own_container_.empty()) return own_container_;
+    if (!tool()) return "";
+    for (const auto& candidate : own_container_candidates()) {
+        const CommandResult result = invoke(
+            {"inspect", "--type", "container", "--format",
+             "{{.Id}}|{{.HostConfig.UsernsMode}}|{{json .Mounts}}", candidate},
+            kCommandTimeoutSeconds, /*capture_stderr=*/false);
+        if (result.exit_code != 0) continue;
+        const std::string output = trim(result.output);
+        const auto bar = output.find('|');
+        const auto mode_end = bar == std::string::npos ? bar : output.find('|', bar + 1);
+        if (mode_end == std::string::npos) continue;
+        std::vector<OwnMount> mounts;
+        const auto parsed = nlohmann::json::parse(output.substr(mode_end + 1), nullptr, false);
+        if (parsed.is_array()) {
+            for (const auto& mount : parsed) {
+                const std::string source = mount.value("Source", "");
+                const std::string destination = mount.value("Destination", "");
+                if (!source.empty() && !destination.empty()) {
+                    mounts.push_back({destination, source});
+                }
+            }
+        }
+        own_container_ = output.substr(0, bar);
+        own_userns_mode_ = output.substr(bar + 1, mode_end - bar - 1);
+        own_mounts_ = std::move(mounts);
+        LOG(INFO, "Container") << "lemond runs in container " << own_container_ << std::endl;
+        return own_container_;
+    }
+    return "";
+}
+
+std::string ContainerManager::backend_network() const {
+    const std::string own = own_container();
+    if (own.empty()) return "";
+    // lemond's networks, and its addresses on them, can change while it runs.
+    const CommandResult result =
+        invoke({"inspect", "--type", "container", "--format", "{{json .NetworkSettings.Networks}}", own},
+               kCommandTimeoutSeconds, /*capture_stderr=*/false);
+    if (result.exit_code != 0) return "";
+    std::vector<std::string> addresses;
+    // Under pasta, Podman reports the networks as null rather than {}.
+    const auto networks = nlohmann::json::parse(trim(result.output), nullptr, false);
+    const bool attached = networks.is_object() && networks.contains(kBackendNetwork);
+    if (attached && networks[kBackendNetwork].is_object()) {
+        for (const char* key : {"IPAddress", "GlobalIPv6Address"}) {
+            const std::string address = networks[kBackendNetwork].value(key, "");
+            if (!address.empty()) addresses.push_back(address);
+        }
+    }
+    std::string network;
+    if (attached) {
+        const CommandResult inspected =
+            invoke({"network", "inspect", "--format", "{{.Name}} {{.Internal}}", kBackendNetwork},
+                   kCommandTimeoutSeconds, /*capture_stderr=*/false);
+        if (inspected.exit_code != 0) return "";
+        if (trim(inspected.output) == std::string(kBackendNetwork) + " true") network = kBackendNetwork;
+    }
+    set_refused_local_addresses(network.empty() ? std::vector<std::string>() : addresses);
+    std::lock_guard<std::mutex> lock(own_container_mutex_);
+    if (network != backend_network_) {
+        LOG(INFO, "Container") << "Container backends run beside lemond on "
+                               << (network.empty() ? "no internal network" : network) << std::endl;
+        backend_network_ = network;
+    }
+    return network;
+}
+
+std::string ContainerManager::host_path(const std::string& path) const {
+    own_container();
+    std::lock_guard<std::mutex> lock(own_container_mutex_);
+    const OwnMount* best = nullptr;
+    for (const auto& mount : own_mounts_) {
+        const std::string& dest = mount.destination;
+        const bool holds = path == dest || dest == "/" ||
+                           (path.size() > dest.size() && path.compare(0, dest.size(), dest) == 0 &&
+                            path[dest.size()] == '/');
+        if (holds && (!best || dest.size() > best->destination.size())) best = &mount;
+    }
+    if (!best) {
+        throw std::runtime_error("Cannot mount " + path +
+                                 " into a container backend: it is not on a volume or bind "
+                                 "mount of lemond's container");
+    }
+    if (best->destination == "/") return best->source + path;
+    return best->source + path.substr(best->destination.size());
+}
+
+std::string ContainerManager::container_name(const std::string& instance,
+                                             const std::string& recipe,
                                              const std::string& backend,
                                              const std::string& model) {
-    return "lemonade-" + std::to_string(instance) + "-" + name_token(recipe) + "-" +
+    return "lemonade-" + name_token(instance) + "-" + name_token(recipe) + "-" +
            name_token(backend) + "-" + name_token(model);
 }
 

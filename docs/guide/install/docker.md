@@ -241,6 +241,108 @@ curl http://localhost:13305/api/v1/models
 
 You should receive a response listing available models.
 
+## Container Backends
+
+[Container backends](../configuration/container-backends.md) run from the Lemonade image on Linux with an AMD GPU. Lemonade starts each one as a container beside its own, on the host's Podman or Docker, which it reaches through the socket you mount.
+
+Lemonade's container joins two networks: its usual one, for the internet and its published port, and `lemonade-backends`, an internal network with no route out, which the backends join. Lemonade refuses connections that backends make to it on that network, so a backend reaches neither the internet nor Lemonade's API. Backends also share Lemonade's process namespace, so they stop when Lemonade's container stops, even if it is killed.
+
+**With Podman**, set up the host as in [Container Backends](../configuration/container-backends.md#setup), then:
+
+1. Start your account's Podman socket: `systemctl --user enable --now podman.socket`.
+2. Create the backends' network: `podman network create --internal --disable-dns lemonade-backends`.
+3. Start Lemonade on both networks, with your socket mounted:
+
+```bash
+podman run -d \
+  --name lemonade-server \
+  -p 13305:13305 \
+  --network podman --network lemonade-backends \
+  --user 0:0 \
+  -v $XDG_RUNTIME_DIR/podman/podman.sock:/run/podman/podman.sock \
+  -v lemonade-cache:/opt/lemonade/.cache/huggingface \
+  -v lemonade-llama:/opt/lemonade/llama \
+  -v lemonade-data:/opt/lemonade/.cache/lemonade \
+  -v lemonade-config:/opt/lemonade/.config/lemonade \
+  ghcr.io/lemonade-sdk/lemonade-server:latest
+```
+
+Under rootless Podman, `--user 0:0` runs Lemonade as your own account on the host, which owns the socket. Don't give Lemonade's container a user namespace of its own, with `--userns=keep-id` or `--uidmap` for example, under Podman or Docker: it gives backends control over Lemonade's process, and Lemonade refuses to start them.
+
+While a backend runs, Podman refuses `podman rm -f lemonade-server`, since the backend depends on Lemonade's container. Stop Lemonade first, or add `--depend` to remove its backends with it.
+
+**With Docker** 25 or newer:
+
+1. Create the backends' network: `docker network create --internal lemonade-backends`.
+2. Create a network for Lemonade itself: `docker network create lemonade`. Docker can't add its default `bridge` network beside another one.
+3. Start Lemonade on both networks, with the Docker socket and the GPU devices:
+
+```bash
+docker run -d \
+  --name lemonade-server \
+  -p 13305:13305 \
+  --network lemonade --network lemonade-backends \
+  --group-add $(getent group docker | cut -d: -f3) \
+  --device /dev/kfd --device /dev/dri \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v lemonade-cache:/opt/lemonade/.cache/huggingface \
+  -v lemonade-llama:/opt/lemonade/llama \
+  -v lemonade-data:/opt/lemonade/.cache/lemonade \
+  -v lemonade-config:/opt/lemonade/.config/lemonade \
+  ghcr.io/lemonade-sdk/lemonade-server:latest
+```
+
+Lemonade detects the GPU through `--device`, and passes the devices' group on to each backend. Mounting the Docker socket gives Lemonade root-equivalent control of the host, so prefer Podman where you can, and set `LEMONADE_API_KEY`.
+
+With Docker Compose, which creates both networks, run `DOCKER_GID=$(getent group docker | cut -d: -f3) docker compose up -d` with this `docker-compose.yml`:
+
+```yml
+services:
+  lemonade:
+    image: ghcr.io/lemonade-sdk/lemonade-server:latest
+    container_name: lemonade-server
+    ports:
+      - "13305:13305"
+    networks: [default, lemonade-backends]
+    group_add:
+      - "${DOCKER_GID}"
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - lemonade-cache:/opt/lemonade/.cache/huggingface
+      - lemonade-llama:/opt/lemonade/llama
+      - lemonade-data:/opt/lemonade/.cache/lemonade
+      - lemonade-config:/opt/lemonade/.config/lemonade
+
+networks:
+  lemonade-backends:
+    name: lemonade-backends
+    internal: true
+
+volumes:
+  lemonade-cache:
+  lemonade-llama:
+  lemonade-data:
+  lemonade-config:
+```
+
+The network keeps the name `lemonade-backends` through `name:`; Lemonade puts backends only on an internal network with that name.
+
+Then install a backend and run a model, with `podman exec` under Podman:
+
+```bash
+docker exec lemonade-server lemonade backends install llamacpp:nathanw
+docker exec lemonade-server lemonade run Qwen3-4B-GGUF --llamacpp nathanw
+```
+
+Until setup is complete, `lemonade backends` shows the backend as `action_required`, with the step that's missing.
+
+- Keep model files on a volume or bind mount of Lemonade's container, as the default `lemonade-cache` volume does: each backend mounts them from the host.
+- Connect other containers, such as Open WebUI, to Lemonade's usual network or its published port. Lemonade refuses their connections on `lemonade-backends`.
+- Backends on `lemonade-backends` can reach each other.
+
 <br>
 
 # Build Your Own Docker Image

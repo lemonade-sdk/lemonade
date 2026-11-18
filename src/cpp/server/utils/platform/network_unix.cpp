@@ -2,7 +2,10 @@
 #include "lemon/utils/network_utils.h"
 
 #include <arpa/inet.h>
+#include <atomic>
 #include <cstring>
+#include <mutex>
+#include <set>
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -19,6 +22,56 @@
 #endif
 
 namespace lemon::utils {
+
+namespace {
+
+std::mutex refused_mutex;
+std::set<std::string> refused_addresses;
+std::atomic<bool> any_refused{false};
+
+// The address in `storage` as text, with a v4-mapped IPv6 address as IPv4, since
+// the "::" listener takes IPv4 connections that way.
+std::string address_text(const sockaddr_storage& storage) {
+    char text[INET6_ADDRSTRLEN] = {};
+    if (storage.ss_family == AF_INET) {
+        inet_ntop(AF_INET, &reinterpret_cast<const sockaddr_in*>(&storage)->sin_addr, text,
+                  sizeof(text));
+    } else if (storage.ss_family == AF_INET6) {
+        const in6_addr* v6 = &reinterpret_cast<const sockaddr_in6*>(&storage)->sin6_addr;
+        if (IN6_IS_ADDR_V4MAPPED(v6)) {
+            inet_ntop(AF_INET, &v6->s6_addr[12], text, sizeof(text));
+        } else {
+            inet_ntop(AF_INET6, v6, text, sizeof(text));
+        }
+    }
+    return text;
+}
+
+} // namespace
+
+void set_refused_local_addresses(const std::vector<std::string>& addresses) {
+    std::lock_guard<std::mutex> lock(refused_mutex);
+    refused_addresses = std::set<std::string>(addresses.begin(), addresses.end());
+    any_refused.store(!refused_addresses.empty());
+}
+
+bool is_refused_connection(socket_t sock) {
+    if (!any_refused.load()) return false;
+    sockaddr_storage local = {};
+    sockaddr_storage peer = {};
+    socklen_t local_length = sizeof(local);
+    socklen_t peer_length = sizeof(peer);
+    if (getsockname(sock, reinterpret_cast<sockaddr*>(&local), &local_length) != 0 ||
+        getpeername(sock, reinterpret_cast<sockaddr*>(&peer), &peer_length) != 0) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(refused_mutex);
+    // Rootless Podman's port forwarder connects from inside lemond's own
+    // network namespace, to whichever of lemond's addresses it picks, so a
+    // published port can arrive on a refused address from that same address.
+    return refused_addresses.count(address_text(local)) > 0 &&
+           refused_addresses.count(address_text(peer)) == 0;
+}
 
 bool configure_tcp_keepalive(socket_t sock) {
     int opt = 1;

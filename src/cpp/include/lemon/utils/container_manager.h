@@ -31,6 +31,9 @@ struct ContainerRunSpec {
     std::string model;
     int port = 0;
     std::string network;
+    // A PID namespace to join, such as container:<id>, or "" for the
+    // container's own.
+    std::string pid;
     std::vector<std::string> devices;
     std::vector<std::string> cap_add;
     std::vector<ContainerMount> mounts;
@@ -73,9 +76,13 @@ struct CommandResult {
 // Each host read, defaulting to the real host so tests can fake every branch.
 struct ContainerHost {
     std::function<bool(const std::string& name)> on_path;
+    std::function<bool(const std::string& path)> exists;
     // True when this account can read and write /dev/kfd and every /dev/dri
     // render node present on the host.
     std::function<bool()> gpu_devices_accessible;
+    // The numeric group that owns /dev/kfd or the first /dev/dri render node,
+    // or "" when neither is present.
+    std::function<std::string()> gpu_device_group;
     // The group's numeric ID, or "" when the host defines no such group.
     std::function<std::string(const std::string& group)> group_id;
     // The name of the account this process runs as, or "" when it is unknown.
@@ -102,7 +109,8 @@ public:
 
     static ContainerManager& global();
 
-    // Podman when it is on PATH, Docker otherwise, nullopt when neither is.
+    // Podman when it is on PATH, Docker otherwise, nullopt when neither is. In
+    // a container, the tool whose host socket is mounted.
     std::optional<ContainerTool> tool() const;
     // Only rootless Podman publishes a port from an --internal network; under
     // rootful Podman or Docker, lemond connects at the container's address.
@@ -113,11 +121,30 @@ public:
     std::vector<SetupFailure> check_host() const;
     // lemond.service's subordinate ID ranges, then `podman info`.
     std::optional<SetupFailure> check_podman() const;
+    // lemond's own setup in a container: a socket it can use, the user it runs
+    // as, the backends' network and the render group ID.
+    std::optional<SetupFailure> check_container() const;
     // The SELinux check for a backend whose devices include /dev/kfd, or
     // nullopt when it passes.
     std::optional<SetupFailure> check_selinux() const;
 
     std::vector<std::string> run_command(const ContainerRunSpec& spec) const;
+
+    // True when lemond itself runs in a container, from the marker file Docker
+    // or Podman puts in every container.
+    bool in_container() const;
+    // The ID of the container lemond runs in, as the tool behind CONTAINER_HOST
+    // or DOCKER_HOST knows it, or "" when lemond is not in a container or that
+    // tool cannot find it. Backends then run beside lemond's container on the
+    // same host tool, share its network, and mount model files by their host
+    // paths.
+    std::string own_container() const;
+    // The path on the host for `path` inside lemond's container, through the
+    // bind mount or volume that holds it. Throws when no mount holds it.
+    std::string host_path(const std::string& path) const;
+    // lemonade-backends when lemond's container is on it and it is internal,
+    // otherwise "".
+    std::string backend_network() const;
 
     bool has_image(const std::string& image) const;
     void pull(const std::string& image, const DownloadProgressCallback& progress) const;
@@ -135,9 +162,10 @@ public:
 
     // lemonade-<instance>-<recipe>-<backend>-<model>, reduced to the
     // characters a container name accepts. `instance` is the port the owning
-    // lemond listens on, so two lemond instances sharing a container daemon
-    // never claim each other's containers.
-    static std::string container_name(int instance, const std::string& recipe,
+    // lemond listens on, or the short ID of the container it runs in, so two
+    // lemond instances sharing a container daemon never claim each other's
+    // containers. Every lemond in a container listens on the same port.
+    static std::string container_name(const std::string& instance, const std::string& recipe,
                                       const std::string& backend, const std::string& model);
     // The command that installs `package` on the distribution `os_release`
     // describes, matched on ID, then each word of ID_LIKE. `name` is how the
@@ -153,6 +181,8 @@ public:
                                                     const std::string& destination);
 
 private:
+    // The tool whose socket is mounted into lemond's container, if any.
+    std::optional<ContainerTool> mounted_socket() const;
     CommandResult invoke(const std::vector<std::string>& args, int timeout_seconds,
                          bool capture_stderr = true) const;
     void remove_network(const std::string& name) const;
@@ -165,6 +195,17 @@ private:
     bool expect_rootless() const;
     bool own_podman_socket() const;
     static bool needs_crun(bool rootless, const std::string& runtime);
+    // The host's render group ID, for a tool that adds it by number. In a
+    // container, LEMONADE_RENDER_GID, then the GPU device nodes' owner, since
+    // the image's /etc/group says nothing about the host.
+    std::string render_group_id() const;
+    // IDs the container lemond runs in may go by, most specific first.
+    std::vector<std::string> own_container_candidates() const;
+
+    struct OwnMount {
+        std::string destination;
+        std::string source;
+    };
 
     ContainerHost host_;
     mutable std::mutex podman_mode_mutex_;
@@ -173,6 +214,13 @@ private:
     mutable std::string podman_network_backend_;
     // Podman's OCI runtime, such as "crun" or "runc", from the same answer.
     mutable std::string podman_oci_runtime_;
+    // lemond's own container and its mounts, once the tool has found it.
+    mutable std::mutex own_container_mutex_;
+    mutable std::string own_container_;
+    mutable std::vector<OwnMount> own_mounts_;
+    mutable std::string backend_network_;
+    // Podman's or Docker's UsernsMode for lemond's container, "" by default.
+    mutable std::string own_userns_mode_;
 };
 
 }  // namespace utils

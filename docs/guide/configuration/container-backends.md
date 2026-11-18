@@ -23,6 +23,8 @@ Rootful Podman and Docker give that account root-equivalent control of the host'
 
 ## Setup
 
+When `lemond` runs in the Lemonade Docker image, set up the host as below, then follow [Container Backends in Docker](../install/docker.md#container-backends).
+
 When `lemond` runs under your own account, from a shell, a `systemctl --user` unit, or an app that embeds it, its containers sit beside your own in `podman ps`, and it uses whatever `CONTAINER_HOST` your environment sets. The `systemctl --user` unit sets it to your `podman.socket`, so Podman's API service starts the containers outside the unit's sandbox. If the unit is ever killed outright, as with `systemctl --user kill -s KILL lemond`, a container can keep running; loading the same model replaces it, or `podman rm -f` removes it.
 
 **With Podman:**
@@ -85,11 +87,11 @@ Install pulls the image, so loading a model starts from the image already on dis
 
 ## How Containers Run
 
-Each loaded model gets its own container, named `lemonade-<port>-<recipe>-<backend>-<model>`, where `<port>` is the port Lemonade listens on, and labeled `ai.lemonade`, so `podman ps --filter label=ai.lemonade` lists them. Every load logs its full `podman run` or `docker run` command. Each container:
+Each loaded model gets its own container, named `lemonade-<port>-<recipe>-<backend>-<model>`, where `<port>` is the port Lemonade listens on, or the short ID of Lemonade's own container when it runs in one, and labeled `ai.lemonade`, so `podman ps --filter label=ai.lemonade` lists them. Every load logs its full `podman run` or `docker run` command. Each container:
 
 - mounts only the model's files, read-only, under `/mnt/models`, with the shared SELinux label so other containers and programs can still read them
 - opens only the GPU device nodes its backend needs
 - drops every Linux capability its backend does not need, and runs with `no-new-privileges`
-- joins its own `--internal` network, so only this machine reaches its API and the server inside stays off the internet
+- joins its own `--internal` network, so only this machine reaches its API and the server inside stays off the internet; from the Lemonade Docker image, it joins the shared `lemonade-backends` network instead
 
 Unloading a model stops its container.
