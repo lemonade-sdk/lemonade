@@ -161,15 +161,15 @@ jobs:
           checks = {
               'cpu': [
                   (base_assets, rf'^sd-{re.escape(base_short)}-bin-win-cpu-x64\.zip$'),
-                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-Linux-Ubuntu-24\.04-x86_64\.zip$'),
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-Linux-Ubuntu-(?:24|26)\.04-x86_64\.zip$'),
               ],
               'vulkan': [
                   (base_assets, rf'^sd-{re.escape(base_short)}-bin-win-vulkan-x64\.zip$'),
-                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-Linux-Ubuntu-24\.04-x86_64-vulkan\.zip$'),
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-Linux-Ubuntu-(?:24|26)\.04-x86_64-vulkan\.zip$'),
               ],
               'rocm-stable': [
                   (base_assets, rf'^sd-{re.escape(base_short)}-bin-win-rocm-[0-9][^/]*-x64\.zip$'),
-                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-Linux-Ubuntu-24\.04-x86_64-rocm-[0-9][^/]*\.zip$'),
+                  (base_assets, rf'^sd-{re.escape(base_short)}-bin-Linux-Ubuntu-(?:24|26)\.04-x86_64-rocm-[0-9][^/]*\.zip$'),
               ],
               'metal': [
                   (base_assets, rf'^sd-{re.escape(base_short)}-bin-Darwin-macOS-[^/]+-arm64\.zip$'),

@@ -129,7 +129,7 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 #ifdef _WIN32
         params.filename = "sd-" + short_version + "-bin-win-rocm-" + get_therock_version() + "-x64.zip";
 #elif defined(__linux__)
-        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm-" +
+        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-*-x86_64-rocm-" +
                   get_therock_version() + ".zip";
 #else
         throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
@@ -138,7 +138,7 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
     #ifdef _WIN32
         params.filename = "sd-" + short_version + "-bin-win-vulkan-x64.zip";
     #elif defined(__linux__)
-        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip";
+        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-*-x86_64-vulkan.zip";
     #else
         throw std::runtime_error("Vulkan sd.cpp only supported on Windows and Linux");
     #endif
@@ -165,7 +165,7 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
     #ifdef _WIN32
         params.filename = "sd-" + short_version + "-bin-win-cpu-x64.zip";
 #elif defined(__linux__)
-        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
+        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-*-x86_64.zip";
 #else
         throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
 #endif
