@@ -507,6 +507,9 @@ def main():
         "lemonade_get_model_info",
         "lemonade_load_model",
         "lemonade_unload_model",
+        "lemonade_get_loaded_models",
+        "lemonade_pull_model",
+        "lemonade_delete_model",
     }
     assert expected.issubset(names), f"Missing MCP hub tools: {expected - names}"
 

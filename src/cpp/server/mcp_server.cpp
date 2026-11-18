@@ -1249,6 +1249,128 @@ std::vector<McpTool> McpServer::build_tools() {
                 return server_tool_("lemonade_unload_model", arguments);
             }),
         McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_get_loaded_models"},
+                            {"annotations", {
+                                {"readOnlyHint", true},
+                                {"destructiveHint", false},
+                                {"openWorldHint", false},
+                            }},
+                            {"description",
+                             "List the models currently loaded in Lemonade, including runtime "
+                             "recipe/type/device information reported by the server. Use this "
+                             "when the question is specifically about current residency; use "
+                             "lemonade_list_models for broader discovery."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"additionalProperties", false},
+                                {"properties", json::object()},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_get_loaded_models, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_get_loaded_models", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_pull_model"},
+                            {"annotations", {
+                                {"readOnlyHint", false},
+                                {"destructiveHint", false},
+                                {"openWorldHint", true},
+                            }},
+                            {"description",
+                             "Download or register a model using the same implementation as "
+                             "POST /v1/pull. For a built-in/registered model, pass its exact "
+                             "model_name. For a custom remote model, pass a user.* model_name "
+                             "plus checkpoint and recipe. This call is synchronous and may take "
+                             "a long time for large model downloads."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"required", json::array({"model_name"})},
+                                {"additionalProperties", false},
+                                {"properties", {
+                                    {"model_name", {{"type", "string"},
+                                                    {"description", "Exact registered model ID, or user.* ID for a new custom model."}}},
+                                    {"checkpoint", {{"type", "string"},
+                                                    {"description", "Optional remote repository/checkpoint selector accepted by /pull."}}},
+                                    {"recipe", {{"type", "string"},
+                                                {"description", "Recipe required when registering a custom checkpoint."}}},
+                                    {"source", {{"type", "string"},
+                                                {"description", "Optional remote registry source, for example huggingface or modelscope."}}},
+                                    {"do_not_upgrade", {{"type", "boolean"},
+                                                        {"description", "Skip upgrading an already-cached registered model."}}},
+                                }},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_pull_model, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_pull_model", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_delete_model"},
+                            {"annotations", {
+                                {"readOnlyHint", false},
+                                {"destructiveHint", true},
+                                {"openWorldHint", false},
+                            }},
+                            {"description",
+                             "Delete exactly one model using the same implementation as POST "
+                             "/v1/delete. This is destructive. The model_name must identify an "
+                             "existing model exactly and confirm must be true. A loaded model is "
+                             "unloaded first, matching the REST endpoint."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"required", json::array({"model_name", "confirm"})},
+                                {"additionalProperties", false},
+                                {"properties", {
+                                    {"model_name", {{"type", "string"},
+                                                    {"description", "Exact existing model ID to delete."}}},
+                                    {"confirm", {{"type", "boolean"},
+                                                 {"enum", json::array({true})},
+                                                 {"description", "Must be true to execute deletion."}}},
+                                }},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_delete_model, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_delete_model", arguments);
+            }),
+        McpTool(
             json{
                 {"name", "lemonade_list_models"},
                 {"annotations", {
