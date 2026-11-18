@@ -495,6 +495,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: api-examples
+          overwrite: true
           path: |
             docs/tools/api_examples_cache.json
             docs/tools/api_examples_status.txt
@@ -899,6 +900,10 @@ jobs:
                 exit 1
               fi
             fi
+            # A failed rerun must not look like a manual hold if git fails later.
+            if [[ "$VALIDATED" != true ]]; then
+              gh pr edit "$EXISTING_PR" --title "$TITLE" --body-file pr_body.md
+            fi
           elif git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
             # A closed PR left its old branch; start clean, never carry old commits.
             BRANCH="${BRANCH}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -926,8 +931,24 @@ jobs:
             DOCS_PATCH=$(mktemp)
             git add -N -- docs/api
             git diff --binary HEAD -- docs/tools/api_examples_cache.json docs/api > "$DOCS_PATCH"
-            if [[ -s "$DOCS_PATCH" ]]; then
-              git -C "$WORKTREE" apply --3way --index "$DOCS_PATCH"
+            if [[ -s "$DOCS_PATCH" ]] &&
+               ! git -C "$WORKTREE" apply --3way --index "$DOCS_PATCH"; then
+              # Generated-file conflicts use the recorded candidate only for
+              # conflicted paths; non-conflicting branch edits stay intact.
+              mapfile -d '' -t conflicts < <(git -C "$WORKTREE" diff --name-only --diff-filter=U -z -- docs/tools/api_examples_cache.json docs/api)
+              if (( ${#conflicts[@]} == 0 )); then
+                echo "::error::API docs replay failed without resolvable conflicts."
+                exit 1
+              fi
+              for file in "${conflicts[@]}"; do
+                if [[ -f "$file" ]]; then
+                  mkdir -p "$WORKTREE/$(dirname "$file")"
+                  cp -- "$file" "$WORKTREE/$file"
+                  git -C "$WORKTREE" add -- "$file"
+                else
+                  git -C "$WORKTREE" rm -f -- "$file"
+                fi
+              done
             fi
             rm -f "$DOCS_PATCH"
           fi
