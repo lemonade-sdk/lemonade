@@ -84,6 +84,12 @@ public:
         return std::nullopt;
     }
 
+    // Add the checkpoints a registry row implies but does not name, before its
+    // paths resolve and before it downloads. Default: none.
+    virtual void add_implied_checkpoints(ModelInfo& info) const {
+        (void)info;
+    }
+
     // Add automatic overridable options before exposing/passing to a backend.
     // Managed arguments (model paths/ports) do not belong here. Default: none.
     virtual void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const {

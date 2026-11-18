@@ -1,12 +1,18 @@
 // Proves HRX keeps its narrow install, custom-argument, and process-launch
-// contract. These checks call the same helpers as HrxServer::load(), without
+// contract. These checks resolve runtime options and call the launch helpers without
 // starting the backend or duplicating descriptor-derived data tables.
 
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/hrx/hrx.h"
 #include "lemon/backends/hrx/hrx_server.h"
+#include "lemon/model_manager.h"
+#include "lemon/models/json_catalog.h"
+#include "lemon/recipe_options.h"
+#include "lemon/utils/custom_args.h"
 
 #include <cstdio>
 #include <exception>
+#include <fstream>
 #include <functional>
 #include <set>
 #include <string>
@@ -18,7 +24,7 @@ namespace {
 namespace hrx = lemon::backends::hrx;
 using lemon::backends::HrxServer;
 
-constexpr const char* kReleaseVersion = "hrx-b99";
+constexpr const char* kReleaseVersion = "hrx-b129";
 
 int failures = 0;
 
@@ -111,6 +117,62 @@ void check_admission_contract() {
     check("HRX rejects an equals-form managed argument", equals_flag_rejected);
 }
 
+void check_catalog_mtp_contract() {
+    std::ifstream stream(HRX_TEST_CATALOG_PATH);
+    const auto catalog = lemon::json::parse(stream);
+    const std::string name = "Qwen3.5-35B-A3B-HRX";
+    const auto info = lemon::models::parse_registry_row(
+        name, catalog.at(name), lemon::models::RegistryRowRules{});
+    check("HRX MTP catalog entry parses", info.has_value());
+    if (!info) return;
+
+    check("HRX MTP catalog entry selects the HRX recipe",
+          info->recipe == "llamacpp-hrx");
+    check("HRX MTP catalog entry uses the dedicated MTP checkpoint",
+          info->checkpoint() ==
+              "unsloth/Qwen3.5-35B-A3B-MTP-GGUF:Qwen3.5-35B-A3B-UD-Q4_K_XL.gguf");
+    lemon::RecipeOptions options(info->recipe, lemon::json::object());
+    hrx::ops()->resolve_runtime_options(*info, options);
+    check("Catalog MTP capability enables draft-mtp",
+          options.get_option("hrx_args") == "--spec-type draft-mtp");
+}
+
+void check_mtp_contract() {
+    lemon::ModelInfo info;
+    info.labels = {"chat", "mtp"};
+    lemon::RecipeOptions options("llamacpp-hrx", lemon::json::object());
+    hrx::ops()->resolve_runtime_options(info, options);
+    const auto args = hrx::build_server_argv(
+        "/models/qualified.gguf", 4096, 14123, options.get_option("hrx_args"));
+    check("MTP capability automatically reaches the HRX launch command",
+          lemon::utils::custom_args_has_flag(args, "--spec-type"));
+    check("MTP selects draft-mtp without overriding backend draft defaults",
+          options.get_option("hrx_args") == "--spec-type draft-mtp");
+    hrx::ops()->resolve_runtime_options(info, options);
+    check("Repeated resolution does not duplicate MTP arguments",
+          options.get_option("hrx_args") == "--spec-type draft-mtp");
+
+    for (const std::string custom : {"--spec-type none", "--spec-type=none",
+                                    "--spec-type draft-mtp --spec-draft-n-max 4"}) {
+        lemon::RecipeOptions overridden("llamacpp-hrx", {{"hrx_args", custom}});
+        hrx::ops()->resolve_runtime_options(info, overridden);
+        check("Explicit speculative arguments win: " + custom,
+              overridden.get_option("hrx_args") == custom);
+    }
+
+    lemon::RecipeOptions disabled("llamacpp-hrx", {{"merge_args", false},
+                                                  {"hrx_args", "--threads 7"}});
+    hrx::ops()->resolve_runtime_options(info, disabled);
+    check("merge_args=false disables automatic MTP defaults",
+          disabled.get_option("hrx_args") == "--threads 7");
+
+    info.labels = {"chat"};
+    lemon::RecipeOptions ordinary("llamacpp-hrx", {{"hrx_args", "--threads 7"}});
+    hrx::ops()->resolve_runtime_options(info, ordinary);
+    check("Non-MTP models retain their original arguments",
+          ordinary.get_option("hrx_args") == "--threads 7");
+}
+
 void check_installer_contract() {
 #if defined(__linux__) && (defined(__x86_64__) || defined(__amd64__))
     const auto params = HrxServer::get_install_params("hrx", kReleaseVersion);
@@ -118,7 +180,7 @@ void check_installer_contract() {
           params.repo == "ROCm/ggml-staging-automation");
     check("HRX installer maps the version to the exact release asset",
           params.filename ==
-              "llama-hrx-b99-bin-manylinux-hrx-x64.tar.gz");
+              "llama-hrx-b129-bin-manylinux-hrx-x64.tar.gz");
 #else
     const bool unsupported_host_rejected = throws_exception([] {
         (void)HrxServer::get_install_params("hrx", kReleaseVersion);
@@ -139,6 +201,8 @@ int main() {
     try {
         check_launch_contract();
         check_admission_contract();
+        check_catalog_mtp_contract();
+        check_mtp_contract();
         check_installer_contract();
     } catch (const std::exception& error) {
         check(std::string("unexpected exception: ") + error.what(), false);

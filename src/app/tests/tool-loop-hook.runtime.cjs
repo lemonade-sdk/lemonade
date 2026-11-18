@@ -18,6 +18,15 @@ const detector = ts.transpileModule(fs.readFileSync(detectorPath, 'utf8'), {
 const detectorModule = { exports: {} };
 Function('module', 'exports', detector)(detectorModule, detectorModule.exports);
 
+// Load the production follow-up helper, rather than faking it in the callback.
+const directAnalysisPath = path.join(root, 'src/features/images/directImageAnalysis.ts');
+const directAnalysis = ts.transpileModule(fs.readFileSync(directAnalysisPath, 'utf8'), {
+  fileName: directAnalysisPath,
+  compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
+}).outputText;
+const directAnalysisModule = { exports: {} };
+Function('module', 'exports', directAnalysis)(directAnalysisModule, directAnalysisModule.exports);
+
 // Execute the production callback with a minimal controlled runtime, so the
 // test covers actual tool execution, skipped results and message correlation.
 const harness = ts.transpileModule(`
@@ -50,8 +59,9 @@ function makeHarness(executeTool) {
   reportDiagnostics: true,
 });
 assert.equal((harness.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error).length, 0);
-const makeHarness = Function('ToolLoopDetector', harness.outputText + '\nreturn makeHarness;')(
+const makeHarness = Function('ToolLoopDetector', 'directImageFollowupContent', harness.outputText + '\nreturn makeHarness;')(
   detectorModule.exports.ToolLoopDetector,
+  directAnalysisModule.exports.directImageFollowupContent,
 );
 
 const called = [];

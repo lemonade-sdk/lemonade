@@ -22,6 +22,7 @@ export interface HistoryPoint {
   cpu: number | null;
   ram: number | null;
   gpu: number | null;
+  gpuById: Record<string, number | null>;
   vram: number | null;
   npu: number | null;
   aggregateTps: number;
@@ -170,6 +171,7 @@ export function useMonitorData(isActive = true): MonitorData {
     tps: 0, ppTps: 0,
     cpu: null as number | null, ram: null as number | null,
     gpu: null as number | null, vram: null as number | null, npu: null as number | null,
+    gpuById: {} as Record<string, number | null>,
     activeSlots: 0, totalSlots: 0, cacheUtil: null as number | null,
   });
   const targetSlotRef = useRef(new Map<number, SlotTarget>());
@@ -349,6 +351,7 @@ export function useMonitorData(isActive = true): MonitorData {
       tgt.cpu = ss?.cpu_percent ?? null;
       tgt.ram = ss?.memory_gb ?? null;
       tgt.gpu = ss?.gpu_percent ?? null;
+      tgt.gpuById = Object.fromEntries((ss?.gpus ?? []).map(gpu => [gpu.id, gpu.gpu_percent]));
       tgt.vram = ss?.vram_gb ?? null;
       tgt.npu = ss?.npu_percent ?? null;
       tgt.activeSlots = Math.max(activeSlots, st?.live?.active_requests ?? 0);
@@ -503,6 +506,7 @@ export function useMonitorData(isActive = true): MonitorData {
           cpu: aTarget.cpu,
           ram: aTarget.ram,
           gpu: aTarget.gpu,
+          gpuById: aTarget.gpuById,
           vram: aTarget.vram,
           npu: aTarget.npu,
           aggregateTps: aI.tps,
@@ -593,7 +597,12 @@ export function useMonitorData(isActive = true): MonitorData {
   }, [slots, slotHistory, history.length]);
 
   const sysChartData = useMemo(() =>
-    history.map(h => ({ cpu: h.cpu ?? 0, gpu: h.gpu ?? 0 })),
+    history.map(h => ({
+      cpu: h.cpu ?? 0,
+      gpu: h.gpu ?? 0,
+      ...Object.fromEntries(Object.entries(h.gpuById).map(([id, value]) =>
+        [`gpu:${id}`, value ?? Number.NaN])),
+    })),
     [history]
   );
 

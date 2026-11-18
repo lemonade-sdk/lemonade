@@ -67,6 +67,16 @@ BatchFlag find_batch_flag(const std::vector<std::string>& args, const std::strin
     return flag;
 }
 
+// The last of the two spellings wins, as llama-server reads its arguments in order.
+bool kv_unified(const std::vector<std::string>& args) {
+    bool unified = false;
+    for (const std::string& arg : args) {
+        if (arg == "-kvu" || arg == "--kv-unified") unified = true;
+        if (arg == "-no-kvu" || arg == "--no-kv-unified") unified = false;
+    }
+    return unified;
+}
+
 }  // namespace
 
 std::optional<bool> decision_text_truncated(const std::string& decision_type,
@@ -211,6 +221,12 @@ SingleBatchPlan plan_single_batch(int ctx_size, const std::vector<std::string>& 
     // llama.cpp caps -ub at -b, and an encoder's embedding mode caps -b at -ub.
     plan.max_input_tokens = std::min({ctx_size, batch.value.value_or(plan.batch_size),
                                       ubatch.value.value_or(plan.batch_size)});
+    // Without a unified KV buffer, llama-server splits ctx_size across its slots.
+    // An auto count (-np -1) turns the unified buffer on, so it splits nothing.
+    const BatchFlag parallel = find_batch_flag(user_args, "-np", "--parallel");
+    if (parallel.value && *parallel.value > 1 && !kv_unified(user_args)) {
+        plan.max_input_tokens = std::min(plan.max_input_tokens, ctx_size / *parallel.value);
+    }
     return plan;
 }
 

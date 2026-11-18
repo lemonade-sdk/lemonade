@@ -9,6 +9,7 @@
 #include <system_error>
 #include <lemon/auto_context_budget.h>
 #include <lemon/backends/backend_ops.h>
+#include <lemon/backends/llamacpp/llamacpp_rulehead.h>
 #include <lemon/backends/backend_registry.h>
 #include <lemon/gguf_reader.h>
 #include <lemon/gpu_memory_selection.h>
@@ -169,9 +170,23 @@ inline double get_available_memory_gb(DeviceType device_type,
         return available;
     }
 
+    if (auto metrics = create_metrics_platform()) {
+        const double physical_total_gb = metrics->get_memory_total_gb();
+        const double ram_used_gb = metrics->get_memory_usage_gb();
+        if (physical_total_gb > 0 && ram_used_gb > 0) {
+            if (memory_known_out) *memory_known_out = true;
+            double available = (std::max)(0.0, physical_total_gb - ram_used_gb);
+            LOG(DEBUG, "AutoTune") << "get_available_memory_gb: CPU/NPU (physical RAM) total="
+                                   << std::fixed << std::setprecision(2) << physical_total_gb
+                                   << " GB, used=" << ram_used_gb
+                                   << " GB → " << available << " GB available"  << " ";
+            return available;
+        }
+    }
+
     // On unified-memory systems (APU), the iGPU vram_gb + virtual_gb approximates system RAM
     auto amd_igpu = si->get_amd_igpu_device();
-    if (amd_igpu.available && amd_igpu.vram_gb > 0) {
+    if (amd_igpu.available && amd_igpu.vram_gb + amd_igpu.virtual_gb > 0) {
         if (memory_known_out) *memory_known_out = true;
         double total_gb = amd_igpu.vram_gb + amd_igpu.virtual_gb;
         double available = (std::max)(0.0, total_gb - used_gb);
@@ -354,6 +369,12 @@ inline bool is_encoder_decision_model(const ModelInfo& model_info) {
            model_info.max_context_window > 0;
 }
 
+/// See llamacpp_rulehead.h. Its GGUF declares the base model's 128000-token
+/// window, not what the router trained on.
+inline bool is_rule_head_router_model(const ModelInfo& model_info) {
+    return !model_info.checkpoint("rulehead").empty();
+}
+
 /// Auto-resolve ctx_size if it is -1 in the effective options.
 /// Returns the resolved context size, or -2 if no auto-resolution is needed
 /// (i.e. ctx_size was already set to an explicit non-negative value).
@@ -369,6 +390,10 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
 
     if (is_encoder_decision_model(model_info)) {
         return model_info.max_context_window;
+    }
+
+    if (is_rule_head_router_model(model_info)) {
+        return backends::llamacpp::RULE_HEAD_ROUTER_CTX_SIZE;
     }
 
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);
