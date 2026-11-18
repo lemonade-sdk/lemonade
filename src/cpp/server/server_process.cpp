@@ -183,13 +183,14 @@ std::string ContainerProcess::start(const ServerCommand& command) {
     // refuses connections arriving on it, so a backend cannot use lemond's API
     // to reach the internet either. A backend that adds no capability joins
     // lemond's PID namespace, so the kernel kills it when lemond dies, even by
-    // SIGKILL.
+    // SIGKILL; one that adds any, such as SYS_PTRACE, could reach lemond's
+    // processes there, and through them lemond's mounted socket.
     if (own_container.empty()) {
         manager.create_network(name_);
         spec.network = name_;
     } else {
         spec.network = manager.backend_network();
-        if (ContainerManager::joins_lemond_pid_namespace(policy_.cap_add)) {
+        if (policy_.cap_add.empty()) {
             spec.pid = "container:" + own_container;
 #ifdef __linux__
             // A backend in lemond's PID namespace, as the same host account

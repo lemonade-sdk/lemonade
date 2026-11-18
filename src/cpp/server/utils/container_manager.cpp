@@ -952,10 +952,6 @@ std::string ContainerManager::install_command(const std::string& os_release,
     return "Install " + name + " with the host's package manager";
 }
 
-bool ContainerManager::joins_lemond_pid_namespace(const std::vector<std::string>& cap_add) {
-    return cap_add.empty();
-}
-
 bool ContainerManager::allowed_image(const std::string& image) {
     for (const std::string prefix : {"docker.io/kyuz0/", "ghcr.io/peonist-ai/"}) {
         if (image.size() > prefix.size() && image.compare(0, prefix.size(), prefix) == 0) {

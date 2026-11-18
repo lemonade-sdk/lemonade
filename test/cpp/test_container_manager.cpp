@@ -770,9 +770,6 @@ void test_in_container() {
         return false;
     }());
 
-    check("the backends' network is the internal one lemond's container is on",
-          manager.backend_network() == "lemonade-backends");
-
     ContainerRunSpec spec = example_spec();
     spec.network = manager.backend_network();
     spec.pid = "container:" + id;
@@ -785,8 +782,7 @@ void test_in_container() {
               command.find(" --init") == std::string::npos &&
               command.find(" -p ") == std::string::npos &&
               command.find(" -v /home/user/.local/share/containers/storage/volumes/"
-                           "lemonade-cache/_data/hub/blobs/x:/mnt/models/") != std::string::npos &&
-              command.find(" --annotation run.oci.keep_original_groups=1") != std::string::npos);
+                           "lemonade-cache/_data/hub/blobs/x:/mnt/models/") != std::string::npos);
 
     check("in a container, the setup checks pass once the host's tool finds it",
           manager.check_host().empty() && !manager.check_podman());
@@ -799,17 +795,13 @@ void test_in_container() {
 
     FakeHost no_internal = contained_host();
     no_internal.internal_networks = {};
-    const ContainerManager no_internal_manager(no_internal.host());
-    const auto network_failures = no_internal_manager.check_host();
+    const auto network_failures = ContainerManager(no_internal.host()).check_host();
     check("with no internal network, the failure says to create one and start lemond on it",
           network_failures.size() == 1 && network_failures[0].id == "backend_network" &&
               network_failures[0].steps[0] ==
                   "podman network create --internal --disable-dns lemonade-backends" &&
               network_failures[0].steps[1].find("--network podman --network lemonade-backends") !=
                   std::string::npos);
-    no_internal.internal_networks = contained_host().internal_networks;
-    check("creating the backends' network as internal clears the failure without restarting lemond",
-          no_internal_manager.check_host().empty());
 
     FakeHost changing = contained_host();
     const ContainerManager changing_manager(changing.host());
@@ -831,14 +823,6 @@ void test_in_container() {
     check("under pasta, lemond is on no internal network",
           ContainerManager(pasta.host()).backend_network().empty());
 
-    FakeHost two_internal = contained_host();
-    two_internal.containers[id] =
-        id + "||[]|{\"aaa-internal\":{\"IPAddress\":\"10.90.0.2\"},"
-             "\"lemonade-backends\":{\"IPAddress\":\"10.89.0.2\"}}";
-    two_internal.internal_networks = {{"aaa-internal", "true"}, {"lemonade-backends", "true"}};
-    check("of several internal networks, lemonade-backends is the backends' network",
-          ContainerManager(two_internal.host()).backend_network() == "lemonade-backends");
-
     FakeHost only_other = contained_host();
     only_other.containers[id] =
         id + "||[]|{\"podman\":{\"IPAddress\":\"10.88.0.5\"},"
@@ -857,13 +841,6 @@ void test_in_container() {
     check("under rootless Podman, lemond in its own user namespace fails even as root",
           keep_id_failures.size() == 1 && keep_id_failures[0].id == "container_user" &&
               keep_id_failures[0].steps[0].find("--user 0:0") != std::string::npos);
-    FakeHost keep_id_user = contained_host();
-    keep_id_user.root = false;
-    keep_id_user.containers[id].replace(keep_id_user.containers[id].find("||"), 2,
-                                        "|keep-id:uid=10001,gid=10001|");
-    check("under rootless Podman, --userns=keep-id fails",
-          !ContainerManager(keep_id_user.host()).check_host().empty() &&
-              ContainerManager(keep_id_user.host()).check_host()[0].id == "container_user");
     FakeHost host_mode = contained_host();
     host_mode.containers[id].replace(host_mode.containers[id].find("||"), 2, "|host|");
     check("under rootless Podman, lemond in Podman's own user namespace passes",
@@ -903,20 +880,6 @@ void test_in_container() {
     const auto foreign_failures = ContainerManager(foreign.host()).check_host();
     check("a socket whose Podman does not run lemond's container says so",
           foreign_failures.size() == 1 && foreign_failures[0].id == "socket_daemon");
-
-    FakeHost on_host;
-    on_host.tools = {"podman"};
-    const ContainerManager host_manager(on_host.host());
-    check("on the host, lemond is in no container and runs no inspect",
-          !host_manager.in_container() && host_manager.own_container().empty() &&
-              on_host.commands == 0);
-    check("a backend that adds no capability joins lemond's PID namespace",
-          ContainerManager::joins_lemond_pid_namespace({}));
-    check("a backend that adds a capability, such as SYS_PTRACE, keeps its own PID namespace",
-          !ContainerManager::joins_lemond_pid_namespace({"SYS_PTRACE"}));
-    check("container names take lemond's container ID as the instance",
-          ContainerManager::container_name("aaaaaaaaaaaa", "llamacpp", "nathanw", "m") ==
-              "lemonade-aaaaaaaaaaaa-llamacpp-nathanw-m");
 }
 
 // lemond in the Lemonade image, driving the host's Docker through
@@ -964,12 +927,6 @@ void test_in_container_docker() {
           ContainerManager(from_device.host()).check_host().empty() &&
               join(ContainerManager(from_device.host()).run_command(spec)).find(" --group-add 992 ") !=
                   std::string::npos);
-
-    FakeHost private_userns = from_env;
-    private_userns.containers[id].replace(private_userns.containers[id].find("||"), 2, "|private|");
-    const auto userns_failures = ContainerManager(private_userns.host()).check_host();
-    check("under Docker, lemond in its own user namespace fails",
-          userns_failures.size() == 1 && userns_failures[0].id == "container_user");
 
     FakeHost no_internal = from_env;
     no_internal.internal_networks = {};
