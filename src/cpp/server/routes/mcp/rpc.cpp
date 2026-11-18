@@ -189,6 +189,12 @@ nlohmann::json call_mcp_server_capability(ServerContext& ctx,
         return mcp_model_http_result(response);
     };
 
+    auto call_get_handler = [&call_rest](const char* path) {
+        httplib::Response response;
+        call_rest("GET", path, nlohmann::json::object(), response);
+        return mcp_model_http_result(response);
+    };
+
     try {
         if (tool_name == "lemonade_get_model_info") {
             validate_mcp_model_arguments(arguments, {"model_name"});
@@ -310,6 +316,54 @@ nlohmann::json call_mcp_server_capability(ServerContext& ctx,
                 {"models", models},
                 {"count", models.size()},
             }, false);
+        }
+
+        if (tool_name == "lemonade_get_server_health") {
+            validate_mcp_model_arguments(arguments, {});
+            return call_get_handler("/api/v1/health");
+        }
+
+        if (tool_name == "lemonade_get_system_info") {
+            validate_mcp_model_arguments(arguments, {});
+            return call_get_handler("/api/v1/system-info");
+        }
+
+        if (tool_name == "lemonade_list_backends") {
+            validate_mcp_model_arguments(arguments, {});
+            httplib::Request request;
+            request.method = "GET";
+            httplib::Response response;
+            call_rest("GET", "/api/v1/system-info", nlohmann::json::object(), response);
+            if (response.status >= 400) return mcp_model_http_result(response);
+            nlohmann::json system_info = nlohmann::json::parse(response.body);
+            if (!system_info.contains("recipes")) {
+                return mcp_model_tool_result({
+                    {"error", "Backend recipe detection unavailable: recipes missing from system-info"},
+                }, true);
+            }
+            nlohmann::json payload = {
+                {"recipes", system_info.at("recipes")},
+                {"unavailable_recipes", system_info.value(
+                    "unavailable_recipes", nlohmann::json::array())},
+                {"no_fetch_executables", system_info.value("no_fetch_executables", false)},
+            };
+            return mcp_model_tool_result(std::move(payload), false);
+        }
+
+        if (tool_name == "lemonade_install_backend") {
+            validate_mcp_model_arguments(arguments, {"recipe", "backend", "force"});
+            nlohmann::json body = {
+                {"recipe", required_mcp_model_string(arguments, "recipe")},
+                {"backend", required_mcp_model_string(arguments, "backend")},
+                {"stream", false},
+            };
+            if (arguments.contains("force")) {
+                if (!arguments["force"].is_boolean()) {
+                    throw std::invalid_argument("force must be a boolean");
+                }
+                body["force"] = arguments["force"];
+            }
+            return call_json_handler(body, "/api/v1/install");
         }
 
         return mcp_model_tool_result({{"error", "Unknown Lemonade server tool: " + tool_name}}, true);

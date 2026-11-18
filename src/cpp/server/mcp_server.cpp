@@ -1286,6 +1286,38 @@ std::vector<McpTool> McpServer::build_tools() {
         McpTool(
             []() -> json {
                 json descriptor = json{
+                            {"name", "lemonade_get_server_health"},
+                            {"annotations", {
+                                {"readOnlyHint", true},
+                                {"destructiveHint", false},
+                                {"openWorldHint", false},
+                            }},
+                            {"description",
+                             "Return Lemonade server health and runtime limits using the same "
+                             "implementation as GET /api/v1/health."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"additionalProperties", false},
+                                {"properties", json::object()},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_get_server_health, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_get_server_health", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
                             {"name", "lemonade_pull_model"},
                             {"annotations", {
                                 {"readOnlyHint", false},
@@ -1370,6 +1402,111 @@ std::vector<McpTool> McpServer::build_tools() {
             }(),
             [this](const json& arguments) {
                 return server_tool_("lemonade_delete_model", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_get_system_info"},
+                            {"annotations", {
+                                {"readOnlyHint", true},
+                                {"destructiveHint", false},
+                                {"openWorldHint", false},
+                            }},
+                            {"description",
+                             "Return Lemonade hardware and recipe/backend capability information "
+                             "using the same implementation as GET /api/v1/system-info."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"additionalProperties", false},
+                                {"properties", json::object()},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_get_system_info, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_get_system_info", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_list_backends"},
+                            {"annotations", {
+                                {"readOnlyHint", true},
+                                {"destructiveHint", false},
+                                {"openWorldHint", false},
+                            }},
+                            {"description",
+                             "List Lemonade recipes/backends and their installation/support "
+                             "state. This is the backend-focused view of the canonical "
+                             "/api/v1/system-info data."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"additionalProperties", false},
+                                {"properties", json::object()},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_list_backends, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_list_backends", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_install_backend"},
+                            {"annotations", {
+                                {"readOnlyHint", false},
+                                {"destructiveHint", true},
+                                {"openWorldHint", true},
+                            }},
+                            {"description",
+                             "Install or update one Lemonade recipe/backend through the same "
+                             "implementation as POST /api/v1/install. The MCP call is "
+                             "synchronous; use lemonade_list_backends first to inspect support "
+                             "and current state."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"required", json::array({"recipe", "backend"})},
+                                {"additionalProperties", false},
+                                {"properties", {
+                                    {"recipe", {{"type", "string"}}},
+                                    {"backend", {{"type", "string"}}},
+                                    {"force", {{"type", "boolean"},
+                                               {"description", "Override an unsupported-state guard when the underlying API permits it."}}},
+                                }},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_install_backend, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_install_backend", arguments);
             }),
         McpTool(
             json{
