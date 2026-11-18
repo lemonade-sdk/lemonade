@@ -9,6 +9,7 @@
 #include <vector>
 #include "lemon/backends/vllm/vllm_server.h"
 #include "lemon/runtime_config.h"
+#include "lemon/server/router_dispatch.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/utils/conversation_fingerprint.h"
 #include "lemon/wrapped_server.h"
@@ -66,9 +67,6 @@ static void check_map_empty(const char* name, const std::map<std::string, nlohma
 }
 
 
-// The routing decision reaches span creation through a thread-local, so the
-// mapping from that payload to span attributes is where the interesting
-// behavior lives: what is emitted, and what is deliberately not.
 static void test_route_span_attributes() {
     using lemon::telemetry::route_span_attributes;
 
@@ -93,14 +91,15 @@ static void test_route_span_attributes() {
     check_eq("route attributes: matched rule",
              attrs.count("llm.route.matched_rule") ? attrs.at("llm.route.matched_rule").get<std::string>() : "<missing>",
              "code-remote");
-    check_bool("route attributes: default_used survives as a bool",
-               attrs.count("llm.route.default_used") && attrs.at("llm.route.default_used").is_boolean(), true);
+    check_bool("route attributes: default_used keeps its false value",
+               attrs.count("llm.route.default_used") && attrs.at("llm.route.default_used") == false, true);
     check_eq("route attributes: flattened cost_tier",
              attrs.count("llm.route.cost_tier") ? attrs.at("llm.route.cost_tier").get<std::string>() : "<missing>",
              "free");
     check_bool("route attributes: flattened per-million price stays numeric",
                attrs.count("llm.route.cost_input_per_million") &&
-                   attrs.at("llm.route.cost_input_per_million").is_number(), true);
+                   attrs.at("llm.route.cost_input_per_million").is_number() &&
+                   attrs.at("llm.route.cost_input_per_million").get<double>() == 0.15, true);
 
     // A span attribute is a scalar, so a nested member is skipped rather than
     // stringified into something no backend can filter on.
@@ -111,6 +110,31 @@ static void test_route_span_attributes() {
                nested.count("llm.route.to") == 1, true);
 }
 
+static void test_route_span_payload_flattens_estimated_cost() {
+    lemon::RouterDispatchResult result;
+    result.requested_model = "user.RouterKit";
+    result.selected_model = "Qwen3-8B-GGUF";
+    result.decision.route_to = "Qwen3-8B-GGUF";
+    result.decision.matched_rule = "code-remote";
+    result.decision.default_used = false;
+    result.decision.outputs = nlohmann::json{
+        {"estimated_cost",
+         {{"cost_tier", "low"}, {"cost_input_per_million", 0.15}, {"to", "shadowed"},
+          {"breakdown", {{"input", 1}}}}}};
+
+    const nlohmann::json payload = lemon::route_span_payload(result);
+    check_eq("route payload: decision's own to is kept",
+             payload.value("to", std::string("<missing>")), "Qwen3-8B-GGUF");
+    check_eq("route payload: cost_tier flattened from estimated_cost",
+             payload.value("cost_tier", std::string("<missing>")), "low");
+    check_bool("route payload: price flattened from estimated_cost",
+               payload.contains("cost_input_per_million") &&
+                   payload.at("cost_input_per_million") == 0.15, true);
+    check_bool("route payload: nested cost member is skipped", payload.contains("breakdown"), false);
+    check_bool("route payload: no estimated_cost emits only the decision",
+               lemon::route_span_payload(lemon::RouterDispatchResult{}).size() == 4, true);
+}
+
 int main() {
     using lemon::telemetry::hex_to_bytes;
     using lemon::telemetry::standardize_thinking;
@@ -118,6 +142,7 @@ int main() {
     std::printf("=== RUNNING TELEMETRY HELPERS C++ TESTS ===\n");
 
     test_route_span_attributes();
+    test_route_span_payload_flattens_estimated_cost();
 
     // --- hex_to_bytes tests ---
     check_eq("hex_to_bytes: empty string", hex_to_bytes(""), "");
