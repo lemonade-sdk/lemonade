@@ -269,6 +269,8 @@ podman run -d \
 
 Under rootless Podman, `--user 0:0` runs Lemonade as your own account on the host, which owns the socket. Don't give Lemonade's container a user namespace of its own, with `--userns=keep-id` or `--uidmap` for example, under Podman or Docker: it gives backends control over Lemonade's process, and Lemonade refuses to start them.
 
+While a backend runs, Podman refuses `podman rm -f lemonade-server`, since the backend depends on Lemonade's container. Stop Lemonade first, or add `--depend` to remove its backends with it.
+
 **With Docker** 25 or newer:
 
 1. Create the backends' network: `docker network create --internal lemonade-backends`.
