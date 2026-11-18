@@ -12,9 +12,8 @@ struct ModelInfo;
 
 namespace models {
 
-// One model's options folded lowest-first: image defaults, the row's authored options,
-// what the user saved; see SDServer::build_extra_args() for the full ladder. `authored`
-// is null to read the row's own document instead. `saved_key` must be a canonical ID.
+// One model's options folded lowest-first: what the row authored, then what the
+// user saved. `saved_key` must be a canonical ID.
 RecipeOptions build_recipe_options(const ModelInfo& info, const nlohmann::json& authored,
                                    const std::string& saved_key,
                                    const nlohmann::json& saved_options);

@@ -7,6 +7,7 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/auto_tune.h"
+#include "lemon/backends/llamacpp/llamacpp_rulehead.h"
 #include "lemon/backends/llamacpp/llamacpp_systemone.h"
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
@@ -100,6 +101,10 @@ void respond_with_model_options(ServerContext& ctx, const std::string& id,
             resolved_ctx = backends::llamacpp::encoder_decision_ctx_size(
                 static_cast<int>(std::min<int64_t>(resolved_ctx, std::numeric_limits<int>::max())),
                 info.max_context_window);
+        }
+        if (is_rule_head_router_model(info)) {
+            resolved_ctx = backends::llamacpp::rule_head_ctx_size(
+                static_cast<int>(std::min<int64_t>(resolved_ctx, std::numeric_limits<int>::max())));
         }
 
         json response = {

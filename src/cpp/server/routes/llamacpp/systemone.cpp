@@ -21,14 +21,17 @@ const RouteError kNotDecisionModel{
     "SystemOne questions; checked before it loads"};
 const RouteError kQuestionsRejected{
     400, "",
-    "`llama-server` rejects a question, such as a `score` question with one level; the backend's "
+    "The backend rejects a question, such as a `score` question with one level; the backend's "
     "status replaces this one"};
 const RouteError kOptionCut{
     400, "",
     "A `laya` model (Laya, Julia-1) would cut an option or the question; `llama-server` cuts them "
     "without saying so"};
 const RouteError kContextExceeded{
-    400, "context_length_exceeded", "`state` and a question do not fit in the model's context"};
+    400, "context_length_exceeded",
+    "`state` and a question do not fit in the model's context. FastFlowLM refuses only the "
+    "questions that do not fit: while another question fits, the status is 200 and each "
+    "refused answer carries `\"error\": \"max_length_exceeded\"`"};
 const RouteError kNoImageInput{
     501, "", "`images` is sent to a model that reads no images, or that loaded without `mmproj`"};
 
@@ -36,7 +39,7 @@ const RouteArg kState{"state", ArgIn::JsonBody,
                       {{"type", json::array({"string", "object", "array", "null"})}},
                       true, Support::Available,
                       "The content to judge. A value that is not a string reaches the model as JSON text. "
-                      "`null` asks about the images only; `llama-server` refuses it for decision types "
+                      "`null` asks about the images only; the backend refuses it for decision types "
                       "that need text."};
 const RouteArg kQuestions{"questions", ArgIn::JsonBody, {{"type", "object"}}, true, Support::Available,
                           "Maps each question id to a question, which the model answers independently of the "
@@ -46,8 +49,9 @@ const RouteArg kQuestions{"questions", ArgIn::JsonBody, {{"type", "object"}}, tr
                           "`true` and `false` descriptions."};
 const RouteArg kImages{"images", ArgIn::JsonBody, {{"type", "array"}, {"items", {{"type", "string"}}}}, false,
                        Support::Partial,
-                       "Data URLs of images to judge with the state. The model must load with an `mmproj` "
-                       "file, and `llama-server` decides which decision types read images.",
+                       "Data URLs of images to judge with the state. A `llamacpp` model must load with an "
+                       "`mmproj` file, and `llama-server` decides which decision types read images. FLM's "
+                       "d3 models read images without one.",
                        {}, true};
 
 class SystemOneRoute : public ModelRoute {
@@ -63,11 +67,12 @@ public:
         s.modality = "state + questions -> one answer per question";
         s.experimental = true;
         s.description =
-            "Asks a llama.cpp decision model typed questions about one piece of content and returns "
-            "one answer per question, without generating tokens. lemond forwards the request to "
-            "`llama-server` unchanged, including the order of each question's options, and "
-            "`llama-server` builds the prompt from the template in the GGUF. Only `llamacpp` models "
-            "labelled `classification` and `systemone`, such as `Laya-GGUF`, serve this endpoint.";
+            "Asks a decision model typed questions about one piece of content and returns one answer "
+            "per question, without generating tokens. lemond forwards the request to the backend "
+            "unchanged, including the order of each question's options: `llama-server` builds the "
+            "prompt from the template in the GGUF, and FastFlowLM serves its d3 models on the NPU "
+            "with `flm serve --decision`. Only `llamacpp` and `flm` models labelled `classification` "
+            "and `systemone`, such as `Laya-GGUF` or `d3-lite-FLM`, serve this endpoint.";
         s.notes = {
             "### Cuts\n\n"
             "lemond adds `truncated` to each answer. A `laya` model (Laya, Julia-1) cuts a long "
@@ -116,7 +121,9 @@ public:
                             },
                             "confidence": {"type": "number", "description": "`choice` and `score` questions: how clearly the model prefers its answer; `0` when every option is equally likely."},
                             "noul": {"type": "number", "description": "`noul` questions: the probability that the answer is `true`."},
-                            "truncated": {"type": "boolean", "description": "Added by Lemonade. `false` when the decision type refuses a `state` that does not fit instead of cutting it. Absent when it can cut the `state` without saying so (`lfm2-d1-omni`; `h2o-lightning` with a `state` over 32,000 bytes), so absence means unknown."}
+                            "truncated": {"type": "boolean", "description": "Added by Lemonade. `false` when the decision type refuses a `state` that does not fit instead of cutting it. Absent when it can cut the `state` without saying so (`lfm2-d1-omni`; `h2o-lightning` with a `state` over 32,000 bytes), so absence means unknown."},
+                            "error": {"type": "string", "description": "FastFlowLM: `max_length_exceeded` when this question does not fit in the model's context, so the answer has no scores. The other questions are still answered; when every question is refused, the status is 400 `context_length_exceeded` instead."},
+                            "message": {"type": "string", "description": "With `error`: why the question was refused, with its token count and the context size."}
                         }
                     }
                 },
@@ -185,7 +192,7 @@ protected:
                 write_openai_error(res, kNotDecisionModel,
                     "model '" + req.model + "' is not a SystemOne decision model (it needs "
                     "the 'classification' and 'systemone' labels on a backend that answers "
-                    "/v1/systemone, such as llamacpp)");
+                    "/v1/systemone, such as llamacpp or flm)");
                 return false;
             }
         }
@@ -197,6 +204,10 @@ protected:
         // changes the model's scores.
         ordered_json body = ordered_json::parse(req.http.body);
         body[kModel.name] = req.model;
+        // ctx_size only sizes the load, which is done by now; FLM answers 422 to a
+        // field it does not know.
+        body.erase(model_loading::kCtxSize.name);
+        auto cancel = cancel_on_disconnect(req);
         const ordered_json response = ctx_.router->systemone(body);
         if (response.contains("error")) {
             set_error_response(json(response), res, kBackendError);

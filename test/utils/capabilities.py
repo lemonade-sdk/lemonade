@@ -185,7 +185,7 @@ CAPABILITIES = {
             "responses_extra_body": {"reasoning": {"effort": "none"}},
         },
         "ryzenai": {
-            "backends": ["cpu", "hybrid", "npu"],
+            "backends": ["npu"],
             "supports": {
                 "chat_completions": True,
                 "chat_completions_streaming": True,
@@ -208,9 +208,9 @@ CAPABILITIES = {
                 "static_max_context_window": False,
             },
             "test_models": {
-                "llm_cpu": "Qwen2.5-0.5B-Instruct-CPU",
-                "llm_hybrid": "Qwen-2.5-1.5B-Instruct-Hybrid",
-                "llm_npu": "Qwen2.5-3B-Instruct-NPU",
+                "llm": "Llama-3.2-1B-Instruct-NPU",
+                "llm_npu": "Llama-3.2-1B-Instruct-NPU",
+                "tool_calling": "Llama-3.2-1B-Instruct-NPU",
             },
         },
         "flm": {
@@ -364,20 +364,37 @@ CAPABILITIES = {
             },
         },
     },
-    # SystemOne decision models: a llama.cpp model that deploys as
-    # classification and answers /v1/systemone (llama.cpp b11361 or later).
+    # SystemOne decision models: a model that deploys as classification and
+    # answers /v1/systemone (llama.cpp b11361 or later, or FLM's d3 models).
     "systemone": {
         "llamacpp": {
             "backends": ["cpu", "vulkan", "rocm", "metal"],
             "supports": {
                 "systemone": True,
                 "classify_labels": True,
+                "laya_decision_type": True,
             },
             "test_models": {
-                "systemone": "Julia-1-GGUF",
+                "systemone": "Laya-GGUF",
                 "systemone_router": "Laya-GGUF",
                 "llm": "Tiny-Test-Model-GGUF",
                 "llm_capable": "Qwen3-0.6B-GGUF",
+            },
+        },
+        # d3 decision models on the NPU (`flm serve --decision`, FLM 1.0.11 or
+        # later).
+        "flm": {
+            "backends": ["npu"],
+            "supports": {
+                "systemone": True,
+                "classify_labels": True,
+                "laya_decision_type": False,
+            },
+            "test_models": {
+                "systemone": "d3-lite-FLM",
+                "systemone_router": "d3-lite-FLM",
+                "llm": "llama3.2-1b-FLM",
+                "llm_capable": "qwen3-1.7b-FLM",
             },
         },
     },
@@ -512,7 +529,7 @@ def get_test_model(
     caps = get_capabilities(wrapped_server, modality)
     test_models = caps.get("test_models", {})
 
-    # Try backend-specific model first (e.g., llm_cpu, llm_hybrid)
+    # Try backend-specific model first (e.g., llm_npu)
     if backend:
         backend_specific_key = f"{model_type}_{backend}"
         if backend_specific_key in test_models:

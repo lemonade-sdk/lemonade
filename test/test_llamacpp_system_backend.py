@@ -64,6 +64,11 @@ if "--version" in sys.argv or "--help" in sys.argv:
     print("version: 9999 (mock)")
     sys.exit(0)
 
+argv_path = os.environ.get("MOCK_LLAMA_ARGV_PATH", "")
+if argv_path:
+    with open(argv_path, "w", encoding="utf-8") as handle:
+        json.dump(sys.argv[1:], handle)
+
 
 class ReusableHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
@@ -335,9 +340,15 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         cls.dummy_llama_server_path = os.path.join(cls.temp_bin_dir, "llama-server")
         cls.capture_path = os.path.join(cls.temp_bin_dir, "captured_chat_request.json")
         cls.control_path = os.path.join(cls.temp_bin_dir, "mock_control.json")
+        cls.argv_path = os.path.join(cls.temp_bin_dir, "llama_server_argv.json")
         cls.original_env = {
             name: os.environ.get(name)
-            for name in ("PATH", "MOCK_LLAMA_REQUEST_PATH", "MOCK_LLAMA_CONTROL_PATH")
+            for name in (
+                "PATH",
+                "MOCK_LLAMA_REQUEST_PATH",
+                "MOCK_LLAMA_CONTROL_PATH",
+                "MOCK_LLAMA_ARGV_PATH",
+            )
         }
 
         try:
@@ -359,6 +370,7 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
             os.environ["PATH"] = cls.temp_bin_dir + os.pathsep + original_path
             os.environ["MOCK_LLAMA_REQUEST_PATH"] = cls.capture_path
             os.environ["MOCK_LLAMA_CONTROL_PATH"] = cls.control_path
+            os.environ["MOCK_LLAMA_ARGV_PATH"] = cls.argv_path
             cls._write_mock_control({})
 
             # One lemond and one spawned mock llama-server are enough for all
@@ -551,6 +563,49 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         self.assertEqual(error["code"], "context_length_exceeded")
         self.assertEqual(error["status_code"], 400)
         self.assertIn("exceeds the available context size", error["message"])
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
+    def test_009_lora_checkpoint_is_passed_to_llama_server(self):
+        """Verify a lora checkpoint reaches llama-server as --lora <path>."""
+        model = requests.get(
+            f"http://localhost:{PORT}/api/v1/models/{ENDPOINT_TEST_MODEL}",
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        ).json()
+        # The mock never reads the adapter, so reusing the cached main file as
+        # the lora avoids downloading a real adapter.
+        checkpoint = model["checkpoint"]
+        lora_model = "user.Tiny-Test-Model-LoRA"
+
+        pull_response = requests.post(
+            f"http://localhost:{PORT}/api/v1/pull",
+            json={
+                "model_name": lora_model,
+                "recipe": "llamacpp",
+                "checkpoints": {"main": checkpoint, "lora": checkpoint},
+                "stream": False,
+            },
+            headers=_auth_headers(),
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+        load_response = requests.post(
+            f"http://localhost:{PORT}/api/v1/load",
+            json={"model_name": lora_model, "llamacpp_backend": "system"},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200, load_response.text)
+
+        with open(self.argv_path, "r", encoding="utf-8") as handle:
+            argv = json.load(handle)
+        self.assertIn("--lora", argv)
+        lora_path = argv[argv.index("--lora") + 1]
+        self.assertEqual(os.path.basename(lora_path), checkpoint.split(":", 1)[1], argv)
+        self.assertTrue(os.path.isfile(lora_path), lora_path)
 
 
 def _run_tests():

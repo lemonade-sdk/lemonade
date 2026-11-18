@@ -34,6 +34,7 @@ struct GPUInfo : DeviceInfo {
     // reads it.
     std::string display_name;
     std::string compute_capability;  // NVIDIA only: "MAJOR.MINOR" from nvidia-smi (e.g. "8.6")
+    bool driver_missing = false;  // NVIDIA only: hardware found, but the NVIDIA driver is not bound to it
     double vram_gb = 0.0;
     double vram_used_gb = -1.0;  // -1 when per-device usage is unavailable
     double virtual_gb = 0.0;

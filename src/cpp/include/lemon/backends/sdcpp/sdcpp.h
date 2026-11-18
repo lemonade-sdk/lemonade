@@ -27,13 +27,13 @@ inline const BackendDescriptor descriptor = {
          "SD.cpp backend to use", "Stable Diffusion Options"},
         {"sdcpp_args", "--sdcpp-args", "", "ARGS",
          "Custom arguments to pass to sd-server (must not conflict with managed args)", "Stable Diffusion Options"},
-        // Image generation defaults (recipe-level only, not CLI flags).
         {"steps", "", 20, "SIZE", "Number of diffusion steps", "Stable Diffusion Options"},
         {"cfg_scale", "", 7.0, "SIZE", "Classifier-free guidance scale", "Stable Diffusion Options"},
         {"width", "", 512, "SIZE", "Output image width", "Stable Diffusion Options"},
         {"height", "", 512, "SIZE", "Output image height", "Stable Diffusion Options"},
         {"sampling_method", "", "", "ARGS", "Sampling method", "Stable Diffusion Options"},
         {"flow_shift", "", 0.0, "SIZE", "Flow shift", "Stable Diffusion Options"},
+        {"soft_pixel_cap", "", 0, "SIZE", "Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default)", "Stable Diffusion Options", false},
     },
     /*support*/ {
         {"metal", BackendTier::Core, BackendFormat::Native, {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
@@ -43,6 +43,18 @@ inline const BackendDescriptor descriptor = {
         {"rocm", BackendTier::Core, BackendFormat::Native, {"windows", "linux"},
          {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
         {"cpu", BackendTier::Core, BackendFormat::Native, {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
+    },
+    /*about*/ {
+        {"metal", {"stable-diffusion.cpp image generation accelerated by Metal on Apple Silicon GPUs.",
+                   "leejet", "lemonade-sdk", "MIT", "https://github.com/leejet/stable-diffusion.cpp"}},
+        {"cuda", {"stable-diffusion.cpp image generation on NVIDIA GPUs.",
+                  "leejet", "lemonade-sdk", "MIT", "https://github.com/leejet/stable-diffusion.cpp"}},
+        {"vulkan", {"Cross-platform stable-diffusion.cpp GPU runtime for most AMD and NVIDIA GPUs.",
+                    "leejet", "lemonade-sdk", "MIT", "https://github.com/leejet/stable-diffusion.cpp"}},
+        {"rocm", {"stable-diffusion.cpp specialized for AMD GPUs, built against ROCm from TheRock.",
+                  "leejet", "lemonade-sdk", "MIT", "https://github.com/leejet/stable-diffusion.cpp"}},
+        {"cpu", {"stable-diffusion.cpp on the CPU alone.",
+                 "leejet", "lemonade-sdk", "MIT", "https://github.com/leejet/stable-diffusion.cpp"}},
     },
     /*supported_modes*/ {"image"},
     /*required_checkpoints*/ {"main"},  // flux text_encoder+vae validated together in load()

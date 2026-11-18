@@ -252,15 +252,9 @@ void Server::stop() {
 }
 
 double Server::get_cpu_usage() {
-#if defined(__linux__) || defined(_WIN32)
     return metrics_platform_->get_cpu_usage(cpu_stats_mutex_,
                                             last_cpu_stats_.total,
                                             last_cpu_stats_.total_idle);
-#else
-    uint64_t dummy_total = 0, dummy_idle = 0;
-    std::mutex dummy_mutex;
-    return metrics_platform_->get_cpu_usage(dummy_mutex, dummy_total, dummy_idle);
-#endif
 }
 
 bool Server::should_shutdown() const {
