@@ -942,6 +942,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: api-examples
+          overwrite: true
           path: |
             docs/tools/api_examples_cache.json
             docs/tools/api_examples_status.txt
@@ -1498,23 +1499,13 @@ jobs:
           # PRs (not just the newest 200), and never touch a contributor's PR.
           EXISTING_ROW=$(gh api --paginate --slurp \
             "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" |
-            jq -r --arg repo "$GITHUB_REPOSITORY" --arg branch "$BRANCH" \
-              --arg ggml "$LLAMACPP_RELEASE" --arg rocm "$LLAMACPP_ROCM_RELEASE" \
-              --arg lemonade "$LLAMACPP_LEMONADE_RELEASE" '
+            jq -r --arg repo "$GITHUB_REPOSITORY" --arg branch "$BRANCH" '
               [.[][] |
                 select(.user.login == "app/github-actions" or .user.login == "github-actions[bot]") |
                 select(.head.repo.full_name == $repo and .base.ref == "main") |
                 select(.head.ref == $branch or
                   ((.head.ref | startswith($branch + "-")) and
-                   (.head.ref | ltrimstr($branch + "-") | test("^[0-9]+-[0-9]+$")))) |
-                select(
-                  .head.ref == $branch or
-                  (
-                    ((.body // "") | contains("**ggml-org/llama.cpp candidate**: `" + $ggml + "`")) and
-                    ((.body // "") | contains("**lemonade-sdk/llama.cpp candidate**: `" + $lemonade + "`")) and
-                    ((.body // "") | contains("**lemonade-sdk/llamacpp-rocm candidate**: `" + $rocm + "`"))
-                  )
-                )
+                   (.head.ref | ltrimstr($branch + "-") | test("^[0-9]+-[0-9]+$"))))
               ] | sort_by([(.head.ref != $branch), .created_at]) | first |
               if . == null then empty else "\(.number) \(.head.ref)" end')
           EXISTING_PR=""
@@ -1525,11 +1516,12 @@ jobs:
           if [[ -n "$EXISTING_PR" ]]; then
             old_title=$(gh pr view "$EXISTING_PR" --json title --jq .title)
             was_draft=$(gh pr view "$EXISTING_PR" --json isDraft --jq .isDraft)
-            if [[ "$was_draft" == true && "$old_title" != '[Validation failed] '* ]]; then
+            if [[ "$old_title" == 'HOLD:'* ]] ||
+               [[ "$was_draft" == true && "$old_title" != '[Validation failed] '* ]]; then
               echo "PR #$EXISTING_PR is manually held as draft; leaving it untouched."
               exit 0
             fi
-            if [[ "$VALIDATED" == true && "$was_draft" != true ]]; then
+            if [[ "$VALIDATED" == true && "$was_draft" != true && "$old_title" != '[Validation failed] '* ]]; then
               echo "PR #$EXISTING_PR is already ready; no repeat update needed."
               exit 0
             fi
@@ -1544,6 +1536,10 @@ jobs:
                 exit 1
               fi
             fi
+            # Publish a failed validation warning before any git operation can fail.
+            if [[ "$VALIDATED" != true ]]; then
+              gh pr edit "$EXISTING_PR" --title "$TITLE" --body-file pr_body.md
+            fi
 
             # Append to bot-owned branch history; preserve unrelated pins/docs.
             worktree=$(mktemp -d)
@@ -1555,9 +1551,31 @@ jobs:
             git -C "$worktree" add -- src/cpp/resources/backend_versions.json \
               src/cpp/include/lemon/llamacpp_architectures_generated.h
             if [[ "$VALIDATED" == true ]]; then
-              cp docs/tools/api_examples_cache.json "$worktree/docs/tools/"
-              cp -R docs/api/. "$worktree/docs/api/"
-              git -C "$worktree" add -A -- docs/tools/api_examples_cache.json docs/api
+              # Replay generated changes onto the existing branch, preserving
+              # unrelated edits made by maintainers and removed API pages.
+              docs_patch=$(mktemp)
+              git add -N -- docs/api
+              git diff --binary HEAD -- docs/tools/api_examples_cache.json docs/api > "$docs_patch"
+              if [[ -s "$docs_patch" ]] &&
+                 ! git -C "$worktree" apply --3way --index "$docs_patch"; then
+                # Generated-file conflicts use the recorded candidate only for
+                # conflicted paths; non-conflicting branch edits stay intact.
+                mapfile -d '' -t conflicts < <(git -C "$worktree" diff --name-only --diff-filter=U -z -- docs/tools/api_examples_cache.json docs/api)
+                if (( ${#conflicts[@]} == 0 )); then
+                  echo "::error::API docs replay failed without resolvable conflicts."
+                  exit 1
+                fi
+                for file in "${conflicts[@]}"; do
+                  if [[ -f "$file" ]]; then
+                    mkdir -p "$worktree/$(dirname "$file")"
+                    cp -- "$file" "$worktree/$file"
+                    git -C "$worktree" add -- "$file"
+                  else
+                    git -C "$worktree" rm -f -- "$file"
+                  fi
+                done
+              fi
+              rm -f "$docs_patch"
             fi
             if ! git -C "$worktree" diff --cached --quiet; then
               git -C "$worktree" commit -m "Refresh llama.cpp candidates for ${LLAMACPP_RELEASE}"
