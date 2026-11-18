@@ -931,31 +931,36 @@ jobs:
             DOCS_PATCH=$(mktemp)
             git add -N -- docs/api
             git diff --binary HEAD -- docs/tools/api_examples_cache.json docs/api > "$DOCS_PATCH"
-            if [[ -s "$DOCS_PATCH" ]] &&
-               ! apply_output=$(git -C "$WORKTREE" apply --3way --index "$DOCS_PATCH" 2>&1); then
-              printf '%s\n' "$apply_output" >&2
-              if [[ "$apply_output" == *'does not exist in index'* ]]; then
-                # The bot branch may lack a generated page added on main.
-                # Use recorded versions only for files changed by this patch.
-                mapfile -d '' -t conflicts < <(git diff --name-only -z HEAD -- docs/tools/api_examples_cache.json docs/api)
-              else
-                # Ordinary 3-way conflicts: preserve cleanly merged branch edits.
-                mapfile -d '' -t conflicts < <(git -C "$WORKTREE" diff --name-only --diff-filter=U -z -- docs/tools/api_examples_cache.json docs/api)
+            mapfile -d '' -t changed < <(git diff --name-only -z HEAD -- docs/tools/api_examples_cache.json docs/api)
+            # git apply rejects the whole patch when one path is missing from the
+            # branch (e.g. a page main added later), so replay those separately.
+            missing=()
+            exclude=()
+            for file in "${changed[@]}"; do
+              if ! git -C "$WORKTREE" cat-file -e "HEAD:$file" 2>/dev/null; then
+                missing+=("$file")
+                exclude+=("--exclude=$file")
               fi
+            done
+            conflicts=()
+            if (( ${#changed[@]} > ${#missing[@]} )) &&
+               ! git -C "$WORKTREE" apply --3way --index "${exclude[@]}" "$DOCS_PATCH"; then
+              mapfile -d '' -t conflicts < <(git -C "$WORKTREE" diff --name-only --diff-filter=U -z -- docs/tools/api_examples_cache.json docs/api)
               if (( ${#conflicts[@]} == 0 )); then
                 echo "::error::API docs replay failed without resolvable conflicts."
                 exit 1
               fi
-              for file in "${conflicts[@]}"; do
-                if [[ -f "$file" ]]; then
-                  mkdir -p "$WORKTREE/$(dirname "$file")"
-                  cp -- "$file" "$WORKTREE/$file"
-                  git -C "$WORKTREE" add -- "$file"
-                else
-                  git -C "$WORKTREE" rm -f --ignore-unmatch -- "$file"
-                fi
-              done
             fi
+            # Generated files: missing or conflicted paths take the recorded version.
+            for file in "${missing[@]}" "${conflicts[@]}"; do
+              if [[ -f "$file" ]]; then
+                mkdir -p "$WORKTREE/$(dirname "$file")"
+                cp -- "$file" "$WORKTREE/$file"
+                git -C "$WORKTREE" add -- "$file"
+              else
+                git -C "$WORKTREE" rm -f --ignore-unmatch -- "$file"
+              fi
+            done
             rm -f "$DOCS_PATCH"
           fi
           if ! git -C "$WORKTREE" diff --cached --quiet; then
