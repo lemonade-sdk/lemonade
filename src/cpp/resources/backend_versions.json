@@ -5,7 +5,7 @@
     "github": {
       "lemonade-sdk/ryzenai-server": {
         "v1.9.0": {
-          "ryzenai-server.zip": "sha256:afb4bd87e71dab243cc9fc30a9996220e685ae15b5fb9214f237698a23a629b3"
+          "ryzenai-server.zip": "sha256:fbafd130d05fb6b6428e927761c65085d672384dd5968d5230b8ee3df878b5f0"
         }
       },
       "pwilkin/openmoss": {
