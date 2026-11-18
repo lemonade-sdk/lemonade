@@ -382,11 +382,15 @@ std::optional<SetupFailure> ContainerManager::check_container() const {
         std::lock_guard<std::mutex> lock(own_container_mutex_);
         userns_mode = own_userns_mode_;
     }
-    if (rootless_podman() && !userns_mode.empty() && userns_mode != "host") {
+    if (!userns_mode.empty() && userns_mode != "host") {
+        const bool rootless = rootless_podman();
         return SetupFailure{"container_user",
-                            "Under rootless Podman, lemond's container must share Podman's user "
-                            "namespace, not have its own (--userns=" + userns_mode + ")",
-                            {"Start lemond's container with --user 0:0 and no --userns option"},
+                            std::string("lemond's container must share the user namespace of ") +
+                                (rootless ? "Podman" : "its backends") +
+                                ", not have its own (--userns=" + userns_mode + ")",
+                            {rootless ? "Start lemond's container with --user 0:0 and no --userns option"
+                                      : "Start lemond's container with no --userns, --uidmap or "
+                                        "--gidmap option"},
                             ""};
     }
     if (backend_network().empty()) {

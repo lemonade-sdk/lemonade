@@ -267,7 +267,7 @@ podman run -d \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
-Under rootless Podman, `--user 0:0` runs Lemonade as your own account on the host, which owns the socket. Don't use `--userns=keep-id`: it gives backends control over Lemonade's process, and Lemonade refuses to start them.
+Under rootless Podman, `--user 0:0` runs Lemonade as your own account on the host, which owns the socket. Don't give Lemonade's container a user namespace of its own, with `--userns=keep-id` or `--uidmap` for example, under Podman or Docker: it gives backends control over Lemonade's process, and Lemonade refuses to start them.
 
 **With Docker** 25 or newer:
 

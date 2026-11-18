@@ -847,6 +847,12 @@ void test_in_container() {
     rootful.gpu_group = "990";
     check("under rootful Podman, lemond need not run as root",
           ContainerManager(rootful.host()).check_host().empty());
+    FakeHost rootful_private = rootful;
+    rootful_private.containers[id].replace(rootful_private.containers[id].find("||"), 2, "|private|");
+    const auto rootful_private_failures = ContainerManager(rootful_private.host()).check_host();
+    check("under rootful Podman, lemond in its own user namespace fails",
+          rootful_private_failures.size() == 1 && rootful_private_failures[0].id == "container_user" &&
+              rootful_private_failures[0].steps[0].find("--uidmap") != std::string::npos);
 
     FakeHost no_socket = contained_host();
     no_socket.paths = {"/run/.containerenv"};
@@ -931,6 +937,12 @@ void test_in_container_docker() {
           ContainerManager(from_device.host()).check_host().empty() &&
               join(ContainerManager(from_device.host()).run_command(spec)).find(" --group-add 992 ") !=
                   std::string::npos);
+
+    FakeHost private_userns = from_env;
+    private_userns.containers[id].replace(private_userns.containers[id].find("||"), 2, "|private|");
+    const auto userns_failures = ContainerManager(private_userns.host()).check_host();
+    check("under Docker, lemond in its own user namespace fails",
+          userns_failures.size() == 1 && userns_failures[0].id == "container_user");
 
     FakeHost no_internal = from_env;
     no_internal.internal_networks = {};
