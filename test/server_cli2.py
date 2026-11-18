@@ -334,6 +334,7 @@ payload = {{
         "ANTHROPIC_BASE_URL": os.environ.get("ANTHROPIC_BASE_URL", ""),
         "ANTHROPIC_AUTH_TOKEN": os.environ.get("ANTHROPIC_AUTH_TOKEN", ""),
         "LEMONADE_API_KEY": os.environ.get("LEMONADE_API_KEY", ""),
+        "OPENCODE_CONFIG_CONTENT": os.environ.get("OPENCODE_CONFIG_CONTENT", ""),
         "OPENAI_BASE_URL": os.environ.get("OPENAI_BASE_URL", ""),
         "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
         "ANTHROPIC_DEFAULT_SONNET_MODEL": os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", ""),
@@ -1807,6 +1808,55 @@ sys.exit(0)
             model_idx = argv.index("-m") + 1
             self.assertEqual(argv[model_idx], f"Lemonade/{ENDPOINT_TEST_MODEL}")
 
+    def test_117a_launch_opencode_v2_with_inline_config(self):
+        """OpenCode 2 gets a private server and its provider/model through config."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "opencode_v2_capture.json")
+            self._write_fake_agent(
+                temp_dir, "opencode", capture_path, version="opencode v2.2.7"
+            )
+            env = self._build_stubbed_agent_env(temp_dir)
+            result = run_cli_command(
+                [
+                    "--host",
+                    "localhost",
+                    "--port",
+                    str(PORT),
+                    "launch",
+                    "opencode",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--agent-args",
+                    "--continue",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            with open(capture_path, encoding="utf-8") as f:
+                payload = json.load(f)
+
+            self.assertEqual(payload["argv"], ["--standalone", "--continue"])
+            config = json.loads(payload["env"]["OPENCODE_CONFIG_CONTENT"])
+            self.assertEqual(config["model"], f"Lemonade/{ENDPOINT_TEST_MODEL}")
+            provider = config["providers"]["Lemonade"]
+            self.assertEqual(
+                provider["package"], "@opencode/ai/providers/openai-compatible"
+            )
+            self.assertEqual(provider["env"], ["LEMONADE_API_KEY"])
+            self.assertEqual(
+                provider["settings"]["baseURL"], f"http://localhost:{PORT}/v1"
+            )
+            self.assertIn(ENDPOINT_TEST_MODEL, provider["models"])
+            self.assertFalse(
+                os.path.exists(
+                    os.path.join(temp_dir, ".config", "opencode", "opencode.json")
+                )
+            )
+
     def test_118_launch_opencode_creates_config(self):
         """Launch opencode should create opencode.json with Lemonade provider."""
         if IS_WINDOWS:
@@ -1818,7 +1868,14 @@ sys.exit(0)
             env = self._build_stubbed_agent_env(temp_dir)
 
             result = run_cli_command(
-                ["launch", "opencode", "--model", ENDPOINT_TEST_MODEL],
+                [
+                    "launch",
+                    "opencode",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--ctx-size",
+                    str(ENDPOINT_TEST_MODEL_CTX_SIZE),
+                ],
                 timeout=TIMEOUT_DEFAULT,
                 env=env,
             )
@@ -2349,7 +2406,7 @@ sys.exit(0)
                 ).json()["context_length"]
                 self.assertNotEqual(loaded_ctx, 40960)
                 self.assertEqual(model.get("contextWindow"), loaded_ctx)
-                self.assertEqual(model.get("maxTokens"), loaded_ctx)
+                self.assertEqual(model.get("maxTokens"), min(loaded_ctx, 65536))
         finally:
             self._save_ctx_size(saved)
 

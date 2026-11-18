@@ -716,10 +716,10 @@ Pi-only options:
 - To customize recipe options (e.g. context size) for the launched model, configure them ahead of time with `lemonade load <model> ... --save-options`, or with `lemonade config set`.
 - `--agent-args` is parsed and appended to the launched agent command.
 - Supported agents: `claude`, `codex`, `opencode`, `pi`, `junie`
-- `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
+- `opencode` reads the installed version to pick its config format: 1.x gets an auto-managed config file at `~/.config/opencode/opencode.json`, while 2.x receives its provider and model through the `OPENCODE_CONFIG_CONTENT` environment variable and starts with `--standalone`, leaving that file untouched. When the version cannot be read, launch warns and falls back to the 1.x file.
 - `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json` (honors `PI_CODING_AGENT_DIR`), plus `mcp.json` with `--mcp`. See [Pi](../integrations/pi.md).
 - `junie` uses an auto-managed custom model profile at `~/.junie/models/lemonade.json` (honors `JUNIE_HOME`) and is launched with `--model custom:lemonade`.
-- When no `--api-key` is provided, the generated `opencode`, `pi`, and `junie` providers use a default `apiKey` value of `lemonade`. With an API key, `pi`'s config references `${LEMONADE_API_KEY}`, which launch exports to pi, instead of storing the key.
+- When no `--api-key` is provided, the generated `opencode`, `pi`, and `junie` providers use a default `apiKey` value of `lemonade`. With an API key, `pi`'s config references `${LEMONADE_API_KEY}`, which launch exports to pi, instead of storing the key. OpenCode 2 always reads the key from `LEMONADE_API_KEY`, which launch exports.
 
 **Examples:**
 
