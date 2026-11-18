@@ -31,7 +31,7 @@ from utils.server_base import (
     pull_model_with_retry,
     get_config,
 )
-from utils.test_models import PORT, TIMEOUT_DEFAULT
+from utils.test_models import PORT, TIMEOUT_DEFAULT, TIMEOUT_MODEL_OPERATION
 
 MOCK_CLOUD_USAGE = {
     "prompt_tokens": 50,
@@ -1253,9 +1253,30 @@ class RouterTests(ServerTestBase):
             resp.headers.get("Content-Type", "").startswith("application/json"),
             f"expected a JSON error, got {resp.headers.get('Content-Type')}",
         )
-        error = resp.json().get("error", {})
+        error = self._error(resp)
         self.assertEqual(error.get("code"), "router_response_chain_unsupported")
         return error
+
+    def _error(self, resp):
+        try:
+            return resp.json().get("error", {})
+        except ValueError:
+            self.fail(f"status {resp.status_code}, non-JSON body: {resp.text[:300]}")
+
+    def _assert_not_rejected(self, body):
+        # The guard answers before any SSE, so the status line is enough and
+        # the stream is closed without waiting for generation.
+        with requests.post(
+            f"{self.base_url}/responses",
+            json={**body, "stream": True, "max_output_tokens": 1},
+            timeout=TIMEOUT_MODEL_OPERATION,
+            stream=True,
+        ) as resp:
+            code = self._error(resp).get("code") if resp.status_code >= 400 else None
+            self.assertNotEqual(
+                code, "router_response_chain_unsupported", f"status {resp.status_code}"
+            )
+            return resp.status_code
 
     def test_640_responses_rejects_previous_response_id(self):
         """A response chain cannot cross routing candidates.
@@ -1289,30 +1310,20 @@ class RouterTests(ServerTestBase):
         self.assertEqual(
             resp.status_code, 404, f"status {resp.status_code}: {resp.text}"
         )
-        self.assertEqual(resp.json().get("error", {}).get("code"), "model_not_found")
+        self.assertEqual(self._error(resp).get("code"), "model_not_found")
         print("[OK] concrete model with previous_response_id passes the guard")
 
     def test_642_responses_ignores_empty_previous_response_id(self):
         """An empty string is not a chain reference, so it must not trip the
         guard -- clients that always send the field shouldn't be locked out."""
-        resp = self._post_responses(
+        status = self._assert_not_rejected(
             {
                 "model": COLLECTION_NAME,
                 "input": "say hi",
                 "previous_response_id": "",
-                "max_output_tokens": 8,
-            },
-            timeout=600,
+            }
         )
-        code = None
-        if resp.status_code >= 400:
-            code = resp.json().get("error", {}).get("code")
-        self.assertNotEqual(
-            code, "router_response_chain_unsupported", f"status {resp.status_code}"
-        )
-        print(
-            f"[OK] empty previous_response_id not rejected (status {resp.status_code})"
-        )
+        print(f"[OK] empty previous_response_id not rejected (status {status})")
 
     def test_643_responses_rejects_chain_before_streaming(self):
         """A streaming request gets the same JSON 400 before any SSE is sent."""
@@ -1372,7 +1383,7 @@ class RouterTests(ServerTestBase):
     def test_646_responses_allows_full_message_with_id(self):
         """A full message that carries its own id is resent input, not a
         reference, so it must not trip the guard."""
-        resp = self._post_responses(
+        status = self._assert_not_rejected(
             {
                 "model": COLLECTION_NAME,
                 "input": [
@@ -1382,17 +1393,22 @@ class RouterTests(ServerTestBase):
                         "content": "say hi",
                     }
                 ],
-                "max_output_tokens": 8,
-            },
-            timeout=600,
+            }
         )
-        code = None
-        if resp.status_code >= 400:
-            code = resp.json().get("error", {}).get("code")
-        self.assertNotEqual(
-            code, "router_response_chain_unsupported", f"status {resp.status_code}"
-        )
-        print(f"[OK] full message with an id not rejected (status {resp.status_code})")
+        print(f"[OK] full message with an id not rejected (status {status})")
+
+    def test_647_responses_ignores_conversation_without_id(self):
+        """A conversation object with an empty or null id refers to nothing."""
+        for conversation in ({"id": ""}, {"id": None}):
+            with self.subTest(conversation=conversation):
+                self._assert_not_rejected(
+                    {
+                        "model": COLLECTION_NAME,
+                        "input": "say hi",
+                        "conversation": conversation,
+                    }
+                )
+        print("[OK] conversation without an id not rejected")
 
 
 if __name__ == "__main__":
