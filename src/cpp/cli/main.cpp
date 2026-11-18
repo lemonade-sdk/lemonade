@@ -981,6 +981,146 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     return true;
 }
 
+static std::string manual_shell_quote(const std::string& value) {
+    std::string quoted = "'";
+    for (size_t i = 0; i < value.size(); ++i) {
+        const char ch = value[i];
+#ifdef _WIN32
+        // PowerShell also treats U+2018/U+2019 as quote delimiters.
+        if (value.compare(i, 3, "\xE2\x80\x98") == 0 ||
+            value.compare(i, 3, "\xE2\x80\x99") == 0) {
+            quoted += value.substr(i, 3);
+            quoted += value.substr(i, 3);
+            i += 2;
+            continue;
+        }
+#endif
+        if (ch == '\'') {
+#ifdef _WIN32
+            quoted += "''";
+#else
+            quoted += "'\\''";
+#endif
+        } else {
+            quoted += ch;
+        }
+    }
+    return quoted + "'";
+}
+
+// Substitute the configured key as shell data, never as quoted source text.
+static std::string manual_shell_quote_arg(const std::string& value,
+                                          const std::string& api_key) {
+    if (api_key.empty() || value.find(api_key) == std::string::npos) {
+        return manual_shell_quote(value);
+    }
+#ifdef _WIN32
+    if (value == api_key) return "$env:LEMONADE_API_KEY";
+    std::string result = "(";
+    bool first = true;
+#else
+    if (value == api_key) return "\"${LEMONADE_API_KEY}\"";
+    std::string result;
+#endif
+    size_t begin = 0;
+    size_t pos = 0;
+    while ((pos = value.find(api_key, begin)) != std::string::npos) {
+#ifdef _WIN32
+        if (pos > begin) {
+            if (!first) result += " + ";
+            result += manual_shell_quote(value.substr(begin, pos - begin));
+            first = false;
+        }
+        if (!first) result += " + ";
+        result += "$env:LEMONADE_API_KEY";
+        first = false;
+#else
+        result += manual_shell_quote(value.substr(begin, pos - begin));
+        result += "\"${LEMONADE_API_KEY}\"";
+#endif
+        begin = pos + api_key.size();
+    }
+    if (begin < value.size()) {
+#ifdef _WIN32
+        if (!first) result += " + ";
+#endif
+        result += manual_shell_quote(value.substr(begin));
+    }
+#ifdef _WIN32
+    return result + ")";
+#else
+    return result;
+#endif
+}
+
+static void print_manual_agent_launch(const lemon_tray::AgentConfig& agent_config,
+                                      const CliConfig& config) {
+    // Pi may still point at a different server until its guarded config sync runs.
+    if (config.agent == "pi") {
+        std::cout << "Install Pi and rerun your original `lemonade launch pi` "
+                     "invocation with the same options before starting Pi manually.\n";
+        return;
+    }
+#ifdef _WIN32
+    std::cout << "\nManual launch (PowerShell):\n";
+#else
+    std::cout << "\nManual launch (POSIX shell):\n";
+#endif
+    if (!config.api_key.empty()) {
+        std::cout << "Set LEMONADE_API_KEY securely in this shell before running "
+                     "the commands below; do not paste the key into them.\n";
+    }
+    std::cout << "Environment variables:\n";
+    if (!config.api_key.empty()) {
+#ifdef _WIN32
+        std::cout << "  if (-not $env:LEMONADE_API_KEY) { throw 'Set LEMONADE_API_KEY first' }\n";
+#else
+        std::cout << "  : \"${LEMONADE_API_KEY:?Set LEMONADE_API_KEY first}\"\n";
+#endif
+    }
+    for (const auto& [key, value] : agent_config.env_vars) {
+        if (!config.api_key.empty() && key == "LEMONADE_API_KEY" &&
+            value == config.api_key) {
+            continue;  // Already provided by the user's shell.
+        }
+#ifdef _WIN32
+        std::cout << "  $env:" << key << " = "
+                  << manual_shell_quote_arg(value, config.api_key) << '\n';
+#else
+        std::cout << "  export " << key << '='
+                  << manual_shell_quote_arg(value, config.api_key) << '\n';
+#endif
+    }
+    std::cout << "Command:\n  ";
+#ifdef _WIN32
+    std::cout << "& ";
+#endif
+    std::cout << manual_shell_quote(agent_config.binary_name);
+    for (const auto& arg : agent_config.extra_args) {
+        std::cout << ' ' << manual_shell_quote_arg(arg, config.api_key);
+    }
+    std::cout << '\n';
+#ifdef _WIN32
+    if (!agent_config.binary_alternatives.empty()) {
+        std::cout << "Use the installed entry point (" << agent_config.binary_name;
+        for (const auto& alternative : agent_config.binary_alternatives) {
+            std::cout << ", " << alternative;
+        }
+        std::cout << ") in the command.\n";
+    }
+#endif
+
+    if (config.agent == "opencode" || config.agent == "junie") {
+        const std::string endpoint = lemon_tray::build_agent_server_base_url(
+            config.host, config.port) +
+            (config.agent == "junie" ? "/v1/chat/completions" : "/v1");
+        std::cout << "Lemonade provider: " << endpoint
+                  << " (model: " << config.model << ")\n";
+    }
+    std::cout << "For remote connections, adjust localhost URLs in the environment "
+                 "or provider configuration.\n";
+}
+
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
     if (config.agent.empty() && !prompt_agent_selection(config.agent)) {
         return 1;
@@ -1043,6 +1183,7 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         if (!agent_config.install_instructions.empty()) {
             LOG(ERROR, "AgentBuilder") << agent_config.install_instructions << std::endl;
         }
+        print_manual_agent_launch(agent_config, config);
         return 1;
     }
 
