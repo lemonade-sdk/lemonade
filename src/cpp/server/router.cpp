@@ -2411,9 +2411,10 @@ json Router::responses(const json& request) {
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "responses", requested_model, request);
 
     try {
-        WrappedServer* active_server = nullptr;
+        // The server can be unloaded once execute_inference releases it.
+        std::string metrics_url;
+        std::function<std::map<std::string, nlohmann::json>(const std::string&)> metrics_parser;
         json response = execute_inference(request, [&](WrappedServer* server) {
-            active_server = server;
             ModelTelemetryIdentity identity = get_telemetry_identity(server);
             if (span) {
                 span->set_attribute("llm.backend", identity.recipe);
@@ -2423,6 +2424,8 @@ json Router::responses(const json& request) {
                 if (request.contains("temperature")) span->set_attribute("llm.config.temperature", request["temperature"]);
                 if (request.contains("top_p")) span->set_attribute("llm.config.top_p", request["top_p"]);
                 if (request.contains("max_output_tokens")) span->set_attribute("llm.config.max_output_tokens", request["max_output_tokens"]);
+                metrics_url = server->get_additional_telemetry_url();
+                metrics_parser = server->get_additional_telemetry_parser();
             }
             return server->responses(request);
         });
@@ -2448,13 +2451,7 @@ json Router::responses(const json& request) {
                     span->set_attribute("llm.performance.tokens_per_second", perf.tokens_per_second);
                 }
 
-                std::string url;
-                std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser;
-                if (active_server) {
-                    url = active_server->get_additional_telemetry_url();
-                    parser = active_server->get_additional_telemetry_parser();
-                }
-                telemetry::end_llm_span_async(span, url, parser, stream_usage_payload(perf),
+                telemetry::end_llm_span_async(span, metrics_url, metrics_parser, stream_usage_payload(perf),
                                               responses_output_text(response));
             }
         }

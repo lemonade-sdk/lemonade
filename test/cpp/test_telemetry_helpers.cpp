@@ -268,6 +268,59 @@ int main() {
             check_int("accumulate_telemetry: tool call chunks count as output", tel.output_chunks, 1);
         }
         {
+            lemon::StreamingProxy::TelemetryData tel;
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"type\": \"response.output_item.added\", \"item\": {\"type\": \"function_call\"}}"), tel);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"type\": \"response.function_call_arguments.delta\", \"delta\": \"{\\\"q\\\"\"}"), tel);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"type\": \"response.function_call_arguments.delta\", \"delta\": \":1}\"}"), tel);
+            check_int("accumulate_telemetry: responses function call argument deltas count as output",
+                      tel.output_chunks, 2);
+        }
+        // UsageChunkFilter: drops the usage-only chunk Lemonade asked for, relays everything else.
+        {
+            std::string relayed;
+            bool done = false;
+            httplib::DataSink out;
+            out.write = [&relayed](const char* d, size_t n) { relayed.append(d, n); return true; };
+            out.is_writable = []() { return true; };
+            out.done = [&done]() { done = true; };
+            lemon::UsageChunkFilter filter(out);
+            const std::string content = "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n";
+            const std::string usage = "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":2}}\r\n\r\n";
+            const std::string final_with_usage =
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"completion_tokens\":2}}\n\n";
+            const std::string stream = ": ping\n\n" + content + usage + final_with_usage + "data: [DONE]\n\n";
+            // Split mid-line to cover chunk boundaries.
+            filter.sink().write(stream.data(), 20);
+            filter.sink().write(stream.data() + 20, stream.size() - 20);
+            filter.sink().done();
+            check_eq("UsageChunkFilter: only the usage-only chunk is removed", relayed,
+                     ": ping\n\n" + content + final_with_usage + "data: [DONE]\n\n");
+            check_bool("UsageChunkFilter: done is passed through", done, true);
+        }
+        {
+            using lemon::UsageChunkFilter;
+            check_bool("UsageChunkFilter: usage without choices is usage-only",
+                       UsageChunkFilter::is_usage_only_line(
+                           "data: {\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":36}}"),
+                       true);
+            check_bool("UsageChunkFilter: content chunk with usage null is kept",
+                       UsageChunkFilter::is_usage_only_line(
+                           "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"}}],\"usage\":null}"),
+                       false);
+            check_bool("UsageChunkFilter: usage on a chunk with text is kept",
+                       UsageChunkFilter::is_usage_only_line(
+                           "data: {\"choices\":[{\"index\":0,\"text\":\" and\",\"finish_reason\":null}],"
+                           "\"usage\":{\"completion_tokens\":6}}"),
+                       false);
+            check_bool("UsageChunkFilter: content chunk without usage is kept",
+                       UsageChunkFilter::is_usage_only_line(
+                           "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"}}]}"),
+                       false);
+        }
+        {
             auto tel = lemon::StreamingProxy::extract_telemetry(nlohmann::json::parse(
                 "{\"usage\": {\"prompt_tokens\": 17, \"completion_tokens\": 1, "
                 "\"prefill_duration_ttft\": 0.368, \"decoding_speed_tps\": 60.86}}"));

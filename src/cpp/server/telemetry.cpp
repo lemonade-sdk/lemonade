@@ -1312,6 +1312,12 @@ void InferenceSpan::cancel() {
     ended_ = true;
 }
 
+void InferenceSpan::mark_completed() {
+    completed_time_ = std::chrono::steady_clock::now();
+    completed_unix_ms_ = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
 void InferenceSpan::record_usage(const std::string& status, int input_tokens, int output_tokens, int cached_tokens,
                                  bool estimated, const std::string& output) {
     if (span_kind_ == "CLASSIFIER" || !usage::enabled()) return;
@@ -1326,17 +1332,16 @@ void InferenceSpan::record_usage(const std::string& status, int input_tokens, in
         return it != custom_attributes_.end() && it->second.is_number() ? it->second.get<double>() : -1.0;
     };
 
+    if (!completed_time_) mark_completed();
     usage::UsageEvent e;
-    e.end_unix_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
+    e.end_unix_ms = completed_unix_ms_;
     e.request = name_;
     e.model = model_name_;
     e.backend = attribute("backend");
     e.device = attribute("device_type");
     e.stream = stream_;
     e.status = status;
-    e.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - start_time_).count();
+    e.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(*completed_time_ - start_time_).count();
     double ttft_s = number("llm.performance.time_to_first_token");
     e.ttft_ms = ttft_s > 0 ? ttft_s * 1000 : -1;
     e.tokens_per_second = number("llm.performance.tokens_per_second");
@@ -1463,6 +1468,7 @@ void end_llm_span_async(
     const std::vector<ToolCall>& tool_calls) {
 
     if (!span) return;
+    span->mark_completed();
 
     if (metrics_url.empty() || !parser) {
         span->end_with_success(usage_payload, text_output, tool_calls);

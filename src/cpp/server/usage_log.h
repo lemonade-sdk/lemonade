@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -48,7 +49,8 @@ struct UsageLogOptions {
 // Options are re-read for every batch so config changes apply without restart.
 class UsageLog {
 public:
-    explicit UsageLog(std::function<UsageLogOptions()> options, size_t queue_capacity = 10000);
+    explicit UsageLog(std::function<UsageLogOptions()> options, size_t queue_capacity = 10000,
+                      std::chrono::milliseconds retention_interval = std::chrono::hours(1));
     ~UsageLog();
 
     void start();
@@ -64,6 +66,7 @@ private:
 
     std::function<UsageLogOptions()> options_;
     size_t capacity_;
+    std::chrono::milliseconds retention_interval_;
     mutable std::mutex mutex_;
     std::condition_variable cv_;
     std::condition_variable cv_idle_;

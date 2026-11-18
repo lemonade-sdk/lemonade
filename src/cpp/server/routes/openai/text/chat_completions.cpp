@@ -99,7 +99,7 @@ ordered_json chat_completion_chunk_schema() {
                     "finish_reason": {"type": ["string", "null"], "description": "Why generation stopped, such as `stop`, `length` or `tool_calls`, on the choice's last chunk; `null` before it."}
                 }
             }},
-            "usage": {"type": "object", "description": "Token counts for the request, on an extra last chunk with an empty `choices`. Sent when the request sets `stream_options.include_usage`, and always by vLLM and FastFlowLM models."},
+            "usage": {"type": "object", "description": "Token counts for the request, on an extra last chunk with an empty `choices`. Sent when the request sets `stream_options.include_usage`, and always by vLLM models."},
             "timings": {"type": "object", "description": "Final chunk only: prompt processing and generation timings, passed through from backends that report them, such as llama.cpp."}
         }
     })");

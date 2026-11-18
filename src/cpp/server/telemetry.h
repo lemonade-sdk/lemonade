@@ -1,5 +1,6 @@
 #pragma once
 #include <chrono>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -30,6 +31,8 @@ public:
     // Client disconnected. streamed_chunks >= 0 becomes an estimated output token count.
     void end_aborted(int streamed_chunks = -1);
     void cancel();
+    // Fixes the usage record's end time, so later metrics collection does not count as inference time.
+    void mark_completed();
 
 
 
@@ -47,6 +50,8 @@ private:
     bool stream_ = false;
     std::optional<int> aborted_chunks_;
     std::chrono::steady_clock::time_point start_time_;
+    std::optional<std::chrono::steady_clock::time_point> completed_time_;
+    int64_t completed_unix_ms_ = 0;
     bool ended_ = false;
 
     struct Message {

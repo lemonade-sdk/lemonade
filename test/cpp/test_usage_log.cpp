@@ -1,8 +1,10 @@
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <vector>
 #include "usage_log.h"
 
@@ -210,6 +212,60 @@ static void test_prunes_files_older_than_max_days() {
     check("age: file older than max_days deleted", !fs::exists(dir / "usage-2020-01-01.jsonl"));
 }
 
+static void test_prunes_single_expired_file() {
+    auto dir = fresh_dir("age_single");
+    fs::create_directories(dir);
+    std::ofstream(dir / "usage-2020-01-01.jsonl") << "{}\n";
+    auto opts = roomy(dir);
+    opts.max_days = 1;
+    UsageLog log([&] { return opts; });
+    log.start();
+    log.flush();
+    check("age: the only file, if expired, is deleted", !fs::exists(dir / "usage-2020-01-01.jsonl"));
+}
+
+static void test_idle_worker_applies_retention() {
+    auto dir = fresh_dir("age_idle");
+    auto opts = roomy(dir);
+    opts.max_days = 1;
+    UsageLog log([&] { return opts; }, 10000, std::chrono::milliseconds(20));
+    log.start();
+    log.flush();
+    fs::create_directories(dir);
+    std::ofstream(dir / "usage-2020-01-01.jsonl") << "{}\n";
+    for (int i = 0; i < 250 && fs::exists(dir / "usage-2020-01-01.jsonl"); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    check("age: retention runs with no new records", !fs::exists(dir / "usage-2020-01-01.jsonl"));
+}
+
+#ifndef _WIN32
+static void test_existing_directory_keeps_permissions() {
+    auto dir = fresh_dir("perms_existing");
+    fs::create_directories(dir);
+    fs::permissions(dir, fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec |
+                             fs::perms::others_read | fs::perms::others_exec);
+    auto before = fs::status(dir).permissions();
+    UsageLog log([&] { return roomy(dir); });
+    log.start();
+    log.push(record_on("2026-09-28"));
+    log.flush();
+    check("perms: existing directory unchanged", fs::status(dir).permissions() == before);
+    auto file_perms = fs::status(dir / "usage-2026-09-28.jsonl").permissions();
+    check("perms: new log file is owner read/write only",
+          file_perms == (fs::perms::owner_read | fs::perms::owner_write));
+}
+
+static void test_created_directory_is_private() {
+    auto dir = fresh_dir("perms_created");
+    UsageLog log([&] { return roomy(dir); });
+    log.start();
+    log.push(record_on("2026-09-28"));
+    log.flush();
+    check("perms: created directory is owner only", fs::status(dir).permissions() == fs::perms::owner_all);
+}
+#endif
+
 static void test_queue_full_writes_dropped_marker() {
     auto dir = fresh_dir("drop");
     UsageLog log([&] { return roomy(dir); }, 2);
@@ -249,6 +305,12 @@ int main() {
     test_unlimited_limits_keep_everything();
     test_disk_usage_tracks_files();
     test_prunes_files_older_than_max_days();
+    test_prunes_single_expired_file();
+    test_idle_worker_applies_retention();
+#ifndef _WIN32
+    test_existing_directory_keeps_permissions();
+    test_created_directory_is_private();
+#endif
     test_queue_full_writes_dropped_marker();
     test_write_failure_disables_log();
     std::printf("=== %s (%d failures) ===\n", g_failures ? "FAILED" : "ALL PASSED", g_failures);

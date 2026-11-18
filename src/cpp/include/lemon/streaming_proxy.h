@@ -96,4 +96,28 @@ public:
 private:
 };
 
+// Relays an SSE stream to `out` without the usage-only chunks (usage set,
+// choices empty or absent) that stream_options.include_usage adds. Used when
+// Lemonade sets include_usage itself, so the client sees the stream it asked for.
+class UsageChunkFilter {
+public:
+    explicit UsageChunkFilter(httplib::DataSink& out);
+    UsageChunkFilter(const UsageChunkFilter&) = delete;
+    UsageChunkFilter& operator=(const UsageChunkFilter&) = delete;
+
+    httplib::DataSink& sink() { return sink_; }
+    // Relays a trailing line that has no terminator.
+    void finish();
+
+    static bool is_usage_only_line(const std::string& line);
+
+private:
+    bool relay(const std::string& text);
+
+    httplib::DataSink& out_;
+    httplib::DataSink sink_;
+    std::string buffer_;
+    bool drop_blank_line_ = false;
+};
+
 } // namespace lemon

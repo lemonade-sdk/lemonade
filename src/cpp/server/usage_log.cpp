@@ -100,7 +100,7 @@ std::vector<LogFile> list_log_files(const std::string& dir) {
     static const std::regex pattern(R"(usage-(\d{4}-\d{2}-\d{2})\.jsonl)");
     std::vector<LogFile> files;
     std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(dir, ec)) {
+    for (const auto& entry : fs::directory_iterator(utils::path_from_utf8(dir), ec)) {
         std::smatch m;
         std::string name = entry.path().filename().string();
         if (!entry.is_regular_file(ec) || !std::regex_match(name, m, pattern)) continue;
@@ -144,8 +144,9 @@ nlohmann::ordered_json make_record(const UsageEvent& e, bool include_content) {
     return r;
 }
 
-UsageLog::UsageLog(std::function<UsageLogOptions()> options, size_t queue_capacity)
-    : options_(std::move(options)), capacity_(queue_capacity) {}
+UsageLog::UsageLog(std::function<UsageLogOptions()> options, size_t queue_capacity,
+                   std::chrono::milliseconds retention_interval)
+    : options_(std::move(options)), capacity_(queue_capacity), retention_interval_(retention_interval) {}
 
 UsageLog::~UsageLog() {
     {
@@ -210,7 +211,8 @@ void UsageLog::run() {
         bool active = false;
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            cv_.wait(lock, [this] { return stop_ || !queue_.empty() || dropped_ > 0; });
+            // The timeout runs age retention while no requests arrive.
+            cv_.wait_for(lock, retention_interval_, [this] { return stop_ || !queue_.empty() || dropped_ > 0; });
             if (stop_ && queue_.empty() && dropped_ == 0) return;
             batch.swap(queue_);
             dropped = std::exchange(dropped_, 0);
@@ -223,7 +225,10 @@ void UsageLog::run() {
                 auto opts = options_();
                 for (const auto& record : batch) write(opts, record);
                 if (dropped > 0) write(opts, {{"dropped", dropped}});
-                file_.flush();
+                if (file_.is_open()) {
+                    file_.flush();
+                    if (!file_) throw std::runtime_error("cannot write " + file_path_);
+                }
                 prune(opts);
             } catch (const std::exception& e) {
                 LOG(WARNING, "UsageLog") << "Usage log disabled after write failure: " << e.what() << std::endl;
@@ -251,13 +256,21 @@ void UsageLog::write(const UsageLogOptions& opts, const nlohmann::ordered_json& 
 
     if (!file_.is_open() || date != file_date_ || opts.dir != file_dir_) {
         file_.close();
-        fs::create_directories(opts.dir);
+        // Records can hold prompts, so what the log creates is readable by its owner only.
+        // A directory that already exists keeps its permissions.
+        fs::path dir = utils::path_from_utf8(opts.dir);
         std::error_code ec;
-        fs::permissions(opts.dir, fs::perms::owner_all, fs::perm_options::replace, ec);
-        fs::path path = fs::path(opts.dir) / file_name(date);
+        if (fs::create_directories(dir)) {
+            fs::permissions(dir, fs::perms::owner_all, fs::perm_options::replace, ec);
+        }
+        fs::path path = dir / file_name(date);
+        bool new_file = !fs::exists(path, ec);
         file_.open(path, std::ios::binary | std::ios::app);
-        if (!file_) throw std::runtime_error("cannot open " + path.string());
-        file_path_ = path.string();
+        if (!file_) throw std::runtime_error("cannot open " + utils::path_to_utf8(path));
+        if (new_file) {
+            fs::permissions(path, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
+        }
+        file_path_ = utils::path_to_utf8(path);
         file_date_ = date;
         file_dir_ = opts.dir;
     }
@@ -266,18 +279,23 @@ void UsageLog::write(const UsageLogOptions& opts, const nlohmann::ordered_json& 
     if (!file_) throw std::runtime_error("cannot write " + file_path_);
 }
 
-// Deletes whole days, oldest first. The newest day is never deleted, so one
-// heavy day can exceed max_total_bytes on its own.
+// Deletes whole days, oldest first. The size cap never deletes the newest day,
+// so one heavy day can exceed max_total_bytes on its own.
 void UsageLog::prune(const UsageLogOptions& opts) {
     auto files = list_log_files(opts.dir);
     std::string cutoff = opts.max_days > 0 ? utc_date_days_ago(opts.max_days) : "";
     uint64_t total = 0;
     for (const auto& f : files) total += f.size;
 
-    for (size_t i = 0; i + 1 < files.size(); ++i) {
+    for (size_t i = 0; i < files.size(); ++i) {
+        bool newest = i + 1 == files.size();
         bool too_old = files[i].date < cutoff;
-        bool over_cap = opts.max_total_bytes > 0 && total > opts.max_total_bytes;
+        bool over_cap = !newest && opts.max_total_bytes > 0 && total > opts.max_total_bytes;
         if (!too_old && !over_cap) continue;
+        if (file_.is_open() && utils::path_to_utf8(files[i].path) == file_path_) {
+            file_.close();
+            file_date_.clear();
+        }
         std::error_code ec;
         if (fs::remove(files[i].path, ec)) total -= files[i].size;
     }
@@ -291,7 +309,7 @@ UsageLogOptions options_from_config() {
     auto* config = RuntimeConfig::global();
     if (!config) return opts;
     opts.dir = config->telemetry_usage_log_path();
-    if (opts.dir.empty()) opts.dir = (fs::path(utils::get_config_dir()) / "usage").string();
+    if (opts.dir.empty()) opts.dir = utils::path_to_utf8(utils::path_from_utf8(utils::get_config_dir()) / "usage");
     int max_mb = config->telemetry_usage_log_max_size_mb();
     int max_days = config->telemetry_usage_log_max_days();
     opts.max_total_bytes = max_mb > 0 ? static_cast<uint64_t>(max_mb) * 1024 * 1024 : 0;

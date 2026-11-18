@@ -45,7 +45,8 @@ bool has_output_text(const nlohmann::json& chunk) {
         }
         return delta.contains("tool_calls") && delta["tool_calls"].is_array() && !delta["tool_calls"].empty();
     }
-    return chunk.contains("type") && chunk["type"] == "response.output_text.delta";
+    return chunk.contains("type") && (chunk["type"] == "response.output_text.delta" ||
+                                      chunk["type"] == "response.function_call_arguments.delta");
 }
 
 void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::TelemetryData& telemetry) {
@@ -61,7 +62,10 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
     }
 
     if (usage.is_object()) {
-        telemetry.tokens_reported = true;
+        if (usage.contains("prompt_tokens") || usage.contains("input_tokens") ||
+            usage.contains("completion_tokens") || usage.contains("output_tokens")) {
+            telemetry.tokens_reported = true;
+        }
         if (usage.contains("prompt_tokens")) {
             telemetry.input_tokens = usage["prompt_tokens"].get<int>();
         } else if (usage.contains("input_tokens")) {
@@ -101,7 +105,9 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
     }
 
     if (timings.is_object()) {
-        telemetry.tokens_reported = true;
+        if (timings.contains("prompt_n") || timings.contains("predicted_n")) {
+            telemetry.tokens_reported = true;
+        }
         if (timings.contains("prompt_n")) {
             telemetry.input_tokens = timings["prompt_n"].get<int>();
         }
@@ -593,6 +599,68 @@ void StreamingProxy::process_sse_lines(std::string& line_buffer, std::function<v
         std::string line = line_buffer.substr(0, pos);
         line_buffer.erase(0, pos + terminator_length);
         line_callback(line);
+    }
+}
+
+UsageChunkFilter::UsageChunkFilter(httplib::DataSink& out) : out_(out) {
+    sink_.write = [this](const char* data, size_t length) {
+        buffer_.append(data, length);
+        bool ok = true;
+        size_t pos;
+        while (ok && (pos = buffer_.find('\n')) != std::string::npos) {
+            std::string line = buffer_.substr(0, pos + 1);
+            buffer_.erase(0, pos + 1);
+            std::string content = line.substr(0, line.find_last_not_of("\r\n") + 1);
+            if (content.empty() && drop_blank_line_) {
+                drop_blank_line_ = false;
+                continue;
+            }
+            drop_blank_line_ = false;
+            if (is_usage_only_line(content)) {
+                drop_blank_line_ = true;
+                continue;
+            }
+            ok = relay(line);
+        }
+        return ok;
+    };
+    sink_.is_writable = [this]() { return !out_.is_writable || out_.is_writable(); };
+    sink_.done = [this]() {
+        finish();
+        if (out_.done) out_.done();
+    };
+    sink_.done_with_trailer = [this](const httplib::Headers& trailer) {
+        finish();
+        if (out_.done_with_trailer) {
+            out_.done_with_trailer(trailer);
+        } else if (out_.done) {
+            out_.done();
+        }
+    };
+}
+
+void UsageChunkFilter::finish() {
+    if (buffer_.empty()) return;
+    std::string rest;
+    rest.swap(buffer_);
+    if (!is_usage_only_line(rest)) relay(rest);
+}
+
+bool UsageChunkFilter::relay(const std::string& text) {
+    return out_.write(text.data(), text.size());
+}
+
+bool UsageChunkFilter::is_usage_only_line(const std::string& line) {
+    if (line.rfind("data:", 0) != 0) return false;
+    size_t start = line.find_first_not_of(' ', 5);
+    if (start == std::string::npos) return false;
+    try {
+        auto chunk = json::parse(line.begin() + start, line.end());
+        if (!chunk.is_object() || !chunk.contains("usage") || chunk["usage"].is_null()) return false;
+        if (!chunk.contains("choices")) return true;
+        return chunk["choices"].is_array() && chunk["choices"].empty();
+    } catch (...) {
+        return false;
     }
 }
 

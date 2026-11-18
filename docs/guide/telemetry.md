@@ -203,7 +203,9 @@ lemonade config set telemetry.usage_log.enabled=true
 | `telemetry.usage_log.max_size_mb` | int | `100` | Total disk cap. Oldest days are deleted first. `-1` for unlimited. |
 | `telemetry.usage_log.max_days` | int | `90` | Days older than this are deleted. `-1` for unlimited. |
 
-There is one file per day, named `usage-YYYY-MM-DD.jsonl` (UTC). Files are only ever appended to, so any log shipper can collect them. A record is about 400 bytes, so the default 100 MB cap holds roughly 260,000 requests. The cap deletes whole days, oldest first, and never the newest day, so a single very busy day can exceed it.
+There is one file per day, named `usage-YYYY-MM-DD.jsonl` (UTC). Files are only ever appended to, so any log shipper can collect them. A record is about 400 bytes, so the default 100 MB cap holds roughly 260,000 requests. The cap deletes whole days, oldest first, and never the newest day, so a single very busy day can exceed it. `max_days` applies to every file, including the newest, and is checked at least hourly even when no requests arrive.
+
+On Linux and macOS, when Lemonade creates the log directory or a log file, only your user can read it, since records can hold prompts. A directory that already exists keeps its permissions.
 
 ```json
 {"ts":"2026-09-29T18:35:45.241Z","host":"WS-ENG-041","lemonade_version":"11.8.1","request":"chat.completions","model":"Qwen3-0.6B-GGUF","backend":"llamacpp","device":"gpu","stream":true,"status":"ok","duration_ms":132,"ttft_ms":14,"tokens_per_second":92.4,"input_tokens":20,"output_tokens":27,"cached_tokens":3,"tokens_reported":true,"tokens_estimated":false,"session_id":"team-a/laptop-7","client_ip":"127.0.0.1"}
@@ -215,7 +217,7 @@ There is one file per day, named `usage-YYYY-MM-DD.jsonl` (UTC). Files are only 
 | `ttft_ms` | Time to first token. `null` when not measurable, e.g. non-streaming cloud requests. |
 | `tokens_per_second` | Decode speed (prefill excluded). `null` when not reported. |
 | `input_tokens` | All prompt tokens, including `cached_tokens`. |
-| `tokens_reported` | `false` when the backend returned no counts. Token fields are then `null`, not `0`. |
+| `tokens_reported` | `false` when the backend returned no counts. Counts it did not report are `null`, not `0`; an aborted record still carries the estimated `output_tokens` (see `tokens_estimated`). |
 | `tokens_estimated` | `true` when the client disconnected mid-stream; `output_tokens` is the number of chunks relayed before the disconnect. |
 | `host` | The machine running Lemonade, even for remote clients. |
 | `input`, `output` | Only with `content: "full"`. `input` is the request's messages or prompt as JSON text. Past `telemetry.max_attribute_length` bytes (default 4096) it is cut and ends with `... [TRUNCATED]`; raise that setting to keep longer prompts. `output` is the full response text. |
