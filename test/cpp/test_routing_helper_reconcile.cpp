@@ -91,6 +91,11 @@ struct RoutingHelperTestHook {
         r.apply_routing_helper_reconcile(std::move(needed), ++generation);
     }
 
+    static Router::RoutingHelperLease lease_transient(
+        Router& r, std::set<std::string> canonical_models) {
+        return r.lease_transient_routing_helpers_canonical(std::move(canonical_models));
+    }
+
     static bool has_helper(Router& r, const std::string& model_name) {
         std::lock_guard<std::mutex> lock(r.load_mutex_);
         for (const auto& s : r.loaded_servers_) {
@@ -173,6 +178,89 @@ static void test_needed_helper_survives(Router& router) {
     RoutingHelperTestHook::reconcile(router, {"kept.helper"});
     check("routing helper still referenced by a policy survives reconcile",
           RoutingHelperTestHook::has_helper(router, "kept.helper"));
+}
+
+static void test_transient_lease_survives_policy_reconcile(Router& router) {
+    RoutingHelperTestHook::add_server(router, make_helper("transient.helper"));
+    bool survived_reconcile = false;
+    {
+        [[maybe_unused]] auto lease = RoutingHelperTestHook::lease_transient(
+            router, {"transient.helper"});
+        RoutingHelperTestHook::reconcile(router, {});
+        survived_reconcile = RoutingHelperTestHook::has_helper(
+            router, "transient.helper");
+    }
+
+    check("transient helper lease survives policy reconcile and releases on scope exit",
+          survived_reconcile &&
+              !RoutingHelperTestHook::has_helper(router, "transient.helper"));
+}
+
+static void test_overlapping_transient_leases(Router& router) {
+    RoutingHelperTestHook::add_server(router, make_helper("overlap.helper"));
+    auto first = RoutingHelperTestHook::lease_transient(router, {"overlap.helper"});
+    auto second = RoutingHelperTestHook::lease_transient(router, {"overlap.helper"});
+
+    first = {};
+    bool survived_first_release =
+        RoutingHelperTestHook::has_helper(router, "overlap.helper");
+    second = {};
+
+    check("overlapping transient leases reclaim only after the final release",
+          survived_first_release &&
+              !RoutingHelperTestHook::has_helper(router, "overlap.helper"));
+}
+
+static void test_concurrent_transient_leases_and_reconcile(Router& router) {
+    RoutingHelperTestHook::add_server(router, make_helper("concurrent.helper"));
+    auto anchor = RoutingHelperTestHook::lease_transient(
+        router, {"concurrent.helper"});
+    std::atomic<int> ready{0};
+    std::atomic<bool> start{false};
+    auto exercise_lease = [&] {
+        ++ready;
+        while (!start.load()) {
+            std::this_thread::yield();
+        }
+        for (int i = 0; i < 500; ++i) {
+            auto lease = RoutingHelperTestHook::lease_transient(
+                router, {"concurrent.helper"});
+        }
+    };
+
+    std::thread first(exercise_lease);
+    std::thread second(exercise_lease);
+    while (ready.load() != 2) {
+        std::this_thread::yield();
+    }
+    start = true;
+    for (int i = 0; i < 500; ++i) {
+        RoutingHelperTestHook::reconcile(router, {});
+    }
+    first.join();
+    second.join();
+    bool survived_concurrent_updates =
+        RoutingHelperTestHook::has_helper(router, "concurrent.helper");
+    anchor = {};
+
+    check("concurrent lease release and policy reconcile preserve then reclaim helper",
+          survived_concurrent_updates &&
+              !RoutingHelperTestHook::has_helper(router, "concurrent.helper"));
+}
+
+static void test_transient_lease_preserves_registered_helper(Router& router) {
+    RoutingHelperTestHook::add_server(router, make_helper("registered.helper"));
+    auto lease = RoutingHelperTestHook::lease_transient(
+        router, {"registered.helper"});
+    RoutingHelperTestHook::reconcile(router, {"registered.helper"});
+    lease = {};
+    bool survived_lease_release =
+        RoutingHelperTestHook::has_helper(router, "registered.helper");
+
+    RoutingHelperTestHook::reconcile(router, {});
+    check("registered policy keeps a helper resident after transient lease release",
+          survived_lease_release &&
+              !RoutingHelperTestHook::has_helper(router, "registered.helper"));
 }
 
 static void test_pinned_stale_helper_survives(Router& router) {
@@ -489,6 +577,10 @@ int main() {
         Router router(&config, nullptr, nullptr);
         test_stale_idle_helper_evicted(router);
         test_needed_helper_survives(router);
+        test_transient_lease_survives_policy_reconcile(router);
+        test_overlapping_transient_leases(router);
+        test_concurrent_transient_leases_and_reconcile(router);
+        test_transient_lease_preserves_registered_helper(router);
         test_pinned_stale_helper_survives(router);
         test_standard_model_untouched(router);
         test_busy_helper_reclaimed_when_idle(router);

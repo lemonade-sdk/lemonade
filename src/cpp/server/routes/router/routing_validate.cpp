@@ -187,6 +187,8 @@ public:
             RoutePolicy policy = parse_route_policy_collection(
                 req.arg(kPolicy), options, &normalized_routing);
 
+            [[maybe_unused]] auto helper_lease =
+                ctx_.router->lease_transient_routing_helpers(policy.helper_models);
             ModelLoader* loader = ctx_.model_loader;
             ClassifierServices services = make_router_classifier_services(
                 *ctx_.router, [loader](const std::string& m) {
