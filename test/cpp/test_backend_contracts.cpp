@@ -13,6 +13,7 @@
 #include "lemon/utils/path_utils.h"
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <set>
@@ -291,11 +292,30 @@ public:
             ("lemonade_flm_install_" + std::to_string(
                 std::chrono::steady_clock::now().time_since_epoch().count()));
         fs::create_directories(root_);
+        if (const char* value = std::getenv("LEMONADE_FLM_NPU_BIN")) {
+            previous_flm_npu_bin_ = value;
+            had_flm_npu_bin_ = true;
+        }
+#ifdef _WIN32
+        _putenv_s("LEMONADE_FLM_NPU_BIN", "");
+#else
+        unsetenv("LEMONADE_FLM_NPU_BIN");
+#endif
         lemon::utils::set_cache_dir(root_.string());
         lemon::RuntimeConfig::set_global(&config_);
     }
 
     ~Fixture() {
+#ifdef _WIN32
+        _putenv_s("LEMONADE_FLM_NPU_BIN",
+                  had_flm_npu_bin_ ? previous_flm_npu_bin_.c_str() : "");
+#else
+        if (had_flm_npu_bin_) {
+            setenv("LEMONADE_FLM_NPU_BIN", previous_flm_npu_bin_.c_str(), 1);
+        } else {
+            unsetenv("LEMONADE_FLM_NPU_BIN");
+        }
+#endif
         lemon::RuntimeConfig::set_global(previous_config_);
         lemon::utils::set_cache_dir(previous_cache_);
         std::error_code ec;
@@ -305,6 +325,8 @@ public:
 private:
     fs::path root_;
     std::string previous_cache_;
+    std::string previous_flm_npu_bin_;
+    bool had_flm_npu_bin_ = false;
     lemon::RuntimeConfig* previous_config_;
     lemon::RuntimeConfig config_;
 };

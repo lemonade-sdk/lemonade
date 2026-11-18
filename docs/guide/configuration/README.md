@@ -283,7 +283,7 @@ Backend-specific settings are nested under their backend name:
 | `prefer_system` | false | Prefer system-installed FLM (on PATH) over auto-installed portable binary |
 | `runtime` | "xrt" | Managed binary build: "xrt" or "hrx". A different installed build requires an update. |
 
-Changing `flm.runtime` leaves the installed build untouched. Updating `flm:npu` or loading a FastFlowLM model downloads and verifies the selected build before replacing the old one. If the update fails, the old build stays on disk but is not used to load a model with the new selection. You can switch back to the installed build without downloading it again.
+Changing `flm.runtime` leaves the installed build untouched. Updating `flm:npu` downloads and verifies the selected build before replacing the old one. Loading a FastFlowLM model does the same when the installed build is missing or does not match, unless `flm.prefer_system` is `true` and `flm` is on `PATH`. In that case, Lemonade loads the PATH binary and ignores `flm.runtime`. If the update fails, the old build stays on disk but is not used to load a model with the new selection. You can switch back to the installed build without downloading it again.
 
 **ryzenai** — RyzenAI NPU inference:
 | Key | Default | Description |

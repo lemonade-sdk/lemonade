@@ -54,7 +54,7 @@ const flmBuildSelector = source.match(
 assert.ok(flmBuildSelector, 'FastFlowLM build selector not found');
 assert.match(flmBuildSelector, /disabled=\{isInstalling \|\| showBackendProgress \|\| !runtimeConfig\.flm\}/);
 assert.doesNotMatch(flmBuildSelector, /info\.state|Uninstall FastFlowLM before changing its build/);
-assert.match(flmBuildSelector, /Changing the build takes effect after the next update/);
+assert.match(flmBuildSelector, /Changing the build requires an update before FastFlowLM can run/);
 
 // Concurrent refreshes may not overwrite the newest system-info snapshot.
 assert.match(source, /const requestId = \+\+systemInfoRequestRef\.current/);

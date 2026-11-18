@@ -686,14 +686,17 @@ bool flm_runtime_matches() {
 
 bool flm_build_matches(const fs::path& install_dir, const std::string& asset) {
     bool installed_hrx = false;
-    for (const auto& entry : fs::recursive_directory_iterator(install_dir)) {
+    std::error_code ec;
+    for (fs::recursive_directory_iterator it(install_dir, ec), end; !ec && it != end;
+         it.increment(ec)) {
+        const auto& entry = *it;
         const std::string filename = entry.path().filename().string();
 #ifdef _WIN32
         const bool hrx_library = filename == "hrx.dll";
 #else
         const bool hrx_library = filename == "libhrx.so" || filename.rfind("libhrx.so.", 0) == 0;
 #endif
-        if (hrx_library && entry.is_regular_file()) {
+        if (hrx_library && entry.is_regular_file(ec)) {
             installed_hrx = true;
             break;
         }

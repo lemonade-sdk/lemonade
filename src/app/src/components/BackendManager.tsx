@@ -1360,7 +1360,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                 </div>
 
                 {recipe === 'flm' && backend === 'npu' && (
-                  <label className="backend-card__variant-meta" title={t('Changing the build takes effect after the next update.')}>
+                  <label className="backend-card__variant-meta" title={t('Changing the build requires an update before FastFlowLM can run.')}>
                     <span>{t('Build')}</span>
                     <select
                       className="select"
