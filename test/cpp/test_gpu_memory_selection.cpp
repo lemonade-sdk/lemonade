@@ -72,6 +72,12 @@ int main() {
         unavailable, "ROCm1");
     check(rocm1.total_gb == 16.0 && rocm1.used_gb == 3.0 && rocm1.label == "AMD ROCm1",
           "ROCm1 selects AMD device 1");
+    check(!rocm1.unified, "ROCm dGPU pool is discrete");
+    auto rocm0 = select_gpu_memory_pool(
+        GpuMemoryVendor::Amd, amd_igpu, two_amd, nvidia, unavailable, "ROCm0");
+    check(rocm0.unified && rocm0.total_gb == 8.0 &&
+          rocm0.physical_total_gb == 0.0,
+          "ROCm iGPU pool does not report its GTT window as physical RAM");
 
     auto cuda_list = select_gpu_memory_pool(
         gpu_memory_vendor_for_target("system", "CUDA0,CUDA1"), unavailable, amd, two_nvidia,
@@ -128,7 +134,18 @@ int main() {
     auto bare_rocm = select_gpu_memory_pool(
         gpu_memory_vendor_for_target("system", "ROCm"), amd_igpu, two_amd, nvidia,
         unavailable, "ROCm");
-    check(bare_rocm.total_gb == 8.0, "bare ROCm selects the first AMD pool");
+    check(bare_rocm.total_gb == 16.0 && !bare_rocm.unified,
+          "bare ROCm prefers the AMD dGPU over the iGPU");
+
+    auto hybrid_auto = select_gpu_memory_pool(
+        GpuMemoryVendor::Any, amd_igpu, two_amd, {}, unavailable);
+    check(hybrid_auto.label == "AMD dGPU" && hybrid_auto.total_gb == 16.0,
+          "untargeted AMD iGPU+dGPU host sizes against the dGPU");
+
+    auto igpu_only = select_gpu_memory_pool(
+        GpuMemoryVendor::Any, amd_igpu, {}, {}, unavailable);
+    check(igpu_only.label == "AMD iGPU" && igpu_only.unified && igpu_only.total_gb == 8.0,
+          "untargeted iGPU-only host sizes against the iGPU");
 
     auto lowercase_cuda = select_gpu_memory_pool(
         gpu_memory_vendor_for_target("SYSTEM", "cuda1"), unavailable, amd, two_nvidia,
@@ -139,9 +156,22 @@ int main() {
     GPUInfo amd_igpu_unknown_usage = gpu(2.0, 0.5);
     amd_igpu_unknown_usage.virtual_gb = 6.0;
     auto unknown_usage = select_gpu_memory_pool(
-        GpuMemoryVendor::Amd, amd_igpu_unknown_usage, two_amd, nvidia, unavailable);
+        GpuMemoryVendor::Amd, amd_igpu_unknown_usage, {}, nvidia, unavailable);
     check(unknown_usage.used_gb < 0.0,
           "incomplete unified-memory usage remains unknown");
+
+    GPUInfo amd_igpu_no_carveout = gpu(0.0);
+    amd_igpu_no_carveout.virtual_gb = 16.0;
+    auto no_carveout = select_gpu_memory_pool(
+        GpuMemoryVendor::Any, amd_igpu_no_carveout, {}, {}, unavailable);
+    check(no_carveout.unified && no_carveout.total_gb == 16.0 &&
+          no_carveout.label == "AMD iGPU",
+          "iGPU without a carve-out still exposes its shared pool");
+
+    auto no_carveout_rocm0 = select_gpu_memory_pool(
+        GpuMemoryVendor::Amd, amd_igpu_no_carveout, two_amd, nvidia, unavailable, "ROCm0");
+    check(no_carveout_rocm0.unified && no_carveout_rocm0.total_gb == 16.0,
+          "iGPU without a carve-out keeps ROCm0");
 
     std::vector<GPUInfo> mixed_usage_nvidia{
         gpu(24.0, -1.0, 0), gpu(8.0, 1.0, 1)};
@@ -156,6 +186,28 @@ int main() {
         GpuMemoryVendor::Metal, unavailable, amd, nvidia, apple);
     check(metal.vendor == GpuMemoryVendor::Metal,
           "Metal pool carries typed vendor identity");
+
+    GPUInfo apple_unified = gpu(24.0, 2.0);
+    apple_unified.virtual_gb = 32.0;
+    apple_unified.unified_memory = true;
+    auto shared_metal = select_gpu_memory_pool(
+        GpuMemoryVendor::Metal, unavailable, amd, nvidia, apple_unified);
+    check(shared_metal.unified && shared_metal.total_gb == 24.0 &&
+          shared_metal.used_gb == 2.0 && shared_metal.physical_total_gb == 32.0,
+          "Apple Silicon separates Metal working set from physical RAM");
+
+    apple_unified.unified_memory = false;
+    auto discrete_metal = select_gpu_memory_pool(
+        GpuMemoryVendor::Metal, unavailable, amd, nvidia, apple_unified);
+    check(!discrete_metal.unified && discrete_metal.total_gb == 24.0 &&
+          discrete_metal.physical_total_gb == 0.0,
+          "Discrete Metal does not claim a shared physical RAM pool");
+
+    GPUInfo unmetered_metal = gpu(24.0, -1.0);
+    auto unknown_metal = select_gpu_memory_pool(
+        GpuMemoryVendor::Metal, unavailable, amd, nvidia, unmetered_metal);
+    check(unknown_metal.used_gb < 0.0 && !unknown_metal.unified,
+          "Unknown discrete Metal VRAM usage stays unknown");
 
     auto automatic = select_gpu_memory_pool(
         GpuMemoryVendor::Any, unavailable, amd, nvidia, unavailable);

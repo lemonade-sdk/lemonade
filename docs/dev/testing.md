@@ -67,6 +67,7 @@ Use the smallest model that exercises the code path. Suites that run on GitHub-h
 | Changes WebSocket / Realtime behavior | `test/test_websocket_idle.py`, `test/server_websocket_auth.py` |
 | Changes streaming error handling | `test/server_streaming_errors.py` |
 | Changes model downloads or registry search | `test/server_downloads.py` |
+| Changes how container backends run (`ContainerManager`, `ContainerProcess`) | `test/cpp/test_container_manager.cpp`, and `test/server_containers.py`, which the `test-container-smoke` job runs against rootless Podman, rootful Podman and Docker on hosted runners |
 | Changes API key authentication | `test/server_cli_apikey.py`, `test/server_websocket_auth.py` |
 | Adds pure C++ logic (parsers, arg resolvers, utilities) | `test/cpp/test_<thing>.cpp`, declared via `add_cpp_ci_test()` in `CMakeLists.txt` |
 | Changes `server_models.json` | Update `test/utils/test_models.py` and `test/utils/capabilities.py` if tests reference the affected models |
@@ -136,12 +137,20 @@ python test/test_schema_lock.py
 
 ## CI Expectations
 
-Every PR runs the C++ `cpp-ci` tests, the endpoint/CLI suites on Windows and Linux, routing schema checks, app typecheck and regression tests, and the docs drift and link checks. Inference suites run on self-hosted AMD hardware runners ([details](./self-hosted-runners.md)); [What defers to the merge queue](#what-defers-to-the-merge-queue) covers when they run.
+Except for the [small docs-only fast path](#small-docs-only-prs) below, PRs run the C++ `cpp-ci` tests, endpoint/CLI suites on Windows and Linux, routing schema checks, app typecheck and regression tests, and docs drift and link checks. Inference suites run on self-hosted AMD hardware runners ([details](./self-hosted-runners.md)); [What defers to the merge queue](#what-defers-to-the-merge-queue) covers when they run.
 
 - Relevant local tests should pass before requesting review. All required CI must be green before final approval and merge.
 - Claiming a failure is a pre-existing flake requires evidence: link a `main` run with the identical failure signature. Fix flaky tests at the root cause; don't widen thresholds or add retries.
 - The PR description states how the change was tested and which platforms you could not cover. Ask in the [Discord](https://discord.gg/5xXzkMu8Zk) for help testing on hardware you don't have.
 - A silently-skipped test is a bug: if your change should be exercised by an existing CI job, confirm the job actually ran it rather than skipping.
+
+### Small docs-only PRs
+
+On ordinary pull requests, reduced CI is used only for 1 to 5 changed Markdown files under `docs/`. Renames are checked using both old and new paths. Generated references (`README.md`, `docs/dev/backends-reference.md`, `docs/dev/model-registries.md`, `docs/guide/cli.md`, `docs/guide/configuration/README.md`, `docs/guide/configuration/custom-models.md`, `docs/guide/configuration/multi-model.md`, and everything under `docs/api/`) require full CI. Markdown files outside `docs/`, including test fixtures, also require full CI.
+
+The labels `ci:distros`, `ci:macos`, `ci:backends`, and `ci:upgrades` force full CI and trigger re-evaluation of the affected workflows. An API error or uncertain classification also runs full CI. Merge queue, push, release and manual runs are never reduced.
+
+Eligible PRs skip the expensive server, packaging, runtime and generated-docs drift jobs. Pre-commit, Markdown links, and vendored asset integrity still run. The Linux embeddable build and its downstream tests remain active to preserve the required matrix check names. Other path-filtered workflows may still run when applicable.
 
 ### What defers to the merge queue
 
@@ -154,7 +163,7 @@ Packaging, distro, PPA, backend-validation, self-hosted inference and most macOS
 | llama.cpp, vLLM, stable-diffusion.cpp validation | `llama.cpp validation`, `vLLM validation`, `stable-diffusion.cpp validation` | `ci:upgrades` |
 | `Test .exe - *` and `Test .deb - *` inference suites on the self-hosted rigs | `Inference backend tests` | `ci:backends` |
 
-Every gated job is reachable from a PR by label — nothing is merge-queue-only. Apply the label when your change plausibly affects that surface (a backend version pin wants `ci:upgrades`, packaging or install-path changes want `ci:distros`, `#ifdef __APPLE__` or CMake changes want `ci:macos`, a wrapped-server or inference-path change wants `ci:backends`); the label takes effect immediately, without a push. Fork contributors can't apply labels themselves — ask a maintainer (or the [Discord](https://discord.gg/5xXzkMu8Zk)) to add one. Note that `Test .dmg - macOS inference` exercises several of the same wrapped servers (llama.cpp, whisper.cpp, moonshine, kokoro) on Metal but lives in the macOS group — a change to one of those that could break on Metal wants `ci:macos` too. `Build Embeddable Lemonade (macOS)` still runs on every PR as the AppleClang compile check.
+Every gated job is reachable from a PR by label — nothing is merge-queue-only. Apply the label when your change plausibly affects that surface (a backend version pin wants `ci:upgrades`, packaging or install-path changes want `ci:distros`, `#ifdef __APPLE__` or CMake changes want `ci:macos`, a wrapped-server or inference-path change wants `ci:backends`); the label takes effect immediately, without a push. Fork contributors can't apply labels themselves — ask a maintainer (or the [Discord](https://discord.gg/5xXzkMu8Zk)) to add one. Note that `Test .dmg - macOS inference` exercises several of the same wrapped servers (llama.cpp, whisper.cpp, moonshine, kokoro) on Metal but lives in the macOS group — a change to one of those that could break on Metal wants `ci:macos` too. `Build Embeddable Lemonade (macOS)` still runs on PRs outside the small-docs fast path as the AppleClang compile check.
 
 Two consequences worth knowing:
 

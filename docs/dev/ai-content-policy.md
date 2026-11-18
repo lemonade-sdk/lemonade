@@ -7,7 +7,7 @@ This policy is designed to keep humans at the center of the Lemonade community. 
 The maintainers of this project make every effort to read and understand the prose you send us. We want to reserve this effort for genuine human ideas and connections, rather than spending it on a high volume (both quantity and length) of AI-generated prose.
 
 > [!NOTE]
-> This policy is an experiment. 30 days after it is introduced we will evaluate whether we want to keep, modify, or drop it.
+> This policy is an experiment. On November 2, 2026 we will evaluate whether we want to keep, modify, or drop it.
 
 ## Rule 1
 

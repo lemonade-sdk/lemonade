@@ -3,6 +3,7 @@ on:
   push:
     branches: ["main"]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   merge_group:
 
 permissions:
@@ -10,7 +11,43 @@ permissions:
 
 jobs:
 
+
+  classify-small-docs-pr:
+    name: Classify small docs PR (Docs and Style)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions/classify-small-docs-pr
+      - name: Classify changed files
+        id: classify
+        uses: ./.github/actions/classify-small-docs-pr
+        with:
+          max-files: "5"
+
+  full-ci-gate:
+    name: Full CI gate (Docs and Style)
+    needs: classify-small-docs-pr
+    if: >-
+      !cancelled() &&
+      (needs.classify-small-docs-pr.result != 'success' ||
+       needs.classify-small-docs-pr.outputs.docs_only != 'true')
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Allow full CI
+        run: echo 'Full CI enabled'
+
   app-regression-tests:
+    needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     runs-on: ubuntu-latest
     concurrency:
       group: ${{ github.workflow }}-app-regression-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
@@ -33,6 +70,9 @@ jobs:
         run: node test/app/run-app-regression-tests.cjs
 
   backend-docs-drift:
+    needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     # Server reference docs are generated from live self-describing endpoints.
     # Build lemond, regenerate, and fail if committed docs are stale.
     runs-on: ubuntu-latest
@@ -45,8 +85,8 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - uses: actions/checkout@v5
-      - name: Install ccache
-        run: sudo apt-get update && sudo apt-get install -y ccache
+      - name: Install ccache and jsonschema
+        run: sudo apt-get update && sudo apt-get install -y ccache python3-jsonschema
       - name: Cache compiler objects
         uses: actions/cache@v5
         with:
@@ -63,6 +103,10 @@ jobs:
         run: python3 docs/tools/gen_backend_boilerplate.py --check
       - name: Check MCP reference docs are up to date
         run: python3 docs/tools/gen_mcp_boilerplate.py --check
+      - name: Check API reference docs and recorded examples are up to date
+        run: python3 docs/tools/gen_api_boilerplate.py --check
+      - name: Check model source docs are up to date
+        run: python3 docs/tools/gen_model_source_boilerplate.py --check
 
   pre-commit:
     runs-on: ubuntu-latest

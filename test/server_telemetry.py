@@ -1089,10 +1089,10 @@ class ErrorTests(TelemetryTestBase):
         """Verify that a streaming error (e.g. invalid parameter) logs error details on the span."""
         self._enable_telemetry(headers={"X-Test-Header": "StreamError"})
 
-        # Call streaming completions with invalid messages schema (string instead of array)
+        # lemond forwards message contents unchecked, so the backend rejects this one mid-stream
         completion_payload = {
             "model": ENDPOINT_TEST_MODEL,
-            "messages": "Hi.",
+            "messages": [{"role": "user", "content": 5}],
             "stream": True,
         }
         res = self._auth_post(

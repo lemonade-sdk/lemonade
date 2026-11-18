@@ -1,6 +1,7 @@
 /**
  * HRX reuses llama-server's protocol but supports only its local-GGUF chat
- * startup branch. HF loading, vision/mmproj, drafting, embeddings, reranking,
+ * startup branch, including embedded MTP heads. HF loading, vision/mmproj,
+ * separate draft checkpoints, embeddings, reranking,
  * and generic GPU-runtime setup stay omitted because the qualified bundle owns
  * those choices. The test-visible launch builders remain local until both HRX
  * and llama.cpp can share a startup seam without either recipe's policy leaking
@@ -15,11 +16,11 @@
 #include "lemon/backends/hrx/hrx.h"
 #include "lemon/model_manager.h"
 #include "lemon/utils/custom_args.h"
-#include "lemon/utils/process_manager.h"
 #include "lemon/utils/recipe_arg_resolver.h"
 
 #include <lemon/utils/aixlog.hpp>
 
+#include <algorithm>
 #include <stdexcept>
 #include <vector>
 
@@ -126,29 +127,15 @@ void HrxServer::load(const std::string& model_name,
     const std::vector<std::pair<std::string, std::string>> environment =
         hrx::build_server_environment();
 
+    ServerCommand command;
+    command.program = executable;
+    command.args = argv;
+    command.env = environment;
+    command.port = backend_port;
+
     const bool info_logging_enabled = log_level_ == "info";
     const bool inherit_output = info_logging_enabled || is_debug();
-    set_process_handle(
-        utils::ProcessManager::start_process(
-            executable,
-            argv,
-            "",
-            inherit_output,
-            true,
-            environment),
-        executable,
-        argv);
-
-    if (!wait_for_ready("/health")) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            utils::ProcessManager::stop_process(handle);
-        }
-        throw std::runtime_error("HRX llama-server failed to start");
-    }
-
-    LOG(DEBUG, "HRX") << "Model loaded on port "
-                       << get_backend_port() << std::endl;
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}), command);
 }
 
 }  // namespace backends
@@ -161,6 +148,23 @@ namespace {
 
 class HrxOps : public BackendOps {
 public:
+    void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const override {
+        const json merge_args_value = options.get_option("merge_args");
+        const bool merge_args =
+            merge_args_value.is_boolean() ? merge_args_value.get<bool>() : true;
+        if (!merge_args) return;
+
+        const bool uses_mtp =
+            std::find(info.labels.begin(), info.labels.end(), "mtp") != info.labels.end();
+        if (!uses_mtp) return;
+
+        const json custom_args_value = options.get_option("hrx_args");
+        const std::string custom_args =
+            custom_args_value.is_string() ? custom_args_value.get<std::string>() : "";
+        options.set_option("hrx_args", utils::append_runtime_arg_defaults(
+            custom_args, {{"--spec-type draft-mtp", "--spec-type"}}));
+    }
+
     void populate_metadata(ModelInfo& info,
                            const BackendOpsContext& ctx) const override {
         llamacpp::ops()->populate_metadata(info, ctx);

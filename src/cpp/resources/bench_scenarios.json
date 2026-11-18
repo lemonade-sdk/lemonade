@@ -49,6 +49,19 @@
       "max_tokens": 100
     },
     {
+      "name": "context-4k",
+      "category": "long-context",
+      "context": {
+        "filler": "The quick brown fox jumps over the lazy dog. This sentence is repeated to build up a large context window for benchmarking purposes. Each repetition adds approximately 20 tokens to the total input. The pangram contains every letter of the English alphabet at least once, making it useful for testing typewriters and fonts historically. ",
+        "target_tokens": 4096,
+        "position": "end"
+      },
+      "messages": [
+        { "role": "user", "content": "Question: What is the capital of France? Answer in one word." }
+      ],
+      "max_tokens": 20
+    },
+    {
       "name": "context-32k",
       "category": "long-context",
       "context": {

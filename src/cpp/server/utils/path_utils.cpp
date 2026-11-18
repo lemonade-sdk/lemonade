@@ -24,8 +24,20 @@ namespace lemon::utils {
 // concurrent access, then read-only from that point on.
 // ---------------------------------------------------------------------------
 
-static std::string g_cache_dir;
-static std::string g_config_dir;
+namespace {
+
+std::string& cache_dir_override() {
+    static std::string value;
+    return value;
+}
+
+std::string& config_dir_override() {
+    static std::string value;
+    return value;
+}
+
+} // namespace
+
 static std::string g_models_dir;
 
 // Platform abstraction instance (created on first use)
@@ -35,11 +47,11 @@ static PathPlatform* platform() {
 }
 
 void set_cache_dir(const std::string& dir) {
-    g_cache_dir = dir;
+    cache_dir_override() = dir;
 }
 
 void set_config_dir(const std::string& dir) {
-    g_config_dir = dir;
+    config_dir_override() = dir;
 }
 
 void set_models_dir(const std::string& dir) {
@@ -49,6 +61,15 @@ void set_models_dir(const std::string& dir) {
 std::string get_environment_variable_utf8(const std::string& name) {
     return platform()->get_environment_variable_utf8(name);
 }
+
+void set_environment_variable_utf8(const std::string& name, const std::string& value) {
+    platform()->set_environment_variable_utf8(name, value);
+}
+
+void unset_environment_variable_utf8(const std::string& name) {
+    platform()->unset_environment_variable_utf8(name);
+}
+
 
 fs::path path_from_utf8(const std::string& path) {
     return platform()->path_from_utf8(path);
@@ -164,8 +185,9 @@ std::string find_executable_in_path(const std::string& executable_name) {
 
 std::string get_cache_dir() {
     // If set_cache_dir() was called at startup, use that
-    if (!g_cache_dir.empty()) {
-        return g_cache_dir;
+    const std::string& cache_dir = cache_dir_override();
+    if (!cache_dir.empty()) {
+        return cache_dir;
     }
 
     // Check LEMONADE_CACHE_DIR environment variable
@@ -175,11 +197,12 @@ std::string get_cache_dir() {
     }
 
     // Fallback to platform-specific defaults (for backward compat / CLI client)
-    return platform()->get_cache_dir(g_cache_dir);
+    return platform()->get_cache_dir(cache_dir);
 }
 
 std::string get_config_dir() {
-    return path_to_utf8(path_from_utf8(platform()->get_config_dir(g_config_dir)).make_preferred());
+    return path_to_utf8(
+        path_from_utf8(platform()->get_config_dir(config_dir_override())).make_preferred());
 }
 
 void migrate_legacy_json_files_to_config_dir(const std::string& cache_dir,

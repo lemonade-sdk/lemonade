@@ -247,17 +247,27 @@ std::map<std::string, double> parse_classifier_scores(const json& response) {
     throw std::runtime_error("classifier response did not contain label scores");
 }
 
+std::optional<bool> parse_truncated(const json& response) {
+    if (response.is_object() && response.contains("truncated") &&
+        response["truncated"].is_boolean()) {
+        return response["truncated"].get<bool>();
+    }
+    return std::nullopt;
+}
+
 ClassifierServices make_classifier_services_from_router_calls(
     RouterJsonCall embeddings,
     RouterJsonCall chat_completion,
     EnsureClassifierModelLoaded ensure_loaded,
     RouterJsonCall classify,
-    RouterModelTypeCall get_model_type) {
+    RouterModelTypeCall get_model_type,
+    RouterOrderedJsonCall systemone) {
     ClassifierServices services;
     auto embeddings_call = std::make_shared<RouterJsonCall>(std::move(embeddings));
     auto chat_completion_call =
         std::make_shared<RouterJsonCall>(std::move(chat_completion));
     auto classify_call = std::make_shared<RouterJsonCall>(std::move(classify));
+    auto systemone_call = std::make_shared<RouterOrderedJsonCall>(std::move(systemone));
 
     services.embed = [embeddings_call,
                       ensure_loaded](const std::string& model,
@@ -276,7 +286,7 @@ ClassifierServices make_classifier_services_from_router_calls(
     services.run_classifier = [chat_completion_call, classify_call, get_model_type,
                                ensure_loaded](const std::string& model,
                                               const std::string& input)
-        -> std::map<std::string, double> {
+        -> ClassifierScores {
         // Load the model BEFORE resolving its runtime type. The production
         // resolver (Router::get_model_type) reports ModelType::LLM until the
         // backend is loaded and alive, so resolving first would make a cold-start
@@ -301,7 +311,11 @@ ClassifierServices make_classifier_services_from_router_calls(
                 {"model", model},
                 {"input", input},
             };
-            return parse_classifier_scores((*classify_call)(request));
+            const json response = (*classify_call)(request);
+            ClassifierScores answer;
+            answer.scores = parse_classifier_scores(response);
+            answer.truncated = parse_truncated(response);
+            return answer;
         }
 
         if (!*chat_completion_call) {
@@ -323,7 +337,72 @@ ClassifierServices make_classifier_services_from_router_calls(
                 },
             })},
         };
-        return parse_classifier_scores((*chat_completion_call)(request));
+        // A chat backend does not say whether it cut the input.
+        ClassifierScores answer;
+        answer.scores = parse_classifier_scores((*chat_completion_call)(request));
+        return answer;
+    };
+
+    services.run_zero_shot_classifier =
+        [classify_call, get_model_type, ensure_loaded](
+            const std::string& model, const std::string& input,
+            const std::vector<std::string>& labels) -> ClassifierScores {
+        if (!classify_call || !*classify_call) {
+            throw std::runtime_error("Router classify call is not configured");
+        }
+
+        ensure_model(ensure_loaded, model);
+
+        // Deliberately no chat fallback
+        if (!get_model_type || get_model_type(model) != ModelType::CLASSIFICATION) {
+            throw std::runtime_error(
+                "zero-shot classifier model '" + model +
+                "' is not a classification model; it cannot score a per-request label list");
+        }
+
+        json request = {
+            {"model", model},
+            {"input", input},
+            {"labels", labels},
+        };
+        const json response = (*classify_call)(request);
+
+        ClassifierScores answer;
+        answer.scores = parse_classifier_scores(response);
+        answer.truncated = parse_truncated(response);
+        return answer;
+    };
+
+    services.run_systemone =
+        [systemone_call, get_model_type, ensure_loaded](
+            const std::string& model, const std::string& input,
+            const nlohmann::ordered_json& question) -> json {
+        if (!*systemone_call) {
+            throw std::runtime_error("Router systemone call is not configured");
+        }
+
+        ensure_model(ensure_loaded, model);
+
+        if (!get_model_type || get_model_type(model) != ModelType::CLASSIFICATION) {
+            throw std::runtime_error(
+                "systemone classifier model '" + model +
+                "' is not a classification model; it cannot answer a SystemOne question");
+        }
+
+        constexpr const char* kQuestionId = "question";
+        nlohmann::ordered_json request = {
+            {"model", model},
+            {"state", input},
+            {"questions", {{kQuestionId, question}}},
+        };
+        json response = (*systemone_call)(request);
+        throw_if_error_response(response, "systemone request");
+        if (!response.is_object() || !response.contains("answers") ||
+            !response["answers"].is_object() || !response["answers"].contains(kQuestionId) ||
+            !response["answers"][kQuestionId].is_object()) {
+            throw std::runtime_error("systemone response has no answer to the question");
+        }
+        return response["answers"][kQuestionId];
     };
 
     services.chat = [chat_completion_call,

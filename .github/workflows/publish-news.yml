@@ -1,0 +1,76 @@
+name: Publish News
+
+# News posts go live on lemonade-server.ai as soon as they merge, while the rest
+# of the site waits for a release. A PR that mixed news and other changes would
+# publish its news before the rest of it ships, so such PRs are rejected.
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+    paths:
+      - "docs/news/**"
+      - "docs/assets/news-data.js"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-news-pr:
+    name: News changes are in their own PR
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+      - name: Reject PRs that mix news and other changes
+        run: |
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          pattern='^(docs/news/|docs/assets/news-data\.js$)'
+          news=$(grep -E "$pattern" <<< "$changed" || true)
+          other=$(grep -vE "$pattern" <<< "$changed" || true)
+          if [ -n "$news" ] && [ -n "$other" ]; then
+            echo "::error::News changes publish to the website as soon as they merge, so they need their own PR. Move these files to a separate PR:"
+            echo "$news"
+            exit 1
+          fi
+
+  publish-news:
+    name: Publish news to lemonade-server.ai
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-news
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: website
+          fetch-depth: 1
+      - name: Configure git
+        run: |
+          git config --global user.name "Lemonade Bot"
+          git config --global user.email "lemonade@amd.com"
+      # Retries cover a release publish pushing to website mid-run.
+      - name: Copy news from main to website
+        run: |
+          for attempt in 1 2 3; do
+            git fetch -q --depth=1 origin \
+              +refs/heads/main:refs/remotes/origin/main \
+              +refs/heads/website:refs/remotes/origin/website
+            git checkout -q -B website origin/website
+            git rm -rq --ignore-unmatch docs/news docs/assets/news-data.js
+            git checkout origin/main -- docs/news docs/assets/news-data.js
+            if git diff --cached --quiet; then
+              echo "Nothing to publish"
+              exit 0
+            fi
+            git commit -qm "Publish news from $(git rev-parse --short origin/main)"
+            git push origin website && exit 0
+          done
+          exit 1

@@ -8,7 +8,23 @@ pacman -S lemonade-server
 
 For package details, see [lemonade-server](https://archlinux.org/packages/extra/x86_64/lemonade-server).
 
-## Step 2: Choose your frontend
+## Step 2: Start the service
+
+The package installs a systemd service, but it is not started automatically. Enable and start it:
+
+```bash
+sudo systemctl enable --now lemond
+```
+
+Check that it's running:
+
+```bash
+sudo systemctl --no-pager status lemond
+```
+
+Without this step, commands such as `lemonade pull` fail with "Could not connect to Lemonade server".
+
+## Step 3: Choose your frontend
 
 === "Web UI"
 

@@ -2,13 +2,13 @@
 Text-classification tests for Lemonade Server.
 
 Tests the /classify endpoint (text -> {label: score}) with the onnxruntime
-backend (ort-server subprocess, CPU EP).
+backend (ort-server subprocess, CPU EP): a fixed-label model, and a zero-shot
+model that takes its labels from each request.
 
 Usage:
     python server_classify.py --wrapped-server onnxruntime --backend cpu
 
-The negative tests run first and never pull the model; only the classification
-test downloads it.
+The negative tests run first and never pull a model.
 """
 
 import requests
@@ -36,21 +36,49 @@ HF_REFERENCE = {
 }
 HF_REFERENCE_TOL = 5e-3
 
+ZERO_SHOT_LABELS = ["Coding", "Sales", "Creative writing", "General knowledge"]
+
+# route() scores from the original PyTorch model
+# (LiquidAI/LFM2.5-Encoder-350M-Prompt-Router @ 35ca4a0), copied from
+# ort-server's test/golden/LFM2.5-Encoder-350M-Prompt-Router.json. The second
+# case is near-uniform, so a pooling or tokenization error cannot hide in a
+# saturated top score. ort-server matches these within 1e-5.
+ZERO_SHOT_REFERENCE = [
+    (
+        "Can you help me debug a failing Python unit test?",
+        {
+            "Coding": 0.838118,
+            "Sales": 0.053962,
+            "Creative writing": 0.053959,
+            "General knowledge": 0.053961,
+        },
+    ),
+    (
+        "Prove that every finite integral domain is a field, with full rigor.",
+        {
+            "code generation": 0.330570,
+            "math reasoning": 0.336955,
+            "creative writing": 0.332475,
+        },
+    ),
+]
+ZERO_SHOT_REFERENCE_TOL = 1e-3
+
 
 class ClassifyTests(ServerTestBase):
     """Tests for the /classify endpoint."""
 
-    _model_pulled = False
+    _pulled = set()
 
     @classmethod
-    def _ensure_model_pulled(cls):
-        if cls._model_pulled:
+    def _ensure_model_pulled(cls, model_type="classification"):
+        model = get_test_model(model_type)
+        if model in cls._pulled:
             return
-        model = get_test_model("classification")
         print(f"\n[SETUP] Ensuring {model} is pulled...")
         pull_model_with_retry(model)
         print(f"[SETUP] {model} is ready")
-        cls._model_pulled = True
+        cls._pulled.add(model)
 
     def _payload(self, **overrides):
         payload = {
@@ -141,6 +169,64 @@ class ClassifyTests(ServerTestBase):
         )
         self._assert_rejected(self._payload(top_k=0), "Zero top_k", expected_status=400)
 
+    def test_005_wrong_type_labels_error(self):
+        """A malformed zero-shot 'labels' list is rejected 400 before any load."""
+        for labels, context in [
+            ("coding", "Non-array labels"),
+            ([], "Empty labels"),
+            (["coding", 7], "Non-string label"),
+            (["coding", "   "], "Whitespace-only label"),
+            (["coding", "coding"], "Duplicate label"),
+            (["coding\ncooking"], "Label with a line feed"),
+            (["coding\r\ncooking"], "Label with a carriage return"),
+            (["coding\tcooking"], "Label with an inner tab"),
+            (["coding\x7f"], "Label with a DEL character"),
+        ]:
+            self._assert_rejected(
+                self._payload(labels=labels), context, expected_status=400
+            )
+
+    def test_006_labels_with_non_ascii_pass_the_control_char_check(self):
+        """The control-character scan walks bytes; UTF-8 must survive it.
+
+        A continuation byte is >= 0x80 and so can never read as a control
+        character -- but only if the scan compares bytes rather than sign-
+        extended chars. Asserting only "control character" is absent would pass
+        when the request never reached the scan, so this pins the outcome to the
+        two results that prove it ran: the labels are accepted, or the loaded
+        fixed-label model refuses labels as a whole.
+        """
+        self._ensure_model_pulled()
+        response = requests.post(
+            f"{self.base_url}/classify",
+            json=self._payload(labels=["café", "日本語", "naïve"]),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertIn(
+            response.status_code,
+            (200, 400),
+            f"unexpected status {response.status_code}, so the control-character "
+            f"scan was never reached: {response.text[:1000]}",
+        )
+        if response.status_code == 400:
+            self.assertIn(
+                "fixed label set",
+                response.text,
+                f"the only acceptable 400 here is the fixed-label refusal; "
+                f"multi-byte UTF-8 labels were rejected instead: "
+                f"{response.text[:1000]}",
+            )
+        print("[OK] Multi-byte UTF-8 labels pass the control-character check")
+
+    def test_506_labels_rejected_by_fixed_label_model(self):
+        """Only the backend knows its task: a fixed-label model refuses labels."""
+        self._ensure_model_pulled()
+        self._assert_rejected(
+            self._payload(labels=["spam", "ham"]),
+            "Labels sent to a fixed-label model",
+            expected_status=400,
+        )
+
     def test_501_missing_input_error(self):
         """A request with a valid model but no input text is a 400 error."""
         self._ensure_model_pulled()
@@ -220,6 +306,153 @@ class ClassifyTests(ServerTestBase):
                 ),
             )
         print(f"[OK] scores match the HuggingFace reference within {HF_REFERENCE_TOL}")
+
+    def _classifier_residency(self, model):
+        response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200, response.text[:500])
+        for loaded in response.json().get("all_models_loaded", []):
+            if loaded.get("model_name") == model:
+                return loaded.get("residency_class")
+        self.fail(f"{model} is not in all_models_loaded: {response.text[:1000]}")
+
+    def test_505_model_optional_keeps_routing_helper_residency(self):
+        """Classifying without 'model' must not demote a routing helper to standard."""
+        model = get_test_model("classification")
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+        self._ensure_model_pulled()
+
+        collection = "user.Test-Classify-Routing-Helper"
+        policy = {
+            "version": "1",
+            "model_name": collection,
+            "recipe": "collection.router",
+            "components": ["Tiny-Test-Model-GGUF", "Qwen3-0.6B-GGUF", model],
+            "routing": {
+                "candidates": ["Tiny-Test-Model-GGUF", "Qwen3-0.6B-GGUF"],
+                "default_model": "Tiny-Test-Model-GGUF",
+                "classifiers": [
+                    {
+                        "id": "phishing",
+                        "type": "classifier",
+                        "model": model,
+                        "labels": ["LABEL_0", "LABEL_1", "LABEL_2", "LABEL_3"],
+                        "default_label": "LABEL_1",
+                        "on_error": "match_false",
+                    }
+                ],
+                "rules": [
+                    {
+                        "id": "phishing-to-capable",
+                        "match": {
+                            "classifier": "phishing",
+                            "label": "LABEL_1",
+                            "min_score": 0.5,
+                        },
+                        "route_to": "Qwen3-0.6B-GGUF",
+                    }
+                ],
+            },
+        }
+        # The router skips loading a routing helper that no registered policy
+        # references, so register the collection before validating against it.
+        response = requests.post(f"{self.base_url}/pull", json=policy, timeout=600)
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        try:
+            inline_policy = {k: v for k, v in policy.items() if k != "model_name"}
+            response = requests.post(
+                f"{self.base_url}/routing/validate",
+                json={"policy": inline_policy, "prompt": "Verify your account now."},
+                timeout=TIMEOUT_CLASSIFY,
+            )
+            self.assertEqual(response.status_code, 200, response.text[:1000])
+            self.assertEqual(self._classifier_residency(model), "routing_helper")
+
+            payload = self._payload()
+            del payload["model"]
+            response = requests.post(
+                f"{self.base_url}/classify", json=payload, timeout=TIMEOUT_CLASSIFY
+            )
+            self.assertEqual(response.status_code, 200, response.text[:500])
+            self.assertEqual(response.json().get("model"), model)
+
+            self.assertEqual(
+                self._classifier_residency(model),
+                "routing_helper",
+                "model-optional classify reloaded the routing helper as a standard model",
+            )
+            print("[OK] model-optional classify kept the routing helper's residency")
+        finally:
+            requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": collection},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+    def _zero_shot(self, text, labels=ZERO_SHOT_LABELS):
+        self._ensure_model_pulled("zero_shot_classification")
+        payload = {
+            "model": get_test_model("zero_shot_classification"),
+            "input": text,
+        }
+        if labels is not None:
+            payload["labels"] = labels
+        return requests.post(
+            f"{self.base_url}/classify", json=payload, timeout=TIMEOUT_CLASSIFY
+        )
+
+    def test_510_zero_shot_picks_the_matching_label(self):
+        """The router scores the request's own labels and picks the right one."""
+        for text, expected in [
+            ("Can you help me debug a failing Python unit test?", "Coding"),
+            ("Can you help me write a poem on love?", "Creative writing"),
+            ("Can you help me close a deal on this car?", "Sales"),
+        ]:
+            response = self._zero_shot(text)
+            self.assertEqual(response.status_code, 200, response.text[:1000])
+            body = response.json()
+            labels = body["labels"]
+            self.assertEqual(set(labels), set(ZERO_SHOT_LABELS), str(labels))
+            self.assertAlmostEqual(sum(labels.values()), 1.0, delta=1e-4)
+            self.assertEqual(max(labels, key=labels.get), expected, str(labels))
+            self.assertIs(body.get("truncated"), False, str(body))
+            print(f"[OK] {text!r} -> {expected} ({labels[expected]:.3f})")
+
+    def test_511_zero_shot_matches_pytorch_reference(self):
+        """End-to-end scores must match the original model's route()."""
+        for text, reference in ZERO_SHOT_REFERENCE:
+            response = self._zero_shot(text, labels=list(reference))
+            self.assertEqual(response.status_code, 200, response.text[:1000])
+            labels = response.json()["labels"]
+            for label, expected in reference.items():
+                self.assertAlmostEqual(
+                    labels[label],
+                    expected,
+                    delta=ZERO_SHOT_REFERENCE_TOL,
+                    msg=f"{text!r} / {label}: {labels[label]:.6f} != {expected:.6f}",
+                )
+        print(f"[OK] zero-shot scores match route() within {ZERO_SHOT_REFERENCE_TOL}")
+
+    def test_512_zero_shot_requires_labels(self):
+        """A zero-shot model has no label set of its own, so omitting labels is 400."""
+        response = self._zero_shot("Can you help me book a flight?", labels=None)
+        self.assertEqual(response.status_code, 400, response.text[:1000])
+        self.assertIn("labels", response.text)
+        print("[OK] Zero-shot request without labels: 400")
+
+    def test_513_zero_shot_reports_truncation(self):
+        """A text past the 2,048-token window is cut, reported, and still routed."""
+        code = (
+            "def merge(a, b):\n    out = []\n    while a and b:\n"
+            "        out.append(a.pop(0) if a[0] < b[0] else b.pop(0))\n"
+            "    return out + a + b\n"
+        )
+        response = self._zero_shot(code * 80 + "Why does this crash on an empty list?")
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        body = response.json()
+        self.assertIs(body.get("truncated"), True, str(body))
+        labels = body["labels"]
+        self.assertEqual(max(labels, key=labels.get), "Coding", str(labels))
+        print(f"[OK] ~4,000-token text cut and still routed to Coding: {labels}")
 
 
 if __name__ == "__main__":

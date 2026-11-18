@@ -46,16 +46,9 @@ public:
     AudioFormatMetadata audio_format_metadata(const std::string& response_format) const override;
 
 private:
-    struct Subprocess {
-        ProcessHandle handle;
-        int port = 0;
-        std::vector<std::string> args;
-    };
-
     std::string resolve_binary_path(const std::string& backend);
-    Subprocess spawn(const std::string& model_path);
+    ServerCommand server_command(const std::string& model_path) const;
 
-    void stop_speech_process();
     void start_speech_process(long timeout_seconds = 600);
 
     std::string design_reference_sample(const std::string& voice_description,
@@ -72,8 +65,6 @@ private:
     std::vector<std::pair<std::string, std::string>> env_vars_;
     std::shared_mutex request_mutex_;
     std::atomic<bool> process_swap_in_progress_{false};
-    std::atomic<int> pcm_sample_rate_{0};
-    std::atomic<int> pcm_channels_{0};
 };
 
 namespace openmoss {

@@ -3,8 +3,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const suiteDir = path.join(__dirname, 'app-regression');
+const repoRoot = path.resolve(__dirname, '..', '..');
+const hasSharedAppLayout = fs.existsSync(
+  path.join(repoRoot, 'src', 'app', 'src', 'features', 'collections', 'collectionModels.ts'),
+);
 const files = fs.readdirSync(suiteDir)
   .filter((name) => name.endsWith('.test.cjs'))
+  .filter((name) => hasSharedAppLayout ? name === 'app.test.cjs' : name !== 'app.test.cjs')
   .sort();
 
 let passed = 0;

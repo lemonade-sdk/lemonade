@@ -10,6 +10,27 @@
 
 namespace lemon {
 
+nlohmann::ordered_json StreamingProxy::error_event_schema() {
+    return nlohmann::ordered_json::parse(R"({
+        "type": "object",
+        "title": "Error event",
+        "description": "Sent in place of the rest of the stream when the backend fails after the stream has started. No `[DONE]` follows it.",
+        "x-no-example": "Only a backend that fails mid-stream sends it.",
+        "required": ["error"],
+        "properties": {
+            "error": {
+                "type": ["object", "string"],
+                "description": "The backend's error, as an object or, when the backend sent one, a string.",
+                "properties": {
+                    "message": {"type": "string", "description": "What failed."},
+                    "type": {"type": "string", "description": "The error's type, such as `backend_error`."},
+                    "status_code": {"type": "integer", "description": "The status the backend answered with, or `502` when it closed the stream without a response."}
+                }
+            }
+        }
+    })");
+}
+
 namespace {
 
 bool has_output_text(const nlohmann::json& chunk) {
@@ -159,7 +180,7 @@ void StreamingProxy::forward_sse_stream(
 
     int backend_status = 200;
     std::string error_body;
-    static constexpr size_t max_error_body = 64 * 1024;
+    static constexpr size_t max_error_body = kMaxErrorBodyBytes;
 
     // Chunk boundaries are arbitrary, so whether the stream carried any event
     // at all is decided per reassembled line rather than per received chunk. An
@@ -167,9 +188,10 @@ void StreamingProxy::forward_sse_stream(
     // off before that is discarded by the client, so it delivered nothing.
     bool has_data_event = false;
     bool has_pending_data_field = false;
+    bool forwarded_error_event = false;
 
     auto process_line = [&telemetry, &has_data_event, &has_pending_data_field, &time_to_first_token,
-                         &start_time](const std::string& line) {
+                         &start_time, &forwarded_error_event](const std::string& line) {
         if (line.empty()) {
             has_data_event = has_data_event || has_pending_data_field;
             has_pending_data_field = false;
@@ -200,6 +222,9 @@ void StreamingProxy::forward_sse_stream(
                 if (chunks_before == 0 && telemetry.output_chunks > 0) {
                     time_to_first_token = std::chrono::duration<double>(
                         std::chrono::steady_clock::now() - start_time).count();
+                }
+                if (chunk.is_object() && chunk.contains("error") && !chunk["error"].is_null()) {
+                    forwarded_error_event = true;
                 }
             } catch (...) {}
         }
@@ -274,7 +299,13 @@ void StreamingProxy::forward_sse_stream(
         result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR;
 
     if (result.curl_code != CURLE_OK) {
-        if (client_disconnected) {
+        if (client_disconnected && forwarded_error_event) {
+            // Gateways that translate the stream stop it themselves once they have
+            // relayed the backend's error, so the client did not go away.
+            stream_error = true;
+            LOG(ERROR, "StreamingProxy") << "Backend reported an error during SSE stream" << std::endl;
+            telemetry.error_message = "Backend reported an error during stream";
+        } else if (client_disconnected) {
             stream_error = true;
             LOG(WARNING, "StreamingProxy") << "Client disconnected during SSE stream (CURL error: " << result.curl_error << ")" << std::endl;
             telemetry.error_message = "Client disconnected during stream";
@@ -409,7 +440,7 @@ void StreamingProxy::forward_byte_stream(
     // JSON error below rather than served as successful media.
     int backend_status = 200;
     std::string error_body;
-    static constexpr size_t max_error_body = 64 * 1024;
+    static constexpr size_t max_error_body = kMaxErrorBodyBytes;
 
     utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,

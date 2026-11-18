@@ -8,6 +8,11 @@
 
 namespace lemon {
 
+namespace models {
+class ArtifactSourceResolver;
+}  // namespace models
+
+
 // Single GGUF variant detected in a remote model registry repository.
 struct GgufVariant {
     // Display label and selector. Callers pull `checkpoint:name`, so this must
@@ -33,6 +38,8 @@ struct GgufVariantSet {
     std::vector<std::string> draft_files;   // Bare filenames of recognized draft GGUF companions.
 };
 
+std::string gguf_quant_token(const std::string& name);
+
 // Enumerate GGUF variants from a normalized repository file list.
 //
 // `repo_files` is the normalized path list returned by the selected registry. `file_sizes` is an optional map (rfilename -> size in bytes) used to
@@ -48,18 +55,24 @@ std::string llamacpp_gguf_incompatibility(
     const nlohmann::json& repository_metadata,
     const std::string& registry_source);
 
+// True when `manifest` has the shape of an exported Lemonade Omni collection:
+// recipe "collection.omni", a non-empty `components` array and a `models` array.
+bool is_omni_collection_manifest(const nlohmann::json& manifest);
+
 // Build the JSON response body for GET /api/v{0,1}/pull/variants.
 //
 // Queries the selected registry, runs `enumerate_gguf_variants`,
 // derives suggested labels from the repo id, and returns the response JSON.
 // Throws std::runtime_error on transport failure; sets `not_found` true if
 // the registry reports a missing/inaccessible repo so the caller can return HTTP 404.
-nlohmann::json fetch_pull_variants(const std::string& checkpoint,
+nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolver,
+                                   const std::string& checkpoint,
                                    const std::string& registry_source,
                                    bool& not_found);
 
-inline nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_found) {
-    return fetch_pull_variants(checkpoint, "huggingface", not_found);
+inline nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolver,
+                                          const std::string& checkpoint, bool& not_found) {
+    return fetch_pull_variants(resolver, checkpoint, "huggingface", not_found);
 }
 
 }  // namespace lemon

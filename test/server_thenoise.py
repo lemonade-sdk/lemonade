@@ -175,8 +175,8 @@ class TheNoiseTests(ServerTestBase):
         assert_valid_png(self, result["data"][0]["b64_json"], "seed=12345")
         print(f"[OK] Image generation with explicit seed successful")
 
-    def test_007_models_endpoint_returns_image_defaults(self):
-        """Test that /models returns image_defaults for the TheNoise model."""
+    def test_007_models_endpoint_returns_generation_options(self):
+        """Test that /models returns generation options for the TheNoise model."""
         response = requests.get(
             f"{self.base_url}/models?show_all=true",
             timeout=TIMEOUT_DEFAULT,
@@ -197,12 +197,14 @@ class TheNoiseTests(ServerTestBase):
                 break
 
         self.assertIsNotNone(model, f"TheNoise model not found in /models response")
-        self.assertIn("image_defaults", model, "Model should have image_defaults")
-        defaults = model["image_defaults"]
-        self.assertIn("steps", defaults, "image_defaults should have steps")
-        self.assertIn("width", defaults, "image_defaults should have width")
-        self.assertIn("height", defaults, "image_defaults should have height")
-        print(f"[OK] {THENOISE_MODEL} image_defaults verified: {defaults}")
+        options = model.get("recipe_options", {})
+        self.assertIn("steps", options, "recipe_options should have steps")
+        self.assertIn("width", options, "recipe_options should have width")
+        self.assertIn("height", options, "recipe_options should have height")
+        self.assertIn(
+            "soft_pixel_cap", options, "recipe_options should have soft_pixel_cap"
+        )
+        print(f"[OK] {THENOISE_MODEL} generation options verified: {options}")
 
     @skip_heavy
     def test_008_negative_prompt(self):

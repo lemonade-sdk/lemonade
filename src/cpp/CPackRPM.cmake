@@ -7,10 +7,16 @@ set(CPACK_RPM_PACKAGE_LICENSE "Apache-2.0")
 set(CPACK_RPM_PACKAGE_GROUP "Applications/System")
 set(CPACK_RPM_PACKAGE_URL "https://github.com/lemonade-sdk/lemonade")
 
-# RPM runtime requirements (package names on Fedora/RHEL)
-# Adjust for target distro if needed.
+# RPM runtime requirements. Package names differ between RPM distros, so each
+# entry is a rich dependency listing the Fedora/RHEL name first and the
+# openSUSE name second (the library packages are named libcurl4, libz1, ...).
+# Only the name that exists on the installing distro has to be available.
 # libgomp is required at runtime by OpenMP-linked backends (e.g. llama-server).
-set(CPACK_RPM_PACKAGE_REQUIRES "libcurl, openssl, zlib, libgomp")
+set(CPACK_RPM_PACKAGE_REQUIRES
+    "(libcurl or libcurl4), (openssl or libopenssl3), (zlib or libz1), (libgomp or libgomp1)")
+# CPack before CMake 4.1 drops CPACK_RPM_PACKAGE_RECOMMENDS, so the tag goes
+# into the spec preamble directly.
+set(CPACK_RPM_SPEC_MORE_DEFINE "Recommends: (podman or docker or docker-ce)\nRecommends: crun")
 
 # Architecture and file name
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")

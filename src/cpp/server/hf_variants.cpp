@@ -1,3 +1,4 @@
+#include <lemon/models/artifact_resolver.h>
 #include "lemon/hf_variants.h"
 
 #include <algorithm>
@@ -12,7 +13,8 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/llamacpp_architectures_generated.h"
 #include "lemon/model_types.h"
-#include "lemon/model_registry.h"
+#include <lemon/models/fetchable_repository.h>
+#include <lemon/models/registry_types.h>
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 
@@ -47,7 +49,8 @@ enum class DraftKind { None, Mtp, Dflash };
 
 DraftKind draft_kind(const std::string& path) {
     const std::string filename = to_lower(filename_only(path));
-    if (filename.rfind("mtp-", 0) == 0) return DraftKind::Mtp;
+    if (filename.rfind("mtp-", 0) == 0 ||
+        filename.find("-mtp-ud-") != std::string::npos) return DraftKind::Mtp;
     if (filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf") {
         return DraftKind::Dflash;
     }
@@ -189,6 +192,11 @@ std::string preferred_draft_companion(
 }
 
 }  // namespace
+
+std::string gguf_quant_token(const std::string& name) {
+    std::string quant;
+    return extract_quant(name, quant) ? quant : std::string();
+}
 
 GgufVariantSet enumerate_gguf_variants(
     const std::vector<std::string>& repo_files,
@@ -334,7 +342,18 @@ GgufVariantSet enumerate_gguf_variants(
     return result;
 }
 
-nlohmann::json fetch_pull_variants(const std::string& checkpoint,
+bool is_omni_collection_manifest(const nlohmann::json& manifest) {
+    // value() throws on a non-string recipe, so check the type first
+    return manifest.is_object() &&
+        manifest.contains("recipe") && manifest["recipe"].is_string() &&
+        is_omni_collection_recipe(manifest["recipe"].get<std::string>()) &&
+        manifest.contains("components") && manifest["components"].is_array() &&
+        !manifest["components"].empty() &&
+        manifest.contains("models") && manifest["models"].is_array();
+}
+
+nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolver,
+                                   const std::string& checkpoint,
                                    const std::string& registry_source,
                                    bool& not_found) {
     not_found = false;
@@ -344,16 +363,19 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     }
 
     const auto source = parse_remote_registry_source(registry_source);
-    const auto& registry = model_registry(source);
-    RegistryRepository repository;
+    models::ArtifactRef probe;
+    probe.registry = source;
+    probe.repo_id = checkpoint;
+    const auto source_repository = resolver.repository_for(probe, models::SourcePlacement{});
+    models::RepoListing repository;
     try {
-        repository = registry.fetch_repository(checkpoint);
+        repository = source_repository->list(checkpoint);
     } catch (const RegistryNotFoundError&) {
         not_found = true;
         return {};
     }
 
-    const auto headers = registry.auth_headers();
+    const auto headers = source_repository->auth_headers();
     std::vector<std::string> repo_files;
     std::vector<std::pair<std::string, uint64_t>> file_sizes;
     for (const auto& file : repository.files) {
@@ -429,14 +451,15 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
         static constexpr uint64_t kMaxManifestBytes = 5ull * 1024 * 1024;
         for (const auto& kv : file_sizes) {
             if (kv.first == manifest_filename && kv.second > kMaxManifestBytes) {
-                throw std::runtime_error(
+                throw std::invalid_argument(
                     "Repository " + checkpoint + " contains '" + manifest_filename +
                     "' but it is too large to be a Lemonade Omni collection manifest");
             }
         }
 
-        std::string manifest_url = registry.resolve_file_url(
-            checkpoint, repository.revision, manifest_filename);
+        std::string manifest_url = source_repository->file_url(
+            models::RepoRef{checkpoint, models::Revision{repository.download_revision, false},
+                            manifest_filename});
         auto manifest_response = HttpClient::get(manifest_url, headers);
         if (manifest_response.status_code != 200) {
             throw std::runtime_error(
@@ -450,13 +473,8 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
         } catch (const std::exception&) {
             manifest = nlohmann::json();
         }
-        bool valid_manifest = manifest.is_object() &&
-            is_omni_collection_recipe(manifest.value("recipe", std::string())) &&
-            manifest.contains("components") && manifest["components"].is_array() &&
-            !manifest["components"].empty() &&
-            manifest.contains("models") && manifest["models"].is_array();
-        if (!valid_manifest) {
-            throw std::runtime_error(
+        if (!is_omni_collection_manifest(manifest)) {
+            throw std::invalid_argument(
                 "Repository " + checkpoint + " contains '" + manifest_filename +
                 "' but it is not a Lemonade Omni collection manifest (expected an exported "
                 "collection JSON with recipe \"collection.omni\", a non-empty 'components' "
@@ -488,7 +506,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
 
     auto vset = enumerate_gguf_variants(repo_files, file_sizes);
     if (vset.variants.empty()) {
-        throw std::runtime_error(
+        throw std::invalid_argument(
             "No supported model files found in repository " + checkpoint +
             ". Supported repository types: GGUF models (*.gguf), ONNX RyzenAI models, and "
             "Lemonade Omni collections (a '" + manifest_filename +
@@ -497,9 +515,9 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
 
     nlohmann::json compatibility_metadata = repository.raw_metadata;
     std::optional<nlohmann::json> expanded_metadata;
-    if (source == RemoteRegistrySource::HuggingFace) {
+    if (source == models::huggingface_descriptor().id) {
         expanded_metadata = fetch_huggingface_compatibility_metadata(
-            checkpoint, repository.snapshot_id);
+            checkpoint, repository.revision.id);
     }
     if (expanded_metadata) {
         for (const char* field : {"gguf", "pipeline_tag"}) {

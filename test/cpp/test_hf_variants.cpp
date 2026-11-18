@@ -350,11 +350,58 @@ int main() {
     }
 
     {
+        auto set = lemon::enumerate_gguf_variants({
+            "Qwen3.8-Flash-Next-UD-Q3_K_XL.gguf",
+            "Qwen3.8-Flash-Next-MTP-UD-Q3_K_XL.gguf",
+        });
+        result.expect("model-prefixed MTP-UD is a draft, not another main variant",
+                      set.variants.size() == 1 && set.draft_files.size() == 1 &&
+                          set.variants[0].draft_file ==
+                              "Qwen3.8-Flash-Next-MTP-UD-Q3_K_XL.gguf",
+                      "got " + join_names(set));
+    }
+    {
         auto set = lemon::enumerate_gguf_variants({"My-MTP-Model-Q8_0.gguf"});
         result.expect("MTP in a main-model name is not treated as a draft",
                       set.variants.size() == 1 && set.variants[0].name == "Q8_0" &&
                           set.draft_files.empty(),
                       "got " + join_names(set));
+    }
+
+    {
+        const nlohmann::json valid = {
+            {"recipe", "collection.omni"},
+            {"components", {"llm"}},
+            {"models", nlohmann::json::array()},
+        };
+        result.expect("exported collection manifest is accepted",
+                      lemon::is_omni_collection_manifest(valid),
+                      "valid manifest was rejected");
+
+        nlohmann::json bad_recipe = valid;
+        bad_recipe["recipe"] = 123;
+        result.expect("non-string recipe is rejected without throwing",
+                      !lemon::is_omni_collection_manifest(bad_recipe),
+                      "manifest with a numeric recipe was accepted");
+
+        nlohmann::json other_recipe = valid;
+        other_recipe["recipe"] = "llamacpp";
+        result.expect("non-collection recipe is rejected",
+                      !lemon::is_omni_collection_manifest(other_recipe),
+                      "manifest with recipe llamacpp was accepted");
+
+        nlohmann::json no_components = valid;
+        no_components["components"] = nlohmann::json::array();
+        result.expect("empty components are rejected",
+                      !lemon::is_omni_collection_manifest(no_components),
+                      "manifest with no components was accepted");
+
+        result.expect("empty object is rejected",
+                      !lemon::is_omni_collection_manifest(nlohmann::json::object()),
+                      "{} was accepted");
+        result.expect("non-object is rejected",
+                      !lemon::is_omni_collection_manifest(nlohmann::json::array()),
+                      "[] was accepted");
     }
 
     printf("\n%d passed, %d failed\n", result.passed, result.failed);

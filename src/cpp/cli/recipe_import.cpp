@@ -1,7 +1,8 @@
 #include "lemon_cli/recipe_import.h"
 
+#include "lemon/canonical_id.h"
 #include "lemon/model_manager.h"
-#include "lemon/model_registry.h"
+#include <lemon/models/registry_types.h>
 #include "lemon/utils/github_api.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
@@ -19,9 +20,9 @@
 namespace lemon_cli {
 namespace {
 
-// Keys allowed in exported/imported model files. Keep in sync with
-// EXPORT_KNOWN_KEYS in src/app/src/renderer/utils/modelData.ts (the GUI's
-// mirror of this transform).
+// Keys kept when a model file is normalized; everything else is dropped.
+// `image_defaults` and `audio_defaults` are retired but still accepted, so
+// older exports import.
 const std::vector<std::string> kKnownKeys = {
     "checkpoint",
     "checkpoints",

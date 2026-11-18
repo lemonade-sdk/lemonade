@@ -67,6 +67,10 @@ The following maintainers are required to review RFCs within their subject area.
 
 This section helps you understand how to write a polished RFC that is likely to get a good reception with the community. The `Request for Comment (RFC)` discussion category also has a template that will guide you.
 
+Follow the [spec writing guide](./specs/spec-writing-guide.md) for structure and precision.
+
+RFCs that propose a new backend must also meet the [backend policy](./adding-a-backend.md#policy).
+
 Reminder: the [AI content policy](./ai-content-policy.md) strictly applies to RFCs. Important decisions in Lemonade must be made through human-to-human discourse.
 
 <!-- if you ever edit this section, make sure to update the template too! -->
