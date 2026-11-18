@@ -112,7 +112,7 @@ public:
           target_(std::move(target)) {}
 
     void run() {
-        const models::RepoListing listing = repository_->list(repo_id_);
+        const models::RepoListing listing = list_bundle();
         dir_ = run_dir(repo_id_);
         std::error_code ec;
         fs::create_directories(dir_, ec);
@@ -177,6 +177,18 @@ public:
     }
 
 private:
+    // loom-fun tags a bundle with a Loom release only once its default branch
+    // moves on to a newer one, so a missing tag means the head still serves ours.
+    models::RepoListing list_bundle() const {
+        try {
+            return repository_->list(repo_id_, loom::kBundleRevision);
+        } catch (const RegistryNotFoundError&) {
+            LOG(INFO, "Loom") << repo_id_ << " has no " << loom::kBundleRevision
+                              << " tag; using its default branch" << std::endl;
+            return repository_->list(repo_id_);
+        }
+    }
+
     models::DownloadFile bundle_download(const RegistryFile& file, const models::Revision& revision) {
         drop_if_resized(dir_ / utils::path_from_utf8(file.path), file.size);
         return {file.path, repository_->file_url({repo_id_, revision, file.path}), file.size,
