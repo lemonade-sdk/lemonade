@@ -27,7 +27,7 @@ namespace {
 constexpr const char* kBackend = "rocm";
 
 // vLLM compiles its kernels on the first start of each model and GPU, which
-// global_timeout does not describe, so it gets its own floor; a larger
+// global_timeout does not describe, so AIM gets its own floor; a larger
 // global_timeout still raises it.
 constexpr long kStartupTimeoutSeconds = 1800;
 
@@ -46,27 +46,17 @@ void pull_model_image(const std::string& image) {
     manager.pull(image, nullptr);
 }
 
-// The context vLLM settled on, from ctx_size or the profile, or 0 when it
-// does not say.
-int64_t served_max_model_len(const std::string& base_url) {
-    try {
-        const auto response = utils::HttpClient::get(
-            base_url + "/v1/models", {}, 10, utils::HttpSecurityPolicy::TrustedLoopback);
-        if (response.status_code != 200) return 0;
-        const json models = json::parse(response.body);
-        for (const auto& model : models.value("data", json::array())) {
-            if (model.contains("max_model_len") && model["max_model_len"].is_number_integer()) {
-                return model["max_model_len"].get<int64_t>();
-            }
-        }
-    } catch (const std::exception&) {
-    }
-    return 0;
-}
-
 }  // namespace
 
 namespace aim {
+
+std::string model_engine(const ModelInfo& info) {
+    return info.extra<std::string>("aim_engine", kEngineVllm);
+}
+
+bool supports_engine(const std::string& engine) {
+    return engine == kEngineVllm;
+}
 
 ModelImage parse_model_image(const std::string& pinned) {
     const auto at = pinned.find('@');
@@ -89,7 +79,8 @@ ModelImage parse_model_image(const std::string& pinned) {
     return {repository + "@" + pin->digest, pin->tag};
 }
 
-std::vector<std::pair<std::string, std::string>> build_container_env(int port, int ctx_size,
+std::vector<std::pair<std::string, std::string>> build_container_env(int port,
+                                                                     const json& engine_args,
                                                                      const std::string& profile) {
     std::vector<std::pair<std::string, std::string>> env = {
         {"AIM_CACHE_PATH", kContainerModelsDir},
@@ -99,8 +90,8 @@ std::vector<std::pair<std::string, std::string>> build_container_env(int port, i
         {"AIM_METRIC", "latency"},
         {"HF_HUB_OFFLINE", "1"},
     };
-    if (ctx_size > 0) {
-        env.push_back({"AIM_ENGINE_ARGS", json{{"max-model-len", ctx_size}}.dump()});
+    if (!engine_args.empty()) {
+        env.push_back({"AIM_ENGINE_ARGS", engine_args.dump()});
     }
     if (!profile.empty()) {
         env.push_back({"AIM_PROFILE_ID", profile});
@@ -108,53 +99,37 @@ std::vector<std::pair<std::string, std::string>> build_container_env(int port, i
     return env;
 }
 
-void translate_reply(json& reply, const std::string& model_name) {
+void restore_model_name(json& reply, const std::string& model_name) {
     if (!reply.is_object()) return;
     if (reply.contains("model")) reply["model"] = model_name;
     if (reply.contains("response") && reply["response"].is_object() &&
         reply["response"].contains("model")) {
         reply["response"]["model"] = model_name;
     }
-    if (!reply.contains("choices") || !reply["choices"].is_array()) return;
-    for (auto& choice : reply["choices"]) {
-        for (const char* part : {"message", "delta"}) {
-            if (!choice.contains(part) || !choice[part].is_object()) continue;
-            json& body = choice[part];
-            if (!body.contains("reasoning")) continue;
-            json reasoning = std::move(body["reasoning"]);
-            body.erase("reasoning");
-            if (!body.contains("reasoning_content")) body["reasoning_content"] = std::move(reasoning);
-        }
-    }
 }
 
-}  // namespace aim
-
-AimServer::AimServer(const std::string& log_level, ModelManager* model_manager,
-                     BackendManager* backend_manager)
-    : VLLMServer("aim", log_level, model_manager, backend_manager) {}
-
-void AimServer::load(const std::string& model_name, const ModelInfo& model_info,
-                     const RecipeOptions& options, bool do_not_upgrade) {
-    (void)do_not_upgrade;  // install_backend() is a no-op once the pinned base is present
-    backend_manager_->install_backend(aim::descriptor.recipe, kBackend);
+Launch prepare_launch(const std::string& model_name, const ModelInfo& model_info,
+                      const RecipeOptions& options, ModelManager* model_manager,
+                      BackendManager* backend_manager, int port, const json& engine_args,
+                      bool inherit_output) {
+    backend_manager->install_backend(descriptor.recipe, kBackend);
 
     const std::string pinned = model_info.extra<std::string>("aim_image", "");
     if (pinned.empty()) {
         throw std::runtime_error("aim: model '" + model_name + "' names no aim_image");
     }
-    const aim::ModelImage image = aim::parse_model_image(pinned);
+    const ModelImage image = parse_model_image(pinned);
     pull_model_image(image.image);
 
     // AIM looks for the model at AIM_CACHE_PATH/<org>/<model>, where <org>/<model>
     // is the id its profiles name, so the checkpoint must be the AIM's own repository.
     const std::string checkpoint = model_info.checkpoint();
     const std::string repo_id = checkpoint.substr(0, checkpoint.find(':'));
-    if (repo_id.empty() || model_manager_ == nullptr) {
+    if (repo_id.empty() || model_manager == nullptr) {
         throw std::runtime_error("aim: no checkpoint to serve for model '" + model_name + "'");
     }
     const fs::path repo_cache =
-        utils::path_from_utf8(model_manager_->get_hf_cache_dir()) /
+        utils::path_from_utf8(model_manager->get_hf_cache_dir()) /
         hf_cache::repo_id_to_cache_dir_name(repo_id, model_info.registry_source);
     const fs::path snapshot = hf_cache::active_snapshot_path(repo_cache);
     if (snapshot.empty() || !fs::exists(snapshot)) {
@@ -162,85 +137,34 @@ void AimServer::load(const std::string& model_name, const ModelInfo& model_info,
                                  model_name + "'");
     }
 
-    // An automatic ctx_size is the router's estimate from the model's size,
-    // so the profile's tuned context stands instead.
-    const json ctx_option = options.get_option("ctx_size");
-    const int ctx_size =
-        !ctx_size_is_auto() && ctx_option.is_number_integer() ? ctx_option.get<int>() : 0;
     const json profile_option = options.get_option("aim_profile");
     const std::string profile = profile_option.is_string() ? profile_option.get<std::string>() : "";
 
-    device_type_ = DEVICE_GPU;
-    port_ = choose_port();
-    served_model_ = repo_id;
+    Launch launch;
+    launch.served_model = repo_id;
+    launch.command.program = "serve";
+    launch.command.model_files_at = {{utils::path_to_utf8(snapshot), repo_id}};
+    launch.command.env = build_container_env(port, engine_args, profile);
+    launch.command.port = port;
+    launch.command.ready_endpoint = "/health";
+    launch.process = std::make_unique<ContainerProcess>(
+        ProcessOutput{inherit_output, true}, descriptor.recipe, kBackend, model_name,
+        *descriptor.container_for(kBackend), image.image);
+    launch.startup_timeout_seconds =
+        (std::max)(kStartupTimeoutSeconds, utils::HttpClient::get_default_timeout());
 
-    ServerCommand command;
-    command.program = "serve";
-    command.model_files_at = {{utils::path_to_utf8(snapshot), repo_id}};
-    command.env = aim::build_container_env(port_, ctx_size, profile);
-    command.port = port_;
-    command.ready_endpoint = "/health";
-
-    LOG(INFO, "AIM") << "Starting " << model_name << " from " << image.image << " (" << image.tag
-                     << ") on port " << port_ << std::endl;
-    const bool inherit_output = (log_level_ == "info") || is_debug();
-    start_server(std::make_unique<ContainerProcess>(
-                     ProcessOutput{inherit_output, true}, aim::descriptor.recipe, kBackend,
-                     model_name, *aim::descriptor.container_for(kBackend), image.image),
-                 command,
-                 (std::max)(kStartupTimeoutSeconds, utils::HttpClient::get_default_timeout()));
-    max_model_len_ = served_max_model_len(get_base_url());
+    LOG(INFO, "AIM") << "Starting " << model_name << " (" << model_engine(model_info)
+                     << ") from " << image.image << " (" << image.tag << ") on port " << port
+                     << std::endl;
+    return launch;
 }
-
-json AimServer::to_aim_request(const json& request) const {
-    json forwarded = request;
-    forwarded["model"] = served_model_;
-    return forwarded;
-}
-
-json AimServer::chat_completion(const json& request) {
-    json reply = VLLMServer::chat_completion(to_aim_request(request));
-    aim::translate_reply(reply, get_model_name());
-    return reply;
-}
-
-json AimServer::completion(const json& request) {
-    json reply = VLLMServer::completion(to_aim_request(request));
-    aim::translate_reply(reply, get_model_name());
-    return reply;
-}
-
-json AimServer::responses(const json& request) {
-    json reply = VLLMServer::responses(to_aim_request(request));
-    aim::translate_reply(reply, get_model_name());
-    return reply;
-}
-
-StreamingProxy::ChunkRewriter AimServer::sse_chunk_rewriter() const {
-    return [model_name = get_model_name()](json& chunk) {
-        aim::translate_reply(chunk, model_name);
-    };
-}
-
-void AimServer::forward_streaming_request(const std::string& endpoint,
-                                          const std::string& request_body,
-                                          httplib::DataSink& sink, bool sse,
-                                          long timeout_seconds,
-                                          TelemetryCallback telemetry_callback) {
-    std::string body = request_body;
-    try {
-        body = to_aim_request(json::parse(request_body)).dump();
-    } catch (const json::exception&) {
-        // vLLM reports the malformed body itself.
-    }
-    VLLMServer::forward_streaming_request(endpoint, body, sink, sse, timeout_seconds,
-                                          telemetry_callback);
-}
-
-namespace aim {
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
-    return make_server<AimServer>(ctx);
+    const std::string engine =
+        ctx.model_info != nullptr ? model_engine(*ctx.model_info) : kEngineVllm;
+    if (engine == kEngineVllm) return make_server<AimVllmServer>(ctx);
+    throw std::runtime_error("aim: model names aim_engine '" + engine +
+                             "', which Lemonade does not run");
 }
 
 const BackendSpec* spec() {

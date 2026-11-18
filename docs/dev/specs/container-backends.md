@@ -212,6 +212,8 @@ The image reference is `<image>@<digest>`, from `ContainerPolicy.image` and the 
 
 AIM is the exception: AMD publishes one image per model, each the `aim-radeon-base` image plus that model's tuned profiles. `aim:rocm` pins the base, and each model row names its own image in `aim_image` as `<repository>:<tag>@<digest>`. The first load of a model pulls its image, which costs only the profile layers once the base is installed. A unit test checks that every row's tag matches the base pin's, because an image built on another base release would pull a second copy of it.
 
+Each model row also names its image's engine in `aim_engine`, `vllm` by default. `aim::create` picks the server class for that engine, which inherits the native backend's request handling (`AimVllmServer` inherits `VLLMServer`), and refuses an engine it has no class for. Starting the container is shared by every engine in `aim::prepare_launch`; the engine's class supplies only its own engine arguments, such as vLLM's `max-model-len`.
+
 ### Program
 
 The program is the server the container runs, with its arguments, such as `llama-server -m /mnt/models/Qwen3-4B-Q4_K_M.gguf --ctx-size 8192 --port 8001 --host 0.0.0.0`. The `WrappedServer` subclass builds it in `ServerCommand` the same way as for a native launch, with two differences:

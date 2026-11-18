@@ -725,21 +725,23 @@ void test_aim() {
 
     using Env = std::vector<std::pair<std::string, std::string>>;
     check("AIM serves the mounted model offline on Lemonade's port, tuned for latency",
-          build_container_env(8001, 0, "") == Env({{"AIM_CACHE_PATH", "/mnt/models"},
+          build_container_env(8001, nlohmann::json::object(), "") ==
+              Env({{"AIM_CACHE_PATH", "/mnt/models"},
                                                    {"AIM_PORT", "8001"},
                                                    {"AIM_METRIC", "latency"},
                                                    {"HF_HUB_OFFLINE", "1"}}));
-    const Env tuned = build_container_env(8001, 16384, "vllm-w7900-bf16-tp1-latency");
-    check("ctx_size becomes vLLM's max-model-len and aim_profile picks the profile",
+    const Env tuned =
+        build_container_env(8001, {{"max-model-len", 16384}}, "vllm-w7900-bf16-tp1-latency");
+    check("engine arguments reach AIM_ENGINE_ARGS and aim_profile picks the profile",
           tuned.size() == 6 &&
               tuned[4] == Env::value_type{"AIM_ENGINE_ARGS", "{\"max-model-len\":16384}"} &&
               tuned[5] == Env::value_type{"AIM_PROFILE_ID", "vllm-w7900-bf16-tp1-latency"});
 
-    using lemon::backends::aim::translate_reply;
+    using lemon::backends::aim::translate_vllm_reply;
     nlohmann::json reply = nlohmann::json::parse(R"({"model":"Qwen/Qwen3.5-9B","choices":[
         {"message":{"role":"assistant","content":"51","reasoning":"17*3"}},
         {"delta":{"reasoning":"more"}}]})");
-    translate_reply(reply, "Qwen3.5-9B-AIM");
+    translate_vllm_reply(reply, "Qwen3.5-9B-AIM");
     check("an AIM reply carries Lemonade's model name and reasoning_content",
           reply["model"] == "Qwen3.5-9B-AIM" &&
               reply["choices"][0]["message"]["reasoning_content"] == "17*3" &&
@@ -747,9 +749,26 @@ void test_aim() {
               reply["choices"][1]["delta"]["reasoning_content"] == "more");
     nlohmann::json event = nlohmann::json::parse(
         R"({"type":"response.created","response":{"model":"Qwen/Qwen3.5-9B"}})");
-    translate_reply(event, "Qwen3.5-9B-AIM");
+    translate_vllm_reply(event, "Qwen3.5-9B-AIM");
     check("a Responses API event names Lemonade's model",
           event["response"]["model"] == "Qwen3.5-9B-AIM");
+
+    lemon::ModelInfo vllm_model;
+    lemon::backends::BackendContext ctx;
+    ctx.model_info = &vllm_model;
+    check("an AIM model with no aim_engine runs on the vLLM server class",
+          dynamic_cast<lemon::backends::AimVllmServer*>(lemon::backends::aim::create(ctx).get()) !=
+              nullptr);
+    lemon::ModelInfo llama_model;
+    llama_model.extras["aim_engine"] = "llamacpp";
+    ctx.model_info = &llama_model;
+    bool refused = false;
+    try {
+        lemon::backends::aim::create(ctx);
+    } catch (const std::runtime_error&) {
+        refused = true;
+    }
+    check("an AIM model naming an engine Lemonade does not run is refused", refused);
 
     // A model image built on another release of the base pulls a second
     // copy of it, tens of GB, so every row must match the backend's pin.
@@ -769,6 +788,8 @@ void test_aim() {
         } catch (const std::invalid_argument&) {
         }
         check(name + " names an AIM image from the pinned base's release", same_release);
+        check(name + " names an engine Lemonade runs",
+              lemon::backends::aim::supports_engine(row.value("aim_engine", "vllm")));
     }
     check("server_models.json has AIM models", rows > 0);
 }
