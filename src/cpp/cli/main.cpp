@@ -1009,7 +1009,14 @@ static void print_manual_agent_launch(const lemon_tray::AgentConfig& agent_confi
                      "invocation with the same options before starting Pi manually.\n";
         return;
     }
-    lemon_cli::print_manual_shell_recipe(agent_config, config.api_key,
+    auto manual_config = agent_config;
+    if (config.agent == "junie") {
+        const char* junie_home = std::getenv("JUNIE_HOME");
+        if (junie_home && *junie_home) {
+            manual_config.env_vars.emplace_back("JUNIE_HOME", junie_home);
+        }
+    }
+    lemon_cli::print_manual_shell_recipe(manual_config, config.api_key,
                                          manual_key_env(config), std::cout);
 
     if (config.agent == "opencode" || config.agent == "junie") {
