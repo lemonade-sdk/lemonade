@@ -29,18 +29,19 @@ inline std::map<std::string, std::string> headers() {
 // once without the Authorization header.
 inline HttpResponse get(
     const std::string& url,
-    const std::map<std::string, std::string>& extra_headers = {}) {
+    const std::map<std::string, std::string>& extra_headers = {},
+    long timeout_seconds = 0) {
     auto h = headers();
     for (const auto& [k, v] : extra_headers) {
         h[k] = v;
     }
-    auto resp = HttpClient::get(url, h);
+    auto resp = HttpClient::get(url, h, timeout_seconds);
     if (h.count("Authorization") &&
         (resp.status_code == 401 ||
          resp.status_code == 403 ||
          resp.status_code == 404)) {
         h.erase("Authorization");
-        resp = HttpClient::get(url, h);
+        resp = HttpClient::get(url, h, timeout_seconds);
     }
     return resp;
 }

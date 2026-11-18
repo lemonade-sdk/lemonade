@@ -4,6 +4,8 @@
 #include "lemon_cli/hf_pull.h"
 #include "lemon_cli/bench.h"
 #include "lemon_cli/chat_repl.h"
+#include "lemon_cli/tui_launch.h"
+#include "lemon_cli/tui_launch_model.h"
 #include <lemon_cli/agent_config_file.h>
 #include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
@@ -65,10 +67,10 @@ static const std::vector<std::string> VALID_LABELS = {
 };
 
 static const std::vector<std::string> SUPPORTED_AGENTS = {
+    "pi",
+    "opencode",
     "claude",
     "codex",
-    "opencode",
-    "pi",
     "junie"
 };
 
@@ -184,6 +186,7 @@ struct CliConfig {
     std::string agent_args;
     std::optional<bool> pi_mcp;
     bool pi_codemode = false;
+    std::optional<bool> tui_override = std::nullopt;
 
     // Cloud provider commands
     std::string cloud_provider;
@@ -981,7 +984,59 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     return true;
 }
 
+static bool stdin_stdout_are_tty() {
+#ifdef _WIN32
+    return _isatty(_fileno(stdin)) != 0 && _isatty(_fileno(stdout)) != 0;
+#else
+    return isatty(fileno(stdin)) != 0 && isatty(fileno(stdout)) != 0;
+#endif
+}
+
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
+    const char* term = std::getenv("TERM");
+    const bool terminal = stdin_stdout_are_tty();
+    const bool tui_terminal = terminal && (!term || std::string(term) != "dumb");
+    if (config.tui_override.value_or(false) && !tui_terminal) {
+        std::cerr << "Error: --tui requires an interactive terminal." << std::endl;
+        return 1;
+    }
+    if (!terminal && (config.agent.empty() || config.model.empty())) {
+        std::cerr << "Error: Non-interactive launch requires an agent and --model." << std::endl;
+        return 1;
+    }
+    std::optional<lemon_cli::LaunchTuiState> confirmed_launch;
+    if (lemon_cli::launch_uses_tui(tui_terminal, config.tui_override, config.agent, config.model)) {
+        lemon_cli::LaunchTuiState tui_state;
+        tui_state.agents = SUPPORTED_AGENTS;
+        tui_state.host = config.host;
+        tui_state.port = config.port;
+        tui_state.is_ssl = config.is_ssl;
+        tui_state.agent = config.agent;
+        tui_state.model = config.model;
+        tui_state.agent_args = config.agent_args;
+        tui_state.codex_model_provider = config.codex_model_provider;
+        tui_state.codex_use_user_config = config.codex_use_user_config;
+        tui_state.pi_mcp = config.pi_mcp;
+        tui_state.pi_codemode = config.pi_codemode;
+        tui_state.recipe_dir = config.repo_dir;
+        tui_state.recipe_file = config.recipe_file;
+        tui_state.recipe_options = config.recipe_options;
+        if (!lemon_cli::launch_tui(client, tui_state)) {
+            return 0;
+        }
+        config.agent = tui_state.agent;
+        config.model = tui_state.model;
+        config.agent_args = tui_state.agent_args;
+        config.codex_model_provider = tui_state.codex_model_provider;
+        config.codex_use_user_config = tui_state.codex_use_user_config;
+        config.pi_mcp = tui_state.pi_mcp;
+        config.pi_codemode = tui_state.pi_codemode;
+        config.repo_dir = tui_state.recipe_dir;
+        config.recipe_file = tui_state.recipe_file;
+        config.recipe_options = tui_state.recipe_options;
+        confirmed_launch = std::move(tui_state);
+    }
+
     if (config.agent.empty() && !prompt_agent_selection(config.agent)) {
         return 1;
     }
@@ -991,19 +1046,11 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         return 1;
     }
 
-    if (model_was_missing) {
-        // Interactive model resolution for launch already handled recipe selection/import choices.
-    } else {
+    if (!model_was_missing && !confirmed_launch) {
         std::cout << "Model was provided explicitly; skipping recipe import prompts." << std::endl;
     }
 
-    // Pi's config sync can load the model, so it waits until pi is found.
     const bool needs_config_sync = lemon_tray::agent_needs_config_sync(config.agent);
-    const bool sync_after_binary_check = config.agent == "pi";
-    if (needs_config_sync && !sync_after_binary_check &&
-        !sync_agent_config_for_launch(client, config)) {
-        return 1;
-    }
 
     lemon_tray::AgentConfig agent_config;
     lemon_tray::AgentLaunchOptions launch_options;
@@ -1051,8 +1098,21 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         return 1;
     }
 
+    if (confirmed_launch) {
+        if (!config.recipe_file.empty()) {
+            std::string imported_model;
+            const int import_result = lemon_cli::import_model_from_json(
+                client, std::move(confirmed_launch->preset_payload), &imported_model);
+            if (import_result != 0 || imported_model.empty()) return 1;
+            config.model = imported_model;
+        } else if (confirmed_launch->download_required) {
+            const int pull_result = client.pull_model({{"model_name", config.model}});
+            if (pull_result != 0) return pull_result;
+        }
+    }
+
     bool model_loaded = false;
-    if (needs_config_sync && sync_after_binary_check &&
+    if (needs_config_sync &&
         !sync_agent_config_for_launch(client, config, &model_loaded)) {
         return 1;
     }
@@ -1537,6 +1597,12 @@ int main(int argc, char* argv[]) {
         ->type_name("KEY")
         ->envname("LEMONADE_API_KEY");
     app.add_flag("!--discovery,--no-discovery", config.no_discovery, "Enable or disable auto-discovery of local server via UDP beacon");
+    bool tui_flag = false;
+    bool no_tui_flag = false;
+    auto* tui_opt = app.add_flag("--tui", tui_flag, "Use the terminal UI for supported commands");
+    auto* no_tui_opt = app.add_flag("--no-tui", no_tui_flag, "Use legacy text prompts for supported commands");
+    tui_opt->excludes(no_tui_opt);
+    no_tui_opt->excludes(tui_opt);
 
     // Subcommands
     // Quick start commands
@@ -1757,10 +1823,10 @@ int main(int argc, char* argv[]) {
             "Custom arguments to pass directly to the launched agent process")
             ->type_name("ARGS")
             ->default_val(config.agent_args);
+        lemon::RecipeOptions::add_cli_options(cmd, config.recipe_options);
     };
 
     add_common_launch_options(*launch_cmd);
-    lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
     hide_all_options_except_help(*launch_cmd);
 
     CLI::Option* codex_provider_opt = nullptr;
@@ -1846,6 +1912,11 @@ int main(int argc, char* argv[]) {
         }
     }
     config.codex_use_user_config = (codex_provider_opt != nullptr && codex_provider_opt->count() > 0);
+    if (tui_opt->count() > 0) {
+        config.tui_override = true;
+    } else if (no_tui_opt->count() > 0) {
+        config.tui_override = false;
+    }
 
     // Auto-discover local server via UDP beacon if the default connection fails
     // Skip when: no command given, scan command, or user explicitly set --host/--port, or --no-discovery is set
