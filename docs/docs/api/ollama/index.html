@@ -4988,8 +4988,8 @@
 <span class="w">  </span><span class="nt">"eval_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">14</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"total_duration"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"load_duration"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"prompt_eval_duration"</span><span class="p">:</span><span class="w"> </span><span class="mi">16594000</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"eval_duration"</span><span class="p">:</span><span class="w"> </span><span class="mi">37498000</span>
+<span class="w">  </span><span class="nt">"prompt_eval_duration"</span><span class="p">:</span><span class="w"> </span><span class="mi">27064000</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"eval_duration"</span><span class="p">:</span><span class="w"> </span><span class="mi">71276000</span>
 <span class="p">}</span>
 </code></pre></div>
 <h4 id="streaming">Streaming</h4>
@@ -5243,7 +5243,7 @@
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3-0.6B-GGUF"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"created_at"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2024-01-01T00:00:00Z"</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"response"</span><span class="p">:</span><span class="w"> </span><span class="s2">" Paris, and the capital of the United States is Washington D.C.  What"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"response"</span><span class="p">:</span><span class="w"> </span><span class="s2">" Paris. True or False? Also, what is the capital of France?\n\nThe"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"done"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"done_reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stop"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"context"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
@@ -5287,7 +5287,7 @@
 <p><strong>Response:</strong> <code>200 OK</code></p>
 <div class="highlight"><pre><span></span><code>{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " Paris", "done": false}
 {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": ",", "done": false}
-{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " and", "done": false}
+{"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": " France", "done": false}
 ...
 {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": "", "done": true, "done_reason": "length"}
 {"model": "Qwen3-0.6B-GGUF", "created_at": "2024-01-01T00:00:00Z", "response": "", "done": true, "done_reason": "stop", "context": [], "prompt_eval_count": 5, "eval_count": 16, "total_duration": 0, "load_duration": 0, "prompt_eval_duration": 0, "eval_duration": 0}
@@ -5854,7 +5854,7 @@
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"nomic-embed-text-v1-GGUF"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"embeddings"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="p">[</span><span class="mf">0.028952952474355698</span><span class="p">,</span><span class="w"> </span><span class="mf">0.050495732575654984</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.007421673275530338</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.01867925561964512</span><span class="p">,</span><span class="w"> </span><span class="mf">0.01494091097265482</span><span class="p">,</span><span class="w"> </span><span class="mf">0.09040514379739761</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.017689568921923637</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0002559536078479141</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="mi">760</span><span class="w"> </span><span class="err">more</span><span class="p">]</span>
+<span class="w">    </span><span class="p">[</span><span class="mf">0.030419785529375076</span><span class="p">,</span><span class="w"> </span><span class="mf">0.051205702126026154</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.007968701422214508</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.016216253861784935</span><span class="p">,</span><span class="w"> </span><span class="mf">0.014430047944188118</span><span class="p">,</span><span class="w"> </span><span class="mf">0.09111383557319641</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.016361059620976448</span><span class="p">,</span><span class="w"> </span><span class="mf">0.00019216086366213858</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="mi">760</span><span class="w"> </span><span class="err">more</span><span class="p">]</span>
 <span class="w">  </span><span class="p">],</span>
 <span class="w">  </span><span class="nt">"total_duration"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"load_duration"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
@@ -5980,7 +5980,7 @@
 <p><strong>Response:</strong> <code>200 OK</code></p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"nomic-embed-text-v1-GGUF"</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"embedding"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mf">0.028952952474355698</span><span class="p">,</span><span class="w"> </span><span class="mf">0.050495732575654984</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.007421673275530338</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.01867925561964512</span><span class="p">,</span><span class="w"> </span><span class="mf">0.01494091097265482</span><span class="p">,</span><span class="w"> </span><span class="mf">0.09040514379739761</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.017689568921923637</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0002559536078479141</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="mi">760</span><span class="w"> </span><span class="err">more</span><span class="p">]</span>
+<span class="w">  </span><span class="nt">"embedding"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mf">0.030419785529375076</span><span class="p">,</span><span class="w"> </span><span class="mf">0.051205702126026154</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.007968701422214508</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.016216253861784935</span><span class="p">,</span><span class="w"> </span><span class="mf">0.014430047944188118</span><span class="p">,</span><span class="w"> </span><span class="mf">0.09111383557319641</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.016361059620976448</span><span class="p">,</span><span class="w"> </span><span class="mf">0.00019216086366213858</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="mi">760</span><span class="w"> </span><span class="err">more</span><span class="p">]</span>
 <span class="p">}</span>
 </code></pre></div>
 <h3 id="response-format_6">Response format</h3>
@@ -6077,7 +6077,7 @@
 <span class="w">      </span><span class="nt">"expires_at"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2099-01-01T00:00:00Z"</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"size_vram"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
 <span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="err">...</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="err">more</span>
+<span class="w">    </span><span class="err">...</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="err">more</span>
 <span class="w">  </span><span class="p">]</span>
 <span class="p">}</span>
 </code></pre></div>

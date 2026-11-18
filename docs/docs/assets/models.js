@@ -36,7 +36,6 @@ const RECIPE_DISPLAY_NAMES = {
   thenoise: 'thenoise',
   ds4: 'DwarfStar4',
   rocmfpx: 'ROCm FPX',
-  halogen: 'Halogen Flash',
   thinksound: 'ThinkSound',
   acestep: 'ACE-Step',
   onnxruntime: 'ONNX Runtime',

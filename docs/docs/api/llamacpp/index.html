@@ -3931,7 +3931,7 @@
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"bge-reranker-v2-m3-GGUF"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"list"</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"results"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">"relevance_score"</span><span class="p">:</span><span class="w"> </span><span class="mf">8.621444702148438</span><span class="p">},</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="err">more</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"results"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">"relevance_score"</span><span class="p">:</span><span class="w"> </span><span class="mf">8.625761032104492</span><span class="p">},</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="err">more</span><span class="p">],</span>
 <span class="w">  </span><span class="nt">"usage"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"prompt_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">51</span><span class="p">,</span><span class="w"> </span><span class="nt">"total_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">51</span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -4132,8 +4132,9 @@
 <span class="w">    </span><span class="nt">"route"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">      </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"choice"</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"choice"</span><span class="p">:</span><span class="w"> </span><span class="s2">"billing"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"probabilities"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"billing"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.9914327368198715</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="err">more</span><span class="p">},</span>
-<span class="w">      </span><span class="nt">"confidence"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.9871491052298071</span>
+<span class="w">      </span><span class="nt">"probabilities"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"billing"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.9912025457133901</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="err">more</span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"confidence"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.9868038185700849</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"truncated"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="err">...</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="err">more</span>
 <span class="w">  </span><span class="p">},</span>
@@ -4294,10 +4295,10 @@
 <span class="w">    </span><span class="nt">"next_token"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">      </span><span class="p">{</span><span class="nt">"has_next_token"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"> </span><span class="nt">"has_new_line"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"> </span><span class="nt">"n_remain"</span><span class="p">:</span><span class="w"> </span><span class="mi">-1</span><span class="p">,</span><span class="w"> </span><span class="nt">"n_decoded"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">}</span>
 <span class="w">    </span><span class="p">],</span>
-<span class="w">    </span><span class="nt">"id_task"</span><span class="p">:</span><span class="w"> </span><span class="mi">276</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">"n_ctx"</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"id_task"</span><span class="p">:</span><span class="w"> </span><span class="mi">355</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"n_ctx"</span><span class="p">:</span><span class="w"> </span><span class="mi">40960</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"is_processing"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">"n_prompt_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">341</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"n_prompt_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">267</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"n_prompt_tokens_cache"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"n_prompt_tokens_processed"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"params"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
@@ -4471,7 +4472,7 @@
 <span class="w">  </span><span class="nt">"filename"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my_conversation_cache.bin"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"n_saved"</span><span class="p">:</span><span class="w"> </span><span class="mi">46</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"n_written"</span><span class="p">:</span><span class="w"> </span><span class="mi">5277108</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"timings"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"save_ms"</span><span class="p">:</span><span class="w"> </span><span class="mf">8.225</span><span class="p">}</span>
+<span class="w">  </span><span class="nt">"timings"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"save_ms"</span><span class="p">:</span><span class="w"> </span><span class="mf">6.543</span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <h4 id="restore">Restore</h4>
@@ -4499,7 +4500,7 @@
 <span class="w">  </span><span class="nt">"filename"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my_conversation_cache.bin"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"n_restored"</span><span class="p">:</span><span class="w"> </span><span class="mi">46</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"n_read"</span><span class="p">:</span><span class="w"> </span><span class="mi">5277108</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"timings"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"restore_ms"</span><span class="p">:</span><span class="w"> </span><span class="mf">1.161</span><span class="p">}</span>
+<span class="w">  </span><span class="nt">"timings"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"restore_ms"</span><span class="p">:</span><span class="w"> </span><span class="mf">1.595</span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <h4 id="erase">Erase</h4>

@@ -3638,6 +3638,7 @@ separate <code>llamacpp:cpu</code> backend is not required on macOS.</p>
 <li><strong>Source</strong>: Per-architecture builds from <a href="https://github.com/lemonade-sdk/llama.cpp">lemonade-sdk/llama.cpp</a></li>
 <li><strong>Binaries</strong>: Compute-capability-specific builds (sm_75, sm_80, sm_86, sm_89, sm_90, sm_100, sm_120)</li>
 <li><strong>Runtime</strong>: Bundled CUDA runtime libraries (no system-wide CUDA toolkit installation required)</li>
+<li><strong>Driver</strong>: The NVIDIA driver must be installed. The binaries are built with CUDA 12.9. Lemonade checks only for the CUDA 12 driver floor (528.33+ on Windows, 525.60.13+ on Linux), relying on CUDA minor-version compatibility, which has limitations (for example, no PTX JIT on older drivers). A driver at least as new as the CUDA 12.9 toolkit's (576.02+ on Windows, 575.51.03+ on Linux) is recommended. If no NVIDIA driver is detected, the CUDA backend is reported as unsupported. If the driver is older than that, the backend is reported as <code>action_required</code> with a link to NVIDIA's driver downloads. Either way, <code>auto</code> backend selection falls through to Vulkan.</li>
 <li><strong>Notes</strong>: On Windows, .7z extraction requires the bsdtar bundled with Windows 11 22H2+. On Linux, the build is shipped as .tar.xz and extracts with the system <code>tar</code>.</li>
 </ul>
 <h3 id="metal">Metal</h3>

@@ -8439,7 +8439,7 @@
 <!-- BEGIN GENERATED: lemonade.classify -->
 <h2 id="post-v1classify"><code>POST /v1/classify</code></h2>
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-experimental-orange" /></sub></p>
-<p>Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on a string and returns a score for each label. It serves <code>onnxruntime</code> sequence classifiers (one label set), token classifiers (aggregated span labels) and zero-shot models (labels sent with each request), and llama.cpp and FastFlowLM decision models, which are zero-shot. It provides the classification that the router's <code>classifier</code> and <code>zero_shot</code> conditions use.</p>
+<p>Runs an encoder text classifier, such as a PII, prompt-safety or domain classifier, on a string and returns a score for each label. It serves <code>onnxruntime</code> sequence classifiers (one label set) and token classifiers (aggregated span labels), and zero-shot models that take <code>labels</code> with each request: <code>onnxruntime</code> zero-shot models, llama.cpp and FastFlowLM decision models, and llama.cpp prompt-router encoders with a <code>rulehead</code> checkpoint. It provides the classification that the router's <code>classifier</code> and <code>zero_shot</code> conditions use.</p>
 <p>Requires <code>LEMONADE_API_KEY</code> when it is set.</p>
 <h3 id="parameters">Parameters</h3>
 <table>
@@ -8483,6 +8483,7 @@
 <p>Single-sequence encoder families: BERT, DistilBERT, RoBERTa, XLM-RoBERTa, DeBERTa (v1/v2), ELECTRA, ALBERT and CamemBERT. A stock <code>optimum-cli export onnx</code> directory of one of these works as is.</p>
 <p>A servable model directory holds <code>model.onnx</code>, <code>tokenizer.json</code> and <code>config.json</code>. The <code>config.json</code> is always required: its architecture is checked against the families above, so an unsupported family such as XLNet is rejected at load time rather than served with wrong scores. Label names (<code>id2label</code>), normalization and the token budget come from the same config, and an optional <code>manifest.json</code> overrides them. Without a manifest, inference assumes single-label softmax, so a multi-label (sigmoid) model declares <code>problem_type: multi_label_classification</code> in its config or ships a <code>manifest.json</code>.</p>
 <p>Zero-shot family: LFM2 (<code>Lfm2BidirForSequenceRouting</code>), such as <code>LFM2.5-Encoder-350M-Prompt-Router-ONNX</code>. Every request to it carries <code>labels</code>.</p>
+<p>The same family as a GGUF runs on <code>llamacpp</code>, on the GPU too. Its GGUF holds only the encoder, and its head ships beside it as <code>rulehead.bin</code>. Register the GGUF with the labels <code>classification</code> and <code>zero-shot</code>: <code>{"model_name": "user.my-router", "recipe": "llamacpp", "checkpoint": "&lt;repo&gt;:&lt;file&gt;-f16.gguf", "labels": ["classification", "zero-shot"]}</code>. Lemonade downloads <code>rulehead.bin</code> from the same repository and refuses the model when the file is missing; a head stored elsewhere is named as the <code>rulehead</code> checkpoint, from the same kind of place as the GGUF (both in repositories, or both on disk). A GGUF on disk is registered with <code>"source": "local_path"</code> and the file's absolute path as <code>checkpoint</code>; its head is <code>rulehead.bin</code> in the same folder. llama-server returns one vector per token and lemond applies the head. A long text is cut as ort-server cuts it, so the GGUF and the ONNX export score the same tokens: the labels are never cut, and the text keeps a third of what they leave of the window from its start and the rest from its end, with <code>\n...\n</code> between them. The response then carries <code>truncated: true</code>. The window is 2048 tokens, as in the ONNX export's manifest; <code>ctx_size</code> 0 means the same, another <code>ctx_size</code> changes it; <code>-b</code> and <code>-ub</code> cap it, and so does <code>-np</code> above 1 without <code>--kv-unified</code>, which gives each slot its share of <code>ctx_size</code>.</p>
 <p>Some upstream models declare only generic <code>LABEL_&lt;n&gt;</code> label names; their model card explains them.</p>
 <h3 id="example">Example</h3>
 <div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">PowerShell</label><label for="__tabbed_1_2">Bash</label></div>
@@ -10005,6 +10006,7 @@ data: {"file": "", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "by
 </table>
 <p>Loading a collection (<code>recipe: "collection.omni"</code>) loads each component in turn with the component's own saved options; options in the request are not forwarded. A <code>collection.router</code> model loads nothing until a request routes to a candidate.</p>
 <p>Loading a model that is already loaded with the same options does nothing; different options reload it.</p>
+<p>On-demand models, including upscalers, cannot be loaded here. Upscalers run via <a href="../openai/#post-v1imagesupscale"><code>POST /v1/images/upscale</code></a>.</p>
 <h3 id="option-priority">Option Priority</h3>
 <p>Each recipe option comes from the first of these layers that sets it:</p>
 <ol>
@@ -10120,6 +10122,11 @@ data: {"file": "", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "by
 <td><code>400</code></td>
 <td><code>invalid_argument</code></td>
 <td>An argument or a value nested in it has the wrong JSON type, or a value its schema does not list</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td></td>
+<td>On-demand models cannot be loaded through /v1/load</td>
 </tr>
 <tr>
 <td><code>400</code></td>
@@ -10835,33 +10842,33 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 <p><strong>Response:</strong> <code>200 OK</code></p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ok"</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026.45.0~1719.034d3f52"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026.47.0~1769.72f32ebd"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"model_loaded"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3-0.6B-GGUF"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"update_check_done"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"models_generation"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"model_sync"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"idle"</span><span class="p">,</span><span class="w"> </span><span class="nt">"sync_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">"completed_sync_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">},</span>
 <span class="w">  </span><span class="nt">"all_models_loaded"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
 <span class="w">      </span><span class="nt">"model_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"nomic-embed-text-v1-GGUF"</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"last_use"</span><span class="p">:</span><span class="w"> </span><span class="mi">872883217</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"last_use"</span><span class="p">:</span><span class="w"> </span><span class="mi">74815978</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"embedding"</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"device"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gpu"</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"pinned"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"is_busy"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"is_streaming"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"backend_url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http://127.0.0.1:8002/v1"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"pid"</span><span class="p">:</span><span class="w"> </span><span class="mi">15836</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"backend_url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http://127.0.0.1:8005/v1"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"pid"</span><span class="p">:</span><span class="w"> </span><span class="mi">1283552</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"launch_command"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">        </span><span class="s2">"~/.cache/lemonade\\bin\\llamacpp\\vulkan\\llama-server.exe"</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">"~/.cache/lemonade/bin/llamacpp/vulkan/llama-server"</span><span class="p">,</span>
 <span class="w">        </span><span class="s2">"-m"</span><span class="p">,</span>
-<span class="w">        </span><span class="s2">"~\\.cache\\huggingface\\hub/models--nomic-ai--nomic-embed-text-v1-GGUF\\snapshots\\90c80ac5c2a0d13de9a36cf1dec39f34acee54a8\\nomic-embed-text-v1.Q4_K_S.gguf"</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">"~/.cache/huggingface/hub/models--nomic-ai--nomic-embed-text-v1-GGUF/snapshots/90c80ac5c2a0d13de9a36cf1dec39f34acee54a8/nomic-embed-text-v1.Q4_K_S.gguf"</span><span class="p">,</span>
 <span class="w">        </span><span class="s2">"--ctx-size"</span><span class="p">,</span>
 <span class="w">        </span><span class="s2">"8192"</span><span class="p">,</span>
 <span class="w">        </span><span class="s2">"--port"</span><span class="p">,</span>
-<span class="w">        </span><span class="s2">"8002"</span><span class="p">,</span>
+<span class="w">        </span><span class="s2">"8005"</span><span class="p">,</span>
 <span class="w">        </span><span class="s2">"--jinja"</span><span class="p">,</span>
 <span class="w">        </span><span class="s2">"--metrics"</span><span class="p">,</span>
-<span class="w">        </span><span class="s2">"-lv"</span><span class="p">,</span>
-<span class="w">        </span><span class="s2">"4"</span><span class="p">,</span>
 <span class="w">        </span><span class="s2">"--embeddings"</span><span class="p">,</span>
 <span class="w">        </span><span class="s2">"--parallel"</span><span class="p">,</span>
 <span class="w">        </span><span class="s2">"1"</span>
@@ -10889,7 +10896,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 <span class="w">    </span><span class="nt">"tts"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"classification"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
 <span class="w">  </span><span class="p">},</span>
-<span class="w">  </span><span class="nt">"websocket_port"</span><span class="p">:</span><span class="w"> </span><span class="mi">9000</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"websocket_port"</span><span class="p">:</span><span class="w"> </span><span class="mi">9001</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"telemetry"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"enabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">},</span>
 <span class="w">  </span><span class="nt">"pinned_helper_models"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"classification"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="mi">6</span><span class="w"> </span><span class="err">more</span><span class="p">}</span>
 <span class="p">}</span>
@@ -10972,15 +10979,15 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 </div>
 <p><strong>Response:</strong> <code>200 OK</code></p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">"time_to_first_token"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.00445</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"tokens_per_second"</span><span class="p">:</span><span class="w"> </span><span class="mf">350.4584986185915</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"time_to_first_token"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.008384</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"tokens_per_second"</span><span class="p">:</span><span class="w"> </span><span class="mf">177.61338359134263</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"input_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"output_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">327</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"output_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">253</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"prompt_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">15</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"cache_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">14</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"request_count_total"</span><span class="p">:</span><span class="w"> </span><span class="mi">9</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"input_tokens_total"</span><span class="p">:</span><span class="w"> </span><span class="mi">165</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"output_tokens_total"</span><span class="p">:</span><span class="w"> </span><span class="mi">2104</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"output_tokens_total"</span><span class="p">:</span><span class="w"> </span><span class="mi">1817</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"prompt_tokens_total"</span><span class="p">:</span><span class="w"> </span><span class="mi">226</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"cache_tokens_total"</span><span class="p">:</span><span class="w"> </span><span class="mi">75</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"routing_decisions_total"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
@@ -11336,6 +11343,11 @@ lemonade_loaded_models 4
 <li><code>version</code> - Installed or configured backend version (when available)</li>
 <li><code>tier</code> - <code>core</code>, <code>experimental</code>, or <code>guest</code>. See <a href="#backend-tiers-and-formats">Backend Tiers and Formats</a>.</li>
 <li><code>format</code> - <code>native</code>, <code>python</code>, or <code>container</code>. See <a href="#backend-tiers-and-formats">Backend Tiers and Formats</a>.</li>
+<li><code>description</code> - One or two sentences on what the backend is for.</li>
+<li><code>author</code> - Who wrote the engine or fork the backend runs, such as <code>ggml-org</code>.</li>
+<li><code>publisher</code> - Who builds the artifact Lemonade installs. Differs from <code>author</code> when someone other than the author builds it, as <code>lemonade-sdk</code> builds <code>llamacpp:rocm</code> from ggml-org's code.</li>
+<li><code>license</code> - The author's license, as an SPDX id such as <code>MIT</code> or a license name. Empty when the author declares none.</li>
+<li><code>project_url</code> - The upstream project's URL. Metadata may describe the upstream project rather than a custom or system-provided binary.</li>
 <li><code>release_url</code> - Where the backend's release asset downloads from.</li>
 <li><code>download_filename</code> - The release asset's filename.</li>
 <li><code>can_uninstall</code> - Whether the backend can be uninstalled. Lemonade sets it only on a backend that does not run on this operating system, always to <code>true</code>, so a missing value also means <code>true</code>.</li>

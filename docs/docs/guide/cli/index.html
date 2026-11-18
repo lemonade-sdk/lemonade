@@ -1230,10 +1230,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#halogen-flash-halogen-recipe" class="md-nav__link">
+  <a href="#halogen-halogen-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Halogen Flash (<code>halogen</code> recipe)
+        Halogen (<code>halogen</code> recipe)
       </span>
     </span>
   </a>
@@ -4050,10 +4050,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#halogen-flash-halogen-recipe" class="md-nav__link">
+  <a href="#halogen-halogen-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Halogen Flash (<code>halogen</code> recipe)
+        Halogen (<code>halogen</code> recipe)
       </span>
     </span>
   </a>
@@ -5327,7 +5327,7 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alia
 </tr>
 </tbody>
 </table>
-<h4 id="halogen-flash-halogen-recipe">Halogen Flash (<code>halogen</code> recipe)</h4>
+<h4 id="halogen-halogen-recipe">Halogen (<code>halogen</code> recipe)</h4>
 <table>
 <thead>
 <tr>
@@ -5593,9 +5593,10 @@ lemonade<span class="w"> </span>update-models<span class="w"> </span>--wait
 lemonade<span class="w"> </span>update-models<span class="w"> </span>Gemma-4-E4B-it<span class="w"> </span>-w
 </code></pre></div>
 <h2 id="options-for-backends">Options for backends</h2>
-<p>The <code>backends</code> command lists supported recipes and their backends. Use <code>--all</code> to list all available backends or use the <code>install</code> and <code>uninstall</code> subcommands to manage them:</p>
+<p>The <code>backends</code> command lists supported recipes and their backends. Use <code>--all</code> to list all available backends, <code>info</code> to learn what one is and who made it, or the <code>install</code> and <code>uninstall</code> subcommands to manage them:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>backends
 lemonade<span class="w"> </span>backends<span class="w"> </span>--all
+lemonade<span class="w"> </span>backends<span class="w"> </span>info<span class="w"> </span>SPEC
 lemonade<span class="w"> </span>backends<span class="w"> </span>install<span class="w"> </span>SPEC<span class="w"> </span><span class="o">[</span>--force<span class="o">]</span>
 lemonade<span class="w"> </span>backends<span class="w"> </span>uninstall<span class="w"> </span>SPEC
 </code></pre></div>
@@ -5616,6 +5617,10 @@ lemonade<span class="w"> </span>backends<span class="w"> </span>uninstall<span c
 <td>List all available recipes and backends</td>
 </tr>
 <tr>
+<td><code>lemonade backends info SPEC</code></td>
+<td>Show a backend's description, author, publisher, license, project page and status. Format: <code>recipe:backend</code> (e.g., <code>llamacpp:nathanw</code>)</td>
+</tr>
+<tr>
 <td><code>lemonade backends install SPEC</code></td>
 <td>Install a backend. Format: <code>recipe:backend</code> (e.g., <code>llamacpp:vulkan</code>)</td>
 </tr>
@@ -5632,13 +5637,17 @@ lemonade<span class="w"> </span>backends<span class="w"> </span>uninstall<span c
 <p><strong>Notes:</strong>
 - Supported backends depend on your system and the recipe
 - Use <code>lemonade backends --all</code> to list all available recipes and backends
-- Each backend lists its tier and format. See <a href="../../api/lemonade/#backend-tiers-and-formats">Backend Tiers and Formats</a> for what each value means.</p>
+- Each backend lists its tier and format. See <a href="../../api/lemonade/#backend-tiers-and-formats">Backend Tiers and Formats</a> for what each value means.
+- A backend's author wrote the engine; its publisher builds what Lemonade installs. They differ when, for example, <code>lemonade-sdk</code> builds ggml-org's llama.cpp for ROCm, or Donato Capitella (kyuz0) packages NathanW's llama.cpp fork as a container image.</p>
 <p><strong>Examples:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="c1"># List supported recipes and backends</span>
 lemonade<span class="w"> </span>backends
 
 <span class="c1"># List all available recipes and backends</span>
 lemonade<span class="w"> </span>backends<span class="w"> </span>--all
+
+<span class="c1"># See what the nathanw llamacpp backend is and who made it</span>
+lemonade<span class="w"> </span>backends<span class="w"> </span>info<span class="w"> </span>llamacpp:nathanw
 
 <span class="c1"># Install Vulkan backend for llamacpp</span>
 lemonade<span class="w"> </span>backends<span class="w"> </span>install<span class="w"> </span>llamacpp:vulkan
