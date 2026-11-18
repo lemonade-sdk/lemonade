@@ -164,8 +164,8 @@ pub struct Stack {
 /// A value that differs between stacks and between processes. It is a
 /// collision avoider, not a secret: RandomState's keys are random per process
 /// and advance with each instance.
-fn random_u64(salt: u64) -> u64 {
-    RandomState::new().hash_one(salt)
+fn random_u64(domain: u64) -> u64 {
+    RandomState::new().hash_one(domain)
 }
 
 /// The first ephemeral port of a new stack: random in the dynamic range
