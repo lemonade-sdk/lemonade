@@ -507,6 +507,29 @@ namespace lemon::backends {
         return parsed ? policy->image + "@" + parsed->digest : "";
     }
 
+    void BackendUtils::record_backend_extra_image(const std::string& recipe,
+                                                  const std::string& backend,
+                                                  const std::string& image) {
+        const auto recorded = get_backend_extra_images(recipe, backend);
+        if (std::find(recorded.begin(), recorded.end(), image) != recorded.end()) return;
+        const fs::path dir = get_install_directory(recipe, backend);
+        std::error_code ec;
+        fs::create_directories(dir, ec);
+        std::ofstream(dir / "extra_images.txt", std::ios::app) << image << "\n";
+    }
+
+    std::vector<std::string> BackendUtils::get_backend_extra_images(const std::string& recipe,
+                                                                    const std::string& backend) {
+        std::vector<std::string> images;
+        std::ifstream file(fs::path(get_install_directory(recipe, backend)) / "extra_images.txt");
+        std::string line;
+        while (std::getline(file, line)) {
+            line = line.substr(0, line.find_last_not_of(" \t\r\n") + 1);
+            if (!line.empty()) images.push_back(line);
+        }
+        return images;
+    }
+
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
         std::string resolved_backend = backend;
         if (recipe_has_rocm_channels(recipe) && backend == "rocm") {

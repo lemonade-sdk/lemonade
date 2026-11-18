@@ -32,10 +32,14 @@ constexpr const char* kBackend = "rocm";
 constexpr long kStartupTimeoutSeconds = 1800;
 
 // A model image is the pinned base plus a few layers of profiles; this pulls
-// those layers when the base is already installed.
-void pull_model_image(const std::string& image) {
+// those layers when the base is already installed. Recorded so that
+// uninstalling the backend removes it, since it holds the base's layers too.
+void pull_model_image(const std::string& image, const DownloadProgressCallback& progress) {
     const auto& manager = utils::ContainerManager::global();
-    if (manager.has_image(image)) return;
+    if (manager.has_image(image)) {
+        BackendUtils::record_backend_extra_image(aim::descriptor.recipe, kBackend, image);
+        return;
+    }
     if (auto* cfg = RuntimeConfig::global()) {
         if (cfg->offline() || cfg->no_fetch_executables()) {
             throw std::runtime_error("aim: " + image + " is not pulled, and " +
@@ -43,8 +47,31 @@ void pull_model_image(const std::string& image) {
                                                      : "fetching executable artifacts is disabled"));
         }
     }
-    manager.pull(image, nullptr);
+    manager.pull(image, progress);
+    BackendUtils::record_backend_extra_image(aim::descriptor.recipe, kBackend, image);
 }
+
+class AimOps : public BackendOps {
+public:
+    // The model's image comes down with its weights, so a pulled model loads
+    // without the network.
+    void download_model(const ModelInfo& info, bool do_not_upgrade,
+                        DownloadProgressCallback progress,
+                        const BackendOpsContext& ctx) const override {
+        const std::string pinned = info.extra<std::string>("aim_image", "");
+        if (!pinned.empty()) {
+            // The weights' download reports completion; the image's must not.
+            pull_model_image(aim::parse_model_image(pinned).image,
+                             [&progress](const DownloadProgress& p) {
+                                 if (!progress) return true;
+                                 DownloadProgress partial = p;
+                                 partial.complete = false;
+                                 return progress(partial);
+                             });
+        }
+        BackendOps::download_model(info, do_not_upgrade, std::move(progress), ctx);
+    }
+};
 
 }  // namespace
 
@@ -119,7 +146,7 @@ Launch prepare_launch(const std::string& model_name, const ModelInfo& model_info
         throw std::runtime_error("aim: model '" + model_name + "' names no aim_image");
     }
     const ModelImage image = parse_model_image(pinned);
-    pull_model_image(image.image);
+    pull_model_image(image.image, nullptr);
 
     // AIM looks for the model at AIM_CACHE_PATH/<org>/<model>, where <org>/<model>
     // is the id its profiles name, so the checkpoint must be the AIM's own repository.
@@ -173,7 +200,7 @@ const BackendSpec* spec() {
 }
 
 const BackendOps* ops() {
-    return default_backend_ops();
+    return single_ops<AimOps>();
 }
 
 }  // namespace aim
