@@ -131,7 +131,7 @@ public:
                            long timeout_seconds = 0,
                            HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
                            size_t max_body_bytes = 0,
-                           const CancelToken& cancel = {});
+                           const RequestCancelToken& cancel = {});
 
     // Simple POST request. Redirects are never followed.
     // timeout_seconds=0 uses default_timeout_seconds_, as in get(); pass

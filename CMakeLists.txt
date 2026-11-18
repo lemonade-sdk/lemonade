@@ -2825,7 +2825,7 @@ if(BUILD_TESTING AND EXISTS "${_JOB_MEDIA_LIMITS_TEST_SRC}")
     )
     target_link_libraries(test_job_media_limits PRIVATE nlohmann_json::nlohmann_json)
     include(CTest)
-    add_cpp_ci_test(test_job_media_limits CI ON COMMAND test_job_media_limits)
+    add_cpp_ci_test(JobMediaLimitsTest CI ON COMMAND test_job_media_limits)
 endif()
 
 set(_JOB_MEDIA_IO_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_media_io.cpp")
@@ -2837,7 +2837,7 @@ if(BUILD_TESTING AND EXISTS "${_JOB_MEDIA_IO_TEST_SRC}")
     )
     target_link_libraries(test_job_media_io PRIVATE nlohmann_json::nlohmann_json)
     include(CTest)
-    add_cpp_ci_test(test_job_media_io CI ON COMMAND test_job_media_io)
+    add_cpp_ci_test(JobMediaIoTest CI ON COMMAND test_job_media_io)
 endif()
 
 # Backend install atomicity (staging + verified atomic swap).

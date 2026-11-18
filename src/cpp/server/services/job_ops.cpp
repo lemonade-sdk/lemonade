@@ -15,6 +15,7 @@
 #include "lemon/jobs/job_media_io.h"
 #include "lemon/jobs/job_media_limits.h"
 #include "lemon/model_manager.h"
+#include "lemon/model_types.h"
 #include "lemon/router.h"
 #include "lemon/server.h"
 #include "lemon/server/api_route.h"
@@ -55,7 +56,7 @@ lemon::jobs::json image_op_result(const nlohmann::json& response, const std::str
     if (!lemon::jobs::media_output_within_limit(bytes))
         throw lemon::jobs::JobError(413, op + " output exceeds the job media output limit of " +
                                        std::to_string(lemon::jobs::kMaxJobMediaOutputBytes) + " bytes");
-    auto out = lemon::jobs::json::parse(response.dump());
+    lemon::jobs::json out = response;
     if (bytes > 0) out["size"] = bytes;
     return out;
 }
@@ -200,7 +201,7 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         if (!model_manager->is_model_downloaded(model))
             throw lemon::jobs::JobError(404, "model '" + model + "' is not downloaded");
         auto info = model_manager->get_model_info(model);
-        nlohmann::json opt_json = nlohmann::json::parse(params.dump());
+        nlohmann::json opt_json = params;
         RecipeOptions options(info.recipe, opt_json);
         std::optional<bool> pinned = std::nullopt;
         if (params.contains("pinned") && params["pinned"].is_boolean())
@@ -261,7 +262,7 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     };
     providers.chat_op = [router](const lemon::jobs::json& params,
                                  lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
-        nlohmann::json request = nlohmann::json::parse(params.dump());
+        nlohmann::json request = params;
         nlohmann::json response = router->chat_completion(request, &cancel);
         if (response.contains("error"))
             throw lemon::jobs::JobError(424, error_message(response, "chat failed"));
@@ -270,7 +271,7 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     providers.image_generations_op = [router](
         const lemon::jobs::json& params, lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
         throw_if_cancelled(cancel);
-        nlohmann::json request = nlohmann::json::parse(params.dump());
+        nlohmann::json request = params;
         nlohmann::json response = router->image_generations(request, &cancel);
         throw_if_cancelled(cancel);
         auto out = image_op_result(response, "image_generations");
@@ -279,7 +280,7 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     providers.image_edits_op = [router](
         const lemon::jobs::json& params, lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
         throw_if_cancelled(cancel);
-        lemon::jobs::json request = params;
+        nlohmann::json request = params;
         lemon::jobs::normalize_image_inputs(request, true);
         nlohmann::json response = router->image_edits(request, &cancel);
         throw_if_cancelled(cancel);
@@ -289,7 +290,7 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     providers.image_variations_op = [router](
         const lemon::jobs::json& params, lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
         throw_if_cancelled(cancel);
-        lemon::jobs::json request = params;
+        nlohmann::json request = params;
         lemon::jobs::normalize_image_inputs(request, true);
         nlohmann::json response = router->image_variations(request, &cancel);
         throw_if_cancelled(cancel);
@@ -299,14 +300,19 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     providers.audio_speech_op = [router](
         const lemon::jobs::json& params, lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
         throw_if_cancelled(cancel);
-        nlohmann::json request = nlohmann::json::parse(params.dump());
+        nlohmann::json request = params;
         // Jobs buffer the result, so streaming selectors cannot be honoured.
         request.erase("stream");
         request.erase("stream_format");
+        const std::string model = request.value("model", "");
         const AudioFormat format = negotiate_speech_format(
-            *router, request.value("model", ""), request.value("response_format", nlohmann::json()),
+            *router, model, request.value("response_format", nlohmann::json()),
             false);
         throw_if_format_error(format);
+        const auto info = router->try_get_model_info(model);
+        if (!info) throw lemon::jobs::JobError(404, "unknown model '" + model + "'");
+        if (info->type != ModelType::TTS)
+            throw lemon::jobs::JobError(400, "model '" + model + "' is not a text-to-speech model");
         request["response_format"] = format.format;
         if (request.contains("voice") && request["voice"] == "") request.erase("voice");
         auto out = media_op_result(
@@ -318,17 +324,22 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     providers.audio_generations_op = [router](
         const lemon::jobs::json& params, lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
         throw_if_cancelled(cancel);
-        nlohmann::json request = nlohmann::json::parse(params.dump());
+        nlohmann::json request = params;
         // Jobs buffer the result, so streaming selectors cannot be honoured.
         request.erase("stream");
         request.erase("stream_format");
         const std::string model = request.value("model", "");
         AudioFormat format = negotiate_audio_generation_format(
             *router, model, request.value("response_format", nlohmann::json()));
+        // Jobs validate formats strictly; the HTTP endpoint falls back to a default format.
         if (format.error.empty() && router->audio_generation_supported_formats(model).empty() &&
             !is_known_audio_format(format.format))
             format.error = "Unsupported audio format requested";
         throw_if_format_error(format);
+        const auto info = router->try_get_model_info(model);
+        if (!info) throw lemon::jobs::JobError(404, "unknown model '" + model + "'");
+        if (info->type != ModelType::AUDIO_GENERATION)
+            throw lemon::jobs::JobError(400, "model '" + model + "' is not an audio-generation model");
         request["response_format"] = format.format;
         auto out = media_op_result(
             "audio_generations", cancel,
@@ -339,7 +350,7 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     providers.model_3d_generations_op = [router](
         const lemon::jobs::json& params, lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
         throw_if_cancelled(cancel);
-        lemon::jobs::json request = params;
+        nlohmann::json request = params;
         lemon::jobs::normalize_image_inputs(request, false);
         auto out = media_op_result(
             "model_3d_generations", cancel,

@@ -282,14 +282,18 @@ void StreamingProxy::forward_sse_stream(
     // bytes can arrive, so the last event of a CR-terminated stream still counts.
     process_sse_lines(line_buffer, process_line, true);
 
-    const bool client_disconnected =
-        result.curl_code == CURLE_WRITE_ERROR ||
-        result.curl_code == CURLE_ABORTED_BY_CALLBACK;
     const bool transport_interrupted =
         result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR;
+    const bool request_cancelled = cancel.cancelled() && !transport_interrupted;
+    const bool client_disconnected = !request_cancelled &&
+        (result.curl_code == CURLE_WRITE_ERROR ||
+         result.curl_code == CURLE_ABORTED_BY_CALLBACK);
 
     if (result.curl_code != CURLE_OK) {
-        if (client_disconnected && forwarded_error_event) {
+        if (request_cancelled) {
+            stream_error = true;
+            LOG(INFO, "StreamingProxy") << "SSE stream cancelled" << std::endl;
+        } else if (client_disconnected && forwarded_error_event) {
             // Gateways that translate the stream stop it themselves once they have
             // relayed the backend's error, so the client did not go away.
             stream_error = true;
@@ -316,7 +320,7 @@ void StreamingProxy::forward_sse_stream(
         }
     }
 
-    if (!client_disconnected &&
+    if (!request_cancelled && !client_disconnected &&
         (result.status_code != 200 || backend_status != 200)) {
         const int status = backend_status != 200 ? backend_status : result.status_code;
         LOG(ERROR, "StreamingProxy") << "Backend returned error: " << status
