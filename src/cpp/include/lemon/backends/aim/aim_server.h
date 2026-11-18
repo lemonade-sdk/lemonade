@@ -15,8 +15,11 @@ namespace backends {
 namespace aim {
 
 // The engines AIM images run, as a model row's `aim_engine` names them.
-// Each has its own server class, which inherits the native backend for
-// that engine so AIM keeps its request handling.
+// Each has its own server class, which inherits the native backend for that
+// engine so AIM keeps its request handling: AimVllmServer : VLLMServer now,
+// and for example AimLlamaServer : LlamaCppServer later. Only chat engines fit:
+// supported modes and the capability mask belong to the recipe, so an engine
+// serving another mode, such as AIM's Whisper images, needs its own recipe.
 inline constexpr const char* kEngineVllm = "vllm";
 
 // The engine a model row names, "vllm" when it names none.
