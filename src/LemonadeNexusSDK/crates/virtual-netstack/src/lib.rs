@@ -362,6 +362,27 @@ pub unsafe extern "C" fn ns_add_local_ip(handle: *mut NsHandle, cidr: *const c_c
     0
 }
 
+/// Change the MTU of a running stack: the largest IP packet it emits and the
+/// segment size it advertises, from the next segment of every connection on.
+/// Returns 0, or -1 for a null handle, an `mtu` below the IPv4 minimum of 68,
+/// or a stopped stack.
+///
+/// # Safety
+/// `handle` must come from `ns_create` and not yet be destroyed.
+#[no_mangle]
+pub unsafe extern "C" fn ns_set_mtu(handle: *mut NsHandle, mtu: u32) -> c_int {
+    let handle = match handle.as_ref() {
+        Some(h) => h,
+        None => return -1,
+    };
+    let mtu = mtu as usize;
+    if mtu < stack::MIN_IPV4_MTU || handle.cmd_tx.send(Command::SetMtu(mtu)).is_err() {
+        return -1;
+    }
+    let _ = handle.waker.wake();
+    0
+}
+
 /// Feed a decrypted inbound IP packet into the stack. Thread-safe.
 ///
 /// # Safety

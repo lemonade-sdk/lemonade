@@ -151,6 +151,28 @@ public:
     /// failed. Thread-safe.
     std::optional<std::size_t> rebind();
 
+    /// Measure the largest packet the tunnel to the session server carries
+    /// and make it the netstack MTU. Echo requests of the tunnel_mtu ladder
+    /// sizes go to the server's tunnel address until the full size is
+    /// answered, one round after the first reply, or `budget` passes; the
+    /// MTU becomes the largest size answered, tunnel_mtu::kFailsafe when
+    /// none was. start() runs it; run it again after the path changed
+    /// (rebind()). Blocks for up to `budget`. Returns the MTU in use,
+    /// nullopt when inactive or the server's tunnel address is unknown
+    /// (BoringtunConfig::server_tunnel_ip). Thread-safe.
+    std::optional<uint32_t> probe_tunnel_mtu(
+        std::chrono::milliseconds budget = std::chrono::milliseconds{2500});
+
+    /// The netstack MTU in use: tunnel_mtu::kFull until a probe lowers it.
+    /// 0 when inactive. Thread-safe.
+    [[nodiscard]] uint32_t tunnel_mtu() const;
+
+    /// True when the last probe got no reply at all, so the MTU in use is
+    /// the failsafe and not a measurement; probe again once the server
+    /// peer's session is up. False after a probe that was answered, and
+    /// when inactive. Thread-safe.
+    [[nodiscard]] bool tunnel_mtu_unanswered() const;
+
     /// Unix seconds of the newest authenticated packet (keepalives included)
     /// or completed handshake from the session server's dataplane peer, as
     /// the dataplane records them: 0 when none arrived yet, nullopt when

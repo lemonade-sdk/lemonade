@@ -476,6 +476,10 @@ struct MeshTunnelStatus {
     /// the mesh. Read live by mesh_status(), not reported by the mesh state
     /// callback.
     bool        tunnel_up{false};
+    /// The netstack MTU in use: the largest packet the tunnel to the session
+    /// server carried when it was last probed (BoringtunMesh::
+    /// probe_tunnel_mtu). 0 while the mesh is down.
+    uint32_t    tunnel_mtu{0};
 };
 
 /// One session move: the Tier 1 server that issued the session left the

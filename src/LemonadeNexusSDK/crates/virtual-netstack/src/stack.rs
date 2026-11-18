@@ -93,6 +93,9 @@ pub enum Command {
         dst: IpEndpoint,
         data: Vec<u8>,
     },
+    /// Largest IP packet the stack emits and the segment size it advertises,
+    /// from the next segment of every connection on.
+    SetMtu(usize),
     Shutdown,
 }
 
@@ -175,6 +178,14 @@ fn initial_ephemeral() -> u16 {
     (FIRST + random_u64(2) % (65536 - FIRST)) as u16
 }
 
+fn new_interface(device: &mut VirtDevice, now: Instant) -> Interface {
+    let mut config = Config::new(smoltcp::wire::HardwareAddress::Ip);
+    // smoltcp derives TCP initial sequence numbers from this seed; the
+    // default is 0, the same for every stack.
+    config.random_seed = random_u64(1);
+    Interface::new(config, device, now)
+}
+
 impl Stack {
     pub fn new(
         mtu: usize,
@@ -196,12 +207,7 @@ impl Stack {
             ));
         }
         let mut device = VirtDevice::new(mtu, output);
-        let mut config = Config::new(smoltcp::wire::HardwareAddress::Ip);
-        // smoltcp derives TCP initial sequence numbers from this seed; the
-        // default is 0, the same for every stack.
-        config.random_seed = random_u64(1);
-        let now = Instant::from_millis(0);
-        let iface = Interface::new(config, &mut device, now);
+        let iface = new_interface(&mut device, Instant::from_millis(0));
 
         let poll = Poll::new()?;
         let waker = Waker::new(poll.registry(), WAKER_TOKEN)?;
@@ -269,6 +275,24 @@ impl Stack {
 
     fn handle_command(&mut self, cmd: Command) -> bool {
         match cmd {
+            Command::SetMtu(mtu) => {
+                if mtu >= MIN_IPV4_MTU && mtu != self.device.mtu() {
+                    self.device.set_mtu(mtu);
+                    // The interface copies the device MTU once, at creation,
+                    // and TCP sizes every segment from that copy. The sockets
+                    // live in the SocketSet, so a new interface over them
+                    // changes the next segment of every open connection.
+                    let addrs: Vec<IpCidr> = self.iface.ip_addrs().to_vec();
+                    let now = self.now();
+                    self.iface = new_interface(&mut self.device, now);
+                    self.iface.update_ip_addrs(|list| {
+                        for addr in addrs {
+                            let _ = list.push(addr);
+                        }
+                    });
+                    log::info!("virtual-netstack: mtu {mtu}");
+                }
+            }
             Command::AddLocalIp(cidr) => {
                 self.iface.update_ip_addrs(|addrs| {
                     if !addrs.iter().any(|a| *a == cidr) {

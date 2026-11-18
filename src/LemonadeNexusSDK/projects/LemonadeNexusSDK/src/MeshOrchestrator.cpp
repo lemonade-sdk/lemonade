@@ -254,6 +254,8 @@ void MeshOrchestrator::run_loop() {
     auto next_monitor      = clock::now();
     auto next_cert_check   = clock::now();
     auto next_lan          = clock::now();
+    auto next_mtu_retry    = clock::now();
+    constexpr auto kMtuRetryInterval = std::chrono::seconds{30};
 
     std::optional<std::chrono::system_clock::time_point> last_wall;
     milliseconds busy{0};
@@ -292,6 +294,8 @@ void MeshOrchestrator::run_loop() {
                 sent = mesh_.rehandshake_all();
                 client_.reset_private_transport();
             }
+            // The network may have changed with the suspension.
+            const auto mtu = mesh_.probe_tunnel_mtu();
             std::vector<std::string> all;
             {
                 std::lock_guard lock(mutex_);
@@ -301,8 +305,9 @@ void MeshOrchestrator::run_loop() {
             relay_fallback_->renew(all, false);
             relay_fallback_->reset_backoff();
             spdlog::info("[MeshOrchestrator] resumed after a suspension ({}): {} handshakes "
-                         "sent, checking {} peer paths",
-                         resume_requested ? "host call" : "wall-clock gap", sent, all.size());
+                         "sent, tunnel mtu {}, checking {} peer paths",
+                         resume_requested ? "host call" : "wall-clock gap", sent,
+                         mtu.value_or(0), all.size());
             // A device list change may have come while the process slept.
             notify_devices();
         }
@@ -368,6 +373,15 @@ void MeshOrchestrator::run_loop() {
             next_monitor = now + kMonitorInterval;
         } else if (paths_checked) {
             do_monitor(false);
+        }
+
+        // A probe that got no reply left the failsafe MTU in place. Measure
+        // again once the server peer's session carried a packet.
+        if (now >= next_mtu_retry && mesh_.tunnel_mtu_unanswered()) {
+            if (const auto seen = mesh_.server_peer_seen(); seen && *seen > 0) {
+                (void)mesh_.probe_tunnel_mtu();
+            }
+            next_mtu_retry = now + kMtuRetryInterval;
         }
 
         // Certificate renewal

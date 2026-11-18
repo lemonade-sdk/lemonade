@@ -44,6 +44,10 @@ impl VirtDevice {
     pub fn mtu(&self) -> usize {
         self.mtu
     }
+
+    pub fn set_mtu(&mut self, mtu: usize) {
+        self.mtu = mtu;
+    }
 }
 
 pub struct VirtRxToken(Vec<u8>);

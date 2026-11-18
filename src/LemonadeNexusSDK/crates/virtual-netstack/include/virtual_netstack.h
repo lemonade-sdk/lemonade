@@ -39,6 +39,12 @@ void ns_destroy(NsHandle* handle);
 /// success, -1 on error.
 int ns_add_local_ip(NsHandle* handle, const char* cidr);
 
+/// Change the MTU of a running stack: the largest IP packet it emits and the
+/// segment size it advertises, from the next segment of every connection on.
+/// Returns 0, or -1 for a NULL handle, an `mtu` below the IPv4 minimum of 68,
+/// or a stopped stack.
+int ns_set_mtu(NsHandle* handle, uint32_t mtu);
+
 /// Feed a decrypted inbound IP packet into the stack. Thread-safe; never
 /// blocks the caller.
 void ns_feed_inbound(NsHandle* handle, const uint8_t* pkt, size_t len);

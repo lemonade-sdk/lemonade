@@ -1,4 +1,5 @@
 #include <LemonadeNexusSDK/BoringtunMesh.hpp>
+#include <LemonadeNexusSDK/TunnelMtu.hpp>
 #include <algorithm>
 
 #include <LemonadeNexus/Boringtun/IpRouter.hpp>
@@ -16,6 +17,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <span>
 #include <unordered_set>
 #include <utility>
@@ -104,6 +106,23 @@ struct BoringtunMesh::Impl {
     NsHandle*                                             ns{nullptr};
     std::string                                           tunnel_addr;  // our virtual IP (no prefix), egress source
     std::map<std::pair<std::string, uint16_t>, uint16_t>  egress_cache;
+
+    std::atomic<uint32_t>   tunnel_mtu{tunnel_mtu::kFull};
+    std::atomic<bool>       probe_unanswered{false};
+    std::mutex              probe_run_mtx;  // one probe at a time
+    std::mutex              probe_mtx;      // guards probe_ident and probe_answered
+    std::condition_variable probe_cv;
+    std::atomic<bool>       probe_active{false};
+    uint16_t                probe_ident{0};
+    std::set<uint32_t>      probe_answered;
+
+    void on_probe_reply(std::span<const uint8_t> pkt) {
+        std::lock_guard lock(probe_mtx);
+        if (const auto len = tunnel_mtu::echo_reply_len(pkt, probe_ident)) {
+            probe_answered.insert(*len);
+            probe_cv.notify_all();
+        }
+    }
 
     // Peers whose traffic goes through a relay: pubkey -> {local shim
     // endpoint, relay endpoint}. Bounded by the peer set; guarded by relay_mtx.
@@ -198,13 +217,18 @@ bool BoringtunMesh::start(const BoringtunConfig& config) {
     dpcfg.public_key_b64  = config.public_key;
     dpcfg.listen_port     = config.listen_port;  // 0 = random
 
+    dpcfg.mtu = tunnel_mtu::kFull;
+    impl_->tunnel_mtu = tunnel_mtu::kFull;
+    impl_->probe_unanswered = false;
     NsHandle* ns = ns_create(dpcfg.mtu, kTcpBufferBytes, &mesh_output_trampoline, &impl_->dp);
     if (!ns) return false;
 
     // dp.stop() joins the receive workers, so this handler never runs after
     // stop() destroys the netstack.
-    impl_->dp.set_inbound_handler([ns](std::span<const uint8_t> pkt) {
-        if (!pkt.empty()) ns_feed_inbound(ns, pkt.data(), pkt.size());
+    impl_->dp.set_inbound_handler([ns, impl = impl_.get()](std::span<const uint8_t> pkt) {
+        if (pkt.empty()) return;
+        if (impl->probe_active.load(std::memory_order_relaxed)) impl->on_probe_reply(pkt);
+        ns_feed_inbound(ns, pkt.data(), pkt.size());
     });
     impl_->dp.set_stun_handler([impl = impl_.get()](std::span<const uint8_t> msg,
                                                     const std::string& from) {
@@ -255,7 +279,83 @@ bool BoringtunMesh::start(const BoringtunConfig& config) {
     spdlog::info("[BoringtunMesh] dataplane up: mesh_ip={}, server_peer={}…",
                  tunnel_addr,
                  impl_->server_pubkey.substr(0, std::min<size_t>(8, impl_->server_pubkey.size())));
+    (void)probe_tunnel_mtu();
     return true;
+}
+
+std::optional<uint32_t> BoringtunMesh::probe_tunnel_mtu(std::chrono::milliseconds budget) {
+    using clock = std::chrono::steady_clock;
+    if (!impl_->active.load()) return std::nullopt;
+    std::string src_text;
+    {
+        std::lock_guard lock(impl_->ns_mtx);
+        src_text = impl_->tunnel_addr;
+    }
+    const auto src = Cidr::parse(src_text);
+    const auto dst = Cidr::parse(impl_->started_cfg.server_tunnel_ip);
+    if (!src || src->prefix_len != 32 || !dst || dst->prefix_len != 32) return std::nullopt;
+
+    std::lock_guard run_lock(impl_->probe_run_mtx);
+    uint16_t ident = 0;
+    randombytes_buf(&ident, sizeof ident);
+    {
+        std::lock_guard lock(impl_->probe_mtx);
+        impl_->probe_ident = ident;
+        impl_->probe_answered.clear();
+    }
+    impl_->probe_active = true;
+
+    constexpr auto kRound  = std::chrono::milliseconds{250};
+    constexpr auto kSettle = std::chrono::milliseconds{300};
+    const auto deadline = clock::now() + budget;
+    std::optional<clock::time_point> settle;
+    std::set<uint32_t> answered;
+    uint16_t seq = 0;
+    while (true) {
+        for (uint32_t size : tunnel_mtu::kLadder) {
+            const auto pkt = tunnel_mtu::echo_request(src->network, dst->network, ident, seq, size);
+            (void)impl_->dp.send_outbound_ip_packet(pkt);
+        }
+        ++seq;
+        const auto stop_at = settle ? *settle : deadline;
+        {
+            std::unique_lock lock(impl_->probe_mtx);
+            impl_->probe_cv.wait_until(lock, std::min(clock::now() + kRound, stop_at), [&] {
+                return impl_->probe_answered.count(tunnel_mtu::kFull) > 0;
+            });
+            answered = impl_->probe_answered;
+        }
+        if (answered.count(tunnel_mtu::kFull)) break;
+        if (!answered.empty() && !settle) settle = std::min(clock::now() + kSettle, deadline);
+        if (clock::now() >= (settle ? *settle : deadline)) break;
+    }
+    impl_->probe_active = false;
+
+    const uint32_t mtu = tunnel_mtu::choose(answered);
+    {
+        std::lock_guard lock(impl_->ns_mtx);
+        if (impl_->ns && mtu != impl_->tunnel_mtu.load()) ns_set_mtu(impl_->ns, mtu);
+    }
+    impl_->tunnel_mtu = mtu;
+    impl_->probe_unanswered = answered.empty();
+    if (answered.empty()) {
+        spdlog::warn("[BoringtunMesh] tunnel mtu: no echo reply from {} within {} ms, using {}",
+                     impl_->started_cfg.server_tunnel_ip, budget.count(), mtu);
+    } else {
+        std::string sizes;
+        for (uint32_t size : answered) sizes += (sizes.empty() ? "" : ",") + std::to_string(size);
+        spdlog::info("[BoringtunMesh] tunnel mtu {} ({} answered {})", mtu,
+                     impl_->started_cfg.server_tunnel_ip, sizes);
+    }
+    return mtu;
+}
+
+uint32_t BoringtunMesh::tunnel_mtu() const {
+    return impl_->active.load() ? impl_->tunnel_mtu.load() : 0;
+}
+
+bool BoringtunMesh::tunnel_mtu_unanswered() const {
+    return impl_->active.load() && impl_->probe_unanswered.load();
 }
 
 void BoringtunMesh::stop() {
@@ -706,6 +806,7 @@ MeshTunnelStatus BoringtunMesh::mesh_status() const {
         ms.tunnel_ip = impl_->tunnel_addr;
     }
     if (!ms.is_up) return ms;
+    ms.tunnel_mtu = impl_->tunnel_mtu.load();
 
     std::map<std::string, Impl::RelayPath> relayed;
     {
