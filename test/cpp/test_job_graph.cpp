@@ -120,8 +120,11 @@ static void test_json_roundtrip() {
     j.steps.push_back(s);
 
     const json serialized = j.to_json();
-    check("json: media tally is an object", serialized["media_extract_bytes"].is_object()
+    check("json: persistence media tally is an object", serialized["media_extract_bytes"].is_object()
               && serialized["media_extract_bytes"]["audio"] == 123);
+    json api = serialized;
+    api.erase("media_extract_bytes");
+    check("json: API omits media tally", j.to_api_json() == api);
     Job back = Job::from_json(serialized);
     check("json: media tally survives", back.media_extract_bytes == j.media_extract_bytes);
     json older = serialized;

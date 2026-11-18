@@ -23,9 +23,6 @@ int main() {
     check("base64: two padding characters only", base64_decoded_size("==") == 0);
     check("output: exact limit", media_output_within_limit(kMaxJobMediaOutputBytes));
     check("output: over limit", !media_output_within_limit(kMaxJobMediaOutputBytes + 1));
-    check("budget: exact limit", job_media_within_budget(kMaxJobMediaStoreBytes - 10, 10));
-    check("budget: over limit", !job_media_within_budget(kMaxJobMediaStoreBytes - 10, 11));
-    check("budget: overflow", !job_media_within_budget(std::numeric_limits<size_t>::max(), 1));
     json media = {{"mime_type", "audio/wav"}, {"data", "YWJjZA=="}, {"size", 4}};
     check("media: explicit size", media_result_bytes(media) == 4);
     media.erase("size");
@@ -81,141 +78,133 @@ int main() {
           payload_bytes(nested) == std::numeric_limits<size_t>::max());
     check("payload: nested overflow saturates",
           payload_bytes(json::array({"abc", nested})) == std::numeric_limits<size_t>::max());
+    check("stored: ordinary output", media_stored_bytes(json{{"size", 100}}) == 0);
+    check("stored: non-object", media_stored_bytes("ordinary") == 0);
+    check("stored: zero decoded size", media_stored_bytes(json{{"mime_type", "audio/wav"},
+                                                           {"data", ""}, {"size", 0}}) == 0);
+    check("stored: binary includes base64 and both copies",
+          media_stored_bytes(media) == 2 * (8 + 9 + sizeof(json)));
+    check("stored: image includes both copies", media_stored_bytes(image) == 2 * (4 + sizeof(json)));
+    check("stored: decoded cap does not imply store cap",
+          media_stored_bytes(boundary_media) > kMaxJobMediaStoreBytes);
+    json deep_media = image;
+    deep_media["extra"] = nested;
+    check("stored: overflow saturates",
+          media_stored_bytes(deep_media) == std::numeric_limits<size_t>::max());
+
     Job job;
-    check("retained: empty job", retained_media_bytes(job) == 0);
+    check("budget: empty job", MediaStoreBudget(job, json::object(), "step").bytes == 0);
     StepRecord audio_step;
     audio_step.id = "a";
     audio_step.output = media;
-    audio_step.extract = {{"a", "size"}};
     job.steps.push_back(audio_step);
-    job.context["a"] = 4;
-    check("retained: extract cannot hide media", retained_media_bytes(job) == 4);
-    Job aliased_job;
-    aliased_job.steps.push_back(audio_step);
-    aliased_job.context["a"] = media;
-    check("retained: media context counted once", retained_media_bytes(aliased_job) == 4);
-    aliased_job.context["copy1"] = media["data"];
-    aliased_job.context["copy2"] = media["data"];
-    aliased_job.context["copy3"] = media["data"];
-    check("retained: context aliases ignored", retained_media_bytes(aliased_job) == 4);
-    aliased_job.context["inputs"] = nested;
-    check("retained: deeply nested context ignored", retained_media_bytes(aliased_job) == 4);
-    Job context_only_job;
-    context_only_job.context = aliased_job.context;
-    check("retained: context without media ignored", retained_media_bytes(context_only_job) == 0);
     StepRecord ordinary_step;
     ordinary_step.output = {{"tps", 42}};
     job.steps.push_back(ordinary_step);
     StepRecord image_step;
     image_step.output = image;
     job.steps.push_back(image_step);
-    check("retained: mixed output sum", retained_media_bytes(job) == 7);
-    const json large = {{"mime_type", "audio/wav"}, {"data", ""},
-                        {"size", std::numeric_limits<size_t>::max()}};
-    const json extracts = {{"copy", "YWJj"}, {"other", "abc"}};
-    const auto next = next_media_extracts(image, extracts, {}, "step");
-    check("extracts: media adds keys", next == std::map<std::string, size_t>{{"copy", 4}, {"other", 3}});
-    check("extracts: ordinary output adds nothing",
-          next_media_extracts(ordinary_step.output, extracts, {}, "step").empty());
-    check("extracts: no extracts preserves tally",
-          next_media_extracts(ordinary_step.output, json::object(), next, "step") == next);
-    check("extracts: non-media replacement removes key",
-          next_media_extracts(ordinary_step.output, json{{"copy", "new"}}, next, "step") ==
-              std::map<std::string, size_t>{{"other", 3}});
-    const auto replaced = next_media_extracts(image, json{{"copy", "ab"}}, next, "step");
+    const size_t output_bytes = media_stored_bytes(media) + media_stored_bytes(image);
+    check("budget: mixed stored outputs", MediaStoreBudget(job, json::object(), "step").bytes == output_bytes);
+    MediaStoreBudget budget(job, image, "step");
+    const size_t initial_bytes = output_bytes + media_stored_bytes(image);
+    check("budget: existing and new stored outputs", budget.bytes == initial_bytes);
+    budget.resolve_extract("copy", "YWJj", true);
+    budget.resolve_extract("other", "abc", true);
+    check("extracts: media adds stored string bytes",
+          budget.extracts == std::map<std::string, size_t>{{"copy", 4}, {"other", 3}} &&
+              budget.bytes == initial_bytes + 7);
+    budget.resolve_extract("copy", "ab", true);
     check("extracts: media replacement updates size",
-          replaced == std::map<std::string, size_t>{{"copy", 2}, {"other", 3}});
-    const auto scalars = next_media_extracts(image, json{{"numbers", json::array({1, 2})}}, {}, "step");
-    check("extracts: numeric array counts", scalars.at("numbers") == 2 * sizeof(json));
+          budget.extracts.at("copy") == 2 && budget.bytes == initial_bytes + 5);
+    budget.resolve_extract("copy", "new", false);
+    check("extracts: non-media replacement removes key",
+          budget.extracts == std::map<std::string, size_t>{{"other", 3}} &&
+              budget.bytes == initial_bytes + 3);
+    budget.resolve_extract("numbers", json::array({1, 2}), true);
+    check("extracts: numeric array counts", budget.extracts.at("numbers") == 2 * sizeof(json));
+    job.media_extract_bytes = {{"copy", 4}, {"other", 3}};
+    MediaStoreBudget collision(job, image, "copy");
     check("extracts: step output drops colliding key without extracts",
-          next_media_extracts(ordinary_step.output, json::object(), next, "copy") ==
-              std::map<std::string, size_t>{{"other", 3}});
-    check("extracts: own step id is charged after dropping old entry",
-          next_media_extracts(image, json{{"copy", "ab"}}, next, "copy") ==
-              std::map<std::string, size_t>{{"copy", 2}, {"other", 3}});
+          collision.extracts == std::map<std::string, size_t>{{"other", 3}} &&
+              collision.bytes == initial_bytes + 3);
+    collision.resolve_extract("copy", "ab", true);
+    check("extracts: own step id charged after dropping old entry",
+          collision.extracts == std::map<std::string, size_t>{{"copy", 2}, {"other", 3}} &&
+              collision.bytes == initial_bytes + 5);
     check("extracts: dropping step id leaves current tally unchanged",
-          next == std::map<std::string, size_t>{{"copy", 4}, {"other", 3}});
+          job.media_extract_bytes == std::map<std::string, size_t>{{"copy", 4}, {"other", 3}});
+
     Job clobbered;
-    StepRecord six_mib_audio;
-    six_mib_audio.output = {{"mime_type", "audio/wav"},
-                            {"data", std::string(8u * 1024u * 1024u, 'A')}};
-    clobbered.steps.push_back(six_mib_audio);
-    const auto before_pause = next_media_extracts(
-        six_mib_audio.output, json{{"pause", six_mib_audio.output["data"]}}, {}, "audio");
-    check("clobbered: first audio and extract retain 14 MiB",
-          projected_media_bytes(clobbered, json::object(), before_pause) ==
-              14u * 1024u * 1024u);
-    const auto after_pause = next_media_extracts(
-        ordinary_step.output, json::object(), before_pause, "pause");
-    check("clobbered: pause drops its old 8 MiB extract", after_pause.empty());
-    const json& final_audio = boundary_media;
-    check("clobbered: final audio fits with 14 MiB retained",
-          projected_media_bytes(clobbered, final_audio, after_pause) ==
-              14u * 1024u * 1024u);
-    job.media_extract_bytes = next;
-    check("retained: extract tally included", retained_media_bytes(job) == 7 + 4 + 3);
-    check("projected: outputs and next tally",
-          projected_media_bytes(job, image, next) == 7 + 3 + 4 + 3);
-    check("projected: replacement does not double count",
-          projected_media_bytes(job, image, replaced) == 7 + 3 + 2 + 3);
-    check("projected: removal does not count old tally",
-          projected_media_bytes(job, ordinary_step.output, {}) == 7);
-    check("projected: output without extracts", projected_media_bytes(Job{}, image, {}) == 3);
-    check("projected: overflow saturates",
-          projected_media_bytes(job, large, next) == std::numeric_limits<size_t>::max());
-    const auto overflowing = next_media_extracts(image, json{{"copy", nested}}, {}, "step");
-    check("projected: extract overflow saturates",
-          projected_media_bytes(Job{}, image, overflowing) == std::numeric_limits<size_t>::max());
-    Job tally_only;
-    tally_only.media_extract_bytes = {{"a", std::numeric_limits<size_t>::max()}, {"b", 1}};
-    check("retained: tally overflow saturates",
-          retained_media_bytes(tally_only) == std::numeric_limits<size_t>::max());
-    check("projected: tally overflow saturates",
-          projected_media_bytes(Job{}, json::object(), tally_only.media_extract_bytes) ==
-              std::numeric_limits<size_t>::max());
+    StepRecord audio;
+    audio.output = {{"mime_type", "audio/wav"}, {"data", std::string(2u * 1024u * 1024u, 'A')}};
+    clobbered.steps.push_back(audio);
+    clobbered.media_extract_bytes = {{"pause", 2u * 1024u * 1024u}};
+    check("clobbered: audio and extract store 6 MiB plus two MIME strings",
+          MediaStoreBudget(clobbered, json::object(), "audio").bytes ==
+              6u * 1024u * 1024u + 18);
+    MediaStoreBudget pause(clobbered, ordinary_step.output, "pause");
+    check("clobbered: pause drops its old 2 MiB extract",
+          pause.extracts.empty() && pause.bytes == 4u * 1024u * 1024u + 18);
+    clobbered.media_extract_bytes = pause.extracts;
+    check("clobbered: next audio stores 8 MiB plus four MIME strings",
+          MediaStoreBudget(clobbered, audio.output, "final").bytes ==
+              8u * 1024u * 1024u + 36);
 
     const json small_media = {{"mime_type", "audio/wav"}, {"data", "YWJj"}, {"size", 3}};
-    const json step_one_extracts = {{"a", std::string(3u * 1024u * 1024u, 'a')},
-                                   {"b", std::string(3u * 1024u * 1024u, 'b')},
-                                   {"c", std::string(3u * 1024u * 1024u, 'c')}};
-    const json step_two_extracts = {{"d", step_one_extracts["a"]},
-                                   {"e", step_one_extracts["b"]},
-                                   {"f", step_one_extracts["c"]}};
+    const std::string three_mib(3u * 1024u * 1024u, 'a');
+    MediaStoreBudget first(Job{}, small_media, "first");
+    for (const auto* key : {"a", "b", "c"}) first.resolve_extract(key, three_mib, true);
+    check("cumulative: first step fits", first.bytes <= kMaxJobMediaStoreBytes);
+    MediaStoreBudget alone(Job{}, small_media, "second");
+    for (const auto* key : {"d", "e", "f"}) alone.resolve_extract(key, three_mib, true);
+    check("cumulative: second step alone fits", alone.bytes <= kMaxJobMediaStoreBytes);
     Job cumulative;
-    const auto first = next_media_extracts(small_media, step_one_extracts, {}, "step");
-    check("cumulative: first step fits",
-          projected_media_bytes(cumulative, small_media, first) <= kMaxJobMediaStoreBytes);
-    check("cumulative: second step alone fits",
-          projected_media_bytes(Job{}, small_media,
-                                next_media_extracts(small_media, step_two_extracts, {}, "step")) <=
-              kMaxJobMediaStoreBytes);
     StepRecord first_step;
     first_step.output = small_media;
     cumulative.steps.push_back(first_step);
-    cumulative.media_extract_bytes = first;
+    cumulative.media_extract_bytes = first.extracts;
+    MediaStoreBudget combined(cumulative, small_media, "second");
     check("cumulative: retained first extracts counted",
-          retained_media_bytes(cumulative) == 3 + 9u * 1024u * 1024u);
-    check("cumulative: combined steps exceed budget",
-          projected_media_bytes(cumulative, small_media,
-                                next_media_extracts(small_media, step_two_extracts, first, "step")) >
-              kMaxJobMediaStoreBytes);
-    check("cumulative: replacing keys fits",
-          projected_media_bytes(cumulative, small_media,
-                                next_media_extracts(small_media, step_one_extracts, first, "step")) <=
-              kMaxJobMediaStoreBytes);
+          combined.bytes == 2 * media_stored_bytes(small_media) + 9u * 1024u * 1024u);
+    size_t resolved = 0;
+    for (const auto* key : {"d", "e", "f", "g"}) {
+        combined.resolve_extract(key, three_mib, true);
+        ++resolved;
+        if (combined.bytes > kMaxJobMediaStoreBytes) break;
+    }
+    check("cumulative: combined steps exceed budget and stop resolving",
+          combined.bytes > kMaxJobMediaStoreBytes && resolved == 3);
+    MediaStoreBudget replaced(cumulative, small_media, "second");
+    for (const auto* key : {"a", "b", "c"}) replaced.resolve_extract(key, three_mib, true);
+    check("cumulative: replacing keys fits", replaced.bytes ==
+          2 * media_stored_bytes(small_media) + 9u * 1024u * 1024u);
+
     const json large_chat = {{"response", std::string(kMaxJobMediaStoreBytes + 1, 'x')}};
+    MediaStoreBudget chat(Job{}, large_chat, "step");
+    chat.resolve_extract("response", large_chat["response"], false);
     check("extracts: non-media response beyond budget is unrestricted",
-          next_media_extracts(large_chat, large_chat, {}, "step").empty() &&
-              projected_media_bytes(Job{}, large_chat, {}) == 0);
-    const auto exact = std::map<std::string, size_t>{{"copy", kMaxJobMediaStoreBytes - 3}};
-    check("projected: exact budget", projected_media_bytes(Job{}, image, exact) == kMaxJobMediaStoreBytes);
-    const auto over = std::map<std::string, size_t>{{"copy", kMaxJobMediaStoreBytes - 2}};
-    check("projected: one byte over budget",
-          projected_media_bytes(Job{}, image, over) == kMaxJobMediaStoreBytes + 1);
-    job.steps[0].output = large;
-    job.steps[2].output = large;
-    check("retained: overflow saturates",
-          retained_media_bytes(job) == std::numeric_limits<size_t>::max());
+          chat.extracts.empty() && chat.bytes == 0);
+    Job boundary;
+    boundary.media_extract_bytes = {{"copy", kMaxJobMediaStoreBytes - media_stored_bytes(image)}};
+    MediaStoreBudget exact(boundary, image, "step");
+    check("budget: exact stored limit", exact.bytes == kMaxJobMediaStoreBytes);
+    exact.resolve_extract("extra", "x", true);
+    check("budget: one stored byte over", exact.bytes == kMaxJobMediaStoreBytes + 1);
+    exact.resolve_extract("copy", "new", false);
+    check("budget: non-media removal reduces total before verdict",
+          exact.bytes == media_stored_bytes(image) + 1);
+    Job overflowing;
+    overflowing.media_extract_bytes = {{"a", std::numeric_limits<size_t>::max()}, {"b", 1}};
+    MediaStoreBudget overflow(overflowing, image, "step");
+    check("budget: tally overflow saturates", overflow.bytes == std::numeric_limits<size_t>::max());
+    overflow.resolve_extract("a", "x", true);
+    check("budget: saturated replacement cannot undercount", overflow.bytes == std::numeric_limits<size_t>::max());
+    MediaStoreBudget deep(Job{}, image, "step");
+    deep.resolve_extract("copy", nested, true);
+    check("budget: extract overflow saturates", deep.bytes == std::numeric_limits<size_t>::max());
+    check("budget: output overflow saturates",
+          MediaStoreBudget(Job{}, deep_media, "step").bytes == std::numeric_limits<size_t>::max());
     std::printf("\n%s (%d failures)\n", g_failures ? "FAIL" : "ALL PASS", g_failures);
     return g_failures ? 1 : 0;
 }

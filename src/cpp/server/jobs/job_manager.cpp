@@ -282,11 +282,11 @@ json JobManager::list() const {
     return out;
 }
 
-std::optional<json> JobManager::get(const std::string& id) const {
+std::optional<Job> JobManager::get(const std::string& id) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(id);
     if (it == jobs_.end() || it->second.deleted) return std::nullopt;
-    return it->second.to_json();
+    return it->second;
 }
 
 bool JobManager::pause(const std::string& id) {
@@ -640,27 +640,31 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
 
         json resolved_extracts = json::object();
         std::map<std::string, std::exception_ptr> extract_errors;
+        std::optional<MediaStoreBudget> budget;
         if (ok) {
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                const auto it = jobs_.find(id);
+                if (it == jobs_.end()) return;
+                budget.emplace(it->second, output, step_id);
+            }
             const bool media = media_result_bytes(output) != 0;
-            size_t resolved_bytes = 0;
             for (auto extract = extracts.begin(); extract != extracts.end(); ++extract) {
+                if (media && budget->bytes > kMaxJobMediaStoreBytes) break;
                 try {
                     json value = expr_detail::resolve_ref_path(
                         extract.value().get<std::string>(), output);
-                    if (media) {
-                        const size_t bytes = payload_bytes(value);
-                        if (!job_media_within_budget(resolved_bytes, bytes)) {
-                            ok = false;
-                            run_error = op + " output would exceed the per-job media store limit of " +
-                                        std::to_string(kMaxJobMediaStoreBytes) + " bytes";
-                            break;
-                        }
-                        resolved_bytes += bytes;
-                    }
+                    budget->resolve_extract(extract.key(), value, media);
+                    if (budget->bytes > kMaxJobMediaStoreBytes) break;
                     resolved_extracts[extract.key()] = std::move(value);
                 } catch (const std::exception&) {
                     extract_errors[extract.key()] = std::current_exception();
                 }
+            }
+            if (budget->bytes > kMaxJobMediaStoreBytes) {
+                ok = false;
+                run_error = op + " output would exceed the per-job media store limit of " +
+                            std::to_string(kMaxJobMediaStoreBytes) + " bytes";
             }
         }
 
@@ -683,16 +687,6 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                 return;
             }
 
-            std::map<std::string, size_t> next;
-            if (ok) {
-                next = next_media_extracts(output, resolved_extracts, job.media_extract_bytes, step_id);
-                if (projected_media_bytes(job, output, next) > kMaxJobMediaStoreBytes) {
-                    ok = false;
-                    run_error = op + " output would exceed the per-job media store limit of " +
-                                std::to_string(kMaxJobMediaStoreBytes) + " bytes";
-                }
-            }
-
             if (ok) {
                 s->output = output;
                 job.context[s->id] = output;
@@ -702,7 +696,7 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                         if (error != extract_errors.end()) std::rethrow_exception(error->second);
                         job.context[it2.key()] = std::move(resolved_extracts.at(it2.key()));
                     }
-                    job.media_extract_bytes = std::move(next);
+                    job.media_extract_bytes = std::move(budget->extracts);
                     const std::string next = next_after_success(job, *s);
                     s->status = StepStatus::Completed;
                     job.cursor = next;

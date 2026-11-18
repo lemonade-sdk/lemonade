@@ -10,6 +10,7 @@
 namespace lemon::jobs {
 
 inline constexpr size_t kMaxJobMediaOutputBytes = 8u * 1024u * 1024u;
+// Stored payload bytes across both result copies and media-derived extracts.
 inline constexpr size_t kMaxJobMediaStoreBytes = 16u * 1024u * 1024u;
 
 inline size_t base64_decoded_size(std::string_view encoded) {
@@ -24,10 +25,6 @@ inline size_t base64_decoded_size(std::string_view encoded) {
 
 inline bool media_output_within_limit(size_t bytes) {
     return bytes <= kMaxJobMediaOutputBytes;
-}
-
-inline bool job_media_within_budget(size_t stored, size_t added) {
-    return stored <= kMaxJobMediaStoreBytes && added <= kMaxJobMediaStoreBytes - stored;
 }
 
 inline size_t media_result_bytes(const json& result) {
@@ -76,39 +73,47 @@ inline size_t payload_bytes(const json& value) {
     return count(count, value, 0);
 }
 
-inline std::map<std::string, size_t> next_media_extracts(
-    const json& output, const json& resolved_extracts,
-    const std::map<std::string, size_t>& current, const std::string& step_id) {
-    auto next = current;
-    // The step output overwrites this context key before its extracts are stored.
-    next.erase(step_id);
-    const bool media = media_result_bytes(output) != 0;
-    for (auto extract = resolved_extracts.begin(); extract != resolved_extracts.end(); ++extract) {
-        if (media) next[extract.key()] = payload_bytes(extract.value());
-        else next.erase(extract.key());
-    }
-    return next;
+inline size_t media_stored_bytes(const json& result) {
+    if (media_result_bytes(result) == 0) return 0;
+    const size_t bytes = payload_bytes(result);
+    if (bytes > std::numeric_limits<size_t>::max() / 2)
+        return std::numeric_limits<size_t>::max();
+    return 2 * bytes;
 }
 
-inline size_t projected_media_bytes(const Job& job, const json& output,
-                                    const std::map<std::string, size_t>& next) {
-    size_t total = media_result_bytes(output);
-    for (const auto& step : job.steps) {
-        const size_t bytes = media_result_bytes(step.output);
-        if (bytes > std::numeric_limits<size_t>::max() - total)
-            return std::numeric_limits<size_t>::max();
-        total += bytes;
-    }
-    for (const auto& extract : next) {
-        if (extract.second > std::numeric_limits<size_t>::max() - total)
-            return std::numeric_limits<size_t>::max();
-        total += extract.second;
-    }
-    return total;
+inline size_t add_media_bytes(size_t total, size_t bytes) {
+    if (bytes > std::numeric_limits<size_t>::max() - total)
+        return std::numeric_limits<size_t>::max();
+    return total + bytes;
 }
 
-inline size_t retained_media_bytes(const Job& job) {
-    return projected_media_bytes(job, json::object(), job.media_extract_bytes);
-}
+struct MediaStoreBudget {
+    size_t bytes = 0;
+    std::map<std::string, size_t> extracts;
+
+    MediaStoreBudget(const Job& job, const json& output, const std::string& step_id)
+        : extracts(job.media_extract_bytes) {
+        extracts.erase(step_id);
+        bytes = media_stored_bytes(output);
+        for (const auto& step : job.steps)
+            bytes = add_media_bytes(bytes, media_stored_bytes(step.output));
+        for (const auto& extract : extracts)
+            bytes = add_media_bytes(bytes, extract.second);
+    }
+
+    void resolve_extract(const std::string& key, const json& value, bool media) {
+        const auto previous = extracts.find(key);
+        if (previous != extracts.end()) {
+            // Saturated totals must stay saturated to avoid undercounting overflow.
+            if (bytes != std::numeric_limits<size_t>::max()) bytes -= previous->second;
+            extracts.erase(previous);
+        }
+        if (media) {
+            const size_t added = payload_bytes(value);
+            extracts[key] = added;
+            bytes = add_media_bytes(bytes, added);
+        }
+    }
+};
 
 } // namespace lemon::jobs

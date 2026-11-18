@@ -31,10 +31,13 @@ namespace lemon {
 namespace {
 
 std::string error_message(const nlohmann::json& response, const std::string& fallback) {
-    const auto& err = response["error"];
-    if (err.is_object() && err.contains("message") && err["message"].is_string())
-        return err["message"].get<std::string>();
-    if (err.is_string()) return err.get<std::string>();
+    const auto err = response.find("error");
+    if (err == response.end()) return fallback;
+    if (err->is_object()) {
+        const auto message = err->find("message");
+        if (message != err->end() && message->is_string()) return message->get<std::string>();
+    }
+    if (err->is_string()) return err->get<std::string>();
     return fallback;
 }
 
@@ -260,15 +263,8 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
                                  lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
         nlohmann::json request = nlohmann::json::parse(params.dump());
         nlohmann::json response = router->chat_completion(request, &cancel);
-        if (response.contains("error")) {
-            std::string msg = "chat failed";
-            const auto& err = response["error"];
-            if (err.is_object() && err.contains("message") && err["message"].is_string())
-                msg = err["message"].get<std::string>();
-            else if (err.is_string())
-                msg = err.get<std::string>();
-            throw lemon::jobs::JobError(424, msg);
-        }
+        if (response.contains("error"))
+            throw lemon::jobs::JobError(424, error_message(response, "chat failed"));
         return lemon::jobs::json::parse(response.dump());
     };
     providers.image_generations_op = [router](

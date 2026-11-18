@@ -190,6 +190,12 @@ struct Job {
         return j;
     }
 
+    json to_api_json() const {
+        json j = to_json();
+        j.erase("media_extract_bytes");
+        return j;
+    }
+
     static Job from_json(const json& j) {
         Job job;
         job.id = j.value("id", "");
