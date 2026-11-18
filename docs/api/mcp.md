@@ -486,17 +486,19 @@ Without `output_path` or `output_dir`, success returns one native MCP `image` co
 
 ### `lemonade_generate_3d`
 
-Reconstruct a GLB from an explicitly supplied image using the existing 3D generation route. Pass base64 PNG, JPEG, BMP or GIF, or a base64 data URL. To start from text, call lemonade_generate_image first and pass its output image here. No 3D model is downloaded implicitly.
+Reconstruct a GLB from exactly one of image (base64 PNG/JPEG/BMP/GIF or data URL) or prompt (generate one 1024x1024 reference image first). The prompt path reuses Lemonade image generation internally, without requiring the MCP client to transfer intermediate image data. Neither model is downloaded implicitly.
 
 **Returns**
 
-Returns a text confirmation and a GLB in structuredContent.data_base64 (mime_type: model/gltf-binary). Errors return isError=true. No prompt-to-3D orchestration.
+Returns a text confirmation and a GLB in structuredContent.data_base64 (mime_type: model/gltf-binary). Prompt mode additionally returns the reference image as an MCP image block and reference_generated, image_model, and model metadata. Errors return isError=true.
 
 | Argument | Required | Schema | Description |
 |---|:---:|---|---|
 | `bg_removal` | no | `{"enum":["threshold","birefnet"],"type":"string"}` | Background removal mode for reconstruction. |
-| `image` | yes | `{"type":"string"}` | Required base64 PNG/JPEG/BMP/GIF image or base64 data URL. |
+| `image` | no | `{"type":"string"}` | Base64 image or data URL; use exactly one of image or prompt. |
+| `image_model` | no | `{"type":"string"}` | Optional loaded/downloaded image model for prompt mode. |
 | `model` | no | `{"type":"string"}` | Optional registered 3D model; otherwise reuse a loaded/downloaded mesh model. |
+| `prompt` | no | `{"type":"string"}` | Text for a 1024x1024 reconstruction reference; exclusive with image. |
 | `resolution` | no | `{"enum":[512,1024,1536],"type":"integer"}` | Reconstruction resolution (512, 1024 or 1536). |
 | `seed` | no | `{"type":"integer"}` | Optional reconstruction seed. |
 | `uv` | no | `{"enum":["box","xatlas"],"type":"string"}` | UV atlas method for reconstruction. |
