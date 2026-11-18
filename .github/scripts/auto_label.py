@@ -43,7 +43,7 @@ Available labels:
 Engine — apply AT MOST ONE total. This is a hard rule: even if multiple seem relevant, pick the single backend the item is PRIMARILY about, or apply none. Skip entirely if not backend-specific:
 - engine::llamacpp   — llama.cpp (LlamaCppServer); GPU/CPU LLM inference (Vulkan, ROCm, Metal)
 - engine::flm        — FastFlowLM (NPU); multi-modal LLM/ASR/embeddings/reranking
-- engine::ryzenai    — RyzenAI hybrid NPU backend
+- engine::ryzenai    — RyzenAI NPU backend
 - engine::vllm       — vLLM (experimental, ROCm Linux, Strix Halo)
 - engine::whispercpp — whisper.cpp; audio transcription
 - engine::sd         — stable-diffusion.cpp; image generation/edit/variations
