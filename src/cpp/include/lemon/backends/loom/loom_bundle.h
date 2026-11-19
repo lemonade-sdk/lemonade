@@ -19,8 +19,8 @@ inline constexpr const char* kCompleteMarker = ".lemonade-loom.json";
 // Bound on the card, lock, and info.json read while inspecting a repository.
 inline constexpr std::uint64_t kMaxMetadataBytes = 8 * 1024 * 1024;
 // Loom release the bundles are fetched for: the loom-fun tag of the cards this
-// loom-serve reads, and the backend_versions.json pin. A run folder recorded for
-// another release (an older card loom-serve rejects) is fetched again.
+// loom-serve reads, and the backend_versions.json pin. A snapshot Lemonade recorded
+// for another release (an older card loom-serve rejects) is fetched again.
 inline constexpr const char* kBundleRevision = "v0.2.0";
 
 // Keys of info.json's `devices` map, one per GPU a bundle is built and gated for.
@@ -30,10 +30,10 @@ inline constexpr const char* kRadeonR9700Target = "radeon-r9700";
 // gfx1201-16gb the 16 GB class (RX 9070 XT, RX 9070).
 inline constexpr const char* kGfx120116gbTarget = "gfx1201-16gb";
 
-// A parameter the card places in the run folder but takes from a pinned
-// revision of another repository.
+// A parameter the card places beside itself but takes from a pinned revision
+// of another repository.
 struct OriginFile {
-    std::string path;        // relative to the run folder, e.g. parameter/x.gguf
+    std::string path;        // relative to the card, e.g. parameter/x.gguf
     std::string repository;  // e.g. unsloth/Qwen3.5-0.8B-GGUF
     std::string revision;    // commit the card pins
     std::string file;        // path inside that repository
@@ -62,11 +62,16 @@ struct BundlePlan {
 // kind other than "hf", or leaves a file without a locked digest.
 BundlePlan plan_bundle(const json& card, const json& lock);
 
+// The program sources and data files the card's program sets read. A lock
+// published with the default "assets" scope leaves them unrecorded.
+// Throws std::runtime_error when one escapes the card's folder.
+std::vector<std::string> program_files(const json& card);
+
 // A relative path that stays inside the folder it is joined to.
 bool is_contained_relative_path(const std::string& path);
 
-// `<org>--<name>` for an `org/name` bundle repository id.
-std::string store_dir_name(const std::string& repo_id);
+// Throws std::invalid_argument unless `repo_id` is a plain `org/name` repository id.
+void validate_repo_id(const std::string& repo_id);
 
 // The device target a GPU runs, or "" when Loom has no build for it. `arch` is
 // what identify_rocm_arch_from_name gives for `gpu_name`: the exact ISA on Linux,

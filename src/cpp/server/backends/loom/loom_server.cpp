@@ -7,6 +7,7 @@
 #include "lemon/backends/loom/loom.h"
 #include "lemon/backends/loom/loom_bundle.h"
 #include "lemon/model_manager.h"
+#include "lemon/models/artifact_layout.h"
 #include "lemon/models/artifact_ref.h"
 #include "lemon/models/artifact_resolver.h"
 #include "lemon/models/artifact_transfer.h"
@@ -18,6 +19,7 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/utils/safe_fs.h"
 
 #include <lemon/utils/aixlog.hpp>
 
@@ -28,6 +30,7 @@
 #include <memory>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -40,35 +43,25 @@ namespace {
 constexpr const char* kBackend = "hrx";
 constexpr long kBundleTimeoutSeconds = 3600;
 
-fs::path store_root() {
-    return utils::path_from_utf8(utils::get_hf_cache_dir()) / "loom";
+fs::path hf_cache_root() {
+    return utils::path_from_utf8(utils::get_hf_cache_dir());
 }
 
-fs::path run_dir(const std::string& checkpoint) {
-    return store_root() / loom::store_dir_name(models::repo_id_from_checkpoint(checkpoint));
+fs::path repo_cache(const std::string& repo_id) {
+    return hf_cache_root() / registry_repo_cache_dir_name(repo_id, models::huggingface_descriptor().id);
+}
+
+// Bundles download from Hugging Face only, into the cache `hf` and loom-fetch fill.
+fs::path bundle_cache(const std::string& checkpoint) {
+    const std::string repo_id = models::repo_id_from_checkpoint(checkpoint);
+    loom::validate_repo_id(repo_id);
+    return repo_cache(repo_id);
 }
 
 json read_json_file(const fs::path& path) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream) throw std::runtime_error("Cannot read " + utils::path_to_utf8(path));
     return json::parse(stream);
-}
-
-// A run folder fetched for another Loom release holds a card this loom-serve
-// rejects (0.2.0 refuses 0.1.0's `pool_capacity`), so it counts as missing.
-bool bundle_complete(const std::string& checkpoint) {
-    std::error_code ec;
-    const fs::path dir = run_dir(checkpoint);
-    if (!fs::is_regular_file(dir / loom::kCompleteMarker, ec) ||
-        !fs::is_regular_file(dir / loom::kCardFile, ec)) {
-        return false;
-    }
-    try {
-        return read_json_file(dir / loom::kCompleteMarker).value("loom", "") ==
-               loom::kBundleRevision;
-    } catch (const std::exception&) {
-        return false;
-    }
 }
 
 bool file_matches(const fs::path& path, std::uint64_t size, const std::string& algorithm,
@@ -78,6 +71,117 @@ bool file_matches(const fs::path& path, std::uint64_t size, const std::string& a
     std::string error;
     return hash.empty() ||
            utils::HttpClient::verify_file_digest(utils::path_to_utf8(path), algorithm, hash, error);
+}
+
+// An origin file in its own repository's cache, where `hf`, loom-fetch and the
+// other recipes leave it. The pinned revision and the content-addressed blob are
+// taken by size; the active snapshot holds another revision's file under the
+// same name, so `verify` hashes that one before it is used.
+fs::path cached_origin_copy(const loom::OriginFile& file, bool verify) {
+    const fs::path cache = repo_cache(file.repository);
+    struct Candidate {
+        fs::path path;
+        bool needs_digest;
+    };
+    std::vector<Candidate> candidates;
+    if (utils::is_safe_path_component(file.revision)) {
+        candidates.push_back({cache / "snapshots" / file.revision / utils::path_from_utf8(file.file), false});
+    }
+    candidates.push_back({cache / "blobs" / file.sha256, false});
+    const fs::path active = hf_cache::active_snapshot_path(cache);
+    if (!active.empty()) candidates.push_back({active / utils::path_from_utf8(file.file), true});
+
+    for (const auto& candidate : candidates) {
+        std::error_code ec;
+        const fs::path resolved = fs::canonical(candidate.path, ec);
+        if (ec) continue;
+        const bool hash = verify && candidate.needs_digest;
+        if (file_matches(resolved, file.size, "sha256", hash ? file.sha256 : "")) return resolved;
+    }
+    return {};
+}
+
+// loom-serve reads every file relative to the card, so an origin file cached in
+// its own repository is linked beside it.
+bool place_origin_file(const loom::OriginFile& file, const fs::path& dir) {
+    const fs::path target = dir / utils::path_from_utf8(file.path);
+    if (file_matches(target, file.size, "sha256", "")) return true;
+    const fs::path source = cached_origin_copy(file, true);
+    if (source.empty()) return false;
+
+    std::error_code ec;
+    fs::remove(target, ec);
+    fs::create_directories(target.parent_path(), ec);
+    ec.clear();
+    fs::create_hard_link(source, target, ec);
+    if (ec) {
+        ec.clear();
+        fs::copy_file(source, target, fs::copy_options::overwrite_existing, ec);
+    }
+    if (ec) return false;
+    LOG(INFO, "Loom") << "Reusing " << utils::path_to_utf8(source) << " for " << file.path << std::endl;
+    return true;
+}
+
+// A snapshot Lemonade fetched records its Loom release; one fetched for another
+// release holds a card this loom-serve rejects (0.2.0 refuses 0.1.0's
+// `pool_capacity`). A snapshot without that record (loom-fetch, `hf download`)
+// is ready once every file its card reads is here or, for an origin file, in
+// its own repository's cache.
+bool snapshot_ready(const fs::path& dir) {
+    std::error_code ec;
+    try {
+        if (!fs::is_regular_file(dir / loom::kCardFile, ec)) return false;
+        if (fs::is_regular_file(dir / loom::kCompleteMarker, ec)) {
+            return read_json_file(dir / loom::kCompleteMarker).value("loom", "") ==
+                   loom::kBundleRevision;
+        }
+        const json card = read_json_file(dir / loom::kCardFile);
+        const loom::BundlePlan plan = loom::plan_bundle(card, read_json_file(dir / loom::kLockFile));
+        for (const auto& path : loom::program_files(card)) {
+            if (!fs::is_regular_file(dir / utils::path_from_utf8(path), ec)) return false;
+        }
+        for (const auto& file : plan.locked_files) {
+            if (!file_matches(dir / utils::path_from_utf8(file.path), file.size, "sha256", "")) {
+                return false;
+            }
+        }
+        for (const auto& file : plan.origin_files) {
+            if (!file_matches(dir / utils::path_from_utf8(file.path), file.size, "sha256", "") &&
+                cached_origin_copy(file, false).empty()) {
+                return false;
+            }
+        }
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+// refs/main's snapshot when it is ready, else the newest ready one: `hf` points
+// refs/main at whatever revision it last resolved, a card-only fetch included.
+fs::path bundle_dir(const std::string& checkpoint) {
+    const fs::path cache = bundle_cache(checkpoint);
+    const fs::path active = hf_cache::active_snapshot_path(cache);
+    if (!active.empty() && snapshot_ready(active)) return active;
+    std::vector<std::pair<fs::file_time_type, fs::path>> snapshots;
+    std::error_code ec;
+    for (fs::directory_iterator it(cache / "snapshots", hf_cache::dir_options(), ec), end;
+         !ec && it != end; it.increment(ec)) {
+        std::error_code entry_ec;
+        if (it->path() == active || !it->is_directory(entry_ec)) continue;
+        snapshots.emplace_back(it->last_write_time(entry_ec), it->path());
+    }
+    std::sort(snapshots.begin(), snapshots.end(),
+              [](const auto& a, const auto& b) { return a.first > b.first; });
+    for (const auto& snapshot : snapshots) {
+        if (snapshot_ready(snapshot.second)) return snapshot.second;
+    }
+    return {};
+}
+
+bool bundle_complete(const std::string& checkpoint) {
+    return !bundle_dir(checkpoint).empty();
 }
 
 // The download re-hashes a file it finds in place, but takes one the listing
@@ -98,8 +202,8 @@ models::ArtifactRef bundle_ref(const std::string& checkpoint, const models::Regi
     return ref;
 }
 
-// Pulls a bundle repository and the origin files its lock pins into one run
-// folder, reusing any copy the models directory already holds.
+// Pulls a bundle repository into its Hugging Face snapshot, with the origin
+// files its lock pins beside the card, reusing any copy the cache already holds.
 class BundleFetcher {
 public:
     // A non-empty `target` refuses a bundle that does not support it before its
@@ -113,7 +217,15 @@ public:
 
     void run() {
         const models::RepoListing listing = list_bundle();
-        dir_ = run_dir(repo_id_);
+        const models::Placement placement{
+            utils::path_to_utf8(hf_cache_root() / repository_->cache_dir_name(repo_id_)),
+            listing.revision.id.empty() ? listing.download_revision : listing.revision.id, ""};
+        const std::string snapshot = models::hf_hub_layout().directory(placement);
+        if (snapshot.empty()) {
+            throw std::runtime_error("Refusing to download " + repo_id_ + " into revision '" +
+                                     placement.revision + "'");
+        }
+        dir_ = utils::path_from_utf8(snapshot);
         std::error_code ec;
         fs::create_directories(dir_, ec);
         fs::remove(dir_ / loom::kCompleteMarker, ec);
@@ -167,6 +279,7 @@ public:
                        {"model_id", bundle.model_id}, {"loom", loom::kBundleRevision}}.dump(2);
         if (!marker.good()) throw std::runtime_error("Cannot record the completed Loom bundle");
         marker.close();
+        models::hf_hub_layout().activate(placement);
 
         if (progress_) {
             DownloadProgress done;
@@ -196,41 +309,11 @@ private:
     }
 
     models::DownloadFile origin_download(const loom::OriginFile& file) {
-        const fs::path target = dir_ / utils::path_from_utf8(file.path);
-        drop_if_resized(target, file.size);
-        std::error_code ec;
-        if (!fs::exists(target, ec)) adopt_cached_copy(file, target);
+        drop_if_resized(dir_ / utils::path_from_utf8(file.path), file.size);
+        (void)place_origin_file(file, dir_);
         return {file.path,
                 repository_->file_url({file.repository, models::Revision{file.revision, true}, file.file}),
                 file.size, "sha256", file.sha256, ""};
-    }
-
-    void adopt_cached_copy(const loom::OriginFile& file, const fs::path& target) {
-        const fs::path cache = utils::path_from_utf8(utils::get_hf_cache_dir()) /
-                               registry_repo_cache_dir_name(file.repository, repository_->id());
-        std::vector<fs::path> candidates = {
-            cache / "snapshots" / file.revision / utils::path_from_utf8(file.file),
-            cache / "blobs" / file.sha256,
-        };
-        const fs::path active = hf_cache::active_snapshot_path(cache);
-        if (!active.empty()) candidates.push_back(active / utils::path_from_utf8(file.file));
-
-        std::error_code ec;
-        fs::create_directories(target.parent_path(), ec);
-        for (const auto& candidate : candidates) {
-            const fs::path resolved = fs::canonical(candidate, ec);
-            if (ec || !file_matches(resolved, file.size, "sha256", file.sha256)) continue;
-            fs::create_hard_link(resolved, target, ec);
-            if (ec) {
-                ec.clear();
-                fs::copy_file(resolved, target, fs::copy_options::overwrite_existing, ec);
-            }
-            if (!ec) {
-                LOG(INFO, "Loom") << "Reusing " << utils::path_to_utf8(resolved) << " for "
-                                  << file.path << std::endl;
-                return;
-            }
-        }
     }
 
     void execute(const models::DownloadPlan& plan, DownloadProgressCallback progress) {
@@ -338,9 +421,15 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
             bundle_ref(checkpoint, model_manager_->download_source_for(model_info));
         BundleFetcher(model_manager_->resolver().repository_for(ref, {}), nullptr, {}, target).run();
     }
-    const fs::path dir = run_dir(checkpoint);
+    const fs::path dir = bundle_dir(checkpoint);
+    if (dir.empty()) throw std::runtime_error("The Loom bundle for " + model_name + " is incomplete");
     const json card = read_json_file(dir / loom::kCardFile);
     const loom::BundlePlan plan = loom::plan_bundle(card, read_json_file(dir / loom::kLockFile));
+    for (const auto& file : plan.origin_files) {
+        if (!place_origin_file(file, dir)) {
+            throw std::runtime_error(file.path + " is missing from the Loom bundle for " + model_name);
+        }
+    }
     served_model_id_ = plan.model_id;
 
     const json info = fs::exists(dir / loom::kInfoFile) ? read_json_file(dir / loom::kInfoFile) : json();
@@ -438,7 +527,7 @@ public:
                                         const CheckpointResolveContext& ctx) const override {
         (void)info;
         try {
-            return utils::path_to_utf8(run_dir(ctx.checkpoint));
+            return utils::path_to_utf8(bundle_dir(ctx.checkpoint));
         } catch (const std::invalid_argument&) {
             return "";
         }
@@ -467,7 +556,7 @@ public:
 
     void remove_self_managed_model(const ModelInfo& info) const override {
         std::error_code ec;
-        fs::remove_all(run_dir(info.checkpoint()), ec);
+        fs::remove_all(bundle_cache(info.checkpoint()), ec);
         if (ec) {
             throw std::runtime_error("Failed to remove the Loom bundle for " + info.checkpoint() +
                                      ": " + ec.message());
@@ -481,7 +570,7 @@ public:
             return "Loom checkpoints name a whole bundle repository (org/name), without a variant";
         }
         try {
-            (void)store_dir_name(checkpoint);
+            validate_repo_id(checkpoint);
         } catch (const std::invalid_argument& error) {
             return error.what();
         }
@@ -490,9 +579,9 @@ public:
 
     void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
         try {
-            const fs::path dir = run_dir(info.checkpoint());
+            const fs::path dir = bundle_dir(info.checkpoint());
             std::error_code ec;
-            if (!fs::is_regular_file(dir / kCardFile, ec)) return;
+            if (dir.empty() || !fs::is_regular_file(dir / kCardFile, ec)) return;
             const json card = read_json_file(dir / kCardFile);
             const json presets = card.value("presets", json::object());
             for (const auto& [name, preset] : presets.items()) {

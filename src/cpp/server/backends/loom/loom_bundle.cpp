@@ -233,7 +233,37 @@ BundlePlan plan_bundle(const json& card, const json& lock) {
     return plan;
 }
 
-std::string store_dir_name(const std::string& repo_id) {
+std::vector<std::string> program_files(const json& card) {
+    std::vector<std::string> files;
+    const auto add = [&files](const json& entry) {
+        const std::string path = entry.is_string() ? entry.get<std::string>() : string_field(entry, "path");
+        if (path.empty()) return;
+        if (!is_contained_relative_path(path)) {
+            throw std::runtime_error("Loom card names a program file outside its folder: " + path);
+        }
+        files.push_back(path);
+    };
+    const auto programs = card.is_object() ? card.find("programs") : card.end();
+    if (!card.is_object() || programs == card.end() || !programs->is_object()) return files;
+    for (const auto& [name, program] : programs->items()) {
+        (void)name;
+        if (!program.is_object()) continue;
+        for (const char* role : {"inputs", "libraries"}) {
+            const auto entries = program.find(role);
+            if (entries == program.end() || !entries->is_array()) continue;
+            for (const auto& entry : *entries) {
+                add(entry);
+                if (!entry.is_object()) continue;
+                const auto data = entry.find("data");
+                if (data == entry.end() || !data->is_array()) continue;
+                for (const auto& auxiliary : *data) add(auxiliary);
+            }
+        }
+    }
+    return files;
+}
+
+void validate_repo_id(const std::string& repo_id) {
     const std::size_t slash = repo_id.find('/');
     if (slash == std::string::npos || slash == 0 || slash + 1 == repo_id.size() ||
         repo_id.find('/', slash + 1) != std::string::npos ||
@@ -242,7 +272,6 @@ std::string store_dir_name(const std::string& repo_id) {
         repo_id.find("..") != std::string::npos) {
         throw std::invalid_argument("Not an org/name repository id: " + repo_id);
     }
-    return repo_id.substr(0, slash) + "--" + repo_id.substr(slash + 1);
 }
 
 std::string device_target(const std::string& arch, const std::string& gpu_name, double vram_gb) {

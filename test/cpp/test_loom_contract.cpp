@@ -1,5 +1,6 @@
 // Proves the loom recipe's bundle planning, launch, request shaping, readiness,
-// install and catalog contracts without a GPU, a network or a running loom-serve.
+// install, catalog and cache layout contracts without a GPU, a network or a
+// running loom-serve.
 
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
@@ -7,9 +8,13 @@
 #include "lemon/backends/loom/loom_bundle.h"
 #include "lemon/backends/loom/loom_server.h"
 #include "lemon/models/json_catalog.h"
+#include "lemon/utils/path_utils.h"
+
+#include "support/test_state_isolation.h"
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -89,7 +94,7 @@ void check_bundle_plan() {
         const auto& model = plan.origin_files[0].path == "parameter/model.gguf"
                                 ? plan.origin_files[0]
                                 : plan.origin_files[1];
-        check("A parameter keeps its run-folder path, repository, revision and file",
+        check("A parameter keeps its card-relative path, repository, revision and file",
               model.path == "parameter/model.gguf" &&
                   model.repository == "ggml-org/Qwen3.6-27B-GGUF" &&
                   model.revision == "1132d03976d88e30a09ab0ddbf1531d5e1b46e7c" &&
@@ -135,7 +140,7 @@ void check_bundle_plan() {
     json escaping = kCard;
     escaping["variants"]["gguf"]["services"]["chat"]["parameters"]["model"]["files"][0]["path"] =
         "../outside.gguf";
-    check("A parameter placed outside the run folder is rejected",
+    check("A parameter placed outside the card's folder is rejected",
           throws_exception([&] { (void)loom::plan_bundle(escaping, kLock); }));
 
     json undeclared = kCard;
@@ -152,13 +157,28 @@ void check_paths() {
     for (const std::string path : {"", "/abs", "../x", "a/../b", "a//b", "C:/x", "a\\b", "./x"}) {
         check("Path is rejected: '" + path + "'", !loom::is_contained_relative_path(path));
     }
-    check("Store folder joins org and name",
-          loom::store_dir_name("loom-fun/unsloth-Qwen3.5-0.8B-loom") ==
-              "loom-fun--unsloth-Qwen3.5-0.8B-loom");
+    check("An org/name repository id is accepted",
+          !throws_exception([] { loom::validate_repo_id("loom-fun/unsloth-Qwen3.5-0.8B-loom"); }));
     for (const std::string repo : {"noslash", "a/b/c", "/name", "org/", "org/..", "org/a b"}) {
         check("Repository id is rejected: '" + repo + "'",
-              throws_exception([&] { (void)loom::store_dir_name(repo); }));
+              throws_exception([&] { loom::validate_repo_id(repo); }));
     }
+}
+
+void check_program_files() {
+    json card = kCard;
+    card["programs"]["source"]["inputs"].push_back("program/control.loom");
+    card["programs"]["source"]["libraries"] = {"program/llm.loom"};
+    check("Program sources, their data files and libraries are listed",
+          loom::program_files(card) ==
+              std::vector<std::string>{"program/prepare.loom", "weights.loom",
+                                       "program/control.loom", "program/llm.loom"});
+    check("A card without programs lists none", loom::program_files(json::object()).empty());
+
+    json escaping = kCard;
+    escaping["programs"]["source"]["inputs"][0]["data"] = {"../weights.loom"};
+    check("A program data file outside the card's folder is rejected",
+          throws_exception([&] { (void)loom::program_files(escaping); }));
 }
 
 void check_launch_contract() {
@@ -462,12 +482,220 @@ void check_catalog_contract() {
           !loom::ops()->validate_registration_checkpoint("loom-fun/x-loom:Q4_K_M").empty());
 }
 
+// The Hugging Face cache loom-fetch leaves behind: the bundle repository's files
+// in a snapshot, each origin file in its own repository's snapshot at the pinned
+// revision, and refs/main on whatever revision `hf` last resolved.
+class FixtureHub {
+public:
+    static constexpr const char* kBundleRepo = "loom-fun/fixture-bundle-loom";
+    static constexpr const char* kSnapshot = "1111111111111111111111111111111111111111";
+    static constexpr const char* kGgufRevision = "2222222222222222222222222222222222222222";
+    static constexpr const char* kGgufSha256 =
+        "3333333333333333333333333333333333333333333333333333333333333333";
+
+    explicit FixtureHub(const std::string& name) : root_(lemon::test::make_scratch_dir(name)) {
+        lemon::utils::set_models_dir(root_.string());
+    }
+
+    fs::path bundle_cache() const { return root_ / "models--loom-fun--fixture-bundle-loom"; }
+    fs::path gguf_cache() const { return root_ / "models--fixture-org--Fixture-GGUF"; }
+    fs::path snapshot(const std::string& revision = kSnapshot) const {
+        return bundle_cache() / "snapshots" / revision;
+    }
+
+    static json card() {
+        return json::parse(R"({
+          "model": {"id": "Fixture/Model"},
+          "programs": {"source": {
+            "inputs": [{"path": "program/prepare.loom", "data": ["weights.loom"]}],
+            "libraries": ["program/llm.loom"]}},
+          "variants": {"gguf": {"services": {"chat": {
+            "parameters": {"model": {"files": [{"path": "parameter/model.gguf", "format": "gguf",
+                                                 "origin": "@checkpoint/model.gguf"}]}},
+            "tokenizers": {"text": "tokenizer.json"}}}}},
+          "presets": {"chat": {"execution": {"context_capacity": 4096}}},
+          "origins": {"checkpoint": {"kind": "hf", "repository": "fixture-org/Fixture-GGUF",
+                                     "revision": "2222222222222222222222222222222222222222"}}
+        })");
+    }
+
+    static json lock() {
+        return json{{"schema_version", 2},
+                    {"files",
+                     {{{"origin", "@checkpoint/model.gguf"}, {"size", 4}, {"sha256", kGgufSha256}},
+                      {{"origin", "tokenizer.json"},
+                       {"size", 2},
+                       {"sha256", std::string(64, '4')}}}}};
+    }
+
+    // The files loom-fetch's `hf` downloads land in a bundle snapshot: no parameter/.
+    void write_bundle(const std::string& revision = kSnapshot) const {
+        write(snapshot(revision) / "model.json", card().dump());
+        write(snapshot(revision) / "model.json.lock", lock().dump());
+        write(snapshot(revision) / "tokenizer.json", "{}");
+        write(snapshot(revision) / "weights.loom", "w");
+        write(snapshot(revision) / "program" / "prepare.loom", "p");
+        write(snapshot(revision) / "program" / "llm.loom", "l");
+    }
+
+    void write_card_only(const std::string& revision = kSnapshot) const {
+        write(snapshot(revision) / "model.json", card().dump());
+        write(snapshot(revision) / "model.json.lock", lock().dump());
+        write(snapshot(revision) / "info.json", "{}");
+    }
+
+    void write_gguf_snapshot() const {
+        write(gguf_cache() / "snapshots" / kGgufRevision / "model.gguf", "gguf");
+    }
+
+    void write_ref_main(const std::string& revision) const {
+        write(bundle_cache() / "refs" / "main", revision);
+    }
+
+    static void write(const fs::path& path, const std::string& content) {
+        fs::create_directories(path.parent_path());
+        std::ofstream(path, std::ios::binary | std::ios::trunc) << content;
+    }
+
+    static lemon::ModelInfo model() {
+        lemon::ModelInfo info;
+        info.model_name = "Fixture-Loom";
+        info.recipe = "loom";
+        info.checkpoints["main"] = kBundleRepo;
+        return info;
+    }
+
+    static bool downloaded() {
+        return loom::ops()->is_downloaded(model(), lemon::backends::BackendOpsContext{});
+    }
+
+    static fs::path resolved() {
+        lemon::backends::CheckpointResolveContext ctx;
+        ctx.checkpoint = kBundleRepo;
+        ctx.repo_id = kBundleRepo;
+        ctx.type = "main";
+        return fs::path(loom::ops()->resolve_checkpoint_path(model(), ctx));
+    }
+
+private:
+    fs::path root_;
+};
+
+bool same_path(const fs::path& a, const fs::path& b) {
+    return !a.empty() && a.lexically_normal() == b.lexically_normal();
+}
+
+void check_cache_layout() {
+    {
+        FixtureHub hub("loom_fetch_layout");
+        hub.write_bundle();
+        hub.write_gguf_snapshot();
+        hub.write_ref_main(std::string(40, '9'));
+        check("A loom-fetch bundle whose GGUF sits in its own repository is downloaded",
+              FixtureHub::downloaded());
+        check("It resolves to the complete snapshot, past a refs/main with no snapshot",
+              same_path(FixtureHub::resolved(), hub.snapshot()));
+    }
+    {
+        FixtureHub hub("loom_card_only");
+        hub.write_card_only();
+        hub.write_gguf_snapshot();
+        hub.write_ref_main(FixtureHub::kSnapshot);
+        check("A snapshot holding only the card is not downloaded", !FixtureHub::downloaded());
+        check("A snapshot holding only the card resolves to nothing", FixtureHub::resolved().empty());
+    }
+    {
+        FixtureHub hub("loom_missing_library");
+        hub.write_bundle();
+        hub.write_gguf_snapshot();
+        fs::remove(hub.snapshot() / "program" / "llm.loom");
+        check("A snapshot missing a program library is not downloaded", !FixtureHub::downloaded());
+    }
+    {
+        FixtureHub hub("loom_missing_data");
+        hub.write_bundle();
+        hub.write_gguf_snapshot();
+        fs::remove(hub.snapshot() / "weights.loom");
+        check("A snapshot missing a program data file is not downloaded", !FixtureHub::downloaded());
+    }
+    {
+        FixtureHub hub("loom_missing_tokenizer");
+        hub.write_bundle();
+        hub.write_gguf_snapshot();
+        fs::remove(hub.snapshot() / "tokenizer.json");
+        check("A snapshot missing a locked bundle file is not downloaded", !FixtureHub::downloaded());
+    }
+    {
+        FixtureHub hub("loom_missing_gguf");
+        hub.write_bundle();
+        check("A bundle whose GGUF is cached nowhere is not downloaded", !FixtureHub::downloaded());
+    }
+    {
+        FixtureHub hub("loom_resized_gguf");
+        hub.write_bundle();
+        FixtureHub::write(hub.gguf_cache() / "snapshots" / FixtureHub::kGgufRevision / "model.gguf",
+                          "truncated");
+        check("A cached GGUF of the wrong size does not count", !FixtureHub::downloaded());
+    }
+    {
+        FixtureHub hub("loom_gguf_blob");
+        hub.write_bundle();
+        FixtureHub::write(hub.gguf_cache() / "blobs" / FixtureHub::kGgufSha256, "gguf");
+        check("A GGUF found by its content-addressed blob counts", FixtureHub::downloaded());
+    }
+    {
+        FixtureHub hub("loom_gguf_beside_card");
+        hub.write_bundle();
+        FixtureHub::write(hub.snapshot() / "parameter" / "model.gguf", "gguf");
+        check("A GGUF already beside the card counts", FixtureHub::downloaded());
+    }
+    {
+        FixtureHub hub("loom_old_marker");
+        hub.write_bundle();
+        hub.write_gguf_snapshot();
+        FixtureHub::write(hub.snapshot() / loom::kCompleteMarker, json{{"loom", "v0.1.0"}}.dump());
+        check("A snapshot Lemonade fetched for another Loom release is not downloaded",
+              !FixtureHub::downloaded());
+        FixtureHub::write(hub.snapshot() / loom::kCompleteMarker,
+                          json{{"loom", loom::kBundleRevision}}.dump());
+        check("A snapshot Lemonade fetched for this Loom release is downloaded",
+              FixtureHub::downloaded());
+    }
+    {
+        FixtureHub hub("loom_snapshot_choice");
+        const std::string older(40, '5');
+        const std::string newer(40, '6');
+        hub.write_bundle(older);
+        hub.write_bundle(newer);
+        hub.write_gguf_snapshot();
+        std::error_code ec;
+        const auto now = fs::file_time_type::clock::now();
+        fs::last_write_time(hub.snapshot(older), now - std::chrono::hours(48), ec);
+        fs::last_write_time(hub.snapshot(newer), now, ec);
+        check("Without refs/main the newest complete snapshot serves",
+              same_path(FixtureHub::resolved(), hub.snapshot(newer)));
+        hub.write_ref_main(older);
+        check("refs/main's complete snapshot serves ahead of a newer one",
+              same_path(FixtureHub::resolved(), hub.snapshot(older)));
+    }
+    {
+        FixtureHub hub("loom_delete");
+        hub.write_bundle();
+        hub.write_gguf_snapshot();
+        loom::ops()->remove_self_managed_model(FixtureHub::model());
+        check("Deleting removes the bundle repository's cache", !fs::exists(hub.bundle_cache()));
+        check("Deleting keeps the GGUF repository other tools share", fs::exists(hub.gguf_cache()));
+    }
+    lemon::utils::set_models_dir("");
+}
+
 }  // namespace
 
 int main() {
     try {
         check_bundle_plan();
         check_paths();
+        check_program_files();
         check_launch_contract();
         check_device_targets();
         check_request_contract();
@@ -477,6 +705,7 @@ int main() {
         check_installer_contract();
         check_descriptor_contract();
         check_catalog_contract();
+        check_cache_layout();
     } catch (const std::exception& error) {
         check(std::string("unexpected exception: ") + error.what(), false);
     }
