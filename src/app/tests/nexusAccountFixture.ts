@@ -22,7 +22,9 @@ export async function setupNexusAccount(page: Page, options: {
   const state: NexusStatus = { available: true, controller_url: 'http://127.0.0.1:15555', enabled: true,
     registered: options.registered ?? true, locked: options.joined === false, mesh_up: options.joined !== false,
     status: options.joined === false ? 'locked' : 'running', node_id: 'self', group_node_id: options.joined === false ? '' : 'group',
-    device_name: deviceName, hostname: 'studio-mac', members, has_network: !options.freshKey, ...(options.freshKey ? { locked: false, status: 'ready', registered: true, unlock: 'device_key' as const, identity_source: 'handoff' as const } : {}),
+    device_name: deviceName, hostname: 'studio-mac', members, has_network: !options.freshKey,
+    mesh_udp_port: 0, dataplane_port: options.joined === false ? 0 : 60123, mapped_endpoint: '', mapping_protocol: '', tunnel_mtu: 1280,
+    ...(options.freshKey ? { locked: false, status: 'ready', registered: true, unlock: 'device_key' as const, identity_source: 'handoff' as const } : {}),
     ...(options.needsUserKey ? { identity_source: 'handoff' as const, needs_user_key: true } : {}),
     ...(options.deviceKey ? { identity_source: 'user' as const, unlock: options.registered === false ? 'passkey' as const : 'device_key' as const } : {}) };
   const entry = (id: string, name: string, kind: 'group' | 'node', parent_id: string): NexusTreeEntry => ({
@@ -91,7 +93,14 @@ export async function setupNexusAccount(page: Page, options: {
       challenge: 'AQIDBA', user_id: 'fixture-identity', rp_id: new URL(page.url()).hostname, credential_id: state.registered ? 'AQIDBA' : '', registration: !state.registered,
     } });
     if (path.endsWith('/passkey/register')) state.registered = true;
-    if (path.endsWith('/device')) { state.device_name = String(body?.device_name); members[0].device_name = state.device_name; }
+    if (path.endsWith('/device')) {
+      if (body?.device_name !== undefined) { state.device_name = String(body.device_name); members[0].device_name = state.device_name; }
+      if (body?.mesh_udp_port !== undefined) {
+        const port = body.mesh_udp_port;
+        if (!Number.isInteger(port) || Number(port) < 0 || Number(port) > 65535) return route.fulfill({ status: 400, headers, json: { error: 'Enter a UDP port (1-65535), or 0 for any port' } });
+        state.mesh_udp_port = Number(port); state.dataplane_port = Number(port);
+      }
+    }
     if (path.endsWith('/lock')) { state.locked = true; state.mesh_up = false; state.members = []; }
     if (path.endsWith('/passkey/unlock')) { state.locked = false; if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; } }
     if (path.endsWith('/key/unlock')) {
