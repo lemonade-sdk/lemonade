@@ -36,10 +36,67 @@ any synthesis of the results; the server just executes the recipe durably.
 | `load`        | yes | `{loaded, model, backend, ctx_size}`; loads with `params` = `{model, llamacpp_backend, ctx_size, llamacpp_args, merge_args, save_options, pinned}` (same shape as `POST /load`) |
 | `unload`      | yes | `{}`; unloads `params.model` if set and loaded, else all |
 | `chat`        | yes | the backend chat response verbatim (`timings`/`usage` included); `params` is a chat/completions request |
+| `image_generations` | yes | backend image response with `data[i].b64_json` and a top-level decoded-byte `size`; `params` is an images/generations request |
+| `image_edits` | yes | image response as above; accepts base64 `image` and optional `mask` |
+| `image_variations` | yes | image response as above; accepts base64 `image` |
+| `audio_speech` | yes | `{data, mime_type, size, response_format}` with base64 audio and optional format `headers`; `params` is an audio/speech request |
+| `audio_generations` | yes | base64 audio result as above; `params` is an audio/generations request |
+| `model_3d_generations` | yes | `{data, mime_type, size, response_format}` with base64 GLB in `data`; `params` includes `model` and base64 `image` |
 
 "Exclusive" ops require the model slot — see [Exclusivity](#exclusivity-and-queuing).
-This is the current set, not a fixed one; ops for other modalities are additive —
-see [Extending with new ops](#extending-with-new-ops-any-modality).
+For the implementation walkthrough, see [How to add a new op](how-to-add-new-job-ops.md).
+
+## Media inputs and outputs
+
+Job image inputs use `image` and `mask`, each a bare base64 string or a `data:`
+URI. A later step can reuse an earlier image with `"image": "${a.data.0.b64_json}"`.
+Image edits and variations map these fields to `image_data` and `mask_data`,
+strip data URI prefixes, and supply missing filename and image content type
+metadata. Explicit backend fields take precedence. `image_files` passes through
+untouched. 3D generation uses `image` and also accepts `image_data` when `image`
+is absent.
+
+Image results carry base64 image bytes in `data[i].b64_json`; their top-level
+`size` is the total decoded image size in bytes. Audio and 3D results carry
+base64 bytes in `data`, with `size`, `mime_type`, and `response_format`. A 3D
+result uses `mime_type: "model/gltf-binary"` and `response_format: "glb"`.
+
+Audio jobs drop `stream` and `stream_format` because a job always buffers its
+result. Speech jobs also drop an empty `voice`, like the HTTP speech route.
+When the model is resident and supplies a supported-format list, audio ops
+negotiate `response_format` against that list. With no resident model, the list
+is empty: absent an explicit format, speech defaults to `mp3` and audio
+generation to `wav`. An explicit known format can also pass without a backend
+support check when the list is empty. The recorded `mime_type` reflects this
+selection, which may have used a default rather than backend capabilities.
+Load the model in an earlier step to negotiate against its supported list.
+
+PCM outputs use the backend's content type when available and preserve its
+format headers in the result's `headers` object (for example, `X-MOSS-Sample-Rate` and
+`X-MOSS-Channels`). Results omit `headers` when the backend supplies none.
+
+Each media result has an 8 MiB limit. Image results count decoded bytes across
+all `b64_json` images and gain a `size` field when they contain image bytes.
+A job has a 16 MiB media budget. The budget counts media retained in step
+outputs plus the payload bytes of context copies extracted from a media
+result. The job tracks these copies per context key across steps and recounts
+the budget for each step, adjusting the size when a key is replaced and dropping
+an entry when a step's own output overwrites that context key. Extracts
+from non-media steps are unrestricted; overwriting a key removes its previous
+media-copy size from the budget. The per-result limit rejects the result
+with an error message before the engine stores it.
+The constants and accounting helpers live in `lemon/jobs/job_media_limits.h`.
+
+A backend failure sent as an SSE error event fails the step with the backend's
+error message, including when media bytes arrived before the error.
+Once the sum passes the limit, the job fails that step
+with "would exceed the per-job media store limit",
+subject to the step's `on_fail` policy.
+Speech/3D byte streams pass the request cancellation into the HTTP transfer, so
+an interrupt during backend silence stops the transfer instead of holding the
+exclusive slot.
+ACE-Step passes the request token into its submit, poll and result HTTP calls, so
+an interrupt aborts an in-flight backend call instead of waiting for its timeout.
 
 ## Recipe: steps
 
@@ -68,6 +125,13 @@ id jumps there — **failure is a first-class branch**, which is how a `load` th
 OOMs can jump to a smaller-config `load` (test-by-failure). Every branch /
 `on_done` / `on_fail` target must reference a **later** step; the graph is
 validated at creation, so execution is acyclic and always terminates.
+
+### Step errors
+
+If an operation throws, the engine records the exception message in the step's
+`error` field and applies `on_fail`. It does not expose `JobError::status` or a
+step error code. Only the job-create path interprets that status, choosing
+between HTTP 400 for an invalid graph and HTTP 429 for a full job store.
 
 ## Lifecycle
 
@@ -149,8 +213,8 @@ never took effect and "before the step" is automatic.
 
 ## Exclusivity and queuing
 
-`load` / `unload` / `chat` require the **model slot**. While a job containing any
-exclusive step runs, it holds a Router-level exclusive gate: all normal
+The operations marked exclusive in the [operations table](#operations) require
+the **model slot**. While a job containing any exclusive step runs, it holds a Router-level exclusive gate: all normal
 inference and load traffic **queues** behind it until the job finishes or is
 paused (pause is the escape hatch — it releases the slot so queued traffic
 drains, and resume re-acquires). Acquiring the gate first *drains* in-flight
@@ -224,41 +288,58 @@ recommendation itself):
   ] }
 ```
 
-## Extending with new ops (any modality)
+## Example: text to image to 3D
 
-The engine is modality-agnostic — `chat` is only the first *inference* op wired
-up. Ops are a pluggable registry, not a fixed set, so image generation, TTS,
-transcription, or a 3D-mesh op are additive: no changes to the engine, graph,
-context, or expression language.
+With `Qwen3-4B-Instruct-2507-GGUF`, `Flux-2-Klein-4B`, and `TRELLIS-3D` downloaded and their
+backends installed, post this body to `POST /api/v1/jobs`. The inference ops load
+their models on demand. Read `GET /api/v1/jobs/{id}` until the job completes.
 
-An op is a handler in the op registry (`OpRegistry`):
-
-```cpp
-struct OpHandler {
-    std::function<json(const json& params, const json& context, CancelFlag& cancel)> run;
-    bool exclusive = false;   // true if it holds the model slot (see Exclusivity)
-};
+```json
+{
+  "name": "text-to-3d",
+  "inputs": {
+    "text_model": "Qwen3-4B-Instruct-2507-GGUF",
+    "image_model": "Flux-2-Klein-4B",
+    "model_3d": "TRELLIS-3D"
+  },
+  "steps": [
+    {
+      "id": "enhance",
+      "op": "chat",
+      "params": {
+        "model": "${inputs.text_model}",
+        "messages": [
+          {"role": "user", "content": "Write a short image prompt for a toy robot, isolated on a white background. Return only the prompt."}
+        ],
+        "max_completion_tokens": 128,
+        "stream": false
+      }
+    },
+    {
+      "id": "image",
+      "op": "image_generations",
+      "params": {
+        "model": "${inputs.image_model}",
+        "prompt": "${enhance.choices.0.message.content}",
+        "n": 1,
+        "response_format": "b64_json"
+      }
+    },
+    {
+      "id": "model3d",
+      "op": "model_3d_generations",
+      "params": {
+        "model": "${inputs.model_3d}",
+        "image": "${image.data.0.b64_json}",
+        "response_format": "glb"
+      }
+    }
+  ]
+}
 ```
 
-The signature assumes nothing about text or LLMs: `params` and the return value
-are arbitrary JSON, and any op that loads a model sets `exclusive = true` (like
-`load`/`unload`/`chat`). Because every step's output lands in the shared context,
-later steps consume it via `${step_id.field}` references — that is the data-flow
-a pipeline needs.
-
-To add one, register a provider in `OpProviders` that forwards to the relevant
-already-existing Router backend (`SdServer`, `KokoroServer`, `WhisperServer`, …)
-and `register_op` it. A `text → LLM enhancer → image → 3D` pipeline is then just
-three registered ops passing data through the context:
-
-```jsonc
-{ "steps": [
-    { "id": "enhance", "op": "chat", "params": { "...": "..." },
-      "extract": { "prompt": "choices.0.message.content" } },
-    { "id": "image",   "op": "generate_image",
-      "params": { "prompt": "${enhance.prompt}" },
-      "extract": { "path": "data.0.path" } },
-    { "id": "model3d", "op": "generate_3d",
-      "params": { "image": "${image.path}" } }
-  ] }
-```
+The image step returns `data[0].b64_json` and a top-level `size`; it does not
+return a file path. The 3D step consumes those base64 image bytes and returns
+base64 GLB in `context.model3d.data`, with `mime_type: "model/gltf-binary"`,
+`response_format: "glb"`, and a decoded-byte `size`. Decode that `data` value
+to save a `.glb` file. Both results must fit the media limits described above.
