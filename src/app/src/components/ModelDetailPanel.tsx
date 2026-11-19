@@ -1672,9 +1672,21 @@ const ModelConfigurationTab: React.FC<{
       return true;
     }
     try {
-      // The draft is what was just sent, so only the server layers move. Syncing
-      // it back would also undo anything typed while the save was in flight.
-      applyServerOptions(await api.saveModelOptions(name, patch), false);
+      const result = await api.saveModelOptions(name, patch);
+      applyServerOptions(result, false);
+      const savedDraft = draftFromResolvedOptions(recipeKeys, sanitizeRecipeOptions(result.saved),
+        sanitizeRecipeOptions(result.effective), offersResolvedValue);
+      // The server normalizes argument order. Keep the accepted draft aligned
+      // without overwriting edits made while the save was in flight.
+      setRecipeDraft(current => {
+        const next = { ...current };
+        for (const key of argsKeyNames) {
+          if ((current[key] || '') === (recipeDraft[key] || '')) {
+            next[key] = savedDraft.recipe[key] || '';
+          }
+        }
+        return next;
+      });
       if (showNotice) setNotice('Saved for future loads');
       return true;
     } catch (error) {
