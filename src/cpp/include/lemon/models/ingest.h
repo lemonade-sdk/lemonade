@@ -14,6 +14,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace lemon {
@@ -99,6 +100,12 @@ class ModelIngest : public ArtifactFetchService {
     void populate_from_cached_manifest(ModelInfo& info);  // forwards to the collection unit
 
   private:
+    friend class IngestCollections;
+
+    void register_user_models(
+        const std::vector<std::pair<std::string, nlohmann::json>>& models,
+        const std::string& source, bool allow_backend_args);
+
     // Cycle-detecting form used by the collection fan-out. `visited` holds the
     // collection names entered on the current call chain; re-entering one throws.
     void pull(const std::string& model_name, const nlohmann::json& model_data,

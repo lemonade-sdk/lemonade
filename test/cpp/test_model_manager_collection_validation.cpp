@@ -3,6 +3,16 @@
 
 #include "lemon/model_manager.h"
 #include "lemon/routing_policy.h"
+#include "lemon/models/alias_manager.h"
+#include "lemon/models/artifact_store.h"
+#include "lemon/models/change_notifier.h"
+#include "lemon/models/ingest_collections.h"
+#include "lemon/models/model_errors.h"
+#include "lemon/models/store.h"
+#include "support/test_state_isolation.h"
+
+#include <filesystem>
+#include <fstream>
 
 #include <cstdio>
 #include <map>
@@ -558,7 +568,194 @@ static void test_register_preserves_routing(ModelManager& manager) {
           it != info.extras.end() && it->second == doc["routing"]);
 }
 
+static void test_collection_registration_rejection_is_atomic() {
+    namespace fs = std::filesystem;
+    using namespace lemon::models;
+    const auto root = lemon::test::make_scratch_dir("collection-atomic-registration");
+    const auto file = root / "user_models.json";
+    AliasManager aliases;
+    ModelStore store(aliases);
+    RegistryDocuments registries(json::object(), file.string());
+    ModelChangeNotifier notifier;
+    ModelIngest::Deps deps{nullptr, {}, &registries, &store, &notifier, {}};
+    ModelIngest ingest(deps);
+    IngestCollections collections(deps, ingest);
+
+    // Keep the scan's published model set while an admin adds the second row.
+    json admin = component_def("AtomicB");
+    admin["recipe_options"] = {{"llamacpp_args", "--threads 2"}};
+    ingest.register_user_model("user.AtomicB", admin, "", true);
+    const json before = *registries.pin().user;
+    bool rejected = false;
+    try {
+        collections.register_components(json::array({"AtomicA", "AtomicB"}),
+            json::array({component_def("AtomicA"), component_def("AtomicB")}),
+            "", false);
+    } catch (const lemon::BackendArgsAuthorizationError&) {
+        rejected = true;
+    }
+    check("collection rejects changing concurrently registered backend args", rejected);
+    check("rejected component batch preserves every registry row",
+          *registries.pin().user == before);
+    std::ifstream input(file);
+    json disk;
+    input >> disk;
+    input.close();
+    check("rejected component batch preserves disk registry", disk == before);
+    fs::remove_all(root);
+}
+
+static void test_collection_parent_rejection_is_atomic(bool existing, bool register_only) {
+    using namespace lemon::models;
+    const auto root = lemon::test::make_scratch_dir("collection-parent-atomic");
+    const auto file = root / "user_models.json";
+    AliasManager aliases;
+    ModelStore store(aliases);
+    RegistryDocuments registries(json::object(), file.string());
+    ModelChangeNotifier notifier;
+    int options_saved = 0;
+    ModelIngest ingest({nullptr, {}, &registries, &store, &notifier,
+        [&](const ModelInfo&) { ++options_saved; }});
+    if (existing) {
+        ingest.register_user_model("user.AtomicParent",
+            {{"recipe", "collection.omni"}, {"components", {"Original"}}}, "", true);
+    }
+    {
+        std::map<std::string, ModelInfo> rows;
+        if (existing) {
+            ModelInfo parent;
+            parent.model_name = "user.AtomicParent";
+            parent.recipe = "collection.omni";
+            parent.components = {"Original"};
+            rows.emplace(parent.model_name, parent);
+        }
+        ModelStore::Build build(store);
+        build.commit(std::move(rows), nullptr, {});
+    }
+    json admin = component_def("AtomicB");
+    admin["recipe_options"] = {{"llamacpp_args", "--threads 2"}};
+    ingest.register_user_model("user.AtomicB", admin, "", true);
+    const json before = *registries.pin().user;
+    std::ifstream before_file(file);
+    const std::string before_bytes{std::istreambuf_iterator<char>(before_file), {}};
+    before_file.close();
+    const json doc = {{"recipe", "collection.omni"},
+        {"components", {"AtomicA", "AtomicB"}},
+        {"models", {component_def("AtomicA"), component_def("AtomicB")}}};
+    bool rejected = false;
+    try {
+        if (register_only) {
+            ingest.register_model("user.AtomicParent", doc, true, true, false);
+        } else {
+            ingest.pull("user.AtomicParent", doc, true, nullptr, {}, false);
+        }
+    } catch (const lemon::BackendArgsAuthorizationError&) {
+        rejected = true;
+    }
+    check(register_only ? "registration phase rejects component backend-args drift"
+                        : "download phase rejects component backend-args drift", rejected);
+    check(existing ? "rejection preserves existing parent and untouched components"
+                   : "rejection leaves new parent and components absent",
+          *registries.pin().user == before);
+    std::ifstream after_file(file);
+    const std::string after_bytes{std::istreambuf_iterator<char>(after_file), {}};
+    after_file.close();
+    check("rejected collection leaves registry bytes and options unchanged",
+          after_bytes == before_bytes && options_saved == 0);
+}
+
+static void test_regular_inline_registration_preserves_local_components() {
+    using namespace lemon::models;
+    const auto root = lemon::test::make_scratch_dir("collection-regular-inline");
+    AliasManager aliases;
+    ModelStore store(aliases);
+    RegistryDocuments registries(json::object(), (root / "user_models.json").string());
+    ModelChangeNotifier notifier;
+    ModelIngest ingest({nullptr, {}, &registries, &store, &notifier, {}});
+    json local = component_def("LocalB");
+    local["recipe_options"] = {{"llamacpp_args", "--threads 2"}};
+    ingest.register_user_model("user.LocalB", local, "", true);
+    const json local_before = registries.pin().user->at("LocalB");
+    {
+        ModelInfo info;
+        info.model_name = "user.LocalB";
+        info.recipe = "llamacpp";
+        ModelStore::Build build(store);
+        build.commit({{info.model_name, info}}, nullptr, {});
+    }
+    const json doc = {{"recipe", "collection.omni"}, {"source", "modelscope"},
+        {"components", {"NewA", "LocalB"}},
+        {"models", {component_def("NewA"), component_def("LocalB")}}};
+    ingest.register_model("user.RegularInline", doc, true, true, false);
+    const auto saved = registries.pin().user;
+    check("regular inline collection registers parent and unknown component",
+        saved->contains("NewA") && saved->at("RegularInline").at("components") ==
+            json::array({"user.NewA", "user.LocalB"}));
+    check("regular inline import preserves known local backend arguments",
+        saved->at("LocalB") == local_before);
+    check("inline component inherits parent registry provenance",
+        saved->at("NewA").at("source") == "modelscope");
+}
+
+static void test_collection_download_selection_does_not_repeat_registration(bool builtin) {
+    using namespace lemon::models;
+    const auto root = lemon::test::make_scratch_dir("collection-download-selection");
+    AliasManager aliases;
+    ModelStore store(aliases);
+    RegistryDocuments registries(json::object(), (root / "user_models.json").string());
+    ModelChangeNotifier notifier;
+    ModelArtifactStore artifacts({[&] { return root.string(); }, {}, {}});
+    ModelIngest ingest({&artifacts, {}, &registries, &store, &notifier, {}});
+    if (builtin) {
+        ModelInfo child;
+        child.model_name = "SelectedA";
+        child.recipe = "llamacpp";
+        child.downloaded = true;
+        ModelStore::Build build(store);
+        build.commit({{child.model_name, child}}, nullptr, {});
+    }
+    const json doc = {{"recipe", "collection.omni"},
+        {"checkpoint", "example/collection-pointer"}, {"components", {"user.SelectedA"}},
+        {"models", {component_def("SelectedA")}}};
+    ingest.register_model("user.SelectedParent", doc, true, true, true);
+    json admin = doc;
+    admin["recipe_options"] = {{"llamacpp_args", "--threads 2"}};
+    ingest.register_user_model("user.SelectedParent", admin, "", true);
+    {
+        ModelInfo parent;
+        parent.model_name = "user.SelectedParent";
+        parent.recipe = "collection.omni";
+        parent.checkpoints["main"] = "example/collection-pointer";
+        parent.downloaded = true;
+        ModelInfo child;
+        child.model_name = builtin ? "SelectedA" : "user.SelectedA";
+        child.recipe = "llamacpp";
+        child.downloaded = true;
+        ModelStore::Build build(store);
+        build.commit({{parent.model_name, parent}, {child.model_name, child}}, nullptr, {});
+    }
+    const json before = *registries.pin().user;
+    int completed = 0;
+    ingest.pull("user.SelectedParent", {{"components", {"user.SelectedA"}}}, true,
+        [&](const lemon::DownloadProgress& progress) {
+            if (progress.complete) ++completed;
+            return true;
+        }, {}, false);
+    check("component-only download completes without fetching pointer manifest", completed == 1);
+    check("download selection preserves admin arguments added after registration",
+          *registries.pin().user == before);
+}
+
 int main() {
+    test_collection_registration_rejection_is_atomic();
+    test_regular_inline_registration_preserves_local_components();
+    test_collection_download_selection_does_not_repeat_registration(false);
+    test_collection_download_selection_does_not_repeat_registration(true);
+    for (bool existing : {false, true}) {
+        for (bool register_only : {false, true}) {
+            test_collection_parent_rejection_is_atomic(existing, register_only);
+        }
+    }
     ModelManagerConfig config;
     config.availability = [](const std::map<std::string, ModelInfo>&) {
         return machine_without_npu();

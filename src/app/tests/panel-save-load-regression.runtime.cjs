@@ -7,7 +7,11 @@ const filename = path.resolve(__dirname, '../src/components/ModelDetailPanel.tsx
 const source = ts.createSourceFile(filename, fs.readFileSync(filename, 'utf8'),
   ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const declarations = new Map();
+let selectionChange;
 function visit(node) {
+  if (ts.isIfStatement(node) && node.expression.getText(source) === 'saveSelectionRef.current.name !== name') {
+    selectionChange = node.getText(source);
+  }
   if (ts.isVariableDeclaration(node) && node.initializer) {
     declarations.set(node.name.getText(source), node.initializer.getText(source));
   }
@@ -38,13 +42,17 @@ function loadPayload(state) {
     keys, ['llamacpp_args'], new Set(['llamacpp_args']), state.draft.recipe, state.baseline, true);
 }
 
-async function saveAndLoad(editDuringSave) {
-  const state = { draft: structuredClone(draft), baseline: structuredClone(initial) };
+async function saveAndLoad(editDuringSave, { failure, showNotice = true, stale = false, deferDraftUpdate = false } = {}) {
+  const state = { draft: structuredClone(draft), baseline: structuredClone(initial), notices: [] };
+  const saveSelectionRef = { current: { name: 'Test' } };
+  let queuedDraftUpdate;
   let finishSave;
-  const pending = new Promise(resolve => { finishSave = resolve; });
+  let rejectSave;
+  const pending = new Promise((resolve, reject) => { finishSave = resolve; rejectSave = reject; });
   let submitted;
   const dependencies = {
     serverOptionsLoaded: true,
+    saveSelectionRef,
     buildConfigOptions: () => ({ ...draft.recipe, ctx_size: 8192 }),
     serverSavedRecipeOptions: {},
     recipeKeys: keys,
@@ -64,32 +72,51 @@ async function saveAndLoad(editDuringSave) {
     },
     sanitizeRecipeOptions: value => value,
     offersResolvedValue: key => key === 'llamacpp_backend',
-    setRecipeDraft: update => { state.draft.recipe = update(state.draft.recipe); },
+    setRecipeDraft: update => {
+      if (deferDraftUpdate) queuedDraftUpdate = update;
+      else state.draft.recipe = update(state.draft.recipe);
+    },
     setCtxSizeDraft: update => { state.draft.ctxSize = update(state.draft.ctxSize); },
-    setNotice: () => {},
+    setNotice: notice => { state.notices.push(notice); },
     t: text => text,
-    friendlyErrorMessage: error => { throw error; },
+    friendlyErrorMessage: error => error.message,
   };
   const save = compile(`${declarations.get('fieldValue')}
 ${declarations.get('draftFromResolvedOptions')}
 return ${declarations.get('saveConfig')};`, Object.keys(dependencies))(...Object.values(dependencies));
-  const request = save();
+  const request = save(showNotice);
   assert.equal(submitted.llamacpp_args, args);
-  editDuringSave?.(state.draft);
-  finishSave(response);
-  assert.equal(await request, true);
+  const selectModel = name => {
+    const previousName = saveSelectionRef.current.name;
+    compile(selectionChange, ['saveSelectionRef', 'name'])(saveSelectionRef, name);
+    if (previousName !== name) {
+      state.draft = { ctxSize: '4096', recipe: { llamacpp_backend: 'vulkan', llamacpp_args: args } };
+      state.baseline = structuredClone(state.draft);
+    }
+  };
+  editDuringSave?.(state.draft, selectModel);
+  if (failure) rejectSave(new Error('save rejected'));
+  else finishSave(response);
+  state.saved = await request;
+  if (!stale) assert.equal(state.saved, !failure);
+  if (queuedDraftUpdate) {
+    selectModel('Other');
+    state.draft.recipe = queuedDraftUpdate(state.draft.recipe);
+  }
   return state;
 }
 
 (async () => {
   const unchanged = await saveAndLoad();
+  assert.deepEqual(unchanged.notices, ['Saved for future loads']);
   assert.deepEqual(loadPayload(unchanged), { llamacpp_backend: 'metal', ctx_size: 8192 },
     'after Save reorders effective arguments, an unchanged panel Load must use saved arguments without a privileged override');
   unchanged.draft.ctxSize = '4096';
   assert.deepEqual(loadPayload(unchanged), { llamacpp_backend: 'metal', ctx_size: 4096 },
     'context-only changes after Save must not resend arguments');
 
-  const edited = await saveAndLoad(current => {
+  const edited = await saveAndLoad((current, selectModel) => {
+    selectModel('Test');
     current.recipe.llamacpp_args = '--threads 4';
     current.ctxSize = '4096';
   });
@@ -103,5 +130,33 @@ return ${declarations.get('saveConfig')};`, Object.keys(dependencies))(...Object
   assert.equal(loadPayload(cleared).llamacpp_args, null);
   assert.equal(loadPayload(cleared).merge_args, false,
     'clearing arguments while Save is pending must remain a protected change');
+  const switched = await saveAndLoad((_current, selectModel) => selectModel('Other'), { stale: true });
+  assert.equal(switched.baseline.recipe.llamacpp_backend, 'vulkan',
+    'a Save response for the previous model must not replace the selected model server layers');
+  assert.equal(switched.draft.recipe.llamacpp_args, args,
+    'a previous-model Save must not normalize arguments in the selected model draft');
+  assert.deepEqual(switched.notices, [], 'a previous-model Save must not show a success notice');
+  assert.equal(switched.saved, false);
+
+  const returned = await saveAndLoad((_current, selectModel) => {
+    selectModel('Other');
+    selectModel('Test');
+  }, { stale: true });
+  assert.equal(returned.baseline.recipe.llamacpp_backend, 'vulkan',
+    'returning to the original model must not accept a Save from its earlier selection');
+  assert.equal(returned.draft.recipe.llamacpp_args, args);
+  assert.deepEqual(returned.notices, []);
+  assert.equal(returned.saved, false);
+
+  const failed = await saveAndLoad((_current, selectModel) => selectModel('Other'), {
+    stale: true, failure: true,
+  });
+  assert.deepEqual(failed.notices, [], 'a previous-model Save failure must not replace the selected model notice');
+  const currentFailure = await saveAndLoad(undefined, { failure: true });
+  assert.deepEqual(currentFailure.notices, ['Could not save model options: save rejected']);
+
+  const queued = await saveAndLoad(undefined, { deferDraftUpdate: true });
+  assert.equal(queued.draft.recipe.llamacpp_args, args,
+    'a queued draft updater must not normalize a model selected after the response');
   console.log('Panel Save to Load regression checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

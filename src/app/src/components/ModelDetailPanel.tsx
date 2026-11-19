@@ -1443,6 +1443,8 @@ const ModelConfigurationTab: React.FC<{
   const isReloading = reloadingNames.has(name);
   const currentNameRef = useRef(name);
   currentNameRef.current = name;
+  const saveSelectionRef = useRef({ name });
+  if (saveSelectionRef.current.name !== name) saveSelectionRef.current = { name };
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [systemInfoSettled, setSystemInfoSettled] = useState(() => api.systemInfoData !== null);
 
@@ -1671,14 +1673,17 @@ const ModelConfigurationTab: React.FC<{
       if (showNotice) setNotice('Saved for future loads');
       return true;
     }
+    const saveSelection = saveSelectionRef.current;
     try {
       const result = await api.saveModelOptions(name, patch);
+      if (saveSelectionRef.current !== saveSelection) return false;
       applyServerOptions(result, false);
       const savedDraft = draftFromResolvedOptions(recipeKeys, sanitizeRecipeOptions(result.saved),
         sanitizeRecipeOptions(result.effective), offersResolvedValue);
       // The server normalizes argument order. Keep the accepted draft aligned
       // without overwriting edits made while the save was in flight.
       setRecipeDraft(current => {
+        if (saveSelectionRef.current !== saveSelection) return current;
         const next = { ...current };
         for (const key of argsKeyNames) {
           if ((current[key] || '') === (recipeDraft[key] || '')) {
@@ -1690,6 +1695,7 @@ const ModelConfigurationTab: React.FC<{
       if (showNotice) setNotice('Saved for future loads');
       return true;
     } catch (error) {
+      if (saveSelectionRef.current !== saveSelection) return false;
       setNotice(`Could not save model options: ${friendlyErrorMessage(error)}`);
       return false;
     }

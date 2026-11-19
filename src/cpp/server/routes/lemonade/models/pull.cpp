@@ -275,7 +275,16 @@ public:
                 return;
             }
 
-            json download_request = collection_file_import ? req.body : json::object();
+            json download_request = json::object();
+            if (collection_file_import && req.arg(kComponents).is_array()) {
+                // Registration already committed; replaying definitions could overwrite
+                // an admin's edits made before the download operation starts.
+                download_request["components"] = json::array();
+                for (const auto& component : req.arg(kComponents)) {
+                    download_request["components"].push_back(
+                        ctx_.model_manager->resolve_model_name(component.get<std::string>()));
+                }
+            }
             for (const RouteArg* field : {&kSource, &kRegistrySource}) {
                 if (req.has(*field)) {
                     download_request[field->name] = req.arg(*field);
