@@ -15,6 +15,7 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include <lemon/utils/aixlog.hpp>
+#include <curl/curl.h>
 #include <cstdlib>
 #include <filesystem>
 #include <set>
@@ -192,11 +193,6 @@ void TrellisServer::model_3d_generations(const json& request, httplib::DataSink&
             fields,
             1800,
             utils::HttpSecurityPolicy::TrustedLoopback);
-        if (resp.curl_code != 0) {
-            LOG(ERROR, "trellis-server") << "generation transport error: " << resp.curl_error << std::endl;
-            fail("generation transport error: " + resp.curl_error);
-            return;
-        }
         if (resp.status_code < 200 || resp.status_code >= 300) {
             LOG(ERROR, "trellis-server") << "generation failed (HTTP " << resp.status_code
                                          << "): " << resp.body << std::endl;
@@ -204,6 +200,27 @@ void TrellisServer::model_3d_generations(const json& request, httplib::DataSink&
             return;
         }
         sink.write(resp.body.data(), resp.body.size());
+    } catch (const utils::HttpClientCancellationException& e) {
+        LOG(WARNING, "trellis-server") << "3D generation cancelled: " << e.what() << std::endl;
+        fail(e.what());
+    } catch (const utils::HttpClientException& e) {
+        const int code = e.curl_code();
+        const bool disconnected = code == CURLE_COULDNT_CONNECT ||
+                                  code == CURLE_GOT_NOTHING ||
+                                  code == CURLE_SEND_ERROR ||
+                                  code == CURLE_RECV_ERROR ||
+                                  code == CURLE_PARTIAL_FILE;
+        if (disconnected || !is_backend_alive()) {
+            LOG(WARNING, "trellis-server") << "3D backend connection lost: " << e.what()
+                                           << "; requesting reload" << std::endl;
+            if (!was_watchdog_triggered()) {
+                request_backend_reset_from_watchdog(
+                    "TRELLIS 3D backend connection lost: " + std::string(e.what()));
+            }
+            throw BackendStreamRetryableReset(get_watchdog_reset_reason());
+        }
+        LOG(ERROR, "trellis-server") << "model_3d_generations failed: " << e.what() << std::endl;
+        fail(e.what());
     } catch (const std::exception& e) {
         LOG(ERROR, "trellis-server") << "model_3d_generations failed: " << e.what() << std::endl;
         fail(e.what());
