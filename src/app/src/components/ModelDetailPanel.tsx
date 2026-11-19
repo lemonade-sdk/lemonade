@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
-import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow, ModelOptions, SystemGpuStats } from '../api';
+import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow, ModelOptions } from '../api';
 import api, { friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
 import {
@@ -493,33 +493,6 @@ function gpuChoices(info: SystemInfoLike, kind: 'cuda' | 'rocm'): GpuChoice[] {
       label: `${prefix}${gpu.index}${detail}`,
     };
   });
-}
-
-// Monitor uses system-stats (NVML); the selector uses system-info. Reuse names
-// only when UUIDs or explicit runtime indices agree, never by array position.
-function withMonitoredCudaNames(info: SystemInfoLike, stats: readonly SystemGpuStats[]): SystemInfoLike {
-  const devices = (info as any)?.devices;
-  if (!Array.isArray(devices?.nvidia_gpu) || stats.length === 0) return info;
-  const names = new Map<string, string>();
-  for (const gpu of stats) {
-    if (gpu.vendor.toLowerCase() === 'nvidia' && gpu.id && gpu.name) {
-      names.set(gpu.id.toLowerCase(), gpu.name);
-    }
-  }
-  let changed = false;
-  const nvidia_gpu = devices.nvidia_gpu.map((gpu: any) => {
-    if (!gpu || gpu.available === false) return gpu;
-    const id = gpu.uuid ? `nvidia:${String(gpu.uuid).toLowerCase()}`
-      : Number.isInteger(gpu.index) ? `nvidia:index:${gpu.index}` : '';
-    const name = names.get(id) || (Number.isInteger(gpu.index)
-      ? names.get(`nvidia:index:${gpu.index}`) : undefined);
-    if (!name || name === gpu.name) return gpu;
-    changed = true;
-    return { ...gpu, name };
-  });
-  return changed
-    ? { ...(info as Record<string, unknown>), devices: { ...devices, nvidia_gpu } }
-    : info;
 }
 
 function gpuChoiceFor(value: string, info: SystemInfoLike): GpuChoice | undefined {
@@ -1622,7 +1595,6 @@ const ModelConfigurationTab: React.FC<{
   const currentNameRef = useRef(name);
   currentNameRef.current = name;
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
-  const [gpuStats, setGpuStats] = useState<SystemGpuStats[]>([]);
   const [systemInfoSettled, setSystemInfoSettled] = useState(() => api.systemInfoData !== null);
   const [serverUrl, setServerUrl] = useState(() => api.baseUrl);
 
@@ -1635,11 +1607,6 @@ const ModelConfigurationTab: React.FC<{
       .then(info => { if (alive) setSystemInfo(info); })
       .catch(() => { if (alive) setSystemInfo(api.systemInfoData); })
       .finally(() => { if (alive) setSystemInfoSettled(true); });
-    // A single inexpensive snapshot supplies the same GPU names as Monitor.
-    // Failure must not block configuration or alter device IDs.
-    void api.systemStats()
-      .then(stats => { if (alive && api.baseUrl === serverUrl) setGpuStats(stats.gpus ?? []); })
-      .catch(() => { if (alive && api.baseUrl === serverUrl) setGpuStats([]); });
     return () => { alive = false; };
   }, [isActive, serverUrl]);
 
@@ -1726,7 +1693,6 @@ const ModelConfigurationTab: React.FC<{
     setServerOptionsLoaded(false);
     setRecipeDraft({});
     setSystemInfo(null);
-    setGpuStats([]);
     setSystemInfoSettled(false);
     setServerUrl(api.baseUrl);
   }), []);
@@ -1748,7 +1714,7 @@ const ModelConfigurationTab: React.FC<{
 
   const ctxSizeId = `config-${name}-ctx_size`.replace(/[^a-zA-Z0-9_-]/g, '-');
   const ctxSliderId = `${ctxSizeId}-slider`;
-  const info = useMemo(() => withMonitoredCudaNames(systemInfo, gpuStats) || {}, [systemInfo, gpuStats]);
+  const info = systemInfo || {};
   const ctxMin = 512;
   const ctxStep = 512;
   const positiveCtxValue = (value: unknown): number | undefined => {

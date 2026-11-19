@@ -16,9 +16,9 @@ const panelSource = fs.readFileSync(path.resolve(__dirname, '../src/components/M
   .replace(/\r\n/g, '\n');
 const helperNames = ['activeRecipeForModel', 'optionalDisplayValue', 'systemRecipes', 'backendMapForRecipe',
   'recipeDefaultBackend', 'availableDeviceCounts', 'indexed', 'deviceBackendFor', 'runtimeDevicesFor',
-  'hipIndexedAmdGpus', 'shortGpuId', 'gpuChoices', 'withMonitoredCudaNames', 'gpuChoiceFor', 'matchingDeviceOption',
+  'hipIndexedAmdGpus', 'shortGpuId', 'gpuChoices', 'gpuChoiceFor', 'matchingDeviceOption',
   'deviceOptionsForKey', 'deviceOptionLabel'];
-let helperCode = 'type SystemInfoLike = any; type RecipeOptions = any; type ModelInfo = any; type SystemGpuStats = any;\n';
+let helperCode = 'type SystemInfoLike = any; type RecipeOptions = any; type ModelInfo = any;\n';
 for (const pattern of [/^const SINGLE_GPU_RECIPES.*$/m, /^interface RuntimeDevice.*$/m, /^const isGpuId = .*$/m]) {
   const match = panelSource.match(pattern);
   assert.ok(match, `${pattern} missing`);
@@ -32,10 +32,10 @@ for (const name of helperNames) {
   assert.ok(match, `${name} missing`);
   helperCode += match[0];
 }
-helperCode += 'module.exports = { deviceOptionsForKey, deviceOptionLabel, matchingDeviceOption, withMonitoredCudaNames };';
+helperCode += 'module.exports = { deviceOptionsForKey, deviceOptionLabel, matchingDeviceOption };';
 const helperModule = { exports: {} };
 vm.runInNewContext(compile(helperCode), { module: helperModule, exports: helperModule.exports });
-const { deviceOptionsForKey, deviceOptionLabel, matchingDeviceOption, withMonitoredCudaNames } = helperModule.exports;
+const { deviceOptionsForKey, deviceOptionLabel, matchingDeviceOption } = helperModule.exports;
 // Values built in the vm context have its prototypes; compare copies made here.
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -65,33 +65,35 @@ assert.deepEqual(plain(cuda), ['auto', 'GPU-aaaa0000-0000-0000-0000-000000000000
 assert.deepEqual(plain(labels(cuda)), ['auto', 'CUDA0 (GeForce RTX 2060)',
   `CUDA1 (${p100} · GPU-bbbb1111)`, `CUDA2 (${p100} · GPU-cccc2222)`]);
 
-// Monitor's NVML names enrich blank system-info names by UUID, not array order.
-const unnamed = JSON.parse(JSON.stringify(info));
-unnamed.devices.nvidia_gpu.forEach(gpu => { gpu.name = ''; });
-const monitored = withMonitoredCudaNames(unnamed, [
-  { vendor: 'nvidia', id: 'nvidia:GPU-cccc2222-0000-0000-0000-000000000000', name: p100 },
-  { vendor: 'nvidia', id: 'nvidia:GPU-aaaa0000-0000-0000-0000-000000000000', name: 'GeForce RTX 2060' },
-  { vendor: 'nvidia', id: 'nvidia:GPU-bbbb1111-0000-0000-0000-000000000000', name: p100 },
-]);
-assert.deepEqual(plain(labels(cuda, monitored)), plain(labels(cuda)));
-assert.deepEqual(plain(deviceOptionsForKey('acestep_device', undefined, 'cuda', acestep, monitored)), plain(cuda));
-assert.deepEqual(plain(labels(cuda, unnamed)), ['auto', 'CUDA0', 'CUDA1', 'CUDA2'],
-  'monitor enrichment must not mutate the system-info cache');
-assert.equal(withMonitoredCudaNames(unnamed, [
-  { vendor: 'nvidia', id: 'nvidia:index:1', name: p100 },
-]).devices.nvidia_gpu[1].name, p100, 'matching runtime indices are a safe fallback');
-
-// Without a common UUID, do not guess which physical card a metric describes.
-const indexedOnly = { devices: { nvidia_gpu: [
-  { available: true, index: 0, name: '' },
-  { available: true, index: 1, name: '' },
-] } };
-assert.equal(deviceOptionLabel('cuda0', withMonitoredCudaNames(indexedOnly, [
-  { vendor: 'nvidia', id: 'nvidia:GPU-aaaa', name: 'Unmatched card' },
-])), 'CUDA0');
-assert.equal(deviceOptionLabel('cuda1', withMonitoredCudaNames(indexedOnly, [
-  { vendor: 'nvidia', id: 'nvidia:index:1', name: 'RTX 5090' },
-])), 'CUDA1 (RTX 5090)');
+// The /system-info payload already has the same names and UUIDs as /system-stats.
+// Exercise the real two-NVIDIA-GPU shape without adding another API data source.
+const twoNvidiaInfo = {
+  ...info,
+  devices: {
+    ...info.devices,
+    nvidia_gpu: [
+      { index: 0, uuid: 'GPU-11111111-2222-3333-4444-555555555555', name: 'NVIDIA GeForce RTX 5090' },
+      { index: 1, uuid: 'GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', name: 'NVIDIA GeForce RTX 4090' },
+    ],
+  },
+};
+const expectedCudaIds = ['auto', twoNvidiaInfo.devices.nvidia_gpu[0].uuid,
+  twoNvidiaInfo.devices.nvidia_gpu[1].uuid];
+const expectedCudaLabels = ['auto', 'CUDA0 (NVIDIA GeForce RTX 5090)',
+  'CUDA1 (NVIDIA GeForce RTX 4090)'];
+for (const recipe of ['thenoise', 'sd-cpp', 'acestep']) {
+  const key = `${recipe}_device`;
+  const options = deviceOptionsForKey(key, undefined, 'cuda', { recipe }, twoNvidiaInfo);
+  assert.deepEqual(plain(options), expectedCudaIds, `${recipe}: stable GPU IDs`);
+  assert.deepEqual(plain(labels(options, twoNvidiaInfo)), expectedCudaLabels,
+    `${recipe}: names should come directly from system-info`);
+  assert.equal(matchingDeviceOption('cuda1', options, twoNvidiaInfo), expectedCudaIds[2]);
+}
+assert.equal(deviceOptionLabel('cuda0', twoNvidiaInfo), expectedCudaLabels[1]);
+assert.equal(deviceOptionLabel('CUDA1', twoNvidiaInfo), expectedCudaLabels[2]);
+// Also check that the rendered options use the label helper, not the raw value.
+assert.match(panelSource,
+  /options\.map\(opt => <option key=\{opt\} value=\{opt\}>\{deviceOptionLabel\(opt, info, runtimeDevices,/);
 
 // ROCm is numbered by HIP, not by the iGPU-first amd_gpu order, and saved by PCI address.
 const rocm = deviceOptionsForKey('acestep_device', undefined, 'rocm', acestep, info);
