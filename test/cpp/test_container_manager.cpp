@@ -764,22 +764,28 @@ void test_aim() {
     check("a Responses API event names Lemonade's model",
           event["response"]["model"] == "Qwen3.5-9B-AIM");
 
+    const auto refused = [](const lemon::ModelInfo& model) {
+        lemon::backends::BackendContext ctx;
+        ctx.model_info = &model;
+        try {
+            lemon::backends::aim::create(ctx);
+        } catch (const std::runtime_error&) {
+            return true;
+        }
+        return false;
+    };
     lemon::ModelInfo vllm_model;
+    vllm_model.extras["aim_engine"] = "vllm";
     lemon::backends::BackendContext ctx;
     ctx.model_info = &vllm_model;
-    check("an AIM model with no aim_engine runs on the vLLM server class",
+    check("an AIM model naming aim_engine vllm runs on the vLLM server class",
           dynamic_cast<lemon::backends::AimVllmServer*>(lemon::backends::aim::create(ctx).get()) !=
               nullptr);
     lemon::ModelInfo llama_model;
     llama_model.extras["aim_engine"] = "llamacpp";
-    ctx.model_info = &llama_model;
-    bool refused = false;
-    try {
-        lemon::backends::aim::create(ctx);
-    } catch (const std::runtime_error&) {
-        refused = true;
-    }
-    check("an AIM model naming an engine Lemonade does not run is refused", refused);
+    check("an AIM model naming an engine Lemonade does not run is refused", refused(llama_model));
+    check("an AIM model naming no engine is refused rather than given vLLM",
+          refused(lemon::ModelInfo{}));
 
     // A model image built on another release of the base pulls a second
     // copy of it, tens of GB, so every row must match the backend's pin.
@@ -800,7 +806,7 @@ void test_aim() {
         }
         check(name + " names an AIM image from the pinned base's release", same_release);
         check(name + " names an engine Lemonade runs",
-              lemon::backends::aim::supports_engine(row.value("aim_engine", "vllm")));
+              lemon::backends::aim::supports_engine(row.value("aim_engine", "")));
     }
     check("server_models.json has AIM models", rows > 0);
 }

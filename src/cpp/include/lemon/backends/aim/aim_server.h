@@ -22,7 +22,8 @@ namespace aim {
 // serving another mode, such as AIM's Whisper images, needs its own recipe.
 inline constexpr const char* kEngineVllm = "vllm";
 
-// The engine a model row names, "vllm" when it names none.
+// The engine a model row names in `aim_engine`, or "" when it names none.
+// Every AIM row must name one: an engine is not inferred.
 std::string model_engine(const ModelInfo& info);
 bool supports_engine(const std::string& engine);
 

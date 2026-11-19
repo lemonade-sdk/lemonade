@@ -78,7 +78,7 @@ public:
 namespace aim {
 
 std::string model_engine(const ModelInfo& info) {
-    return info.extra<std::string>("aim_engine", kEngineVllm);
+    return info.extra<std::string>("aim_engine", "");
 }
 
 bool supports_engine(const std::string& engine) {
@@ -187,9 +187,9 @@ Launch prepare_launch(const std::string& model_name, const ModelInfo& model_info
 }
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
-    const std::string engine =
-        ctx.model_info != nullptr ? model_engine(*ctx.model_info) : kEngineVllm;
+    const std::string engine = ctx.model_info != nullptr ? model_engine(*ctx.model_info) : "";
     if (engine == kEngineVllm) return make_server<AimVllmServer>(ctx);
+    if (engine.empty()) throw std::runtime_error("aim: model names no aim_engine");
     throw std::runtime_error("aim: model names aim_engine '" + engine +
                              "', which Lemonade does not run");
 }
