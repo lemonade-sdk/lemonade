@@ -75,7 +75,11 @@ std::filesystem::path huggingface_token_path() {
     if (!explicit_path.empty()) return lemon::utils::path_from_utf8(explicit_path);
     const std::string hf_home = lemon::utils::get_environment_variable_utf8("HF_HOME");
     if (!hf_home.empty()) return lemon::utils::path_from_utf8(hf_home) / "token";
-    return lemon::utils::path_from_utf8(lemon::utils::default_hf_cache_dir()).parent_path() / "token";
+    try {
+        return lemon::utils::path_from_utf8(lemon::utils::default_hf_cache_dir()).parent_path() / "token";
+    } catch (const std::exception&) {
+        return {};
+    }
 }
 
 // Same precedence as huggingface_hub: HF_TOKEN, then the token file that
