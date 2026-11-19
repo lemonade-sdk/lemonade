@@ -62,7 +62,6 @@ test('moderator invitations delegate their preset to the server and display deni
   const fixture = await openLocalAccount(page);
   await page.getByRole('button', { name: 'Connect another device', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Connect another device', exact: true });
-  await dialog.getByRole('textbox', { name: 'Device name', exact: true }).fill('Lab workstation');
   await dialog.getByLabel('Role', { exact: true }).selectOption('moderator');
   await expect(dialog).toContainText('Run inference, use MCP tools, manage models and jobs, and invite devices.');
   await page.screenshot({ path: testInfo.outputPath('mesh-moderator-invitation.png') });
@@ -76,6 +75,6 @@ test('moderator invitations delegate their preset to the server and display deni
   await dialog.getByRole('button', { name: 'Create invitation', exact: true }).click();
   await expect(dialog.getByLabel('Invitation code', { exact: true })).toBeVisible();
   const write = fixture.calls.filter(call => call.path.endsWith('/invites')).at(-1)!;
-  expect(write.body).toEqual({ device_name: 'Lab workstation', ttl_sec: 600, role: 'moderator' });
+  expect(write.body).toEqual({ ttl_sec: 600, role: 'moderator' });
   expect(write.authorization).toBeUndefined();
 });

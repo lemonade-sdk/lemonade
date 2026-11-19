@@ -22,7 +22,7 @@ export async function setupNexusAccount(page: Page, options: {
   const state: NexusStatus = { available: true, controller_url: 'http://127.0.0.1:15555', enabled: true,
     registered: options.registered ?? true, locked: options.joined === false, mesh_up: options.joined !== false,
     status: options.joined === false ? 'locked' : 'running', node_id: 'self', group_node_id: options.joined === false ? '' : 'group',
-    device_name: deviceName, members, has_network: !options.freshKey, ...(options.freshKey ? { locked: false, status: 'ready', registered: true, unlock: 'device_key' as const, identity_source: 'handoff' as const } : {}),
+    device_name: deviceName, hostname: 'studio-mac', members, has_network: !options.freshKey, ...(options.freshKey ? { locked: false, status: 'ready', registered: true, unlock: 'device_key' as const, identity_source: 'handoff' as const } : {}),
     ...(options.needsUserKey ? { identity_source: 'handoff' as const, needs_user_key: true } : {}),
     ...(options.deviceKey ? { identity_source: 'user' as const, unlock: options.registered === false ? 'passkey' as const : 'device_key' as const } : {}) };
   const entry = (id: string, name: string, kind: 'group' | 'node', parent_id: string): NexusTreeEntry => ({

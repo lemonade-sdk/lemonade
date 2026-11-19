@@ -1567,6 +1567,7 @@ int main() {
             request("join", R"({"code":"12345678"})", 423);
             request("egress", R"({"node_id":"another-device"})", 423);
             request("invites", R"({"device_name":"New device"})", 423);
+            request("invites", "{}", 423);
             request("device/check", R"({"name":"Work PC"})", 423);
             request("passkey/unlock", R"({"passkey_assertion":{"credential_id":"wrong"}})", 403);
             request("members/peer/role", R"({"role":"admin"})", 423);
@@ -1600,9 +1601,14 @@ int main() {
                     ? nlohmann::json::parse(initial->body).value("device_name", std::string{}) : std::string{};
                 check(!first_name.empty() && first_name != "My Lemonade device" && first_name.size() <= 128,
                       "An unnamed device carries the machine's host name");
+                const auto reported = initial && initial->status == 200
+                    ? nlohmann::json::parse(initial->body).value("hostname", std::string{}) : std::string{};
+                check(reported == first_name, "Status reports the machine's host name");
             }
             auto named = request("device", R"({"device_name":"My laptop"})", 200);
             check(named.at("device_name") == "My laptop", "Device name updated");
+            check(named.value("hostname", std::string{}) != "My laptop" && !named.value("hostname", std::string{}).empty(),
+                  "The host name stays the machine's name after a rename");
             request("lock", "{}", 200);
             request("disable", "{}", 200);
             {

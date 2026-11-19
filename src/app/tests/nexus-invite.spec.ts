@@ -97,7 +97,6 @@ test('a refused invitation creation explains the next step', async ({ page }) =>
   fixture.inviteFailure = { status: 403, error: 'missing add_child permission on the group' };
   await page.getByRole('button', { name: 'Connect another device' }).click();
   const dialog = page.getByRole('dialog', { name: 'Connect another device' });
-  await dialog.getByRole('textbox', { name: 'Device name', exact: true }).fill('My phone');
   await dialog.getByRole('button', { name: 'Create invitation', exact: true }).click();
   await expect(dialog.getByRole('alert')).toHaveText('The inviting device may not add devices. Ask an administrator of the network for an invitation.');
   await expect(dialog.locator('details.nexus-error-detail')).toContainText('missing add_child permission on the group');

@@ -249,6 +249,17 @@ test('a device waiting for its key from the tray shows no passkey form', async (
   await expect(dialog.getByRole('textbox', { name: 'Device name', exact: true })).toHaveValue('My laptop');
 });
 
+test('an unnamed device is prefilled with its host name', async ({ page }) => {
+  const fixture = await setupNexusAccount(page, { registered: false, joined: false });
+  fixture.state.device_name = '';
+  await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Enable Mesh' });
+  await expect(dialog.getByRole('textbox', { name: 'Device name', exact: true })).toHaveValue('studio-mac');
+  delete fixture.state.hostname;
+  await dialog.getByRole('button', { name: 'Check again', exact: true }).click();
+  await expect(dialog.getByRole('textbox', { name: 'Device name', exact: true })).toHaveValue('This computer');
+});
+
 test('a user identity whose keystore is unavailable shows the server\'s reason', async ({ page }) => {
   const fixture = await setupNexusAccount(page, { needsUserKey: true, joined: false });
   fixture.state.identity_source = 'user';
@@ -430,7 +441,7 @@ test('read-only members have no admin badge or invitation action', async ({ page
 async function createInvitation(page: Page) {
   await page.getByRole('button', { name: 'Connect another device' }).click();
   const dialog = page.getByRole('dialog', { name: 'Connect another device' });
-  await dialog.getByRole('textbox', { name: 'Device name', exact: true }).fill('My phone');
+  await expect(dialog.getByRole('textbox', { name: 'Device name', exact: true })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Create invitation', exact: true }).click();
   return dialog;
 }
@@ -449,7 +460,7 @@ test('an authorized account creates an expiring device invitation with a readabl
   expect(await clipboard(page)).toBe('1234 5678');
   await dialog.getByRole('button', { name: 'Copy full invite token', exact: true }).click();
   expect(await clipboard(page)).toBe(`lnk_${'a'.repeat(64)}`);
-  expect(fixture.calls.find(call => call.path.endsWith('/invites'))?.body).toEqual({ device_name: 'My phone', ttl_sec: 600, role: 'user' });
+  expect(fixture.calls.find(call => call.path.endsWith('/invites'))?.body).toEqual({ ttl_sec: 600, role: 'user' });
 });
 
 test('an older server without invitation codes still shows the token', async ({ page, context }) => {

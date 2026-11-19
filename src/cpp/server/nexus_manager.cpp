@@ -1784,7 +1784,8 @@ struct NexusManager::Session {
         auto mesh = mesh_status();
         json result = {{"status", detail}, {"locked", locked}, {"mesh_up", !locked && ln_mesh_is_active(client.get()) != 0},
             {"node_id", node_id}, {"group_node_id", group_id}, {"tunnel_ip", tunnel_ip},
-            {"peer_count", mesh.value("peer_count", 0)}, {"device_name", device_name()}, {"server", host},
+            {"peer_count", mesh.value("peer_count", 0)}, {"device_name", device_name()}, {"hostname", machine_name()},
+            {"server", host},
             {"registered", account.contains("credential_id") || key_unlock()}, {"has_network", has_network()},
             {"unlock", key_unlock() ? "device_key" : "passkey"}, {"members", devices},
             {"exposed", json::array({{{"vport", 13305}, {"local_port", ingress_port}}})}, {"error", error},
@@ -2286,12 +2287,12 @@ struct NexusManager::Session {
             return {{"group_node_id", group_id}, {"can_manage", group_admin()}, {"members", devices}};
         }
         if (path == "/link-token") {
-            const auto name = body.at("device_name").get<std::string>();
-            if (name.empty() || name.size() > 128) throw NexusError(400, "Enter the name of the device you're inviting");
+            const auto name = body.value("device_name", std::string());
+            if (name.size() > 128) throw NexusError(400, "Enter a name of up to 128 characters");
             const auto self = find_member(devices, node_id);
             auto result = create_invite("", body, self.is_object() ? self.value("permissions", json::array()) : json::array(),
                 self.is_object() && self.value("is_admin", false));
-            result["device_name"] = name;
+            if (!name.empty()) result["device_name"] = name;
             return result;
         }
         refresh_devices();
