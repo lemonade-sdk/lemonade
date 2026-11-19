@@ -26,7 +26,7 @@ test('a device with its own network joins another one as a member and can leave 
   const server = panel.locator('.nexus-devices li').filter({ hasText: 'Studio server' });
   await expect(server.locator('.nexus-pill').filter({ hasText: 'Server' })).toHaveCount(1);
   await expect(server.locator('.nexus-pill').filter({ hasText: 'Joined network' })).toHaveCount(1);
-  await expect(panel.locator('.nexus-mesh-row--choice').filter({ hasText: 'Studio server' })).toBeVisible();
+  await expect(server.getByRole('button', { name: 'Run chat on Studio server', exact: true })).toBeEnabled();
   await expect(panel.locator('.nexus-mesh__state')).toHaveText('1 server online');
   await studio.getByRole('button', { name: 'Leave network', exact: true }).click();
   await studio.getByRole('button', { name: 'Leave', exact: true }).click();
@@ -65,23 +65,25 @@ test('Enable Mesh by invitation on a registered device reports the membership in
   await expect(page.getByRole('button', { name: 'Mesh: My laptop', exact: true })).toBeVisible();
 });
 
-test('Chat runs on selects a mesh server through the home server and keeps its key out of storage', async ({ page }) => {
+test('Run chat here selects a mesh server through the home server and keeps its key out of storage', async ({ page }) => {
   const fixture = await setupNexusAccount(page);
   const gpu = { ...fixture.state.members[1], node_id: 'gpu', device_name: 'GPU box', is_inference: true, can_connect: true, connection_type: 'p2p' as const };
   fixture.state.members.push(gpu);
   await enableNexusMesh(page);
   const panel = page.locator('.nexus-mesh');
-  await expect(panel.locator('.nexus-mesh-row--choice').filter({ hasText: 'This device' })).toHaveAttribute('aria-pressed', 'true');
-  const choice = panel.locator('.nexus-mesh-row--choice').filter({ hasText: 'GPU box' });
-  await expect(choice.locator('.nexus-pill--connection')).toHaveText('P2P');
+  const local = panel.getByRole('button', { name: 'Run chat on My laptop', exact: true });
+  await expect(local).toHaveAttribute('aria-pressed', 'true');
+  const choice = panel.getByRole('button', { name: 'Run chat on GPU box', exact: true });
+  await expect(panel.locator('.nexus-devices li').filter({ hasText: 'GPU box' }).locator('.nexus-pill--connection')).toHaveText('P2P');
   await choice.click();
   await expect(choice).toHaveAttribute('aria-pressed', 'true');
+  await expect(local).toHaveAttribute('aria-pressed', 'false');
   await panel.getByRole('textbox', { name: 'API key (only if that computer sets one)' }).fill('gpu-secret');
   await panel.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => fixture.calls.filter(call => call.origin === 'http://127.0.0.1:13305' && call.path.includes('/nexus/peers/gpu/')).length).toBeGreaterThan(0);
   expect(await page.evaluate(() => Object.values(localStorage).some(value => value.includes('gpu-secret')))).toBe(false);
-  await panel.locator('.nexus-mesh-row--choice').filter({ hasText: 'This device' }).click();
-  await expect(panel.locator('.nexus-mesh-row--choice').filter({ hasText: 'This device' })).toHaveAttribute('aria-pressed', 'true');
+  await local.click();
+  await expect(local).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('deleting the account needs the device name, calls account/delete and signs the device out', async ({ page }) => {
