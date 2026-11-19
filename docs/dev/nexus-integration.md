@@ -140,7 +140,8 @@ Account metadata and the enabled preference live in `nexus/` under the server
 configuration directory; the identity lives there only for a system service
 (see [Identity storage](#identity-storage)). Until the user names the device,
 `status` reports the machine's host name as `device_name` (without a `.local`
-suffix), and a join uses it. Unix permissions restrict the directory to its
+suffix), and a join uses it. `status` always reports that host name as
+`hostname`, so a client can offer it before the user picks a name. Unix permissions restrict the directory to its
 owner. Restart leaves an enabled passkey device locked, and a long supervisor
 pause locks the mesh; a key-unlocked device unlocks again by itself in both
 cases. Transient failures reconnect with bounded backoff after a successful
@@ -500,7 +501,7 @@ Routes live under `/v1/nexus/` only. The `/api/v1` prefix of the older
 | GET | `key/handoff` | Start a single-use identity hand-off and return the SDK's request JSON; local controller only |
 | POST | `device/check` | Advisory check that a device name folds to a free DNS label: `{name, code?}` (`device_name` is accepted in place of `name`); uses this account's group when joined, else the invite code's group. Answers `{label, available, conflicts, suggestion}`. The federation still refuses a collision on join or rename |
 | POST | `enable`, `disable`, `lock`, `device` | Local state; `device` sets `{device_name?, mesh_udp_port?}` (see [Dataplane port and router mapping](#dataplane-port-and-router-mapping)) |
-| POST | `invites`, `invites/cancel`, `join` | Invite a device into this account's top-level group with `{device_name, permissions? \| role?, ttl_sec?}`, or join as a new device with `{code}`. Without `permissions` or `role` the invite grants the `user` preset reduced to what this device holds |
+| POST | `invites`, `invites/cancel`, `join` | Invite a device into this account's top-level group with `{permissions? \| role?, ttl_sec?, device_name?}`, or join as a new device with `{code}`. The joining device names itself; `device_name` only labels the open invitation in `status`. Without `permissions` or `role` the invite grants the `user` preset reduced to what this device holds |
 | POST | `tree/{id}/invites` | Invite into group `{id}` with `{permissions? \| role?, ttl_sec?, device_name?}`; needs `add_child` or admin above it; the same default as `invites` |
 | POST | `invites/accept` | Join another network: accept `{code}` as an account that already joined |
 | GET | `memberships` | Groups this identity belongs to (`role` is `home` or `member`) and `group_node_id` |

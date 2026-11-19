@@ -97,6 +97,7 @@ export interface NexusStatus {
   group_node_id?: string;
   tunnel_ip?: string;
   device_name?: string;
+  hostname?: string;
   peer_count?: number;
   members: NexusDevice[];
   error?: string;

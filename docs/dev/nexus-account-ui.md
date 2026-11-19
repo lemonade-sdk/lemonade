@@ -258,7 +258,8 @@ show the local-setup guidance. Advanced management of an already unlocked
 server still follows the existing listener authorization rules.
 
 Users with verified invitation permission can open **Connect another device**,
-name the invited device and copy a single-use code or full token. Invitations
+pick a role and copy a single-use code or full token. The joining device
+names itself in **Enable Mesh**, prefilled with its host name. Invitations
 request a ten-minute lifetime. Closing the dialog does not revoke an invitation;
 it remains usable until consumption or server expiry.
 

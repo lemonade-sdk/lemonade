@@ -44,7 +44,7 @@ export function NexusSignInDialog({ service, onClose, onSignedIn, passkeyActive 
       if (revision !== request.current) return;
       setInspection(result);
       setAction(result.status.registered && result.status.has_network !== false ? 'return' : 'create');
-      setDeviceName(result.status.device_name || t('This computer'));
+      setDeviceName(result.status.device_name || result.status.hostname || t('This computer'));
     } catch (error) { if (revision === request.current) setError({ message: error instanceof TypeError ? t('Cannot reach the Lemonade server. Start it or check the connection in Settings.') : error instanceof Error ? error.message : String(error) }); }
     finally { if (revision === request.current) setChecking(false); }
   };
@@ -124,7 +124,6 @@ export function NexusAccountInviteDialog({ service, session, onClose }: {
   const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const id = useId();
-  const [deviceName, setDeviceName] = useState('');
   const [invite, setInvite] = useState<NexusInvite>();
   const [role, setRole] = useState<'user' | 'moderator'>('user');
   const [busy, setBusy] = useState(false);
@@ -152,14 +151,13 @@ export function NexusAccountInviteDialog({ service, session, onClose }: {
       <WorkspaceActionButton ref={copyRef} disabled={!expires} onClick={() => copy(code ? groupedInvitationCode(code) : invite.link_token)}>{code ? t('Copy invitation code') : t('Copy invitation')}</WorkspaceActionButton>
       {code && invite.link_token && <WorkspaceActionButton appearance="quiet" size="small" disabled={!expires} onClick={() => copy(invite.link_token)}>{t('Copy full invite token')}</WorkspaceActionButton>}
       <p className="nexus-hint">{t('The invitation works once. Closing this dialog does not revoke it.')}</p></> : <form onSubmit={event => {
-      event.preventDefault(); if (busy || !deviceName.trim()) return; setBusy(true); setError(undefined);
-      void service.invite(session, deviceName, role).then(setInvite).catch(error => setError(nexusInviteFailure(error))).finally(() => setBusy(false));
-    }}><label htmlFor={id}>{t('Device name')}</label><input autoFocus id={id} className="input" value={deviceName} disabled={busy} maxLength={128} onChange={event => setDeviceName(event.target.value)} placeholder={t('For example, my phone')} />
-      <label htmlFor={`${id}-role`}>{t('Role')}</label>
-      <select id={`${id}-role`} className="input" value={role} disabled={busy} onChange={event => setRole(event.target.value as 'user' | 'moderator')}><option value="user">{t('User')}</option><option value="moderator">{t('Moderator')}</option></select>
+      event.preventDefault(); if (busy) return; setBusy(true); setError(undefined);
+      void service.invite(session, role).then(setInvite).catch(error => setError(nexusInviteFailure(error))).finally(() => setBusy(false));
+    }}><label htmlFor={`${id}-role`}>{t('Role')}</label>
+      <select autoFocus id={`${id}-role`} className="input" value={role} disabled={busy} onChange={event => setRole(event.target.value as 'user' | 'moderator')}><option value="user">{t('User')}</option><option value="moderator">{t('Moderator')}</option></select>
       <p className="nexus-hint">{role === 'user' ? t('Connect to the mesh and run inference.') : t('Run inference, use MCP tools, manage models and jobs, and invite devices.')}</p>
       <p className="nexus-hint">{t('An invitation grants at most your own permissions.')}</p>
-      <WorkspaceActionButton type="submit" disabled={busy || !deviceName.trim()}>{busy ? t('Creating invitation…') : t('Create invitation')}</WorkspaceActionButton></form>}
+      <WorkspaceActionButton type="submit" disabled={busy}>{busy ? t('Creating invitation…') : t('Create invitation')}</WorkspaceActionButton></form>}
     {error && <FailureNotice notice={error} />}<div className="nexus-group-actions"><WorkspaceActionButton appearance="quiet" disabled={busy} onClick={onClose}>{t('Close')}</WorkspaceActionButton></div>
   </div></div>;
 }
