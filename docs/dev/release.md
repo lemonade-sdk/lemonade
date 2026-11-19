@@ -131,9 +131,9 @@ The [cpp_server_build_test_release.yml workflow](https://github.com/lemonade-sdk
 
 ### 6. Approve Windows Signing
 
-Lemonade .msi artifacts are signed by SignPath.io under their SignPath Foundation program. Thank you SignPath!
+Lemonade's Windows release files (both .msi installers and the `lemond.exe` and `lemonade.exe` binaries in the Windows embeddable .zip) are signed by SignPath.io under their SignPath Foundation program. Thank you SignPath!
 
-Every release must be manually approved on SignPath. After the Windows installer is built by the release action, a job called Sign MSI Installers with SignPath will start.
+Every release must be manually approved on SignPath. All Windows files go out in a single signing request, so there is one approval per release. After the Windows installers and embeddable archive are built by the release action, a job called Sign Windows Release with SignPath will start.
 
 Example from v10.7.0: https://github.com/lemonade-sdk/lemonade/actions/runs/27283434473/job/80587971984
 
