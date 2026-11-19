@@ -202,11 +202,13 @@ bool BoringtunMesh::start(const BoringtunConfig& config) {
             live.tunnel_ip == config.tunnel_ip &&
             live.server_tunnel_ip == config.server_tunnel_ip &&
             live.server_public_key == config.server_public_key &&
-            live.server_endpoint == config.server_endpoint) {
+            live.server_endpoint == config.server_endpoint &&
+            live.listen_port == config.listen_port) {
             return true;
         }
         // A re-join issues a fresh mesh IP/keys. Keeping the old plane would
-        // leave us handshaking with credentials the server has replaced.
+        // leave us handshaking with credentials the server has replaced. A
+        // new fixed listen port needs a new socket.
         spdlog::info("[BoringtunMesh] config changed — restarting dataplane");
         stop();
     }
@@ -807,7 +809,8 @@ MeshTunnelStatus BoringtunMesh::mesh_status() const {
         ms.tunnel_ip = impl_->tunnel_addr;
     }
     if (!ms.is_up) return ms;
-    ms.tunnel_mtu = impl_->tunnel_mtu.load();
+    ms.tunnel_mtu     = impl_->tunnel_mtu.load();
+    ms.dataplane_port = impl_->dp.bound_port();
 
     std::map<std::string, Impl::RelayPath> relayed;
     {

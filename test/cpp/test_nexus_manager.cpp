@@ -1125,9 +1125,10 @@ void check_identity_rules(const std::function<void(bool, const char*)>& check) {
     check(access::account_file_tag("ed25519:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstu=").size() == 16, "An account tag is 16 characters");
     check(access::account_file_tag("").empty() && access::account_file_tag("ed25519:../x").empty(), "A malformed key has no tag");
     const json previous = {{"server", "sn01.example"}, {"genesis_pubkey", "g"}, {"tier1_epoch", 7}, {"tier1_chain", "c0ffee"}, {"device_name", "My laptop"},
-        {"user_id", "u1"}, {"unlock", "device_key"}, {"credential_id", "c1"}, {"public_key", "ed25519:a"}};
+        {"mesh_udp_port", 51900}, {"user_id", "u1"}, {"unlock", "device_key"}, {"credential_id", "c1"}, {"public_key", "ed25519:a"}};
     const auto fresh = access::account_for_key(previous, nullptr, "ed25519:b");
-    check(fresh == json({{"server", "sn01.example"}, {"genesis_pubkey", "g"}, {"tier1_epoch", 7}, {"tier1_chain", "c0ffee"}, {"device_name", "My laptop"}, {"public_key", "ed25519:b"}}),
+    check(fresh == json({{"server", "sn01.example"}, {"genesis_pubkey", "g"}, {"tier1_epoch", 7}, {"tier1_chain", "c0ffee"}, {"device_name", "My laptop"},
+                         {"mesh_udp_port", 51900}, {"public_key", "ed25519:b"}}),
           "A new key's account carries the network and machine facts only, the epoch floor with its chain");
     const auto restored = access::account_for_key(previous, json{{"device_name", "Other"}, {"user_id", "u2"}, {"unlock", "device_key"}}, "ed25519:b");
     check(restored.at("device_name") == "Other" && restored.at("user_id") == "u2" && restored.at("server") == "sn01.example" &&
@@ -1472,6 +1473,18 @@ int main() {
         check(access::session_dropped(json{{"needs_rejoin", true}, {"peer_count", 0}}), "The SDK's rejoin flag starts a join");
         check(!access::session_dropped(json{{"needs_rejoin", false}}) && !access::session_dropped(json::object()) &&
               !access::session_dropped(json::array()), "Without the flag, or with a malformed status, the session stays");
+        // ln_mesh_enable_config answers LN_OK and leaves the dataplane down when a fixed
+        // port cannot be bound, so the port in use decides.
+        check(access::mesh_transport_failure(true, 0, json{{"dataplane_port", 40123}}).empty() &&
+              access::mesh_transport_failure(true, 51900, json{{"dataplane_port", 51900}}).empty(), "A started transport on the configured port is up");
+        check(access::mesh_transport_failure(false, 51900, json{{"dataplane_port", 51900}}) == "Could not start the mesh transport",
+              "A refused enable or expose is a transport failure");
+        const auto unbound = access::mesh_transport_failure(true, 51900, json{{"dataplane_port", 0}});
+        check(unbound.find("51900") != std::string::npos && unbound.find("free port") != std::string::npos, "A fixed port that is not bound names the port");
+        check(access::mesh_transport_failure(true, 51900, json::object()).find("51900") != std::string::npos &&
+              access::mesh_transport_failure(true, 51900, json{{"dataplane_port", "51900"}}).find("51900") != std::string::npos,
+              "A missing or malformed port report counts as unbound");
+        check(access::mesh_transport_failure(true, 0, json::object()).empty(), "Any port: the SDK's answer alone decides");
         check_access_rules(check);
         check_identity_rules(check);
         check_role_presets(check);
@@ -1555,6 +1568,9 @@ int main() {
             request("selection", R"({"target":"local"})", 409);
             request("selection", R"({"target":5})", 400);
             check(enabled.contains("mesh_port") && enabled.contains("genesis_key_set"), "Status reports the SDK mesh port and Genesis key state");
+            check(enabled.at("mesh_udp_port") == 0 && enabled.at("dataplane_port") == 0 && enabled.at("mapped_endpoint") == "" &&
+                  enabled.at("mapping_protocol") == "" && enabled.at("tunnel_mtu") == 0,
+                  "Status reports the SDK's dataplane port, router mapping and tunnel MTU, and no fixed port by default");
             check(enabled.at("available") && enabled.at("enabled") && enabled.at("locked"), "SDK enabled without unlocking");
             const bool system_identity = enabled.value("identity_source", "") == "system";
             check(system_identity == std::filesystem::exists(root / "nexus/identity.json"), "Only a system service persists an identity file");
@@ -1603,6 +1619,17 @@ int main() {
             }
             auto named = request("device", R"({"device_name":"My laptop"})", 200);
             check(named.at("device_name") == "My laptop", "Device name updated");
+            request("device", R"({"mesh_udp_port":70000})", 400);
+            request("device", R"({"mesh_udp_port":-1})", 400);
+            request("device", R"({"mesh_udp_port":"51900"})", 400);
+            auto fixed = request("device", R"({"mesh_udp_port":51900})", 200);
+            check(fixed.at("mesh_udp_port") == 51900 && fixed.at("device_name") == "My laptop" && fixed.at("dataplane_port") == 0,
+                  "The mesh UDP port is saved beside the device name and takes effect when the mesh starts");
+            {
+                std::ifstream saved_input(root / "nexus/account.json");
+                const auto saved = nlohmann::json::parse(saved_input, nullptr, false);
+                check(saved.is_object() && saved.value("mesh_udp_port", 0) == 51900, "The mesh UDP port lives in account.json");
+            }
             request("lock", "{}", 200);
             request("disable", "{}", 200);
             {
@@ -1705,6 +1732,7 @@ int main() {
             const auto status = restored.status();
             check(status.at("enabled") && status.at("locked") && !status.at("mesh_up"), "Restarts enabled and locked");
             check(status.at("device_name") == "My laptop", "Name survives restart");
+            check(status.at("mesh_udp_port") == 51900, "The mesh UDP port survives restart");
             restored.disable();
         }
         {

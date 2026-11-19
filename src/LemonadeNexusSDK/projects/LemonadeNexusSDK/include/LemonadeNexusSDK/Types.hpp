@@ -480,6 +480,18 @@ struct MeshTunnelStatus {
     /// server carried when it was last probed (BoringtunMesh::
     /// probe_tunnel_mtu). 0 while the mesh is down.
     uint32_t    tunnel_mtu{0};
+    /// The local UDP port the dataplane socket is bound to: the
+    /// MeshConfig::listen_port when one is set, or the port the OS chose.
+    /// 0 while the dataplane is down.
+    uint16_t    dataplane_port{0};
+    /// The "a.b.c.d:port" the router maps to the dataplane port (PCP or
+    /// NAT-PMP), published as this device's mesh endpoint while the lease
+    /// is live. Empty when no mapping is live: the router speaks neither
+    /// protocol, refused, or the lease ended.
+    std::string mapped_endpoint;
+    /// The protocol that obtained mapped_endpoint: "pcp" or "natpmp"; empty
+    /// when no mapping is live.
+    std::string mapping_protocol;
 };
 
 /// One session move: the Tier 1 server that issued the session left the
@@ -519,6 +531,15 @@ struct MeshConfig {
     /// every peer on a relay when one is available.
     bool     prefer_direct{true};
     bool     auto_connect{true};             ///< Auto-connect to discovered peers
+    /// The local UDP port of the mesh dataplane socket. 0 (the default)
+    /// takes a port the OS chooses at every start. A non-zero port is bound
+    /// at every start and rebind (join, enable_mesh, resume), exclusively,
+    /// so a router mapping or a manual port forward to it stays valid; a
+    /// port that cannot be bound is an error, never a different port.
+    /// enable_mesh with a port other than the one in use restarts the
+    /// dataplane on the new port. MeshTunnelStatus::dataplane_port reports
+    /// the port in use.
+    uint16_t listen_port{0};
 };
 
 // ---------------------------------------------------------------------------

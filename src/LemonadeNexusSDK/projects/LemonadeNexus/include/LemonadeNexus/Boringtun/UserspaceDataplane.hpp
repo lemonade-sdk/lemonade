@@ -104,14 +104,16 @@ public:
     /// not with start()/stop().
     void suspend();
 
-    /// Replace the UDP socket: bind a new one (the configured port, or any
-    /// port when that one is taken) and start the rx/timer threads again,
-    /// keeping every peer, route, and session. For a resume after
-    /// suspend(), and for a socket a suspension defuncted while the plane
-    /// kept running. The caller re-keys the peers afterwards (the new
-    /// source port is a new path for them). Returns false when the plane
-    /// was never started or the bind failed; false after a running plane
-    /// leaves it suspended. Not thread-safe with start()/stop().
+    /// Replace the UDP socket: bind a new one on the configured port (any
+    /// port when that is 0) and start the rx/timer threads again, keeping
+    /// every peer, route, and session. For a resume after suspend(), and
+    /// for a socket a suspension defuncted while the plane kept running.
+    /// The caller re-keys the peers afterwards (the new source port is a
+    /// new path for them). Returns false when the plane was never started
+    /// or the bind failed; a configured port that is taken is a failure,
+    /// never a different port. False after a running plane leaves it
+    /// suspended; rebind() may be called again. Not thread-safe with
+    /// start()/stop().
     [[nodiscard]] bool rebind();
 
     /// True between suspend() and rebind().
@@ -287,10 +289,12 @@ private:
 
     /// Log a recvfrom() error that is not a timeout, once per start().
     void note_rx_error();
-    /// Create and bind the UDP socket for `port` (0 = any) with the plane's
-    /// socket options. Returns the socket and the port it bound, or
-    /// kInvalidSocket.
-    [[nodiscard]] intptr_t open_socket(uint16_t port, uint16_t& bound_port) const;
+    /// Create and bind the UDP socket for `port` with the plane's socket
+    /// options. 0 takes any port; a non-zero port is bound exclusively, so
+    /// a second socket cannot share it. Returns the socket and the port it
+    /// bound, or kInvalidSocket with the OS error in `error`.
+    [[nodiscard]] intptr_t open_socket(uint16_t port, uint16_t& bound_port,
+                                       std::string& error) const;
     /// Start the rx workers and the timer thread on the current socket.
     void start_threads();
     /// Stop the threads and close the socket; peers and routes stay.

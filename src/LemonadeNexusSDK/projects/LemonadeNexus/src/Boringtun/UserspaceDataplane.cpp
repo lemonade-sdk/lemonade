@@ -57,6 +57,17 @@ uint64_t pack_sockaddr(const sockaddr_in& addr) {
     return pack_endpoint(ntohl(addr.sin_addr.s_addr), ntohs(addr.sin_port));
 }
 
+/// The OS error of the last socket call, as "text (code)".
+std::string last_socket_error() {
+#ifdef _WIN32
+    const int err = WSAGetLastError();
+    return "WSA error (" + std::to_string(err) + ")";
+#else
+    const int err = errno;
+    return std::string(std::strerror(err)) + " (" + std::to_string(err) + ")";
+#endif
+}
+
 std::string endpoint_to_string(uint64_t packed) {
     if (packed == 0) return {};
     uint32_t ip = static_cast<uint32_t>(packed >> 16);
@@ -164,8 +175,12 @@ bool UserspaceDataplane::start(const Config& config) {
     }
     config_ = config;
     uint16_t bound = 0;
-    const intptr_t sock = open_socket(config.listen_port, bound);
-    if (sock == static_cast<intptr_t>(kInvalidSocket)) return false;
+    std::string error;
+    const intptr_t sock = open_socket(config.listen_port, bound, error);
+    if (sock == static_cast<intptr_t>(kInvalidSocket)) {
+        spdlog::error("[dataplane] failed to bind UDP port {}: {}", config.listen_port, error);
+        return false;
+    }
     bound_port_ = bound;
     socket_ = sock;
     rx_error_logged_ = false;
@@ -177,7 +192,8 @@ bool UserspaceDataplane::start(const Config& config) {
     return true;
 }
 
-intptr_t UserspaceDataplane::open_socket(uint16_t port, uint16_t& bound_port) const {
+intptr_t UserspaceDataplane::open_socket(uint16_t port, uint16_t& bound_port,
+                                         std::string& error) const {
 #ifdef _WIN32
     static std::once_flag wsa_once;
     std::call_once(wsa_once, [] {
@@ -188,13 +204,24 @@ intptr_t UserspaceDataplane::open_socket(uint16_t port, uint16_t& bound_port) co
 
     socket_t sock = ::socket(AF_INET, SOCK_DGRAM, 0);
     if (sock == kInvalidSocket) {
-        spdlog::error("[dataplane] failed to create UDP socket");
+        error = "socket(): " + last_socket_error();
         return static_cast<intptr_t>(kInvalidSocket);
     }
 
-    int reuse = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
-               reinterpret_cast<const char*>(&reuse), sizeof(reuse));
+    // A fixed port is bound exclusively: a second instance on the same port
+    // must fail instead of sharing the datagrams. SO_REUSEADDR lets a second
+    // UDP bind succeed on Linux and BSD; on Windows exclusive use is opt-in.
+    int exclusive = 1;
+    if (port == 0) {
+        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
+                   reinterpret_cast<const char*>(&exclusive), sizeof(exclusive));
+    }
+#ifdef _WIN32
+    else {
+        setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+                   reinterpret_cast<const char*>(&exclusive), sizeof(exclusive));
+    }
+#endif
 #ifdef __APPLE__
     // A send on a socket iOS defuncted during a suspension must fail with an
     // error, not kill the process.
@@ -222,15 +249,9 @@ intptr_t UserspaceDataplane::open_socket(uint16_t port, uint16_t& bound_port) co
     bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     bind_addr.sin_port        = htons(port);
     if (bind(sock, reinterpret_cast<const sockaddr*>(&bind_addr), sizeof(bind_addr)) != 0) {
-#ifdef _WIN32
-        const int err = WSAGetLastError();
-        spdlog::error("[dataplane] failed to bind UDP port {} (WSA error {})", port, err);
-#else
         // EPERM here on macOS means the App Sandbox lacks the
         // com.apple.security.network.server entitlement.
-        const int err = errno;
-        spdlog::error("[dataplane] failed to bind UDP port {}: {}", port, std::strerror(err));
-#endif
+        error = last_socket_error();
         close_socket(sock);
         return static_cast<intptr_t>(kInvalidSocket);
     }
@@ -279,13 +300,15 @@ bool UserspaceDataplane::rebind() {
     if (was_running) close_plane();
     const uint16_t old_port = bound_port_;
     uint16_t bound = 0;
-    intptr_t sock = open_socket(config_.listen_port, bound);
-    if (sock == static_cast<intptr_t>(kInvalidSocket) && config_.listen_port != 0) {
-        // The configured port may still be held by the defunct socket's
-        // owner; any port serves, the peers learn it from the handshake.
-        sock = open_socket(0, bound);
-    }
+    std::string error;
+    const intptr_t sock = open_socket(config_.listen_port, bound, error);
     if (sock == static_cast<intptr_t>(kInvalidSocket)) {
+        // A fixed port is what a port forward points at: another port would
+        // carry nothing from outside, so the plane stays suspended until a
+        // rebind gets the port.
+        spdlog::warn("[dataplane] rebind: failed to bind UDP port {}: {}; the dataplane stays "
+                     "suspended",
+                     config_.listen_port, error);
         suspended_ = true;
         return false;
     }

@@ -1,5 +1,5 @@
-// Interface enumeration for LAN-direct paths on Windows:
-// GetAdaptersAddresses (iphlpapi).
+// Interface enumeration and default-gateway lookup for LAN-direct paths on
+// Windows: GetAdaptersAddresses and GetBestRoute2 (iphlpapi).
 
 #ifdef _WIN32
 
@@ -18,6 +18,8 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -97,6 +99,45 @@ std::vector<InterfaceAddress> list_interface_addresses() {
         }
     }
     return out;
+}
+
+std::optional<GatewayRoute> default_gateway_ipv4() {
+    // A public destination selects the default route; nothing is sent to it.
+    SOCKADDR_INET destination{};
+    destination.Ipv4.sin_family = AF_INET;
+    destination.Ipv4.sin_addr.s_addr = htonl(0x08080808U);
+    MIB_IPFORWARD_ROW2 row{};
+    SOCKADDR_INET source{};
+    if (GetBestRoute2(nullptr, 0, nullptr, &destination, 0, &row, &source) != NO_ERROR) {
+        return std::nullopt;
+    }
+    // A more specific route toward the destination (a VPN's 0.0.0.0/1 split
+    // or a static route) is not the default route, and an on-link route has
+    // no gateway.
+    if (row.DestinationPrefix.PrefixLength != 0) return std::nullopt;
+    if (row.NextHop.si_family != AF_INET || row.NextHop.Ipv4.sin_addr.s_addr == 0) {
+        return std::nullopt;
+    }
+    if (source.si_family != AF_INET) return std::nullopt;
+
+    char gateway[INET_ADDRSTRLEN] = {};
+    char local[INET_ADDRSTRLEN] = {};
+    if (inet_ntop(AF_INET, &row.NextHop.Ipv4.sin_addr, gateway, sizeof gateway) == nullptr ||
+        inet_ntop(AF_INET, &source.Ipv4.sin_addr, local, sizeof local) == nullptr) {
+        return std::nullopt;
+    }
+    GatewayRoute route;
+    route.gateway = gateway;
+    route.local_address = local;
+    if (route.local_address.empty() || !gateway_address_usable(route.gateway)) {
+        return std::nullopt;
+    }
+    wchar_t alias[IF_MAX_STRING_SIZE + 1] = {};
+    if (ConvertInterfaceLuidToAlias(&row.InterfaceLuid, alias, IF_MAX_STRING_SIZE + 1) ==
+        NO_ERROR) {
+        route.interface_name = narrow(alias);
+    }
+    return route;
 }
 
 }  // namespace lnsdk

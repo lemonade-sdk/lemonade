@@ -7,7 +7,10 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <charconv>
 #include <optional>
+#include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -142,6 +145,87 @@ std::vector<std::string> select_local_endpoints(const std::vector<InterfaceAddre
         out.push_back(itf.address + ":" + std::to_string(port));
     }
     return out;
+}
+
+bool gateway_address_usable(const std::string& gateway) {
+    if (endpoint_scope(gateway + ":1") == AddressScope::Private) return true;
+    const auto ip = parse_address(gateway);
+    return ip && in_block(*ip, 0xA9FE0000, 16);
+}
+
+namespace {
+
+/// The next whitespace-delimited field of `line`, consumed from its front.
+std::string_view next_field(std::string_view& line) {
+    const auto start = line.find_first_not_of(" \t");
+    if (start == std::string_view::npos) {
+        line = {};
+        return {};
+    }
+    line.remove_prefix(start);
+    const auto end = line.find_first_of(" \t");
+    const auto field = line.substr(0, end);
+    line.remove_prefix(end == std::string_view::npos ? line.size() : end);
+    return field;
+}
+
+template <typename T>
+std::optional<T> parse_number(std::string_view field, int base) {
+    T value{};
+    const auto [ptr, ec] = std::from_chars(field.data(), field.data() + field.size(), value, base);
+    if (ec != std::errc{} || ptr != field.data() + field.size()) return std::nullopt;
+    return value;
+}
+
+/// The dotted form of a /proc/net/route address: 8 hex digits of the
+/// address in little-endian byte order ("0101A8C0" is 192.168.1.1).
+std::optional<std::string> dotted_from_route_hex(std::string_view field) {
+    if (field.size() != 8) return std::nullopt;
+    const auto value = parse_number<uint32_t>(field, 16);
+    if (!value) return std::nullopt;
+    return std::to_string(*value & 0xff) + "." + std::to_string((*value >> 8) & 0xff) + "." +
+           std::to_string((*value >> 16) & 0xff) + "." + std::to_string((*value >> 24) & 0xff);
+}
+
+}  // namespace
+
+std::optional<GatewayRoute> parse_proc_net_route(std::string_view text,
+                                                 const std::vector<InterfaceAddress>& interfaces) {
+    constexpr unsigned kRtfUp = 0x0001;
+    constexpr unsigned kRtfGateway = 0x0002;
+    std::optional<GatewayRoute> best;
+    unsigned long best_metric = 0;
+    while (!text.empty()) {
+        const auto newline = text.find('\n');
+        std::string_view line = text.substr(0, newline);
+        text.remove_prefix(newline == std::string_view::npos ? text.size() : newline + 1);
+        if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+
+        const auto iface = next_field(line);
+        if (iface.empty() || iface == "Iface") continue;
+        const auto destination = next_field(line);
+        const auto gateway_hex = next_field(line);
+        const auto flags = parse_number<unsigned>(next_field(line), 16);
+        next_field(line);  // RefCnt
+        next_field(line);  // Use
+        const auto metric = parse_number<unsigned long>(next_field(line), 10);
+        if (destination != "00000000" || !flags || !metric) continue;
+        if ((*flags & (kRtfUp | kRtfGateway)) != (kRtfUp | kRtfGateway)) continue;
+        const auto gateway = dotted_from_route_hex(gateway_hex);
+        if (!gateway || *gateway == "0.0.0.0") continue;
+        if (best && *metric >= best_metric) continue;
+
+        GatewayRoute route;
+        route.gateway = *gateway;
+        route.interface_name = std::string(iface);
+        const auto itf = std::find_if(interfaces.begin(), interfaces.end(), [&](const auto& a) {
+            return a.name == iface;
+        });
+        if (itf != interfaces.end()) route.local_address = itf->address;
+        best = std::move(route);
+        best_metric = *metric;
+    }
+    return best;
 }
 
 bool lan_endpoint_usable(const std::string& endpoint, bool server_on_loopback) {

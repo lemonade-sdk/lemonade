@@ -2,6 +2,7 @@
 
 #include <LemonadeNexusSDK/HolePunch.hpp>
 #include <LemonadeNexusSDK/LanPaths.hpp>
+#include <LemonadeNexusSDK/PortMapper.hpp>
 #include <LemonadeNexusSDK/RelayFallback.hpp>
 #include <LemonadeNexusSDK/Types.hpp>
 
@@ -120,6 +121,10 @@ inline constexpr std::chrono::seconds kTunnelAliveWindow{20};
 ///      stun_refresh_interval_sec (0 turns it off)
 ///   4. Reports that endpoint via heartbeat (POST /api/mesh/heartbeat). An
 ///      empty endpoint (none learned yet) leaves the stored endpoint as is.
+///      While the router mapping of step 9 is live, the heartbeat carries
+///      the mapped endpoint instead; the reflexive one returns when the
+///      mapping ends. A change of the published endpoint goes out in a
+///      heartbeat at once.
 ///      The heartbeat also reports this device's LAN endpoints
 ///      (select_local_endpoints over list_interface_addresses, with the
 ///      dataplane port), read again every kLanRefreshInterval and in every
@@ -134,6 +139,14 @@ inline constexpr std::chrono::seconds kTunnelAliveWindow{20};
 ///      prefer_direct is set.
 ///   8. Checks the client's registered certificates and renews due ones on a
 ///      separate thread, so a slow certificate request never delays steps 1-7
+///   9. Keeps a router mapping for the dataplane port (PortMapper: PCP, then
+///      NAT-PMP). The first attempt follows the first STUN answer, or the
+///      first pass when STUN is off; later ones come when the mapper says
+///      they are due, after a resume, and when the dataplane's bound port
+///      changed. The attempt runs at the end of a pass, after the pass's
+///      heartbeat, so its bounded wait never delays the join's first
+///      heartbeat and peer list. A router without either protocol changes
+///      nothing. stop() releases the mapping.
 ///
 /// Some events make a pass run steps 1, 3, 5 and 7 at once instead of on
 /// their intervals, with a new punch burst for every peer still being probed:
@@ -197,6 +210,8 @@ public:
 
     /// Get current mesh status (thread-safe snapshot). `tunnel_up` is read
     /// live from the dataplane (tunnel_alive), not from the last monitor pass.
+    /// `mapped_endpoint` and `mapping_protocol` are read live from the port
+    /// mapper.
     [[nodiscard]] MeshTunnelStatus status() const;
 
     /// Get current mesh peers (thread-safe snapshot).
@@ -247,6 +262,12 @@ public:
     /// The LAN endpoints this device reports now (thread-safe snapshot).
     [[nodiscard]] std::vector<std::string> local_endpoints() const;
 
+    /// Replace the port mapper's options (tests point it at a fake gateway
+    /// with a fixed clock). Call before start(). Without this call the
+    /// mapper uses the defaults of PortMapperOptions with `server_scope` set
+    /// to the scope of the session server's mesh endpoint at start().
+    void set_port_mapper_options(PortMapperOptions options);
+
     /// Interval between verifications of the Tier 1 servers that relay
     /// choice ranks. Tree calls also verify them, but a device that makes
     /// none would otherwise keep its first answer.
@@ -284,6 +305,16 @@ private:
     /// Read this host's LAN addresses again and choose the LAN endpoints to
     /// report. Returns true when the reported list changed.
     bool do_lan_refresh();
+
+    /// Obtain or renew the router mapping for the dataplane's bound port
+    /// (PortMapper::maintain) and log a published or ended mapping. Blocks
+    /// for the mapper's bounded wait. Returns true when the published
+    /// endpoint changed.
+    bool do_port_mapping();
+
+    /// The endpoint the heartbeat publishes: the mapped endpoint while the
+    /// mapping is live, else the reflexive one (empty until learned).
+    std::string published_endpoint() const;
 
     /// Run one hole-punch pass. Returns when the next probe is due.
     std::chrono::steady_clock::time_point do_punch();
@@ -398,6 +429,11 @@ private:
     std::atomic<bool>        cert_busy_{false};          // cert_thread_ still working
     std::unique_ptr<RelayFallback> relay_fallback_;      // used by the loop thread only
     std::unique_ptr<HolePuncher>   hole_puncher_;        // used by the loop thread only
+    std::optional<PortMapperOptions> port_mapper_options_;  // set_port_mapper_options
+    // Created by start() and reset by stop(), both under mutex_; the loop
+    // thread calls maintain() and release() without it.
+    std::unique_ptr<PortMapper>    port_mapper_;
+    uint16_t                       mapped_port_{0};      // last port given to maintain()
 };
 
 } // namespace lnsdk

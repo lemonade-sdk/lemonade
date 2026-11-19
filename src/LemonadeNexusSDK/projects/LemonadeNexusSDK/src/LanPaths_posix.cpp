@@ -1,5 +1,6 @@
-// Interface enumeration for LAN-direct paths on POSIX systems (Linux, macOS,
-// iOS, and Android API 24 or later): getifaddrs.
+// Interface enumeration and default-gateway lookup for LAN-direct paths on
+// POSIX systems (Linux, macOS, iOS, and Android API 24 or later): getifaddrs,
+// /proc/net/route on Linux, and the PF_ROUTE sysctl on Apple platforms.
 
 #if !defined(_WIN32)
 
@@ -11,18 +12,23 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+#include <algorithm>
 #include <bit>
 #include <cstdint>
+#include <cstring>
+#include <string>
 
 #if defined(__linux__)
 #include <cstdio>
 #elif defined(__APPLE__)
 #include <TargetConditionals.h>
-// The media ioctl and its header exist in the macOS SDK only; iOS reports
-// no link speed through this path.
+// The media ioctl, its header and net/route.h exist in the macOS SDK only;
+// iOS reports no link speed and no default gateway through these paths.
 #if TARGET_OS_OSX
 #include <net/if_media.h>
+#include <net/route.h>
 #include <sys/ioctl.h>
+#include <sys/sysctl.h>
 #include <unistd.h>
 #endif
 #endif
@@ -150,6 +156,139 @@ std::vector<InterfaceAddress> list_interface_addresses() {
     }
     freeifaddrs(list);
     return out;
+}
+
+namespace {
+
+#if defined(__linux__)
+
+std::optional<GatewayRoute> platform_default_gateway() {
+    // Android refuses /proc/net/route to apps on recent releases; the open
+    // fails and the lookup reports no gateway.
+    std::FILE* f = std::fopen("/proc/net/route", "re");
+    if (f == nullptr) return std::nullopt;
+    std::string text;
+    char chunk[4096];
+    for (;;) {
+        const auto n = std::fread(chunk, 1, sizeof chunk, f);
+        text.append(chunk, n);
+        if (n < sizeof chunk) break;
+    }
+    const bool failed = std::ferror(f) != 0;
+    std::fclose(f);
+    if (failed) return std::nullopt;
+    return parse_proc_net_route(text, list_interface_addresses());
+}
+
+#elif defined(__APPLE__) && TARGET_OS_OSX
+
+/// The IPv4 address of the up interface named `name`, or empty.
+std::string address_of_interface(const std::vector<InterfaceAddress>& interfaces,
+                                 const std::string& name) {
+    const auto itf = std::find_if(interfaces.begin(), interfaces.end(), [&](const auto& a) {
+        return a.up && a.name == name;
+    });
+    return itf == interfaces.end() ? std::string{} : itf->address;
+}
+
+/// Socket addresses in a routing message are aligned to 4 bytes; a zero
+/// sa_len still takes one slot (route(8) and netstat use this rule).
+std::size_t route_sockaddr_size(uint8_t sa_len) {
+    return sa_len > 0 ? 1 + ((sa_len - 1) | (sizeof(uint32_t) - 1)) : sizeof(uint32_t);
+}
+
+bool zero_ipv4(const sockaddr* sa) {
+    if (sa == nullptr || sa->sa_len == 0) return true;
+    if (sa->sa_family != AF_INET || sa->sa_len < sizeof(sockaddr_in)) return false;
+    sockaddr_in in{};
+    std::memcpy(&in, sa, sizeof in);
+    return in.sin_addr.s_addr == 0;
+}
+
+std::optional<GatewayRoute> platform_default_gateway() {
+    int mib[6] = {CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_FLAGS, RTF_GATEWAY};
+    std::size_t len = 0;
+    if (sysctl(mib, 6, nullptr, &len, nullptr, 0) != 0 || len == 0) return std::nullopt;
+    // The table can grow between the size query and the read.
+    std::vector<char> buffer(len + 1024);
+    len = buffer.size();
+    if (sysctl(mib, 6, buffer.data(), &len, nullptr, 0) != 0) return std::nullopt;
+
+    const auto interfaces = list_interface_addresses();
+    std::optional<GatewayRoute> scoped;
+    const char* const end = buffer.data() + len;
+    for (const char* p = buffer.data(); p + sizeof(rt_msghdr) <= end;) {
+        rt_msghdr rtm{};
+        std::memcpy(&rtm, p, sizeof rtm);
+        if (rtm.rtm_msglen < sizeof(rt_msghdr) || p + rtm.rtm_msglen > end) break;
+        const char* const record_end = p + rtm.rtm_msglen;
+        const char* const record = p;
+        p = record_end;
+        if (rtm.rtm_version != RTM_VERSION) continue;
+        if ((rtm.rtm_flags & (RTF_UP | RTF_GATEWAY)) != (RTF_UP | RTF_GATEWAY)) continue;
+        if ((rtm.rtm_flags & RTF_HOST) != 0) continue;
+
+        const sockaddr* addrs[RTAX_MAX] = {};
+        const char* cursor = record + sizeof(rt_msghdr);
+        bool truncated = false;
+        for (int i = 0; i < RTAX_MAX; ++i) {
+            if ((rtm.rtm_addrs & (1 << i)) == 0) continue;
+            if (cursor + 1 > record_end) {
+                truncated = true;
+                break;
+            }
+            const auto* sa = reinterpret_cast<const sockaddr*>(cursor);
+            const auto size = route_sockaddr_size(sa->sa_len);
+            if (cursor + size > record_end) {
+                truncated = true;
+                break;
+            }
+            addrs[i] = sa;
+            cursor += size;
+        }
+        if (truncated) continue;
+        // The default route has destination 0.0.0.0 and no mask (or a zero mask).
+        if ((rtm.rtm_addrs & RTA_DST) == 0 || !zero_ipv4(addrs[RTAX_DST])) continue;
+        if ((rtm.rtm_addrs & RTA_NETMASK) != 0 && !zero_ipv4(addrs[RTAX_NETMASK])) continue;
+        const sockaddr* gw = addrs[RTAX_GATEWAY];
+        if (gw == nullptr || gw->sa_family != AF_INET || gw->sa_len < sizeof(sockaddr_in)) continue;
+        sockaddr_in gw_in{};
+        std::memcpy(&gw_in, gw, sizeof gw_in);
+        char text[INET_ADDRSTRLEN] = {};
+        if (inet_ntop(AF_INET, &gw_in.sin_addr, text, sizeof text) == nullptr) continue;
+
+        GatewayRoute route;
+        route.gateway = text;
+        char name[IF_NAMESIZE] = {};
+        if (if_indextoname(rtm.rtm_index, name) != nullptr) route.interface_name = name;
+        route.local_address = address_of_interface(interfaces, route.interface_name);
+#ifdef RTF_IFSCOPE
+        // An interface-scoped default route is a secondary path; the
+        // unscoped one is the route the system uses.
+        if ((rtm.rtm_flags & RTF_IFSCOPE) != 0) {
+            if (!scoped) scoped = std::move(route);
+            continue;
+        }
+#endif
+        return route;
+    }
+    return scoped;
+}
+
+#else
+
+std::optional<GatewayRoute> platform_default_gateway() { return std::nullopt; }
+
+#endif
+
+}  // namespace
+
+std::optional<GatewayRoute> default_gateway_ipv4() {
+    auto route = platform_default_gateway();
+    if (!route || route->local_address.empty() || !gateway_address_usable(route->gateway)) {
+        return std::nullopt;
+    }
+    return route;
 }
 
 }  // namespace lnsdk

@@ -85,6 +85,13 @@ nlohmann::json device_permissions(const nlohmann::json& current, bool see, bool 
 std::pair<int, std::string> assignment_error(const std::string& reason);
 uint64_t newer_tier1_epoch(const nlohmann::json& membership, uint64_t saved);
 bool session_dropped(const nlohmann::json& mesh_status);
+/// Why the mesh transport is not up after `ln_mesh_enable` or `ln_mesh_enable_config`
+/// and `ln_mesh_expose_service`, or "" when it is. `started` is whether those calls
+/// answered LN_OK; `port` is the configured `mesh_udp_port` (0 = any port) and
+/// `mesh_status` the SDK's `ln_mesh_status` report. The SDK answers LN_OK and leaves
+/// the dataplane down when a fixed port cannot be bound, so with a fixed port the
+/// `dataplane_port` in use decides, and the text names the port.
+std::string mesh_transport_failure(bool started, int port, const nlohmann::json& mesh_status);
 /// Decides the identity source from the process role, and nothing else:
 /// Windows always User (LemonadeServer.exe runs as the signed-in user); macOS Handoff as
 /// root (the LaunchDaemon cannot reach a login keychain) and User otherwise; Linux System
@@ -96,7 +103,8 @@ const char* identity_source_name(IdentitySource source);
 std::string account_file_tag(const std::string& pubkey);
 /// The account that belongs to `pubkey` when another identity's account is active:
 /// `archived` (that key's account, or null) with `server`, `genesis_pubkey`,
-/// `tier1_epoch` and `device_name` carried from `previous` when it has none of its own.
+/// `tier1_epoch`, `device_name` and `mesh_udp_port` carried from `previous` when it has
+/// none of its own.
 /// Those are facts about the network and the machine, not about the identity; the
 /// Genesis pin in particular must not drop with a key change. `public_key` is set.
 nlohmann::json account_for_key(const nlohmann::json& previous, const nlohmann::json& archived, const std::string& pubkey);
