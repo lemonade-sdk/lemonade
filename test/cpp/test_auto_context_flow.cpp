@@ -60,6 +60,25 @@ int main() {
     CHECK(resolve(cpu_llama, 4.0, false) == 4096);
     CHECK(resolve(cpu_llama, 4.0, true) == AUTO_CTX_NO_CAPACITY);
 
+    // The effective backend wins over llamacpp's GPU catalog default.
+    const auto requested_gpu = fixture("llamacpp", 6.0, DEVICE_GPU);
+    CHECK(auto_context_device_for_backend(requested_gpu, "cpu") == DEVICE_CPU);
+    CHECK(auto_context_device_for_backend(requested_gpu, "cuda") == DEVICE_GPU);
+    CHECK(auto_context_device_for_backend(requested_gpu, "rocm") == DEVICE_GPU);
+    const auto other_recipe = fixture("ds4", 6.0, DEVICE_GPU);
+    CHECK(auto_context_device_for_backend(other_recipe, "cpu") == DEVICE_GPU);
+    auto selected_cpu = requested_gpu;
+    selected_cpu.device = auto_context_device_for_backend(selected_cpu, "cpu");
+    CHECK(resolve(requested_gpu, 2.0, true) == AUTO_CTX_NO_CAPACITY);
+    CHECK(resolve(selected_cpu, 20.0, true) >= 4096);
+
+    // Rule-head admission must test its actual 2048-token window (not the
+    // GGUF base model's 128k context, nor a generic 4096-token floor).
+    auto rule_head = fixture("llamacpp", 3.0, DEVICE_GPU);
+    rule_head.max_context_window = backends::llamacpp::RULE_HEAD_ROUTER_CTX_SIZE;
+    CHECK(resolve(rule_head, 16.0, true) == rule_head.max_context_window);
+    CHECK(resolve(rule_head, 4.0, true) == AUTO_CTX_NO_CAPACITY);
+
     // DS4 owns its resident working-set budget. A real, non-empty file
     // ensures this exercises the backend's non-null KV-budget hook instead
     // of silently testing its generic nullopt path.

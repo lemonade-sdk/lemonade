@@ -90,5 +90,17 @@ int main() {
     CHECK(!auto_context_llamacpp_can_cpu_offload("", "disabled", nullptr));
     CHECK(!auto_context_llamacpp_can_cpu_offload("", nullptr, "99"));
     CHECK(!auto_context_llamacpp_can_cpu_offload("--gpu-layers 99", nullptr, "auto"));
+
+    // Fixed encoder windows have no KV slope, but safer admission still needs
+    // weights plus the existing device/OS reserves. CPU offload is conditional.
+    CHECK(auto_context_fixed_weights_fit(16, -1, 6, false, false, false));
+    CHECK(!auto_context_fixed_weights_fit(6, -1, 6, false, false, false));
+    CHECK(auto_context_fixed_weights_fit(16, -1, 6, true, false, false));
+    CHECK(!auto_context_fixed_weights_fit(4, 0.25, 6, true, false, false));
+    CHECK(auto_context_fixed_weights_fit(4, 100, 70, true, false, true));
+    CHECK(!auto_context_fixed_weights_fit(4, 100, 70, true, false, false));
+    CHECK(auto_context_fixed_weights_fit(8, 20, 6, true, true, false));
+    CHECK(!auto_context_fixed_weights_fit(8, 5, 6, true, true, false));
+    CHECK(!auto_context_fixed_weights_fit(8, -1, 6, true, true, true));
     return failures ? 1 : 0;
 }

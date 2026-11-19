@@ -331,6 +331,27 @@ inline bool auto_context_cpu_offload_weights_fit(
     return gpu_usable + ram_usable >= weights_gib + workspace + extra;
 }
 
+// Fixed-window encoder models have no growing KV cache. Apply the existing
+// device/UMA reserves to their weights, without inventing a KV slope.
+inline bool auto_context_fixed_weights_fit(
+    double free_gib, double physical_free_gib, double weights_gib,
+    bool gpu, bool unified_gpu, bool cpu_offload) {
+    if (!std::isfinite(free_gib) || free_gib <= 0.0 ||
+        !std::isfinite(weights_gib) || weights_gib <= 0.0) return false;
+    const auto& policy = !gpu ? AUTO_CTX_HOST_RESERVE
+        : unified_gpu ? AUTO_CTX_UNIFIED_GPU_RESERVE : AUTO_CTX_DISCRETE_GPU_RESERVE;
+    const double workspace = policy.compute_workspace.estimate(weights_gib);
+    const double headroom = policy.memory_headroom.estimate(
+        gpu && unified_gpu && physical_free_gib >= 0.0 ? physical_free_gib : free_gib);
+    const bool direct_fit = gpu && unified_gpu
+        ? (std::isfinite(physical_free_gib) && physical_free_gib >= 0.0 &&
+           free_gib >= weights_gib + workspace &&
+           physical_free_gib >= weights_gib + workspace + headroom)
+        : free_gib >= weights_gib + workspace + headroom;
+    return direct_fit || (gpu && auto_context_cpu_offload_weights_fit(
+        free_gib, physical_free_gib, weights_gib, false, unified_gpu, cpu_offload));
+}
+
 // The default deliberately tries the 4k minimum if the model weights fit,
 // even when estimated KV capacity is below that minimum. This is best-effort
 // and can OOM, but avoids main's unconditional fallback for oversized weights.

@@ -525,6 +525,14 @@ inline bool is_rule_head_router_model(const ModelInfo& model_info) {
     return !model_info.checkpoint("rulehead").empty();
 }
 
+// A per-load CPU override does not mutate the catalog's GPU recipe default.
+// Context admission must use the device that llama-server actually selects.
+inline DeviceType auto_context_device_for_backend(
+    const ModelInfo& model_info, const std::string& backend) {
+    return model_info.recipe == "llamacpp" && backend == "cpu"
+        ? DEVICE_CPU : model_info.device;
+}
+
 /// Auto-resolve ctx_size if it is -1 in the effective options.
 /// Returns the resolved context size, or -2 if no auto-resolution is needed
 /// (i.e. ctx_size was already set to an explicit non-negative value).
@@ -542,13 +550,13 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         return -2;  // Explicit value, no auto-resolution needed
     }
 
-    if (is_encoder_decision_model(model_info)) {
-        return model_info.max_context_window;
-    }
-
-    if (is_rule_head_router_model(model_info)) {
-        return backends::llamacpp::RULE_HEAD_ROUTER_CTX_SIZE;
-    }
+    const RuntimeConfig* runtime = RuntimeConfig::global();
+    const bool safer = runtime && runtime->auto_context_safer();
+    const bool fixed_encoder = is_encoder_decision_model(model_info);
+    const bool fixed_rule_head = !fixed_encoder && is_rule_head_router_model(model_info);
+    const int64_t fixed_window = fixed_encoder ? model_info.max_context_window
+        : fixed_rule_head ? backends::llamacpp::RULE_HEAD_ROUTER_CTX_SIZE : 0;
+    if (fixed_window > 0 && !safer) return fixed_window;
 
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);
     std::string backend;
@@ -558,6 +566,10 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     const json device_json = effective_options.get_option(recipe + "_device");
     if (backend_json.is_string()) backend = backend_json.get<std::string>();
     if (device_json.is_string()) device = device_json.get<std::string>();
+    // The recipe default is GPU even for a request selecting llamacpp:cpu.
+    // Keep the correction local so the catalog and caller are unchanged.
+    ModelInfo admission_info = model_info;
+    admission_info.device = auto_context_device_for_backend(model_info, backend);
     const json llama_args = effective_options.get_option("llamacpp_args");
     const std::string llama_args_str = llama_args.is_string()
         ? llama_args.get<std::string>() : "";
@@ -567,16 +579,13 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     bool memory_known = false;
     double physical_free_gb = -1.0;
     double available_gb = get_available_memory_gb(
-        model_info.device, gpu_memory_vendor_for_target(backend, device), device,
+        admission_info.device, gpu_memory_vendor_for_target(backend, device), device,
         &ctx_unified_gpu, &memory_known, &physical_free_gb);
-
-    const RuntimeConfig* runtime = RuntimeConfig::global();
-    const bool safer = runtime && runtime->auto_context_safer();
 
     if (available_gb <= 0) {
         if (!memory_known ||
             !auto_context_strict_admission_for_recipe(
-                model_info.recipe, (model_info.device & DEVICE_GPU) != 0, safer)) {
+                recipe, (admission_info.device & DEVICE_GPU) != 0, safer)) {
             const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE :
                 (model_info.max_context_window > 0
                      ? (std::min)(model_info.max_context_window, AUTO_CTX_FALLBACK)
@@ -586,22 +595,49 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
             return safer ? AUTO_CTX_NO_CAPACITY : fallback;
         }
         // A full GPU pool is not proof that llama.cpp can adapt its layer split.
-        if (model_info.recipe != "llamacpp" || !(model_info.device & DEVICE_GPU) ||
+        if (recipe != "llamacpp" || !(admission_info.device & DEVICE_GPU) ||
             !cpu_offload_runtime_compatible ||
             (ctx_unified_gpu && !(physical_free_gb > 0.0)))
             return AUTO_CTX_NO_CAPACITY;
     }
 
+    if (fixed_encoder) {
+        // Encoder SystemOne has a fixed window but no growing KV cache.
+        // Only in safer mode, require measured space for its complete weights.
+        auto file_gib = [](const std::string& path) -> double {
+            if (path.empty()) return 0.0;
+            std::error_code ec;
+            const auto bytes = std::filesystem::file_size(utils::path_from_utf8(path), ec);
+            return ec ? 0.0 : static_cast<double>(bytes) / BYTES_PER_GIB;
+        };
+        const double weights_gib = auto_context_total_weights_gib(
+            model_info.size, file_gib(model_info.resolved_path()),
+            file_gib(model_info.resolved_path("mmproj")),
+            file_gib(model_info.resolved_path("draft")));
+        const bool gpu = (admission_info.device & DEVICE_GPU) != 0;
+        return auto_context_fixed_weights_fit(
+            available_gb, physical_free_gb, weights_gib, gpu, ctx_unified_gpu,
+            gpu && recipe == "llamacpp" && cpu_offload_runtime_compatible)
+            ? fixed_window : AUTO_CTX_NO_CAPACITY;
+    }
+
+    if (fixed_rule_head) {
+        // The GGUF reports the *base* model's 128k window. Admit only the
+        // router's actual 2048 tokens, then preserve that exact fixed window.
+        admission_info.max_context_window = fixed_window;
+    }
     const json hrx_args = effective_options.get_option("hrx_args");
     const bool bounded_swa = bounded_swa_runtime_compatible_for_recipe(
         recipe, llama_args_str,
         hrx_args.is_string() ? hrx_args.get<std::string>() : "", backend);
     const double kv_bytes_ratio = auto_context_llamacpp_kv_bytes_ratio(
         recipe, llama_args_str);
-    int64_t result = compute_auto_context_size(model_info, available_gb,
+    int64_t result = compute_auto_context_size(admission_info, available_gb,
                                                is_embedding, ctx_unified_gpu,
                                                physical_free_gb, bounded_swa, safer,
                                                cpu_offload_runtime_compatible, kv_bytes_ratio);
+    if (fixed_rule_head)
+        result = result >= fixed_window ? fixed_window : AUTO_CTX_NO_CAPACITY;
     LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
                            << " → ctx_size=" << result;
     return result;
