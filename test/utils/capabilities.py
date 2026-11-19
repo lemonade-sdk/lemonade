@@ -159,7 +159,10 @@ CAPABILITIES = {
             "chat_extra_body": {"enable_thinking": False},
             "responses_extra_body": {"reasoning": {"effort": "none"}},
         },
-        # vLLM reads thinking switches only from chat_template_kwargs.
+        # Thinking is turned off for the run, as the tests' small token budgets
+        # would otherwise land entirely in reasoning. vLLM's chat completions
+        # read the switch only from chat_template_kwargs; its Responses API maps
+        # reasoning.effort "none" to it.
         "aim": {
             "backends": ["rocm"],
             "supports": {
@@ -180,6 +183,7 @@ CAPABILITIES = {
                 "llm": "Qwen3.5-9B-AIM",
             },
             "chat_extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+            "responses_extra_body": {"reasoning": {"effort": "none"}},
         },
         # A reasoning model, with thinking turned off for the run: the tests'
         # small token budgets would otherwise land entirely in reasoning.
