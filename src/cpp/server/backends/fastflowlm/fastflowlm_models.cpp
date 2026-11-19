@@ -701,6 +701,7 @@ bool flm_build_matches(const fs::path& install_dir, const std::string& asset) {
             break;
         }
     }
+    if (ec) return false;
     return installed_hrx == (asset.rfind("HRX_", 0) == 0);
 }
 
