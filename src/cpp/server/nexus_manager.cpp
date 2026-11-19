@@ -849,11 +849,24 @@ std::string account_file_tag(const std::string& pubkey) {
 
 json account_for_key(const json& previous, const json& archived, const std::string& pubkey) {
     json next = archived.is_object() ? archived : json::object();
-    for (const char* name : {"server", "genesis_pubkey", "tier1_epoch", "tier1_chain", "device_name"}) {
+    for (const char* name : {"server", "genesis_pubkey", "tier1_epoch", "tier1_chain", "device_name", "mesh_udp_port"}) {
         if (!next.contains(name) && previous.is_object() && previous.contains(name)) next[name] = previous.at(name);
     }
     next["public_key"] = pubkey;
     return next;
+}
+
+std::string mesh_transport_failure(bool started, int port, const json& mesh_status) {
+    if (!started) return "Could not start the mesh transport";
+    int bound = 0;
+    if (mesh_status.is_object()) {
+        const auto it = mesh_status.find("dataplane_port");
+        if (it != mesh_status.end() && it->is_number_integer()) bound = it->get<int>();
+    }
+    if (port != 0 && bound != port) {
+        return "Could not bind the mesh dataplane to UDP port " + std::to_string(port) + ". Choose a free port, or 0 for any port.";
+    }
+    return {};
 }
 
 AccountMatch account_match(const json& account, const std::string& pubkey, const std::string& user_id) {
@@ -1470,6 +1483,10 @@ struct NexusManager::Session {
         const auto named = account.value("device_name", std::string{});
         return named.empty() ? machine_name() : named;
     }
+    int mesh_udp_port() const {
+        const auto it = account.find("mesh_udp_port");
+        return it != account.end() && it->is_number_integer() ? it->get<int>() : 0;
+    }
     void persist() { write_json(root / "account.json", account); }
     static void write_json(const std::filesystem::path& path, const json& value) {
         auto temporary = path;
@@ -1784,7 +1801,10 @@ struct NexusManager::Session {
         auto mesh = mesh_status();
         json result = {{"status", detail}, {"locked", locked}, {"mesh_up", !locked && ln_mesh_is_active(client.get()) != 0},
             {"node_id", node_id}, {"group_node_id", group_id}, {"tunnel_ip", tunnel_ip},
-            {"peer_count", mesh.value("peer_count", 0)}, {"device_name", device_name()}, {"server", host},
+            {"peer_count", mesh.value("peer_count", 0)}, {"tunnel_mtu", mesh.value("tunnel_mtu", 0)},
+            {"mesh_udp_port", mesh_udp_port()}, {"dataplane_port", mesh.value("dataplane_port", 0)},
+            {"mapped_endpoint", mesh.value("mapped_endpoint", "")}, {"mapping_protocol", mesh.value("mapping_protocol", "")},
+            {"device_name", device_name()}, {"server", host},
             {"registered", account.contains("credential_id") || key_unlock()}, {"has_network", has_network()},
             {"unlock", key_unlock() ? "device_key" : "passkey"}, {"members", devices},
             {"exposed", json::array({{{"vport", 13305}, {"local_port", ingress_port}}})}, {"error", error},
@@ -1912,11 +1932,7 @@ struct NexusManager::Session {
             lock();
             throw NexusError(502, catalog_error);
         }
-        if (ln_mesh_enable(client.get()) != LN_OK || ln_mesh_expose_service(client.get(), 13305,
-                ("tcp:127.0.0.1:" + std::to_string(ingress_port)).c_str()) != LN_OK) {
-            lock();
-            throw NexusError(502, "Could not start the mesh transport");
-        }
+        start_mesh_transport();
         joined = true;
         reconnect = true;
         retry_delay = std::chrono::seconds(5);
@@ -1940,6 +1956,22 @@ struct NexusManager::Session {
                 refresh_devices();
             }
         } catch (const std::exception& e) { set_error(e); }
+    }
+    // A fixed mesh_udp_port binds exclusively, so a router mapping or a manual port
+    // forward to it stays valid; the SDK moves the dataplane when the port differs
+    // from the one in use. A failure locks the session and stays in `error` after
+    // the lock, so status names the port the user has to change.
+    void start_mesh_transport() {
+        const auto port = mesh_udp_port();
+        const auto config = json{{"listen_port", port}}.dump();
+        const auto service = "tcp:127.0.0.1:" + std::to_string(ingress_port);
+        const bool started = (port == 0 ? ln_mesh_enable(client.get()) : ln_mesh_enable_config(client.get(), config.c_str())) == LN_OK &&
+            ln_mesh_expose_service(client.get(), 13305, service.c_str()) == LN_OK;
+        const auto failure = nexus_access::mesh_transport_failure(started, port, mesh_status());
+        if (failure.empty()) return;
+        lock();
+        error = failure;
+        throw NexusError(502, failure);
     }
     // The lowest epoch the SDK accepts, for the chain the device last verified. A floor
     // stored before the chain was recorded (an earlier release) could belong to a network
@@ -2062,14 +2094,29 @@ struct NexusManager::Session {
         if (path == "/status") return status();
         if (path == "/selection") return selection(method, body);
         if (path == "/device") {
-            const auto name = body.at("device_name").get<std::string>();
-            if (name.empty() || name.size() > 128) throw NexusError(400, "Enter a device name (up to 128 characters)");
-            if (joined && !locked) {
-                const auto updates = json{{"hostname", name}}.dump();
-                sdk_call([&](auto out) { return ln_update_node(client.get(), node_id.c_str(), updates.c_str(), out); });
+            if (!body.contains("device_name") && !body.contains("mesh_udp_port")) throw NexusError(400, "Send device_name or mesh_udp_port");
+            if (body.contains("device_name")) {
+                const auto name = body.at("device_name").get<std::string>();
+                if (name.empty() || name.size() > 128) throw NexusError(400, "Enter a device name (up to 128 characters)");
+                if (joined && !locked) {
+                    const auto updates = json{{"hostname", name}}.dump();
+                    sdk_call([&](auto out) { return ln_update_node(client.get(), node_id.c_str(), updates.c_str(), out); });
+                }
+                account["device_name"] = name;
+                persist();
             }
-            account["device_name"] = name;
-            persist();
+            if (body.contains("mesh_udp_port")) {
+                const auto& value = body.at("mesh_udp_port");
+                if (!value.is_number_integer() || value.get<int64_t>() < 0 || value.get<int64_t>() > 65535) {
+                    throw NexusError(400, "Enter a UDP port (1-65535), or 0 for any port");
+                }
+                const auto port = value.get<int>();
+                if (port != mesh_udp_port()) {
+                    account["mesh_udp_port"] = port;
+                    persist();
+                    if (joined && !locked) start_mesh_transport();
+                }
+            }
             return status();
         }
         if (path.rfind("/passkey/challenge", 0) == 0) {

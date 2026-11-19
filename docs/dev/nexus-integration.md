@@ -224,8 +224,8 @@ use and records it as `public_key`. On a change, the current account is moved
 to `account-<tag>.json` (`tag` is the first 16 characters of the key's URL-safe
 base64) and the new key's archived account, if any, comes back. A key with no
 archived account starts fresh and carries only `server`, `genesis_pubkey`,
-`tier1_epoch` and `device_name` from the previous account: facts about the
-network and the machine, not about the identity. An `account.json` from
+`tier1_epoch`, `device_name` and `mesh_udp_port` from the previous account:
+facts about the network and the machine, not about the identity. An `account.json` from
 before `public_key` was recorded belongs to an unknown key: no key adopts it
 at start, and the federation's `user_id` decides at the first authentication.
 When it names the same user the file is bound to the key; when it names
@@ -428,6 +428,28 @@ target that cannot be selected answers 409. `status` includes the SDK's
 `mesh_port` report: port,
 TLS state, selection and the URL of each reachable device.
 
+### Dataplane port and router mapping
+
+The mesh dataplane is one UDP socket. By default the OS picks its port at
+every start. `POST /v1/nexus/device` with `{"mesh_udp_port": 51900}` fixes
+the port: `lemond` stores it in `account.json` (`mesh_udp_port`, 0 = any
+port, the default) and enables the mesh with
+`ln_mesh_enable_config(..., {"listen_port": 51900})` instead of
+`ln_mesh_enable`. A fixed port binds exclusively, so a router mapping or a
+manual port forward to it stays valid across restarts. A change while the
+mesh is up moves the dataplane at once. When the port cannot be bound the SDK
+leaves the dataplane down; `lemond` locks the session and `status` reports
+`error` (not retryable) naming the port, so the user chooses a free port or
+0 and unlocks again. The SDK maps the port on the router through PCP or
+NAT-PMP by itself and publishes the mapped address as this device's
+endpoint while the lease is live.
+
+`status` passes the SDK's `ln_mesh_status` fields through: `dataplane_port`
+(the UDP port in use, 0 while the dataplane is down), `mapped_endpoint`
+(`"a.b.c.d:port"` on the router, `""` without a live mapping),
+`mapping_protocol` (`"pcp"`, `"natpmp"` or `""`) and `tunnel_mtu`, beside
+the configured `mesh_udp_port`.
+
 ### Tier 1 servers and the Genesis key
 
 The SDK sends tree, session and private-API calls only to Tier 1 servers that
@@ -477,7 +499,7 @@ Routes live under `/v1/nexus/` only. The `/api/v1` prefix of the older
 | POST | `key/unlock` | Unlock with the device key (`{defer_join?, identity_envelope?, replace_passkey?}`); local controller only. Refused once a passkey is registered unless `replace_passkey` is true, which retires the passkey after the key authenticated (the browser's path). An `identity_envelope` from `ln_identity_handoff_seal` delivers the user's identity first (see [Identity storage](#identity-storage)) |
 | GET | `key/handoff` | Start a single-use identity hand-off and return the SDK's request JSON; local controller only |
 | POST | `device/check` | Advisory check that a device name folds to a free DNS label: `{name, code?}` (`device_name` is accepted in place of `name`); uses this account's group when joined, else the invite code's group. Answers `{label, available, conflicts, suggestion}`. The federation still refuses a collision on join or rename |
-| POST | `enable`, `disable`, `lock`, `device` | Local state and device name |
+| POST | `enable`, `disable`, `lock`, `device` | Local state; `device` sets `{device_name?, mesh_udp_port?}` (see [Dataplane port and router mapping](#dataplane-port-and-router-mapping)) |
 | POST | `invites`, `invites/cancel`, `join` | Invite a device into this account's top-level group with `{device_name, permissions? \| role?, ttl_sec?}`, or join as a new device with `{code}`. Without `permissions` or `role` the invite grants the `user` preset reduced to what this device holds |
 | POST | `tree/{id}/invites` | Invite into group `{id}` with `{permissions? \| role?, ttl_sec?, device_name?}`; needs `add_child` or admin above it; the same default as `invites` |
 | POST | `invites/accept` | Join another network: accept `{code}` as an account that already joined |
