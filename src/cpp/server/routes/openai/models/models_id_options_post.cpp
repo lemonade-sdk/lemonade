@@ -80,7 +80,8 @@ public:
         s.modality = "n/a";
         s.description =
             "Saves recipe options for a model without loading it. The body is a flat object of "
-            "the recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts.";
+            "the recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts. Sending `*_args` or "
+            "`merge_args` requires admin authorization, including empty or `null` values.";
         s.notes = {
             "The request merges into the model's saved entry, so keys it leaves out keep their "
             "values. `null` removes an option, as do `-1`, `\"\"` and `\"auto\"` for any option "
@@ -115,6 +116,10 @@ public:
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
+        if (!authorize_backend_args(req, res)) {
+            return;
+        }
+
         ModelManager* model_manager = ctx_.model_manager;
         respond_with_model_options(ctx_, req.value(openai::models::kId, std::string()), res,
             [model_manager, &req](const std::string& model_key, ModelInfo& info,

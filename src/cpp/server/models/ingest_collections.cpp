@@ -163,7 +163,8 @@ json IngestCollections::fetch_manifest(const std::string& repo_id,
 }
 
 std::vector<std::string> IngestCollections::register_components(
-    const json& component_names, const json& component_defs, const std::string& registry_source) {
+    const json& component_names, const json& component_defs, const std::string& registry_source,
+    bool allow_backend_args) {
     auto def_name = [](const json& def) -> std::string {
         if (!def.is_object()) return "";
         for (const char* key : {"model_name", "id"}) {
@@ -257,7 +258,7 @@ std::vector<std::string> IngestCollections::register_components(
     for (const auto& [canonical, def] : pending_registrations) {
         LOG(INFO, "ModelManager") << "Registering collection component as user model: "
             << canonical << std::endl;
-        fetch_.register_user_model(canonical, def);
+        fetch_.register_user_model(canonical, def, "", allow_backend_args);
     }
     return components;
 }

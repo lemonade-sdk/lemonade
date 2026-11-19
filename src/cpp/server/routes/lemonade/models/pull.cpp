@@ -117,7 +117,10 @@ public:
         s.summary = "Install a model";
         s.description =
             "Installs a model from the built-in registry, or registers a new `user.*` model from "
-            "a Hugging Face or ModelScope checkpoint and installs it.";
+            "a Hugging Face or ModelScope checkpoint and installs it. Backend arguments in imported "
+            "definitions, including embedded models and legacy option blocks, require admin authorization. "
+            "Defining or changing a collection manifest checkpoint or registry source also requires admin "
+            "authorization; pulling an existing collection without these overrides remains available.";
         s.notes = {
             "Pulling an already-downloaded model downloads any newer commit from its registry. "
             "Loading a model never checks for updates, and "
@@ -205,12 +208,17 @@ public:
         s.examples = {job_example, success_example, events_example, register_example,
                       collection_example};
         s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidSource, kInvalidModelDefinition,
-                    kLemondOffline, kUnknownModel, kIllegalLabels, kRegistryUnavailable, kPullFailed};
+                    kLemondOffline, kUnknownModel, kIllegalLabels, kRegistryUnavailable, kPullFailed,
+                    kBackendArgsAdminRequired};
         s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
+        if (!authorize_backend_args(req, res)) {
+            return;
+        }
+
         try {
             std::string model_name = req.arg(kModelName).get<std::string>();
 
@@ -249,7 +257,7 @@ public:
                     /*require_definition=*/false,
                     /*allow_embedded_models=*/true,
                     local_import,
-                    res)) {
+                    res, is_admin_request(req))) {
                 return;
             }
 
@@ -274,13 +282,14 @@ public:
                 }
             }
 
+            const bool allow_backend_args = is_admin_request(req) || !collection_file_import;
             if (stream) {
                 ModelManager* model_manager = ctx_.model_manager;
                 DownloadManager::Operation operation =
                     [model_manager, model_name, download_request,
-                     do_not_upgrade](DownloadProgressCallback progress_cb, utils::CancelToken cancel) {
+                     do_not_upgrade, allow_backend_args](DownloadProgressCallback progress_cb, utils::CancelToken cancel) {
                         model_manager->download_model(model_name, download_request, do_not_upgrade,
-                                                      progress_cb, cancel);
+                                                      progress_cb, cancel, allow_backend_args);
                     };
 
                 if (!subscribe) {
@@ -293,12 +302,15 @@ public:
                     DownloadManager::stream(operation, sink);
                 });
             } else {
-                ctx_.model_manager->download_model(model_name, download_request, do_not_upgrade);
+                ctx_.model_manager->download_model(model_name, download_request, do_not_upgrade,
+                                                   nullptr, utils::CancelToken(), allow_backend_args);
 
                 json response = {{"status", "success"}, {"model_name", model_name}};
                 res.set_content(response.dump(), "application/json");
             }
 
+        } catch (const BackendArgsAuthorizationError& e) {
+            write_plain_error(res, kBackendArgsAdminRequired, e.what());
         } catch (const lemon::UnknownModelError& e) {
             LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
             res.status = kUnknownModel.status;

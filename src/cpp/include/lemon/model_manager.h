@@ -176,21 +176,22 @@ public:
     // Register a user model
     void register_user_model(const std::string& model_name,
                             const json& model_data,
-                            const std::string& source = "");
+                            const std::string& source = "", bool allow_backend_args = true);
 
     // Register or validate a model definition without downloading its files.
     // Uses the same registration path as download_model.
     void register_model(const std::string& model_name,
                        const json& model_data,
                        bool allow_missing_checkpoint = false,
-                       bool replace_existing = false);
+                       bool replace_existing = false, bool allow_backend_args = true);
 
     // Register (if needed) and download a model
     void download_model(const std::string& model_name,
                        const json& model_data,
                        bool do_not_upgrade = false,
                        DownloadProgressCallback progress_callback = nullptr,
-                       const utils::CancelToken& cancel = utils::CancelToken());
+                       const utils::CancelToken& cancel = utils::CancelToken(),
+                       bool allow_backend_args = true);
 
     // Download a model
     void download_registered_model(const ModelInfo& info,
@@ -338,7 +339,8 @@ public:
 
     // Replace the model's recipe_options.json entry, returning the new entry.
     // An empty object erases the entry rather than persisting `{}`.
-    json replace_options(const std::string& name, const json& saved);
+    json replace_options(const std::string& name, const json& saved,
+                         bool allow_backend_args = true);
 
 
 private:
@@ -379,7 +381,8 @@ private:
     // The authored layer of build_recipe_options()'s ladder, read from the
     // registry row. Takes no store lock.
     json registry_recipe_options(const std::string& cache_key);
-    json write_saved_model_options(const std::string& model_name, const json& options, bool merge);
+    json write_saved_model_options(const std::string& model_name, const json& options, bool merge,
+                                   bool allow_backend_args = true);
 
     // Cache management
     void build_cache();

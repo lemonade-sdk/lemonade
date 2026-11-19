@@ -201,7 +201,7 @@ The `lemonade check-updates` command uses this endpoint.
 ## `POST /v1/models/register`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Registers or updates a `user.*` model definition in `user_models.json` without downloading any files, for clients that register and install as separate steps. [`POST /v1/pull`](#post-v1pull) registers the same way and then downloads.
+Registers or updates a `user.*` model definition in `user_models.json` without downloading files. [`POST /v1/pull`](#post-v1pull) registers the same way and then downloads. Backend arguments (including legacy option blocks) and collection manifest checkpoints require admin authorization.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -325,6 +325,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The definition is malformed and nothing is registered, for example a name outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, an empty `recipe` where one is required, `checkpoints` without `main`, an unsupported `source`, `components` that are empty or name the collection itself, another collection or an unregistered model, or an invalid routing policy |
 | `400` |  | A field not listed above has the wrong JSON type |
+| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `500` |  | The definition is invalid in another way and nothing is registered, for example a GGUF `checkpoint` without a variant, a recipe this system cannot run, or labels that name two deployment modes |
 <!-- END GENERATED: lemonade.models_register -->
 
@@ -332,7 +333,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /v1/pull`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Installs a model from the built-in registry, or registers a new `user.*` model from a Hugging Face or ModelScope checkpoint and installs it.
+Installs a model from the built-in registry, or registers a new `user.*` model from a Hugging Face or ModelScope checkpoint and installs it. Backend arguments in imported definitions, including embedded models and legacy option blocks, require admin authorization. Defining or changing a collection manifest checkpoint or registry source also requires admin authorization; pulling an existing collection without these overrides remains available.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -620,6 +621,7 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 | `400` | `lemond_offline` | `offline` is set to `true` |
 | `400` | `unknown_model` | Without `stream`, the model is not registered and its name has no `user.` prefix |
 | `400` |  | Labels or `embedding`/`reranking` flags name a deployment mode the recipe cannot serve, or name two |
+| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `500` |  | Another failure occurs, for example a failed download, a model this system cannot run, a new `user.*` model without `recipe` or `checkpoint`, or a GGUF `checkpoint` without a variant; a new definition stays registered |
 | `503` | `registry_unavailable` | Without `stream`, the model registry rate-limits or is temporarily unavailable; the `Retry-After` header and the body's `upstream_status_code` carry the details |
 <!-- END GENERATED: lemonade.pull -->
@@ -1093,7 +1095,7 @@ A file still held open, for example by a download that was just cancelled, is re
 ## `POST /v1/load`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Loads a registered model into memory, downloading it first when needed, so it is ready before the first request.
+Loads a registered model into memory, downloading it first when needed, so it is ready before the first request. Request-supplied `*_args` and `merge_args` require admin authorization, including empty or `null` values.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1240,6 +1242,7 @@ A collection, which has no checkpoint of its own.
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | On-demand models cannot be loaded through /v1/load |
 | `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
+| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -2939,7 +2942,7 @@ The endpoints below create and manage persistent server-side jobs.
 ## `POST /v1/jobs`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Creates a job: a sequence of server operations that runs in the background, passing data between steps and branching on results. A job survives client disconnects and server restarts (a restart leaves an active job interrupted), and can be paused, interrupted, resumed, read and deleted.
+Creates a job: a sequence of server operations that runs in the background, passing data between steps and branching on results. A job survives client disconnects and server restarts (a restart leaves an active job interrupted), and can be paused, interrupted, resumed, read and deleted. A `load` step supplying `*_args` or `merge_args` requires admin authorization, including empty, `null` or referenced values.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -2995,6 +2998,7 @@ A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The step graph is invalid, for example no steps, a duplicate step id or an unknown `op` |
+| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `429` |  | All 50 jobs in the store are still active or resumable |
 <!-- END GENERATED: lemonade.jobs_create -->
 

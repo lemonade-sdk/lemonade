@@ -25,6 +25,7 @@
 #include <lemon/runtime_config.h>
 #include <lemon/system_info.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/backend_args.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/safe_fs.h>
@@ -502,20 +503,21 @@ void ModelIngest::download_from_manifest(const json& manifest,
 void ModelIngest::register_model(const std::string& model_name,
                                  const json& model_data,
                                  bool allow_missing_checkpoint,
-                                 bool replace_existing) {
+                                 bool replace_existing, bool allow_backend_args) {
     std::set<std::string> visited;
     pull(model_name, model_data, true, nullptr, visited,
-         true, allow_missing_checkpoint, replace_existing);
+         true, allow_missing_checkpoint, replace_existing, utils::CancelToken(),
+         allow_backend_args);
 }
 
 void ModelIngest::pull(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback,
-                                 const utils::CancelToken& cancel) {
+                                 const utils::CancelToken& cancel, bool allow_backend_args) {
     std::set<std::string> visited;
     pull(model_name, model_data, do_not_upgrade, progress_callback, visited,
-         false, false, false, cancel);
+         false, false, false, cancel, allow_backend_args);
 }
 
 void ModelIngest::pull(const std::string& model_name,
@@ -526,7 +528,7 @@ void ModelIngest::pull(const std::string& model_name,
                                  bool register_only,
                                  bool allow_missing_checkpoint,
                                  bool replace_existing,
-                                 const utils::CancelToken& cancel) {
+                                 const utils::CancelToken& cancel, bool allow_backend_args) {
     // Keep a mutable registration payload so legacy re-pulls that omit the
     // registry retain the source recorded on the existing model. The original
     // request remains untouched for validation and download semantics.
@@ -697,7 +699,7 @@ void ModelIngest::pull(const std::string& model_name,
     // failures can roll it back instead of leaving a broken entry behind.
     bool collection_registered_this_call = false;
     if (is_model_collection_recipe(actual_recipe) && is_user_model_name(model_name) && !model_registered) {
-        register_user_model(model_name, registration_data);
+        register_user_model(model_name, registration_data, "", allow_backend_args);
         model_registered = true;
         collection_registered_this_call = true;
     }
@@ -795,13 +797,13 @@ void ModelIngest::pull(const std::string& model_name,
                 model_data.contains("components") && model_data["components"].is_array()) {
                 // Exported-collection format: `models` carries what `components` names.
                 components = collections_->register_components(model_data["components"], model_data["models"],
-                                                registry_source_of(info));
+                                                registry_source_of(info), allow_backend_args);
 
                 // Rewrite with canonical names; the bulky payload is dropped.
                 if (is_user_model_name(model_name) && !components.empty()) {
                     json reg = registration_data;
                     reg["components"] = components;
-                    register_user_model(model_name, reg);
+                    register_user_model(model_name, reg, "", allow_backend_args);
                 }
             } else if (!repo_id.empty() && (components.empty() || !do_not_upgrade)) {
                 // A non-empty checkpoint marks a registry-backed collection: the list
@@ -912,7 +914,7 @@ void ModelIngest::pull(const std::string& model_name,
     // otherwise an import that reports success would silently leave the old
     // checkpoints/options in place.
     if (is_user_model_name(model_name) && !model_registered) {
-        register_user_model(model_name, registration_data);
+        register_user_model(model_name, registration_data, "", allow_backend_args);
     }
 
     auto model_info = requested_info ? *requested_info : require_info(model_name);
@@ -1080,7 +1082,7 @@ static bool user_entry_is_router_collection(const json& user_models,
 
 void ModelIngest::register_user_model(const std::string& model_name,
                                       const json& model_data,
-                                      const std::string& source) {
+                                      const std::string& source, bool allow_backend_args) {
     const std::string recipe = model_data.value("recipe", std::string());
 
     // Remove "user." prefix if present
@@ -1142,6 +1144,14 @@ void ModelIngest::register_user_model(const std::string& model_name,
     {
         ModelStore::Write store_write(*deps_.store);
         deps_.registries->update_user([&](json& user_models) {
+            const json previous = user_models.contains(clean_name)
+                ? row_recipe_options(user_models[clean_name]) : json::object();
+            if (!allow_backend_args &&
+                utils::backend_arg_options(previous) !=
+                    utils::backend_arg_options(row_recipe_options(model_entry))) {
+                throw BackendArgsAuthorizationError(
+                    "Admin authorization is required to change registered backend arguments");
+            }
             overwrote_router_collection =
                 user_entry_is_router_collection(user_models, clean_name);
             user_models[clean_name] = model_entry;

@@ -24,7 +24,8 @@ public:
         s.modality = "n/a";
         s.description =
             "Resets a model to its defaults by erasing its `recipe_options.json` entry. Defaults "
-            "from its registry entry and the server's configuration still apply.";
+            "from its registry entry and the server's configuration still apply. Clearing saved backend "
+            "arguments requires admin authorization.";
         s.args = {openai::models::kId};
 
         RouteResponse response;
@@ -44,9 +45,9 @@ public:
     void handle(RouteRequest& req, httplib::Response& res) override {
         ModelManager* model_manager = ctx_.model_manager;
         respond_with_model_options(ctx_, req.value(openai::models::kId, std::string()), res,
-            [model_manager](const std::string& model_key, ModelInfo& info, httplib::Response&) {
+            [this, model_manager, &req](const std::string& model_key, ModelInfo& info, httplib::Response&) {
                 if (!model_manager->options(model_key)["saved"].empty()) {
-                    model_manager->replace_options(model_key, json::object());
+                    model_manager->replace_options(model_key, json::object(), is_admin_request(req));
                 }
                 info = model_manager->get_model_info(model_key);
                 return true;
