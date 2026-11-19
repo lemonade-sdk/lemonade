@@ -1461,6 +1461,62 @@ class LemonadeAPI {
 
   // ── Endpoints ───────────────────────────────────────────────────
 
+  async webSearch(
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<{ query: string; search_type?: 'web' | 'news'; results: Array<{
+    title: string; url: string; snippet: string; source?: string; published_at?: string;
+  }>; truncated: boolean }> {
+    const envelope = await this._json<Record<string, unknown>>('/mcp', {
+      method: 'POST',
+      body: {
+        jsonrpc: '2.0', id: 'web-search', method: 'tools/call',
+        params: { name: 'lemonade_web_search', arguments: args },
+      },
+      signal,
+    });
+    const rpcError = isObject(envelope?.error) ? envelope.error : null;
+    if (rpcError) throw new Error(String(rpcError.message || 'Web search MCP request failed.'));
+    const result = isObject(envelope?.result) ? envelope.result : null;
+    if (!result) throw new Error('Web search returned no MCP result.');
+    const blocks = Array.isArray(result.content) ? result.content : [];
+    const texts = blocks.filter(isObject).filter(block => block.type === 'text' && typeof block.text === 'string')
+      .map(block => String(block.text));
+    if (result.isError === true) throw new Error(texts.join('\n').trim() || 'Web search failed.');
+    let payload: unknown = result.structuredContent;
+    if (payload === undefined) {
+      // Older servers may only provide JSON text blocks, not structuredContent.
+      for (const text of texts) {
+        try { payload = JSON.parse(text); break; } catch { /* try the next block */ }
+      }
+    }
+    if (!isObject(payload) || typeof payload.query !== 'string' ||
+        !Array.isArray(payload.results) || typeof payload.truncated !== 'boolean' || payload.results.length > 5) {
+      throw new Error('Web search returned an invalid result format.');
+    }
+    if (payload.search_type !== undefined && payload.search_type !== 'web' && payload.search_type !== 'news') {
+      throw new Error('Web search returned an invalid search type.');
+    }
+    const results = payload.results.map((entry: unknown) => {
+      if (!isObject(entry) || typeof entry.title !== 'string' ||
+          typeof entry.url !== 'string' || typeof entry.snippet !== 'string') {
+        throw new Error('Web search returned an invalid result entry.');
+      }
+      try {
+        if (new URL(entry.url).protocol !== 'https:') throw new Error();
+      } catch { throw new Error('Web search returned a non-HTTPS result URL.'); }
+      if ((entry.source !== undefined && typeof entry.source !== 'string') ||
+          (entry.published_at !== undefined && typeof entry.published_at !== 'string')) {
+        throw new Error('Web search returned invalid article metadata.');
+      }
+      return { title: entry.title, url: entry.url, snippet: entry.snippet,
+        ...(entry.source ? { source: entry.source } : {}),
+        ...(entry.published_at ? { published_at: entry.published_at } : {}) };
+    });
+    return { query: payload.query, search_type: payload.search_type as 'web' | 'news' | undefined,
+      results, truncated: payload.truncated };
+  }
+
   async health(): Promise<HealthData> {
     const data = normalizeHealth(await this._json<unknown>('/api/v1/health'));
     const signature = JSON.stringify(data);
