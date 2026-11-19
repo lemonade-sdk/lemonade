@@ -131,7 +131,9 @@ public:
 
     bool has_image(const std::string& image) const;
     void pull(const std::string& image, const DownloadProgressCallback& progress) const;
-    void remove_image(const std::string& image) const;
+    // True once the image is gone, including when it was never there; false
+    // when it is still present, such as while a container uses it.
+    bool remove_image(const std::string& image) const;
 
     // Replaces any network of that name with an --internal one carrying the
     // ai.lemonade label.

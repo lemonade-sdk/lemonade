@@ -230,11 +230,18 @@ void install_container_backend(const std::string& recipe, const std::string& bac
     if (ec) {
         throw std::runtime_error("Failed to replace " + install_dir.string() + ": " + ec.message());
     }
-    for (const auto& extra : stale_extras) {
-        manager.remove_image(extra.image);
-    }
+    // An image still in use, such as by a loaded model, stays recorded under its
+    // old pin, so the next install or uninstall removes it.
     if (!previous_image.empty() && previous_image != image) {
-        manager.remove_image(previous_image);
+        stale_extras.push_back({installed_pin, previous_image});
+    }
+    std::vector<backends::BackendUtils::ExtraImage> still_present;
+    for (const auto& extra : stale_extras) {
+        if (!manager.remove_image(extra.image)) still_present.push_back(extra);
+    }
+    if (!still_present.empty()) {
+        kept_extras.insert(kept_extras.end(), still_present.begin(), still_present.end());
+        backends::BackendUtils::write_backend_extra_images(install_dir.string(), kept_extras);
     }
     LOG(INFO, "BackendManager") << "Installed " << recipe << ":" << backend << " as " << image
                                 << std::endl;
@@ -262,19 +269,26 @@ void uninstall_container_backend(const std::string& recipe, const std::string& b
     // Images built on the backend's share its layers, so removing only the
     // pinned image would free none of them.
     const fs::path install_dir = container_version_file(recipe, backend).parent_path();
-    for (const auto& extra :
-         backends::BackendUtils::read_backend_extra_images(install_dir.string())) {
-        utils::ContainerManager::global().remove_image(extra.image);
-    }
+    std::vector<backends::BackendUtils::ExtraImage> images =
+        backends::BackendUtils::read_backend_extra_images(install_dir.string());
     const std::string image = backends::BackendUtils::get_installed_backend_image(recipe, backend);
     if (!image.empty()) {
-        utils::ContainerManager::global().remove_image(image);
+        images.push_back({read_version_file(container_version_file(recipe, backend)), image});
+    }
+    std::vector<backends::BackendUtils::ExtraImage> still_present;
+    for (const auto& entry : images) {
+        if (!utils::ContainerManager::global().remove_image(entry.image)) {
+            still_present.push_back(entry);
+        }
     }
     std::error_code ec;
     fs::remove_all(install_dir, ec);
     if (ec) {
         throw std::runtime_error("Failed to remove " + install_dir.string() + ": " + ec.message());
     }
+    // An image still in use stays recorded without a version marker, so the
+    // backend reads as uninstalled and the next install or uninstall removes it.
+    backends::BackendUtils::write_backend_extra_images(install_dir.string(), still_present);
 }
 
 bool github_download_service_reachable() {

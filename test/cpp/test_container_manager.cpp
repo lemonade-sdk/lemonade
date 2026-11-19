@@ -69,6 +69,9 @@ struct FakeHost {
     std::map<std::string, std::string> files = {{"/etc/os-release", "ID=ubuntu\nID_LIKE=debian\n"}};
     std::map<std::string, std::string> env;
     bool root = false;
+    // Images the fake tool holds, and those a container is using.
+    mutable std::set<std::string> images;
+    std::set<std::string> images_in_use;
     // How many commands the manager has run on the host.
     mutable int commands = 0;
     mutable std::vector<std::vector<std::string>> runs;
@@ -97,6 +100,14 @@ struct FakeHost {
                 result.output = podman_rootless + " " + network_backend + " " + oci_runtime + "\n";
             } else if (argv.size() > 1 && argv[1] == "network") {
                 result.exit_code = 0;
+            } else if (argv.size() > 2 && argv[1] == "rmi") {
+                const bool busy = images_in_use.count(argv[2]) > 0;
+                const bool present = images.count(argv[2]) > 0;
+                if (!busy) images.erase(argv[2]);
+                result.exit_code = busy ? 2 : (present ? 0 : 1);
+                if (busy) result.output = "image is in use by a container";
+            } else if (argv.size() > 2 && argv[1] == "image" && argv[2] == "inspect") {
+                result.exit_code = images.count(argv.back()) ? 0 : 125;
             } else if (argv.front() == "getsubids") {
                 const auto it = subids.find(join({argv.begin() + 1, argv.end()}));
                 result.exit_code = it == subids.end() ? 1 : 0;
@@ -795,6 +806,19 @@ void test_aim() {
 }
 
 #ifndef _WIN32
+void test_remove_image() {
+    FakeHost podman;
+    podman.tools = {"podman"};
+    podman.images = {"a@sha256:1", "b@sha256:2"};
+    podman.images_in_use = {"b@sha256:2"};
+    const ContainerManager manager(podman.host());
+    check("removing an image reports it gone", manager.remove_image("a@sha256:1"));
+    check("removing an image that is already absent reports it gone",
+          manager.remove_image("c@sha256:3"));
+    check("removing an image a container uses reports it still present",
+          !manager.remove_image("b@sha256:2") && podman.images.count("b@sha256:2"));
+}
+
 void test_extra_image_record() {
     namespace fs = std::filesystem;
     using lemon::backends::BackendUtils;
@@ -856,6 +880,7 @@ int main() {
     test_helpers();
 #ifndef _WIN32
     test_model_mounts();
+    test_remove_image();
     test_extra_image_record();
 #endif
 

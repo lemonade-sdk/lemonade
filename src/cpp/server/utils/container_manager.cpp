@@ -587,13 +587,13 @@ void ContainerManager::pull(const std::string& image,
     if (progress) progress(p);
 }
 
-void ContainerManager::remove_image(const std::string& image) const {
-    if (!tool()) return;
+bool ContainerManager::remove_image(const std::string& image) const {
+    if (!tool()) return false;
     const CommandResult result = invoke({"rmi", image}, kCommandTimeoutSeconds);
-    if (result.exit_code != 0) {
-        LOG(WARNING, "Container") << "Could not remove image " << image << ": "
-                                  << trim(result.output) << std::endl;
-    }
+    if (result.exit_code == 0 || !has_image(image)) return true;
+    LOG(WARNING, "Container") << "Could not remove image " << image << ": "
+                              << trim(result.output) << std::endl;
+    return false;
 }
 
 void ContainerManager::create_network(const std::string& name) const {
