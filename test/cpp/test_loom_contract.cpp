@@ -88,7 +88,6 @@ const json kLock = json::parse(R"({
 void check_bundle_plan() {
     const loom::BundlePlan plan = loom::plan_bundle(kCard, kLock);
     check("Plan carries the card's model id", plan.model_id == "Qwen/Qwen3.6-27B");
-    check("A card with a chat preset runs it", plan.preset == "chat");
     check("Plan lists one file per pinned parameter", plan.origin_files.size() == 2);
     if (plan.origin_files.size() == 2) {
         const auto& model = plan.origin_files[0].path == "parameter/model.gguf"
@@ -106,26 +105,6 @@ void check_bundle_plan() {
     }
     check("Bundle-local locked files are verified too",
           plan.locked_files.size() == 1 && plan.locked_files[0].path == "tokenizer.json");
-
-    json single_preset = kCard;
-    single_preset["presets"] = {{"vision-mtp", {{"execution", json::object()}}}};
-    check("A card whose only preset is not chat names that preset",
-          loom::plan_bundle(single_preset, kLock).preset == "vision-mtp");
-
-    json several_presets = kCard;
-    several_presets["presets"]["chat-r9700"] = {{"execution", json::object()}};
-    check("A card with several presets still runs chat",
-          loom::plan_bundle(several_presets, kLock).preset == "chat");
-
-    json gpu_variant_only = kCard;
-    gpu_variant_only["presets"] = {{"vision", json::object()}, {"vision-r9700", json::object()}};
-    check("A card without chat runs its one preset that is not a GPU variant",
-          loom::plan_bundle(gpu_variant_only, kLock).preset == "vision");
-
-    json no_chat = kCard;
-    no_chat["presets"] = {{"a", json::object()}, {"b", json::object()}};
-    check("A card with several presets and no chat leaves the choice to loom-serve",
-          loom::plan_bundle(no_chat, kLock).preset.empty());
 
     json url_origin = kCard;
     url_origin["origins"]["drafter"]["kind"] = "url";
@@ -329,70 +308,60 @@ void check_card_metadata() {
         "thinking":{"status":"yes"},"audio":{"status":"n/a"},
         "speculative_decoding":{"status":"yes","value":{"method":"dflash"}}}}})");
     using Args = std::vector<std::string>;
-    check("Strix Halo serves a fixed pool and preloads a package that fits beside it",
-          loom::serve_args(loom::kStrixHaloTarget, info, 23000000000ull, "", true) ==
-              Args({"--pool_backing=fixed", "--parameter_mode=preload"}));
-    check("Strix Halo keeps the default parameter mode above 40 GB of weights",
-          loom::serve_args(loom::kStrixHaloTarget, info, 80400000000ull, "", true) ==
-              Args({"--pool_backing=fixed"}));
-    check("The R9700 serves a fixed pool and preloads any package",
-          loom::serve_args(loom::kRadeonR9700Target, info, 80400000000ull, "", true) ==
-              Args({"--pool_backing=fixed", "--parameter_mode=preload"}));
-    check("The 16 GB class serves its 15 GB budget and small slabs, and preloads",
-          loom::serve_args(loom::kGfx120116gbTarget, info, 1, "", true) ==
-              Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib",
-                    "--weight_slab_bytes=64mib", "--parameter_mode=preload"}));
+    const json cards = json::parse(R"({"devices":{
+        "strix-halo":{"quick_start":{"preset":"chat","device":"amdgpu://?completion_spin_ns=4294967295",
+                                     "args":["--pool_backing=fixed","--parameter_mode=preload"]}},
+        "radeon-r9700":{"quick_start":{"preset":"chat-r9700","device":"amdgpu://?completion_spin_ns=4294967295",
+                                       "args":["--pool_backing=fixed","--parameter_mode=preload"]}},
+        "gfx1201-16gb":{"quick_start":{"preset":null,"device":"amdgpu://",
+                                       "args":["--memory_bytes=15000000000","--state_slab_bytes=4mib"]}}}})");
+    const loom::QuickStart strix = loom::quick_start(cards, loom::kStrixHaloTarget);
+    check("A GPU serves the preset, device query and flags its card records",
+          strix.preset == "chat" && strix.device_query == "completion_spin_ns=4294967295" &&
+              strix.args == Args({"--pool_backing=fixed", "--parameter_mode=preload"}));
+    check("The R9700 serves its own recorded preset",
+          loom::quick_start(cards, loom::kRadeonR9700Target).preset == "chat-r9700");
+    const loom::QuickStart small = loom::quick_start(cards, loom::kGfx120116gbTarget);
+    check("A card without a preset or device query leaves both empty",
+          small.preset.empty() && small.device_query.empty());
+    check("Recorded flags are served as they are where the host preloads",
+          loom::serve_args(strix, "", true) == Args({"--pool_backing=fixed", "--parameter_mode=preload"}));
     check("No preload where the host has no memlock problem",
-          loom::serve_args(loom::kRadeonR9700Target, info, 1, "", false) ==
-              Args({"--pool_backing=fixed"}));
+          loom::serve_args(strix, "", false) == Args({"--pool_backing=fixed"}));
     check("A requested size serves an elastic pool of that size",
-          loom::serve_args(loom::kRadeonR9700Target, info, 1, "16gib", true) ==
+          loom::serve_args(strix, "16gib", true) ==
               Args({"--parameter_mode=preload", "--memory_bytes=16gib"}));
-    const json recorded = json::parse(
-        R"({"devices":{"strix-halo":{"serve_args":["--memory_bytes=15000000000","--state_slab_bytes=4mib"]}}})");
-    check("Flags the card records for a GPU are served as they are",
-          loom::serve_args(loom::kStrixHaloTarget, recorded, 1, "", false) ==
-              Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib"}));
-    check("Recorded flags without a parameter mode gain the preload flag",
-          loom::serve_args(loom::kStrixHaloTarget, recorded, 1, "", true) ==
-              Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib",
-                    "--parameter_mode=preload"}));
-    check("Recorded flags keep the default parameter mode above the GPU's preload limit",
-          loom::serve_args(loom::kStrixHaloTarget, recorded, 80400000000ull, "", true) ==
-              Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib"}));
     check("A size the user asks for replaces the recorded one",
-          loom::serve_args(loom::kStrixHaloTarget, recorded, 1, "8gib", true) ==
-              Args({"--state_slab_bytes=4mib", "--parameter_mode=preload", "--memory_bytes=8gib"}));
-    const json recorded_mode = json::parse(
-        R"({"devices":{"strix-halo":{"serve_args":["--pool_backing=fixed","--parameter_mode=mmap"]}}})");
-    check("A recorded parameter mode is kept",
-          loom::serve_args(loom::kStrixHaloTarget, recorded_mode, 1, "", true) ==
-              Args({"--pool_backing=fixed", "--parameter_mode=mmap"}));
+          loom::serve_args(small, "8gib", true) == Args({"--state_slab_bytes=4mib", "--memory_bytes=8gib"}));
+    check("The device takes the card's completion wait",
+          loom::device_uri("amdgpu://1", strix.device_query) == "amdgpu://1?completion_spin_ns=4294967295");
+    check("A query parameter the user sets wins",
+          loom::device_uri("amdgpu://?completion_spin_ns=0", strix.device_query) ==
+              "amdgpu://?completion_spin_ns=0");
+    check("Another user parameter keeps the card's",
+          loom::device_uri("amdgpu://?x=1", strix.device_query) ==
+              "amdgpu://?x=1&completion_spin_ns=4294967295");
+    check("No card query leaves the device as it is", loom::device_uri("amdgpu://", "") == "amdgpu://");
+    check("A GPU without a recorded Quick start is refused",
+          throws_exception([&] { (void)loom::quick_start(cards, "gfx1150"); }) &&
+              throws_exception([&] { (void)loom::quick_start(json::object(), loom::kStrixHaloTarget); }));
     for (const std::string bad :
          {"\"--listen=0.0.0.0:18080\"", "\"--model=other.json\"", "\"--device=amdgpu://1\"",
           "\"--devices=d.json\"", "\"--flagfile=f\"", "\"--preset=x\"", "\"--listen\"",
           "\"0.0.0.0:80\"", "\"--memory_bytes=\"", "\"--memory_bytes=1 --listen=0.0.0.0:1\"", "1"}) {
         const json info_with_bad = json::parse(
-            R"({"devices":{"strix-halo":{"serve_args":["--memory_bytes=1",)" + bad + "]}}}");
+            R"({"devices":{"strix-halo":{"quick_start":{"preset":"chat","device":"amdgpu://","args":["--memory_bytes=1",)" +
+            bad + "]}}}}");
         check("A recorded serve argument outside the allowlist is rejected: " + bad,
-              throws_exception([&] {
-                  (void)loom::serve_args(loom::kStrixHaloTarget, info_with_bad, 1, "", true);
-              }));
+              throws_exception([&] { (void)loom::quick_start(info_with_bad, loom::kStrixHaloTarget); }));
     }
-
-    json r9700_card = kCard;
-    r9700_card["presets"]["chat-r9700"] = {{"execution", json::object()}};
-    check("The R9700 runs the card's -r9700 preset",
-          loom::target_preset(r9700_card, "chat", loom::kRadeonR9700Target) == "chat-r9700");
-    r9700_card["presets"]["chat-16gb"] = {{"execution", json::object()}};
-    check("The 16 GB class runs the card's -16gb preset",
-          loom::target_preset(r9700_card, "chat", loom::kGfx120116gbTarget) == "chat-16gb");
-    check("Strix Halo runs the base preset",
-          loom::target_preset(r9700_card, "chat", loom::kStrixHaloTarget) == "chat");
-    check("The R9700 runs the base preset when the card has no variant",
-          loom::target_preset(kCard, "chat", loom::kRadeonR9700Target) == "chat");
-    check("Parameter bytes sum the origin files",
-          loom::parameter_bytes(loom::plan_bundle(kCard, kLock)) == 19095766304ull + 1033066592ull);
+    for (const std::string bad : {R"("device":"file:///x","preset":"chat")", R"("device":"amdgpu://?a=1 --listen","preset":"chat")",
+                                  R"("device":"amdgpu://","preset":"a b")", R"("device":"amdgpu://","preset":1)"}) {
+        const json info_with_bad = json::parse(
+            R"({"devices":{"strix-halo":{"quick_start":{)" + bad + R"(,"args":[]}}}})");
+        check("A recorded device or preset outside the allowlist is rejected: " + bad,
+              throws_exception([&] { (void)loom::quick_start(info_with_bad, loom::kStrixHaloTarget); }));
+    }
     check("Verified features become catalog labels",
           loom::suggested_labels(info, "Qwen3.6-27B-Loom") ==
               std::vector<std::string>({"chat", "vision", "tool-calling", "reasoning", "dflash"}));
