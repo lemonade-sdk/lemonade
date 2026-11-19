@@ -186,6 +186,9 @@
 .nexus-text-button:hover { color: var(--text-primary); text-decoration: underline; }
 .nexus-error { margin: var(--space-1) 0; color: var(--danger); font-size: var(--text-xs); overflow-wrap: anywhere; }
 .nexus-error:empty { display: none; }
+.nexus-error-detail { margin: var(--space-1) 0; font-size: var(--text-xs); color: var(--text-tertiary); }
+.nexus-error-detail > summary { cursor: pointer; }
+.nexus-error-detail > code { overflow-wrap: anywhere; }
 
 .nexus-view-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 32px 0 22px; padding-top: 24px; border-top: 1px solid var(--border-subtle); }
 .nexus-view-heading h3 { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-semibold); }

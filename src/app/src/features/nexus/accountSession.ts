@@ -1,6 +1,6 @@
 import type { NexusAccount, NexusDevice } from './NexusAccountContext';
 import {
-  acceptNexusInvite, getNexusMemberships, isNexusDesktop, leaveNexusMembership, nexusAccountController, prepareNexus, usesNexusDeviceKey,
+  acceptNexusInvite, getNexusMemberships, isNexusDesktop, leaveNexusMembership, nexusAccountController, NexusRequestError, normalizeNexusInvitation, prepareNexus, usesNexusDeviceKey,
   type NexusDevice as NetworkDevice, type NexusInvite, type NexusJoinMembership, type NexusMembership, type NexusStatus,
 } from './nexus';
 
@@ -45,6 +45,21 @@ export function nexusJoinNotice(membership: NexusJoinMembership | undefined): { 
   if (membership.status === 'pending') return { error: false, message: 'The invite is waiting for the network to confirm it. This device stays in its own network and joins the invited one as a member once confirmed.' };
   return { error: false, message: 'This device joined the invited network as a member and keeps its own network.' };
 }
+export interface NexusFailureNotice { message: string; detail?: string }
+const INVITE_FAILURES: readonly (readonly [RegExp, string])[] = [
+  [/group no longer exists/i, 'The device that created this invitation is no longer in a network. Create a new invitation on a device that is in the mesh.'],
+  [/invalid or expired link token|link token.*\b(?:expired|invalid|spent|unknown)\b|\b(?:expired|invalid|spent|unknown)\b.*link token/i, 'This code is wrong, already used, or older than 10 minutes. Create a new invitation.'],
+  [/could not establish connection|connection error|unreachable/i, 'Could not reach the Nexus servers. Check the network and try again.'],
+  [/not allowed|permission|forbidden/i, 'The inviting device may not add devices. Ask an administrator of the network for an invitation.'],
+];
+// Server and SDK invitation failures are terse. Each known one becomes a sentence with the
+// next step; the raw text stays available as the detail.
+export function nexusInviteFailure(error: unknown): NexusFailureNotice {
+  const detail = error instanceof Error ? error.message : String(error);
+  const known = INVITE_FAILURES.find(([pattern]) => pattern.test(detail))
+    ?? (error instanceof NexusRequestError && error.status === 403 ? INVITE_FAILURES[3] : undefined);
+  return known ? { message: known[1], detail } : { message: detail };
+}
 
 export function verifyAvatarReply(value: unknown): NexusAvatarState {
   const reply = value as Partial<NexusAvatarState & { image: string | null; revision: number; can_write: boolean; pending?: boolean }> | null;
@@ -87,7 +102,7 @@ export function verifyAccountReply(value: unknown, source: string, expectedId?: 
     canInvite: Boolean(self.permissions?.includes('admin') || self.permissions?.includes('add_child')) };
 }
 
-export const validNexusInvitation = (value: string) => /^(?:[0-9]{8}|lnk_[0-9a-f]{64})$/.test(value.trim());
+export const validNexusInvitation = (value: string) => /^(?:[0-9]{8}|lnk_[0-9a-f]{64})$/.test(normalizeNexusInvitation(value));
 const boundedName = (name: string) => Boolean(name.trim()) && new TextEncoder().encode(name.trim()).length <= 128;
 
 export function createNexusAccountService(dependencies = { controller: nexusAccountController, desktop: isNexusDesktop, prepare: prepareNexus }): NexusAccountService {
@@ -137,7 +152,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
         if (input.action === 'return' && !current.registered) throw new Error('Create an account or join by invitation before enabling Mesh on this device.');
       }, dependencies.desktop());
       if (input.action === 'join') {
-        const code = input.invitation!.trim();
+        const code = normalizeNexusInvitation(input.invitation!);
         if (prepared?.mesh_up) await acceptNexusInvite(code, controller.request);
         else await controller.request('join', { code });
       }

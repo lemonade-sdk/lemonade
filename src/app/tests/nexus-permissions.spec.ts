@@ -68,7 +68,8 @@ test('moderator invitations delegate their preset to the server and display deni
   await page.screenshot({ path: testInfo.outputPath('mesh-moderator-invitation.png') });
   fixture.rejectWrites = true;
   await dialog.getByRole('button', { name: 'Create invitation', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toContainText('Nexus refused');
+  await expect(dialog.getByRole('alert')).toContainText('The inviting device may not add devices.');
+  await expect(dialog.locator('details.nexus-error-detail')).toContainText('Nexus refused');
   await expect(dialog.getByLabel('Role', { exact: true })).toHaveValue('moderator');
   await expect(dialog.getByLabel('Invitation code', { exact: true })).toHaveCount(0);
   fixture.rejectWrites = false;

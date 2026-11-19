@@ -446,7 +446,7 @@ test('an authorized account creates an expiring device invitation with a readabl
   await expect(dialog.getByRole('timer')).toContainText('Expires in');
   await expect(dialog).toContainText('Closing this dialog does not revoke it.');
   await dialog.getByRole('button', { name: 'Copy invitation code', exact: true }).click();
-  expect(await clipboard(page)).toBe('12345678');
+  expect(await clipboard(page)).toBe('1234 5678');
   await dialog.getByRole('button', { name: 'Copy full invite token', exact: true }).click();
   expect(await clipboard(page)).toBe(`lnk_${'a'.repeat(64)}`);
   expect(fixture.calls.find(call => call.path.endsWith('/invites'))?.body).toEqual({ device_name: 'My phone', ttl_sec: 600, role: 'user' });

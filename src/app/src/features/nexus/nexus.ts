@@ -587,8 +587,11 @@ export function getNexusDeviceAccess(nodeId: string): Promise<NexusDeviceAccess>
 export function setNexusDeviceAccess(nodeId: string, memberNodeId: string, see: boolean, connect: boolean): Promise<NexusDeviceAccess> {
   return nexusRequest(`devices/${encodeURIComponent(nodeId)}/access`, { member_node_id: memberNodeId, see, connect });
 }
+// The invitation dialog shows the 8-digit code as "4709 6838"; people copy or type it with
+// the space or a dash, so the server receives the digits alone.
+export const normalizeNexusInvitation = (value: string) => value.replace(/[\s-]/g, '');
 export function acceptNexusInvite(code: string, request = nexusRequest): Promise<{ status?: string; group_id?: string; error?: string }> {
-  return request('invites/accept', { code: code.trim() });
+  return request('invites/accept', { code: normalizeNexusInvitation(code) });
 }
 export function getNexusMemberships(request = nexusRequest): Promise<{ memberships: NexusMembership[]; group_node_id: string }> {
   return request('memberships');

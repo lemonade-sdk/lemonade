@@ -45,6 +45,7 @@ export async function setupNexusAccount(page: Page, options: {
   const calls: { path: string; origin: string; method: string; body: Record<string, unknown> | null; authorization?: string }[] = [];
   const fixture = { state, calls, branches, accountRole, accountError: false, accountUnavailable: false, rejectWrites: false, invalidTree: false, unlockUnreachable: false,
     hasOwnNetwork: false, refuseMembership: false, deletePending: false, joinedNetworks: [] as string[],
+    inviteFailure: undefined as { status: number; error: string } | undefined,
     access: {} as Record<string, { see: boolean; connect: boolean }>,
     peerFailures: 0, peerRefused: false, peerModels: [] as Record<string, unknown>[],
     avatarSaveGate: undefined as Promise<void> | undefined,
@@ -99,6 +100,7 @@ export async function setupNexusAccount(page: Page, options: {
       state.locked = false; state.registered = true; state.unlock = 'device_key';
       if (!body?.defer_join) { state.mesh_up = true; state.group_node_id = 'group'; state.has_network = true; }
     }
+    if (fixture.inviteFailure && /\/(join|invites|invites\/accept)$/.test(path)) return route.fulfill({ status: fixture.inviteFailure.status, headers, json: { error: fixture.inviteFailure.error } });
     if (path.endsWith('/join')) {
       state.mesh_up = true; state.group_node_id = 'group'; state.has_network = true;
       if (fixture.hasOwnNetwork) { state.join_membership = { status: 'member', group_id: 'studio' }; fixture.joinedNetworks.push('studio'); }
