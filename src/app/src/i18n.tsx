@@ -604,6 +604,7 @@ const ZH_CN: Record<string, string> = {
   'Live microphone': '实时麦克风',
   'Connecting microphone…': '正在连接麦克风…',
   'Microphone': '麦克风',
+  'Realtime microphone disconnected.': '实时麦克风已断开。',
   'Preparing dictation...': '正在准备听写…',
   'Downloading {model} for dictation...': '正在下载 {model} 用于听写…',
   'Loading {model} for dictation...': '正在加载 {model} 用于听写…',

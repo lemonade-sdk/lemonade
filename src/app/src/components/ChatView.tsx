@@ -2686,7 +2686,7 @@ ${finalText}`
           // A failed primary socket may still close while the legacy port connects.
           if (!isCurrent() || !realtimeRef.current) return;
           setIsLiveConnected(false);
-          if (dictating && liveFinalizeTimerRef.current === null) setLiveError('Realtime microphone disconnected.');
+          if (dictating && liveFinalizeTimerRef.current === null) setLiveError(t('Realtime microphone disconnected.'));
           failDictation();
         },
         onError: message => { if (isCurrent()) { setLiveError(message); failDictation(); } },
