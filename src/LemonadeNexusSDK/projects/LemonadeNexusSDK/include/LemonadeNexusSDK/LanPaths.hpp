@@ -19,6 +19,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -49,6 +50,37 @@ struct InterfaceAddress {
 /// The IPv4 addresses of this host's interfaces, in the order the platform
 /// lists them. Empty when the platform call fails. Thread-safe.
 [[nodiscard]] std::vector<InterfaceAddress> list_interface_addresses();
+
+/// The default IPv4 route: the gateway's address and the local address of
+/// the interface the route uses.
+struct GatewayRoute {
+    std::string gateway;         ///< Dotted IPv4 address of the next hop
+    std::string local_address;   ///< Dotted IPv4 address of this host on the route's interface
+    std::string interface_name;  ///< Interface name ("en0", "wlan0", "Wi-Fi"); may be empty
+};
+
+/// The system's default IPv4 gateway, or nullopt when there is none, it
+/// cannot be read (Android may refuse /proc/net/route), or the gateway is
+/// not a private or link-local address (a VPN or carrier gateway is never a
+/// router to ask for a port mapping). A NAT-PMP or PCP client sends its
+/// requests to `gateway` from `local_address`. Reads the route table with
+/// /proc/net/route on Linux and Android, the PF_ROUTE sysctl on macOS and
+/// iOS, and GetBestRoute2 on Windows. Never throws. Thread-safe.
+[[nodiscard]] std::optional<GatewayRoute> default_gateway_ipv4();
+
+/// The default route in a Linux /proc/net/route table: the entry with
+/// destination 0.0.0.0 whose flags carry RTF_UP and RTF_GATEWAY; the lowest
+/// metric wins, the first listed among equal metrics. Addresses in the table
+/// are little-endian hex. `local_address` is the address of the interface
+/// in `interfaces` with the route's name (empty when none). Nullopt when the
+/// table has no default route or does not parse. Pure.
+[[nodiscard]] std::optional<GatewayRoute> parse_proc_net_route(
+    std::string_view text, const std::vector<InterfaceAddress>& interfaces);
+
+/// Whether `gateway` (a dotted IPv4 address) is a router this host may ask
+/// for a port mapping: a private address (endpoint_scope Private) or a
+/// link-local address in 169.254.0.0/16. Pure.
+[[nodiscard]] bool gateway_address_usable(const std::string& gateway);
 
 /// Whether an interface name names a VPN, tunnel, container, or other
 /// virtual interface whose address is not a LAN address that peers can

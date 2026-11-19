@@ -490,6 +490,11 @@ public:
 
     /// Enable mesh networking. Starts background peer discovery, NAT traversal,
     /// and dataplane peer sync. Requires a joined node (node_id + dataplane).
+    /// A `config.listen_port` other than the dataplane's current one restarts
+    /// the dataplane on that port before the orchestrator starts; when that
+    /// port cannot be bound the dataplane stays down and the mesh is not
+    /// enabled (join_network() or another enable_mesh() brings it back). The
+    /// config is kept: a later join binds its listen_port too.
     void enable_mesh(const MeshConfig& config = {});
 
     /// Disable mesh networking and remove all mesh peers from the tunnel.
@@ -502,7 +507,9 @@ public:
     /// `needs_rejoin` is true after the SDK dropped a session whose Tier 1
     /// server left the verified membership and could not move it by itself
     /// (no identity, or the silent join failed): call join_network() again,
-    /// which authenticates through a current member and clears it.
+    /// which authenticates through a current member and clears it. Its
+    /// `dataplane_port` is the dataplane socket's bound UDP port, read live
+    /// (0 while the dataplane is down), also while the mesh is disabled.
     [[nodiscard]] MeshTunnelStatus mesh_status() const;
 
     /// Get the current list of known mesh peers.

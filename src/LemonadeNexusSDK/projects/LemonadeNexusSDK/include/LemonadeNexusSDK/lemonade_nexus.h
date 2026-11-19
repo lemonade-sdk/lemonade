@@ -497,9 +497,17 @@ ln_error_t ln_mesh_enable(ln_client_t* client);
 
 /** Enable mesh networking with custom config (JSON string).
  *  Config JSON keys: peer_refresh_interval_sec, heartbeat_interval_sec,
- *  stun_refresh_interval_sec, prefer_direct, auto_connect. A key that is
- *  left out keeps the default of ln_mesh_enable (heartbeat_interval_sec 3,
- *  peer_refresh_interval_sec 30).
+ *  stun_refresh_interval_sec, prefer_direct, auto_connect, listen_port. A
+ *  key that is left out keeps the default of ln_mesh_enable
+ *  (heartbeat_interval_sec 3, peer_refresh_interval_sec 30, listen_port 0).
+ *  listen_port (default 0) is the local UDP port of the mesh dataplane
+ *  socket. 0 takes a port the OS chooses at every start. A non-zero port is
+ *  bound exclusively at every start and rebind (join, this call, ln_resume),
+ *  so a router mapping or a manual port forward to it stays valid; a port
+ *  that cannot be bound is an error (the dataplane stays down, or stays
+ *  suspended at ln_resume), never a different port. A port other than the
+ *  one in use restarts the dataplane. ln_mesh_status reports the port in
+ *  use as dataplane_port. A value outside 0..65535 is LN_ERR_INTERNAL.
  *  stun_refresh_interval_sec (default 60) sets how often the client learns
  *  its reflexive address from the server's STUN service and publishes it for
  *  hole punching; 0 turns this off. prefer_direct (default true) keeps
@@ -513,8 +521,17 @@ ln_error_t ln_mesh_disable(ln_client_t* client);
 
 /** Get mesh tunnel status as JSON.
  *  Returns: {is_up, tunnel_ip, peer_count, online_count,
- *  total_rx_bytes, total_tx_bytes, peers: [...], needs_rejoin, tunnel_up}.
+ *  total_rx_bytes, total_tx_bytes, peers: [...], needs_rejoin, tunnel_up,
+ *  tunnel_mtu, dataplane_port, mapped_endpoint, mapping_protocol}.
  *  Each peer has the fields ln_mesh_peers documents.
+ *  dataplane_port is the local UDP port the mesh dataplane socket is bound
+ *  to (the listen_port of ln_mesh_enable_config when one is set, else the
+ *  port the OS chose), read live; 0 while the dataplane is down.
+ *  mapped_endpoint is the "a.b.c.d:port" the router maps to that port with
+ *  PCP or NAT-PMP, published as this device's mesh endpoint while the lease
+ *  is live, and mapping_protocol is "pcp" or "natpmp"; both are "" while
+ *  no mapping is live (the router speaks neither protocol, refused, or the
+ *  lease ended).
  *  needs_rejoin is true when the Tier 1 server that issued the session left
  *  the verified membership and the SDK could not move the session by itself
  *  (no identity set, or the silent join failed; see

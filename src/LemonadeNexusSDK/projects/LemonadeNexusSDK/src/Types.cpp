@@ -254,6 +254,9 @@ void to_json(json& j, const MeshTunnelStatus& s) {
         {"needs_rejoin",   s.needs_rejoin},
         {"tunnel_up",      s.tunnel_up},
         {"tunnel_mtu",     s.tunnel_mtu},
+        {"dataplane_port", s.dataplane_port},
+        {"mapped_endpoint",  s.mapped_endpoint},
+        {"mapping_protocol", s.mapping_protocol},
     };
 }
 
@@ -267,6 +270,9 @@ void from_json(const json& j, MeshTunnelStatus& s) {
     s.needs_rejoin   = j.value("needs_rejoin", false);
     s.tunnel_up      = j.value("tunnel_up", false);
     s.tunnel_mtu     = j.value("tunnel_mtu", uint32_t{0});
+    s.dataplane_port = j.value("dataplane_port", uint16_t{0});
+    s.mapped_endpoint  = j.value("mapped_endpoint", "");
+    s.mapping_protocol = j.value("mapping_protocol", "");
     if (j.contains("peers") && j["peers"].is_array()) {
         s.peers = j["peers"].get<std::vector<MeshPeer>>();
     }
@@ -293,6 +299,7 @@ void to_json(json& j, const MeshConfig& c) {
         {"stun_refresh_interval_sec", c.stun_refresh_interval_sec},
         {"prefer_direct",             c.prefer_direct},
         {"auto_connect",              c.auto_connect},
+        {"listen_port",               c.listen_port},
     };
 }
 
@@ -303,6 +310,13 @@ void from_json(const json& j, MeshConfig& c) {
     c.stun_refresh_interval_sec = j.value("stun_refresh_interval_sec", d.stun_refresh_interval_sec);
     c.prefer_direct             = j.value("prefer_direct", d.prefer_direct);
     c.auto_connect              = j.value("auto_connect", d.auto_connect);
+    // A port outside the range must not wrap to another port.
+    const auto listen_port = j.value("listen_port", int64_t{d.listen_port});
+    if (listen_port < 0 || listen_port > 65535) {
+        throw std::invalid_argument("MeshConfig listen_port out of range: " +
+                                    std::to_string(listen_port));
+    }
+    c.listen_port = static_cast<uint16_t>(listen_port);
 }
 
 } // namespace lnsdk

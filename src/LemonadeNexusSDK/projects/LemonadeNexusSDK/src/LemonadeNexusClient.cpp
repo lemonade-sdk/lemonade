@@ -581,6 +581,45 @@ struct LemonadeNexusClient::Impl {
         return true;
     }
 
+    /// Bring the dataplane up on `bt` (a join's config, or the config in use
+    /// with another listen port) and point the private transport and the
+    /// exposed services at the new plane. False when it did not start; the
+    /// plane is then down.
+    bool start_dataplane(const BoringtunConfig& bt) {
+        {
+            std::lock_guard lock(mutex);
+            boringtun_config = bt;
+        }
+        if (!meshplane.start(bt)) {
+            spdlog::warn("[LemonadeNexusClient] mesh dataplane start failed (listen_port {})",
+                         bt.listen_port);
+            return false;
+        }
+        // Fresh dataplane — close the breaker so private calls probe at once,
+        // forget the old path's unanswered requests, and drop any
+        // connection pooled against the old egress.
+        mesh_breaker_until_ms.store(0, std::memory_order_relaxed);
+        private_path_answered();
+        {
+            std::lock_guard lock(private_api_mtx);
+            drop_private_client();
+        }
+        // Re-apply service exposures registered before the plane came up
+        std::vector<std::pair<uint16_t, std::string>> exposures;
+        {
+            std::lock_guard lock(mutex);
+            exposures = exposed_services;
+        }
+        for (const auto& [vport, target] : exposures) {
+            std::string error;
+            if (!apply_ingress(vport, target, error)) {
+                spdlog::warn("[LemonadeNexusClient] re-exposing {} -> {} failed: {}",
+                             vport, target, error);
+            }
+        }
+        return true;
+    }
+
     // --- Tier 1 transport -----------------------------------------------------
 
     /// How long a verified membership is used before it is verified again.
@@ -3397,34 +3436,10 @@ Result<JoinResult> LemonadeNexusClient::join_network(const std::string& username
         {
             std::lock_guard lock(impl_->mutex);
             bt.server_tunnel_ip = impl_->server_tunnel_ip;
-            impl_->boringtun_config = bt;
+            // The fixed port of an earlier enable_mesh() survives a re-join.
+            bt.listen_port = impl_->mesh_config.listen_port;
         }
-        if (!impl_->meshplane.start(bt)) {
-            spdlog::warn("[LemonadeNexusClient] mesh dataplane start failed");
-        } else {
-            // Fresh dataplane — close the breaker so private calls probe at once,
-            // forget the old path's unanswered requests, and drop any
-            // connection pooled against the old egress.
-            impl_->mesh_breaker_until_ms.store(0, std::memory_order_relaxed);
-            impl_->private_path_answered();
-            {
-                std::lock_guard lock(impl_->private_api_mtx);
-                impl_->drop_private_client();
-            }
-            // Re-apply service exposures registered before a re-join
-            std::vector<std::pair<uint16_t, std::string>> exposures;
-            {
-                std::lock_guard lock(impl_->mutex);
-                exposures = impl_->exposed_services;
-            }
-            for (const auto& [vport, target] : exposures) {
-                std::string error;
-                if (!impl_->apply_ingress(vport, target, error)) {
-                    spdlog::warn("[LemonadeNexusClient] re-exposing {} -> {} failed: {}",
-                                 vport, target, error);
-                }
-            }
-        }
+        (void)impl_->start_dataplane(bt);
     }
 
     spdlog::info("[LemonadeNexusClient] joined network: node_id={}, tunnel_ip={}, mesh_pubkey={}",
@@ -3819,6 +3834,25 @@ void LemonadeNexusClient::enable_mesh(const MeshConfig& config) {
     // Stop existing orchestrator if any
     disable_mesh();
 
+    // The config is kept before the dataplane moves: a join after a failed
+    // move binds the fixed port again, as the application asked.
+    BoringtunConfig bt;
+    {
+        std::lock_guard lock(impl_->mutex);
+        impl_->mesh_config = config;
+        bt = impl_->boringtun_config;
+    }
+    if (bt.listen_port != config.listen_port) {
+        bt.listen_port = config.listen_port;
+        if (!impl_->start_dataplane(bt)) {
+            spdlog::warn("[LemonadeNexusClient] enable_mesh: the dataplane is down, it could "
+                         "not move to UDP port {}; join again, or enable the mesh with a "
+                         "port that is free",
+                         config.listen_port);
+            return;
+        }
+    }
+
     impl_->mesh_orchestrator = std::make_unique<MeshOrchestrator>(
         *this, impl_->meshplane, nid);
 
@@ -3831,7 +3865,6 @@ void LemonadeNexusClient::enable_mesh(const MeshConfig& config) {
             impl_->mesh_orchestrator->set_devices_callback(impl_->mesh_devices_callback);
         }
         impl_->mesh_enabled = true;
-        impl_->mesh_config  = config;
     }
 
     impl_->mesh_orchestrator->start(config);
@@ -3858,7 +3891,8 @@ MeshTunnelStatus LemonadeNexusClient::mesh_status() const {
             status = impl_->mesh_orchestrator->status();
         }
     }
-    status.needs_rejoin = impl_->rejoin_needed.load(std::memory_order_relaxed);
+    status.needs_rejoin   = impl_->rejoin_needed.load(std::memory_order_relaxed);
+    status.dataplane_port = impl_->meshplane.bound_port();
     return status;
 }
 
