@@ -86,47 +86,6 @@ void visit_file_references(const json& node,
     }
 }
 
-// What each GPU's card Quick start serves it with (loom-skills device.json
-// card.serve_args and card.preload_max_weight_bytes).
-struct TargetProfile {
-    const char* target;
-    const char* preset_suffix;
-    std::vector<std::string> args;
-    // Largest parameter_bytes whose preloaded host copy still fits beside the
-    // GPU's memory; Strix Halo shares one RAM between both.
-    std::uint64_t preload_max_bytes;
-};
-
-const std::vector<TargetProfile>& target_profiles() {
-    static const std::vector<TargetProfile> profiles = {
-        {kStrixHaloTarget, "", {"--pool_backing=fixed"}, 40000000000ull},
-        {kRadeonR9700Target, "-r9700", {"--pool_backing=fixed"},
-         std::numeric_limits<std::uint64_t>::max()},
-        {kGfx120116gbTarget, "-16gb",
-         {"--memory_bytes=15000000000", "--state_slab_bytes=4mib", "--weight_slab_bytes=64mib"},
-         std::numeric_limits<std::uint64_t>::max()},
-    };
-    return profiles;
-}
-
-const TargetProfile* profile_for(const std::string& target) {
-    for (const auto& profile : target_profiles()) {
-        if (target == profile.target) return &profile;
-    }
-    return nullptr;
-}
-
-bool is_gpu_variant(const std::string& preset) {
-    for (const auto& profile : target_profiles()) {
-        const std::string suffix = profile.preset_suffix;
-        if (!suffix.empty() && preset.size() > suffix.size() &&
-            preset.compare(preset.size() - suffix.size(), suffix.size(), suffix) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
 bool starts_with(const std::string& text, const std::string& prefix) {
     return text.rfind(prefix, 0) == 0;
 }
@@ -175,21 +134,6 @@ BundlePlan plan_bundle(const json& card, const json& lock) {
     BundlePlan plan;
     plan.model_id = string_field(card.value("model", json::object()), "id");
     if (plan.model_id.empty()) throw std::runtime_error("Loom card has no model.id");
-    const auto presets = card.find("presets");
-    if (presets != card.end() && presets->is_object()) {
-        if (presets->contains("chat")) {
-            plan.preset = "chat";
-        } else if (presets->size() == 1) {
-            plan.preset = presets->begin().key();
-        } else {
-            std::vector<std::string> base;
-            for (const auto& [name, preset] : presets->items()) {
-                (void)preset;
-                if (!is_gpu_variant(name)) base.push_back(name);
-            }
-            if (base.size() == 1) plan.preset = base.front();
-        }
-    }
 
     const auto origins = read_origins(card, lock);
     const auto locked = read_lock_files(lock);
@@ -296,57 +240,52 @@ bool bundle_supports_target(const json& info, const std::string& target) {
     return state != "unsupported" && state != "not_a_target";
 }
 
-std::string target_preset(const json& card, const std::string& preset, const std::string& target) {
-    const TargetProfile* profile = profile_for(target);
-    if (preset.empty() || profile == nullptr || *profile->preset_suffix == '\0') return preset;
-    const std::string variant = preset + profile->preset_suffix;
-    const auto presets = card.is_object() ? card.find("presets") : card.end();
-    if (card.is_object() && presets != card.end() && presets->is_object() &&
-        presets->contains(variant)) {
-        return variant;
-    }
-    return preset;
-}
-
-std::uint64_t parameter_bytes(const BundlePlan& plan) {
-    std::uint64_t total = 0;
-    std::set<std::string> seen;
-    for (const auto& file : plan.origin_files) {
-        if (seen.insert(file.path).second) total += file.size;
-    }
-    return total;
-}
-
-std::vector<std::string> serve_args(const std::string& target, const json& info,
-                                    std::uint64_t parameter_bytes,
-                                    const std::string& requested_memory_bytes, bool preload) {
-    std::vector<std::string> args;
+QuickStart quick_start(const json& info, const std::string& target) {
     const auto devices = info.is_object() ? info.find("devices") : info.end();
-    const json device = info.is_object() && devices != info.end() && devices->is_object()
-                            ? devices->value(target, json::object())
-                            : json::object();
-    const TargetProfile* profile = profile_for(target);
-    const auto recorded = device.is_object() ? device.find("serve_args") : device.end();
-    if (device.is_object() && recorded != device.end() && recorded->is_array()) {
-        for (const auto& arg : *recorded) {
-            const std::string text = arg.is_string() ? arg.get<std::string>() : "";
-            if (!is_recordable_serve_arg(text)) {
-                throw std::runtime_error("Loom bundle records a serve argument Lemonade does not "
-                                         "allow for " + target + ": " + (arg.is_string() ? text : arg.dump()));
-            }
-            args.push_back(text);
-        }
-        const bool sets_parameter_mode =
-            std::any_of(args.begin(), args.end(),
-                        [](const std::string& arg) { return starts_with(arg, "--parameter_mode="); });
-        if (preload && !sets_parameter_mode &&
-            (profile == nullptr || parameter_bytes <= profile->preload_max_bytes)) {
-            args.push_back(kPreloadFlag);
-        }
-    } else if (profile != nullptr) {
-        args = profile->args;
-        if (preload && parameter_bytes <= profile->preload_max_bytes) args.push_back(kPreloadFlag);
+    const json entry = devices != info.end() && devices->is_object()
+                           ? devices->value(target, json::object())
+                           : json::object();
+    const auto recorded = entry.is_object() ? entry.find("quick_start") : entry.end();
+    if (!entry.is_object() || recorded == entry.end() || !recorded->is_object()) {
+        throw std::runtime_error("Loom bundle records no Quick start for " + target);
     }
+    QuickStart qs;
+    const json preset = recorded->value("preset", json());
+    if (preset.is_string()) qs.preset = preset.get<std::string>();
+    if ((!preset.is_null() && !preset.is_string()) ||
+        !std::all_of(qs.preset.begin(), qs.preset.end(), is_repo_id_char)) {
+        throw std::runtime_error("Loom bundle records a preset Lemonade does not allow for " +
+                                 target + ": " + preset.dump());
+    }
+    const std::string device = string_field(*recorded, "device");
+    const std::size_t query = device.find('?');
+    qs.device_query = query == std::string::npos ? "" : device.substr(query + 1);
+    if (!starts_with(device, "amdgpu://") ||
+        !std::all_of(qs.device_query.begin(), qs.device_query.end(), [](char c) {
+            return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '=' || c == '&';
+        })) {
+        throw std::runtime_error("Loom bundle records a device Lemonade does not allow for " +
+                                 target + ": " + device);
+    }
+    const auto args = recorded->find("args");
+    if (args == recorded->end() || !args->is_array()) {
+        throw std::runtime_error("Loom bundle records no Quick start flags for " + target);
+    }
+    for (const auto& arg : *args) {
+        const std::string text = arg.is_string() ? arg.get<std::string>() : "";
+        if (!is_recordable_serve_arg(text)) {
+            throw std::runtime_error("Loom bundle records a serve argument Lemonade does not "
+                                     "allow for " + target + ": " + (arg.is_string() ? text : arg.dump()));
+        }
+        qs.args.push_back(text);
+    }
+    return qs;
+}
+
+std::vector<std::string> serve_args(const QuickStart& quick_start,
+                                    const std::string& requested_memory_bytes, bool preload) {
+    std::vector<std::string> args = quick_start.args;
+    if (!preload) args.erase(std::remove(args.begin(), args.end(), kPreloadFlag), args.end());
     if (!requested_memory_bytes.empty()) {
         args.erase(std::remove_if(args.begin(), args.end(),
                                   [](const std::string& arg) {
@@ -357,6 +296,24 @@ std::vector<std::string> serve_args(const std::string& target, const json& info,
         args.push_back("--memory_bytes=" + requested_memory_bytes);
     }
     return args;
+}
+
+std::string device_uri(const std::string& device, const std::string& query) {
+    std::string uri = device;
+    const std::size_t start = device.find('?');
+    const std::string own = start == std::string::npos ? "" : "&" + device.substr(start + 1) + "&";
+    std::size_t begin = 0;
+    while (begin <= query.size()) {
+        const std::size_t end = std::min(query.find('&', begin), query.size());
+        const std::string param = query.substr(begin, end - begin);
+        const std::string key = param.substr(0, param.find('='));
+        if (!param.empty() && own.find("&" + key + "=") == std::string::npos &&
+            own.find("&" + key + "&") == std::string::npos) {
+            uri += (uri.find('?') == std::string::npos ? "?" : "&") + param;
+        }
+        begin = end + 1;
+    }
+    return uri;
 }
 
 std::vector<std::string> build_server_argv(const std::string& model_dir, int port,
