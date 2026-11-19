@@ -401,13 +401,17 @@
 .nexus-mesh-dot--info { color: var(--info); }
 .nexus-mesh-dot--muted { color: var(--text-tertiary); }
 .nexus-mesh-dot--faint { color: var(--border-strong); }
-.nexus-pill { display: inline-flex; align-items: center; padding: 2px 7px; border: 1px solid currentColor; border-radius: var(--radius-pill); color: var(--text-secondary); font-size: 10px; font-weight: var(--weight-semibold); letter-spacing: .06em; line-height: 1.4; text-transform: uppercase; white-space: nowrap; }
-.nexus-pill--good { color: var(--success); }
-.nexus-pill--warn { color: var(--warning); }
-.nexus-pill--accent { color: var(--accent); }
-.nexus-pill--info { color: var(--info); }
-.nexus-pill--muted { color: var(--text-tertiary); }
-.nexus-pill--faint { color: var(--text-tertiary); border-color: var(--border-strong); }
+.nexus-pill { --nexus-pill-tone: var(--text-secondary); display: inline-flex; align-items: center; padding: 2px 7px; border: 1px solid currentColor; border-radius: var(--radius-pill); color: var(--nexus-pill-tone); font-size: 10px; font-weight: var(--weight-semibold); letter-spacing: .06em; line-height: 1.4; text-transform: uppercase; white-space: nowrap; }
+.nexus-pill--good { --nexus-pill-tone: var(--success); }
+.nexus-pill--warn { --nexus-pill-tone: var(--warning); }
+.nexus-pill--accent { --nexus-pill-tone: var(--accent); }
+.nexus-pill--info { --nexus-pill-tone: var(--info); }
+.nexus-pill--muted, .nexus-pill--faint { --nexus-pill-tone: var(--text-tertiary); }
+.nexus-pill--faint { border-color: var(--border-strong); }
+/* The light tones are tuned for glyphs on the canvas, not for 10px text, so the pill
+   fills with the tone and darkens the text to clear 4.5:1 against its own fill. */
+[data-theme="light"] .nexus-pill { background: color-mix(in srgb, var(--nexus-pill-tone) 14%, var(--surface-2)); border-color: color-mix(in srgb, var(--nexus-pill-tone) 40%, transparent); color: color-mix(in srgb, var(--nexus-pill-tone) 50%, var(--text-primary)); }
+[data-theme="light"] .nexus-pill--accent { color: var(--accent-fg); }
 .nexus-mesh-choice { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
 .nexus-mesh-choice > .nexus-mesh-row { flex: 1; min-width: 0; margin: 0; }
 .nexus-mesh-choice > .workspace-action-button { flex-shrink: 0; }
