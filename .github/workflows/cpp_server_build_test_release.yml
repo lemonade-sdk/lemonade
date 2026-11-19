@@ -1561,7 +1561,7 @@ jobs:
             script: server_llm.py
             extra_args: "--wrapped-server gufo --backend rocm"
           - name: loom
-            runner: r9700
+            runner: radeon-r9700
             install: "loom:hrx"
             script: server_llm.py
             extra_args: "--wrapped-server loom --backend hrx"
