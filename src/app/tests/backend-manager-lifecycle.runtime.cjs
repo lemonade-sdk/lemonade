@@ -51,10 +51,10 @@ assert.match(source, /backendActionIsReflected/);
 const flmBuildSelector = source.match(
   /recipe === 'flm' && backend === 'npu' && \([\s\S]*?<select[\s\S]*?<\/select>/,
 )?.[0];
-assert.ok(flmBuildSelector, 'FastFlowLM build selector not found');
+assert.ok(flmBuildSelector, 'FastFlowLM runtime selector not found');
 assert.match(flmBuildSelector, /disabled=\{isInstalling \|\| showBackendProgress \|\| !runtimeConfig\.flm\}/);
 assert.doesNotMatch(flmBuildSelector, /info\.state|Uninstall FastFlowLM before changing its build/);
-assert.match(flmBuildSelector, /Changing the build requires an update before FastFlowLM can run/);
+assert.match(flmBuildSelector, /Changing the runtime requires an update before FastFlowLM can run/);
 
 // Concurrent refreshes may not overwrite the newest system-info snapshot.
 assert.match(source, /const requestId = \+\+systemInfoRequestRef\.current/);
