@@ -1,4 +1,5 @@
 #include <lemon/wrapped_server.h>
+#include <lemon/runtime_config.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/url_utils.h>
 #include <lemon/utils/http_client.h>
@@ -573,17 +574,25 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
     const std::string normalized_endpoint = normalize_endpoint(endpoint);
     std::string health_url = get_base_url() + normalized_endpoint;
 
-    // Use global default if not specified
-    if (timeout_seconds == 0) {
-        timeout_seconds = utils::HttpClient::get_default_timeout();
+    // A model load has a distinct startup deadline, unrelated to request timeouts.
+    if (timeout_seconds <= 0) {
+        timeout_seconds = kDefaultStartupTimeoutSeconds;
+    }
+    // 0 preserves the backend-specific startup default (600s, 1800s for vLLM).
+    if (auto* config = RuntimeConfig::global()) {
+        const long configured = config->backend_startup_timeout_seconds();
+        if (configured > 0) timeout_seconds = configured;
     }
 
     std::cout << "Waiting for " + server_name_ + " to be ready (timeout: " << timeout_seconds << "s)..." << std::endl;
     LOG(DEBUG, "WrappedServer") << "Waiting for " + server_name_ + " to be ready..." << std::endl;
 
-    const long max_attempts = (timeout_seconds * 1000) / poll_interval_ms;
+    // Count wall-clock time, not probes: each probe can consume a full second.
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::seconds(timeout_seconds);
+    auto last_log = std::chrono::steady_clock::now();
 
-    for (long i = 0; i < max_attempts; i++) {
+    while (std::chrono::steady_clock::now() < deadline) {
         if (load_cancel_ && load_cancel_->load()) {
             LOG(WARNING, "WrappedServer") << server_name_ << " load cancelled" << std::endl;
             return false;
@@ -607,9 +616,11 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
 
         std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
 
-        // Print progress every 10 seconds
-        if (i % 100 == 0 && i > 0) {
+        // A slow health probe should not stretch the logged interval either.
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last_log >= std::chrono::seconds(10)) {
             LOG(DEBUG, "WrappedServer") << "Still waiting for " + server_name_ + "..." << std::endl;
+            last_log = now;
         }
     }
 
@@ -618,7 +629,6 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
 }
 
 json WrappedServer::forward_get_request(const std::string& endpoint, long timeout_seconds) {
-    (void)timeout_seconds;
     if (!is_backend_alive()) {
         if (was_watchdog_triggered() || has_backend_process_exited()) {
             if (!was_watchdog_triggered()) {
@@ -635,7 +645,7 @@ json WrappedServer::forward_get_request(const std::string& endpoint, long timeou
     std::map<std::string, std::string> headers;
 
     try {
-        auto response = utils::HttpClient::get(url, headers, 0,
+        auto response = utils::HttpClient::get(url, headers, timeout_seconds,
                                                utils::HttpSecurityPolicy::TrustedLoopback);
         note_backend_activity();
 
@@ -853,7 +863,8 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
     try {
         if (sse) {
             // Use StreamingProxy to forward the SSE stream with telemetry callback
-            // Use INFERENCE_TIMEOUT_SECONDS (0 = infinite) as chat completions can take a long time
+            // Long generations are not bound by a server-wide timeout. The
+            // client disconnect callback and watchdog still handle failures.
             StreamingProxy::forward_sse_stream(url, request_body, sink,
                 [telemetry_callback](const StreamingProxy::TelemetryData& telemetry) {
                     if (telemetry_callback) {

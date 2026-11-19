@@ -139,7 +139,7 @@ void ThinkSoundServer::audio_generations(const json& request, httplib::DataSink&
     if (request.contains("steps"))    body["steps"]    = request["steps"];
     if (request.contains("cfg"))      body["cfg"]      = request["cfg"];
     if (request.contains("seed"))     body["seed"]     = request["seed"];
-    forward_streaming_request("/generate", body.dump(), sink, /*sse=*/false, /*timeout_seconds=*/600);
+    forward_streaming_request("/generate", body.dump(), sink, /*sse=*/false);
 }
 
 }  // namespace backends

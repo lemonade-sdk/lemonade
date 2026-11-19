@@ -58,7 +58,7 @@ public:
         const std::string& request_body,
         httplib::DataSink& sink,
         std::function<void(const TelemetryData&)> on_complete = nullptr,
-        long timeout_seconds = 300,
+        long timeout_seconds = utils::HttpClient::kNoTimeout,
         std::function<void()> on_chunk = nullptr,
         long heartbeat_interval_ms = 1000
     );
@@ -67,7 +67,7 @@ public:
         const std::string& backend_url,
         const std::string& request_body,
         httplib::DataSink& sink,
-        long timeout_seconds = 300,
+        long timeout_seconds = utils::HttpClient::kNoTimeout,
         std::function<void()> on_chunk = nullptr
     );
 

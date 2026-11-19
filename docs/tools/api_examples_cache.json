@@ -200,6 +200,7 @@
         "auto_evict": false,
         "auto_evict_threshold_pct": 0.9,
         "auto_update_models": false,
+        "backend_startup_timeout_seconds": 0,
         "broadcast": true,
         "cloud_providers": [],
         "config_version": 2,
@@ -216,13 +217,13 @@
           "args": "",
           "prefer_system": false
         },
-        "global_timeout": 600,
         "host": "localhost",
         "hrx": {
           "args": "",
           "hrx_bin": "builtin"
         },
         "inhibit_suspend": true,
+        "inference_inactivity_timeout_seconds": 1800,
         "kokoro": {
           "cpu_bin": "builtin"
         },
@@ -372,6 +373,7 @@
         "auto_evict": false,
         "auto_evict_threshold_pct": 0.9,
         "auto_update_models": false,
+        "backend_startup_timeout_seconds": 0,
         "broadcast": true,
         "cloud_providers": [],
         "config_version": 2,
@@ -388,13 +390,13 @@
           "args": "",
           "prefer_system": false
         },
-        "global_timeout": 600,
         "host": "localhost",
         "hrx": {
           "args": "",
           "hrx_bin": "builtin"
         },
         "inhibit_suspend": true,
+        "inference_inactivity_timeout_seconds": 1800,
         "kokoro": {
           "cpu_bin": "builtin"
         },

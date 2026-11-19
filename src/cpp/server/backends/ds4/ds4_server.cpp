@@ -173,7 +173,7 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     start_server(std::make_unique<ContainerProcess>(ProcessOutput{inherit_output, true},
                                                     ds4::descriptor.recipe, backend, model_name,
                                                     *ds4::descriptor.container_for(backend), image),
-                 command, HttpClient::get_default_timeout());
+                 command);
 }
 
 json Ds4Server::chat_completion(const json& request) {

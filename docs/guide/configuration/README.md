@@ -49,6 +49,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "auto_evict": false,
   "auto_evict_threshold_pct": 0.9,
   "auto_update_models": false,
+  "backend_startup_timeout_seconds": 0,
   "broadcast": true,
   "cloud_providers": [],
   "config_version": 2,
@@ -65,7 +66,6 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "args": "",
     "prefer_system": false
   },
-  "global_timeout": 600,
   "gufo": {
     "args": ""
   },
@@ -74,6 +74,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "args": "",
     "hrx_bin": "builtin"
   },
+  "inference_inactivity_timeout_seconds": 1800,
   "inhibit_suspend": true,
   "kokoro": {
     "cpu_bin": "builtin"
@@ -217,8 +218,9 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `log_file` | string | "auto" | File logging mode: "auto" (console-only for direct server runs, lemonade-server.log for embedded tray app), "disabled", "enabled", or custom target file path |
 | `log_max_file_size_mb` | int | 10 | Max active log file size in MB before triggering rotation (steady-state footprint bounded to ~`log_max_file_size_mb * (log_max_files + 1)`) |
 | `log_max_files` | int | 5 | Max number of rotated log backup files to retain (.1 through .N); legacy oversized files are rotated into .1 and pruned over cycles |
-| `global_timeout` | int | 600 | Timeout in seconds for HTTP, inference, and readiness checks |
 | `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
+| `backend_startup_timeout_seconds` | int | 0 | Backend readiness deadline: `0` uses backend-specific defaults (600s generally, 1800s for vLLM); 1–86400 overrides all backends on subsequent starts. Set via `lemonade config set backend_startup_timeout_seconds=3600`. Not an inference time limit. |
+| `inference_inactivity_timeout_seconds` | int | 1800 | Per-inference idle threshold (seconds, 0–86400); `0` disables this guard. No total inference deadline. Transferred request/response bytes reset the timer. Pure backend computation without network activity cannot be detected. Remote SSE heartbeats also count as received bytes. Takes effect on new requests. Set via `lemonade config set inference_inactivity_timeout_seconds=3600`. |
 | `auto_evict` | bool | false | Enable dynamic VRAM management based on idle time and global GPU memory pressure. Can be overridden per model. |
 | `auto_evict_threshold_pct` | number | 0.90 | Global VRAM fraction at which pressure eviction is evaluated. Must be greater than 0 and at most 1.0; `0.90` means 90%. |
 | `broadcast` | bool | true | Enable or disable UDP broadcasting for server discovery |
