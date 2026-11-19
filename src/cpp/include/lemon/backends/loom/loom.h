@@ -24,9 +24,6 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
     return flags;
 }
 
-// A custom --device replaces this whole URI, the completion wait included.
-inline constexpr const char* kDefaultDevice = "amdgpu://?completion_spin_ns=4294967295";
-
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "loom",
     /*display_name*/    "Loom",

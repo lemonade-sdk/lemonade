@@ -445,15 +445,14 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
 
     constexpr bool kPreload = true;
     const std::string loom_args = options.get_option("loom_args").get<std::string>();
-    const std::vector<std::string> serve_args =
-        loom::serve_args(target, info, loom::parameter_bytes(plan), kPreload, loom_args);
+    const loom::QuickStart quick_start = loom::quick_start(info, target);
+    const std::vector<std::string> serve_args = loom::serve_args(quick_start, kPreload, loom_args);
 
     port_ = choose_port();
     ServerCommand command;
     command.program = BackendUtils::get_backend_binary_path(*loom::spec(), kBackend);
-    command.args = loom::build_server_argv(utils::path_to_utf8(dir), port_,
-                                           loom::target_preset(card, plan.preset, target),
-                                           serve_args, loom_args);
+    command.args = loom::build_server_argv(utils::path_to_utf8(dir), port_, quick_start.preset,
+                                           serve_args, loom_args, quick_start.device_query);
     command.port = port_;
     command.ready_endpoint = "/readyz";
 
@@ -585,7 +584,8 @@ public:
             std::error_code ec;
             if (dir.empty() || !fs::is_regular_file(dir / kCardFile, ec)) return;
             const json card = read_json_file(dir / kCardFile);
-            const PresetLimits limits = preset_limits(card, detect_supported_gpu());
+            const QuickStart start = quick_start(read_json_file(dir / kInfoFile), detect_supported_gpu());
+            const PresetLimits limits = preset_limits(card, start.preset);
             if (limits.context_capacity > 0) {
                 info.max_context_window = limits.context_capacity;
             }

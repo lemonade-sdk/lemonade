@@ -50,9 +50,6 @@ struct LockedFile {
 
 struct BundlePlan {
     std::string model_id;
-    // "chat" when the card has it, else the card's only preset that is not a
-    // GPU variant (`<preset>-r9700` or `<preset>-16gb`); "" leaves the choice to loom-serve.
-    std::string preset;
     std::vector<OriginFile> origin_files;
     std::vector<LockedFile> locked_files;
 };
@@ -88,41 +85,36 @@ std::string device_target(const std::string& arch, const std::string& gpu_name,
 // bundle without that map is left to loom-serve.
 bool bundle_supports_target(const json& info, const std::string& target);
 
-// The preset a GPU runs: the card's `<preset>-r9700` (32 GB class) or `<preset>-16gb`
-// (16 GB class) variant when the card has one (a larger prefill chunk, same programs), else `preset`.
-std::string target_preset(const json& card, const std::string& preset, const std::string& target);
-
 struct PresetLimits {
     std::int64_t context_capacity = 0;
     std::int64_t max_tokens = 0;
 };
 
-PresetLimits preset_limits(const json& card, const std::string& target = "");
+PresetLimits preset_limits(const json& card, const std::string& preset = "");
 
-// The bytes of the parameter files a bundle loads from its origins.
-std::uint64_t parameter_bytes(const BundlePlan& plan);
+struct QuickStart {
+    std::string preset;
+    std::string device_query;
+    std::vector<std::string> args;
+};
+
+QuickStart quick_start(const json& info, const std::string& target);
 
 // --parameter_mode=preload: reads the weights into host memory first, which
 // avoids ROCm/hrx-system#3332 (the default parameter mode fails under the stock
 // 8 MiB RLIMIT_MEMLOCK on Linux).
 inline constexpr const char* kPreloadFlag = "--parameter_mode=preload";
 
-// The loom-serve flags the bundle's card serves `target` with: the flags its
-// info.json records for that GPU, else the GPU's own (a fixed pool on Strix Halo
-// and the 32 GB class). Recorded flags are limited to pool, memory, slab and
-// parameter-mode settings; any other throws. kPreloadFlag is added where `preload`,
-// the host copy of `parameter_bytes` fits, and no parameter mode is recorded.
-// loom-serve rejects a memory limit on a fixed pool, so a --memory_bytes in
-// `custom_args` drops the recorded backing and size, leaving an elastic pool of
-// the size the user asks for.
-std::vector<std::string> serve_args(const std::string& target, const json& info,
-                                    std::uint64_t parameter_bytes, bool preload,
-                                    const std::string& custom_args);
+// loom-serve rejects a memory limit on a fixed pool, so a custom --memory_bytes
+// drops the recorded backing and size before custom arguments are appended.
+std::vector<std::string> serve_args(const QuickStart& quick_start,
+                                    bool preload, const std::string& custom_args);
 
 std::vector<std::string> build_server_argv(const std::string& model_dir, int port,
                                            const std::string& preset,
                                            const std::vector<std::string>& serve_args,
-                                           const std::string& custom_args);
+                                           const std::string& custom_args,
+                                           const std::string& device_query = "");
 
 // loom-serve registers the bundle under the card's model id and reads
 // chat_template_kwargs itself, so the `/no_think` prefix Lemonade adds for other
