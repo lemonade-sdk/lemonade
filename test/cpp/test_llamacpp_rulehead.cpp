@@ -31,6 +31,8 @@ using lemon::backends::llamacpp::RouterTokens;
 using lemon::backends::llamacpp::RuleHead;
 using lemon::backends::llamacpp::score_pooled_router_labels;
 using lemon::backends::llamacpp::score_router_labels;
+using lemon::backends::llamacpp::special_token_lead;
+using lemon::backends::llamacpp::strip_special_tokens;
 using lemon::backends::llamacpp::token_byte_spans;
 using nlohmann::json;
 
@@ -457,6 +459,66 @@ int main() {
         tokenized = false;
         (void)fit_router_input({repeat("x", 40)}, "short", 128, 1, 5, counting);
         expect(tokenized, "a label block within the bound still goes to the tokenizer");
+
+        // Budget 40 as above: a text of 40 bytes cannot hold 41 tokens.
+        std::vector<std::string> seen;
+        const auto recording = [&](const std::string& s) {
+            seen.push_back(s);
+            return char_tokens(s);
+        };
+        const std::string block = build_router_input(one, "").text;
+        const RouterFit at_budget = fit_router_input(one, repeat("x", 40), 64, 1, 5, recording);
+        expect(!at_budget.truncated && at_budget.fits_by_bytes &&
+                   seen == std::vector<std::string>{block, at_budget.input.text},
+               "a text of no more bytes than its budget is read whole, untokenized on its own");
+        seen.clear();
+        const RouterFit past_budget = fit_router_input(one, repeat("x", 41), 64, 1, 5, recording);
+        expect(past_budget.truncated && !past_budget.fits_by_bytes && seen.size() == 3 &&
+                   seen[1] == repeat("x", 41),
+               "a text of more bytes than its budget is counted on its own and cut");
+        const RouterFit wide = fit_router_input(one, repeat(e_acute, 20), 64, 1, 5, char_tokens);
+        expect(!wide.truncated && wide.fits_by_bytes,
+               "the bound counts bytes, so 20 two-byte characters fit a budget of 40");
+
+        // A token without bytes breaks the bound: the text is then counted as before.
+        const auto with_empty = [&](const std::string& s) {
+            json out = char_tokens(s);
+            json padded = json::array();
+            for (auto& token : out) {
+                padded.push_back(token);
+                if (token["piece"] == "z") padded.push_back(piece(2000, ""));
+            }
+            return padded;
+        };
+        const RouterFit empty_pieces = fit_router_input(one, repeat("z", 30), 64, 1, 5, with_empty);
+        expect(empty_pieces.truncated && !empty_pieces.fits_by_bytes,
+               "a tokenizer that returns tokens without bytes still gets its text cut");
+    }
+
+    {
+        const json with_bos = json::array({piece(1, "<s>"), piece(7, "a"), piece(8, "b")});
+        const json with_both = json::array({piece(1, "<s>"), piece(7, "a"), piece(8, "b"), piece(2, "</s>")});
+        const json plain = json::array({piece(7, "a"), piece(8, "b")});
+        expect(special_token_lead(with_bos, plain) == 1 &&
+                   special_token_lead(json::array({7, 8, 2}), plain) == 0,
+               "the special tokens before the input are counted");
+        expect(throws<std::runtime_error>(
+                   [&] { special_token_lead(json::array({1, 9, 8}), plain); }),
+               "an input tokenized differently with special tokens is refused");
+        expect(strip_special_tokens(with_both, 1, 2) == plain &&
+                   strip_special_tokens(with_bos, 1, 1) == plain &&
+                   strip_special_tokens(plain, 0, 0) == plain,
+               "the special tokens are taken off both ends");
+        expect(throws<std::runtime_error>([&] { strip_special_tokens(json::array({1}), 1, 2); }) &&
+                   throws<std::runtime_error>([&] { strip_special_tokens(with_both, 3, 2); }),
+               "an answer shorter than its special tokens is refused");
+        const json one_call = json::array({piece(1, "<s>"), piece(7, "a"), piece(8, "b")});
+        const RouterTokens from_one_call =
+            router_tokens(one_call, strip_special_tokens(one_call, 1, 1), 2);
+        const RouterTokens from_two_calls = router_tokens(json::array({1, 7, 8}), plain, 2);
+        expect(from_one_call.ids == from_two_calls.ids &&
+                   from_one_call.spans == from_two_calls.spans,
+               "ids and spans from one add_special call equal those from two calls");
     }
 
     if (failures > 0) {
