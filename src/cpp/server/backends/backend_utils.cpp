@@ -21,6 +21,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
@@ -510,24 +511,42 @@ namespace lemon::backends {
     void BackendUtils::record_backend_extra_image(const std::string& recipe,
                                                   const std::string& backend,
                                                   const std::string& image) {
-        const auto recorded = get_backend_extra_images(recipe, backend);
-        if (std::find(recorded.begin(), recorded.end(), image) != recorded.end()) return;
-        const fs::path dir = get_install_directory(recipe, backend);
-        std::error_code ec;
-        fs::create_directories(dir, ec);
-        std::ofstream(dir / "extra_images.txt", std::ios::app) << image << "\n";
+        // The expected pin, not the installed one: a model pulled after an upgrade
+        // brought a new pin belongs to the install that pin is about to get.
+        const ExtraImage entry{get_backend_version(recipe, backend), image};
+        const std::string dir = get_install_directory(recipe, backend);
+        auto recorded = read_backend_extra_images(dir);
+        for (const auto& existing : recorded) {
+            if (existing.pin == entry.pin && existing.image == entry.image) return;
+        }
+        recorded.push_back(entry);
+        write_backend_extra_images(dir, recorded);
     }
 
-    std::vector<std::string> BackendUtils::get_backend_extra_images(const std::string& recipe,
-                                                                    const std::string& backend) {
-        std::vector<std::string> images;
-        std::ifstream file(fs::path(get_install_directory(recipe, backend)) / "extra_images.txt");
+    std::vector<BackendUtils::ExtraImage> BackendUtils::read_backend_extra_images(
+        const std::string& install_dir) {
+        std::vector<ExtraImage> images;
+        std::ifstream file(fs::path(install_dir) / "extra_images.txt");
         std::string line;
         while (std::getline(file, line)) {
-            line = line.substr(0, line.find_last_not_of(" \t\r\n") + 1);
-            if (!line.empty()) images.push_back(line);
+            std::istringstream fields(line);
+            ExtraImage entry;
+            if (fields >> entry.pin >> entry.image) images.push_back(entry);
         }
         return images;
+    }
+
+    void BackendUtils::write_backend_extra_images(const std::string& install_dir,
+                                                  const std::vector<ExtraImage>& images) {
+        const fs::path path = fs::path(install_dir) / "extra_images.txt";
+        std::error_code ec;
+        if (images.empty()) {
+            fs::remove(path, ec);
+            return;
+        }
+        fs::create_directories(install_dir, ec);
+        std::ofstream file(path, std::ios::trunc);
+        for (const auto& entry : images) file << entry.pin << " " << entry.image << "\n";
     }
 
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {

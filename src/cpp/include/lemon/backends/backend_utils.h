@@ -261,14 +261,24 @@ namespace lemon::backends {
         /** The image get_backend_image() gave at install time, or "" when none is installed. */
         static std::string get_installed_backend_image(const std::string& recipe, const std::string& backend);
 
-        /** Records an image a container backend pulled beside its pinned one, such as a
-         *  per-model image built on it, so uninstalling or replacing the backend removes it. */
+        /** An image a container backend pulled beside its pinned one, such as a per-model
+         *  image built on it, with the backend pin it was pulled for. */
+        struct ExtraImage {
+            std::string pin;
+            std::string image;
+        };
+
+        /** Records `image` under the backend's expected pin, so uninstalling the backend or
+         *  moving it to another pin removes it. */
         static void record_backend_extra_image(const std::string& recipe, const std::string& backend,
                                                const std::string& image);
 
-        /** The images record_backend_extra_image() recorded for the installed backend. */
-        static std::vector<std::string> get_backend_extra_images(const std::string& recipe,
-                                                                 const std::string& backend);
+        /** The images record_backend_extra_image() recorded in `install_dir`. */
+        static std::vector<ExtraImage> read_backend_extra_images(const std::string& install_dir);
+
+        /** Replaces the record in `install_dir` with `images`. */
+        static void write_backend_extra_images(const std::string& install_dir,
+                                               const std::vector<ExtraImage>& images);
 
         /** Get the path where the version indicator is installed. Does not check existence. */
         static std::string get_installed_version_file(const BackendSpec& spec, const std::string& backend);

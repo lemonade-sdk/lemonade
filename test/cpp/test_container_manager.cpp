@@ -794,6 +794,28 @@ void test_aim() {
     check("server_models.json has AIM models", rows > 0);
 }
 
+#ifndef _WIN32
+void test_extra_image_record() {
+    namespace fs = std::filesystem;
+    using lemon::backends::BackendUtils;
+    const fs::path dir = fs::temp_directory_path() / "lemonade-test-extra-images";
+    fs::remove_all(dir);
+    BackendUtils::write_backend_extra_images(
+        dir.string(), {{"2026.11.0@sha256:aa", "docker.io/amdenterpriseai/a@sha256:1"},
+                       {"2026.12.0@sha256:bb", "docker.io/amdenterpriseai/b@sha256:2"}});
+    const auto read = BackendUtils::read_backend_extra_images(dir.string());
+    check("each recorded image keeps the pin it was pulled for",
+          read.size() == 2 && read[0].pin == "2026.11.0@sha256:aa" &&
+              read[0].image == "docker.io/amdenterpriseai/a@sha256:1" &&
+              read[1].pin == "2026.12.0@sha256:bb");
+    BackendUtils::write_backend_extra_images(dir.string(), {});
+    check("an empty record leaves no file behind",
+          !fs::exists(dir / "extra_images.txt") &&
+              BackendUtils::read_backend_extra_images(dir.string()).empty());
+    fs::remove_all(dir);
+}
+#endif
+
 void test_descriptors_and_pins() {
     std::ifstream in(BACKEND_VERSIONS_JSON_PATH);
     const nlohmann::json versions = nlohmann::json::parse(in);
@@ -834,6 +856,7 @@ int main() {
     test_helpers();
 #ifndef _WIN32
     test_model_mounts();
+    test_extra_image_record();
 #endif
 
     test_halogen_kernel_check();

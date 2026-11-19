@@ -203,12 +203,14 @@ void install_container_backend(const std::string& recipe, const std::string& bac
     // failed write leaves the working install in place.
     const std::string previous_image =
         backends::BackendUtils::get_installed_backend_image(recipe, backend);
-    // Images built on the previous pin go with it; a reinstall of the same pin
-    // keeps them.
-    const std::vector<std::string> recorded_extras =
-        backends::BackendUtils::get_backend_extra_images(recipe, backend);
-    const bool same_pin = previous_image == image;
     const fs::path install_dir = version_file.parent_path();
+    // Images pulled for this pin stay with the new install; those pulled for an
+    // earlier one go with it.
+    std::vector<backends::BackendUtils::ExtraImage> kept_extras;
+    std::vector<backends::BackendUtils::ExtraImage> stale_extras;
+    for (auto& entry : backends::BackendUtils::read_backend_extra_images(install_dir.string())) {
+        (entry.pin == pin ? kept_extras : stale_extras).push_back(std::move(entry));
+    }
     const fs::path staging_dir =
         install_dir.parent_path() / ("." + install_dir.filename().string() + ".staging");
     std::error_code ec;
@@ -222,17 +224,14 @@ void install_container_backend(const std::string& recipe, const std::string& bac
     if (ec || !staged) {
         throw std::runtime_error("Failed to write the version marker in " + staging_dir.string());
     }
+    backends::BackendUtils::write_backend_extra_images(staging_dir.string(), kept_extras);
     fs::remove_all(install_dir, ec);
     if (!ec) fs::rename(staging_dir, install_dir, ec);
     if (ec) {
         throw std::runtime_error("Failed to replace " + install_dir.string() + ": " + ec.message());
     }
-    for (const auto& extra : recorded_extras) {
-        if (same_pin) {
-            backends::BackendUtils::record_backend_extra_image(recipe, backend, extra);
-        } else {
-            manager.remove_image(extra);
-        }
+    for (const auto& extra : stale_extras) {
+        manager.remove_image(extra.image);
     }
     if (!previous_image.empty() && previous_image != image) {
         manager.remove_image(previous_image);
@@ -262,14 +261,15 @@ std::string container_registry_url(const std::string& image) {
 void uninstall_container_backend(const std::string& recipe, const std::string& backend) {
     // Images built on the backend's share its layers, so removing only the
     // pinned image would free none of them.
-    for (const auto& extra : backends::BackendUtils::get_backend_extra_images(recipe, backend)) {
-        utils::ContainerManager::global().remove_image(extra);
+    const fs::path install_dir = container_version_file(recipe, backend).parent_path();
+    for (const auto& extra :
+         backends::BackendUtils::read_backend_extra_images(install_dir.string())) {
+        utils::ContainerManager::global().remove_image(extra.image);
     }
     const std::string image = backends::BackendUtils::get_installed_backend_image(recipe, backend);
     if (!image.empty()) {
         utils::ContainerManager::global().remove_image(image);
     }
-    const fs::path install_dir = container_version_file(recipe, backend).parent_path();
     std::error_code ec;
     fs::remove_all(install_dir, ec);
     if (ec) {
