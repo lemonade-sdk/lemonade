@@ -561,6 +561,21 @@ test('Nexus uses the shared Settings selection colors in both themes', async ({ 
   }
 });
 
+test('light theme fills the device pills instead of outlining them in the raw tone', async ({ page }, testInfo) => {
+  await setupNexusAccount(page);
+  await enableNexusMesh(page);
+  await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.getByRole('button', { name: 'Mesh: My laptop', exact: true }).click();
+  const menu = page.getByRole('dialog', { name: 'Lemonade Account', exact: true });
+  const row = menu.locator('.nexus-devices li').filter({ hasText: 'My laptop' });
+  await expect(row.locator('.nexus-pill--accent')).toHaveText(['This device', 'Admin']);
+  const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
+  for (const pill of await menu.locator('.nexus-pill').all()) expect(await pill.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+  for (const pill of await row.locator('.nexus-pill--accent').all()) expect(await pill.evaluate(el => getComputedStyle(el).color)).not.toBe(accent);
+  await menu.screenshot({ path: testInfo.outputPath('nexus-pills-light.png') });
+});
+
 test('a rejected server API key gives actionable Enable Mesh guidance', async ({ page }) => {
   await setupNexusAccount(page, { unauthorized: true });
   await page.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
