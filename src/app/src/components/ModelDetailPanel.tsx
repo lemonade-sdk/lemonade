@@ -2577,7 +2577,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
     start: (model: ModelInfo, recipeOptions?: Record<string, unknown>) => void,
     target: ModelInfo,
   ) => {
-    start(target, configLoadOptionsRef.current?.());
+    start(target, configLoadOptionsRef.current?.() ?? {});
   }, []);
 
   const detailName = model ? mdName(model) : '';

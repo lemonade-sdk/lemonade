@@ -518,7 +518,7 @@ The `LEMONADE_ADMIN_API_KEY` environment variable provides elevated access to bo
 
 Supplying backend command-line arguments (`*_args`) or changing `merge_args` through model loading, background-job load steps, saved model options, registration, or import also requires admin authorization. This includes options inside `recipe_options`, legacy option blocks, and embedded collection model definitions. Clearing saved backend arguments also requires admin authorization. Requests with insufficient privileges return HTTP 403 before changing models or saved options. Regular clients can still load models with arguments already configured by the operator.
 
-Creating or changing a collection's manifest checkpoint, or changing that manifest's registry source, also requires admin authorization because the manifest can supply backend arguments. Regular clients can still load or pull existing operator-configured collections.
+Submitting a collection's manifest checkpoint or its registry source also requires admin authorization because the manifest can supply backend arguments, even when resending an unchanged value. Regular clients can still load or pull existing operator-configured collections without these fields; their configured manifest sources remain trusted.
 
 Set different regular and admin keys to separate these permissions. With only the regular key configured, that key authorizes argument overrides too; with neither key configured, no authentication is required. With only an admin key configured, ordinary API operations remain open, but argument overrides require the admin key.
 

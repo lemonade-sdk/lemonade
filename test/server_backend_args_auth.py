@@ -300,6 +300,95 @@ class BackendArgsAuthorizationTests(unittest.TestCase):
                         {"model_name": name, "recipe": "llamacpp", **options},
                     )
 
+    def test_regular_option_edits_preserve_registered_and_saved_arguments(self):
+        with isolated_server() as server:
+            name = "user.PartialOptions"
+            status, text = server.request(
+                "POST",
+                "/v1/models/register",
+                {
+                    "model_name": name,
+                    "recipe": "llamacpp",
+                    "recipe_options": {"llamacpp_args": "--threads 1"},
+                },
+                ADMIN_KEY,
+            )
+            self.assertEqual(status, 200, text[:1000])
+            status, text = server.request(
+                "POST",
+                f"/v1/models/{name}/options",
+                {"llamacpp_args": "--threads 2"},
+                ADMIN_KEY,
+            )
+            self.assertEqual(status, 200, text[:1000])
+            registry = server.saved_state()["user_models.json"]
+            for prefix in PREFIXES:
+                path = f"{prefix}/models/{name}/options"
+                for context in (2048, None):
+                    with self.subTest(prefix=prefix, context=context):
+                        status, text = server.request(
+                            "POST", path, {"ctx_size": context}, REGULAR_KEY
+                        )
+                        self.assertEqual(status, 200, text[:1000])
+                        saved = json.loads(text)["saved"]
+                        self.assertEqual(saved["llamacpp_args"], "--threads 2")
+                        if context is None:
+                            self.assertNotIn("ctx_size", saved)
+                        else:
+                            self.assertEqual(saved["ctx_size"], context)
+                        self.assertEqual(
+                            server.saved_state()["user_models.json"], registry
+                        )
+
+    def test_regular_key_can_register_collection_of_existing_models(self):
+        with isolated_server() as server:
+            child = "user.RegularCollectionChild"
+            collection = "user.RegularCollection"
+            public_child = None
+            for definition in (
+                {"model_name": child, "recipe": "llamacpp"},
+                {
+                    "model_name": collection,
+                    "recipe": "collection.omni",
+                    "components": [child],
+                },
+            ):
+                status, text = server.request(
+                    "POST", "/v1/models/register", definition, REGULAR_KEY
+                )
+                self.assertEqual(status, 200, text[:1000])
+                if definition["model_name"] == child:
+                    public_child = json.loads(text)["model_name"]
+            status, text = server.request(
+                "GET", f"/v1/models/{collection}", key=REGULAR_KEY
+            )
+            self.assertEqual(status, 200, text[:1000])
+            model = json.loads(text)
+            self.assertEqual(model["recipe"], "collection.omni")
+            self.assertEqual(model["components"], [public_child])
+
+    def test_regular_key_can_complete_ordinary_jobs(self):
+        with isolated_server() as server:
+            for wrapped in (False, True):
+                body = {"steps": [{"id": "wait", "op": "sleep", "params": {"ms": 1}}]}
+                if wrapped:
+                    body = {"definition": body}
+                status, text = server.request("POST", "/v1/jobs", body, REGULAR_KEY)
+                self.assertEqual(status, 202, text[:1000])
+                job_id = json.loads(text)["id"]
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    status, text = server.request(
+                        "GET", f"/v1/jobs/{job_id}", key=REGULAR_KEY
+                    )
+                    self.assertEqual(status, 200, text[:1000])
+                    job = json.loads(text)
+                    if job["status"] in ("completed", "failed"):
+                        break
+                    time.sleep(0.02)
+                self.assertEqual(job["status"], "completed", text[:1000])
+                self.assertEqual(job["steps"][0]["status"], "completed")
+
     def test_regular_key_cannot_choose_remote_collection_manifests(self):
         with isolated_server() as server:
             for route in ("models/register", "pull"):
@@ -338,11 +427,21 @@ class BackendArgsAuthorizationTests(unittest.TestCase):
                     {"model_name": "user.RemoteAuthBoundary", **checkpoint},
                 )
             for source_key in ("source", "registry_source"):
-                self.assert_forbidden_without_writes(
-                    server,
-                    "/v1/pull",
-                    {"model_name": "user.RemoteAuthBoundary", source_key: "modelscope"},
-                )
+                for source in ("huggingface", "modelscope"):
+                    self.assert_forbidden_without_writes(
+                        server,
+                        "/v1/pull",
+                        {"model_name": "user.RemoteAuthBoundary", source_key: source},
+                    )
+            self.assert_forbidden_without_writes(
+                server,
+                "/v1/models/register",
+                {
+                    "model_name": "user.RemoteAuthBoundary",
+                    "recipe": "collection.omni",
+                    "checkpoint": "example/remote-collection",
+                },
+            )
 
     def test_collection_source_change_requires_admin_with_explicit_recipe(self):
         with isolated_server() as server:
