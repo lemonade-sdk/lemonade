@@ -72,7 +72,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `sd-cpp` | rocm | core | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | core | native | linux, windows | cpu (x86_64) |
 | `strata` | cuda | experimental | python | linux, windows | nvidia_gpu (sm_120, sm_75, sm_86, sm_89) |
-| `strata` | rocm | experimental | python | linux, windows | amd_gpu (gfx1100, gfx1101, gfx1102, gfx1151, gfx1200, gfx1201) |
+| `strata` | rocm | experimental | python | linux, windows | amd_gpu (gfx1030, gfx1031, gfx1100, gfx1101, gfx1102, gfx1151, gfx1200, gfx1201) |
 | `strata` | sycl | experimental | python | linux | intel_gpu (arc) |
 | `strata` | cuda | experimental | python | linux | nvidia_gpu (sm_121) |
 | `strata` | metal | experimental | python | macos | metal |

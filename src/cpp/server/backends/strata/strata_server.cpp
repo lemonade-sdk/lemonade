@@ -296,7 +296,9 @@ std::string engine_asset(const std::string& target, const std::string& backend,
     } else if (backend == "sycl" && target == "linux-x86_64") {
         variant = "sycl";
     } else if (backend == "rocm") {
-        if (arch == "gfx1200" || arch == "gfx1201") variant = "hip-rx9070";
+        if (arch == "gfx1030" || arch == "gfx1031") {
+            variant = target == "windows-x86_64" ? "hip-rdna2" : "hip-rx6000";
+        } else if (arch == "gfx1200" || arch == "gfx1201") variant = "hip-rx9070";
         else if (arch == "gfx1100" || arch == "gfx1101" || arch == "gfx1102") {
             variant = target == "windows-x86_64" ? "hip-rdna3" : "hip-rx7900";
         } else if (arch == "gfx1151") {

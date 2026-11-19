@@ -1,5 +1,6 @@
 #include "lemon/backends/strata/strata_server.h"
 #include "lemon/models/store_builder.h"
+#include "lemon/system_info.h"
 
 #include <cstdio>
 #include <stdexcept>
@@ -35,6 +36,19 @@ int main() {
                               strata::ops()->device_family("gfx120X", "AMD Radeon RX 9070 XT"),
                               release_assets) ==
               "strata-engine-9.8.7-windows-x86_64-hip-rx9070.tar.gz");
+    const lemon::json rdna2_assets = {
+        {"strata-engine-9.8.7-linux-x86_64-hip-rx6000.tar.gz", "sha256:" + std::string(64, 'a')},
+        {"strata-engine-9.8.7-windows-x86_64-hip-rdna2.tar.gz", "sha256:" + std::string(64, 'a')}};
+    for (const std::string arch : {"gfx1030", "gfx1031"}) {
+        check("Strata advertises supported RDNA2 architectures",
+              lemon::SystemInfo::backend_supports_arch("strata", "rocm", arch));
+        check("Linux RDNA2 architectures select the RX 6000 archive",
+              strata::engine_asset("linux-x86_64", "rocm", arch, rdna2_assets) ==
+                  "strata-engine-9.8.7-linux-x86_64-hip-rx6000.tar.gz");
+        check("Windows RDNA2 architectures select the RDNA2 archive",
+              strata::engine_asset("windows-x86_64", "rocm", arch, rdna2_assets) ==
+                  "strata-engine-9.8.7-windows-x86_64-hip-rdna2.tar.gz");
+    }
     lemon::json cuda_assets = lemon::json::object();
     for (const std::string filename : {
             "strata-engine-9.8.7-windows-x86_64-cuda-cuda12.tar.gz",
