@@ -1580,10 +1580,11 @@ jobs:
         run: docker --version
 
       # The .deb needs libcpp-httplib0.26, which 24.04 has only in this PPA. The
-      # Strix Halo runners come with it; the R9700 runners do not.
-      - name: Add the Lemonade PPA if missing
+      # Strix Halo runners can already install it (and have no passwordless
+      # sudo); the R9700 runners cannot.
+      - name: Add the Lemonade PPA if libcpp-httplib0.26 is unavailable
         run: |
-          if ! grep -rqs lemonade-team/bleeding-edge /etc/apt/sources.list /etc/apt/sources.list.d/; then
+          if ! apt-cache policy libcpp-httplib0.26 2>/dev/null | grep -q 'Candidate: [0-9]'; then
             sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge
           fi
 
