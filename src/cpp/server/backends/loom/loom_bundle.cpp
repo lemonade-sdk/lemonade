@@ -318,8 +318,8 @@ std::uint64_t parameter_bytes(const BundlePlan& plan) {
 }
 
 std::vector<std::string> serve_args(const std::string& target, const json& info,
-                                    std::uint64_t parameter_bytes,
-                                    const std::string& requested_memory_bytes, bool preload) {
+                                    std::uint64_t parameter_bytes, bool preload,
+                                    const std::string& custom_args) {
     std::vector<std::string> args;
     const auto devices = info.is_object() ? info.find("devices") : info.end();
     const json device = info.is_object() && devices != info.end() && devices->is_object()
@@ -347,32 +347,25 @@ std::vector<std::string> serve_args(const std::string& target, const json& info,
         args = profile->args;
         if (preload && parameter_bytes <= profile->preload_max_bytes) args.push_back(kPreloadFlag);
     }
-    if (!requested_memory_bytes.empty()) {
+    if (utils::custom_args_has_flag(utils::parse_custom_args(custom_args), "--memory_bytes")) {
         args.erase(std::remove_if(args.begin(), args.end(),
                                   [](const std::string& arg) {
                                       return starts_with(arg, "--pool_backing=") ||
                                              starts_with(arg, "--memory_bytes=");
                                   }),
                    args.end());
-        args.push_back("--memory_bytes=" + requested_memory_bytes);
     }
     return args;
 }
 
 std::vector<std::string> build_server_argv(const std::string& model_dir, int port,
                                            const std::string& preset,
-                                           const std::string& device,
                                            const std::vector<std::string>& serve_args,
                                            const std::string& custom_args) {
-    if (device.empty() ||
-        std::any_of(device.begin(), device.end(),
-                    [](char c) { return std::isspace(static_cast<unsigned char>(c)); })) {
-        throw std::invalid_argument("loom_device must be a single HAL device URI");
-    }
     std::vector<std::string> argv = {
         "--model=" + model_dir + "/" + kCardFile,
         "--listen=127.0.0.1:" + std::to_string(port),
-        "--device=" + device,
+        std::string("--device=") + kDefaultDevice,
     };
     if (!preset.empty()) argv.push_back("--preset=" + preset);
     argv.insert(argv.end(), serve_args.begin(), serve_args.end());

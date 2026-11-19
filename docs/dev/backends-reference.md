@@ -146,8 +146,6 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
-| `loom_device` | `--loom-device` | URI | amdgpu:// | HAL device URI loom-serve runs the bundle on. amdgpu:// is amdgpu://0, the first GPU loom-serve supports in its own enumeration order (not a DRM card or HIP device index); amdgpu://1 selects the next one |
-| `loom_memory_bytes` | `--loom-memory-bytes` | BYTES | "" | Device pool size, e.g. 16gib, served as an elastic pool; empty serves the bundle as its card does, with a fixed pool sized by the card's preset |
 | `loom_args` | `--loom-args` | ARGS | "" | Custom arguments to pass to loom-serve |
 
 #### `moonshine` — Moonshine

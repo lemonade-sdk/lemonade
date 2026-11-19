@@ -105,15 +105,15 @@ inline constexpr const char* kPreloadFlag = "--parameter_mode=preload";
 // and the 32 GB class). Recorded flags are limited to pool, memory, slab and
 // parameter-mode settings; any other throws. kPreloadFlag is added where `preload`,
 // the host copy of `parameter_bytes` fits, and no parameter mode is recorded.
-// loom-serve rejects a memory limit on a fixed pool, so a size the user asks for
-// replaces the backing with an elastic pool of that size.
+// loom-serve rejects a memory limit on a fixed pool, so a --memory_bytes in
+// `custom_args` drops the recorded backing and size, leaving an elastic pool of
+// the size the user asks for.
 std::vector<std::string> serve_args(const std::string& target, const json& info,
-                                    std::uint64_t parameter_bytes,
-                                    const std::string& requested_memory_bytes, bool preload);
+                                    std::uint64_t parameter_bytes, bool preload,
+                                    const std::string& custom_args);
 
 std::vector<std::string> build_server_argv(const std::string& model_dir, int port,
                                            const std::string& preset,
-                                           const std::string& device,
                                            const std::vector<std::string>& serve_args,
                                            const std::string& custom_args);
 

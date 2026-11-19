@@ -182,40 +182,37 @@ void check_program_files() {
 }
 
 void check_launch_contract() {
+    const std::string device = std::string("--device=") + loom::kDefaultDevice;
     const std::vector<std::string> expected = {
         "--model=/run/model.json",
         "--listen=127.0.0.1:14123",
-        "--device=amdgpu://",
+        device,
         "--preset=vision-mtp",
         "--memory_bytes=57000000000",
         "--workers=4",
     };
     check("Launch argv binds loopback and appends benign custom flags",
-          loom::build_server_argv("/run", 14123, "vision-mtp", "amdgpu://",
-                                  {"--memory_bytes=57000000000"}, "--workers=4") == expected);
+          loom::build_server_argv("/run", 14123, "vision-mtp", {"--memory_bytes=57000000000"},
+                                  "--workers=4") == expected);
     check("Launch argv omits an unset preset and serve flags",
-          loom::build_server_argv("/run", 1, "", "amdgpu://", {}, "") ==
-              std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1",
-                                        "--device=amdgpu://"}));
+          loom::build_server_argv("/run", 1, "", {}, "") ==
+              std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1", device}));
     check("Serve flags are passed through in order",
-          loom::build_server_argv("/run", 1, "", "amdgpu://",
-                                  {"--pool_backing=fixed", loom::kPreloadFlag}, "") ==
-              std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1",
-                                        "--device=amdgpu://", "--pool_backing=fixed",
-                                        "--parameter_mode=preload"}));
+          loom::build_server_argv("/run", 1, "", {"--pool_backing=fixed", loom::kPreloadFlag}, "") ==
+              std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1", device,
+                                        "--pool_backing=fixed", "--parameter_mode=preload"}));
+    check("A custom device and memory size follow the defaults, so they win",
+          loom::build_server_argv("/run", 1, "", {}, "--device=amdgpu://1 --memory_bytes=16gib") ==
+              std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1", device,
+                                        "--device=amdgpu://1", "--memory_bytes=16gib"}));
 
-    for (const std::string custom : {"--listen=0.0.0.0:80", "--model=other.json", "--device=task",
-                                     "--devices=d.json", "--memory_bytes=1", "--preset=x",
+    for (const std::string custom : {"--listen=0.0.0.0:80", "--model=other.json",
+                                     "--devices=d.json", "--preset=x",
                                      "--flagfile=f", "--listen 0.0.0.0:80"}) {
         check("Reserved custom argument is rejected: " + custom, throws_exception([&] {
-                  (void)loom::build_server_argv("/run", 1, "", "amdgpu://", {}, custom);
+                  (void)loom::build_server_argv("/run", 1, "", {}, custom);
               }));
     }
-    check("A device with whitespace is rejected", throws_exception([] {
-              (void)loom::build_server_argv("/run", 1, "", "amdgpu:// --listen=0.0.0.0:1", {}, "");
-          }));
-    check("An empty device is rejected",
-          throws_exception([] { (void)loom::build_server_argv("/run", 1, "", "", {}, ""); }));
 }
 
 void check_device_targets() {
@@ -330,43 +327,46 @@ void check_card_metadata() {
         "speculative_decoding":{"status":"yes","value":{"method":"dflash"}}}}})");
     using Args = std::vector<std::string>;
     check("Strix Halo serves a fixed pool and preloads a package that fits beside it",
-          loom::serve_args(loom::kStrixHaloTarget, info, 23000000000ull, "", true) ==
+          loom::serve_args(loom::kStrixHaloTarget, info, 23000000000ull, true, "") ==
               Args({"--pool_backing=fixed", "--parameter_mode=preload"}));
     check("Strix Halo keeps the default parameter mode above 40 GB of weights",
-          loom::serve_args(loom::kStrixHaloTarget, info, 80400000000ull, "", true) ==
+          loom::serve_args(loom::kStrixHaloTarget, info, 80400000000ull, true, "") ==
               Args({"--pool_backing=fixed"}));
     check("The R9700 serves a fixed pool and preloads any package",
-          loom::serve_args(loom::kRadeonR9700Target, info, 80400000000ull, "", true) ==
+          loom::serve_args(loom::kRadeonR9700Target, info, 80400000000ull, true, "") ==
               Args({"--pool_backing=fixed", "--parameter_mode=preload"}));
     check("The 16 GB class serves its 15 GB budget and small slabs, and preloads",
-          loom::serve_args(loom::kGfx120116gbTarget, info, 1, "", true) ==
+          loom::serve_args(loom::kGfx120116gbTarget, info, 1, true, "") ==
               Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib",
                     "--weight_slab_bytes=64mib", "--parameter_mode=preload"}));
     check("No preload where the host has no memlock problem",
-          loom::serve_args(loom::kRadeonR9700Target, info, 1, "", false) ==
+          loom::serve_args(loom::kRadeonR9700Target, info, 1, false, "") ==
               Args({"--pool_backing=fixed"}));
-    check("A requested size serves an elastic pool of that size",
-          loom::serve_args(loom::kRadeonR9700Target, info, 1, "16gib", true) ==
-              Args({"--parameter_mode=preload", "--memory_bytes=16gib"}));
+    check("A custom memory size drops the fixed pool so loom-serve serves an elastic one",
+          loom::serve_args(loom::kRadeonR9700Target, info, 1, true, "--memory_bytes=16gib") ==
+              Args({"--parameter_mode=preload"}));
     const json recorded = json::parse(
         R"({"devices":{"strix-halo":{"serve_args":["--memory_bytes=15000000000","--state_slab_bytes=4mib"]}}})");
     check("Flags the card records for a GPU are served as they are",
-          loom::serve_args(loom::kStrixHaloTarget, recorded, 1, "", false) ==
+          loom::serve_args(loom::kStrixHaloTarget, recorded, 1, false, "") ==
               Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib"}));
     check("Recorded flags without a parameter mode gain the preload flag",
-          loom::serve_args(loom::kStrixHaloTarget, recorded, 1, "", true) ==
+          loom::serve_args(loom::kStrixHaloTarget, recorded, 1, true, "") ==
               Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib",
                     "--parameter_mode=preload"}));
     check("Recorded flags keep the default parameter mode above the GPU's preload limit",
-          loom::serve_args(loom::kStrixHaloTarget, recorded, 80400000000ull, "", true) ==
+          loom::serve_args(loom::kStrixHaloTarget, recorded, 80400000000ull, true, "") ==
               Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib"}));
-    check("A size the user asks for replaces the recorded one",
-          loom::serve_args(loom::kStrixHaloTarget, recorded, 1, "8gib", true) ==
-              Args({"--state_slab_bytes=4mib", "--parameter_mode=preload", "--memory_bytes=8gib"}));
+    check("A custom memory size drops the recorded one",
+          loom::serve_args(loom::kStrixHaloTarget, recorded, 1, true, "--memory_bytes 8gib") ==
+              Args({"--state_slab_bytes=4mib", "--parameter_mode=preload"}));
+    check("Other custom flags keep the recorded size",
+          loom::serve_args(loom::kStrixHaloTarget, recorded, 1, false, "--workers=4") ==
+              Args({"--memory_bytes=15000000000", "--state_slab_bytes=4mib"}));
     const json recorded_mode = json::parse(
         R"({"devices":{"strix-halo":{"serve_args":["--pool_backing=fixed","--parameter_mode=mmap"]}}})");
     check("A recorded parameter mode is kept",
-          loom::serve_args(loom::kStrixHaloTarget, recorded_mode, 1, "", true) ==
+          loom::serve_args(loom::kStrixHaloTarget, recorded_mode, 1, true, "") ==
               Args({"--pool_backing=fixed", "--parameter_mode=mmap"}));
     for (const std::string bad :
          {"\"--listen=0.0.0.0:18080\"", "\"--model=other.json\"", "\"--device=amdgpu://1\"",
@@ -376,7 +376,7 @@ void check_card_metadata() {
             R"({"devices":{"strix-halo":{"serve_args":["--memory_bytes=1",)" + bad + "]}}}");
         check("A recorded serve argument outside the allowlist is rejected: " + bad,
               throws_exception([&] {
-                  (void)loom::serve_args(loom::kStrixHaloTarget, info_with_bad, 1, "", true);
+                  (void)loom::serve_args(loom::kStrixHaloTarget, info_with_bad, 1, true, "");
               }));
     }
 

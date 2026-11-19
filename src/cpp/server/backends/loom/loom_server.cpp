@@ -438,18 +438,16 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
     }
 
     constexpr bool kPreload = true;
-    const std::vector<std::string> serve_args = loom::serve_args(
-        target, info, loom::parameter_bytes(plan),
-        options.get_option("loom_memory_bytes").get<std::string>(), kPreload);
+    const std::string loom_args = options.get_option("loom_args").get<std::string>();
+    const std::vector<std::string> serve_args =
+        loom::serve_args(target, info, loom::parameter_bytes(plan), kPreload, loom_args);
 
     port_ = choose_port();
     ServerCommand command;
     command.program = BackendUtils::get_backend_binary_path(*loom::spec(), kBackend);
     command.args = loom::build_server_argv(utils::path_to_utf8(dir), port_,
                                            loom::target_preset(card, plan.preset, target),
-                                           options.get_option("loom_device").get<std::string>(),
-                                           serve_args,
-                                           options.get_option("loom_args").get<std::string>());
+                                           serve_args, loom_args);
     command.port = port_;
     command.ready_endpoint = "/readyz";
 

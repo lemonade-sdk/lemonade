@@ -11,20 +11,21 @@ namespace loom {
 
 // loom-serve takes the last occurrence of a flag, so a custom argument naming one
 // of these would move the listener off the port Lemonade proxies to, expose it
-// beyond loopback, swap the bundle behind the router, or run it on a device
-// Lemonade is not tracking. A flagfile could carry any of them.
+// beyond loopback, or swap the bundle behind the router. A flagfile could carry
+// any of them.
 inline const std::set<std::string>& reserved_custom_arg_flags() {
     static const std::set<std::string> flags = {
         "--flagfile",
         "--model",
         "--listen",
-        "--device",
         "--devices",
-        "--memory_bytes",
         "--preset",
     };
     return flags;
 }
+
+// A custom --device replaces this whole URI, the completion wait included.
+inline constexpr const char* kDefaultDevice = "amdgpu://?completion_spin_ns=4294967295";
 
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "loom",
@@ -37,15 +38,6 @@ inline const BackendDescriptor descriptor = {
     /*uses_ctx_size*/   false,  // the bundle's preset fixes the context capacity
     /*dynamic_models*/  false,
     /*options*/ {
-        {"loom_device", "--loom-device", "amdgpu://?completion_spin_ns=4294967295", "URI",
-         "HAL device URI loom-serve runs the bundle on. amdgpu:// is amdgpu://0, the first GPU "
-         "loom-serve supports in its own enumeration order (not a DRM card or HIP device index); "
-         "amdgpu://1 selects the next one",
-         "Loom Options"},
-        {"loom_memory_bytes", "--loom-memory-bytes", "", "BYTES",
-         "Device pool size, e.g. 16gib, served as an elastic pool; empty serves the bundle "
-         "as its card does, with a fixed pool sized by the card's preset",
-         "Loom Options"},
         {"loom_args", "--loom-args", "", "ARGS",
          "Custom arguments to pass to loom-serve", "Loom Options"},
     },
