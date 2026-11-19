@@ -214,6 +214,21 @@ AIM works differently. AMD publishes one image per model. Each one is the same l
 
 Each model row also names the inference engine its image runs in `aim_engine`, which every AIM row must set. `aim::create` picks the server class for that engine, which inherits the native backend's request handling (`AimVllmServer` inherits `VLLMServer`), and refuses an engine it has no class for. Starting the container is shared by every engine in `aim::prepare_launch`; the engine's class supplies only its own engine arguments, such as vLLM's `max-model-len`.
 
+#### Adding an AIM model
+
+A new AIM model for a GPU `aim:rocm` already supports, on the release `aim:rocm` already pins, needs one row in `server_models.json` and no code:
+
+1. **Pick the image.** It must be published under `docker.io/amdenterpriseai/`, on the same tag as the `aim.rocm` pin in `backend_versions.json` (for example `2026.11.0`), and it must have a profile for the GPU; `podman run --rm <image> list-profiles` lists them.
+2. **Write the row:**
+   - `recipe`: `aim`
+   - `checkpoint`: the Hugging Face id the image's profiles name, such as `Qwen/Qwen3.5-9B`. AIM looks for the weights under that id and serves the model under it, so any other repository fails at load.
+   - `aim_engine`: the engine the image runs, such as `vllm`. It must have a server class in `aim::create`.
+   - `aim_image`: `<repository>:<tag>@<digest>`, with the digest Docker Hub lists for that tag.
+   - `labels` and `size`, as for any model.
+3. **Run `test_container_manager`.** It checks the image's tag against the base pin and the engine against `aim::create`.
+
+A model that exists only in a newer AIM release means moving to that release by hand, since the weekly pin updater leaves AIM out: bump `aim.rocm` and every AIM row's `aim_image` to the new tag together.
+
 ### Program
 
 The program is the server the container runs, with its arguments, such as `llama-server -m /mnt/models/Qwen3-4B-Q4_K_M.gguf --ctx-size 8192 --port 8001 --host 0.0.0.0`. The `WrappedServer` subclass builds it in `ServerCommand` the same way as for a native launch, with two differences:
