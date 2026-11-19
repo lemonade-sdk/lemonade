@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-11-18T02:10:20.585817+00:00",
-  "run_id": "44221105544",
-  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44221105544",
+  "generated_at": "2026-11-19T08:58:38.273694+00:00",
+  "run_id": "44442138884",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
   "repo": "lemonade-sdk/lemonade",
   "repo_url": "https://github.com/lemonade-sdk/lemonade",
   "actions_url": "https://github.com/lemonade-sdk/lemonade/actions/workflows/benchmark-regression.yml",
-  "commit": "0c2aa038bbe6344f3813df26e3bb54f396ed1076",
-  "lemonade_version": "v2026.44.1",
+  "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1",
+  "lemonade_version": "v2026.47.1",
   "lemonade_versions_seen": [
     "v11.5.2",
     "v11.6.0",
@@ -19,7 +19,8 @@
     "v2026.41.1",
     "v2026.42.1",
     "v2026.43.3",
-    "v2026.44.1"
+    "v2026.44.1",
+    "v2026.47.1"
   ],
   "systems": [
     {
@@ -37,7 +38,7 @@
       "vram_gb": 32.0,
       "ram_gb": 30.98,
       "os": "linux",
-      "lemonade_version": "v2026.44.1"
+      "lemonade_version": "v2026.47.1"
     },
     {
       "id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|0.5|linux",
@@ -4218,6 +4219,326 @@
         "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686"
       }
     ],
+    "K2-Horizon-0.9B-GGUF|context-4k": [
+      {
+        "model": "K2-Horizon-0.9B-GGUF",
+        "scenario": "context-4k",
+        "fork_id": "llamacpp-upstream-vulkan",
+        "fork_label": "llama.cpp Vulkan (upstream reference)",
+        "fork_repo": "ggml-org/llama.cpp",
+        "fork_version": "b12532",
+        "rocm_version": null,
+        "backend": "vulkan",
+        "ctx_size": 4096,
+        "quant": "Q4_K_M",
+        "tps_mean": 196.54,
+        "tps_p95": 199.54,
+        "tg_tps": 196.54,
+        "ttft_ms_mean": 560.76,
+        "ttft_ms_best": 559.49,
+        "pp_tps": 5914.31,
+        "input_tokens": 3309,
+        "vram_peak_gb": 1.1523208618164062,
+        "timestamp": "2026-11-18T21:24:11Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
+      },
+      {
+        "model": "K2-Horizon-0.9B-GGUF",
+        "scenario": "context-4k",
+        "fork_id": "llamacpp-rocm-nightly",
+        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llamacpp-rocm",
+        "fork_version": "b1380",
+        "rocm_version": "10.3.0a20261118",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "quant": "Q4_K_M",
+        "tps_mean": 174.82,
+        "tps_p95": 177.85,
+        "tg_tps": 174.82,
+        "ttft_ms_mean": 552.66,
+        "ttft_ms_best": 546.63,
+        "pp_tps": 6053.4,
+        "input_tokens": 3309,
+        "vram_peak_gb": 1.35479736328125,
+        "timestamp": "2026-11-18T18:42:06Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
+      },
+      {
+        "model": "K2-Horizon-0.9B-GGUF",
+        "scenario": "context-4k",
+        "fork_id": "llamacpp-amd-ecosystem-gfx11",
+        "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+        "fork_repo": "AMD-Ecosystem/llama.cpp",
+        "fork_version": "gfx11-rocm-nightly-20261118",
+        "rocm_version": "10.1.0a20260822",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "quant": "Q4_K_M",
+        "tps_mean": 167.94,
+        "tps_p95": 170.54,
+        "tg_tps": 167.94,
+        "ttft_ms_mean": 539.14,
+        "ttft_ms_best": 536.41,
+        "pp_tps": 6168.8,
+        "input_tokens": 3309,
+        "vram_peak_gb": 1.3487815856933594,
+        "timestamp": "2026-11-18T20:03:58Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
+      }
+    ],
+    "K2-Horizon-0.9B-GGUF|context-32k": [
+      {
+        "model": "K2-Horizon-0.9B-GGUF",
+        "scenario": "context-32k",
+        "fork_id": "llamacpp-upstream-vulkan",
+        "fork_label": "llama.cpp Vulkan (upstream reference)",
+        "fork_repo": "ggml-org/llama.cpp",
+        "fork_version": "b12532",
+        "rocm_version": null,
+        "backend": "vulkan",
+        "ctx_size": 32768,
+        "quant": "Q4_K_M",
+        "tps_mean": 88.22,
+        "tps_p95": 88.48,
+        "tg_tps": 88.22,
+        "ttft_ms_mean": 11534.96,
+        "ttft_ms_best": 11394.66,
+        "pp_tps": 2242.54,
+        "input_tokens": 25553,
+        "vram_peak_gb": 2.7812347412109375,
+        "timestamp": "2026-11-18T21:24:11Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
+      },
+      {
+        "model": "K2-Horizon-0.9B-GGUF",
+        "scenario": "context-32k",
+        "fork_id": "llamacpp-rocm-nightly",
+        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llamacpp-rocm",
+        "fork_version": "b1380",
+        "rocm_version": "10.3.0a20261118",
+        "backend": "rocm",
+        "ctx_size": 32768,
+        "quant": "Q4_K_M",
+        "tps_mean": 82.2,
+        "tps_p95": 82.91,
+        "tg_tps": 82.2,
+        "ttft_ms_mean": 8453.16,
+        "ttft_ms_best": 8418.86,
+        "pp_tps": 3035.21,
+        "input_tokens": 25553,
+        "vram_peak_gb": 2.9125442504882812,
+        "timestamp": "2026-11-18T18:42:06Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
+      },
+      {
+        "model": "K2-Horizon-0.9B-GGUF",
+        "scenario": "context-32k",
+        "fork_id": "llamacpp-amd-ecosystem-gfx11",
+        "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+        "fork_repo": "AMD-Ecosystem/llama.cpp",
+        "fork_version": "gfx11-rocm-nightly-20261118",
+        "rocm_version": "10.1.0a20260822",
+        "backend": "rocm",
+        "ctx_size": 32768,
+        "quant": "Q4_K_M",
+        "tps_mean": 79.11,
+        "tps_p95": 79.49,
+        "tg_tps": 79.11,
+        "ttft_ms_mean": 9720.97,
+        "ttft_ms_best": 9608.42,
+        "pp_tps": 2659.44,
+        "input_tokens": 25553,
+        "vram_peak_gb": 2.90667724609375,
+        "timestamp": "2026-11-18T20:03:58Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
+      }
+    ],
+    "gpt-oss-20b-mxfp4-GGUF|context-4k": [
+      {
+        "model": "gpt-oss-20b-mxfp4-GGUF",
+        "scenario": "context-4k",
+        "fork_id": "llamacpp-upstream-vulkan",
+        "fork_label": "llama.cpp Vulkan (upstream reference)",
+        "fork_repo": "ggml-org/llama.cpp",
+        "fork_version": "b12532",
+        "rocm_version": null,
+        "backend": "vulkan",
+        "ctx_size": 4096,
+        "quant": "MXFP4",
+        "tps_mean": 71.43,
+        "tps_p95": 72.11,
+        "tg_tps": 71.43,
+        "ttft_ms_mean": 1692.02,
+        "ttft_ms_best": 1688.75,
+        "pp_tps": 1847.52,
+        "input_tokens": 3120,
+        "vram_peak_gb": 11.737594604492188,
+        "timestamp": "2026-11-18T22:10:20Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
+      },
+      {
+        "model": "gpt-oss-20b-mxfp4-GGUF",
+        "scenario": "context-4k",
+        "fork_id": "llamacpp-rocm-nightly",
+        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llamacpp-rocm",
+        "fork_version": "b1380",
+        "rocm_version": "10.3.0a20261118",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "quant": "MXFP4",
+        "tps_mean": 67.9,
+        "tps_p95": 68.47,
+        "tg_tps": 67.9,
+        "ttft_ms_mean": 1851.86,
+        "ttft_ms_best": 1775.25,
+        "pp_tps": 1757.5,
+        "input_tokens": 3120,
+        "vram_peak_gb": 11.408706665039062,
+        "timestamp": "2026-11-18T19:27:41Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
+      },
+      {
+        "model": "gpt-oss-20b-mxfp4-GGUF",
+        "scenario": "context-4k",
+        "fork_id": "llamacpp-amd-ecosystem-gfx11",
+        "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+        "fork_repo": "AMD-Ecosystem/llama.cpp",
+        "fork_version": "gfx11-rocm-nightly-20261118",
+        "rocm_version": "10.1.0a20260822",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "quant": "MXFP4",
+        "tps_mean": 67.26,
+        "tps_p95": 67.79,
+        "tg_tps": 67.26,
+        "ttft_ms_mean": 1866.35,
+        "ttft_ms_best": 1821.57,
+        "pp_tps": 1712.81,
+        "input_tokens": 3120,
+        "vram_peak_gb": 11.405559539794922,
+        "timestamp": "2026-11-18T20:48:47Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
+      }
+    ],
+    "gpt-oss-20b-mxfp4-GGUF|context-32k": [
+      {
+        "model": "gpt-oss-20b-mxfp4-GGUF",
+        "scenario": "context-32k",
+        "fork_id": "llamacpp-upstream-vulkan",
+        "fork_label": "llama.cpp Vulkan (upstream reference)",
+        "fork_repo": "ggml-org/llama.cpp",
+        "fork_version": "b12532",
+        "rocm_version": null,
+        "backend": "vulkan",
+        "ctx_size": 32768,
+        "quant": "MXFP4",
+        "tps_mean": 61.76,
+        "tps_p95": 62.0,
+        "tg_tps": 61.76,
+        "ttft_ms_mean": 15251.61,
+        "ttft_ms_best": 15231.59,
+        "pp_tps": 1556.24,
+        "input_tokens": 23704,
+        "vram_peak_gb": 12.487655639648438,
+        "timestamp": "2026-11-18T22:10:20Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
+      },
+      {
+        "model": "gpt-oss-20b-mxfp4-GGUF",
+        "scenario": "context-32k",
+        "fork_id": "llamacpp-rocm-nightly",
+        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llamacpp-rocm",
+        "fork_version": "b1380",
+        "rocm_version": "10.3.0a20261118",
+        "backend": "rocm",
+        "ctx_size": 32768,
+        "quant": "MXFP4",
+        "tps_mean": 57.55,
+        "tps_p95": 57.81,
+        "tg_tps": 57.55,
+        "ttft_ms_mean": 15660.96,
+        "ttft_ms_best": 15656.45,
+        "pp_tps": 1514.01,
+        "input_tokens": 23704,
+        "vram_peak_gb": 12.09234619140625,
+        "timestamp": "2026-11-18T19:27:41Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
+      },
+      {
+        "model": "gpt-oss-20b-mxfp4-GGUF",
+        "scenario": "context-32k",
+        "fork_id": "llamacpp-amd-ecosystem-gfx11",
+        "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+        "fork_repo": "AMD-Ecosystem/llama.cpp",
+        "fork_version": "gfx11-rocm-nightly-20261118",
+        "rocm_version": "10.1.0a20260822",
+        "backend": "rocm",
+        "ctx_size": 32768,
+        "quant": "MXFP4",
+        "tps_mean": 55.71,
+        "tps_p95": 55.73,
+        "tg_tps": 55.71,
+        "ttft_ms_mean": 17339.31,
+        "ttft_ms_best": 17326.28,
+        "pp_tps": 1368.1,
+        "input_tokens": 23704,
+        "vram_peak_gb": 12.089218139648438,
+        "timestamp": "2026-11-18T20:48:47Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
+      }
+    ],
     "Bonsai-1.7B-HRX|context-4k": [
       {
         "model": "Bonsai-1.7B-HRX",
@@ -4918,6 +5239,34 @@
         "commit": "17193fd7fb09a8d8c777e42d5bfacbc55dd19c4c"
       }
     ],
+    "MiniCPM3-4B-HRX|context-32k": [
+      {
+        "model": "MiniCPM3-4B-HRX",
+        "scenario": "context-32k",
+        "fork_id": "llamacpp-hrx",
+        "fork_label": "llama.cpp HRX (ROCm/ggml-staging-automation)",
+        "fork_repo": "ROCm/ggml-staging-automation",
+        "fork_version": "hrx-b148",
+        "rocm_version": null,
+        "backend": "hrx",
+        "ctx_size": 32768,
+        "quant": "Q4_K_M",
+        "tps_mean": 2.09,
+        "tps_p95": 2.13,
+        "tg_tps": 2.09,
+        "ttft_ms_mean": 51521.95,
+        "ttft_ms_best": 51349.46,
+        "pp_tps": 490.23,
+        "input_tokens": 25173,
+        "vram_peak_gb": 29.300853729248047,
+        "timestamp": "2026-11-18T22:43:21Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
+      }
+    ],
     "MiniCPM5-1B-HRX|context-4k": [
       {
         "model": "MiniCPM5-1B-HRX",
@@ -5056,6 +5405,34 @@
         "run_id": "41375885762",
         "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/41375885762",
         "commit": "17193fd7fb09a8d8c777e42d5bfacbc55dd19c4c"
+      }
+    ],
+    "Mistral-Small-3.2-24B-Instruct-2506-HRX|context-32k": [
+      {
+        "model": "Mistral-Small-3.2-24B-Instruct-2506-HRX",
+        "scenario": "context-32k",
+        "fork_id": "llamacpp-hrx",
+        "fork_label": "llama.cpp HRX (ROCm/ggml-staging-automation)",
+        "fork_repo": "ROCm/ggml-staging-automation",
+        "fork_version": "hrx-b148",
+        "rocm_version": null,
+        "backend": "hrx",
+        "ctx_size": 32768,
+        "quant": "Q4_K_M",
+        "tps_mean": 3.94,
+        "tps_p95": 3.97,
+        "tg_tps": 3.94,
+        "ttft_ms_mean": 69665.26,
+        "ttft_ms_best": 69571.15,
+        "pp_tps": 357.99,
+        "input_tokens": 24906,
+        "vram_peak_gb": 31.41408920288086,
+        "timestamp": "2026-11-18T22:53:14Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
       }
     ],
     "Phi-4-mini-instruct-HRX|context-4k": [
@@ -5560,6 +5937,62 @@
         "run_id": "40052857545",
         "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40052857545",
         "commit": "034d3f522246c93604e0a629a79f0f19d4749057"
+      }
+    ],
+    "Qwen3.5-35B-A3B-HRX|context-4k": [
+      {
+        "model": "Qwen3.5-35B-A3B-HRX",
+        "scenario": "context-4k",
+        "fork_id": "llamacpp-hrx",
+        "fork_label": "llama.cpp HRX (ROCm/ggml-staging-automation)",
+        "fork_repo": "ROCm/ggml-staging-automation",
+        "fork_version": "hrx-b148",
+        "rocm_version": null,
+        "backend": "hrx",
+        "ctx_size": 4096,
+        "quant": "Q4_K_XL",
+        "tps_mean": 13.78,
+        "tps_p95": 13.95,
+        "tg_tps": 13.78,
+        "ttft_ms_mean": 3997.99,
+        "ttft_ms_best": 3958.28,
+        "pp_tps": 810.96,
+        "input_tokens": 3210,
+        "vram_peak_gb": 23.295833587646484,
+        "timestamp": "2026-11-18T23:34:38Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
+      }
+    ],
+    "Qwen3.5-35B-A3B-HRX|context-32k": [
+      {
+        "model": "Qwen3.5-35B-A3B-HRX",
+        "scenario": "context-32k",
+        "fork_id": "llamacpp-hrx",
+        "fork_label": "llama.cpp HRX (ROCm/ggml-staging-automation)",
+        "fork_repo": "ROCm/ggml-staging-automation",
+        "fork_version": "hrx-b148",
+        "rocm_version": null,
+        "backend": "hrx",
+        "ctx_size": 32768,
+        "quant": "Q4_K_XL",
+        "tps_mean": 12.24,
+        "tps_p95": 12.33,
+        "tg_tps": 12.24,
+        "ttft_ms_mean": 27066.03,
+        "ttft_ms_best": 26972.28,
+        "pp_tps": 919.09,
+        "input_tokens": 24790,
+        "vram_peak_gb": 24.447906494140625,
+        "timestamp": "2026-11-18T23:34:38Z",
+        "lemonade_version": "v2026.47.1",
+        "hw_id": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S|32.0|linux",
+        "run_id": "44442138884",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884",
+        "commit": "281dcea8a8b61a23bfef37a650d2a2e6a576bdd1"
       }
     ],
     "Qwen3.8-27B-HRX|context-4k": [
@@ -28196,6 +28629,246 @@
         ]
       }
     },
+    "K2-Horizon-0.9B-GGUF": {
+      "context-4k": {
+        "llamacpp-amd-ecosystem-gfx11": [
+          {
+            "version": "gfx11-rocm-nightly-20261118",
+            "rocm_version": "10.1.0a20260822",
+            "timestamp": "2026-11-18T20:03:58Z",
+            "tps_mean": 167.94,
+            "tps_p95": 170.54,
+            "tg_tps": 167.94,
+            "ttft_ms_mean": 539.14,
+            "ttft_ms_best": 536.41,
+            "pp_tps": 6168.8,
+            "vram_peak_gb": 1.3487815856933594,
+            "input_tokens": 3309,
+            "quant": "Q4_K_M",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
+          }
+        ],
+        "llamacpp-rocm-nightly": [
+          {
+            "version": "b1380",
+            "rocm_version": "10.3.0a20261118",
+            "timestamp": "2026-11-18T18:42:06Z",
+            "tps_mean": 174.82,
+            "tps_p95": 177.85,
+            "tg_tps": 174.82,
+            "ttft_ms_mean": 552.66,
+            "ttft_ms_best": 546.63,
+            "pp_tps": 6053.4,
+            "vram_peak_gb": 1.35479736328125,
+            "input_tokens": 3309,
+            "quant": "Q4_K_M",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
+          }
+        ],
+        "llamacpp-upstream-vulkan": [
+          {
+            "version": "b12532",
+            "rocm_version": null,
+            "timestamp": "2026-11-18T21:24:11Z",
+            "tps_mean": 196.54,
+            "tps_p95": 199.54,
+            "tg_tps": 196.54,
+            "ttft_ms_mean": 560.76,
+            "ttft_ms_best": 559.49,
+            "pp_tps": 5914.31,
+            "vram_peak_gb": 1.1523208618164062,
+            "input_tokens": 3309,
+            "quant": "Q4_K_M",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
+          }
+        ]
+      },
+      "context-32k": {
+        "llamacpp-amd-ecosystem-gfx11": [
+          {
+            "version": "gfx11-rocm-nightly-20261118",
+            "rocm_version": "10.1.0a20260822",
+            "timestamp": "2026-11-18T20:03:58Z",
+            "tps_mean": 79.11,
+            "tps_p95": 79.49,
+            "tg_tps": 79.11,
+            "ttft_ms_mean": 9720.97,
+            "ttft_ms_best": 9608.42,
+            "pp_tps": 2659.44,
+            "vram_peak_gb": 2.90667724609375,
+            "input_tokens": 25553,
+            "quant": "Q4_K_M",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
+          }
+        ],
+        "llamacpp-rocm-nightly": [
+          {
+            "version": "b1380",
+            "rocm_version": "10.3.0a20261118",
+            "timestamp": "2026-11-18T18:42:06Z",
+            "tps_mean": 82.2,
+            "tps_p95": 82.91,
+            "tg_tps": 82.2,
+            "ttft_ms_mean": 8453.16,
+            "ttft_ms_best": 8418.86,
+            "pp_tps": 3035.21,
+            "vram_peak_gb": 2.9125442504882812,
+            "input_tokens": 25553,
+            "quant": "Q4_K_M",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
+          }
+        ],
+        "llamacpp-upstream-vulkan": [
+          {
+            "version": "b12532",
+            "rocm_version": null,
+            "timestamp": "2026-11-18T21:24:11Z",
+            "tps_mean": 88.22,
+            "tps_p95": 88.48,
+            "tg_tps": 88.22,
+            "ttft_ms_mean": 11534.96,
+            "ttft_ms_best": 11394.66,
+            "pp_tps": 2242.54,
+            "vram_peak_gb": 2.7812347412109375,
+            "input_tokens": 25553,
+            "quant": "Q4_K_M",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
+          }
+        ]
+      }
+    },
+    "gpt-oss-20b-mxfp4-GGUF": {
+      "context-4k": {
+        "llamacpp-amd-ecosystem-gfx11": [
+          {
+            "version": "gfx11-rocm-nightly-20261118",
+            "rocm_version": "10.1.0a20260822",
+            "timestamp": "2026-11-18T20:48:47Z",
+            "tps_mean": 67.26,
+            "tps_p95": 67.79,
+            "tg_tps": 67.26,
+            "ttft_ms_mean": 1866.35,
+            "ttft_ms_best": 1821.57,
+            "pp_tps": 1712.81,
+            "vram_peak_gb": 11.405559539794922,
+            "input_tokens": 3120,
+            "quant": "MXFP4",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
+          }
+        ],
+        "llamacpp-rocm-nightly": [
+          {
+            "version": "b1380",
+            "rocm_version": "10.3.0a20261118",
+            "timestamp": "2026-11-18T19:27:41Z",
+            "tps_mean": 67.9,
+            "tps_p95": 68.47,
+            "tg_tps": 67.9,
+            "ttft_ms_mean": 1851.86,
+            "ttft_ms_best": 1775.25,
+            "pp_tps": 1757.5,
+            "vram_peak_gb": 11.408706665039062,
+            "input_tokens": 3120,
+            "quant": "MXFP4",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
+          }
+        ],
+        "llamacpp-upstream-vulkan": [
+          {
+            "version": "b12532",
+            "rocm_version": null,
+            "timestamp": "2026-11-18T22:10:20Z",
+            "tps_mean": 71.43,
+            "tps_p95": 72.11,
+            "tg_tps": 71.43,
+            "ttft_ms_mean": 1692.02,
+            "ttft_ms_best": 1688.75,
+            "pp_tps": 1847.52,
+            "vram_peak_gb": 11.737594604492188,
+            "input_tokens": 3120,
+            "quant": "MXFP4",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
+          }
+        ]
+      },
+      "context-32k": {
+        "llamacpp-amd-ecosystem-gfx11": [
+          {
+            "version": "gfx11-rocm-nightly-20261118",
+            "rocm_version": "10.1.0a20260822",
+            "timestamp": "2026-11-18T20:48:47Z",
+            "tps_mean": 55.71,
+            "tps_p95": 55.73,
+            "tg_tps": 55.71,
+            "ttft_ms_mean": 17339.31,
+            "ttft_ms_best": 17326.28,
+            "pp_tps": 1368.1,
+            "vram_peak_gb": 12.089218139648438,
+            "input_tokens": 23704,
+            "quant": "MXFP4",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
+          }
+        ],
+        "llamacpp-rocm-nightly": [
+          {
+            "version": "b1380",
+            "rocm_version": "10.3.0a20261118",
+            "timestamp": "2026-11-18T19:27:41Z",
+            "tps_mean": 57.55,
+            "tps_p95": 57.81,
+            "tg_tps": 57.55,
+            "ttft_ms_mean": 15660.96,
+            "ttft_ms_best": 15656.45,
+            "pp_tps": 1514.01,
+            "vram_peak_gb": 12.09234619140625,
+            "input_tokens": 23704,
+            "quant": "MXFP4",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
+          }
+        ],
+        "llamacpp-upstream-vulkan": [
+          {
+            "version": "b12532",
+            "rocm_version": null,
+            "timestamp": "2026-11-18T22:10:20Z",
+            "tps_mean": 61.76,
+            "tps_p95": 62.0,
+            "tg_tps": 61.76,
+            "ttft_ms_mean": 15251.61,
+            "ttft_ms_best": 15231.59,
+            "pp_tps": 1556.24,
+            "vram_peak_gb": 12.487655639648438,
+            "input_tokens": 23704,
+            "quant": "MXFP4",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
+          }
+        ]
+      }
+    },
     "Bonsai-1.7B-HRX": {
       "context-4k": {
         "llamacpp-hrx": [
@@ -29408,6 +30081,27 @@
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/41375885762"
           }
         ]
+      },
+      "context-32k": {
+        "llamacpp-hrx": [
+          {
+            "version": "hrx-b148",
+            "rocm_version": null,
+            "timestamp": "2026-11-18T22:43:21Z",
+            "tps_mean": 2.09,
+            "tps_p95": 2.13,
+            "tg_tps": 2.09,
+            "ttft_ms_mean": 51521.95,
+            "ttft_ms_best": 51349.46,
+            "pp_tps": 490.23,
+            "vram_peak_gb": 29.300853729248047,
+            "input_tokens": 25173,
+            "quant": "Q4_K_M",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
+          }
+        ]
       }
     },
     "MiniCPM5-1B-HRX": {
@@ -29976,6 +30670,27 @@
             "lemonade_version": "v2026.44.1",
             "run_id": "41375885762",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/41375885762"
+          }
+        ]
+      },
+      "context-32k": {
+        "llamacpp-hrx": [
+          {
+            "version": "hrx-b148",
+            "rocm_version": null,
+            "timestamp": "2026-11-18T22:53:14Z",
+            "tps_mean": 3.94,
+            "tps_p95": 3.97,
+            "tg_tps": 3.94,
+            "ttft_ms_mean": 69665.26,
+            "ttft_ms_best": 69571.15,
+            "pp_tps": 357.99,
+            "vram_peak_gb": 31.41408920288086,
+            "input_tokens": 24906,
+            "quant": "Q4_K_M",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
           }
         ]
       }
@@ -30678,6 +31393,50 @@
             "lemonade_version": "v2026.43.3",
             "run_id": "40052857545",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/40052857545"
+          }
+        ]
+      }
+    },
+    "Qwen3.5-35B-A3B-HRX": {
+      "context-4k": {
+        "llamacpp-hrx": [
+          {
+            "version": "hrx-b148",
+            "rocm_version": null,
+            "timestamp": "2026-11-18T23:34:38Z",
+            "tps_mean": 13.78,
+            "tps_p95": 13.95,
+            "tg_tps": 13.78,
+            "ttft_ms_mean": 3997.99,
+            "ttft_ms_best": 3958.28,
+            "pp_tps": 810.96,
+            "vram_peak_gb": 23.295833587646484,
+            "input_tokens": 3210,
+            "quant": "Q4_K_XL",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
+          }
+        ]
+      },
+      "context-32k": {
+        "llamacpp-hrx": [
+          {
+            "version": "hrx-b148",
+            "rocm_version": null,
+            "timestamp": "2026-11-18T23:34:38Z",
+            "tps_mean": 12.24,
+            "tps_p95": 12.33,
+            "tg_tps": 12.24,
+            "ttft_ms_mean": 27066.03,
+            "ttft_ms_best": 26972.28,
+            "pp_tps": 919.09,
+            "vram_peak_gb": 24.447906494140625,
+            "input_tokens": 24790,
+            "quant": "Q4_K_XL",
+            "lemonade_version": "v2026.47.1",
+            "run_id": "44442138884",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44442138884"
           }
         ]
       }
