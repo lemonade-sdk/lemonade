@@ -245,6 +245,7 @@ class McpGatewayTests(ServerTestBase):
             "lemonade_generate_image",
             "lemonade_omni",
             "lemonade_docs",
+            "lemonade_web_search",
         }
         self.assertTrue(expected.issubset(names), f"missing tools: {expected - names}")
         for tool in tools:
@@ -286,6 +287,20 @@ class McpGatewayTests(ServerTestBase):
         self.assertEqual(required, {"messages"})
         self.assertIn("model", omni["inputSchema"]["properties"])
         self.assertIn("output_dir", omni["inputSchema"]["properties"])
+        web = next(t for t in tools if t["name"] == "lemonade_web_search")
+        self.assertEqual(web["inputSchema"]["required"], ["query"])
+        self.assertEqual(
+            web["annotations"],
+            {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": True,
+            },
+        )
+        self.assertEqual(web["inputSchema"]["properties"]["max_results"]["minimum"], 1)
+        self.assertEqual(
+            web["inputSchema"]["properties"]["search_type"]["enum"], ["web", "news"]
+        )
 
     # ---------------------------------------------------------------------
     # tools/call error paths
@@ -452,6 +467,31 @@ class McpGatewayTests(ServerTestBase):
         self.assertNotIn("$.model", message)
         self.assertIn("$.n", message)
         self.assertIn("value must be >= 1", message)
+
+    def test_021d_web_search_rejects_invalid_args_without_network(self):
+        """Invalid calls must fail before any external request is attempted."""
+        for arguments in (
+            {},
+            {"query": ""},
+            {"query": "  "},
+            {"query": "x" * 257},
+            {"query": 123},
+            {"query": "test", "max_results": 6},
+            {"query": "test", "max_results": "five"},
+            {"query": "test", "search_type": "images"},
+            {"query": "test", "search_type": 42},
+        ):
+            response = _post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 54,
+                    "method": "tools/call",
+                    "params": {"name": "lemonade_web_search", "arguments": arguments},
+                }
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertTrue(body["result"]["isError"], msg=str(arguments))
 
     def test_022_omni_rejects_non_collection_model(self):
         """
