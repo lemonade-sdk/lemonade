@@ -900,9 +900,10 @@ jobs:
           }
 
       - name: Re-record the API examples the new backend serves
-        # An example changes only when the new backend changes its response's shape,
-        # so the update PR carries no churn from new values.
+        # Recording must not turn a docs-only failure into failed inference.
+        id: record_api_examples
         if: matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
@@ -910,13 +911,41 @@ jobs:
           & .\.venv\Scripts\python.exe docs\tools\gen_api_boilerplate.py --lemond build\Release\lemond.exe --refresh llamacpp
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Verify recorded API examples
+        id: verify_api_examples
+        if: matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.record_api_examples.outcome == 'success'
+        continue-on-error: true
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          & .\.venv\Scripts\python.exe docs\tools\gen_api_boilerplate.py --lemond build\Release\lemond.exe --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Record API documentation status
+        if: always() && matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
+        shell: PowerShell
+        env:
+          RECORD_OUTCOME: ${{ steps.record_api_examples.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify_api_examples.outcome }}
+        run: |
+          $status = if ($env:RECORD_OUTCOME -eq 'success' -and $env:VERIFY_OUTCOME -eq 'success') { 'passed' } else { 'failed' }
+          Set-Content -Path docs\tools\api_examples_status.txt -Value $status -Encoding ascii -NoNewline
+          if ($status -ne 'passed') {
+            Write-Warning "API example recording or verification failed; the update PR must be a draft."
+            "### API documentation verification failed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
       - name: Upload recorded API examples
-        if: matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        if: always() && matrix.backend == 'vulkan' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: api-examples
+          overwrite: true
           path: |
             docs/tools/api_examples_cache.json
+            docs/tools/api_examples_status.txt
             docs/api/
           retention-days: 7
 
@@ -1157,26 +1186,52 @@ jobs:
   # ========================================================================
   create-pr:
     name: Create update PR
-    needs: [get-latest-releases, verify-release-assets, validate, validate-linux]
+    needs: [get-latest-releases, verify-release-assets, build, build-linux, validate, validate-linux, gpu-offload-gate, validation-gate]
     runs-on: ubuntu-latest
+    concurrency:
+      group: llamacpp-auto-update-${{ github.repository }}-${{ needs.get-latest-releases.outputs.llamacpp_release }}-${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}-${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
+      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: write
     if: >-
+      always() &&
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.validate.result == 'success' &&
-      needs.validate-linux.result == 'success' &&
-      needs.verify-release-assets.result == 'success'
+      needs.get-latest-releases.result == 'success' &&
+      needs.verify-release-assets.result == 'success' &&
+      needs.build.result == 'success' &&
+      needs.build-linux.result == 'success' &&
+      (needs.validate.result == 'success' || needs.validate.result == 'failure') &&
+      (needs.validate-linux.result == 'success' || needs.validate-linux.result == 'failure')
     steps:
       - uses: actions/checkout@v5
 
       - name: Download recorded API examples
+        id: api_artifact
+        continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           name: api-examples
-          path: docs
+          path: api-examples-artifact
+
+      - name: Install verified API documentation
+        id: api_docs
+        if: steps.api_artifact.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat api-examples-artifact/tools/api_examples_status.txt)" = passed
+          test -s api-examples-artifact/tools/api_examples_cache.json
+          for page in docs/api/*.md; do
+            test -s "api-examples-artifact/api/${page##*/}"
+          done
+          cp api-examples-artifact/tools/api_examples_cache.json docs/tools/
+          cp -R api-examples-artifact/api/. docs/api/
 
       - name: Download validation results
+        id: validation_artifacts
+        continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           pattern: validation-results-*
@@ -1202,6 +1257,8 @@ jobs:
         run: python3 .github/scripts/update_llamacpp_architectures.py
 
       - name: Generate PR body
+        id: render_body
+        continue-on-error: true
         shell: bash
         env:
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
@@ -1352,24 +1409,198 @@ jobs:
               f.write(body)
           PYEOF
 
+      - name: Report incomplete validation
+        shell: bash
+        env:
+          MATRIX_RESULT: ${{ needs.validate.result }}
+          LINUX_RESULT: ${{ needs.validate-linux.result }}
+          GPU_RESULT: ${{ needs.gpu-offload-gate.result }}
+          GATE_RESULT: ${{ needs.validation-gate.result }}
+          DOC_DOWNLOAD: ${{ steps.api_artifact.outcome }}
+          DOC_INSTALL: ${{ steps.api_docs.outcome }}
+          VALIDATION_DOWNLOAD: ${{ steps.validation_artifacts.outcome }}
+          BODY_RESULT: ${{ steps.render_body.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
+          ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
+          LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
+        run: |
+          set -euo pipefail
+          problems=()
+          [[ "$MATRIX_RESULT" == success ]] || problems+=("Backend validation: $MATRIX_RESULT")
+          [[ "$LINUX_RESULT" == success ]] || problems+=("Linux validation: $LINUX_RESULT")
+          [[ "$GPU_RESULT" == success ]] || problems+=("GPU offload: $GPU_RESULT")
+          [[ "$GATE_RESULT" == success ]] || problems+=("Validation gate: $GATE_RESULT")
+          [[ "$DOC_DOWNLOAD" == success && "$DOC_INSTALL" == success ]] || problems+=("API docs recording, verification or artifact: failed")
+          [[ "$VALIDATION_DOWNLOAD" == success ]] || problems+=("Validation results download: $VALIDATION_DOWNLOAD")
+          for backend in vulkan rocm-stable rocm-nightly cuda-arm64 cuda-x64; do
+            file="llamacpp_validation_${backend}.json"
+            if [[ ! -s "$file" ]]; then
+              problems+=("Missing validation results: $backend")
+            elif ! python3 - "$file" <<'PYVALID'
+          import json, sys
+          try:
+              with open(sys.argv[1], encoding="utf-8") as f:
+                  rows = json.load(f)
+              assert isinstance(rows, list) and rows
+              assert all(isinstance(r, dict) and isinstance(r.get("model"), str)
+                         and r.get("pass") is True for r in rows)
+          except (OSError, ValueError, AssertionError, TypeError):
+              sys.exit(1)
+          PYVALID
+            then
+              problems+=("Failed or malformed validation results: $backend")
+            fi
+          done
+          [[ "$BODY_RESULT" == success && -s pr_body.md ]] || problems+=("PR validation report: missing or failed")
+
+          if (( ${#problems[@]} == 0 )); then
+            echo 'VALIDATED=true' >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo 'VALIDATED=false' >> "$GITHUB_ENV"
+          if [[ "$BODY_RESULT" != success || ! -s pr_body.md ]]; then
+            printf '## Auto-update llama.cpp backends\n\n- **ggml-org/llama.cpp candidate**: `%s`\n- **lemonade-sdk/llamacpp-rocm candidate**: `%s`\n- **lemonade-sdk/llama.cpp candidate**: `%s`\n\nValidation did not complete.\n' \
+              "$RELEASE" "$ROCM_RELEASE" "$LEMONADE_RELEASE" > pr_body.md
+          fi
+          {
+            printf '> [!CAUTION]\n> **Validation incomplete. This PR must remain a draft.**\n'
+            for problem in "${problems[@]}"; do printf '> - %s\n' "$problem"; done
+            printf '> Workflow: %s\n\n' "$RUN_URL"
+            cat pr_body.md
+          } > pr_body_checked.md
+          mv pr_body_checked.md pr_body.md
+          printf '### llama.cpp auto-update requires review\n' >> "$GITHUB_STEP_SUMMARY"
+          for problem in "${problems[@]}"; do
+            printf '::warning::llama.cpp auto-update: %s\n' "$problem"
+            printf -- '- %s\n' "$problem" >> "$GITHUB_STEP_SUMMARY"
+          done
+
       - name: Create Pull Request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
           LLAMACPP_LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
+          LLAMACPP_GGML_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.ggml_update_backends }}
+          LLAMACPP_ROCM_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.rocm_update_backends }}
+          LLAMACPP_LEMONADE_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.lemonade_update_backends }}
         run: |
+          set -euo pipefail
           BRANCH="auto/llamacpp-update-${LLAMACPP_RELEASE}-${LLAMACPP_LEMONADE_RELEASE}-${LLAMACPP_ROCM_RELEASE}"
 
-          # Check if a PR already exists for this update
-          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
-          if [ -n "$EXISTING_PR" ]; then
-            echo "PR #$EXISTING_PR already exists for branch $BRANCH. Skipping."
-            exit 0
-          fi
+          TITLE="Update llama.cpp to ${LLAMACPP_RELEASE}"
+          if [[ "$VALIDATED" != true ]]; then TITLE="[Validation failed] $TITLE"; fi
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Find exact release tuples, including retry branches. Query all open
+          # PRs (not just the newest 200), and never touch a contributor's PR.
+          EXISTING_ROW=$(gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" |
+            jq -r --arg repo "$GITHUB_REPOSITORY" --arg branch "$BRANCH" '
+              [.[][] |
+                select(.user.login == "app/github-actions" or .user.login == "github-actions[bot]") |
+                select(.head.repo.full_name == $repo and .base.ref == "main") |
+                select(.head.ref == $branch or
+                  ((.head.ref | startswith($branch + "-")) and
+                   (.head.ref | ltrimstr($branch + "-") | test("^[0-9]+-[0-9]+$"))))
+              ] | sort_by([(.head.ref != $branch), .created_at]) | first |
+              if . == null then empty else "\(.number) \(.head.ref)" end')
+          EXISTING_PR=""
+          if [[ -n "$EXISTING_ROW" ]]; then
+            EXISTING_PR="${EXISTING_ROW%% *}"
+            BRANCH="${EXISTING_ROW#* }"
+          fi
+          if [[ -n "$EXISTING_PR" ]]; then
+            old_title=$(gh pr view "$EXISTING_PR" --json title --jq .title)
+            was_draft=$(gh pr view "$EXISTING_PR" --json isDraft --jq .isDraft)
+            if [[ "$old_title" == 'HOLD:'* ]] ||
+               [[ "$was_draft" == true && "$old_title" != '[Validation failed] '* ]]; then
+              echo "PR #$EXISTING_PR is manually held as draft; leaving it untouched."
+              exit 0
+            fi
+            if [[ "$VALIDATED" == true && "$was_draft" != true && "$old_title" != '[Validation failed] '* ]]; then
+              echo "PR #$EXISTING_PR is already ready; no repeat update needed."
+              exit 0
+            fi
+
+            # Demote before publishing unvalidated pins. Some GITHUB_TOKENs
+            # cannot call convertPullRequestToDraft: still publish the warning
+            # but do not push any changes to a ready PR in that case.
+            if [[ "$VALIDATED" != true && "$was_draft" != true ]]; then
+              if ! gh pr ready "$EXISTING_PR" --undo; then
+                echo "::error::Could not convert PR #$EXISTING_PR to draft; no branch update was pushed."
+                gh pr edit "$EXISTING_PR" --title "$TITLE" --body-file pr_body.md
+                exit 1
+              fi
+            fi
+            # Publish a failed validation warning before any git operation can fail.
+            if [[ "$VALIDATED" != true ]]; then
+              gh pr edit "$EXISTING_PR" --title "$TITLE" --body-file pr_body.md
+            fi
+
+            # Append to bot-owned branch history; preserve unrelated pins/docs.
+            worktree=$(mktemp -d)
+            trap 'git worktree remove --force "$worktree" >/dev/null 2>&1 || true; rm -rf "$worktree"' EXIT
+            git fetch --no-tags origin "refs/heads/$BRANCH"
+            git worktree add --detach "$worktree" FETCH_HEAD
+            (cd "$worktree" && python3 "$GITHUB_WORKSPACE/.github/scripts/update_backend_versions.py")
+            cp src/cpp/include/lemon/llamacpp_architectures_generated.h "$worktree/src/cpp/include/lemon/"
+            git -C "$worktree" add -- src/cpp/resources/backend_versions.json \
+              src/cpp/include/lemon/llamacpp_architectures_generated.h
+            if [[ "$VALIDATED" == true ]]; then
+              # Replay generated changes onto the existing branch, preserving
+              # unrelated edits made by maintainers.
+              docs_patch=$(mktemp)
+              git add -N -- docs/api
+              git diff --binary HEAD -- docs/tools/api_examples_cache.json docs/api > "$docs_patch"
+              mapfile -d '' -t changed < <(git diff --name-only -z HEAD -- docs/tools/api_examples_cache.json docs/api)
+              # git apply rejects the whole patch when one path is missing from the
+              # branch (e.g. a page main added later), so replay those separately.
+              missing=()
+              exclude=()
+              for file in "${changed[@]}"; do
+                if ! git -C "$worktree" cat-file -e "HEAD:$file" 2>/dev/null; then
+                  missing+=("$file")
+                  exclude+=("--exclude=$file")
+                fi
+              done
+              conflicts=()
+              if (( ${#changed[@]} > ${#missing[@]} )) &&
+                 ! git -C "$worktree" apply --3way --index "${exclude[@]}" "$docs_patch"; then
+                mapfile -d '' -t conflicts < <(git -C "$worktree" diff --name-only --diff-filter=U -z -- docs/tools/api_examples_cache.json docs/api)
+                if (( ${#conflicts[@]} == 0 )); then
+                  echo "::error::API docs replay failed without resolvable conflicts."
+                  exit 1
+                fi
+              fi
+              # Generated files: missing or conflicted paths take the recorded version.
+              for file in "${missing[@]}" "${conflicts[@]}"; do
+                if [[ -f "$file" ]]; then
+                  mkdir -p "$worktree/$(dirname "$file")"
+                  cp -- "$file" "$worktree/$file"
+                  git -C "$worktree" add -- "$file"
+                else
+                  git -C "$worktree" rm -f --ignore-unmatch -- "$file"
+                fi
+              done
+              rm -f "$docs_patch"
+            fi
+            if ! git -C "$worktree" diff --cached --quiet; then
+              git -C "$worktree" commit -m "Refresh llama.cpp candidates for ${LLAMACPP_RELEASE}"
+              git -C "$worktree" push origin "HEAD:refs/heads/$BRANCH"
+            fi
+            # A verified retry clears stale warnings, but never auto-releases a draft.
+            gh pr edit "$EXISTING_PR" --title "$TITLE" --body-file pr_body.md
+            echo "Updated bot PR #$EXISTING_PR (draft status preserved)."
+            exit 0
+          fi
+          # A closed auto-PR may leave its branch behind. Do not force-push it.
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            BRANCH="${BRANCH}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          fi
 
           # Skip if backend_versions.json is already up to date
           if git diff --quiet src/cpp/resources/backend_versions.json src/cpp/include/lemon/llamacpp_architectures_generated.h; then
@@ -1378,13 +1609,17 @@ jobs:
           fi
 
           git checkout -b "$BRANCH"
-          git add src/cpp/resources/backend_versions.json src/cpp/include/lemon/llamacpp_architectures_generated.h \
-            docs/tools/api_examples_cache.json docs/api
+          git add -- src/cpp/resources/backend_versions.json src/cpp/include/lemon/llamacpp_architectures_generated.h
+          if [[ "$VALIDATED" == true ]]; then
+            git add -- docs/tools/api_examples_cache.json docs/api
+          fi
           git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE}, rocm-stable to ${LLAMACPP_LEMONADE_RELEASE}, rocm-nightly to ${LLAMACPP_ROCM_RELEASE}"
           git push origin "$BRANCH"
 
-          gh pr create \
-            --title "Update llama.cpp to ${LLAMACPP_RELEASE}" \
+          pr_args=()
+          if [[ "$VALIDATED" != true ]]; then pr_args+=(--draft); fi
+          gh pr create "${pr_args[@]}" \
+            --title "$TITLE" \
             --body-file pr_body.md \
             --base main \
             --head "$BRANCH"

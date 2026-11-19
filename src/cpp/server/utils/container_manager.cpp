@@ -19,8 +19,8 @@
 #include <lemon/utils/aixlog.hpp>
 
 #ifndef _WIN32
-#include <grp.h>
 #include <pwd.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -61,18 +61,6 @@ const char* tool_name(ContainerTool tool) {
 }
 
 #ifndef _WIN32
-// The group's ID, or nullopt when the host defines no such group. getgrnam_r,
-// since setup checks run on concurrent request threads.
-std::optional<gid_t> lookup_group(const std::string& group) {
-    struct group entry = {};
-    struct group* found = nullptr;
-    std::vector<char> buffer(16384);
-    if (::getgrnam_r(group.c_str(), &entry, buffer.data(), buffer.size(), &found) != 0 || !found) {
-        return std::nullopt;
-    }
-    return found->gr_gid;
-}
-
 // Desktop distros often grant the logged-in account device access through
 // ACLs rather than render membership, so this tests access itself.
 bool account_opens_gpu_devices() {
@@ -99,9 +87,26 @@ std::string process_account() {
     return found->pw_name;
 }
 
-std::string host_group_id(const std::string& group) {
-    const std::optional<gid_t> found = lookup_group(group);
-    return found ? std::to_string(static_cast<unsigned long>(*found)) : "";
+std::vector<std::string> host_device_group_ids(const std::vector<std::string>& paths) {
+    std::set<gid_t> gids;
+    const auto add = [&gids](const fs::path& node) {
+        struct stat info = {};
+        // Group 0 would hand the container root's group for nothing a device needs.
+        if (::stat(node.c_str(), &info) == 0 && S_ISCHR(info.st_mode) && info.st_gid != 0) {
+            gids.insert(info.st_gid);
+        }
+    };
+    for (const auto& path : paths) {
+        std::error_code ec;
+        if (fs::is_directory(path, ec)) {
+            for (const auto& entry : fs::directory_iterator(path, ec)) add(entry.path());
+        } else {
+            add(path);
+        }
+    }
+    std::vector<std::string> ids;
+    for (const gid_t gid : gids) ids.push_back(std::to_string(static_cast<unsigned long>(gid)));
+    return ids;
 }
 #endif
 
@@ -158,11 +163,13 @@ ContainerHost ContainerHost::real() {
 #ifdef _WIN32
     host.gpu_devices_accessible = []() { return false; };
     host.account = []() { return std::string(); };
-    host.group_id = [](const std::string&) { return std::string(); };
+    host.device_group_ids = [](const std::vector<std::string>&) {
+        return std::vector<std::string>();
+    };
 #else
     host.gpu_devices_accessible = account_opens_gpu_devices;
     host.account = process_account;
-    host.group_id = host_group_id;
+    host.device_group_ids = host_device_group_ids;
 #endif
     host.env = [](const std::string& name) {
         const char* value = std::getenv(name.c_str());
@@ -440,13 +447,23 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
             argv.push_back("run.oci.keep_original_groups=1");
         } else {
             // Docker resolves a group name in the image's /etc/group, where it
-            // may be missing or numbered differently from the device nodes.
-            const std::string gid = host_.group_id("render");
-            if (!gid.empty()) {
+            // may be missing or numbered differently from the device nodes. An
+            // image that runs as root opens them as their owner; one that does
+            // not needs every group that owns one, such as video for a /dev/kfd
+            // that is not render's.
+            for (const auto& gid : host_.device_group_ids(spec.devices)) {
                 argv.push_back("--group-add");
                 argv.push_back(gid);
             }
         }
+    }
+    if (rootless && spec.user) {
+        // Container root is the account itself, so a root image reads the
+        // model files as their owner. An image with its own user would read
+        // them as an unmapped subordinate ID; keep-id maps the account onto
+        // that user instead.
+        argv.push_back("--userns=keep-id:uid=" + std::to_string(spec.user->uid) +
+                       ",gid=" + std::to_string(spec.user->gid));
     }
     for (const auto& capability : spec.cap_add) {
         argv.push_back("--cap-add");
@@ -676,7 +693,7 @@ std::string ContainerManager::install_command(const std::string& os_release,
 }
 
 bool ContainerManager::allowed_image(const std::string& image) {
-    for (const std::string prefix : {"docker.io/kyuz0/", "ghcr.io/peonist-ai/"}) {
+    for (const std::string prefix : {"docker.io/kyuz0/", "ghcr.io/peonist-ai/", "ghcr.io/gufo-org/"}) {
         if (image.size() > prefix.size() && image.compare(0, prefix.size(), prefix) == 0) {
             return true;
         }
