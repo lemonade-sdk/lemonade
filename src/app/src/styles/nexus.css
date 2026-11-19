@@ -382,17 +382,13 @@
 .nexus-mesh-list { list-style: none; margin: 0; padding: 0; }
 .nexus-mesh-row { display: flex; align-items: flex-start; gap: 10px; width: 100%; margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-2); color: var(--text-primary); text-align: left; }
 .nexus-mesh-list > .nexus-mesh-row + .nexus-mesh-row { border-top: 1px solid var(--border-subtle); }
-.nexus-mesh-row--choice { cursor: pointer; }
-.nexus-mesh-row--choice:not(:disabled):hover { border-color: var(--border-strong); background: var(--surface-3); }
-.nexus-mesh-row--choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .nexus-mesh-row.is-selected { border-color: var(--accent); background: var(--accent-soft); }
-.nexus-mesh-row:disabled { cursor: default; }
 .nexus-mesh-row__body { flex: 1; min-width: 0; }
 .nexus-mesh-row__name { display: block; font-size: var(--text-sm); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
 .nexus-mesh-row__sub { display: block; margin-top: 2px; color: var(--text-tertiary); font-size: var(--text-xs); overflow-wrap: anywhere; }
 .nexus-mesh-row__pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
-.nexus-mesh-row__check { flex-shrink: 0; margin-top: 2px; color: var(--accent); }
 .nexus-mesh-row__actions { display: flex; flex-shrink: 0; gap: 6px; }
+.nexus-chat-here[aria-pressed="true"] { color: var(--accent); }
 .nexus-mesh-row > .workspace-action-button, .nexus-mesh-row > .nexus-pill { flex-shrink: 0; margin-top: 1px; }
 .nexus-mesh-dot { box-sizing: border-box; display: inline-block; flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .nexus-mesh-dot--good { color: var(--success); }
@@ -412,9 +408,6 @@
    fills with the tone and darkens the text to clear 4.5:1 against its own fill. */
 [data-theme="light"] .nexus-pill { background: color-mix(in srgb, var(--nexus-pill-tone) 14%, var(--surface-2)); border-color: color-mix(in srgb, var(--nexus-pill-tone) 40%, transparent); color: color-mix(in srgb, var(--nexus-pill-tone) 50%, var(--text-primary)); }
 [data-theme="light"] .nexus-pill--accent { color: var(--accent-fg); }
-.nexus-mesh-choice { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
-.nexus-mesh-choice > .nexus-mesh-row { flex: 1; min-width: 0; margin: 0; }
-.nexus-mesh-choice > .workspace-action-button { flex-shrink: 0; }
 .nexus-server-info { width: min(560px, 100%); }
 .nexus-server-info__section { margin-top: 16px; }
 .nexus-server-info__section > .nexus-mesh__label { margin-bottom: 6px; }
@@ -431,9 +424,6 @@
 .nexus-mesh__empty { margin: 0 0 8px; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
 .nexus-mesh__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .nexus-account-menu .nexus-mesh-row { padding: 8px 10px; }
-.nexus-chat-hosts > .nexus-mesh-row { align-items: center; margin-bottom: 6px; }
-.nexus-chat-hosts > .nexus-mesh-row > .nexus-mesh-row__check { margin-top: 0; }
-.nexus-chat-hosts > .nexus-mesh-row:last-of-type { margin-bottom: 0; }
 .nexus-account-menu .nexus-devices { margin-bottom: var(--space-3); }
 @media (max-width: 560px) {
   .nexus-mesh { padding: 14px; }

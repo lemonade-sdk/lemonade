@@ -1,14 +1,12 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNexusAccount } from '../features/nexus/NexusAccountContext';
-import {
-  NEXUS_CONNECTION_LABELS, isLoopbackUrl, nexusDeviceConnection, nexusInferenceServers, nexusServerUnavailable, selectNexusInferenceServer, useNexusNetwork, type NexusConnection,
-} from '../features/nexus/nexus';
+import { isLoopbackUrl, selectNexusInferenceServer, useNexusNetwork } from '../features/nexus/nexus';
 import { useI18n } from '../i18n';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
 import { NexusNetwork } from './NexusNetwork';
-import { NexusDeviceRows, NexusMeshPanel, nexusListedDevices } from './NexusMesh';
+import { NexusDeviceRows, NexusMeshPanel, nexusListedDevices, type NexusChatHost } from './NexusMesh';
 import '../styles/nexus.css';
 
 // The account's profile image, shared by its devices. Without one the mark is generic: the
@@ -146,28 +144,14 @@ function AccountAccess({ showSignOut = false }: { showSignOut?: boolean }) {
   </div>;
 }
 
-const CHAT_HOST_TONES: Record<NexusConnection, string> = { p2p: 'good', relay: 'warn', connecting: 'accent', offline: 'muted' };
-function ChatHostRow({ selected, title, subtitle, connection, disabled, onChoose }: {
-  selected: boolean; title: string; subtitle?: string; connection?: NexusConnection; disabled: boolean; onChoose: () => void;
-}) {
+function MyDevices() {
   const { t } = useI18n();
-  return <button type="button" className={`nexus-mesh-row nexus-mesh-row--choice nexus-chat-host${selected ? ' is-selected' : ''}`} aria-pressed={selected} disabled={disabled} onClick={onChoose}>
-    <span className="nexus-mesh-row__body">
-      <span className="nexus-mesh-row__name">{title}</span>
-      {subtitle && <span className="nexus-mesh-row__sub">{subtitle}</span>}
-    </span>
-    {connection && <span className={`nexus-pill nexus-pill--${CHAT_HOST_TONES[connection]} nexus-pill--connection`}>{t(NEXUS_CONNECTION_LABELS[connection])}</span>}
-    {selected && <Icon name="check" size={16} className="nexus-mesh-row__check" />}
-  </button>;
-}
-
-function ChatRunsOn() {
-  const { t } = useI18n();
+  const { account, devices, onConnectDevice } = useNexusAccount();
   const network = useNexusNetwork(false);
   const { status } = network;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const servers = nexusInferenceServers(status);
+  const listed = account ? nexusListedDevices(status, devices) : [];
   const selected = network.selectedServerId || 'local';
   const disabled = busy || Boolean(network.switchingServer);
   const choose = async (target: string) => {
@@ -177,27 +161,12 @@ function ChatRunsOn() {
     catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   };
-  return <div className="nexus-section nexus-chat-hosts">
-    <p className="nexus-mesh__label">{t('Chat runs on')}</p>
-    <ChatHostRow selected={selected === 'local'} title={t('This device')} subtitle={t('Models on this computer')} disabled={disabled} onChoose={() => void choose('local')} />
-    {servers.map(device => {
-      const unavailable = nexusServerUnavailable(status, device);
-      return <ChatHostRow key={device.node_id} selected={selected === device.node_id} title={device.device_name || t('Unnamed device')}
-        subtitle={device.tunnel_ip.split('/')[0]} connection={unavailable ?? nexusDeviceConnection(status, device)} disabled={disabled || Boolean(unavailable)} onChoose={() => void choose(device.node_id)} />;
-    })}
-    {error && <p className="nexus-error" role="alert">{error}</p>}
-  </div>;
-}
-
-function MyDevices() {
-  const { t } = useI18n();
-  const { account, devices, onConnectDevice } = useNexusAccount();
-  const { status } = useNexusNetwork(false);
-  const listed = account ? nexusListedDevices(status, devices) : [];
+  const chat: NexusChatHost | undefined = account && status?.mesh_up && !status.locked ? { selected, disabled, onChoose: target => void choose(target) } : undefined;
   return <details className="nexus-section nexus-device-disclosure" open>
     <summary><span>{t('My devices')}</span><Icon name="chevron-right" size={16} /></summary>
     <div className="nexus-device-disclosure__content">
-    {listed.length ? <NexusDeviceRows status={status} devices={listed} /> : <p className="nexus-mesh__empty">{account ? t('No devices connected yet.') : t('Enable Mesh to list your devices.')}</p>}
+    {listed.length ? <NexusDeviceRows status={status} devices={listed} chat={chat} /> : <p className="nexus-mesh__empty">{account ? t('No devices connected yet.') : t('Enable Mesh to list your devices.')}</p>}
+    {error && <p className="nexus-error" role="alert">{error}</p>}
     {account && onConnectDevice && <WorkspaceActionButton icon="plus" onClick={onConnectDevice}>{t('Connect another device')}</WorkspaceActionButton>}
     </div>
   </details>;
@@ -290,7 +259,6 @@ export function NexusAccountMenu({ open, onOpenChange, onOpenPage }: {
         <WorkspaceActionButton ref={closeRef} appearance="quiet" size="small" iconOnly icon="x" aria-label={t('Close account menu')} onClick={() => close(true)} />
       </div>
       <AccountAccess />
-      {account && <ChatRunsOn />}
       <MyDevices />
       <button type="button" className="nexus-account-menu__link" onClick={() => { close(true); onOpenPage(); }}>
         <span>{t('Open Accounts')}</span><Icon name="chevron-right" size={16} />

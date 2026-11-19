@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { enableNexusMesh, resumedNexusMesh, setupNexusAccount } from './nexusAccountFixture';
 
 for (const action of ['create', 'join'] as const) {
@@ -276,25 +276,46 @@ test('a degraded server shows a reconnecting state instead of its error', async 
   await expect(panel.getByRole('alert')).toContainText('No network server found for mesh.example.', { timeout: 15000 });
 });
 
-test('Chat runs on offers only servers this device has a path to', async ({ page }) => {
+test('each device card lists once and only servers this device has a path to offer Run chat here', async ({ page }, testInfo) => {
   const fixture = await setupNexusAccount(page, { deviceKey: true });
   const server = { ...fixture.state.members[1], is_inference: true, can_connect: true };
   fixture.state.members.push({ ...server, node_id: 'gpu', device_name: 'GPU box', connection_type: 'p2p' },
     { ...server, node_id: 'cpu', device_name: 'Office PC', connection_type: 'unknown' },
     { ...server, node_id: 'away', device_name: 'Travel laptop', is_online: false });
+  fixture.state.members[1].is_inference = false;
   await page.reload();
   await resumedNexusMesh(page);
-  const choice = (name: string) => page.locator('.nexus-mesh .nexus-mesh-row--choice').filter({ hasText: name });
-  await expect(choice('GPU box')).toBeEnabled();
-  await expect(choice('Office PC')).toBeDisabled();
-  await expect(choice('Office PC').locator('.nexus-pill--connection')).toHaveText('Connecting');
-  await expect(choice('Travel laptop')).toBeDisabled();
-  await expect(choice('Travel laptop').locator('.nexus-pill--connection')).toHaveText('Offline');
+  const names = ['My laptop', 'Kitchen PC', 'GPU box', 'Office PC', 'Travel laptop'];
+  const checkPanel = async (panel: Locator) => {
+    const cards = panel.locator('.nexus-devices li');
+    await expect(cards).toHaveCount(names.length);
+    for (const name of names) await expect(panel.getByText(name, { exact: true })).toHaveCount(1);
+    await expect(cards.first()).toContainText('My laptop');
+    await expect(cards.first().locator('.nexus-pill').filter({ hasText: 'This device' })).toHaveCount(1);
+    await expect(panel.getByText('Chat runs on', { exact: true })).toHaveCount(0);
+    const control = (name: string) => panel.getByRole('button', { name: `Run chat on ${name}`, exact: true });
+    await expect(control('My laptop')).toHaveAttribute('aria-pressed', 'true');
+    await expect(control('My laptop')).toHaveText('Chat runs here');
+    await expect(control('GPU box')).toBeEnabled();
+    await expect(control('GPU box')).toHaveText('Run chat here');
+    await expect(control('Office PC')).toBeDisabled();
+    await expect(cards.filter({ hasText: 'Office PC' }).locator('.nexus-pill--connection')).toHaveText('Connecting');
+    await expect(control('Travel laptop')).toBeDisabled();
+    await expect(cards.filter({ hasText: 'Travel laptop' }).locator('.nexus-pill--connection')).toHaveText('Offline');
+    await expect(control('Kitchen PC')).toHaveCount(0);
+    await expect(cards.filter({ hasText: 'Kitchen PC' }).locator('.nexus-pill').filter({ hasText: 'Client' })).toHaveCount(1);
+  };
+  await checkPanel(page.locator('.nexus-mesh'));
+  await page.locator('.nexus-mesh').screenshot({ path: testInfo.outputPath('mesh-devices-run-chat-here.png') });
   await page.getByRole('button', { name: 'Mesh: My laptop', exact: true }).click();
   const menu = page.getByRole('dialog', { name: 'Lemonade Account', exact: true });
-  await expect(menu.locator('.nexus-chat-host').filter({ hasText: 'GPU box' })).toBeEnabled();
-  await expect(menu.locator('.nexus-chat-host').filter({ hasText: 'Travel laptop' })).toBeDisabled();
-  await expect(menu.locator('.nexus-chat-host').filter({ hasText: 'Office PC' }).locator('.nexus-pill--connection')).toHaveText('Connecting');
+  await expect(menu.getByText('Chat runs on', { exact: true })).toHaveCount(0);
+  await checkPanel(menu.locator('.nexus-device-disclosure'));
+  await menu.screenshot({ path: testInfo.outputPath('account-menu-devices-run-chat-here.png') });
+  await menu.getByRole('button', { name: 'Run chat on GPU box', exact: true }).click();
+  await expect(menu.getByRole('button', { name: 'Run chat on GPU box', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(menu.getByRole('button', { name: 'Run chat on My laptop', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(() => fixture.calls.some(call => call.path.includes('/nexus/peers/gpu/'))).toBe(true);
 });
 
 const passkeyCalls = (fixture: { calls: { path: string }[] }) => fixture.calls.filter(call => call.path.includes('/passkey/'));
