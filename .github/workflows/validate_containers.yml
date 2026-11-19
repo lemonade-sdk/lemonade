@@ -4,7 +4,9 @@ name: Update Container Backend Images
 # pin in backend_versions.json is <tag>@<digest>. A tag with version numbers,
 # such as 0.18.22, moves to the highest-numbered tag of the same shape; every
 # pin then moves to its tag's newest digest. The update PR is opened the same
-# way as validate_llamacpp.yml's.
+# way as validate_llamacpp.yml's. AIM is bumped by hand: each AIM model row in
+# server_models.json names an image built on the aim pin's release, and they
+# must move to a new release together.
 
 on:
   workflow_dispatch:
@@ -57,11 +59,13 @@ jobs:
               "application/vnd.oci.image.manifest.v1+json",
           ])
 
+          MANUAL = {"aim"}
+
           images = {}
           for header in glob.glob("src/cpp/include/lemon/backends/*/*.h"):
               text = open(header, encoding="utf-8").read()
               recipe = RECIPE_RE.search(text)
-              if not recipe:
+              if not recipe or recipe.group(1) in MANUAL:
                   continue
               for backend, image in POLICY_RE.findall(text):
                   images[(recipe.group(1), backend)] = image
@@ -70,7 +74,8 @@ jobs:
           versions = json.load(open(path, encoding="utf-8"))
           pinned = {
               (recipe, backend)
-              for recipe, backends in versions.items() if isinstance(backends, dict)
+              for recipe, backends in versions.items()
+              if isinstance(backends, dict) and recipe not in MANUAL
               for backend, pin in backends.items() if isinstance(pin, str) and PIN_RE.match(pin)
           }
           if not images or pinned - images.keys():
