@@ -55,7 +55,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'load_model',
-      description: 'Load a downloaded/local model into the server for inference. A recipe defines the inference backend: llamacpp (GPU/CPU via llama.cpp — backends: vulkan, rocm, metal, cpu), flm (NPU via FastFlowLM), ryzenai-llm (hybrid NPU). Combined forms like "llamacpp-vulkan" or "llamacpp-cpu" select a backend. Router models (recipe=collection.router) are virtual orchestration policies: load_model validates/registers them for use but never starts a backend process for the Router itself. Do not assign a backend/device to the Router. If the user asks for CPU, pass backend/device=cpu for ordinary models. If multiple recipes are available and the user did not choose, call get_model_info and ask_question first.',
+      description: 'Load a downloaded/local model into the server for inference. A recipe defines the inference backend: llamacpp (GPU/CPU via llama.cpp — backends: vulkan, rocm, metal, cpu), flm (NPU via FastFlowLM), ryzenai-llm (NPU via Ryzen AI). Combined forms like "llamacpp-vulkan" or "llamacpp-cpu" select a backend. Router models (recipe=collection.router) are virtual orchestration policies: load_model validates/registers them for use but never starts a backend process for the Router itself. Do not assign a backend/device to the Router. If the user asks for CPU, pass backend/device=cpu for ordinary models. If multiple recipes are available and the user did not choose, call get_model_info and ask_question first.',
       parameters: {
         type: 'object',
         properties: {
