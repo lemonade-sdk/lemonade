@@ -423,18 +423,11 @@ bool Router::ensure_loaded_model_residency_canonical(
         return false;
     }
 
-    // Refuse to durably promote an already-loaded Standard model into a routing
-    // helper for a policy that no longer needs it. An in-flight request can carry
-    // a copy of a policy that was edited or deleted after it started; without this
-    // guard that stale copy would flip a user-facing Standard model to
-    // RoutingHelper, bypassing every stale-helper check in load_model() and
-    // stranding it since reconcile ignored it while it was still Standard. Checking
-    // the needed-set directly (not pinning) keeps a pin from letting an obsolete
-    // policy override the current role. The backend stays resident and still serves
-    // the old request as Standard.
+    // A transient lease protects the model during validation, but only a registered
+    // policy should durably promote a pre-existing Standard model to a helper.
     if (requested_residency_class == ResidencyClass::RoutingHelper &&
         existing->get_residency_class() != ResidencyClass::RoutingHelper &&
-        !is_needed_helper_locked(canonical_model_name)) {
+        active_policy_helper_models_.count(canonical_model_name) == 0) {
         existing->update_access_time();
         return true;
     }

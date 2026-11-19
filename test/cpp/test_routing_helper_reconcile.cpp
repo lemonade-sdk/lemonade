@@ -517,25 +517,44 @@ static void test_reclaim_rearms_when_rescued_before_commit(Router& router) {
           resident_while_busy && reclaimed);
 }
 
-// Reviewer's promotion-path ask: an already-loaded Standard model must not be
-// durably promoted to a routing helper by an in-flight request carrying an
-// obsolete policy. Reconcile publishes a needed-set that excludes the model,
-// then a RoutingDependency residency request arrives (as it would while
-// evaluating a stale copied policy). The backend must stay resident and remain
-// Standard rather than becoming a stale RoutingHelper no active policy needs.
-static void test_stale_policy_does_not_promote_standard(Router& router) {
+// A transient validation lease protects helpers loaded for the request, but it
+// must not change the residency of a model that was already loaded by the user.
+static void test_transient_lease_preserves_standard_model(Router& router) {
     RoutingHelperTestHook::add_server(router, make_standard("promote.model"));
     RoutingHelperTestHook::reconcile(router, {});
 
-    bool ensured = RoutingHelperTestHook::ensure_residency(
-        router, "promote.model", lemon::LoadPurpose::RoutingDependency);
+    bool ensured = false;
+    {
+        [[maybe_unused]] auto lease = RoutingHelperTestHook::lease_transient(
+            router, {"promote.model"});
+        ensured = RoutingHelperTestHook::ensure_residency(
+            router, "promote.model", lemon::LoadPurpose::RoutingDependency);
+    }
     bool still_resident = RoutingHelperTestHook::has_any_model(router, "promote.model");
     bool stayed_standard =
         RoutingHelperTestHook::residency_of(router, "promote.model") ==
         ResidencyClass::Standard;
 
-    check("stale in-flight policy cannot promote a Standard model to a helper",
+    check("transient validation lease preserves a pre-existing Standard model",
           ensured && still_resident && stayed_standard);
+}
+
+static void test_registered_policy_promotes_standard_model(Router& router) {
+    RoutingHelperTestHook::add_server(router, make_standard("registered.standard"));
+    RoutingHelperTestHook::reconcile(router, {"registered.standard"});
+
+    bool ensured = false;
+    {
+        [[maybe_unused]] auto lease = RoutingHelperTestHook::lease_transient(
+            router, {"registered.standard"});
+        ensured = RoutingHelperTestHook::ensure_residency(
+            router, "registered.standard", lemon::LoadPurpose::RoutingDependency);
+    }
+    bool stayed_helper = RoutingHelperTestHook::has_helper(
+        router, "registered.standard");
+
+    check("registered policy still promotes and retains a Standard model",
+          ensured && stayed_helper);
 }
 
 // Reviewer's ask #4: router shutdown while a deferred reclaim is pending. The
@@ -590,7 +609,8 @@ int main() {
         test_maintenance_completion_reclaims_helper(router);
         test_deferred_reclaim_waits_for_slot(router);
         test_reclaim_rearms_when_rescued_before_commit(router);
-        test_stale_policy_does_not_promote_standard(router);
+        test_transient_lease_preserves_standard_model(router);
+        test_registered_policy_promotes_standard_model(router);
     }
 
     test_shutdown_with_pending_reclaim(config);
