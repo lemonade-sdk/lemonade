@@ -40,6 +40,12 @@ static int64_t resolve(const ModelInfo& info, double free_gib,
 }
 
 int main() {
+    // With measurable weight fit, default mode deliberately tries 4k even if
+    // reserved KV suggests 1200 tokens. Safer opt-in rejects that shortfall.
+    const auto short_ctx = fixture("llamacpp", 3.0, DEVICE_GPU);
+    CHECK(resolve(short_ctx, 4.646484375, false) == 4096);
+    CHECK(resolve(short_ctx, 4.646484375, true) == AUTO_CTX_NO_CAPACITY);
+
     // These were best-effort before PR #3988. The estimate must not turn
     // into a blanket load rejection unless stricter admission was requested.
     auto flm = fixture("flm", 20.0, DEVICE_CPU);
@@ -70,6 +76,12 @@ int main() {
     ds4.resolved_paths["main"] = ds4_file.string();
     CHECK(resolve(ds4, 1e-8, false) == 4096);
     CHECK(resolve(ds4, 1e-8, true) == AUTO_CTX_NO_CAPACITY);
+    // The backend's working-set estimate permits KV here although the full
+    // checkpoint cannot fit. A generic llama.cpp calculation must reject it.
+    CHECK(resolve(ds4, 20.0, true) >= 4096);
+    auto generic = ds4;
+    generic.recipe = "llamacpp";
+    CHECK(resolve(generic, 20.0, true) == AUTO_CTX_NO_CAPACITY);
     std::filesystem::remove(ds4_file);
 
     // The actual production estimator must still exploit Gemma4's bounded

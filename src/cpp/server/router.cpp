@@ -1087,6 +1087,28 @@ void Router::load_model(const std::string& model_name,
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
         int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
         const bool ctx_size_auto = auto_ctx != -2;
+        if (auto_ctx == AUTO_CTX_NO_CAPACITY && !is_unmetered_load) {
+            // Admission can fail only because another resident model occupies
+            // the memory. Recover using the existing LRU/pinning/residency
+            // rules, not evict_all_servers(): that would also evict pinned peers.
+            // Only candidates from this same residency pool are eligible.
+            const size_t max_recovery_evictions = loaded_servers_.size();
+            for (size_t attempt = 0;
+                 attempt < max_recovery_evictions && auto_ctx == AUTO_CTX_NO_CAPACITY;
+                 ++attempt) {
+                if (cancel_flag && cancel_flag->load())
+                    throw std::runtime_error("load cancelled");
+                WrappedServer* victim = find_lru_server_in_pool(
+                    model_type, requested_residency_class, canonical_model_name);
+                if (!victim) break;
+                LOG(INFO, "Router") << "Auto-context admission retry after evicting "
+                                    << victim->get_model_name() << std::endl;
+                const size_t old_size = loaded_servers_.size();
+                evict_server(victim);
+                if (loaded_servers_.size() == old_size) break; // Busy: no memory freed.
+                auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
+            }
+        }
         if (auto_ctx == AUTO_CTX_NO_CAPACITY) {
             throw std::runtime_error(
                 "Not enough free memory to load " + canonical_model_name +

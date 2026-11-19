@@ -226,7 +226,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond`. See [Imported models](./custom-models.md#imported-models-extra_models_dir) |
 | `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
-| `auto_context_safer` | bool | false | Opt into strict auto-context admission for all recipes. In normal mode, non-llama.cpp backends retain best-effort fallback; standard llama.cpp still checks measured memory. Explicit context sizes bypass the estimator. |
+| `auto_context_safer` | bool | false | Opt into strict automatic context admission. Default llama.cpp GPU loads reject clearly oversized weights, but may try the 4k minimum when weights fit even if the estimated KV budget is short. This can still OOM; `true` requires a measured minimum fit. Explicit context sizes bypass admission. |
 | `default_model_source` | string | "huggingface" | Remote registry used to pull checkpoints when a request does not name one (`huggingface` or `modelscope`). Explicit `--source`, a `source`/`registry_source` field, or a provider URL always overrides it. |
 | `download_rate_limit` | string | "" | Caps model/backend download speed. Byte rate with curl-style suffixes: `512`, `100K`, `10M`, etc. Use `""` for unlimited download speed. A non-empty value also serializes concurrent transfers. |
 | `offline` | bool | false | Skip model downloads |
@@ -244,8 +244,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 `auto_context_safer` defaults to `false`. Set it with
 `lemonade config set auto_context_safer=true` to reject insufficient automatic
 context estimates for every recipe. Otherwise non-llama.cpp recipes retain the
-previous best-effort load behavior, while standard llama.cpp checks memory and
-eligible CPU offload before rejecting. The minimum is
+previous best-effort load behavior. Standard llama.cpp rejects clearly
+oversized weights but deliberately tries the minimum when the weights
+fit, even if estimated KV capacity is lower; that attempt can OOM.
+Opt-in safer mode rejects insufficient estimated KV capacity. The minimum is
 `min(max_context_window, 4096)` for text models with a known trained window,
 4096 if unknown, and 8192 for embeddings. Explicit `ctx_size` overrides remain
 the user's responsibility. A streaming backend supplies its own KV budget.

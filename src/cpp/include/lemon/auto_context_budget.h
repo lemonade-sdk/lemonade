@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
@@ -211,11 +212,11 @@ inline bool auto_context_llamacpp_can_cpu_offload(
     const std::string& custom_args,
     const char* fit_env = std::getenv("LLAMA_ARG_FIT"),
     const char* gpu_layers_env = std::getenv("LLAMA_ARG_N_GPU_LAYERS")) {
-    if ((fit_env && std::string(fit_env) == "off") ||
-        (gpu_layers_env && std::string(gpu_layers_env) != "auto"))
-        return false;
-
+    // llama.cpp applies explicit CLI args after environment defaults. Parse
+    // the last explicit occurrence of each switch before consulting its env.
     const auto args = utils::parse_custom_args(custom_args);
+    std::optional<std::string> fit_arg;
+    std::optional<std::string> layers_arg;
     for (size_t i = 0; i < args.size(); ++i) {
         const auto eq = args[i].find('=');
         const std::string flag = args[i].substr(0, eq);
@@ -230,10 +231,19 @@ inline bool auto_context_llamacpp_can_cpu_offload(
                    args[i + 1][0] != '-') {
             value = args[++i];
         }
-        if ((fit_flag && value == "off") ||
-            (layers_flag && value != "auto")) return false;
+        if (fit_flag) fit_arg = value;
+        else layers_arg = value;
     }
-    return true;
+    const std::string fit = fit_arg.value_or(fit_env ? fit_env : "on");
+    const std::string layers = layers_arg.value_or(gpu_layers_env ? gpu_layers_env : "auto");
+    // Missing/unrecognized --fit is not evidence of adaptive placement.
+    std::string normalized_fit = fit;
+    std::transform(normalized_fit.begin(), normalized_fit.end(), normalized_fit.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const bool fit_enabled = normalized_fit == "on" || normalized_fit == "true" ||
+                             normalized_fit == "1" || normalized_fit == "yes" ||
+                             normalized_fit == "enabled";
+    return fit_enabled && layers == "auto";
 }
 
 
@@ -321,9 +331,11 @@ inline bool auto_context_cpu_offload_weights_fit(
     return gpu_usable + ram_usable >= weights_gib + workspace + extra;
 }
 
-// Pure, deterministic policy: a weight fit does not imply the KV cache fits.
-// The ordinary mode tries the useful minimum when only reserve estimates are
-// uncertain. A backend-provided KV budget is authoritative: never override it.
+// The default deliberately tries the 4k minimum if the model weights fit,
+// even when estimated KV capacity is below that minimum. This is best-effort
+// and can OOM, but avoids main's unconditional fallback for oversized weights.
+// Opt-in safer mode requires measured fit. Backend-owned KV limits remain
+// authoritative in either mode.
 inline int64_t auto_context_minimum_admission(
     int64_t estimated_tokens, int64_t minimum_tokens,
     bool weights_fit, bool measured_offloaded_minimum_fit,

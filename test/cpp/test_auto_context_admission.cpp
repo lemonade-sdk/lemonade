@@ -72,5 +72,23 @@ int main() {
     CHECK(!auto_context_llamacpp_can_cpu_offload("", "off", nullptr));
     CHECK(!auto_context_llamacpp_can_cpu_offload("", nullptr, "all"));
     CHECK(!auto_context_llamacpp_can_cpu_offload("", nullptr, "35"));
+    // Admission policy: weight-only fit keeps a risky 4k try in default mode,
+    // including pinned layer placement; safer mode requires the KV budget.
+    CHECK(auto_context_minimum_admission(256, 4096, true, false, false, false) == 4096);
+    CHECK(auto_context_minimum_admission(256, 4096, true, false, false, true) == 0);
+    CHECK(auto_context_minimum_admission(256, 4096, false, false, false, false) == 0);
+    CHECK(auto_context_minimum_admission(256, 4096, false, true, false, true) == 4096);
+    // CLI wins over LLAMA_ARG_* env defaults; --fit disabled has many spellings.
+    CHECK(auto_context_llamacpp_can_cpu_offload("--fit on --gpu-layers auto", "off", "35"));
+    CHECK(auto_context_llamacpp_can_cpu_offload("-fit=on -ngl=auto", "false", "all"));
+    CHECK(auto_context_llamacpp_can_cpu_offload("--fit off --fit on", nullptr, nullptr));
+    CHECK(!auto_context_llamacpp_can_cpu_offload("--fit off", nullptr, nullptr));
+    CHECK(!auto_context_llamacpp_can_cpu_offload("--fit false", nullptr, nullptr));
+    CHECK(!auto_context_llamacpp_can_cpu_offload("--fit 0", nullptr, nullptr));
+    CHECK(!auto_context_llamacpp_can_cpu_offload("--fit disabled", nullptr, nullptr));
+    CHECK(!auto_context_llamacpp_can_cpu_offload("", "0", nullptr));
+    CHECK(!auto_context_llamacpp_can_cpu_offload("", "disabled", nullptr));
+    CHECK(!auto_context_llamacpp_can_cpu_offload("", nullptr, "99"));
+    CHECK(!auto_context_llamacpp_can_cpu_offload("--gpu-layers 99", nullptr, "auto"));
     return failures ? 1 : 0;
 }

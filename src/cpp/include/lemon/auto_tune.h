@@ -149,8 +149,7 @@ inline double get_available_memory_gb(DeviceType device_type,
                 return 0.0;
             }
             if (memory_known_out) *memory_known_out = true;
-            if (physical_free_gb_out &&
-                (!pool.unified || pool.vendor == GpuMemoryVendor::Amd)) {
+            if (physical_free_gb_out) {
                 // The CPU can hold non-offloaded layers on either UMA or a dGPU.
                 double total_ram_gb = physical_total_gb;
                 if (total_ram_gb <= 0.0) {
@@ -460,8 +459,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         const bool offload_measured = unified_gpu || physical_free_gb >= 0.0;
         const bool unmeasured_host_offload = cpu_offload && !unified_gpu &&
             physical_free_gb < 0.0;
-        const bool require_measured = safer ||
-            (model_info.recipe == "llamacpp" && !cpu_offload_runtime_compatible);
+        const bool require_measured = safer;
         const int64_t admitted = auto_context_minimum_admission(
             max_ctx_from_memory, fallback, weights_fit,
             offload_ctx > 0 && offload_measured, unmeasured_host_offload,
