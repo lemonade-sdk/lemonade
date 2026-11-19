@@ -339,7 +339,12 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
 }
 
 VLLMServer::VLLMServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
-    : WrappedServer("vllm-server", log_level, model_manager, backend_manager) {
+    : VLLMServer("vllm-server", log_level, model_manager, backend_manager) {
+}
+
+VLLMServer::VLLMServer(const std::string& server_name, const std::string& log_level,
+                       ModelManager* model_manager, BackendManager* backend_manager)
+    : WrappedServer(server_name, log_level, model_manager, backend_manager) {
 }
 
 VLLMServer::~VLLMServer() {
@@ -671,7 +676,7 @@ json VLLMServer::fit_openai_max_tokens_to_context(const json& request) {
 
 int64_t VLLMServer::count_openai_prompt_tokens(const json& request) {
     json tokenize_request;
-    tokenize_request["model"] = model_name_;
+    tokenize_request["model"] = served_model_name();
     if (request.contains("messages")) {
         tokenize_request["messages"] = request["messages"];
         copy_if_present(tokenize_request, request, "add_generation_prompt");

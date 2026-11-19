@@ -2,6 +2,8 @@
 // against ContainerManager, with a fake host in place of Podman and Docker, and
 // checks every container backend's descriptor and pin.
 
+#include "lemon/backends/aim/aim.h"
+#include "lemon/backends/aim/aim_server.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
@@ -20,6 +22,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 using lemon::utils::ContainerHost;
@@ -66,6 +69,9 @@ struct FakeHost {
     std::map<std::string, std::string> files = {{"/etc/os-release", "ID=ubuntu\nID_LIKE=debian\n"}};
     std::map<std::string, std::string> env;
     bool root = false;
+    // Images the fake tool holds, and those a container is using.
+    mutable std::set<std::string> images;
+    std::set<std::string> images_in_use;
     // How many commands the manager has run on the host.
     mutable int commands = 0;
     mutable std::vector<std::vector<std::string>> runs;
@@ -94,6 +100,14 @@ struct FakeHost {
                 result.output = podman_rootless + " " + network_backend + " " + oci_runtime + "\n";
             } else if (argv.size() > 1 && argv[1] == "network") {
                 result.exit_code = 0;
+            } else if (argv.size() > 2 && argv[1] == "rmi") {
+                const bool busy = images_in_use.count(argv[2]) > 0;
+                const bool present = images.count(argv[2]) > 0;
+                if (!busy) images.erase(argv[2]);
+                result.exit_code = busy ? 2 : (present ? 0 : 1);
+                if (busy) result.output = "image is in use by a container";
+            } else if (argv.size() > 2 && argv[1] == "image" && argv[2] == "inspect") {
+                result.exit_code = images.count(argv.back()) ? 0 : 125;
             } else if (argv.front() == "getsubids") {
                 const auto it = subids.find(join({argv.begin() + 1, argv.end()}));
                 result.exit_code = it == subids.end() ? 1 : 0;
@@ -151,6 +165,13 @@ void test_run_command() {
     check("podman run matches the spec's Complete Example",
           podman_command == "podman" + common + " --group-add keep-groups" + mount_and_home +
                                 " -p 127.0.0.1:8001:8001" + image_and_program);
+
+    ContainerRunSpec shm = example_spec();
+    shm.shm_size = "1g";
+    const std::string shm_command = join(ContainerManager(podman.host()).run_command(shm));
+    check("a policy's shm_size sizes the container's /dev/shm",
+          shm_command.find(" --shm-size=1g ") != std::string::npos &&
+              podman_command.find("--shm-size") == std::string::npos);
 
     FakeHost user_socket;
     user_socket.tools = {"podman"};
@@ -555,10 +576,13 @@ void test_helpers() {
     check("permissive SELinux passes the SELinux check",
           !ContainerManager(fedora.host()).check_selinux());
 
+    check("AMD's AIM images are allowed",
+          ContainerManager::allowed_image("docker.io/amdenterpriseai/aim-radeon-base"));
     check("other publishers are refused",
           !ContainerManager::allowed_image("docker.io/library/ubuntu") &&
               !ContainerManager::allowed_image("docker.io/kyuz0x/image") &&
-              !ContainerManager::allowed_image("docker.io/kyuz0/"));
+              !ContainerManager::allowed_image("docker.io/kyuz0/") &&
+              !ContainerManager::allowed_image("docker.io/amdenterpriseaix/aim-radeon-base"));
 
     const std::string digest =
         "sha256:e79f876de3be84200172552b7abe5686a230f1fce02caa65dbba90372e3255c6";
@@ -686,6 +710,142 @@ void test_ds4_memory_plan() {
           !memory_plan(115.0, 100.0).resident);
 }
 
+void test_aim() {
+    using lemon::backends::aim::build_container_env;
+    using lemon::backends::aim::parse_model_image;
+    const std::string digest =
+        "sha256:12f469a59f155b0696074bbd791203a938483d56d831c12e4d3c2b004bf1282b";
+    const auto image =
+        parse_model_image("docker.io/amdenterpriseai/aim-radeon-qwen-qwen3-5-9b:2026.11.0@" + digest);
+    check("an AIM model image runs by digest and keeps its release tag",
+          image.image == "docker.io/amdenterpriseai/aim-radeon-qwen-qwen3-5-9b@" + digest &&
+              image.tag == "2026.11.0");
+    for (const std::string& bad : std::vector<std::string>{
+             "docker.io/amdenterpriseai/aim-radeon-qwen-qwen3-5-9b@" + digest,
+             "docker.io/amdenterpriseai/aim-radeon-qwen-qwen3-5-9b:2026.11.0",
+             "docker.io/amdenterpriseai/aim-radeon-qwen-qwen3-5-9b:2026.11.0@sha256:12f4",
+             "docker.io/library/ubuntu:24.04@" + digest}) {
+        bool threw = false;
+        try {
+            parse_model_image(bad);
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        check("an AIM model image is refused: " + bad, threw);
+    }
+
+    using Env = std::vector<std::pair<std::string, std::string>>;
+    check("AIM serves the mounted model offline on Lemonade's port, tuned for latency",
+          build_container_env(8001, nlohmann::json::object(), "") ==
+              Env({{"AIM_CACHE_PATH", "/mnt/models"},
+                                                   {"AIM_PORT", "8001"},
+                                                   {"AIM_METRIC", "latency"},
+                                                   {"HF_HUB_OFFLINE", "1"}}));
+    const Env tuned =
+        build_container_env(8001, {{"max-model-len", 16384}}, "vllm-w7900-bf16-tp1-latency");
+    check("engine arguments reach AIM_ENGINE_ARGS and aim_profile picks the profile",
+          tuned.size() == 6 &&
+              tuned[4] == Env::value_type{"AIM_ENGINE_ARGS", "{\"max-model-len\":16384}"} &&
+              tuned[5] == Env::value_type{"AIM_PROFILE_ID", "vllm-w7900-bf16-tp1-latency"});
+
+    using lemon::backends::aim::translate_vllm_reply;
+    nlohmann::json reply = nlohmann::json::parse(R"({"model":"Qwen/Qwen3.5-9B","choices":[
+        {"message":{"role":"assistant","content":"51","reasoning":"17*3"}},
+        {"delta":{"reasoning":"more"}}]})");
+    translate_vllm_reply(reply, "Qwen3.5-9B-AIM");
+    check("an AIM reply carries Lemonade's model name and reasoning_content",
+          reply["model"] == "Qwen3.5-9B-AIM" &&
+              reply["choices"][0]["message"]["reasoning_content"] == "17*3" &&
+              !reply["choices"][0]["message"].contains("reasoning") &&
+              reply["choices"][1]["delta"]["reasoning_content"] == "more");
+    nlohmann::json event = nlohmann::json::parse(
+        R"({"type":"response.created","response":{"model":"Qwen/Qwen3.5-9B"}})");
+    translate_vllm_reply(event, "Qwen3.5-9B-AIM");
+    check("a Responses API event names Lemonade's model",
+          event["response"]["model"] == "Qwen3.5-9B-AIM");
+
+    const auto refused = [](const lemon::ModelInfo& model) {
+        lemon::backends::BackendContext ctx;
+        ctx.model_info = &model;
+        try {
+            lemon::backends::aim::create(ctx);
+        } catch (const std::runtime_error&) {
+            return true;
+        }
+        return false;
+    };
+    lemon::ModelInfo vllm_model;
+    vllm_model.extras["aim_engine"] = "vllm";
+    lemon::backends::BackendContext ctx;
+    ctx.model_info = &vllm_model;
+    check("an AIM model naming aim_engine vllm runs on the vLLM server class",
+          dynamic_cast<lemon::backends::AimVllmServer*>(lemon::backends::aim::create(ctx).get()) !=
+              nullptr);
+    lemon::ModelInfo llama_model;
+    llama_model.extras["aim_engine"] = "llamacpp";
+    check("an AIM model naming an engine Lemonade does not run is refused", refused(llama_model));
+    check("an AIM model naming no engine is refused rather than given vLLM",
+          refused(lemon::ModelInfo{}));
+
+    // A model image built on another release of the base pulls a second
+    // copy of it, tens of GB, so every row must match the backend's pin.
+    std::ifstream versions_in(BACKEND_VERSIONS_JSON_PATH);
+    const auto base_pin = lemon::backends::parse_container_pin(
+        nlohmann::json::parse(versions_in)["aim"]["rocm"].get<std::string>());
+    std::ifstream models_in(SERVER_MODELS_JSON_PATH);
+    const nlohmann::json models = nlohmann::json::parse(models_in);
+    int rows = 0;
+    for (const auto& [name, row] : models.items()) {
+        if (row.value("recipe", "") != "aim") continue;
+        ++rows;
+        bool same_release = false;
+        try {
+            same_release = base_pin &&
+                           parse_model_image(row.value("aim_image", "")).tag == base_pin->tag;
+        } catch (const std::invalid_argument&) {
+        }
+        check(name + " names an AIM image from the pinned base's release", same_release);
+        check(name + " names an engine Lemonade runs",
+              lemon::backends::aim::supports_engine(row.value("aim_engine", "")));
+    }
+    check("server_models.json has AIM models", rows > 0);
+}
+
+#ifndef _WIN32
+void test_remove_image() {
+    FakeHost podman;
+    podman.tools = {"podman"};
+    podman.images = {"a@sha256:1", "b@sha256:2"};
+    podman.images_in_use = {"b@sha256:2"};
+    const ContainerManager manager(podman.host());
+    check("removing an image reports it gone", manager.remove_image("a@sha256:1"));
+    check("removing an image that is already absent reports it gone",
+          manager.remove_image("c@sha256:3"));
+    check("removing an image a container uses reports it still present",
+          !manager.remove_image("b@sha256:2") && podman.images.count("b@sha256:2"));
+}
+
+void test_extra_image_record() {
+    namespace fs = std::filesystem;
+    using lemon::backends::BackendUtils;
+    const fs::path dir = fs::temp_directory_path() / "lemonade-test-extra-images";
+    fs::remove_all(dir);
+    BackendUtils::write_backend_extra_images(
+        dir.string(), {{"2026.11.0@sha256:aa", "docker.io/amdenterpriseai/a@sha256:1"},
+                       {"2026.12.0@sha256:bb", "docker.io/amdenterpriseai/b@sha256:2"}});
+    const auto read = BackendUtils::read_backend_extra_images(dir.string());
+    check("each recorded image keeps the pin it was pulled for",
+          read.size() == 2 && read[0].pin == "2026.11.0@sha256:aa" &&
+              read[0].image == "docker.io/amdenterpriseai/a@sha256:1" &&
+              read[1].pin == "2026.12.0@sha256:bb");
+    BackendUtils::write_backend_extra_images(dir.string(), {});
+    check("an empty record leaves no file behind",
+          !fs::exists(dir / "extra_images.txt") &&
+              BackendUtils::read_backend_extra_images(dir.string()).empty());
+    fs::remove_all(dir);
+}
+#endif
+
 void test_descriptors_and_pins() {
     std::ifstream in(BACKEND_VERSIONS_JSON_PATH);
     const nlohmann::json versions = nlohmann::json::parse(in);
@@ -726,11 +886,14 @@ int main() {
     test_helpers();
 #ifndef _WIN32
     test_model_mounts();
+    test_remove_image();
+    test_extra_image_record();
 #endif
 
     test_halogen_kernel_check();
     test_gufo_argv();
     test_ds4_memory_plan();
+    test_aim();
     test_descriptors_and_pins();
 
     if (failures == 0) {

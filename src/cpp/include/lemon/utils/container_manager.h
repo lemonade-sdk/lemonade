@@ -40,6 +40,7 @@ struct ContainerRunSpec {
     std::vector<std::string> devices;
     std::vector<std::string> cap_add;
     std::optional<ContainerUser> user;  // nullopt when the image runs as root
+    std::string shm_size;  // "" keeps the tool's default
     std::vector<ContainerMount> mounts;
     std::vector<std::pair<std::string, std::string>> env;
     std::string image;                 // <image>@<digest>
@@ -130,7 +131,9 @@ public:
 
     bool has_image(const std::string& image) const;
     void pull(const std::string& image, const DownloadProgressCallback& progress) const;
-    void remove_image(const std::string& image) const;
+    // True once the image is gone, including when it was never there; false
+    // when it is still present, such as while a container uses it.
+    bool remove_image(const std::string& image) const;
 
     // Replaces any network of that name with an --internal one carrying the
     // ai.lemonade label.

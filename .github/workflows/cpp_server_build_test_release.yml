@@ -1517,11 +1517,12 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
 
-  # Container backends run on Devlab Dispatch's ephemeral Strix Halo Linux
-  # runners, which have the memory and scratch disk for DS4 and Halogen models.
+  # Container backends run on Devlab Dispatch's ephemeral Linux runners, which
+  # have the memory and scratch disk for DS4 and Halogen models: Strix Halo by
+  # default, or the GPU an entry's `runner` names.
   test-container-backends:
     name: Test container backend - ${{ matrix.name }}
-    runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
+    runs-on: ${{ matrix.runner || fromJSON('["self-hosted", "Linux", "devlab-dispatch", "strix-halo"]') }}
     needs: build-lemonade-deb
     if: >-
       !startsWith(github.ref, 'refs/tags/') &&
@@ -1558,6 +1559,12 @@ jobs:
             install: "gufo:rocm"
             script: server_llm.py
             extra_args: "--wrapped-server gufo --backend rocm"
+          # AIM runs only on gfx1201 (Radeon AI PRO R9700).
+          - name: aim
+            install: "aim:rocm"
+            script: server_llm.py
+            extra_args: "--wrapped-server aim --backend rocm"
+            runner: [self-hosted, Linux, devlab-dispatch, radeon-r9700]
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1571,6 +1578,15 @@ jobs:
 
       - name: Print the Docker version
         run: docker --version
+
+      # The .deb needs libcpp-httplib0.26, which 24.04 has only in this PPA. The
+      # Strix Halo runners can already install it (and have no passwordless
+      # sudo); the R9700 runners cannot.
+      - name: Add the Lemonade PPA if libcpp-httplib0.26 is unavailable
+        run: |
+          if ! apt-cache policy libcpp-httplib0.26 2>/dev/null | grep -q 'Candidate: [0-9]'; then
+            sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge
+          fi
 
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb

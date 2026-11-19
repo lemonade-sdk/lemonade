@@ -31,6 +31,7 @@ Lemonade follows [Ramalama](https://github.com/containers/ramalama)'s container 
   - Donato's [Docker Hub account](https://hub.docker.com/u/kyuz0) for rocmfpx, nathanw, and ds4.
   - Peonist's [ghcr.io account](https://github.com/orgs/peonist-ai/packages) for Halogen.
   - Gufo's [ghcr.io account](https://github.com/orgs/gufo-org/packages) for Gufo, built by [gufo-org/toolboxes](https://github.com/gufo-org/toolboxes).
+  - AMD's [Docker Hub account](https://hub.docker.com/u/amdenterpriseai) for AIM.
 - **Models.** Downloaded by Lemonade and mounted read-only. Mounts and privileges are Lemonade's to set.
 - **Packaging.**
   - The PPA, the GitHub release .deb and .rpm, source builds and the embedded SDK tarball will natively support the container backends.
@@ -101,10 +102,11 @@ Each `BackendDescriptor` contains the information needed to install and launch t
 
 | Field | Required | Meaning | Adds to the run command |
 | --- | --- | --- | --- |
-| `image` | Yes | Where the image is published. Only `docker.io/kyuz0/*`, `ghcr.io/peonist-ai/*` and `ghcr.io/gufo-org/*` are allowed. | The image reference (see [Image](#image)) |
+| `image` | Yes | Where the image is published. Only `docker.io/amdenterpriseai/*`, `docker.io/kyuz0/*`, `ghcr.io/peonist-ai/*` and `ghcr.io/gufo-org/*` are allowed. | The image reference (see [Image](#image)) |
 | `devices` | Yes | Device nodes the container can open, such as `{"/dev/dri"}`. | One `--device` per node, and `--group-add` (see [Run Options](#run-options)) |
 | `cap_add` | No | Linux capabilities to give back after `--cap-drop=all`, such as `{"SYS_PTRACE"}`. | One `--cap-add` per capability |
 | `user` | No | The numeric UID and GID the image runs as, such as `{1000, 1000}` for Gufo's image. Unset for an image that runs as root. | `--userns=keep-id` on rootless Podman (see [Run Options](#run-options)) |
+| `shm_size` | No | Size of the container's `/dev/shm`, such as `"1g"`, for engines that need more than the tool's 64 MiB default. | `--shm-size` |
 
 Halogen's `BackendDescriptor` declares one container backend, `rocm`, for Strix Halo (`gfx1151`):
 
@@ -186,6 +188,7 @@ These options are the same for Podman and Docker:
 | `--env HIP_VISIBLE_DEVICES` | Index of the GPU whose arch is `SystemInfo::get_rocm_arch()`, only when `devices` includes `/dev/kfd` | `lemond` reads each node's `gfx_target_version` under `/sys/devices/virtual/kfd/kfd/topology/nodes` and picks the one equal to `SystemInfo::get_rocm_arch()` † |
 | `--env` | Any other variables the engine needs, such as `ROCBLAS_USE_HIPBLASLT=1` or Halogen's `HALOGEN_CTX` | `ServerCommand.env`, set by the `WrappedServer` subclass |
 | `--cap-add` | One per capability, only when `ContainerPolicy` sets `cap_add` ‡ | `ContainerPolicy.cap_add` |
+| `--shm-size` | Only when `ContainerPolicy` sets `shm_size` | `ContainerPolicy.shm_size` |
 
 Only rootless Podman can publish a port from an `--internal` network.
 
@@ -206,6 +209,25 @@ When the container tool is Docker or rootful Podman, `lemond` connects to the se
 ### Image
 
 The image reference is `<image>@<digest>`, from `ContainerPolicy.image` and the digest in the backend's pin (see [Version Pins](#version-pins)). Install pulls it, so a load never downloads anything.
+
+AIM works differently. AMD publishes one image per model. Each one is the same large shared image, `aim-radeon-base` (about 25 GB to download), plus a few kilobytes of settings for that model, which AIM calls profiles. `aim:rocm` pins the shared image, so installing the backend downloads it once. Each model row names its own image in `aim_image`, written `<repository>:<tag>@<digest>`. Pulling a model downloads that image along with the weights, and since the shared part is already on disk, only the model's settings come down. Lemonade remembers these model images and removes them when the backend is uninstalled or its pin changes. A unit test checks that every model image comes from the same AIM release as the pinned shared image; one from another release would download a second 25 GB copy.
+
+Each model row also names the inference engine its image runs in `aim_engine`, which every AIM row must set. `aim::create` picks the server class for that engine, which inherits the native backend's request handling (`AimVllmServer` inherits `VLLMServer`), and refuses an engine it has no class for. Starting the container is shared by every engine in `aim::prepare_launch`; the engine's class supplies only its own engine arguments, such as vLLM's `max-model-len`.
+
+#### Adding an AIM model
+
+A new AIM model for a GPU `aim:rocm` already supports, on the release `aim:rocm` already pins, needs one row in `server_models.json` and no code:
+
+1. **Pick the image.** It must be published under `docker.io/amdenterpriseai/`, on the same tag as the `aim.rocm` pin in `backend_versions.json` (for example `2026.11.0`), and it must have a profile for the GPU; `podman run --rm <image> list-profiles` lists them.
+2. **Write the row:**
+   - `recipe`: `aim`
+   - `checkpoint`: the Hugging Face id the image's profiles name, such as `Qwen/Qwen3.5-9B`. AIM looks for the weights under that id and serves the model under it, so any other repository fails at load.
+   - `aim_engine`: the engine the image runs, such as `vllm`. It must have a server class in `aim::create`.
+   - `aim_image`: `<repository>:<tag>@<digest>`, with the digest Docker Hub lists for that tag.
+   - `labels` and `size`, as for any model.
+3. **Run `test_container_manager`.** It checks the image's tag against the base pin and the engine against `aim::create`.
+
+A model that exists only in a newer AIM release means moving to that release by hand, since the weekly pin updater leaves AIM out: bump `aim.rocm` and every AIM row's `aim_image` to the new tag together.
 
 ### Program
 

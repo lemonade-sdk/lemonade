@@ -47,14 +47,24 @@ public:
     std::string get_additional_telemetry_url() const override;
     std::function<std::map<std::string, nlohmann::json>(const std::string&)> get_additional_telemetry_parser() const override;
 
-private:
-    std::filesystem::path rocm_shim_dir_;
+protected:
+    // For a backend that runs vLLM some other way and reuses its request handling.
+    VLLMServer(const std::string& server_name,
+               const std::string& log_level,
+               ModelManager* model_manager,
+               BackendManager* backend_manager);
+
+    // The name vLLM serves the model under, which /tokenize requests must use.
+    virtual std::string served_model_name() const { return model_name_; }
 
     json prepare_openai_request(const json& request);
     json fit_openai_max_tokens_to_context(const json& request);
     int64_t count_openai_prompt_tokens(const json& request);
 
     int64_t max_model_len_ = 0;
+
+private:
+    std::filesystem::path rocm_shim_dir_;
 };
 
 namespace vllm {

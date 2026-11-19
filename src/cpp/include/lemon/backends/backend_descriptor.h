@@ -47,6 +47,7 @@ struct ContainerPolicy {
     std::vector<std::string> devices;   // device nodes the container can open, e.g. "/dev/dri"
     std::vector<std::string> cap_add;   // capabilities given back after --cap-drop=all
     std::optional<utils::ContainerUser> user;  // nullopt when the image runs as root
+    std::string shm_size;               // the container's /dev/shm, e.g. "1g"; "" keeps the tool's 64 MiB
 };
 
 // What one backend is and where it comes from, shown to people choosing among

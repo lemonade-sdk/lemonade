@@ -861,7 +861,9 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                     }
                 },
                 timeout_seconds,
-                mark_stream_progress
+                mark_stream_progress,
+                StreamingProxy::kHeartbeatIntervalMs,
+                sse_chunk_rewriter()
             );
         } else {
             StreamingProxy::forward_byte_stream(url, request_body, sink, timeout_seconds,

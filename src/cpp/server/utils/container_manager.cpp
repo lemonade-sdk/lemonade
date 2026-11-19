@@ -469,6 +469,9 @@ std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& s
         argv.push_back("--cap-add");
         argv.push_back(capability);
     }
+    if (!spec.shm_size.empty()) {
+        argv.push_back("--shm-size=" + spec.shm_size);
+    }
     for (const auto& mount : spec.mounts) {
         // -v splits its argument on ':'.
         if (mount.source.find(':') != std::string::npos) {
@@ -584,13 +587,13 @@ void ContainerManager::pull(const std::string& image,
     if (progress) progress(p);
 }
 
-void ContainerManager::remove_image(const std::string& image) const {
-    if (!tool()) return;
+bool ContainerManager::remove_image(const std::string& image) const {
+    if (!tool()) return false;
     const CommandResult result = invoke({"rmi", image}, kCommandTimeoutSeconds);
-    if (result.exit_code != 0) {
-        LOG(WARNING, "Container") << "Could not remove image " << image << ": "
-                                  << trim(result.output) << std::endl;
-    }
+    if (result.exit_code == 0 || !has_image(image)) return true;
+    LOG(WARNING, "Container") << "Could not remove image " << image << ": "
+                              << trim(result.output) << std::endl;
+    return false;
 }
 
 void ContainerManager::create_network(const std::string& name) const {
@@ -693,7 +696,8 @@ std::string ContainerManager::install_command(const std::string& os_release,
 }
 
 bool ContainerManager::allowed_image(const std::string& image) {
-    for (const std::string prefix : {"docker.io/kyuz0/", "ghcr.io/peonist-ai/", "ghcr.io/gufo-org/"}) {
+    for (const std::string prefix :
+         {"docker.io/amdenterpriseai/", "docker.io/kyuz0/", "ghcr.io/peonist-ai/", "ghcr.io/gufo-org/"}) {
         if (image.size() > prefix.size() && image.compare(0, prefix.size(), prefix) == 0) {
             return true;
         }

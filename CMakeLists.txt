@@ -236,6 +236,7 @@ set(LEMON_BACKENDS
     "rocmfpx|rocmfpx"
     "halogen|halogen"
     "gufo|gufo"
+    "aim|aim"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
@@ -2777,6 +2778,7 @@ if(BUILD_TESTING AND EXISTS "${_CONTAINER_MANAGER_TEST_SRC}")
     target_link_libraries(test_container_manager PRIVATE lemonade-server-core)
     target_compile_definitions(test_container_manager PRIVATE
         BACKEND_VERSIONS_JSON_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backend_versions.json"
+        SERVER_MODELS_JSON_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/server_models.json"
     )
     add_cpp_ci_test(ContainerManagerTest CI ON COMMAND test_container_manager)
 endif()
@@ -3948,6 +3950,13 @@ if(BUILD_TESTING AND EXISTS "${_STREAMING_HEARTBEAT_TEST_SRC}")
     add_executable(test_streaming_heartbeat test/cpp/test_streaming_heartbeat.cpp)
     target_link_libraries(test_streaming_heartbeat PRIVATE lemonade-server-core)
     add_cpp_ci_test(StreamingHeartbeatTest CI ON COMMAND test_streaming_heartbeat)
+endif()
+
+set(_STREAMING_REWRITE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_rewrite.cpp")
+if(BUILD_TESTING AND EXISTS "${_STREAMING_REWRITE_TEST_SRC}")
+    add_executable(test_streaming_rewrite test/cpp/test_streaming_rewrite.cpp)
+    target_link_libraries(test_streaming_rewrite PRIVATE lemonade-server-core)
+    add_cpp_ci_test(StreamingRewriteTest CI ON COMMAND test_streaming_rewrite)
 endif()
 
 set(_STREAMING_SILENT_STREAM_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_silent_stream.cpp")

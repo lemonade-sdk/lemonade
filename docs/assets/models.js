@@ -5,6 +5,7 @@ const RAW_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/lemonade';
 /* BEGIN GENERATED: models-js-recipes */
 const RECIPE_PRIORITY = [
   'acestep',
+  'aim',
   'ds4',
   'flm',
   'gufo',
@@ -36,6 +37,7 @@ const RECIPE_DISPLAY_NAMES = {
   thenoise: 'thenoise',
   ds4: 'DwarfStar4',
   rocmfpx: 'ROCm FPX',
+  aim: 'AIM',
   thinksound: 'ThinkSound',
   acestep: 'ACE-Step',
   onnxruntime: 'ONNX Runtime',
