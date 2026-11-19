@@ -7,6 +7,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/ds4/ds4.h"
+#include "lemon/backends/gufo/gufo.h"
 #include "lemon/backends/gufo/gufo_server.h"
 #include "lemon/backends/halogen/halogen_server.h"
 #include "lemon/utils/container_manager.h"
@@ -24,6 +25,7 @@
 using lemon::utils::ContainerHost;
 using lemon::utils::ContainerManager;
 using lemon::utils::ContainerRunSpec;
+using lemon::utils::ContainerUser;
 
 namespace {
 
@@ -46,6 +48,8 @@ std::string join(const std::vector<std::string>& argv) {
 struct FakeHost {
     std::set<std::string> tools;
     bool gpu_access = false;
+    // The groups owning the device nodes a run passes in.
+    std::vector<std::string> device_gids = {"990"};
     std::string account = "alice";
     std::map<std::string, std::string> subids;  // getsubids arguments -> output
     // `docker info`'s exit code and its OperatingSystem|SecurityOptions answer.
@@ -71,9 +75,7 @@ struct FakeHost {
         h.on_path = [this](const std::string& name) { return tools.count(name) > 0; };
         h.gpu_devices_accessible = [this]() { return gpu_access; };
         h.account = [this]() { return account; };
-        h.group_id = [](const std::string& group) {
-            return group == "render" ? std::string("990") : std::string();
-        };
+        h.device_group_ids = [this](const std::vector<std::string>&) { return device_gids; };
         h.env = [this](const std::string& name) {
             const auto it = env.find(name);
             return it == env.end() ? std::string() : it->second;
@@ -165,7 +167,7 @@ void test_run_command() {
     FakeHost docker;
     docker.tools = {"docker"};
     const std::string docker_command = join(ContainerManager(docker.host()).run_command(example_spec()));
-    check("docker run adds the host's render ID and publishes no port",
+    check("docker run adds the device nodes' group IDs and publishes no port",
           docker_command == "docker" + common + " --group-add 990" +
                                 mount_and_home + image_and_program);
 
@@ -189,6 +191,36 @@ void test_run_command() {
                               " --cap-add SYS_PTRACE -v ") != std::string::npos &&
               policy_command.find(" --env HOME=/tmp --env HIP_VISIBLE_DEVICES=0"
                                   " --env ROCBLAS_USE_HIPBLASLT=1 -p ") != std::string::npos);
+
+    FakeHost video_kfd;
+    video_kfd.tools = {"docker"};
+    video_kfd.device_gids = {"44", "990"};
+    check("docker run adds every group that owns a device node",
+          join(ContainerManager(video_kfd.host()).run_command(policy))
+                  .find(" --device /dev/dri --device /dev/kfd --group-add 44 --group-add 990"
+                        " --cap-add SYS_PTRACE ") != std::string::npos);
+
+    FakeHost root_owned;
+    root_owned.tools = {"docker"};
+    root_owned.device_gids = {};
+    check("docker run adds no group when no device node has one",
+          join(ContainerManager(root_owned.host()).run_command(example_spec()))
+                  .find("--group-add") == std::string::npos);
+
+    ContainerRunSpec non_root = example_spec();
+    non_root.user = ContainerUser{1000, 1000};
+    check("rootless podman maps the account onto an image's own user",
+          join(ContainerManager(podman.host()).run_command(non_root)) ==
+              "podman" + common + " --group-add keep-groups --userns=keep-id:uid=1000,gid=1000" +
+                  mount_and_home + " -p 127.0.0.1:8001:8001" + image_and_program);
+    check("rootless podman through the account's podman.socket maps the image's user too",
+          join(ContainerManager(user_socket.host()).run_command(non_root))
+                  .find(" --annotation run.oci.keep_original_groups=1"
+                        " --userns=keep-id:uid=1000,gid=1000 -v ") != std::string::npos);
+    check("docker and rootful podman run an image's own user unmapped",
+          join(ContainerManager(docker.host()).run_command(non_root)).find("--userns") ==
+                  std::string::npos &&
+              join(rootful_manager.run_command(non_root)).find("--userns") == std::string::npos);
 
     ContainerRunSpec colon = example_spec();
     colon.mounts = {{"/home/alice/a:b.gguf", "/mnt/models/a:b.gguf"}};
@@ -478,7 +510,7 @@ void test_oci_runtime() {
     FakeHost rootful = runc;
     rootful.oci_runtime = "runc";
     rootful.podman_rootless = "false";
-    check("rootful Podman on runc passes, since it adds the render group by ID",
+    check("rootful Podman on runc passes, since it adds the device nodes' groups by ID",
           !ContainerManager(rootful.host()).check_podman());
 
     FakeHost own_socket = runc;
@@ -675,6 +707,9 @@ void test_descriptors_and_pins() {
                                 versions[desc->recipe][backend].get<std::string>()));
         }
     }
+    const auto& gufo_user = lemon::backends::gufo::descriptor.container_for("rocm")->user;
+    check("gufo:rocm declares the gufo-org image's 1000:1000 user",
+          gufo_user && gufo_user->uid == 1000 && gufo_user->gid == 1000);
 }
 
 }  // namespace
