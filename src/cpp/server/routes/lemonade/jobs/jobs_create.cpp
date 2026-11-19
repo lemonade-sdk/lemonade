@@ -54,7 +54,7 @@ public:
             "data between steps and branching on results. A job survives client disconnects and "
             "server restarts (a restart leaves an active job interrupted), and can be paused, "
             "interrupted, resumed, read and deleted. A `load` step supplying `*_args` or `merge_args` "
-            "requires admin authorization, including empty, `null` or referenced values.";
+            "requires [admin authorization](../guide/configuration/README.md#admin-api-key), including empty, `null` or referenced values.";
         s.notes = {
             "The job store holds 50 jobs: a new job evicts the oldest finished one.",
             "A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot "

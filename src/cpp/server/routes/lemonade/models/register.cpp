@@ -46,9 +46,10 @@ public:
         s.paths = {"models/register"};
         s.summary = "Register or update a user model definition without downloading it";
         s.description =
-            "Registers or updates a `user.*` model definition in `user_models.json` without downloading files. "
+            "Registers or updates a `user.*` model definition in `user_models.json` without "
+            "downloading any files, for clients that register and install as separate steps. "
             "[`POST /v1/pull`](#post-v1pull) registers the same way and then downloads. Backend arguments "
-            "(including legacy option blocks) and collection manifest checkpoints require admin authorization.";
+            "(including legacy option blocks) and collection manifest checkpoints require [admin authorization](../guide/configuration/README.md#admin-api-key).";
         s.args = {kModelName, kRecipe, kCheckpoint, kCheckpoints, kSource, kLabels, kComponents};
 
         RouteResponse response;

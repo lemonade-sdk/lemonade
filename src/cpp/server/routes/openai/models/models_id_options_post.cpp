@@ -81,7 +81,7 @@ public:
         s.description =
             "Saves recipe options for a model without loading it. The body is a flat object of "
             "the recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts. Sending `*_args` or "
-            "`merge_args` requires admin authorization, including empty or `null` values.";
+            "`merge_args` requires [admin authorization](../guide/configuration/README.md#admin-api-key), including empty or `null` values.";
         s.notes = {
             "The request merges into the model's saved entry, so keys it leaves out keep their "
             "values. `null` removes an option, as do `-1`, `\"\"` and `\"auto\"` for any option "

@@ -25,7 +25,7 @@ public:
         s.description =
             "Resets a model to its defaults by erasing its `recipe_options.json` entry. Defaults "
             "from its registry entry and the server's configuration still apply. Clearing saved backend "
-            "arguments requires admin authorization.";
+            "arguments requires [admin authorization](../guide/configuration/README.md#admin-api-key).";
         s.args = {openai::models::kId};
 
         RouteResponse response;

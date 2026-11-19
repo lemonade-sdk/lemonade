@@ -103,8 +103,8 @@ public:
         s.summary = "Load a model";
         s.description =
             "Loads a registered model into memory, downloading it first when needed, so it is "
-            "ready before the first request. Request-supplied `*_args` and `merge_args` require admin "
-            "authorization, including empty or `null` values.";
+            "ready before the first request. Request-supplied `*_args` and `merge_args` require "
+            "[admin authorization](../guide/configuration/README.md#admin-api-key), including empty or `null` values.";
         s.notes = {
             "Loading a collection (`recipe: \"collection.omni\"`) loads each component in turn "
             "with the component's own saved options; options in the request are not forwarded. A "

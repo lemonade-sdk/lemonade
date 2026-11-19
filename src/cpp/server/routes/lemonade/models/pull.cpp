@@ -118,7 +118,7 @@ public:
         s.description =
             "Installs a model from the built-in registry, or registers a new `user.*` model from "
             "a Hugging Face or ModelScope checkpoint and installs it. Backend arguments in imported "
-            "definitions, including embedded models and legacy option blocks, require admin authorization. "
+            "definitions, including embedded models and legacy option blocks, require [admin authorization](../guide/configuration/README.md#admin-api-key). "
             "Defining or changing a collection manifest checkpoint or registry source also requires admin "
             "authorization; pulling an existing collection without these overrides remains available.";
         s.notes = {

@@ -201,7 +201,7 @@ The `lemonade check-updates` command uses this endpoint.
 ## `POST /v1/models/register`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Registers or updates a `user.*` model definition in `user_models.json` without downloading files. [`POST /v1/pull`](#post-v1pull) registers the same way and then downloads. Backend arguments (including legacy option blocks) and collection manifest checkpoints require admin authorization.
+Registers or updates a `user.*` model definition in `user_models.json` without downloading any files, for clients that register and install as separate steps. [`POST /v1/pull`](#post-v1pull) registers the same way and then downloads. Backend arguments (including legacy option blocks) and collection manifest checkpoints require [admin authorization](../guide/configuration/README.md#admin-api-key).
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -333,7 +333,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /v1/pull`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Installs a model from the built-in registry, or registers a new `user.*` model from a Hugging Face or ModelScope checkpoint and installs it. Backend arguments in imported definitions, including embedded models and legacy option blocks, require admin authorization. Defining or changing a collection manifest checkpoint or registry source also requires admin authorization; pulling an existing collection without these overrides remains available.
+Installs a model from the built-in registry, or registers a new `user.*` model from a Hugging Face or ModelScope checkpoint and installs it. Backend arguments in imported definitions, including embedded models and legacy option blocks, require [admin authorization](../guide/configuration/README.md#admin-api-key). Defining or changing a collection manifest checkpoint or registry source also requires admin authorization; pulling an existing collection without these overrides remains available.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1095,7 +1095,7 @@ A file still held open, for example by a download that was just cancelled, is re
 ## `POST /v1/load`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Loads a registered model into memory, downloading it first when needed, so it is ready before the first request. Request-supplied `*_args` and `merge_args` require admin authorization, including empty or `null` values.
+Loads a registered model into memory, downloading it first when needed, so it is ready before the first request. Request-supplied `*_args` and `merge_args` require [admin authorization](../guide/configuration/README.md#admin-api-key), including empty or `null` values.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -2942,7 +2942,7 @@ The endpoints below create and manage persistent server-side jobs.
 ## `POST /v1/jobs`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Creates a job: a sequence of server operations that runs in the background, passing data between steps and branching on results. A job survives client disconnects and server restarts (a restart leaves an active job interrupted), and can be paused, interrupted, resumed, read and deleted. A `load` step supplying `*_args` or `merge_args` requires admin authorization, including empty, `null` or referenced values.
+Creates a job: a sequence of server operations that runs in the background, passing data between steps and branching on results. A job survives client disconnects and server restarts (a restart leaves an active job interrupted), and can be paused, interrupted, resumed, read and deleted. A `load` step supplying `*_args` or `merge_args` requires [admin authorization](../guide/configuration/README.md#admin-api-key), including empty, `null` or referenced values.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
