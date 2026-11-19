@@ -38,7 +38,7 @@ json resolve_all_recipe_options(const RecipeOptions& options) {
 } // namespace
 
 std::vector<RouteError> model_options_errors() {
-    return {ModelLoader::kModelNotSupported, ModelLoader::kModelNotFound, kOptionsUpdateFailed, kBackendArgsAdminRequired};
+    return {ModelLoader::kModelNotSupported, ModelLoader::kModelNotFound, kOptionsUpdateFailed};
 }
 
 ordered_json model_options_schema() {

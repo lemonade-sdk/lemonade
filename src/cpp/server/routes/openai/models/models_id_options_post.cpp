@@ -109,7 +109,7 @@ public:
         example.args = {{"id", "Qwen3-4B-GGUF"}, {"ctx_size", 8192}};
         s.examples = {example};
         s.errors = join_errors({{kBodyNotJson, kArgInvalid, kUnknownOption, kLiveProcessOption,
-                                 kUnlistedFieldInvalid, kInvalidOptionValue},
+                                 kUnlistedFieldInvalid, kInvalidOptionValue, kBackendArgsAdminRequired},
                                 model_options_errors()});
         s.request_format = RequestFormat::Json;
         return s;

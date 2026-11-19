@@ -2093,7 +2093,6 @@ Per-architecture defaults are chosen by the architecture in the model's GGUF met
 
 | Status | Code | When |
 |--------|------|------|
-| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `500` | `internal_error` | Reading or saving the model's options fails, for example on an unwritable options file |

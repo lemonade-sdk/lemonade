@@ -38,7 +38,7 @@ public:
         example.setup = {{"openai.models_id_options_post", ""}};
         example.args = {{"id", "Qwen3-4B-GGUF"}};
         s.examples = {example};
-        s.errors = model_options_errors();
+        s.errors = join_errors({model_options_errors(), {kBackendArgsAdminRequired}});
         return s;
     }
 
