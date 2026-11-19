@@ -174,6 +174,8 @@ void StreamingProxy::forward_sse_stream(
     // A rewriter needs whole events, so the stream is then forwarded line by
     // line as process_sse_lines reassembles it, rather than as received.
     bool client_gone = false;
+    // Cleared once the stream is flushed; later passes over a line only read it.
+    bool forwarding = true;
     auto forward_rewritten = [&sink, &rewrite_chunk, &client_gone](const std::string& line) {
         if (client_gone) return;
         std::string out = line;
@@ -190,9 +192,9 @@ void StreamingProxy::forward_sse_stream(
     };
 
     auto process_line = [&telemetry, &has_data_event, &has_pending_data_field,
-                         &forwarded_error_event, &rewrite_chunk,
+                         &forwarded_error_event, &rewrite_chunk, &forwarding,
                          &forward_rewritten](const std::string& line) {
-        if (rewrite_chunk) forward_rewritten(line);
+        if (rewrite_chunk && forwarding) forward_rewritten(line);
         if (line.empty()) {
             has_data_event = has_data_event || has_pending_data_field;
             has_pending_data_field = false;
@@ -297,9 +299,16 @@ void StreamingProxy::forward_sse_stream(
     // bytes can arrive, so the last event of a CR-terminated stream still counts.
     process_sse_lines(line_buffer, process_line, true);
 
+    // An unterminated final line is no event, so it reaches the client as
+    // received, as it would without a rewriter, and before [DONE].
+    if (rewrite_chunk && !client_gone && !line_buffer.empty()) {
+        client_gone = !sink.write(line_buffer.data(), line_buffer.size());
+    }
+    forwarding = false;
+
     const bool client_disconnected =
         result.curl_code == CURLE_WRITE_ERROR ||
-        result.curl_code == CURLE_ABORTED_BY_CALLBACK;
+        result.curl_code == CURLE_ABORTED_BY_CALLBACK || client_gone;
     const bool transport_interrupted =
         result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR;
 
@@ -329,6 +338,11 @@ void StreamingProxy::forward_sse_stream(
             LOG(ERROR, "StreamingProxy") << "SSE stream failed: CURL error: " << result.curl_error << std::endl;
             telemetry.error_message = "SSE stream failed: CURL error: " + result.curl_error;
         }
+    } else if (client_disconnected) {
+        // The rewriter writes the last lines after the backend's transfer ends.
+        stream_error = true;
+        LOG(WARNING, "StreamingProxy") << "Client disconnected during SSE stream" << std::endl;
+        telemetry.error_message = "Client disconnected during stream";
     }
 
     if (!client_disconnected &&
