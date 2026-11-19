@@ -8,12 +8,9 @@
 // isolation, so a busy helper is reclaimed by a subsequent policy reconcile once
 // idle — the real transition, not a hand-invoked second prune.
 //
-// The full load_model interleaving (the load-completion validation guard) is an
-// integration concern: it needs a real ModelManager (reads server_models.json),
-// the compile-time backend registry, and a spawned subprocess, so it is not
-// unit-testable here. That guard shares the exact predicate validated below
-// (residency == RoutingHelper, not pinned, absent from needed_helper_models_),
-// which this test covers via a StubWrappedServer injected through a friend hook.
+// Residency transitions and retry classification are tested through the same
+// lock-held helpers used by load_model, with StubWrappedServer instances rather
+// than a ModelManager-backed subprocess.
 
 #include "lemon/router.h"
 #include "lemon/runtime_config.h"
@@ -129,6 +126,19 @@ struct RoutingHelperTestHook {
     static bool ensure_residency(Router& r, const std::string& model_name,
                                  lemon::LoadPurpose load_purpose) {
         return r.ensure_loaded_model_residency_canonical(model_name, load_purpose);
+    }
+
+    static void transition_residency(Router& r, const std::string& model_name,
+                                     ResidencyClass residency) {
+        std::lock_guard<std::mutex> lock(r.load_mutex_);
+        auto* server = r.find_server_by_model_name(model_name);
+        r.transition_server_residency_locked(server, residency);
+    }
+
+    static bool should_skip_nuclear_retry(Router& r, const std::string& model_name,
+                                          ResidencyClass residency) {
+        std::lock_guard<std::mutex> lock(r.load_mutex_);
+        return r.should_skip_nuclear_retry_for_transient_helper_locked(model_name, residency);
     }
 
     static ResidencyClass residency_of(Router& r, const std::string& model_name) {
@@ -539,6 +549,46 @@ static void test_transient_lease_preserves_standard_model(Router& router) {
           ensured && still_resident && stayed_standard);
 }
 
+static void test_second_load_check_preserves_standard_model(Router& router) {
+    RoutingHelperTestHook::add_server(router, make_standard("concurrent.standard"));
+    RoutingHelperTestHook::reconcile(router, {});
+
+    {
+        [[maybe_unused]] auto lease = RoutingHelperTestHook::lease_transient(
+            router, {"concurrent.standard"});
+        RoutingHelperTestHook::transition_residency(
+            router, "concurrent.standard", ResidencyClass::RoutingHelper);
+    }
+
+    check("second load check preserves a concurrently loaded Standard model",
+          RoutingHelperTestHook::residency_of(router, "concurrent.standard") ==
+              ResidencyClass::Standard);
+}
+
+static void test_transient_only_failure_classification(Router& router) {
+    RoutingHelperTestHook::reconcile(router, {});
+    bool standard_load_keeps_normal_retry =
+        !RoutingHelperTestHook::should_skip_nuclear_retry(
+            router, "failure.helper", ResidencyClass::Standard);
+
+    bool transient_failure_skips_global_retry = false;
+    {
+        [[maybe_unused]] auto lease = RoutingHelperTestHook::lease_transient(
+            router, {"failure.helper"});
+        transient_failure_skips_global_retry =
+            RoutingHelperTestHook::should_skip_nuclear_retry(
+                router, "failure.helper", ResidencyClass::RoutingHelper);
+        RoutingHelperTestHook::reconcile(router, {"failure.helper"});
+        transient_failure_skips_global_retry =
+            transient_failure_skips_global_retry &&
+            !RoutingHelperTestHook::should_skip_nuclear_retry(
+                router, "failure.helper", ResidencyClass::RoutingHelper);
+    }
+
+    check("only transiently leased helper failures skip the global retry",
+          standard_load_keeps_normal_retry && transient_failure_skips_global_retry);
+}
+
 static void test_registered_policy_promotes_standard_model(Router& router) {
     RoutingHelperTestHook::add_server(router, make_standard("registered.standard"));
     RoutingHelperTestHook::reconcile(router, {"registered.standard"});
@@ -610,6 +660,8 @@ int main() {
         test_deferred_reclaim_waits_for_slot(router);
         test_reclaim_rearms_when_rescued_before_commit(router);
         test_transient_lease_preserves_standard_model(router);
+        test_second_load_check_preserves_standard_model(router);
+        test_transient_only_failure_classification(router);
         test_registered_policy_promotes_standard_model(router);
     }
 

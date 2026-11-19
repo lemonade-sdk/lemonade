@@ -376,6 +376,12 @@ void Router::transition_server_residency_locked(
         return;
     }
 
+    if (requested_residency_class == ResidencyClass::RoutingHelper &&
+        server->get_residency_class() == ResidencyClass::Standard &&
+        active_policy_helper_models_.count(server->get_model_name()) == 0) {
+        return;
+    }
+
     if (!is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
         // Admit into the destination pool before changing the live role. Standard
         // admission remains type-wide; helper admission is keyed by model name.
@@ -421,15 +427,6 @@ bool Router::ensure_loaded_model_residency_canonical(
         find_server_by_model_name(canonical_model_name);
     if (!existing || !existing->is_backend_alive()) {
         return false;
-    }
-
-    // A transient lease protects the model during validation, but only a registered
-    // policy should durably promote a pre-existing Standard model to a helper.
-    if (requested_residency_class == ResidencyClass::RoutingHelper &&
-        existing->get_residency_class() != ResidencyClass::RoutingHelper &&
-        active_policy_helper_models_.count(canonical_model_name) == 0) {
-        existing->update_access_time();
-        return true;
     }
 
     transition_server_residency_locked(
@@ -712,6 +709,18 @@ bool Router::routing_helper_no_longer_needed(const std::string& canonical_model_
         return false;
     }
     return !is_needed_helper_locked(canonical_model_name);
+}
+
+bool Router::should_skip_nuclear_retry_for_transient_helper_locked(
+    const std::string& canonical_model_name,
+    ResidencyClass requested_residency_class) const {
+    if (requested_residency_class != ResidencyClass::RoutingHelper) {
+        return false;
+    }
+
+    auto transient = transient_helper_refcounts_.find(canonical_model_name);
+    return active_policy_helper_models_.count(canonical_model_name) == 0 &&
+           transient != transient_helper_refcounts_.end() && transient->second > 0;
 }
 
 bool Router::has_npu_server() const {
@@ -1340,6 +1349,15 @@ void Router::load_model(const std::string& model_name,
                           << "abandoning nuclear retry" << std::endl;
                 load_cv_.notify_all();
                 return;
+            }
+
+            if (should_skip_nuclear_retry_for_transient_helper_locked(
+                    canonical_model_name, requested_residency_class)) {
+                LOG(ERROR, "Router") << "Transient routing helper "
+                                      << canonical_model_name
+                                      << " failed to load; preserving resident models"
+                                      << std::endl;
+                throw std::runtime_error(error_message);
             }
 
             // Nuclear option: evict all models and retry

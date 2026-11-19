@@ -417,6 +417,9 @@ private:
     bool routing_helper_no_longer_needed(const std::string& canonical_model_name,
                                          ResidencyClass requested_residency_class,
                                          bool pinned) const;
+    bool should_skip_nuclear_retry_for_transient_helper_locked(
+        const std::string& canonical_model_name,
+        ResidencyClass requested_residency_class) const;
     // Release-triggered reclaim: unload a pending-stale routing helper once its
     // last request drains. Looks the server up by name (never a captured raw
     // pointer) and re-validates staleness under load_mutex_. Waits for the
