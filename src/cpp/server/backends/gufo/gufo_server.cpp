@@ -56,6 +56,18 @@ public:
     std::string validate_checkpoint_file(const std::string& resolved_path) const override {
         return llamacpp::ops()->validate_checkpoint_file(resolved_path);
     }
+
+    // A host install's version.txt holds the release it came from, but the
+    // expected version is the image pin that names that release.
+    std::string resolve_version(const std::string& backend,
+                                const std::string& file_version) const override {
+        if (file_version.empty() || gufo::descriptor.container_for(backend)) {
+            return file_version;
+        }
+        const std::string pin =
+            BackendUtils::get_backend_version(gufo::descriptor.recipe, backend);
+        return file_version == gufo::release_tag(pin) ? pin : file_version;
+    }
 };
 
 }  // namespace
@@ -72,12 +84,18 @@ std::string speculative_mode(const std::string& draft_architecture,
                                 "GGUF architecture '" + draft_architecture + "'");
 }
 
+std::string release_tag(const std::string& version) {
+    const auto pin = parse_container_pin(version);
+    return pin ? "v" + pin->tag : version;
+}
+
 std::vector<std::string> build_server_argv(const std::string& model_name,
                                            const std::string& gguf_path,
                                            const std::string& mmproj_path,
                                            const std::string& draft_path,
                                            const std::string& speculative,
                                            int ctx_size,
+                                           const std::string& host,
                                            int port,
                                            const std::string& gufo_args) {
     // gufo answers 404 to a request naming any other model, and Lemonade
@@ -87,7 +105,7 @@ std::vector<std::string> build_server_argv(const std::string& model_name,
         "--model", gguf_path,
         "--served-model-name", model_name,
         "--context", std::to_string(ctx_size),
-        "--host", "0.0.0.0",
+        "--host", host,
         "--port", std::to_string(port),
     };
     if (!mmproj_path.empty()) {
@@ -112,6 +130,19 @@ std::vector<std::string> build_server_argv(const std::string& model_name,
 
 }  // namespace gufo
 
+InstallParams GufoServer::get_install_params(const std::string& backend,
+                                             const std::string& version) {
+#ifdef _WIN32
+    if (backend == kBackend) {
+        const std::string tag = gufo::release_tag(version);
+        return {"gufo-org/gufo", "gufo-" + tag + "-windows-x86_64.zip", tag};
+    }
+#else
+    (void)version;
+#endif
+    throw std::runtime_error("gufo:" + backend + " has no release download for this platform");
+}
+
 GufoServer::GufoServer(const std::string& log_level, ModelManager* model_manager,
                        BackendManager* backend_manager)
     : WrappedServer("gufo", log_level, model_manager, backend_manager) {}
@@ -122,7 +153,7 @@ GufoServer::~GufoServer() {
 
 void GufoServer::load(const std::string& model_name, const ModelInfo& model_info,
                       const RecipeOptions& options, bool do_not_upgrade) {
-    (void)do_not_upgrade;  // install_backend() is a no-op once the pinned image is present
+    (void)do_not_upgrade;  // install_backend() is a no-op once the pinned image or build is present
     LOG(INFO, "Gufo") << "Loading model: " << model_name << std::endl;
 
     backend_manager_->install_backend(gufo::descriptor.recipe, kBackend);
@@ -145,30 +176,41 @@ void GufoServer::load(const std::string& model_name, const ModelInfo& model_info
 
     const int ctx_size = options.get_option("ctx_size");
     const std::string gufo_args = options.get_option("gufo_args");
+    const ContainerPolicy* container = gufo::descriptor.container_for(kBackend);
     device_type_ = DEVICE_GPU;
     port_ = choose_port();
 
     ServerCommand command;
-    command.program = gufo::descriptor.binary;
+    command.program = container
+                          ? gufo::descriptor.binary
+                          : BackendUtils::get_backend_binary_path(*gufo::spec(), kBackend);
+    // A container's port is published from its own network namespace.
     command.args = gufo::build_server_argv(model_name, gguf_path, mmproj_path, draft_path,
-                                           speculative,
-                                           ctx_size, port_, gufo_args);
-    for (const std::string& path : {gguf_path, mmproj_path, draft_path}) {
-        if (!path.empty()) {
-            const auto files = gguf_files(path);
-            command.model_files.insert(command.model_files.end(), files.begin(), files.end());
+                                           speculative, ctx_size,
+                                           container ? "0.0.0.0" : "127.0.0.1", port_,
+                                           gufo_args);
+    if (container) {
+        for (const std::string& path : {gguf_path, mmproj_path, draft_path}) {
+            if (!path.empty()) {
+                const auto files = gguf_files(path);
+                command.model_files.insert(command.model_files.end(), files.begin(), files.end());
+            }
         }
     }
     command.port = port_;
     // /health answers as soon as the process is up; /ready waits for the model.
     command.ready_endpoint = "/ready";
 
-    const bool inherit_output = (log_level_ == "info") || is_debug();
-    start_server(std::make_unique<ContainerProcess>(
-                     ProcessOutput{inherit_output, true}, gufo::descriptor.recipe, kBackend,
-                     model_name, *gufo::descriptor.container_for(kBackend),
-                     BackendUtils::get_backend_image(gufo::descriptor.recipe, kBackend)),
-                 command, utils::HttpClient::get_default_timeout());
+    const ProcessOutput output{(log_level_ == "info") || is_debug(), true};
+    std::unique_ptr<ServerProcess> process;
+    if (container) {
+        process = std::make_unique<ContainerProcess>(
+            output, gufo::descriptor.recipe, kBackend, model_name, *container,
+            BackendUtils::get_backend_image(gufo::descriptor.recipe, kBackend));
+    } else {
+        process = std::make_unique<NativeProcess>(output);
+    }
+    start_server(std::move(process), command, utils::HttpClient::get_default_timeout());
     LOG(DEBUG, "Gufo") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 
@@ -195,8 +237,7 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 const BackendSpec* spec() {
-    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary);
-    return &kSpec;
+    return make_spec<GufoServer>(descriptor);
 }
 
 const BackendOps* ops() {

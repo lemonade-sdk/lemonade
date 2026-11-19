@@ -10,6 +10,7 @@
 #include "lemon/backends/gufo/gufo.h"
 #include "lemon/backends/gufo/gufo_server.h"
 #include "lemon/backends/halogen/halogen_server.h"
+#include "lemon/system_info.h"
 #include "lemon/utils/container_manager.h"
 
 #include <cstdio>
@@ -636,7 +637,7 @@ void test_halogen_kernel_check() {
 void test_gufo_argv() {
     const std::string argv = join(lemon::backends::gufo::build_server_argv(
         "Qwen3.8-27B-Gufo", "/mnt/models/target.gguf", "/mnt/models/mmproj-BF16.gguf",
-        "/mnt/models/draft.gguf", "dflash2", 8192, 8001, "--think off"));
+        "/mnt/models/draft.gguf", "dflash2", 8192, "0.0.0.0", 8001, "--think off"));
     check("gufo serves the target under Lemonade's model name, with its projector and its "
           "DFlash2 draft",
           argv == "serve llm --model /mnt/models/target.gguf --served-model-name "
@@ -645,10 +646,10 @@ void test_gufo_argv() {
                   "/mnt/models/draft.gguf --think off");
     check("gufo passes an MTP draft through --mtp-model and a DSpark draft through --dspark-model",
           join(lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "d.gguf", "mtp", 0,
-                                                        1, ""))
+                                                        "127.0.0.1", 1, ""))
                       .find("--speculative mtp --mtp-model d.gguf") != std::string::npos &&
               join(lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "d.gguf",
-                                                            "dspark", 0, 1, ""))
+                                                            "dspark", 0, "127.0.0.1", 1, ""))
                       .find("--speculative dspark --dspark-model d.gguf") != std::string::npos);
     using lemon::backends::gufo::speculative_mode;
     check("gufo reads a draft's mode from its GGUF architecture",
@@ -664,11 +665,17 @@ void test_gufo_argv() {
     check("gufo refuses a draft of an architecture it cannot run", threw);
     threw = false;
     try {
-        lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "", "", 0, 1, "--port 9");
+        lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "", "", 0, "127.0.0.1", 1,
+                                                 "--port 9");
     } catch (const std::invalid_argument&) {
         threw = true;
     }
     check("gufo_args cannot move the port", threw);
+    using lemon::backends::gufo::release_tag;
+    check("gufo's host build comes from the release its image pin is tagged with",
+          release_tag("0.34.0@sha256:49b1fce40cb43e33c46d91595e300cb320cdec768fcd976f8c8da24b402fc133") ==
+                  "v0.34.0" &&
+              release_tag("v0.35.0") == "v0.35.0");
 }
 
 void test_ds4_memory_plan() {
@@ -691,6 +698,10 @@ void test_descriptors_and_pins() {
     const nlohmann::json versions = nlohmann::json::parse(in);
     for (const auto* desc : lemon::backends::all_descriptors()) {
         for (const auto& row : desc->support) {
+            // A backend can run in a container on one OS and on the host on another.
+            if (row.supported_os.count(lemon::get_current_os()) == 0) {
+                continue;
+            }
             const bool container = desc->container_for(row.backend) != nullptr;
             check(desc->recipe + ":" + row.backend + " is labeled container exactly when it has a policy",
                   container == (row.format == lemon::BackendFormat::Container));
@@ -707,9 +718,14 @@ void test_descriptors_and_pins() {
                                 versions[desc->recipe][backend].get<std::string>()));
         }
     }
+#ifdef _WIN32
+    check("gufo:rocm runs the release's Windows build on the host",
+          lemon::backends::gufo::descriptor.container_for("rocm") == nullptr);
+#else
     const auto& gufo_user = lemon::backends::gufo::descriptor.container_for("rocm")->user;
     check("gufo:rocm declares the gufo-org image's 1000:1000 user",
           gufo_user && gufo_user->uid == 1000 && gufo_user->gid == 1000);
+#endif
 }
 
 }  // namespace
