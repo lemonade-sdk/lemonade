@@ -37,7 +37,7 @@ inline const BackendDescriptor descriptor = {
     /*uses_ctx_size*/   false,  // the bundle's preset fixes the context capacity
     /*dynamic_models*/  false,
     /*options*/ {
-        {"loom_device", "--loom-device", "amdgpu://", "URI",
+        {"loom_device", "--loom-device", "amdgpu://?completion_spin_ns=4294967295", "URI",
          "HAL device URI loom-serve runs the bundle on. amdgpu:// is amdgpu://0, the first GPU "
          "loom-serve supports in its own enumeration order (not a DRM card or HIP device index); "
          "amdgpu://1 selects the next one",

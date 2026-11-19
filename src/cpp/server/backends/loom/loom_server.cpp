@@ -437,11 +437,7 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
         throw std::runtime_error(model_name + " is not supported on this GPU (" + target + ")");
     }
 
-#if defined(__linux__)
-    constexpr bool kPreload = true;  // ROCm/hrx-system#3332 is the Linux memlock limit
-#else
-    constexpr bool kPreload = false;
-#endif
+    constexpr bool kPreload = true;
     const std::vector<std::string> serve_args = loom::serve_args(
         target, info, loom::parameter_bytes(plan),
         options.get_option("loom_memory_bytes").get<std::string>(), kPreload);
