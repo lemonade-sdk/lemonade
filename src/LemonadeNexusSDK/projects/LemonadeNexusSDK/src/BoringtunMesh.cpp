@@ -313,7 +313,8 @@ std::optional<uint32_t> BoringtunMesh::probe_tunnel_mtu(std::chrono::millisecond
     uint16_t seq = 0;
     while (true) {
         for (uint32_t size : tunnel_mtu::kLadder) {
-            const auto pkt = tunnel_mtu::echo_request(src->network, dst->network, ident, seq, size);
+            const auto pkt = tunnel_mtu::echo_request(src->network, dst->network, ident, seq,
+                                                      tunnel_mtu::probe_size(size));
             (void)impl_->dp.send_outbound_ip_packet(pkt);
         }
         ++seq;

@@ -23,8 +23,13 @@ inline constexpr uint32_t kFull = 1420;
 /// tunnel and carrier path must carry.
 inline constexpr uint32_t kFailsafe = 1280;
 
-/// Probe sizes, largest first.
+/// MTU candidates, largest first.
 inline constexpr std::array<uint32_t, 4> kLadder{1420, 1340, 1280, 1200};
+
+/// The echo request length that stands for `mtu`: kFull itself, and below
+/// it `mtu` plus the relay packet header, so the size chosen also fits the
+/// path to a relayed peer.
+uint32_t probe_size(uint32_t mtu);
 
 /// An IPv4 ICMP echo request of `total_len` bytes (at least 28) with valid
 /// header and ICMP checksums. Addresses are in host byte order.
@@ -35,8 +40,8 @@ std::vector<uint8_t> echo_request(uint32_t src, uint32_t dst, uint16_t ident, ui
 /// else nullopt.
 std::optional<uint32_t> echo_reply_len(std::span<const uint8_t> pkt, uint16_t ident);
 
-/// The MTU to use when the probes of the `answered` sizes came back: the
-/// largest ladder size among them, kFailsafe when none did.
+/// The MTU to use when echo replies of the `answered` lengths came back: the
+/// largest ladder size whose probe_size is among them, kFailsafe when none is.
 uint32_t choose(const std::set<uint32_t>& answered);
 
 }  // namespace lnsdk::tunnel_mtu

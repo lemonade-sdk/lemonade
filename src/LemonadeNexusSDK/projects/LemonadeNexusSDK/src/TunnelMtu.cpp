@@ -1,5 +1,7 @@
 #include <LemonadeNexusSDK/TunnelMtu.hpp>
 
+#include <LemonadeNexus/Relay/RelayWire.hpp>
+
 #include <algorithm>
 
 namespace lnsdk::tunnel_mtu {
@@ -56,9 +58,16 @@ std::optional<uint32_t> echo_reply_len(std::span<const uint8_t> pkt, uint16_t id
     return static_cast<uint32_t>(pkt.size());
 }
 
+uint32_t probe_size(uint32_t mtu) {
+    // A relayed full-size packet already exceeds a 1500-byte underlay and
+    // travels as IP fragments, so the allowance applies below the full size.
+    if (mtu == kFull) return mtu;
+    return mtu + static_cast<uint32_t>(nexus::relay::kRelayHeaderSize);
+}
+
 uint32_t choose(const std::set<uint32_t>& answered) {
     for (uint32_t size : kLadder) {
-        if (answered.count(size)) return size;
+        if (answered.count(probe_size(size))) return size;
     }
     return kFailsafe;
 }
