@@ -2179,7 +2179,7 @@ The same backend can carry different labels on different operating systems. Each
     - `backends` - Available backends for this recipe
       - One entry per backend.
         - `devices` - Devices **on this system** that support this backend; empty when none do.
-        - `runtime_devices` - `sd-cpp` `rocm` and `vulkan` only, when installed: the GPUs the build itself enumerates, as `{name, description}` in its runtime order. `name` (such as `ROCm1`) is what `sd-cpp_device` selects; that order can differ from `devices.amd_gpu`.
+        - `runtime_devices` - Optional devices enumerated by an installed backend, as `{name, description}` in the runtime's own order.
         - `state` - Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available`, `action_required` or `installed`.
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL.
