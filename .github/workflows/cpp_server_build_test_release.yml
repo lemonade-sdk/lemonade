@@ -1564,7 +1564,7 @@ jobs:
             install: "aim:rocm"
             script: server_llm.py
             extra_args: "--wrapped-server aim --backend rocm"
-            runner: [self-hosted, Linux, devlab-dispatch, r9700]
+            runner: [self-hosted, Linux, devlab-dispatch, radeon-r9700]
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
