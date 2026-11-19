@@ -111,6 +111,16 @@ export interface NexusStatus {
   revoked_public_key?: string;
   join_membership?: NexusJoinMembership;
   mesh_port?: NexusMeshPort;
+  mesh_udp_port?: number;
+  dataplane_port?: number;
+  mapped_endpoint?: string;
+  mapping_protocol?: NexusMappingProtocol;
+  tunnel_mtu?: number;
+}
+export type NexusMappingProtocol = 'pcp' | 'natpmp' | '';
+export const NEXUS_MAPPING_PROTOCOL_LABELS: Record<Exclude<NexusMappingProtocol, ''>, string> = { pcp: 'PCP', natpmp: 'NAT-PMP' };
+export function setNexusMeshUdpPort(port: number): Promise<NexusStatus> {
+  return nexusRequest('device', { mesh_udp_port: port });
 }
 export function nexusMeshPortUrl(status: NexusStatus | null | undefined, nodeId: string): string | undefined {
   if (!status?.mesh_port?.running) return undefined;

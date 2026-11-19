@@ -5,6 +5,7 @@ import {
   isNexusDesktop, prepareNexus, refreshNexus, useNexusNetwork, usesNexusDeviceKey,
 } from '../features/nexus/nexus';
 import { NexusHierarchy } from './NexusHierarchy';
+import { NexusPortSetting } from './NexusMesh';
 import { NexusRoutePermissions } from './NexusRoutePermissions';
 import { WorkspaceActionButton } from './WorkspacePanels';
 
@@ -28,6 +29,7 @@ export function NexusNetwork({ advanced, showCompact = true }: { advanced: boole
     finally { await refreshNexus(); setBusy(false); }
   };
   return <>
+    {advanced && status?.enabled && <NexusPortSetting status={status} />}
     {advanced && connected && status && account && account.id === status.group_node_id && account.role && <NexusRoutePermissions
       key={`${network.selectedServerId}:${status.group_node_id}:${status.node_id}`} viewerRole={account.role} />}
     {connected && status ? (advanced || showCompact) && <NexusHierarchy key={`${status.group_node_id}:${status.node_id}`} status={status} advanced={advanced} /> : advanced && <div className="nexus-network-empty">

@@ -4,8 +4,8 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useI18n } from '../i18n';
 import { useNexusAccount, type NexusDevice as AccountDevice } from '../features/nexus/NexusAccountContext';
 import {
-  NEXUS_CONNECTION_LABELS, dismissNexusNotice, nexusDeviceConnection, nexusDeviceTags, nexusInferenceServers, nexusMeshPortUrl, nexusMeshSummary,
-  nexusRequest, nexusServerUnavailable, refreshNexus, relayEndpoint, selectNexusInferenceServer, useNexusNetwork,
+  NEXUS_CONNECTION_LABELS, NEXUS_MAPPING_PROTOCOL_LABELS, dismissNexusNotice, nexusDeviceConnection, nexusDeviceTags, nexusInferenceServers, nexusMeshPortUrl, nexusMeshSummary,
+  nexusRequest, nexusServerUnavailable, refreshNexus, relayEndpoint, selectNexusInferenceServer, setNexusMeshUdpPort, useNexusNetwork,
   type NexusConnection, type NexusDevice, type NexusMeshState, type NexusStatus,
 } from '../features/nexus/nexus';
 import { WorkspaceActionButton } from './WorkspacePanels';
@@ -54,6 +54,10 @@ export function NexusDeviceRows({ status, devices, chat }: { status: NexusStatus
       return <li key={`${device.group_id || 'home'}:${device.node_id}`} className={`nexus-mesh-row${selected ? ' is-selected' : ''}`}>
         <span className="nexus-mesh-row__body">
           <span className="nexus-mesh-row__name">{name}</span>
+          {local && status?.mapped_endpoint && <span className="nexus-mesh-row__sub">
+            {status.mapping_protocol ? t('Reachable through your router ({protocol})', { protocol: NEXUS_MAPPING_PROTOCOL_LABELS[status.mapping_protocol] }) : t('Reachable through your router')}
+            {' '}<code className="nexus-mesh-row__endpoint">{status.mapped_endpoint}</code>
+          </span>}
           {device.tunnel_ip && <span className="nexus-mesh-row__sub">{device.tunnel_ip.split('/')[0]}</span>}
           <span className="nexus-mesh-row__pills">
             {nexusDeviceTags(status, device).map(tag => <NexusPill key={tag} label={tag} tone={tagTone(tag)} />)}
@@ -70,6 +74,37 @@ export function NexusDeviceRows({ status, devices, chat }: { status: NexusStatus
       </li>;
     })}
   </ul>;
+}
+
+export function NexusPortSetting({ status }: { status: NexusStatus }) {
+  const { t } = useI18n();
+  const id = useId();
+  const configured = status.mesh_udp_port ?? 0;
+  const [draft, setDraft] = useState(String(configured));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => { setDraft(String(configured)); }, [configured]);
+  const inUse = status.mesh_up && !status.locked && status.dataplane_port ? status.dataplane_port : undefined;
+  const save = async () => {
+    if (busy) return;
+    setBusy(true); setError('');
+    try { await setNexusMeshUdpPort(Number(draft)); await refreshNexus(); }
+    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  };
+  return <form className="nexus-port-setting" onSubmit={event => { event.preventDefault(); void save(); }}>
+    <div className="nexus-port-setting__header">
+      <label htmlFor={`${id}-port`}>{t('Mesh UDP port')}</label>
+      {inUse && <span className="nexus-port-setting__in-use">{t('In use: {port}', { port: inUse })}</span>}
+    </div>
+    <div className="nexus-port-setting__row">
+      <input id={`${id}-port`} className="input" type="text" inputMode="numeric" pattern="[0-9]*" required autoComplete="off"
+        value={draft} disabled={busy} aria-describedby={`${id}-hint ${id}-error`} onChange={event => setDraft(event.target.value.replace(/\D/g, ''))} />
+      <WorkspaceActionButton type="submit" size="small" disabled={busy || draft === String(configured)}>{t('Save')}</WorkspaceActionButton>
+    </div>
+    <p id={`${id}-hint`} className="nexus-hint">{t('0 lets the system pick a port. Set a fixed port when you forward one on your router.')}</p>
+    <p id={`${id}-error`} className="nexus-error" role="alert">{error}</p>
+  </form>;
 }
 
 function Endpoint({ label, value, copied, onCopy }: { label: string; value: string; copied: boolean; onCopy: () => void }) {

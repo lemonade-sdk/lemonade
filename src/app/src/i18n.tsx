@@ -9,6 +9,11 @@ export type TranslationValues = Record<string, string | number>;
 export type Translate = (key: string, values?: TranslationValues) => string;
 
 const ZH_CN: Record<string, string> = {
+  'Mesh UDP port': 'Mesh UDP 端口',
+  'In use: {port}': '使用中：{port}',
+  '0 lets the system pick a port. Set a fixed port when you forward one on your router.': '0 表示由系统选择端口。在路由器上转发了端口时，请设置固定端口。',
+  'Reachable through your router ({protocol})': '可通过你的路由器访问（{protocol}）',
+  'Reachable through your router': '可通过你的路由器访问',
   'Route permissions': '路由权限',
   'Allowed mesh routes by role': '按角色查看允许访问的网状网络路由',
   'Loading route permissions…': '正在加载路由权限…',
