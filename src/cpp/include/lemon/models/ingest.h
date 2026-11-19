@@ -77,19 +77,18 @@ class ModelIngest : public ArtifactFetchService {
     // the entry and the invalidation are one move, so no reader can see one without the
     // other. A router collection also reconciles the routing-helper working set.
     void register_user_model(const std::string& model_name, const nlohmann::json& model_data,
-                             const std::string& source = "", bool allow_backend_args = true);
+                             const std::string& source, bool allow_backend_args);
     void unregister_user_model(const std::string& model_name);
     void forget_registered_model(const std::string& canonical_model_name);
 
     void register_model(const std::string& model_name, const nlohmann::json& model_data,
-                        bool allow_missing_checkpoint, bool replace_existing, bool allow_backend_args = true);
+                        bool allow_missing_checkpoint, bool replace_existing, bool allow_backend_args);
 
     // Register if needed, then fetch. A `collection.omni` entry resolves its
     // components and fetches each one.
     void pull(const std::string& model_name, const nlohmann::json& model_data,
               bool do_not_upgrade, DownloadProgressCallback progress,
-              const utils::CancelToken& cancel = utils::CancelToken(),
-              bool allow_backend_args = true);
+              const utils::CancelToken& cancel, bool allow_backend_args);
 
     // Fetch an already-registered model, serialized per checkpoint repository.
     void fetch_model(const ModelInfo& info, bool do_not_upgrade,
@@ -106,8 +105,7 @@ class ModelIngest : public ArtifactFetchService {
               bool do_not_upgrade, DownloadProgressCallback progress,
               std::set<std::string>& visited, bool register_only,
               bool allow_missing_checkpoint, bool replace_existing,
-              const utils::CancelToken& cancel = utils::CancelToken(),
-              bool allow_backend_args = true);
+              const utils::CancelToken& cancel, bool allow_backend_args);
 
     void download_from_registry(const ModelInfo& info, DownloadProgressCallback progress_callback,
                                 const utils::CancelToken& cancel) const;

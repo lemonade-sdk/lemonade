@@ -862,7 +862,7 @@ void ModelIngest::pull(const std::string& model_name,
             LOG(INFO, "ModelManager") << "Downloading component: " << component << std::endl;
             json comp_data = json::object();
             pull(component, comp_data, do_not_upgrade, forward, visited, false, false, false,
-                 cancel);
+                 cancel, allow_backend_args);
         }
 
         // A startup build saw no manifest and published an empty list with no

@@ -19,7 +19,7 @@ namespace lemon {
 //   local_import:          /pull registers files already copied into the Hugging Face cache.
 std::string register_model_definition(ServerContext& ctx, const std::string& model_name,
                                       nlohmann::json& request, bool require_definition,
-                                      bool allow_embedded_models, bool local_import, bool allow_backend_args = true);
+                                      bool allow_embedded_models, bool local_import, bool allow_backend_args);
 
 extern const RouteError kInvalidModelDefinition;
 
@@ -28,7 +28,7 @@ extern const RouteError kInvalidModelDefinition;
 std::optional<std::string> try_register_model_definition(
     ServerContext& ctx, const std::string& model_name, nlohmann::json& request,
     bool require_definition, bool allow_embedded_models, bool local_import,
-    httplib::Response& res, bool allow_backend_args = true);
+    httplib::Response& res, bool allow_backend_args);
 
 extern const RouteError kDeleteFailed;
 

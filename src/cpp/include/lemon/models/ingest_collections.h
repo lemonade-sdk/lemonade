@@ -31,7 +31,7 @@ class IngestCollections {
     std::vector<std::string> register_components(const nlohmann::json& component_names,
                                                  const nlohmann::json& component_defs,
                                                  const std::string& registry_source,
-                                                 bool allow_backend_args = true);
+                                                 bool allow_backend_args);
 
     // Fetches the manifest, then registers what it names.
     std::vector<std::string> resolve_from_manifest(const std::string& repo_id,

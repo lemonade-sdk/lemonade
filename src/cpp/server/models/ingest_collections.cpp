@@ -266,7 +266,8 @@ std::vector<std::string> IngestCollections::register_components(
 std::vector<std::string> IngestCollections::resolve_from_manifest(
     const std::string& repo_id, const std::string& registry_source, bool do_not_upgrade) {
     json manifest = fetch_manifest(repo_id, registry_source, do_not_upgrade);
-    return register_components(manifest["components"], manifest["models"], registry_source);
+    return register_components(manifest["components"], manifest["models"], registry_source,
+                               /*allow_backend_args=*/true);
 }
 
 std::optional<std::string> IngestCollections::validate(

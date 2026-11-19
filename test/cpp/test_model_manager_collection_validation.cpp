@@ -201,7 +201,7 @@ static void test_zero_shot_label_selects_classifier_type(ModelManager& manager) 
         "user.ZsRegistered",
         json{{"model_name", "user.ZsRegistered"}, {"recipe", "onnxruntime"},
              {"checkpoint", "example/zs-registered"},
-             {"labels", {"classification", "zero-shot"}}});
+             {"labels", {"classification", "zero-shot"}}}, "", /*allow_backend_args=*/true);
     // The inline definition omits the label: a registered model keeps its own.
     json registered = router_with_classifier(
         "classifier", onnx_def("user.ZsRegistered", {"classification"}));
@@ -230,7 +230,7 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
     manager.register_user_model(
         "user.GuardX",
         json{{"model_name", "user.GuardX"}, {"recipe", "onnxruntime"},
-             {"checkpoint", "example/guard"}, {"reasoning", true}});
+             {"checkpoint", "example/guard"}, {"reasoning", true}}, "", /*allow_backend_args=*/true);
     check("onnxruntime + reasoning:true is CLASSIFICATION, not LLM",
           manager.get_model_info("user.GuardX").type == lemon::ModelType::CLASSIFICATION);
 
@@ -238,7 +238,7 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
     manager.register_user_model(
         "user.ImgX",
         json{{"model_name", "user.ImgX"}, {"recipe", "sd-cpp"},
-             {"checkpoint", "example/img"}, {"vision", true}});
+             {"checkpoint", "example/img"}, {"vision", true}}, "", /*allow_backend_args=*/true);
     check("sd-cpp + vision:true is IMAGE, not LLM",
           manager.get_model_info("user.ImgX").type == lemon::ModelType::IMAGE);
 
@@ -277,7 +277,7 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
         manager.register_user_model(
             "user.LlamaClf",
             json{{"model_name", "user.LlamaClf"}, {"recipe", "llamacpp"},
-                 {"checkpoint", "example/x:Q4_K_M"}, {"labels", {"classification"}}});
+                 {"checkpoint", "example/x:Q4_K_M"}, {"labels", {"classification"}}}, "", /*allow_backend_args=*/true);
     } catch (const lemon::InvalidModelDefinitionError&) {
         rejected = true;
     }
@@ -304,7 +304,7 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
         manager.register_user_model(
             "user.LlamaBoth",
             json{{"model_name", "user.LlamaBoth"}, {"recipe", "llamacpp"},
-                 {"checkpoint", "example/y:Q4_K_M"}, {"labels", {"chat", "embeddings"}}});
+                 {"checkpoint", "example/y:Q4_K_M"}, {"labels", {"chat", "embeddings"}}}, "", /*allow_backend_args=*/true);
     } catch (const lemon::InvalidModelDefinitionError&) {
         two_modes_rejected = true;
     }
@@ -321,7 +321,7 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
             "user.LlamaFlag",
             json{{"model_name", "user.LlamaFlag"}, {"recipe", "llamacpp"},
                  {"checkpoint", "example/z:Q4_K_M"}, {"labels", {"chat"}},
-                 {"embedding", true}});
+                 {"embedding", true}}, "", /*allow_backend_args=*/true);
     } catch (const lemon::InvalidModelDefinitionError&) {
         flag_rejected = true;
     }
@@ -410,7 +410,7 @@ static void test_filtered_classifier_component_does_not_drop_policy(ModelManager
     manager.register_user_model(
         "user.npu-clf",
         json{{"model_name", "user.npu-clf"}, {"recipe", "ryzenai-llm"},
-             {"checkpoint", "example/npu-clf"}});
+             {"checkpoint", "example/npu-clf"}}, "", /*allow_backend_args=*/true);
     check("npu-clf is hardware-filtered (test machine has no NPU)",
           !manager.model_exists("user.npu-clf"));
 
@@ -441,7 +441,7 @@ static void test_filtered_classifier_component_does_not_drop_policy(ModelManager
         }},
     };
 
-    manager.register_user_model("user.RouterFiltered", doc);
+    manager.register_user_model("user.RouterFiltered", doc, "", /*allow_backend_args=*/true);
 
     auto info = manager.get_model_info("user.RouterFiltered");
     check("router policy still parses when a classifier component is "
@@ -459,7 +459,7 @@ static void test_filtered_classifier_bare_name_resolves_through_alias(ModelManag
     manager.register_user_model(
         "user.npu-clf2",
         json{{"model_name", "user.npu-clf2"}, {"recipe", "ryzenai-llm"},
-             {"checkpoint", "example/npu-clf2"}});
+             {"checkpoint", "example/npu-clf2"}}, "", /*allow_backend_args=*/true);
     check("npu-clf2 is hardware-filtered (test machine has no NPU)",
           !manager.model_exists("user.npu-clf2"));
 
@@ -490,7 +490,7 @@ static void test_filtered_classifier_bare_name_resolves_through_alias(ModelManag
         }},
     };
 
-    manager.register_user_model("user.RouterFilteredBare", doc);
+    manager.register_user_model("user.RouterFilteredBare", doc, "", /*allow_backend_args=*/true);
 
     auto info = manager.get_model_info("user.RouterFilteredBare");
     check("router policy still parses when the classifier references the "
@@ -537,7 +537,7 @@ static void test_filtered_classifier_builtin_prefixed_alias_resolves(ModelManage
         }},
     };
 
-    manager.register_user_model("user.RouterFilteredBuiltin", doc);
+    manager.register_user_model("user.RouterFilteredBuiltin", doc, "", /*allow_backend_args=*/true);
 
     auto info2 = manager.get_model_info("user.RouterFilteredBuiltin");
     check("router policy still parses when the classifier references a "
@@ -551,7 +551,7 @@ static void test_filtered_classifier_builtin_prefixed_alias_resolves(ModelManage
 
 static void test_register_preserves_routing(ModelManager& manager) {
     json doc = valid_router_collection();
-    manager.register_user_model("user.RouterKit", doc);
+    manager.register_user_model("user.RouterKit", doc, "", /*allow_backend_args=*/true);
     auto info = manager.get_model_info("user.RouterKit");
     auto it = info.extras.find("routing");
     check("registered router collection preserves routing in ModelInfo extras",

@@ -316,7 +316,7 @@ static void test_list_sharded_model_files(ModelManager& manager, const Fixture& 
         json{{"checkpoints", json{{"main", path_to_utf8(first)},
                                   {"mmproj", path_to_utf8(fx.local_file)}}},
              {"recipe", "llamacpp"}},
-        "local_path");
+        "local_path", /*allow_backend_args=*/true);
 
     const auto files = manager.list_model_files("user.zz-sharded");
     check("local split GGUF lists every shard and the auxiliary checkpoint", files.size() == 4);

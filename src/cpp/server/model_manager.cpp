@@ -130,7 +130,7 @@ models::SyncService::Deps ModelManager::make_sync_deps() {
     deps.scan = [this](const std::vector<std::string>& targets) { return run_update_scan(targets); };
     deps.download = [this](const std::string& name, const json& options, bool do_not_upgrade,
                            DownloadProgressCallback progress, const utils::CancelToken& cancel) {
-        download_model(name, options, do_not_upgrade, progress, cancel);
+        download_model(name, options, do_not_upgrade, progress, cancel, /*allow_backend_args=*/true);
     };
     deps.store = &store_;
     return deps;
@@ -411,7 +411,7 @@ json ModelManager::replace_options(const std::string& name, const json& saved,
 }
 
 json ModelManager::set_options(const std::string& name, const json& changes) {
-    return write_saved_model_options(name, changes, /*merge=*/true);
+    return write_saved_model_options(name, changes, /*merge=*/true, /*allow_backend_args=*/true);
 }
 
 // Read-modify-write of one model's recipe_options.json entry.

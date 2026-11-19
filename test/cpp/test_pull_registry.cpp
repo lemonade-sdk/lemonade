@@ -231,7 +231,7 @@ void test_a_pull_lands_exactly_the_selected_files() {
     Fixture fx = make_fixture();
     ModelManager mm = fx.make_manager();
 
-    mm.download_model("user.Pull-Char", definition());
+    mm.download_model("user.Pull-Char", definition(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
 
     const fs::path main_snapshot = repo_cache(mm, "vendor/repo") / "snapshots" / "snap-main-1";
     for (const auto& name : kMainSelected) {
@@ -346,7 +346,7 @@ void test_a_suggested_pull_uses_the_default_source() {
     };
     ModelManager mm(config);
 
-    mm.download_model(model_name, nlohmann::json::object());
+    mm.download_model(model_name, nlohmann::json::object(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
 
     check(!fx.trace.urls.empty() && used_default_source,
           "a name-only Suggested pull downloads from the configured default source");
@@ -370,14 +370,14 @@ void test_a_suggested_pull_uses_the_default_source() {
 void test_a_second_pull_reselects_but_refetches_nothing() {
     Fixture fx = make_fixture();
     ModelManager mm = fx.make_manager();
-    mm.download_model("user.Pull-Char", definition());
-    mm.download_model("user.Pull-Char", nlohmann::json::object());
+    mm.download_model("user.Pull-Char", definition(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
+    mm.download_model("user.Pull-Char", nlohmann::json::object(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     reset_trace(fx);
 
     const fs::path main_snapshot = repo_cache(mm, "vendor/repo") / "snapshots" / "snap-main-1";
     const auto installed_at = fs::last_write_time(main_snapshot / "model.gguf");
 
-    mm.download_model("user.Pull-Char", nlohmann::json::object());
+    mm.download_model("user.Pull-Char", nlohmann::json::object(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
 
     check(!fx.trace.listings.empty(), "a re-pull still asks each source for its listing");
     check(fs::exists(main_snapshot / "model.gguf"), "an installed file stays installed");
@@ -403,11 +403,11 @@ void test_a_local_gguf_router_registers_with_its_sibling_head() {
                           {{"recipe", "llamacpp"},
                            {"source", "local_path"},
                            {"checkpoint", gguf},
-                           {"labels", {"classification", "zero-shot"}}});
+                           {"labels", {"classification", "zero-shot"}}}, false, false, /*allow_backend_args=*/true);
         mm.register_model("user.Untagged-Router",
                           {{"recipe", "llamacpp"},
                            {"checkpoint", gguf},
-                           {"labels", {"classification", "zero-shot"}}});
+                           {"labels", {"classification", "zero-shot"}}}, false, false, /*allow_backend_args=*/true);
     } catch (const std::exception& e) {
         registered = false;
         std::cerr << "  registration refused: " << e.what() << std::endl;
@@ -435,7 +435,7 @@ void test_a_pull_of_local_files_never_asks_a_registry() {
                                {"checkpoint", base + "/router-f16.gguf"},
                                {"labels", {"classification", "zero-shot"}}};
         lemon::apply_default_pull_source(body, "huggingface");
-        mm.download_model("user.Pulled-Router", body);
+        mm.download_model("user.Pulled-Router", body, false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     } catch (const std::exception& e) {
         pulled_error = e.what();
     }
@@ -451,7 +451,7 @@ void test_a_pull_of_local_files_never_asks_a_registry() {
     fs::remove(dir / "rulehead.bin");
     std::string missing_error;
     try {
-        mm.download_model("user.Pulled-Router", nlohmann::json::object());
+        mm.download_model("user.Pulled-Router", nlohmann::json::object(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     } catch (const std::exception& e) {
         missing_error = e.what();
     }
@@ -476,7 +476,7 @@ void test_a_scheme_prefixed_router_downloads_from_its_repository() {
                                {"checkpoint", "hf://vendor/router:router-f16.gguf"},
                                {"labels", {"classification", "zero-shot"}}};
         lemon::apply_default_pull_source(body, "modelscope");
-        mm.download_model("user.Scheme-Router", body);
+        mm.download_model("user.Scheme-Router", body, false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     } catch (const std::exception& e) {
         error = e.what();
     }
@@ -502,8 +502,8 @@ void test_a_scheme_prefixed_router_downloads_from_its_repository() {
     unnormalized["checkpoints"]["main"] = "hf://vendor/repo:model.gguf";
     std::string refused;
     try {
-        mm.download_model("user.Scheme-Raw", unnormalized);
-        mm.download_model("user.Scheme-Raw", nlohmann::json::object());
+        mm.download_model("user.Scheme-Raw", unnormalized, false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
+        mm.download_model("user.Scheme-Raw", nlohmann::json::object(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     } catch (const std::exception& e) {
         refused = e.what();
     }
@@ -524,7 +524,7 @@ void test_a_relative_gguf_path_is_refused_in_words() {
                                    {"checkpoint", relative},
                                    {"labels", {"classification", "zero-shot"}}};
             lemon::apply_default_pull_source(body, "huggingface");
-            mm.download_model("user.Relative-Router", body);
+            mm.download_model("user.Relative-Router", body, false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
         } catch (const std::exception& e) {
             error = e.what();
         }
@@ -542,8 +542,8 @@ void test_a_missing_aux_checkpoint_is_refused_in_words() {
 
     bool threw = false;
     try {
-        mm.download_model("user.Pull-Refuse", def);
-        mm.download_model("user.Pull-Refuse", nlohmann::json::object());
+        mm.download_model("user.Pull-Refuse", def, false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
+        mm.download_model("user.Pull-Refuse", nlohmann::json::object(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     } catch (const MissingCheckpointError& e) {
         threw = true;
         check(std::string(e.what()).find("Additional checkpoint file not found") !=
@@ -565,8 +565,8 @@ void test_a_malformed_aux_checkpoint_never_reaches_the_wire() {
 
     bool threw = false;
     try {
-        mm.download_model("user.Pull-Malformed", def);
-        mm.download_model("user.Pull-Malformed", nlohmann::json::object());
+        mm.download_model("user.Pull-Malformed", def, false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
+        mm.download_model("user.Pull-Malformed", nlohmann::json::object(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     } catch (const std::exception& e) {
         threw = true;
         check(std::string(e.what()).find("exact repository variant") != std::string::npos,
@@ -579,7 +579,7 @@ void test_a_malformed_aux_checkpoint_never_reaches_the_wire() {
 void test_a_cancelled_pull_stops_before_the_first_byte() {
     Fixture fx = make_fixture();
     ModelManager mm = fx.make_manager();
-    mm.download_model("user.Pull-Cancel", definition());
+    mm.download_model("user.Pull-Cancel", definition(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     // The registration call already fetched; clear the bytes so the cancelled
     // pull below has real work it must not do.
     for (const auto* repo : {"vendor/repo", "vendor/aux"}) {
@@ -591,7 +591,7 @@ void test_a_cancelled_pull_stops_before_the_first_byte() {
     token.flag = &flag;
     bool threw = false;
     try {
-        mm.download_model("user.Pull-Cancel", nlohmann::json::object(), false, nullptr, token);
+        mm.download_model("user.Pull-Cancel", nlohmann::json::object(), false, nullptr, token, /*allow_backend_args=*/true);
     } catch (const std::exception& e) {
         threw = true;
         check(std::string(e.what()).find("cancelled") != std::string::npos,

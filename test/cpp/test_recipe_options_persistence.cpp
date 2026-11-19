@@ -110,7 +110,7 @@ static void use_fixture_dirs(const Fixture& fx) {
 static void test_replace_and_read_back(const Fixture& fx) {
     ModelManager manager;
     json saved = manager.replace_options(
-        "user.zz-opts", json{{"ctx_size", 4096}, {"batch_size", 128}});
+        "user.zz-opts", json{{"ctx_size", 4096}, {"batch_size", 128}}, /*allow_backend_args=*/true);
     check("replace returns the new entry",
           saved.value("ctx_size", 0) == 4096 && saved.value("batch_size", 0) == 128);
 
@@ -131,14 +131,14 @@ static void test_replace_and_read_back(const Fixture& fx) {
 
 static void test_replace_overwrites_and_empty_erases(const Fixture& fx) {
     ModelManager manager;
-    manager.replace_options("user.zz-opts", json{{"ctx_size", 4096}, {"keep", 1}});
+    manager.replace_options("user.zz-opts", json{{"ctx_size", 4096}, {"keep", 1}}, /*allow_backend_args=*/true);
 
     json replaced =
-        manager.replace_options("user.zz-opts", json{{"ctx_size", 2048}});
+        manager.replace_options("user.zz-opts", json{{"ctx_size", 2048}}, /*allow_backend_args=*/true);
     check("replace discards keys the previous entry had",
           replaced.size() == 1 && replaced.value("ctx_size", 0) == 2048);
 
-    json emptied = manager.replace_options("user.zz-opts", json::object());
+    json emptied = manager.replace_options("user.zz-opts", json::object(), /*allow_backend_args=*/true);
     check("replacing with an empty object returns an empty entry", emptied.empty());
     check("replacing with an empty object removes the row from disk",
           !read_json(fx.options_file).contains("user.zz-opts"));
@@ -147,7 +147,7 @@ static void test_replace_overwrites_and_empty_erases(const Fixture& fx) {
 static void test_merge_semantics(const Fixture& fx) {
     ModelManager manager;
     manager.replace_options("user.zz-opts",
-                                    json{{"ctx_size", 4096}, {"batch_size", 64}});
+                                    json{{"ctx_size", 4096}, {"batch_size", 64}}, /*allow_backend_args=*/true);
 
     json merged = manager.set_options("user.zz-opts", json{{"ctx_size", 8192}});
     check("merge keeps untouched keys",
@@ -171,7 +171,7 @@ static void test_merge_semantics(const Fixture& fx) {
 
 static void test_options_reach_model_info(const Fixture& fx) {
     ModelManager manager;
-    manager.replace_options("user.zz-opts", json{{"ctx_size", 3072}});
+    manager.replace_options("user.zz-opts", json{{"ctx_size", 3072}}, /*allow_backend_args=*/true);
     check("a saved option is visible in the model info without a rebuild",
           manager.get_model_info("user.zz-opts").recipe_options.get_option("ctx_size") == 3072);
 
@@ -184,7 +184,7 @@ static void test_options_reach_model_info(const Fixture& fx) {
 // persist and the cache must be rebuilt to pick the entry up.
 static void test_options_for_unknown_model(const Fixture& fx) {
     ModelManager manager;
-    json saved = manager.replace_options("user.zz-absent", json{{"ctx_size", 999}});
+    json saved = manager.replace_options("user.zz-absent", json{{"ctx_size", 999}}, /*allow_backend_args=*/true);
     check("options for an unknown model are still written", saved.value("ctx_size", 0) == 999);
     check("options for an unknown model persist",
           read_json(fx.options_file)["user.zz-absent"].value("ctx_size", 0) == 999);
@@ -193,7 +193,7 @@ static void test_options_for_unknown_model(const Fixture& fx) {
 static void test_persistence_across_instances(const Fixture& fx) {
     {
         ModelManager manager;
-        manager.replace_options("user.zz-opts", json{{"ctx_size", 7777}});
+        manager.replace_options("user.zz-opts", json{{"ctx_size", 7777}}, /*allow_backend_args=*/true);
     }
     ModelManager restarted;
     check("a new instance reads the saved entry",
@@ -237,7 +237,7 @@ static void test_corrupt_file_is_not_fatal() {
     ModelManager manager;
     check("a non-object options file reads as empty",
           manager.options("user.zz-opts")["saved"].empty());
-    json saved = manager.replace_options("user.zz-opts", json{{"ctx_size", 123}});
+    json saved = manager.replace_options("user.zz-opts", json{{"ctx_size", 123}}, /*allow_backend_args=*/true);
     check("writing over a corrupt file succeeds", saved.value("ctx_size", 0) == 123);
     check("the corrupt file is replaced by an object",
           read_json(seeded.options_file).is_object() &&

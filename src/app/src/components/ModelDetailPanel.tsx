@@ -1599,9 +1599,6 @@ const ModelConfigurationTab: React.FC<{
   );
   const argsKeys = recipeKeys.filter(key => recipeOptionIsArgs(systemInfo, activeRecipe, String(key)));
   const otherRecipeKeys = recipeKeys.filter(key => !selectorKeys.includes(key) && !argsKeys.includes(key));
-  // merge_args only decides what happens to *_args, so it is only stated for a
-  // model that has an args field of its own.
-  const sendsArgs = argsKeys.length > 0;
   // Only the options this panel manages count: a reset here cannot claim to
   // clear a saved key it never shows.
   const hasSavedOptions = Object.keys(serverSavedRecipeOptions)
@@ -1701,17 +1698,18 @@ const ModelConfigurationTab: React.FC<{
     setNotice('Reverted to your saved load settings.');
   };
 
-  // Every option the panel shows is stated outright: the value on screen, or
-  // null where the field is empty. An omitted option would fall back to the
-  // saved value, which is not what the user is looking at.
+  // Unchanged backend arguments stay server-owned so an ordinary load does not
+  // request a privileged override.
   const buildLoadOptions = (): Record<string, unknown> => {
     const configured = buildConfigOptions() as Record<string, unknown>;
     const options: Record<string, unknown> = {};
     for (const key of recipeKeys.map(recipeKey => String(recipeKey))) {
+      if (argsKeyNames.has(key)
+        && (recipeDraft[key] || '') === (savedLoadSettings.recipe[key] || '')) continue;
       options[key] = Object.prototype.hasOwnProperty.call(configured, key) ? configured[key] : null;
     }
     if (supportsContextSize) options.ctx_size = configured.ctx_size ?? -1;
-    if (sendsArgs) options.merge_args = false;
+    if (argsKeys.some(key => Object.prototype.hasOwnProperty.call(options, key))) options.merge_args = false;
     return options;
   };
 

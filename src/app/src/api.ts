@@ -1554,6 +1554,15 @@ class LemonadeAPI {
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
     const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
+    if (recipeOptions !== undefined && stagedOptions) {
+      // An explicit panel payload must not regain hidden privileged overrides.
+      for (const key of Object.keys(stagedOptions)) {
+        if ((key.endsWith('_args') || key === 'merge_args')
+          && !Object.prototype.hasOwnProperty.call(recipeOptions, key)) {
+          delete (stagedOptions as Record<string, unknown>)[key];
+        }
+      }
+    }
     // A load carries whatever the panel currently shows, saved or not, so it must
     // not write those options back as the model's stored defaults.
     const body: Record<string, unknown> = {

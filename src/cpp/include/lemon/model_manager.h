@@ -176,22 +176,21 @@ public:
     // Register a user model
     void register_user_model(const std::string& model_name,
                             const json& model_data,
-                            const std::string& source = "", bool allow_backend_args = true);
+                            const std::string& source, bool allow_backend_args);
 
     // Register or validate a model definition without downloading its files.
     // Uses the same registration path as download_model.
     void register_model(const std::string& model_name,
                        const json& model_data,
-                       bool allow_missing_checkpoint = false,
-                       bool replace_existing = false, bool allow_backend_args = true);
+                       bool allow_missing_checkpoint,
+                       bool replace_existing, bool allow_backend_args);
 
     // Register (if needed) and download a model
     void download_model(const std::string& model_name,
                        const json& model_data,
-                       bool do_not_upgrade = false,
-                       DownloadProgressCallback progress_callback = nullptr,
-                       const utils::CancelToken& cancel = utils::CancelToken(),
-                       bool allow_backend_args = true);
+                       bool do_not_upgrade,
+                       DownloadProgressCallback progress_callback,
+                       const utils::CancelToken& cancel, bool allow_backend_args);
 
     // Download a model
     void download_registered_model(const ModelInfo& info,
@@ -340,7 +339,7 @@ public:
     // Replace the model's recipe_options.json entry, returning the new entry.
     // An empty object erases the entry rather than persisting `{}`.
     json replace_options(const std::string& name, const json& saved,
-                         bool allow_backend_args = true);
+                         bool allow_backend_args);
 
 
 private:
@@ -382,7 +381,7 @@ private:
     // registry row. Takes no store lock.
     json registry_recipe_options(const std::string& cache_key);
     json write_saved_model_options(const std::string& model_name, const json& options, bool merge,
-                                   bool allow_backend_args = true);
+                                   bool allow_backend_args);
 
     // Cache management
     void build_cache();
