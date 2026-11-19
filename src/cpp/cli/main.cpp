@@ -531,7 +531,7 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
     std::string type_str = lemon::model_type_to_string(model_type);
 
     try {
-        std::string health_str = client.make_request("/api/v1/health", "GET", "", "", 2000, 2000);
+        std::string health_str = client.make_request("/v1/health", "GET", "", "", 2000, 2000);
         auto health_json = nlohmann::json::parse(health_str);
         if (health_json.contains("max_models") && health_json.contains("pinned_models")) {
             auto max_models = health_json["max_models"];
@@ -666,7 +666,7 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
 
     try {
         std::string response = client.make_request(
-            "/api/v1/models?show_all=false", "GET", "", "", 3000, 3000);
+            "/v1/models?show_all=false", "GET", "", "", 3000, 3000);
         const nlohmann::json parsed = nlohmann::json::parse(response);
 
         if (!parsed.contains("data") || !parsed["data"].is_array()) {
@@ -705,7 +705,7 @@ static bool load_for_context_window(lemonade::LemonadeClient& client, const CliC
         request_body["model_name"] = config.model;
         request_body["save_options"] = false;
         constexpr time_t load_timeout_ms = 86400000;
-        client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json",
+        client.make_request("/v1/load", "POST", request_body.dump(), "application/json",
                             load_timeout_ms, load_timeout_ms);
     } catch (const lemonade::HttpError& e) {
         std::cerr << "Error: Failed to load " << config.model << ": "
@@ -718,7 +718,7 @@ static bool load_for_context_window(lemonade::LemonadeClient& client, const CliC
 
     try {
         const nlohmann::json model = nlohmann::json::parse(client.make_request(
-            "/api/v1/models/" + config.model, "GET", "", "", 3000, 3000));
+            "/v1/models/" + config.model, "GET", "", "", 3000, 3000));
         const auto context_length = model.find("context_length");
         if (context_length != model.end() && context_length->is_number_integer() &&
             context_length->get<int>() > 0) {
@@ -799,7 +799,7 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         nlohmann::json selected = nlohmann::json::object();
         try {
             selected = nlohmann::json::parse(client.make_request(
-                "/api/v1/models/" + config.model, "GET", "", "", 3000, 3000));
+                "/v1/models/" + config.model, "GET", "", "", 3000, 3000));
         } catch (const lemonade::HttpError& e) {
             selected_unknown = e.status_code() == 404;
         } catch (const std::exception&) {
@@ -1106,7 +1106,7 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
                 request_body["model_name"] = model;
                 request_body["save_options"] = false;
                 // Keep async load silent to avoid disrupting interactive agent UIs.
-                (void)async_client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json");
+                (void)async_client.make_request("/v1/load", "POST", request_body.dump(), "application/json");
             } catch (const std::exception& e) {
                 (void)e;
             }

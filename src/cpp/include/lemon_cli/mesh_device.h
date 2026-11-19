@@ -19,7 +19,7 @@ struct MeshDevice {
     bool self{false};
 };
 
-/// The devices in `status` (lemond's GET /api/v1/nexus/status), from `mesh_port.urls`.
+/// The devices in `status` (lemond's GET /v1/nexus/status), from `mesh_port.urls`.
 /// Empty when the mesh is off or the mesh port is not running.
 std::vector<MeshDevice> mesh_devices(const nlohmann::json& status);
 

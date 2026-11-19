@@ -283,7 +283,7 @@ URL. `nexus_access::kFamilies` lists the families:
 | `system` | docs, `docs/{page}`, metrics |
 | `management` | routing/validate, `slots/{id}` actions, and the five Nexus route prefixes; Nexus operations additionally require Admin |
 
-A mesh peer uses this server's models; it does not change how the operator loaded them. `POST /api/v1/load` from a peer (`nexus_access::request_from_mesh_peer()`) keeps a loaded model as it is instead of reloading it on an option difference, ignores `save_options`, and reports `already_loaded` in its response. Loading a model that is not loaded works as for a local caller.
+A mesh peer uses this server's models; it does not change how the operator loaded them. `POST /v1/load` from a peer (`nexus_access::request_from_mesh_peer()`) keeps a loaded model as it is instead of reloading it on an option difference, ignores `save_options`, and reports `already_loaded` in its response. Loading a model that is not loaded works as for a local caller.
 
 `nexus_access::service_catalog(registry.list(), LEMON_VERSION_STRING)` builds:
 
@@ -291,8 +291,8 @@ A mesh peer uses this server's models; it does not change how the operator loade
 {"version": 202604600300,
  "app": {"name": "lemonade", "version": "2026.46.3"},
  "families": [{"name": "inference", "routes": [
-   {"methods": ["POST"], "path": "/api/v1/chat/completions"},
-   {"methods": ["GET"], "prefix": "/api/v1/models/"}]}]}
+   {"methods": ["POST"], "path": "/v1/chat/completions"},
+   {"methods": ["GET"], "prefix": "/v1/models/"}]}]}
 ```
 
 A route with a `{parameter}` becomes the prefix before it; other paths are
@@ -323,7 +323,7 @@ Each refusal event becomes one log line, `WARNING` for `denied` and `INFO` for
 `unregistered` and `unattributed`:
 
 ```
-Nexus route policy: denied POST /api/v1/chat/completions from <peer_node_id> (family inference, needs svc:inference, catalog 202604600300)
+Nexus route policy: denied POST /v1/chat/completions from <peer_node_id> (family inference, needs svc:inference, catalog 202604600300)
 ```
 
 The line never carries a body, key or address; control characters are replaced

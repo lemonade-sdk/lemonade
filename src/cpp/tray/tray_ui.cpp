@@ -259,7 +259,7 @@ std::string TrayUI::http_post(const std::string& endpoint, const std::string& bo
 
 std::optional<std::vector<LoadedModelInfo>> TrayUI::fetch_server_state() {
     try {
-        std::string body = http_get("/api/v1/health");
+        std::string body = http_get("/v1/health");
         if (body.empty()) return std::nullopt;
 
         auto health = nlohmann::json::parse(body);
@@ -306,7 +306,7 @@ void TrayUI::fetch_runtime_config() {
 
 std::vector<ModelInfo> TrayUI::get_downloaded_models() {
     try {
-        std::string body = http_get("/api/v1/models");
+        std::string body = http_get("/v1/models");
         if (body.empty()) return {};
 
         auto models_json = nlohmann::json::parse(body);
@@ -537,7 +537,7 @@ void TrayUI::on_load_model(const std::string& model_name) {
     std::thread([this, name_copy]() {
         nlohmann::json body;
         body["model_name"] = name_copy;
-        std::string result = http_post("/api/v1/load", body.dump());
+        std::string result = http_post("/v1/load", body.dump());
 
         {
             std::lock_guard<std::mutex> lock(loading_mutex_);
@@ -558,7 +558,7 @@ void TrayUI::on_unload_model() {
         show_notification("Model Loading", "Please wait for the current model to finish loading.");
         return;
     }
-    http_post("/api/v1/unload");
+    http_post("/v1/unload");
     build_menu();
 }
 
@@ -573,7 +573,7 @@ void TrayUI::on_unload_specific_model(const std::string& model_name) {
     std::thread([this, name_copy]() {
         nlohmann::json body;
         body["model_name"] = name_copy;
-        http_post("/api/v1/unload", body.dump());
+        http_post("/v1/unload", body.dump());
         build_menu();
     }).detach();
 }
