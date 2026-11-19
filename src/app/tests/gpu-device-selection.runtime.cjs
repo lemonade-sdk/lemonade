@@ -16,9 +16,9 @@ const panelSource = fs.readFileSync(path.resolve(__dirname, '../src/components/M
   .replace(/\r\n/g, '\n');
 const helperNames = ['activeRecipeForModel', 'optionalDisplayValue', 'systemRecipes', 'backendMapForRecipe',
   'recipeDefaultBackend', 'availableDeviceCounts', 'indexed', 'deviceBackendFor', 'runtimeDevicesFor',
-  'hipIndexedAmdGpus', 'shortGpuId', 'gpuChoices', 'gpuChoiceFor', 'matchingDeviceOption',
+  'hipIndexedAmdGpus', 'shortGpuId', 'gpuChoices', 'withMonitoredCudaNames', 'gpuChoiceFor', 'matchingDeviceOption',
   'deviceOptionsForKey', 'deviceOptionLabel'];
-let helperCode = 'type SystemInfoLike = any; type RecipeOptions = any; type ModelInfo = any;\n';
+let helperCode = 'type SystemInfoLike = any; type RecipeOptions = any; type ModelInfo = any; type SystemGpuStats = any;\n';
 for (const pattern of [/^const SINGLE_GPU_RECIPES.*$/m, /^interface RuntimeDevice.*$/m, /^const isGpuId = .*$/m]) {
   const match = panelSource.match(pattern);
   assert.ok(match, `${pattern} missing`);
@@ -32,10 +32,10 @@ for (const name of helperNames) {
   assert.ok(match, `${name} missing`);
   helperCode += match[0];
 }
-helperCode += 'module.exports = { deviceOptionsForKey, deviceOptionLabel, matchingDeviceOption };';
+helperCode += 'module.exports = { deviceOptionsForKey, deviceOptionLabel, matchingDeviceOption, withMonitoredCudaNames };';
 const helperModule = { exports: {} };
 vm.runInNewContext(compile(helperCode), { module: helperModule, exports: helperModule.exports });
-const { deviceOptionsForKey, deviceOptionLabel, matchingDeviceOption } = helperModule.exports;
+const { deviceOptionsForKey, deviceOptionLabel, matchingDeviceOption, withMonitoredCudaNames } = helperModule.exports;
 // Values built in the vm context have its prototypes; compare copies made here.
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -64,6 +64,34 @@ assert.deepEqual(plain(cuda), ['auto', 'GPU-aaaa0000-0000-0000-0000-000000000000
 // Cards of one model are told apart by a short id; a unique name needs none.
 assert.deepEqual(plain(labels(cuda)), ['auto', 'CUDA0 (GeForce RTX 2060)',
   `CUDA1 (${p100} · GPU-bbbb1111)`, `CUDA2 (${p100} · GPU-cccc2222)`]);
+
+// Monitor's NVML names enrich blank system-info names by UUID, not array order.
+const unnamed = JSON.parse(JSON.stringify(info));
+unnamed.devices.nvidia_gpu.forEach(gpu => { gpu.name = ''; });
+const monitored = withMonitoredCudaNames(unnamed, [
+  { vendor: 'nvidia', id: 'nvidia:GPU-cccc2222-0000-0000-0000-000000000000', name: p100 },
+  { vendor: 'nvidia', id: 'nvidia:GPU-aaaa0000-0000-0000-0000-000000000000', name: 'GeForce RTX 2060' },
+  { vendor: 'nvidia', id: 'nvidia:GPU-bbbb1111-0000-0000-0000-000000000000', name: p100 },
+]);
+assert.deepEqual(plain(labels(cuda, monitored)), plain(labels(cuda)));
+assert.deepEqual(plain(deviceOptionsForKey('acestep_device', undefined, 'cuda', acestep, monitored)), plain(cuda));
+assert.deepEqual(plain(labels(cuda, unnamed)), ['auto', 'CUDA0', 'CUDA1', 'CUDA2'],
+  'monitor enrichment must not mutate the system-info cache');
+assert.equal(withMonitoredCudaNames(unnamed, [
+  { vendor: 'nvidia', id: 'nvidia:index:1', name: p100 },
+]).devices.nvidia_gpu[1].name, p100, 'matching runtime indices are a safe fallback');
+
+// Without a common UUID, do not guess which physical card a metric describes.
+const indexedOnly = { devices: { nvidia_gpu: [
+  { available: true, index: 0, name: '' },
+  { available: true, index: 1, name: '' },
+] } };
+assert.equal(deviceOptionLabel('cuda0', withMonitoredCudaNames(indexedOnly, [
+  { vendor: 'nvidia', id: 'nvidia:GPU-aaaa', name: 'Unmatched card' },
+])), 'CUDA0');
+assert.equal(deviceOptionLabel('cuda1', withMonitoredCudaNames(indexedOnly, [
+  { vendor: 'nvidia', id: 'nvidia:index:1', name: 'RTX 5090' },
+])), 'CUDA1 (RTX 5090)');
 
 // ROCm is numbered by HIP, not by the iGPU-first amd_gpu order, and saved by PCI address.
 const rocm = deviceOptionsForKey('acestep_device', undefined, 'rocm', acestep, info);

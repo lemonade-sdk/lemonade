@@ -132,10 +132,8 @@ public:
                                    "Upscale is not supported by recipe: " + info.recipe);
                 return;
             }
-            if (info.recipe == "thenoise") {
-                server->set_model_metadata(upscale_model_name, info.checkpoint(),
-                                           ModelType::IMAGE, DEVICE_GPU, info.recipe_options);
-            }
+            server->set_model_metadata(upscale_model_name, info.checkpoint(), ModelType::IMAGE,
+                                       server->effective_device(info.recipe_options), info.recipe_options);
             auto* upscale_server = dynamic_cast<IUpscaleServer*>(server.get());
             std::string upscaled = upscale_server->upscale_via_cli(
                 b64_image, info.resolved_path("main"), req.value(kUpscaleFactor, 0.0));
