@@ -325,6 +325,8 @@ void StreamingProxy::forward_sse_stream(
         if (request_cancelled) {
             stream_error = true;
             LOG(INFO, "StreamingProxy") << "SSE stream cancelled" << std::endl;
+            telemetry.error_message = "Request cancelled during stream";
+            telemetry.client_disconnected = true;
         } else if (client_disconnected && forwarded_error_event) {
             // Gateways that translate the stream stop it themselves once they have
             // relayed the backend's error, so the client did not go away.
