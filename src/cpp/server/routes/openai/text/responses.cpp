@@ -1,8 +1,12 @@
+#include <algorithm>
+
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/router_dispatch.h"
 #include "lemon/server/shared_args.h"
 #include "lemon/streaming_proxy.h"
 
@@ -18,6 +22,11 @@ const RouteError kNoResponsesApi{
     "Responses API"};
 const RouteError kNotLlm{
     400, "model_not_applicable", "The request does not stream and `model` is not an LLM"};
+const RouteError kRouterResponseChain{
+    400, "router_response_chain_unsupported",
+    "The request continues earlier responses through `previous_response_id`, `conversation` or an "
+    "`item_reference` input, and `model` is a `collection.router` model whose policy can pick a "
+    "different candidate than the one holding that state"};
 
 ordered_json response_schema() {
     auto schema = ordered_json::parse(R"({
@@ -82,6 +91,43 @@ const RouteArg kInput{"input", ArgIn::JsonBody, {{"type", json::array({"string",
                       "The input, as a string or an array of input items."};
 const RouteArg kMaxOutputTokens{"max_output_tokens", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
                                 "Upper bound on generated tokens."};
+const RouteArg kPreviousResponseId{
+    "previous_response_id", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Partial,
+    "The response this one continues. llama.cpp rejects it."};
+
+bool non_empty(const json& value) {
+    if (value.is_string()) return !value.get_ref<const std::string&>().empty();
+    if (value.is_object()) {
+        const auto id = value.find("id");
+        return id != value.end() && non_empty(*id);
+    }
+    return false;
+}
+
+// OpenAI lets an item reference omit its type, so a bare {"id": ...} is one too;
+// a message item that carries its own id also has a role or content.
+bool is_item_reference(const json& item) {
+    if (!item.is_object()) return false;
+    const auto type = item.find("type");
+    if (type != item.end() && !type->is_null()) {
+        return type->is_string() && type->get_ref<const std::string&>() == "item_reference";
+    }
+    const auto id = item.find("id");
+    return id != item.end() && non_empty(*id) && !item.contains("role") &&
+           !item.contains("content");
+}
+
+// Earlier responses live in the backend that created them, so a request that
+// refers to them can only be answered by that backend.
+bool references_backend_state(const json& body) {
+    const auto previous = body.find(kPreviousResponseId.name);
+    if (previous != body.end() && non_empty(*previous)) return true;
+    const auto conversation = body.find("conversation");
+    if (conversation != body.end() && non_empty(*conversation)) return true;
+    const auto input = body.find(kInput.name);
+    if (input == body.end() || !input->is_array()) return false;
+    return std::any_of(input->begin(), input->end(), is_item_reference);
+}
 
 class ResponsesRoute : public ModelRoute {
 public:
@@ -100,9 +146,15 @@ public:
         s.notes = {
             "Naming a `collection.router` model routes the request to one of its candidates; "
             "see [Router API](./router.md).",
+            "A request that continues earlier responses, through `previous_response_id`, "
+            "`conversation` or an `item_reference` input, is rejected on a `collection.router` "
+            "model, since the candidate picked for this turn may not be the one holding them. "
+            "Resend the full `input`. If the candidate named in the earlier response's "
+            "`x_lemonade_route.route_to` (on the first event of a streamed response) supports "
+            "continuation, the request can also go to it directly; llama.cpp does not.",
         };
         s.args = {
-            kInput, model_loading::kModel, kMaxOutputTokens, generation::kTemperature,
+            kInput, model_loading::kModel, kMaxOutputTokens, kPreviousResponseId, generation::kTemperature,
             openai::text::kRepeatPenalty, generation::kTopK, generation::kTopP, common::kStream,
             openai::text::kRouteTrace, model_loading::kCtxSize
         };
@@ -138,6 +190,7 @@ public:
 
         s.examples = {response_example, stream_example};
         s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kNoResponsesApi, kNotLlm,
+                                 kRouterResponseChain,
                                  kBackendError, kUnexpectedException},
                                 ModelLoader::errors()});
         s.error_format = ErrorFormat::OpenAi;
@@ -148,11 +201,32 @@ public:
 protected:
     const RouteArg& model_arg() const override { return model_loading::kModel; }
 
-    bool validate(RouteRequest& req, httplib::Response&) override {
+    bool validate(RouteRequest& req, httplib::Response& res) override {
+        // A failed registry lookup cannot tell the model is a collection, so the
+        // normal path reports what is wrong with the model instead.
+        std::optional<ModelInfo> collection;
+        try {
+            collection = router_collection_info(ctx_, req.model);
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Router collection dispatch failed for '" << req.model
+                                   << "': " << e.what() << std::endl;
+        }
+        if (collection && collection->route_policy && references_backend_state(req.body)) {
+            LOG(INFO, "Server") << "Rejected /responses continuing earlier responses on router "
+                                << "collection '" << req.model << "'" << std::endl;
+            write_openai_error(
+                res, kRouterResponseChain,
+                "This request continues earlier responses, which are held by the backend that "
+                "served them, and router collection '" + req.model + "' may select a different "
+                "candidate for this turn. Resend the full 'input'. If the candidate named in the "
+                "earlier response's 'x_lemonade_route.route_to' supports continuation, the request "
+                "can also go to it directly.");
+            return false;
+        }
         // Router policies call backends here, before run() does.
         auto cancel = cancel_on_disconnect(req);
-        req.route_decision = router_dispatch(ctx_, req.model, req.value(openai::text::kRouteTrace, false),
-                                             req.body);
+        req.route_decision = router_dispatch(
+            ctx_, req.model, req.value(openai::text::kRouteTrace, false), req.body, collection);
         return true;
     }
 
