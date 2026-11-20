@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <filesystem>
 #include <string>
 
@@ -59,6 +60,16 @@ std::filesystem::path path_from_utf8(const std::string& path);
  * Convert a std::filesystem::path to a UTF-8 string.
  */
 std::string path_to_utf8(const std::filesystem::path& path);
+
+// Cache-key encoding: the full seconds count is range-safe even for macOS's
+// 128-bit file_clock, and the remaining subsecond count fits int64 on Windows.
+inline std::string file_time_cache_stamp(const std::filesystem::file_time_type& time) {
+    const auto elapsed = time.time_since_epoch();
+    const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(elapsed);
+    const auto nanoseconds =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed - seconds);
+    return std::to_string(seconds.count()) + ":" + std::to_string(nanoseconds.count());
+}
 
 /**
  * Finds an executable in the system's PATH.

@@ -166,6 +166,37 @@ void test_a_moved_main_snapshot_keeps_the_one_it_left_named() {
           "the checkpoint slot moves to the new snapshot");
 }
 
+void test_verified_updates_preserve_shared_provenance() {
+    ModelArtifactStore store = make_store();
+    const fs::path dir = lemon::test::make_scratch_dir("verified-shared");
+    ModelInfo first = two_checkpoint_model();
+    ModelInfo second = first;
+    second.model_name = "user.Other-Part";
+
+    Provenance p1 = provenance("vendor/aux", "snap-aux-1");
+    p1.verified_file_updates["first.bin"] = {{"hash", "aaa"}};
+    store.record_processed_model(dir, first, p1, "side");
+
+    Provenance p2 = provenance("vendor/aux", "snap-aux-1");
+    p2.verified_file_updates["second.bin"] = {{"hash", "bbb"}};
+    store.record_processed_model(dir, second, p2, "side");
+
+    const auto after_both = read(dir);
+    check(after_both["processed_models"].contains(first.model_name) &&
+              after_both["processed_models"].contains(second.model_name),
+          "shared repository keeps both model records");
+    check(after_both["verified_files"].contains("first.bin") &&
+              after_both["verified_files"].contains("second.bin"),
+          "unrelated verified files are retained across pulls");
+
+    p1.verified_file_updates = {{"first.bin", nullptr}};
+    store.record_processed_model(dir, first, p1, "side");
+    const auto invalidated = read(dir);
+    check(!invalidated["verified_files"].contains("first.bin") &&
+              invalidated["verified_files"].contains("second.bin"),
+          "invalidating one file does not clear another file's attestation");
+}
+
 }  // namespace
 
 int main() {
@@ -175,6 +206,7 @@ int main() {
     test_a_v2_write_records_each_checkpoint_where_it_lands();
     test_two_models_share_an_auxiliary_file_without_quarrelling();
     test_a_moved_main_snapshot_keeps_the_one_it_left_named();
+    test_verified_updates_preserve_shared_provenance();
 
     if (!g_failures.empty()) {
         std::cerr << g_failures.size() << " failure(s)" << std::endl;

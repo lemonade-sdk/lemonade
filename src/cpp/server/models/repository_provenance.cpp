@@ -8,6 +8,7 @@
 #include "lemon/utils/safe_fs.h"
 
 #include <filesystem>
+#include <mutex>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -20,6 +21,8 @@ namespace {
 
 constexpr const char* kLog = "RepositoryProvenance";
 constexpr const char kProvenanceFile[] = ".lemonade_registry.json";
+// The provenance file is shared by pulls with different main repositories.
+std::mutex provenance_write_mutex;
 
 }  // namespace
 
@@ -111,6 +114,7 @@ std::string processed_snapshot_id(const fs::path& repo_cache_dir, const ModelInf
 // that filled it without any of them claiming the whole model.
 void record_processed_model(const fs::path& repo_cache_dir, const ModelInfo& info,
                               const Provenance& provenance, const std::string& checkpoint_type) {
+    std::lock_guard<std::mutex> guard(provenance_write_mutex);
     const fs::path provenance_path = repo_cache_dir / kProvenanceFile;
     const bool is_main = checkpoint_type.empty() || checkpoint_type == "main";
 
@@ -164,6 +168,22 @@ void record_processed_model(const fs::path& repo_cache_dir, const ModelInfo& inf
              {"snapshot_id", provenance.active_snapshot_id},
              {"processed_models", std::move(processed)}};
     if (!is_main) out["version"] = 2;
+    // Reuse the existing provenance write, updating only this pull's files.
+    if (previous.is_object() && previous.contains("verified_files") &&
+        previous["verified_files"].is_object()) {
+        out["verified_files"] = previous["verified_files"];
+    }
+    if (provenance.verified_file_updates.is_object()) {
+        if (!out.contains("verified_files")) out["verified_files"] = json::object();
+        for (auto it = provenance.verified_file_updates.begin();
+             it != provenance.verified_file_updates.end(); ++it) {
+            if (it.value().is_null()) {
+                out["verified_files"].erase(it.key());
+            } else {
+                out["verified_files"][it.key()] = it.value();
+            }
+        }
+    }
     utils::JsonUtils::save_to_file(out, utils::path_to_utf8(provenance_path));
 }
 
