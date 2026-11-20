@@ -262,7 +262,6 @@ void uninstall_container_backend(const std::string& recipe, const std::string& b
     }
 }
 
-// Probe the configured backend_source, not always GitHub.
 std::string latest_unavailable_on_modelscope(const std::string& repo) {
     return "Cannot resolve 'latest' release for " + repo +
            ": backend_source=modelscope mirrors only pinned versions. "
@@ -516,8 +515,7 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
 std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
                                                      bool throw_on_failure) {
     if (backend_source::is_modelscope(backends::BackendUtils::effective_backend_source())) {
-        // Answering "latest" would need the GitHub API this setting avoids, and a
-        // tag cached from an earlier GitHub lookup may not be mirrored.
+        // "latest" needs the GitHub API, and a tag cached from it may not be mirrored.
         if (throw_on_failure) {
             throw std::runtime_error(latest_unavailable_on_modelscope(repo));
         }

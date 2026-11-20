@@ -8180,8 +8180,7 @@ class EndpointTests(ServerTestBase):
                 },
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
-            # A mirrored file without a pinned or matching SHA-256 is refused, so
-            # success means the mirror served exactly the pinned file.
+            # Unpinned or mismatched files are refused, so success proves the hash.
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()["status"], "success")
         finally:

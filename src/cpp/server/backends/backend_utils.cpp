@@ -188,9 +188,7 @@ namespace lemon::backends {
         return utils::get_environment_variable_utf8("MODELSCOPE_ENDPOINT");
     }
 
-    // The ROCm pip wheels come from AMD's package index, which the ModelScope
-    // mirror does not carry, so under "auto" a ModelScope install goes straight
-    // to the mirrored TheRock tarball. An explicit "wheel" is still honoured.
+    // The mirror has no copy of AMD's wheel index, so "auto" installs the tarball.
     std::string BackendUtils::effective_rocm_install_method() {
         std::string method = "auto";
         if (auto* cfg = RuntimeConfig::global()) {
@@ -219,8 +217,7 @@ namespace lemon::backends {
 
         const std::string source = BackendUtils::effective_backend_source();
         if (backend_source::is_modelscope(source)) {
-            // The mirror publishes assets.json next to each release's files, so
-            // the wildcard resolves without touching the GitHub API.
+            // The mirror's assets.json lists the release, so no GitHub API call.
             const std::string manifest_url =
                 backend_source::release_manifest_url(modelscope_endpoint(), repo, tag);
             LOG(DEBUG, spec.log_name()) << "Resolving asset wildcard '" << pattern
@@ -2172,8 +2169,7 @@ namespace lemon::backends {
             http_progress_cb = utils::create_throttled_progress_callback();
         }
 
-        // AMD publishes no per-tarball checksums; checksums.therock in
-        // backend_versions.json holds hashes taken from AMD's server when pinning.
+        // AMD publishes no checksums; checksums.therock was hashed when pinning.
         utils::DownloadOptions therock_download_opts;
         therock_download_opts.expected_hash = backend_source::require_pinned_hash(
             source, lookup_expected_asset_hash("therock", arch, version, "", filename), filename);

@@ -1,20 +1,11 @@
 #!/usr/bin/env python3
-"""Mirror the backend files Lemonade downloads into one ModelScope Datasets repo.
+"""Mirror the backend files pinned in backend_versions.json to a ModelScope dataset,
+and keep the SHA-256 checksums pinned there in sync.
 
-Lemonade only downloads the versions pinned in
-src/cpp/resources/backend_versions.json, so that file is the list of what to copy.
-Every file keeps its GitHub name. The repo is https://modelscope.cn/datasets/<owner>/<name>
-and the path inside it is:
-
-    github/<owner>/<repo>/<tag>/<file>      for GitHub release files
-    therock/<version>/<file>                for the ROCm runtime from stable.repo.amd.com
-
-Each version folder also gets an assets.json with the name, size and SHA-256 of
-every file in it.
-
-lemond installs a file from the mirror only if backend_versions.json pins its
-SHA-256 (checksums.github and checksums.therock). --write-checksums keeps those
-sections equal to what is pinned; --check-checksums fails when they drift.
+Dataset layout, with GitHub's file names:
+    github/<owner>/<repo>/<tag>/<file>   GitHub release files
+    therock/<version>/<file>             ROCm runtime tarballs
+    <each folder>/assets.json            name, size and SHA-256 of its files
 
 Examples:
     python modelscope_mirror.py --set trial --dry-run
@@ -46,8 +37,7 @@ from pathlib import Path
 from urllib.parse import quote, urlparse
 
 try:
-    # Use the operating system's certificate store. Corporate networks that inspect
-    # TLS (Zscaler and similar) otherwise fail with CERTIFICATE_VERIFY_FAILED.
+    # Networks that inspect TLS need the OS certificate store.
     import truststore
 
     truststore.inject_into_ssl()
@@ -56,7 +46,7 @@ except ImportError:
 
 
 class NoCredentialsAcrossHosts(urllib.request.HTTPRedirectHandler):
-    """urllib forwards every header on a redirect; never carry credentials to another host."""
+    """urllib keeps every header on a redirect; drop credentials when the host changes."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         new = super().redirect_request(req, fp, code, msg, headers, newurl)
@@ -77,16 +67,13 @@ VERSIONS_PATH = "src/cpp/resources/backend_versions.json"
 THEROCK_URL = "https://stable.repo.amd.com/rocm/core/tarball/"
 USER_AGENT = "lemonade-modelscope-mirror"
 
-# Client GPU families. Datacenter targets (gfx942, gfx950) are left out on purpose.
+# Client GPUs only; datacenter targets are not mirrored.
 VLLM_FAMILIES = ["gfx110X", "gfx120X", "gfx1150", "gfx1151"]
-# Instinct (datacenter) TheRock targets are left out, like datacenter vLLM above.
 THEROCK_DATACENTER = {"gfx908", "gfx90a", "gfx94X-dcgpu", "gfx950-dcgpu"}
 THEROCK_OS = ["windows", "linux"]
 
-# Where each pinned backend comes from. This copies the repo names hardcoded in
-# Lemonade's get_install_params() functions. If backend_versions.json gains a key
-# that is not listed here, the script stops so the table gets updated.
-#   recipe -> {variant or "*": (github repo, group)}
+# recipe -> {variant or "*": (repo, group)}, copied from each backend's
+# get_install_params(). An unknown recipe stops the script so this gets updated.
 SOURCES: dict[str, dict[str, tuple[str, str]]] = {
     "llamacpp": {
         "cpu": ("ggml-org/llama.cpp", "llamacpp-upstream"),
@@ -106,7 +93,7 @@ SOURCES: dict[str, dict[str, tuple[str, str]]] = {
     "thenoise": {"*": ("lemonade-sdk/thenoise", "thenoise")},
     "moonshine": {"*": ("lemonade-sdk/moonshine-server-rocm", "small")},
     "onnxruntime": {"*": ("lemonade-sdk/ort-server", "small")},
-    # Personal repos of one contributor. Only mirrored with --include-pwilkin.
+    # Only with --include-pwilkin.
     "thinksound": {"*": ("pwilkin/thinksound.cpp", "pwilkin")},
     "acestep": {"*": ("pwilkin/acestep.cpp", "pwilkin")},
     "trellis": {"*": ("pwilkin/trellis.cpp", "pwilkin")},
@@ -121,7 +108,7 @@ NOT_BACKENDS = {
 }
 
 SETS = {
-    # Small and fast: three backends, about 0.5 GB. Use this for the first trial.
+    # Three small backends, about 0.5 GB.
     "trial": {
         "recipes": {"flm", "onnxruntime", "kokoro"},
         "therock": False,
@@ -159,7 +146,7 @@ def transient(e: Exception) -> bool:
 
 
 def with_retries(what: str, fn, any_error: bool = False):
-    """any_error: retry every exception, for SDK calls whose error types are not documented."""
+    """any_error: retry every exception (the ModelScope SDK documents none)."""
     for attempt in range(1, RETRIES + 1):
         try:
             return fn()
@@ -204,8 +191,7 @@ def head_size(url: str) -> int | None:
 
 
 def github_release(repo: str, tag: str) -> dict:
-    # "latest" is the newest stable release; "newest" also counts prereleases
-    # (release candidates), which is what a just-finished release build published.
+    # "newest" includes release candidates; "latest" does not.
     if tag == "newest":
         url = f"https://api.github.com/repos/{repo}/releases?per_page=1"
     elif tag == "latest":
@@ -236,7 +222,7 @@ def load_versions(path: str | None, ref: str | None) -> dict:
 
 
 def is_container_recipe(variants) -> bool:
-    """Container backends pin <tag>@sha256:<digest> images, which need a registry, not this mirror."""
+    """Image pins (<tag>@sha256:<digest>) belong in a registry, not this mirror."""
     pins = [t for v, t in variants.items() if v != "comment"]
     return bool(pins) and all(isinstance(t, str) and "@sha256:" in t for t in pins)
 
@@ -244,7 +230,7 @@ def is_container_recipe(variants) -> bool:
 def pinned_releases(
     versions: dict, recipes: set[str] | None, include_pwilkin: bool
 ) -> dict[tuple[str, str], str]:
-    """(GitHub repo, tag) -> mirror group, for every release file set versions pins."""
+    """(repo, tag) -> mirror group for each pinned GitHub release."""
     pins: dict[tuple[str, str], str] = {}
     for recipe, variants in versions.items():
         if (
@@ -305,7 +291,7 @@ def release_item(repo: str, tag: str, group: str) -> Item:
 
 
 def therock_item(versions: dict) -> Item:
-    """The client TheRock tarballs AMD publishes for the pinned version."""
+    """Client TheRock tarballs published for the pinned version."""
     ver = versions["therock"]["version"]
     item = Item(group="therock", folder=f"therock/{ver}", source=THEROCK_URL)
     # Same arch -> tarball name mapping Lemonade uses in install_therock().
@@ -370,7 +356,7 @@ def build_plan(
 
 
 def pinned_sha256(all_versions: list[dict], folder: str, name: str) -> str:
-    """The SHA-256 backend_versions.json pins for one mirrored file, or ""."""
+    """The pinned SHA-256 for one mirrored file, or ""."""
     kind, _, rest = folder.partition("/")
     found = set()
     for versions in all_versions:
@@ -388,7 +374,7 @@ def pinned_sha256(all_versions: list[dict], folder: str, name: str) -> str:
 
 
 def download(url: str, dest: Path, expect_sha: str, expect_size: int | None) -> str:
-    """Download url to dest, resuming after dropped connections, and check it."""
+    """Download with resume, then check size and SHA-256."""
     dest.unlink(missing_ok=True)
 
     def fetch() -> None:
@@ -402,7 +388,7 @@ def download(url: str, dest: Path, expect_sha: str, expect_size: int | None) -> 
             with open(dest, mode) as f:
                 while chunk := r.read(8 << 20):
                     f.write(chunk)
-        # A server that drops the connection mid-body ends read() without an error.
+        # A dropped connection ends read() early without raising.
         got = dest.stat().st_size
         if expect_size is not None and got < expect_size:
             raise ConnectionError(f"connection closed at {got} of {expect_size} bytes")
@@ -428,16 +414,11 @@ def download(url: str, dest: Path, expect_sha: str, expect_size: int | None) -> 
 def checksums_for(
     versions: dict, refresh_github: bool, hash_therock: bool, workdir: Path
 ) -> dict:
-    """checksums.github and checksums.therock for what versions pins.
+    """The checksums section for what versions pins.
 
-    GitHub entries come from the digests GitHub publishes. A hash already pinned
-    is kept unless refresh_github is set, so an upstream file replaced after
-    pinning shows up as drift instead of being trusted. Assets uploaded to a
-    release after it was pinned are added.
-
-    AMD publishes no TheRock checksums. When the pinned version already has
-    entries they are kept without contacting AMD; otherwise each tarball is
-    downloaded and hashed, and only when hash_therock is set.
+    Pinned hashes win over GitHub's unless refresh_github, so a replaced upstream
+    file shows as drift. AMD publishes no checksums: TheRock is hashed by
+    download, only for a newly pinned version and only with hash_therock.
     """
     old = versions.get("checksums", {})
     github: dict[str, dict[str, dict[str, str]]] = {}
@@ -464,9 +445,6 @@ def checksums_for(
     item = therock_item(versions)
     therock: dict[str, str] = {}
     for f in item.files:
-        if old_therock.get(f["name"]):
-            therock[f["name"]] = old_therock[f["name"]]
-            continue
         if not hash_therock:
             therock[f["name"]] = "(not hashed yet)"
             continue
@@ -481,12 +459,8 @@ def checksums_for(
 def describe_drift(
     want: dict, have: dict, prefix: str = "checksums"
 ) -> list[tuple[bool, str]]:
-    """(fatal, line) for each difference between the upstream and pinned checksums.
-
-    Fatal: a pinned hash upstream no longer matches, or a pinned release (or TheRock
-    version) with no checksums. Not fatal: a single asset upstream added or
-    removed after pinning, or entries left over for a version no longer pinned.
-    """
+    """(fatal, line) per difference. Fatal: a changed hash, or a pinned release
+    without checksums. A single asset added or removed upstream only warns."""
     lines = []
     for key in sorted(set(want) | set(have)):
         path = f"{prefix}.{key}"
@@ -542,7 +516,7 @@ REPO_TYPE = "dataset"  # files live in a ModelScope Datasets repo: modelscope.cn
 
 
 def file_url(repo: str, path: str, endpoint: str = "https://modelscope.cn") -> str:
-    """Direct download URL for one file in the dataset repo (what Lemonade will call)."""
+    """The URL lemond downloads one dataset file from."""
     return (
         f"{endpoint}/api/v1/datasets/{repo}/repo?Revision=master&FilePath={quote(path)}"
     )
@@ -553,10 +527,7 @@ def manifest_files(item: Item) -> list[dict]:
 
 
 def read_manifest(repo: str, folder: str, endpoint: str) -> list[dict] | None:
-    """The files a mirrored folder's assets.json lists, or None when it has none.
-
-    The dataset is public, so this sends no token.
-    """
+    """Files listed in a folder's assets.json, or None. Public, so no token."""
     try:
         body = http_get(file_url(repo, f"{folder}/assets.json", endpoint))
     except urllib.error.HTTPError as e:
@@ -599,8 +570,7 @@ def list_existing(api, repo: str) -> dict[str, int]:
 def missing_from(
     items: list[Item], existing: dict[str, int], read_manifests=None
 ) -> list[str]:
-    """Pinned files absent from ModelScope. With read_manifests (folder -> files or
-    None), an assets.json that does not list exactly the planned files counts too."""
+    """Planned files missing from ModelScope; with read_manifests, stale assets.json too."""
     missing = []
     for item in items:
         for f in item.files:
@@ -814,16 +784,14 @@ def main() -> int:
         manifest_path = f"{item.folder}/assets.json"
         if args.dry_run or not item.files:
             continue
-        # Compared on every run, so a manifest an interrupted run left behind is
-        # rewritten even though its files are already uploaded.
+        # Checked every run: an interrupted run can leave it stale.
         old = (
             read_manifest(args.repo, item.folder, args.endpoint)
             if manifest_path in existing
             else None
         )
         if old:
-            # A file with no pinned or published SHA-256 (an unpinned TheRock
-            # version) keeps the value computed when it was uploaded.
+            # Files with no known SHA-256 keep the one from their first upload.
             known = {o["name"]: o.get("sha256", "") for o in old}
             for f in item.files:
                 f["sha256"] = f["sha256"] or known.get(f["name"], "")

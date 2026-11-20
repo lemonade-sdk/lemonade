@@ -1,6 +1,5 @@
-# backend_source=modelscope installs a file only when backend_versions.json pins
-# its SHA-256, so a pin change must come with its checksums. Fix a failure with
-# `python tools/modelscope_mirror/modelscope_mirror.py --write-checksums`.
+# Pin changes need matching checksums. Fix with:
+#   python tools/modelscope_mirror/modelscope_mirror.py --write-checksums
 name: Backend checksums
 
 on:

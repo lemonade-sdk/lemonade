@@ -1,6 +1,3 @@
-// backend_source: where pinned backend release files are downloaded from.
-// Covers the URL builders in lemon/backends/backend_source.h and the
-// backend_source config key (default, env override, validation).
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
@@ -49,7 +46,6 @@ static void set_env(const char* name, const char* value) {
 }
 
 int main() {
-    // GitHub is unchanged and stays the default.
     check_eq(bs::release_asset_url("github", "", "ggml-org/llama.cpp", "b12109",
                                    "llama-b12109-bin-win-vulkan-x64.zip"),
              "https://github.com/ggml-org/llama.cpp/releases/download/b12109/"
@@ -60,7 +56,6 @@ int main() {
              "https://stable.repo.amd.com/rocm/core/tarball/therock-dist-windows-gfx1151-10.1.0.tar.gz",
              "github TheRock URL is AMD's tarball server");
 
-    // ModelScope keeps the GitHub file name under github/<repo>/<tag>/.
     check_eq(bs::release_asset_url("modelscope", "", "ggml-org/llama.cpp", "b12109",
                                    "llama-b12109-bin-win-vulkan-x64.zip"),
              "https://modelscope.cn/api/v1/datasets/lemonade-sdk/backends/repo?Revision=master"
@@ -91,7 +86,6 @@ int main() {
     check_eq(bs::reachability_probe_url("github", ""), "https://github.com/",
              "github reachability probe targets GitHub");
 
-    // Config key: default, accepted values, rejected values, env override.
     set_env("LEMONADE_BACKEND_SOURCE", nullptr);
     {
         RuntimeConfig config(json::object());
@@ -131,7 +125,6 @@ int main() {
         set_env("LEMONADE_BACKEND_SOURCE", nullptr);
     }
 
-    // A request's source applies to its own install only.
     {
         using lemon::backends::BackendUtils;
         check(BackendUtils::effective_backend_source() == "github",
@@ -155,7 +148,6 @@ int main() {
                   !bs::is_valid(""),
               "only github and modelscope are valid sources");
 
-        // Installs without a progress callback run on a download-manager worker.
         std::function<std::string(int)> job;
         {
             bs::ScopedOverride request_scope("modelscope");
@@ -174,7 +166,6 @@ int main() {
         check(after_job == "github", "the worker's source is restored after the job");
     }
 
-    // A mirrored file without a pinned checksum is refused; GitHub keeps the optional check.
     {
         const std::string pinned = "sha256:" + std::string(64, 'a');
         check_eq(bs::require_pinned_hash("modelscope", pinned, "f.zip"), pinned,

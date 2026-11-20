@@ -1,19 +1,9 @@
-# Copies the backend files Lemonade pins in backend_versions.json, plus the
-# Lemonade installers, to the lemonade-sdk/backends dataset on ModelScope, which
-# backend_source=modelscope downloads from. Files already on ModelScope are
-# skipped, so reruns are cheap.
+# Uploads the pinned backend files and Lemonade installers to the
+# lemonade-sdk/backends ModelScope dataset. A failed run opens an issue.
 #
-# Coverage: every run checks the pins of main, the newest stable release and the
-# newest release candidate (a release build's run checks that build's pins). A
-# run that leaves a pinned file missing, or finds checksums that do not match
-# the pins, fails and opens an issue; the next good run closes it.
-#
-# Releases are created with GITHUB_TOKEN, and events that token causes do not
-# start other workflows, so `release: published` would never fire here. The
-# finished release build (workflow_run) is the trigger instead.
-#
-# Only code from the default branch runs here. A release build's pins are read
-# as data from its commit, never checked out.
+# Triggered by the finished release build, not `release: published`: releases are
+# created with GITHUB_TOKEN, whose events start no workflows. Only default-branch
+# code runs; a release's pins are read as data, never checked out.
 name: Mirror backends to ModelScope
 
 on:
@@ -26,8 +16,7 @@ on:
   workflow_run:
     workflows: ["C++ Server Build, Test, and Release 🚀"]
     types: [completed]
-    # Only release builds: a PR build's no-op run would otherwise join the
-    # concurrency group and replace a queued release or scheduled run.
+    # A PR build's no-op run would replace a queued run in the concurrency group.
     branches: ["release-v*", "v[0-9]*"]
   schedule:
     - cron: "17 3 * * *"
@@ -76,8 +65,6 @@ jobs:
         run: python tools/modelscope_mirror/modelscope_mirror.py --check-checksums
 
   mirror:
-    # A workflow_run counts only when it is a successful release build: a push to a
-    # release-v* branch (release candidate) or a v* tag (stable release).
     if: >-
       github.repository == 'lemonade-sdk/lemonade' &&
       (github.event_name != 'workflow_run' ||
@@ -86,7 +73,7 @@ jobs:
         (startsWith(github.event.workflow_run.head_branch, 'release-v') ||
          startsWith(github.event.workflow_run.head_branch, 'v'))))
     runs-on: ubuntu-latest
-    # Holds MODELSCOPE_API_TOKEN; restrict its deployment branches to main.
+    # Holds MODELSCOPE_API_TOKEN, limited to main.
     environment: modelscope-mirror
     timeout-minutes: 350
     strategy:
