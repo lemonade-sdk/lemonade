@@ -11,7 +11,9 @@
 #include "lemon/backends/gufo/gufo_server.h"
 #include "lemon/backends/halogen/halogen_server.h"
 #include "lemon/utils/container_manager.h"
+#include "lemon/utils/path_utils.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -712,6 +714,27 @@ void test_descriptors_and_pins() {
           gufo_user && gufo_user->uid == 1000 && gufo_user->gid == 1000);
 }
 
+// A version marker holds only a tag and digest, so an install made before a
+// backend changed repositories still names an image under the old one.
+void test_installed_images() {
+    const fs::path cache = fs::temp_directory_path() / "lemonade-test-installed-images";
+    fs::remove_all(cache);
+    fs::create_directories(cache / "bin" / "gufo" / "rocm");
+    const std::string digest =
+        "sha256:2d7e9995ff2dfd7035f610a419b4f38d5d1604c0c7ab7f3b81415ad6f3e8db8b";
+    std::ofstream(cache / "bin" / "gufo" / "rocm" / "version.txt") << "rocm-10.0-gufo@" << digest
+                                                                    << "\n";
+    const std::string previous_cache = lemon::utils::get_cache_dir();
+    lemon::utils::set_cache_dir(cache.string());
+    const std::vector<std::string> images =
+        lemon::backends::BackendUtils::get_installed_backend_images("gufo", "rocm");
+    lemon::utils::set_cache_dir(previous_cache);
+    fs::remove_all(cache);
+    check("a gufo:rocm install from kyuz0's image still names that image",
+          std::find(images.begin(), images.end(),
+                    "docker.io/kyuz0/amd-strix-halo-toolboxes@" + digest) != images.end());
+}
+
 }  // namespace
 
 int main() {
@@ -732,6 +755,7 @@ int main() {
     test_gufo_argv();
     test_ds4_memory_plan();
     test_descriptors_and_pins();
+    test_installed_images();
 
     if (failures == 0) {
         std::printf("\nAll container manager checks passed.\n");
