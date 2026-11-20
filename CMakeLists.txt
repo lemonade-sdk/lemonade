@@ -2812,6 +2812,14 @@ if(BUILD_TESTING AND EXISTS "${_VIDEO_STORE_TEST_SRC}")
     add_cpp_ci_test(VideoStoreTest CI ON COMMAND test_video_store)
 endif()
 
+# A load that stops waiting for a shared backend install leaves the install running.
+set(_DOWNLOAD_WAIT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_download_wait.cpp")
+if(BUILD_TESTING AND EXISTS "${_DOWNLOAD_WAIT_TEST_SRC}")
+    add_executable(test_download_wait test/cpp/test_download_wait.cpp)
+    target_link_libraries(test_download_wait PRIVATE lemonade-server-core)
+    add_cpp_ci_test(DownloadWaitTest CI ON COMMAND test_download_wait)
+endif()
+
 set(_JOB_GRAPH_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_graph.cpp")
 if(BUILD_TESTING AND EXISTS "${_JOB_GRAPH_TEST_SRC}")
     add_executable(test_job_graph test/cpp/test_job_graph.cpp)

@@ -209,7 +209,7 @@ void SDServer::load(const std::string& model_name,
         device_type_ = DEVICE_CPU;
     }
 
-    backend_manager_->install_backend(sdcpp::spec()->recipe, backend);
+    backend_manager_->install_backend(sdcpp::spec()->recipe, backend, false, nullptr, load_cancel_flag());
 
     std::string model_path = model_info.resolved_path("main");
     std::string llm_path = model_info.resolved_path("text_encoder");
