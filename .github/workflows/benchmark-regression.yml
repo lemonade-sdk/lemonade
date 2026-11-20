@@ -255,13 +255,14 @@ jobs:
           forks = json.loads(Path("src/cpp/resources/benchmark_forks.json").read_text())["forks"]
           fork = next(f for f in forks if f["fork_id"] == os.environ["FORK_ID"])
           models = [m for m in os.environ["GROUP_MODELS"].split(",") if m]
-          runnable = bool(runnable_models(fork, models, forks))
+          runnable = runnable_models(fork, models, forks)
           exe = fork.get("binary_exe_linux", "llama-server")
           bindir = Path(os.environ["GITHUB_WORKSPACE"]) / ".." / "bench-binaries" / fork["fork_id"]
           binary = next(bindir.rglob(exe), None)
           recipe = fork.get("recipe", "llamacpp")
           for k, v in {
             "RUNNABLE": "1" if runnable else "0",
+            "BENCH_MODELS": ",".join(dict.fromkeys(runnable)),
             "BENCH_BACKEND_KEY": fork.get("install_as", fork["backend"]).lower(),
             "BENCH_RECIPE": recipe,
             "BENCH_CONFIG_SECTION": fork.get("config_section", recipe),
@@ -328,23 +329,34 @@ jobs:
               --port         "$PORT" \
               --use-installed \
               || { tail -n 80 "$LOGS_DIR/lemond.stderr.log" 2>/dev/null || true; }
-            if [ -f ci/results/regression_report.json ]; then
-              mkdir -p "ci/results/$FORK_ID"
-              mv ci/results/regression_report.json "ci/results/$FORK_ID/regression_report.json"
-            fi
             stop_lemond
 
             if ! grep -rqs "$BENCH_BIN_FILE" "$LOGS_DIR"; then
               echo "ERROR: no evidence lemond launched $BENCH_BIN_FILE — dropping $FORK_ID results"
-              purge_fresh_results; return 1
+              purge_fresh_results
+              rm -f ci/results/regression_report.json
+              return 1
             fi
-            fresh=$(comm -13 /tmp/pre-bench-files <(find "ci/results/$FORK_ID" -name 'run-*.json' 2>/dev/null | sort) | xargs -r grep -l '"tps"' 2>/dev/null | wc -l)
+            if [ -f ci/results/regression_report.json ]; then
+              mkdir -p "ci/results/$FORK_ID"
+              mv ci/results/regression_report.json "ci/results/$FORK_ID/regression_report.json"
+            fi
+            fresh_files=$(comm -13 /tmp/pre-bench-files <(find "ci/results/$FORK_ID" -name 'run-*.json' 2>/dev/null | sort) | xargs -r grep -l '"tps"' 2>/dev/null || true)
+            fresh=$(printf '%s\n' "$fresh_files" | grep -c . || true)
+            missing=()
+            IFS=',' read -ra expected <<< "$BENCH_MODELS"
+            for m in "${expected[@]}"; do
+              grep -qF "ci/results/$FORK_ID/$m/" <<< "$fresh_files" || missing+=("$m")
+            done
+            if [ ${#missing[@]} -gt 0 ]; then
+              echo "::warning title=No result for some models ($FORK_ID)::${missing[*]}"
+            fi
             if [ "$fresh" = "0" ]; then
               echo "ERROR: no model produced a valid result for $FORK_ID"
               grep -rniE "terminated with exit code|Failed to execute|llama-server failed to start" "$LOGS_DIR" | head -n 20 || true
               return 1
             fi
-            echo "$FORK_ID: $fresh model(s) produced results"
+            echo "$FORK_ID: $fresh of ${#expected[@]} model(s) produced results"
           }
 
           FAILED=()
@@ -410,6 +422,7 @@ jobs:
         run: python3 .github/scripts/validate_backend_bench.py --grade-code artifacts
 
       - name: Upload graded results
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: graded-results-${{ github.run_id }}
@@ -432,6 +445,27 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           pattern: graded-results-*
+          path: artifacts
+
+      - name: Check graded results
+        id: graded
+        run: |
+          if find artifacts -name 'run-*.json' 2>/dev/null | grep -q .; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No graded results; publishing raw bench results (code-test accuracy left out)"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Speed results must survive a failed grading job. Run files that still
+      # hold ungraded code answers keep them, so a later night's grade-code
+      # grades them from the restored history; until then their accuracy is
+      # shown as unavailable.
+      - name: Download raw bench results (fallback)
+        if: steps.graded.outputs.found != 'true'
+        uses: actions/download-artifact@v7
+        with:
+          pattern: bench-results-*
           path: artifacts
 
       - name: Merge results into history branch
@@ -477,7 +511,7 @@ jobs:
       - name: Aggregate leaderboard (full history)
         run: |
           python3 - << 'PY'
-          import json, os, re
+          import hashlib, json, os, re
           from pathlib import Path
           from datetime import datetime, timezone
           # Full history, so the leaderboard keeps entries for forks that were
@@ -525,6 +559,12 @@ jobs:
             if f.get("model_aliases"):
               MODEL_ALIASES.update(f["model_aliases"])
               aliased_forks.add(f["fork_id"])
+
+          def graded_acc(me):
+            # Code answers not graded yet leave a provisional score; show none.
+            acc = me.get("accuracy") or {}
+            return {} if acc.get("pending_code") else acc
+
           for run_file in sorted(results_dir.rglob("run-*.json")):
             if "regression" in run_file.name:
               continue
@@ -600,10 +640,11 @@ jobs:
                     "ttft_ms_mean": round(ttft_block.get("mean", 0), 2),
                     "ttft_ms_best": round(ttft_block["min"], 2) if ttft_block.get("min") else None,
                     "pp_tps": pp_tps,
-                    "accuracy": (me.get("accuracy") or {}).get("score"),
-                    "accuracy_passed": (me.get("accuracy") or {}).get("passed"),
-                    "accuracy_total": (me.get("accuracy") or {}).get("total"),
-                    "accuracy_errors": len((me.get("accuracy") or {}).get("errors") or []),
+                    "accuracy": graded_acc(me).get("score"),
+                    "accuracy_passed": graded_acc(me).get("passed"),
+                    "accuracy_total": graded_acc(me).get("total"),
+                    "accuracy_errors": len(graded_acc(me).get("errors") or []),
+                    "accuracy_questions_version": graded_acc(me).get("questions_version"),
                     "input_tokens": sc.get("input_tokens"),
                     "vram_peak_gb": sc.get("vram_peak_gb"),
                     "timestamp": me.get("timestamp", data.get("timestamp")),
@@ -635,20 +676,23 @@ jobs:
               continue
             fid = rd.get("fork_id")
             for me in rd.get("models") or []:
-              acc = me.get("accuracy")
+              acc = graded_acc(me)
               mdl = MODEL_ALIASES.get(me.get("model"), me.get("model"))
               src = latest_acc.get((mdl, fid))
               if acc and src and src.get("run_id") == rd.get("run_id"):
                 accuracy_detail.setdefault(mdl, {})[fid] = {
                   "passed": acc["passed"], "total": acc["total"],
+                  "questions_version": acc.get("questions_version"),
                   "errors": len(acc.get("errors") or []),
                   "health": acc.get("health"),
                   "failed": {f["id"]: {"response": f["response"], "cut_off": f.get("cut_off", False)}
                              for f in acc.get("failures", [])},
                 }
           accuracy_questions = {}
+          accuracy_questions_version = None
           qpath = Path(".github/scripts/accuracy_questions.json")
           if qpath.exists():
+            accuracy_questions_version = hashlib.sha256(qpath.read_bytes()).hexdigest()[:12]
             def _expected(g):
               t = g["type"]
               if t == "one_of":
@@ -719,7 +763,8 @@ jobs:
                     "ttft_ms_mean": round(ttft_block.get("mean", 0), 2),
                     "ttft_ms_best": round(ttft_block["min"], 2) if ttft_block.get("min") else None,
                     "pp_tps": pp_tps,
-                    "accuracy": (me.get("accuracy") or {}).get("score"),
+                    "accuracy": graded_acc(me).get("score"),
+                    "accuracy_questions_version": graded_acc(me).get("questions_version"),
                     "vram_peak_gb": sc.get("vram_peak_gb"),
                     "input_tokens": sc.get("input_tokens"),
                     "quant": quant,
@@ -764,6 +809,7 @@ jobs:
             "systems": list(systems.values()),
             "experimental_forks": experimental_forks,
             "accuracy_questions": accuracy_questions,
+            "accuracy_questions_version": accuracy_questions_version,
             "accuracy_detail": accuracy_detail,
             "by_model_scenario": leaderboard,
             "history": history,

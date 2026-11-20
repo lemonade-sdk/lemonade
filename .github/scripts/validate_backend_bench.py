@@ -20,6 +20,7 @@ import json
 import os
 import platform
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -38,6 +39,9 @@ BACKEND_VERSIONS_PATH = Path("src/cpp/resources/backend_versions.json")
 LEMOND_BACKEND_VERSIONS_PATH = Path("build/resources/backend_versions.json")
 SCENARIO_FILE = Path("src/cpp/resources/bench_scenarios.json")
 ACCURACY_FILE = Path(__file__).with_name("accuracy_questions.json")
+# Each chat request may wait 600 s, so a hung server could otherwise eat the whole group job.
+# Stop asking after this many requests in a row get no reply.
+MAX_TRANSPORT_FAILURES = 3
 # ctx window -> scenarios run at it. Forks override via "scenario_ctx".
 SCENARIO_CTX = {
     4096: ["context-4k"],
@@ -647,24 +651,48 @@ def _python_block(text: str) -> str:
     return blocks[-1] if blocks else _clean(text)
 
 
-_SECRET_ENV = re.compile(r"TOKEN|SECRET|PASSWORD|KEY|CREDENTIAL", re.I)
+_CODE_ENV_KEEP = ("PATH", "LANG", "LC_ALL", "SYSTEMROOT")
+
+
+def _limit_resources() -> None:
+    import resource
+
+    for limit, value in (
+        (resource.RLIMIT_CPU, 10),
+        (resource.RLIMIT_AS, 1 << 30),
+        (resource.RLIMIT_FSIZE, 10 << 20),
+    ):
+        resource.setrlimit(limit, (value, value))
 
 
 def _run_python_tests(code: str, tests: list[str]) -> bool:
+    # Exit code 0 alone is not enough: generated code that calls sys.exit(0) or
+    # unittest.main() ends before the tests run. Only a marker the code cannot
+    # predict, written after the last test, proves every test ran.
+    marker = f"tests-done-{secrets.token_hex(16)}"
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "solution.py"
-        path.write_text(code + "\n\n" + "\n".join(tests) + "\n", encoding="utf-8")
+        footer = f"__import__('os').write(1, b'\\n{marker}\\n')"
+        path.write_text(
+            "\n".join([code, "", *tests, footer, ""]),
+            encoding="utf-8",
+            errors="replace",
+        )
+        env = {k: os.environ[k] for k in _CODE_ENV_KEEP if k in os.environ}
+        env.update(HOME=tmp, TMPDIR=tmp)
         try:
             r = subprocess.run(
                 [sys.executable, "-I", str(path)],
                 cwd=tmp,
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 timeout=10,
-                env={k: v for k, v in os.environ.items() if not _SECRET_ENV.search(k)},
+                env=env,
+                preexec_fn=None if IS_WINDOWS else _limit_resources,
             )
         except subprocess.TimeoutExpired:
             return False
-        return r.returncode == 0
+        return r.returncode == 0 and marker.encode() in r.stdout
 
 
 def _arg_matches(expected, actual) -> bool:
@@ -766,7 +794,17 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
     repeat = set(suite.get("health_checks", {}).get("repeat", []))
 
     passed, failures, errors, pending_code = 0, [], [], []
-    replies, nondeterministic, empty, cut = {}, [], 0, 0
+    replies, nondeterministic, repeat_errors, empty, cut = {}, [], [], 0, 0
+    transport_failures = 0
+
+    def stalled() -> bool:
+        return transport_failures >= MAX_TRANSPORT_FAILURES
+
+    def skip(items: list[dict]) -> None:
+        errors.extend(
+            {"id": q["id"], "error": "skipped: server stopped responding"}
+            for q in items
+        )
 
     def ask(q: dict) -> dict:
         body = {
@@ -782,6 +820,9 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
         return _lemond_post(base_url, "/api/v1/chat/completions", body, 600)
 
     for ctx, items in sorted(by_ctx.items()):
+        if stalled():
+            skip(items)
+            continue
         load = {"model_name": model, "save_options": False, "ctx_size": ctx}
         if fork.get("recipe", "llamacpp") == "llamacpp":
             load["llamacpp_backend"] = fork.get("install_as", fork["backend"])
@@ -793,15 +834,25 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
                 {"id": q["id"], "error": f"load failed: {e}"[:200]} for q in items
             )
             continue
-        for q in items:
+        for i, q in enumerate(items):
+            if stalled():
+                print(
+                    f"    [accuracy] {model}: {transport_failures} requests in a row "
+                    f"got no response; skipping the remaining questions"
+                )
+                skip(items[i:])
+                break
             try:
                 r = ask(q)
+                transport_failures = 0
             except urllib.error.HTTPError as e:
+                transport_failures = 0
                 if e.code >= 500:
                     errors.append({"id": q["id"], "error": f"HTTP {e.code}"})
                     continue
                 r = {"choices": [{"message": {"content": f"<HTTP {e.code} rejected>"}}]}
             except Exception as e:
+                transport_failures += 1
                 errors.append({"id": q["id"], "error": str(e)[:200]})
                 continue
             choice = (r.get("choices") or [{}])[0]
@@ -840,11 +891,13 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
                     )
                     if second != replies[q["id"]]:
                         nondeterministic.append(q["id"])
-                except Exception:
-                    pass
+                except Exception as e:
+                    repeat_errors.append(q["id"])
+                    if not isinstance(e, urllib.error.HTTPError):
+                        transport_failures += 1
 
-    total = len(suite["questions"]) - len(errors)
-    note = f" ({len(errors)} request errors)" if errors else ""
+    total = len(suite["questions"])
+    note = f" ({len(errors)} request errors, counted as not passed)" if errors else ""
     print(
         f"    [{model}] accuracy = {passed}/{total}{note}, "
         f"{len(pending_code)} code tests graded separately",
@@ -860,6 +913,7 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
         "pending_code": pending_code,
         "health": {
             "nondeterministic": nondeterministic,
+            "repeat_errors": repeat_errors,
             "empty_replies": empty,
             "cut_off": cut,
         },
@@ -884,9 +938,14 @@ def grade_pending_code(root: Path) -> None:
             if not acc or not acc.get("pending_code"):
                 continue
             for item in acc.pop("pending_code"):
-                if item["id"] in tests and _run_python_tests(
-                    item["code"], tests[item["id"]]
-                ):
+                try:
+                    ok = item["id"] in tests and _run_python_tests(
+                        item["code"], tests[item["id"]]
+                    )
+                except Exception as e:
+                    print(f"{f}: grading {item['id']} crashed ({e}); counted as failed")
+                    ok = False
+                if ok:
                     acc["passed"] += 1
                 else:
                     acc["failures"].append(

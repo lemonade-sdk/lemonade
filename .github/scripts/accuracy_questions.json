@@ -1,15 +1,15 @@
 {
   "version": "3",
   "_doc": {
-    "purpose": "Tier-1 nightly accuracy suite: run on every hot model x every backend. The verdict compares backends with each other (a deviation = a question this backend missed that >=75% of the other backends got right), so items should be stable and unambiguous rather than hard.",
-    "versioning": "When adopted, results are keyed by a content hash of this file, not by the 'version' string, so edited questions are never compared with old results.",
+    "purpose": "Tier-1 nightly accuracy suite: run on every hot model x every backend. Each backend is scored on its own: the run publishes passed/total (total is always the full question count; request errors count as not passed and are listed separately), the failed answers, and the question metadata. Items should be stable and unambiguous rather than hard.",
+    "versioning": "Each result records questions_version, a content hash of this file (first 12 hex chars of its SHA-256). The report publishes it with every score, plus the hash of the current file, so results graded by an edited file can be told apart. The 'version' string is informational only.",
     "default_system_prompt": "Used for every item that has no 'system' of its own.",
     "grade_types": {
       "number": "Last number on the final 'Answer:' line equals 'value' (+/- 'tolerance').",
       "one_of": "Final answer equals one of 'values' (case/punctuation-insensitive), or contains one as a whole word when the answer is short.",
       "regex": "Final answer fully matches 'pattern' (case-sensitive).",
       "json": "First JSON value in the reply equals 'value'.",
-      "python_tests": "The last ```python block in the reply is run in a sandboxed subprocess (10 s timeout, no network) followed by 'tests'; pass = exit code 0.",
+      "python_tests": "The last ```python block in the reply is run, followed by 'tests', in a separate 'python -I' process on a throwaway GitHub-hosted VM that holds no secrets: minimal environment, no stdin, 10 s timeout, CPU/memory/file-size limits. It is not network-isolated. Pass = every test ran (a per-run marker printed after the tests is seen) and the exit code is 0.",
       "tool_call": "The reply contains exactly one tool call to 'name' whose arguments match 'args': strings case-insensitive equal, numbers equal, lists compared as case-insensitive sets, {'contains': s} = substring.",
       "no_tool_call": "The reply makes no tool call and its final answer passes the nested 'answer' grade."
     },
@@ -178,8 +178,7 @@
       "prompt": "How many kilometers are in 5 miles, to one decimal place?",
       "grade": {
         "type": "number",
-        "value": 8.05,
-        "tolerance": 0.06
+        "value": 8.0
       }
     },
     {
