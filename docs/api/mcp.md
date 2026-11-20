@@ -392,9 +392,9 @@ Returns a result from lemonade_install_backend, including structured content on 
 
 | Argument | Required | Schema | Description |
 |---|:---:|---|---|
-| `backend` | yes | `{"type":"string"}` | Argument backend for the lemonade_install_backend tool. |
+| `backend` | yes | `{"pattern":"\\S","type":"string"}` | Argument backend for the lemonade_install_backend tool. |
 | `force` | no | `{"type":"boolean"}` | Override an unsupported-state guard when the underlying API permits it. |
-| `recipe` | yes | `{"type":"string"}` | Argument recipe for the lemonade_install_backend tool. |
+| `recipe` | yes | `{"pattern":"\\S","type":"string"}` | Argument recipe for the lemonade_install_backend tool. |
 
 ### `lemonade_list_models`
 

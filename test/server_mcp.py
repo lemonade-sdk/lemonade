@@ -867,6 +867,9 @@ class McpGatewayTests(ServerTestBase):
             ),
         )
         by_name = {tool["name"]: tool for tool in listed}
+        install_props = by_name["lemonade_install_backend"]["inputSchema"]["properties"]
+        for name in ("recipe", "backend"):
+            self.assertEqual(install_props[name]["pattern"], r"\S")
         expected_annotations = {
             "lemonade_list_models": {
                 "readOnlyHint": True,
