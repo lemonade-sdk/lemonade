@@ -752,9 +752,9 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         return false;
     }
     if (cwsr_desc && cwsr_desc->container_for(backend)) {
-        const std::string image = BackendUtils::get_installed_backend_image(recipe, backend);
-        if (image.empty()) return false;
-        return utils::ContainerManager::global().has_image(image);
+        return !BackendUtils::get_present_installed_images(utils::ContainerManager::global(), recipe,
+                                                           backend)
+                    .empty();
     }
 
     // Find the managed binary, then let the backend's ops decide installed-ness

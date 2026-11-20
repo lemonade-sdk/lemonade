@@ -521,6 +521,17 @@ namespace lemon::backends {
         return images;
     }
 
+    std::vector<std::string> BackendUtils::get_present_installed_images(
+        const utils::ContainerManager& manager, const std::string& recipe, const std::string& backend) {
+        std::vector<std::string> present;
+        for (const auto& image : get_installed_backend_images(recipe, backend)) {
+            if (manager.has_image(image)) {
+                present.push_back(image);
+            }
+        }
+        return present;
+    }
+
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
         std::string resolved_backend = backend;
         if (recipe_has_rocm_channels(recipe) && backend == "rocm") {

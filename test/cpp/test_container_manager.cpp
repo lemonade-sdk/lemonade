@@ -68,6 +68,7 @@ struct FakeHost {
     std::map<std::string, std::string> files = {{"/etc/os-release", "ID=ubuntu\nID_LIKE=debian\n"}};
     std::map<std::string, std::string> env;
     bool root = false;
+    std::set<std::string> images;  // references `image inspect` finds
     // How many commands the manager has run on the host.
     mutable int commands = 0;
     mutable std::vector<std::vector<std::string>> runs;
@@ -96,6 +97,8 @@ struct FakeHost {
                 result.output = podman_rootless + " " + network_backend + " " + oci_runtime + "\n";
             } else if (argv.size() > 1 && argv[1] == "network") {
                 result.exit_code = 0;
+            } else if (argv.size() > 2 && argv[1] == "image" && argv[2] == "inspect") {
+                result.exit_code = images.count(argv.back()) ? 0 : 1;
             } else if (argv.front() == "getsubids") {
                 const auto it = subids.find(join({argv.begin() + 1, argv.end()}));
                 result.exit_code = it == subids.end() ? 1 : 0;
@@ -720,19 +723,37 @@ void test_installed_images() {
     const fs::path cache = fs::temp_directory_path() / "lemonade-test-installed-images";
     fs::remove_all(cache);
     fs::create_directories(cache / "bin" / "gufo" / "rocm");
-    const std::string digest =
-        "sha256:2d7e9995ff2dfd7035f610a419b4f38d5d1604c0c7ab7f3b81415ad6f3e8db8b";
-    std::ofstream(cache / "bin" / "gufo" / "rocm" / "version.txt") << "rocm-10.0-gufo@" << digest
-                                                                    << "\n";
     const std::string previous_cache = lemon::utils::get_cache_dir();
     lemon::utils::set_cache_dir(cache.string());
-    const std::vector<std::string> images =
-        lemon::backends::BackendUtils::get_installed_backend_images("gufo", "rocm");
+    using lemon::backends::BackendUtils;
+
+    check("a backend with no version marker names no installed image",
+          BackendUtils::get_installed_backend_images("gufo", "rocm").empty());
+
+    const std::string digest =
+        "sha256:2d7e9995ff2dfd7035f610a419b4f38d5d1604c0c7ab7f3b81415ad6f3e8db8b";
+    const std::string current = "ghcr.io/gufo-org/toolboxes/gufo-runtime@" + digest;
+    const std::string former = "docker.io/kyuz0/amd-strix-halo-toolboxes@" + digest;
+    std::ofstream(cache / "bin" / "gufo" / "rocm" / "version.txt") << "rocm-10.0-gufo@" << digest
+                                                                    << "\n";
+    check("an install's digest is named under the current repository, then the former one",
+          BackendUtils::get_installed_backend_images("gufo", "rocm") ==
+              std::vector<std::string>{current, former});
+
+    FakeHost host;
+    host.tools = {"podman"};
+    host.images = {former, "docker.io/kyuz0/amd-strix-halo-toolboxes@sha256:other"};
+    check("a gufo:rocm install from kyuz0's image is found under that repository only",
+          BackendUtils::get_present_installed_images(ContainerManager(host.host()), "gufo",
+                                                     "rocm") == std::vector<std::string>{former});
+    host.images = {};
+    check("an install whose image is gone has no present image",
+          BackendUtils::get_present_installed_images(ContainerManager(host.host()), "gufo",
+                                                     "rocm")
+              .empty());
+
     lemon::utils::set_cache_dir(previous_cache);
     fs::remove_all(cache);
-    check("a gufo:rocm install from kyuz0's image still names that image",
-          std::find(images.begin(), images.end(),
-                    "docker.io/kyuz0/amd-strix-halo-toolboxes@" + digest) != images.end());
 }
 
 }  // namespace
