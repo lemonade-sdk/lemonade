@@ -192,7 +192,9 @@ public:
                 *ctx_.router, [loader](const std::string& m) {
                     loader->ensure_loaded(m, json::object(), LoadPurpose::RoutingDependency);
                 });
-            RoutingPolicyEngine engine(std::move(policy), std::move(services));
+            CostServices cost_services = make_router_cost_services(*ctx_.router);
+            RoutingPolicyEngine engine(std::move(policy), std::move(services),
+                                       std::move(cost_services));
 
             RouteContext route_context;
             route_context.input = prompt;
