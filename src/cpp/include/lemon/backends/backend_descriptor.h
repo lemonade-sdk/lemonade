@@ -47,6 +47,9 @@ struct ContainerPolicy {
     std::vector<std::string> devices;   // device nodes the container can open, e.g. "/dev/dri"
     std::vector<std::string> cap_add;   // capabilities given back after --cap-drop=all
     std::optional<utils::ContainerUser> user;  // nullopt when the image runs as root
+    // The tag "<backend>_bin": "latest" follows. "" follows the tag of the
+    // backend's backend_versions.json pin, for images whose tags move.
+    std::string latest_tag;
 };
 
 // What one backend is and where it comes from, shown to people choosing among

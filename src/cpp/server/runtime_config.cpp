@@ -1,5 +1,6 @@
 #include "lemon/runtime_config.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/models/configured_catalog.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
@@ -38,7 +39,8 @@ RuntimeConfig* RuntimeConfig::global() {
 // a backend section.
 static bool is_backend_name(const std::string& key) {
     for (const auto* desc : lemon::backends::all_descriptors()) {
-        if (!desc->binary.empty() && desc->effective_config_section() == key) {
+        if ((!desc->binary.empty() || !desc->containers.empty()) &&
+            desc->effective_config_section() == key) {
             return true;
         }
     }
@@ -74,6 +76,17 @@ static bool is_backend_variant_key(const std::string& config_section,
         }
         for (const auto& row : desc->support) {
             if (row.backend == variant) return true;
+        }
+    }
+    return false;
+}
+
+// True when a "<variant>_bin" key names a backend that runs from an image.
+static bool is_container_bin_key(const std::string& config_section, const std::string& key) {
+    const std::string variant = key.substr(0, key.size() - 4);
+    for (const auto* desc : lemon::backends::all_descriptors()) {
+        if (desc->effective_config_section() == config_section && desc->container_for(variant)) {
+            return true;
         }
     }
     return false;
@@ -1179,7 +1192,13 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
         if (!value.is_string()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
         }
-        validate_bin_path(backend, key, value.get<std::string>());
+        if (!is_container_bin_key(backend, key)) {
+            validate_bin_path(backend, key, value.get<std::string>());
+        } else if (!lemon::backends::is_container_bin_value(value.get<std::string>())) {
+            throw std::invalid_argument(
+                "'" + backend + "." + key + "' must be \"builtin\", \"latest\", an image tag, "
+                "or <tag>@sha256:<digest>");
+        }
     }
     else if (key == "prefer_system") {
         if (!value.is_boolean()) {
