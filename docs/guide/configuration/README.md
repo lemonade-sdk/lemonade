@@ -252,7 +252,7 @@ lemonade config set default_model_source=modelscope
 
 To use ModelScope for one install without changing the config, pass `--source modelscope` to `lemonade backends install` (or `"source": "modelscope"` to `POST /v1/install`), or `--backend-source modelscope` to `lemonade load` and `lemonade run` (`"backend_source"` on `POST /v1/load`) for a backend that a load installs. The same setting is available as the `LEMONADE_BACKEND_SOURCE` environment variable. `MODELSCOPE_ENDPOINT` moves the ModelScope API, as it does for model pulls. The dataset is public, so backend downloads send no ModelScope token. With `backend_source=modelscope`:
 
-- Every file is checked against the SHA-256 that `backend_versions.json` pins for it (`checksums.github`, taken from the digests GitHub publishes, and `checksums.therock`, hashed from AMD's server). A file with no pinned SHA-256 is not installed from the mirror.
+- Every file is checked against the SHA-256 that `backend_versions.json` pins for it in `checksums.modelscope` (taken from the digests GitHub publishes, and hashed from AMD's server for TheRock). A file with no pinned SHA-256 is not installed from the mirror. Downloads from GitHub do not use these hashes.
 - Only pinned versions are available. A `*_bin` value of `latest` fails with a clear error; use `builtin` or a pinned tag.
 - `rocm_install_method=auto` installs the TheRock tarball, because the mirror does not carry AMD's pip wheel index. A ROCm runtime already installed from wheels keeps being used, and an explicit `wheel` is still honoured.
 - Container backends still pull their images from their own registries.

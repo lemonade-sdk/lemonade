@@ -13,10 +13,12 @@ import modelscope_mirror as m
 VERSIONS = {
     "comment": "x",
     "checksums": {
-        "github": {
-            "lemonade-sdk/ort-server": {"0.4.0": {"a.zip": "sha256:" + "a" * 64}}
+        "modelscope": {
+            "github": {
+                "lemonade-sdk/ort-server": {"0.4.0": {"a.zip": "sha256:" + "a" * 64}}
+            },
+            "therock": {"10.1.0": {"t.tar.gz": "sha256:" + "b" * 64}},
         },
-        "therock": {"10.1.0": {"t.tar.gz": "sha256:" + "b" * 64}},
     },
     "llamacpp": {
         "comment": "c",
@@ -46,6 +48,12 @@ class PinsTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             m.pinned_releases({"newbackend": {"cpu": "v1"}}, None, True)
 
+    def test_hand_pins_count_for_github_files(self):
+        hand = {
+            "checksums": {"github": {"o/r": {"v1": {"f.zip": "sha256:" + "d" * 64}}}}
+        }
+        self.assertEqual(m.pinned_sha256([hand], "github/o/r/v1", "f.zip"), "d" * 64)
+
     def test_pinned_sha256_reads_both_sections(self):
         self.assertEqual(
             m.pinned_sha256(
@@ -60,7 +68,11 @@ class PinsTest(unittest.TestCase):
 
     def test_pins_that_disagree_stop_the_mirror(self):
         other = {
-            "checksums": {"therock": {"10.1.0": {"t.tar.gz": "sha256:" + "c" * 64}}}
+            "checksums": {
+                "modelscope": {
+                    "therock": {"10.1.0": {"t.tar.gz": "sha256:" + "c" * 64}}
+                }
+            }
         }
         with self.assertRaises(SystemExit):
             m.pinned_sha256([VERSIONS, other], "therock/10.1.0", "t.tar.gz")
@@ -107,7 +119,7 @@ class PinsTest(unittest.TestCase):
             out["github"]["lemonade-sdk/ort-server"]["0.4.0"],
             {"a.zip": "sha256:" + "a" * 64, "late.zip": "sha256:" + "e" * 64},
         )
-        self.assertEqual(out["therock"], VERSIONS["checksums"]["therock"])
+        self.assertEqual(out["therock"], VERSIONS["checksums"]["modelscope"]["therock"])
 
 
 class ManifestTest(unittest.TestCase):

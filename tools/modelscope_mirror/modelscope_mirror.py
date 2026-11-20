@@ -355,19 +355,27 @@ def build_plan(
     return items
 
 
+def generated_checksums(versions: dict) -> dict:
+    """checksums.modelscope: the hashes --write-checksums maintains."""
+    return versions.get("checksums", {}).get("modelscope", {})
+
+
 def pinned_sha256(all_versions: list[dict], folder: str, name: str) -> str:
     """The pinned SHA-256 for one mirrored file, or ""."""
     kind, _, rest = folder.partition("/")
     found = set()
     for versions in all_versions:
-        section = versions.get("checksums", {}).get(kind, {})
+        sections = [generated_checksums(versions).get(kind, {})]
         if kind == "github":
-            repo, _, tag = rest.rpartition("/")
-            value = section.get(repo, {}).get(tag, {}).get(name, "")
-        else:
-            value = section.get(rest, {}).get(name, "")
-        if value:
-            found.add(value.removeprefix("sha256:"))
+            sections.append(versions.get("checksums", {}).get("github", {}))
+        for section in sections:
+            if kind == "github":
+                repo, _, tag = rest.rpartition("/")
+                value = section.get(repo, {}).get(tag, {}).get(name, "")
+            else:
+                value = section.get(rest, {}).get(name, "")
+            if value:
+                found.add(value.removeprefix("sha256:"))
     if len(found) > 1:
         sys.exit(f"{folder}/{name}: the pins disagree on its SHA-256: {sorted(found)}")
     return found.pop() if found else ""
@@ -420,7 +428,7 @@ def checksums_for(
     file shows as drift. AMD publishes no checksums: TheRock is hashed by
     download, only for a newly pinned version and only with hash_therock.
     """
-    old = versions.get("checksums", {})
+    old = generated_checksums(versions)
     github: dict[str, dict[str, dict[str, str]]] = {}
     for repo, tag in sorted(pinned_releases(versions, None, True)):
         item = release_item(repo, tag, "")
@@ -481,10 +489,11 @@ def describe_drift(
 def update_checksums(path: Path, check: bool, refresh: bool, workdir: Path) -> int:
     versions = json.loads(path.read_text(encoding="utf-8"))
     want = checksums_for(versions, refresh or check, not check, workdir)
-    have = versions.get("checksums", {})
+    have = generated_checksums(versions)
     drift = describe_drift(
         {k: v for k, v in want.items() if k != "comment"},
         {k: v for k, v in have.items() if k != "comment"},
+        "checksums.modelscope",
     )
     if check:
         fatal = [line for is_fatal, line in drift if is_fatal]
@@ -504,7 +513,7 @@ def update_checksums(path: Path, check: bool, refresh: bool, workdir: Path) -> i
             return 1
         log(f"{path}: checksums match every pinned file.")
         return 0
-    versions["checksums"] = want
+    versions.setdefault("checksums", {})["modelscope"] = want
     path.write_text(
         json.dumps(versions, indent=2) + "\n", encoding="utf-8", newline="\n"
     )
