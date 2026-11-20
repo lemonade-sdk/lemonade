@@ -75,7 +75,7 @@ public:
             write_unknown_job(res);
             return;
         }
-        res.set_content(job->dump(), "application/json");
+        res.set_content(job->to_api_json().dump(), "application/json");
     }
 };
 

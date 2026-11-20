@@ -28,7 +28,7 @@ public:
 
     std::string create(const std::string& name, std::vector<StepRecord> steps, json inputs);
     json list() const;
-    std::optional<json> get(const std::string& id) const;
+    std::optional<Job> get(const std::string& id) const;
     bool pause(const std::string& id);
     bool interrupt(const std::string& id);
     bool resume(const std::string& id);

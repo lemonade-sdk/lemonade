@@ -19,9 +19,11 @@ const RouteError kVideoNotReady{409, "", "the video's status is not yet `complet
 const RouteError kVideoNoOutput{500, "", "the video completed without an encoded clip"};
 
 std::optional<nlohmann::json> find_video(ServerContext& ctx, const std::string& id) {
-    auto job = ctx.job_manager->get(id);
-    if (!job || !video_store::is_video_job(*job)) return std::nullopt;
-    return job;
+    const auto job = ctx.job_manager->get(id);
+    if (!job) return std::nullopt;
+    nlohmann::json record = job->to_api_json();
+    if (!video_store::is_video_job(record)) return std::nullopt;
+    return record;
 }
 
 void write_unknown_video(httplib::Response& res) {

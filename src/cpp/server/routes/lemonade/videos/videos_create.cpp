@@ -148,7 +148,7 @@ public:
             json body = {{"id", id},
                          {"status", "queued"},
                          {"model", model}};
-            if (job && job->contains("created_at")) body["created_at"] = (*job)["created_at"];
+            if (job) body["created_at"] = job->created_at;
             res.status = 202;
             res.set_content(body.dump(), "application/json");
         } catch (const std::exception& e) {
@@ -170,9 +170,11 @@ private:
     void remove_unreferenced_clips() {
         std::set<std::string> keep;
         for (const auto& summary : ctx_.job_manager->list()) {
-            const auto job = ctx_.job_manager->get(summary.value("id", ""));
-            if (!job || !job->contains("steps") || !(*job)["steps"].is_array()) continue;
-            for (const auto& step : (*job)["steps"]) {
+            const auto found = ctx_.job_manager->get(summary.value("id", ""));
+            if (!found) continue;
+            const json job = found->to_api_json();
+            if (!job.contains("steps") || !job["steps"].is_array()) continue;
+            for (const auto& step : job["steps"]) {
                 for (const char* where : {"params", "output"}) {
                     if (step.contains(where) && step[where].is_object() &&
                         step[where].contains("clip_file") && step[where]["clip_file"].is_string())
