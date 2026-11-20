@@ -263,6 +263,12 @@ void uninstall_container_backend(const std::string& recipe, const std::string& b
 }
 
 // Probe the configured backend_source, not always GitHub.
+std::string latest_unavailable_on_modelscope(const std::string& repo) {
+    return "Cannot resolve 'latest' release for " + repo +
+           ": backend_source=modelscope mirrors only pinned versions. "
+           "Set the backend's *_bin to 'builtin' or a pinned version tag.";
+}
+
 bool backend_download_service_reachable() {
     const std::string source = backends::BackendUtils::effective_backend_source();
     const char* endpoint = std::getenv("MODELSCOPE_ENDPOINT");
@@ -383,7 +389,8 @@ bool is_therock_installed_for_current_arch(const json& backend_versions) {
     }
 
     {
-        const std::string requested = backends::BackendUtils::effective_rocm_install_method();
+        auto* cfg = RuntimeConfig::global();
+        std::string requested = cfg ? cfg->rocm_install_method() : "auto";
         if (requested != "auto") {
             const fs::path wheel_method =
                 fs::path(backends::BackendUtils::get_therock_wheel_dir(rocm_arch, version)) / "method.txt";
@@ -508,6 +515,14 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
 
 std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
                                                      bool throw_on_failure) {
+    if (backend_source::is_modelscope(backends::BackendUtils::effective_backend_source())) {
+        // Answering "latest" would need the GitHub API this setting avoids, and a
+        // tag cached from an earlier GitHub lookup may not be mirrored.
+        if (throw_on_failure) {
+            throw std::runtime_error(latest_unavailable_on_modelscope(repo));
+        }
+        return "";
+    }
     {
         std::lock_guard<std::mutex> lock(latest_version_cache_mutex_);
         auto it = latest_version_cache_.find(repo);
@@ -532,17 +547,6 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
         }
         return "";
     }
-    if (backend_source::is_modelscope(backends::BackendUtils::effective_backend_source())) {
-        // Answering "latest" would need the GitHub API this setting avoids.
-        if (throw_on_failure) {
-            throw std::runtime_error(
-                "Cannot resolve 'latest' release for " + repo +
-                ": backend_source=modelscope mirrors only pinned versions. "
-                "Use 'builtin' or a pinned version tag.");
-        }
-        return "";
-    }
-
     // Include pre-releases to handle the new release scheme of llama.cpp
     const std::string url = "https://api.github.com/repos/" + repo + "/releases?per_page=1";
 
@@ -616,6 +620,18 @@ std::string BackendManager::resolve_user_version(const std::string& recipe,
     // to the binary already installed rather than refusing to load a model that
     // is otherwise ready. Only when nothing is installed do we surface an error.
     if (raw == "latest") {
+        if (backend_source::is_modelscope(backends::BackendUtils::effective_backend_source())) {
+            const std::string installed = read_version_file(
+                fs::path(backends::BackendUtils::get_install_directory(recipe, resolved_backend)) /
+                "version.txt");
+            if (installed.empty()) {
+                throw std::runtime_error(latest_unavailable_on_modelscope(repo));
+            }
+            LOG(WARNING, "BackendManager") << "backend_source=modelscope cannot resolve 'latest'; "
+                                           << "reusing installed " << recipe << ":" << resolved_backend
+                                           << " version " << installed << std::endl;
+            return installed;
+        }
         const bool offline = cfg->offline();
         // A non-throwing lookup so a transient GitHub failure becomes a fallback
         // rather than an exception. Skipped entirely when offline.

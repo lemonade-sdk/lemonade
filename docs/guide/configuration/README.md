@@ -243,18 +243,18 @@ FLM manages its own model storage, so it does not persist a registry source with
 
 ### Downloading backends from ModelScope
 
-On networks where GitHub is slow or unreachable, for example in mainland China, set `backend_source` to `modelscope`. Lemonade then downloads backend binaries and the ROCm runtime from the [`lemonade-sdk/backends`](https://modelscope.cn/datasets/lemonade-sdk/backends) dataset on ModelScope instead of GitHub Releases. The dataset mirrors every release file that Lemonade pins in `backend_versions.json`, with the same file names, and is kept in sync by `tools/modelscope_mirror/modelscope_mirror.py`. Pair it with `default_model_source` so models come from ModelScope too:
+On networks where GitHub is slow or unreachable, for example in mainland China, set `backend_source` to `modelscope`. Lemonade then downloads backend binaries and the ROCm runtime from the [`lemonade-sdk/backends`](https://modelscope.cn/datasets/lemonade-sdk/backends) dataset on ModelScope instead of GitHub Releases. The dataset mirrors the release files that Lemonade pins in `backend_versions.json`, with the same file names, except the `thinksound`, `acestep`, `trellis` and `openmoss` backends (install those with `--source github`) and datacenter GPU builds, and is kept in sync by `tools/modelscope_mirror/modelscope_mirror.py`. Pair it with `default_model_source` so models come from ModelScope too:
 
 ```bash
 lemonade config set backend_source=modelscope
 lemonade config set default_model_source=modelscope
 ```
 
-To use ModelScope for one install without changing the config, pass `--source modelscope` to `lemonade backends install` (or `"source": "modelscope"` to `POST /v1/install`), or `--backend-source modelscope` to `lemonade load` and `lemonade run` (`"backend_source"` on `POST /v1/load`) for a backend that a load installs. The same setting is available as the `LEMONADE_BACKEND_SOURCE` environment variable. `MODELSCOPE_ENDPOINT` moves the ModelScope API, as it does for model pulls, and `MODELSCOPE_API_TOKEN` is sent when set. With `backend_source=modelscope`:
+To use ModelScope for one install without changing the config, pass `--source modelscope` to `lemonade backends install` (or `"source": "modelscope"` to `POST /v1/install`), or `--backend-source modelscope` to `lemonade load` and `lemonade run` (`"backend_source"` on `POST /v1/load`) for a backend that a load installs. The same setting is available as the `LEMONADE_BACKEND_SOURCE` environment variable. `MODELSCOPE_ENDPOINT` moves the ModelScope API, as it does for model pulls. The dataset is public, so backend downloads send no ModelScope token. With `backend_source=modelscope`:
 
 - Every file is checked against the SHA-256 that `backend_versions.json` pins for it (`checksums.github`, taken from the digests GitHub publishes, and `checksums.therock`, hashed from AMD's server). A file with no pinned SHA-256 is not installed from the mirror.
 - Only pinned versions are available. A `*_bin` value of `latest` fails with a clear error; use `builtin` or a pinned tag.
-- `rocm_install_method=auto` installs the TheRock tarball, because the mirror does not carry AMD's pip wheel index. An explicit `wheel` is still honoured.
+- `rocm_install_method=auto` installs the TheRock tarball, because the mirror does not carry AMD's pip wheel index. A ROCm runtime already installed from wheels keeps being used, and an explicit `wheel` is still honoured.
 - Container backends still pull their images from their own registries.
 
 The mirror sync runs when a pin changes on `main`, after every release build, and daily. Each run checks the pins of `main`, the newest stable release and the newest release candidate, and a run that leaves any pinned file missing opens a `ModelScope backend mirror is incomplete` issue.

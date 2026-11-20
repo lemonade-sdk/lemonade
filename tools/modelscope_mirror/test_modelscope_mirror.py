@@ -73,17 +73,108 @@ class PinsTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 m.build_plan([versions], "trial", False, "none")
 
+    def test_new_container_backends_are_skipped(self):
+        versions = {"aim": {"rocm": "2026.11.0@sha256:" + "0" * 64}}
+        self.assertEqual(m.pinned_releases(versions, None, True), {})
+
     def test_describe_drift(self):
-        want = {"github": {"r": {"t": {"a": "1", "b": "2"}}}}
-        have = {"github": {"r": {"t": {"a": "9", "c": "3"}}}}
+        want = {"github": {"r": {"t": {"a": "1", "b": "2"}, "new": {"x": "4"}}}}
+        have = {"github": {"r": {"t": {"a": "9", "c": "3"}, "old": {"y": "5"}}}}
         self.assertEqual(
             m.describe_drift(want, have),
             [
-                "  differs  checksums.github.r.t.a: pinned 9, upstream 1",
-                "  missing  checksums.github.r.t.b",
-                "  stale    checksums.github.r.t.c",
+                (True, "  missing  checksums.github.r.new"),
+                (False, "  stale    checksums.github.r.old"),
+                (True, "  differs  checksums.github.r.t.a: pinned 9, upstream 1"),
+                (False, "  missing  checksums.github.r.t.b"),
+                (False, "  stale    checksums.github.r.t.c"),
             ],
         )
+
+    def test_write_adds_late_assets_and_keeps_pinned_hashes(self):
+        item = m.Item("small", "github/lemonade-sdk/ort-server/0.4.0", "src")
+        item.files += [
+            {"name": "a.zip", "size": 1, "sha256": "f" * 64, "url": "u"},
+            {"name": "late.zip", "size": 1, "sha256": "e" * 64, "url": "u"},
+        ]
+        versions = {"checksums": VERSIONS["checksums"], "onnxruntime": {"cpu": "0.4.0"}}
+        versions["therock"] = VERSIONS["therock"]
+        with mock.patch.object(m, "release_item", return_value=item), mock.patch.object(
+            m, "therock_item", side_effect=AssertionError("AMD contacted")
+        ):
+            out = m.checksums_for(versions, False, True, Path("."))
+        self.assertEqual(
+            out["github"]["lemonade-sdk/ort-server"]["0.4.0"],
+            {"a.zip": "sha256:" + "a" * 64, "late.zip": "sha256:" + "e" * 64},
+        )
+        self.assertEqual(out["therock"], VERSIONS["checksums"]["therock"])
+
+
+class ManifestTest(unittest.TestCase):
+    def item(self):
+        item = m.Item("small", "github/o/r/v1", "src")
+        item.files.append({"name": "a.zip", "size": 3, "sha256": "a" * 64, "url": "u"})
+        return item
+
+    def test_manifest_matches_only_the_planned_files(self):
+        item = self.item()
+        self.assertTrue(m.manifest_is_current(item, m.manifest_files(item)))
+        self.assertFalse(m.manifest_is_current(item, None))
+        self.assertFalse(m.manifest_is_current(item, []))
+        stale = [{"name": "a.zip", "size": 3, "sha256": "b" * 64}]
+        self.assertFalse(m.manifest_is_current(item, stale))
+
+    def test_verify_reports_an_outdated_manifest(self):
+        item = self.item()
+        existing = {"github/o/r/v1/a.zip": 3, "github/o/r/v1/assets.json": 1}
+        self.assertEqual(
+            m.missing_from([item], existing, lambda folder: []),
+            ["github/o/r/v1/assets.json (out of date)"],
+        )
+        self.assertEqual(
+            m.missing_from([item], existing, lambda folder: m.manifest_files(item)), []
+        )
+
+
+class RedirectTest(unittest.TestCase):
+    def test_credentials_are_not_forwarded_to_another_host(self):
+        seen = {}
+
+        class Target(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                seen["auth"] = self.headers.get("Authorization")
+                seen["cookie"] = self.headers.get("Cookie")
+                self.send_response(200)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"ok")
+
+        target = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Target)
+        port = target.server_port
+
+        class Origin(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", f"http://localhost:{port}/file")
+                self.end_headers()
+
+        origin = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Origin)
+        for server in (target, origin):
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            self.addCleanup(server.shutdown)
+        req = m.urllib.request.Request(
+            f"http://127.0.0.1:{origin.server_port}/",
+            headers={"Authorization": "Bearer secret", "Cookie": "s=secret"},
+        )
+        with m.urllib.request.urlopen(req, timeout=10) as r:
+            self.assertEqual(r.read(), b"ok")
+        self.assertEqual(seen, {"auth": None, "cookie": None})
 
 
 class DownloadTest(unittest.TestCase):

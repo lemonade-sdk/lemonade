@@ -219,9 +219,10 @@ namespace lemon::backends {
                                             std::string& filename,
                                             size_t& bytes_total);
 
-        /** rocm_install_method as it applies right now: "auto", "wheel" or "tarball".
-         *  Under backend_source=modelscope, "auto" becomes "tarball" because the
-         *  mirror carries the TheRock tarballs but not AMD's pip wheel index. */
+        /** The rocm_install_method a new ROCm runtime install uses. Under
+         *  backend_source=modelscope, "auto" becomes "tarball" because the mirror
+         *  carries the TheRock tarballs but not AMD's pip wheel index. An installed
+         *  wheel runtime still satisfies "auto", so it is neither replaced nor ignored. */
         static std::string effective_rocm_install_method();
 
         /** The backend source in effect on this thread: a request's `source`, else

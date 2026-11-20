@@ -54,6 +54,23 @@ try:
 except ImportError:
     pass
 
+
+class NoCredentialsAcrossHosts(urllib.request.HTTPRedirectHandler):
+    """urllib forwards every header on a redirect; never carry credentials to another host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if (
+            new is not None
+            and urlparse(newurl).hostname != urlparse(req.full_url).hostname
+        ):
+            for header in ("Authorization", "Cookie"):
+                new.remove_header(header)
+        return new
+
+
+urllib.request.install_opener(urllib.request.build_opener(NoCredentialsAcrossHosts))
+
 DEFAULT_REPO = "lemonade-sdk/backends"
 LEMONADE_REPO = "lemonade-sdk/lemonade"
 VERSIONS_PATH = "src/cpp/resources/backend_versions.json"
@@ -95,8 +112,6 @@ SOURCES: dict[str, dict[str, tuple[str, str]]] = {
     "trellis": {"*": ("pwilkin/trellis.cpp", "pwilkin")},
     "openmoss": {"*": ("pwilkin/openmoss", "pwilkin")},
 }
-# Container backends need a container registry, not file hosting.
-CONTAINER_RECIPES = {"rocmfpx", "halogen", "gufo", "ds4"}
 NOT_BACKENDS = {
     "comment",
     "checksums",
@@ -220,13 +235,23 @@ def load_versions(path: str | None, ref: str | None) -> dict:
     return json.loads(http_get(url))
 
 
+def is_container_recipe(variants) -> bool:
+    """Container backends pin <tag>@sha256:<digest> images, which need a registry, not this mirror."""
+    pins = [t for v, t in variants.items() if v != "comment"]
+    return bool(pins) and all(isinstance(t, str) and "@sha256:" in t for t in pins)
+
+
 def pinned_releases(
     versions: dict, recipes: set[str] | None, include_pwilkin: bool
 ) -> dict[tuple[str, str], str]:
     """(GitHub repo, tag) -> mirror group, for every release file set versions pins."""
     pins: dict[tuple[str, str], str] = {}
     for recipe, variants in versions.items():
-        if recipe in NOT_BACKENDS or recipe in CONTAINER_RECIPES:
+        if (
+            recipe in NOT_BACKENDS
+            or not isinstance(variants, dict)
+            or is_container_recipe(variants)
+        ):
             continue
         if recipe not in SOURCES:
             sys.exit(
@@ -403,28 +428,40 @@ def download(url: str, dest: Path, expect_sha: str, expect_size: int | None) -> 
 def checksums_for(
     versions: dict, refresh_github: bool, hash_therock: bool, workdir: Path
 ) -> dict:
-    """checksums.github and checksums.therock for exactly what versions pins.
+    """checksums.github and checksums.therock for what versions pins.
 
-    GitHub entries for a release that is still pinned are kept unless
-    refresh_github is set; new ones come from the digests GitHub publishes.
-    AMD publishes none for TheRock, so a new tarball is downloaded and hashed,
-    and only when hash_therock is set.
+    GitHub entries come from the digests GitHub publishes. A hash already pinned
+    is kept unless refresh_github is set, so an upstream file replaced after
+    pinning shows up as drift instead of being trusted. Assets uploaded to a
+    release after it was pinned are added.
+
+    AMD publishes no TheRock checksums. When the pinned version already has
+    entries they are kept without contacting AMD; otherwise each tarball is
+    downloaded and hashed, and only when hash_therock is set.
     """
     old = versions.get("checksums", {})
     github: dict[str, dict[str, dict[str, str]]] = {}
     for repo, tag in sorted(pinned_releases(versions, None, True)):
-        known = old.get("github", {}).get(repo, {}).get(tag)
-        if not known or refresh_github:
-            item = release_item(repo, tag, "")
-            missing = [f["name"] for f in item.files if not f["sha256"]]
-            if missing:
-                sys.exit(f"GitHub publishes no SHA-256 for {repo}@{tag}: {missing}")
-            known = {f["name"]: f"sha256:{f['sha256']}" for f in item.files}
-        github.setdefault(repo, {})[tag] = dict(sorted(known.items()))
+        item = release_item(repo, tag, "")
+        unpublished = [f["name"] for f in item.files if not f["sha256"]]
+        if unpublished:
+            sys.exit(f"GitHub publishes no SHA-256 for {repo}@{tag}: {unpublished}")
+        entries = {f["name"]: f"sha256:{f['sha256']}" for f in item.files}
+        if not refresh_github:
+            entries.update(old.get("github", {}).get(repo, {}).get(tag, {}))
+        github.setdefault(repo, {})[tag] = dict(sorted(entries.items()))
 
-    item = therock_item(versions)
     ver = versions["therock"]["version"]
     old_therock = old.get("therock", {}).get(ver, {})
+    result = {}
+    if "comment" in old:
+        result["comment"] = old["comment"]
+    result["github"] = github
+    if old_therock:
+        result["therock"] = {ver: old_therock}
+        return result
+
+    item = therock_item(versions)
     therock: dict[str, str] = {}
     for f in item.files:
         if old_therock.get(f["name"]):
@@ -437,27 +474,33 @@ def checksums_for(
         local = workdir / f["name"]
         therock[f["name"]] = "sha256:" + download(f["url"], local, "", f["size"])
         local.unlink(missing_ok=True)
-
-    result = {}
-    if "comment" in old:
-        result["comment"] = old["comment"]
-    result["github"] = github
     result["therock"] = {ver: therock}
     return result
 
 
-def describe_drift(want: dict, have: dict, prefix: str = "checksums") -> list[str]:
+def describe_drift(
+    want: dict, have: dict, prefix: str = "checksums"
+) -> list[tuple[bool, str]]:
+    """(fatal, line) for each difference between the upstream and pinned checksums.
+
+    Fatal: a pinned hash upstream no longer matches, or a pinned release (or TheRock
+    version) with no checksums. Not fatal: a single asset upstream added or
+    removed after pinning, or entries left over for a version no longer pinned.
+    """
     lines = []
     for key in sorted(set(want) | set(have)):
         path = f"{prefix}.{key}"
+        leaf = not isinstance(want.get(key, have.get(key)), dict)
         if key not in have:
-            lines.append(f"  missing  {path}")
+            lines.append((not leaf, f"  missing  {path}"))
         elif key not in want:
-            lines.append(f"  stale    {path}")
-        elif isinstance(want[key], dict) and isinstance(have[key], dict):
+            lines.append((False, f"  stale    {path}"))
+        elif not leaf and isinstance(have[key], dict):
             lines += describe_drift(want[key], have[key], path)
         elif want[key] != have[key]:
-            lines.append(f"  differs  {path}: pinned {have[key]}, upstream {want[key]}")
+            lines.append(
+                (True, f"  differs  {path}: pinned {have[key]}, upstream {want[key]}")
+            )
     return lines
 
 
@@ -470,11 +513,19 @@ def update_checksums(path: Path, check: bool, refresh: bool, workdir: Path) -> i
         {k: v for k, v in have.items() if k != "comment"},
     )
     if check:
-        if drift:
-            log(f"{path}: checksums do not match the pins:\n" + "\n".join(drift))
+        fatal = [line for is_fatal, line in drift if is_fatal]
+        notes = [line for is_fatal, line in drift if not is_fatal]
+        if notes:
             log(
-                "\nRun python tools/modelscope_mirror/modelscope_mirror.py --write-checksums "
-                "and commit the result."
+                f"{path}: upstream changed after pinning (not an error):\n"
+                + "\n".join(notes)
+            )
+        if fatal:
+            log(f"{path}: checksums do not match the pins:\n" + "\n".join(fatal))
+            log(
+                "\nFor a missing entry, run python tools/modelscope_mirror/modelscope_mirror.py "
+                "--write-checksums and commit the result. A differing hash means upstream "
+                "replaced a pinned file; find out why before pinning the new hash."
             )
             return 1
         log(f"{path}: checksums match every pinned file.")
@@ -497,17 +548,40 @@ def file_url(repo: str, path: str, endpoint: str = "https://modelscope.cn") -> s
     )
 
 
-def auth_get(url: str, token: str) -> bytes:
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Authorization": f"Bearer {token}",
-            "Cookie": f"m_session_id={token}",
-        },
+def manifest_files(item: Item) -> list[dict]:
+    return [{k: f[k] for k in ("name", "size", "sha256")} for f in item.files]
+
+
+def read_manifest(repo: str, folder: str, endpoint: str) -> list[dict] | None:
+    """The files a mirrored folder's assets.json lists, or None when it has none.
+
+    The dataset is public, so this sends no token.
+    """
+    try:
+        body = http_get(file_url(repo, f"{folder}/assets.json", endpoint))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
+    return json.loads(body).get("files", [])
+
+
+def same_files(a: list[dict] | None, b: list[dict]) -> bool:
+    return a is not None and sorted(a, key=lambda f: f["name"]) == sorted(
+        b, key=lambda f: f["name"]
     )
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.read()
+
+
+def manifest_is_current(item: Item, files: list[dict] | None) -> bool:
+    if files is None:
+        return False
+    listed = {f["name"]: f for f in files}
+    return len(listed) == len(item.files) and all(
+        f["name"] in listed
+        and listed[f["name"]]["size"] == f["size"]
+        and (not f["sha256"] or listed[f["name"]]["sha256"] == f["sha256"])
+        for f in item.files
+    )
 
 
 def list_existing(api, repo: str) -> dict[str, int]:
@@ -522,15 +596,26 @@ def list_existing(api, repo: str) -> dict[str, int]:
     }
 
 
-def missing_from(items: list[Item], existing: dict[str, int]) -> list[str]:
+def missing_from(
+    items: list[Item], existing: dict[str, int], read_manifests=None
+) -> list[str]:
+    """Pinned files absent from ModelScope. With read_manifests (folder -> files or
+    None), an assets.json that does not list exactly the planned files counts too."""
     missing = []
     for item in items:
         for f in item.files:
             path = f"{item.folder}/{f['name']}"
             if existing.get(path) != f["size"]:
                 missing.append(f"{path} ({human(f['size'])})")
-        if item.files and f"{item.folder}/assets.json" not in existing:
-            missing.append(f"{item.folder}/assets.json")
+        if not item.files:
+            continue
+        manifest_path = f"{item.folder}/assets.json"
+        if manifest_path not in existing:
+            missing.append(manifest_path)
+        elif read_manifests and not manifest_is_current(
+            item, read_manifests(item.folder)
+        ):
+            missing.append(f"{manifest_path} (out of date)")
     return missing
 
 
@@ -643,7 +728,11 @@ def main() -> int:
 
         if args.verify:
             api = HubApi(token=token or None, endpoint=args.endpoint)
-            missing = missing_from(items, list_existing(api, args.repo))
+            missing = missing_from(
+                items,
+                list_existing(api, args.repo),
+                lambda folder: read_manifest(args.repo, folder, args.endpoint),
+            )
             if missing:
                 log(f"{len(missing)} pinned file(s) missing from {args.repo}:")
                 for m in missing:
@@ -723,37 +812,41 @@ def main() -> int:
                 f"    uploaded  {f['name']}  {human(f['size'])}  in {time.time() - t0:.0f}s"
             )
         manifest_path = f"{item.folder}/assets.json"
-        if not args.dry_run and (changed or manifest_path not in existing):
-            if any(not f["sha256"] for f in item.files) and manifest_path in existing:
-                # Files skipped this run with no pinned or published SHA-256 (an
-                # unpinned TheRock version): keep the value computed at first upload.
-                old = json.loads(
-                    auth_get(file_url(args.repo, manifest_path, args.endpoint), token)
-                )
-                known = {o["name"]: o["sha256"] for o in old.get("files", [])}
-                for f in item.files:
-                    f["sha256"] = f["sha256"] or known.get(f["name"], "")
-            manifest = {
-                "source": item.source,
-                "mirrored_at": datetime.now(timezone.utc).strftime(
-                    "%Y-%m-%dT%H:%M:%SZ"
-                ),
-                "files": [
-                    {k: f[k] for k in ("name", "size", "sha256")} for f in item.files
-                ],
-            }
-            with_retries(
-                f"upload {manifest_path}",
-                lambda: api.upload_file(
-                    args.repo,
-                    REPO_TYPE,
-                    json.dumps(manifest, indent=2).encode(),
-                    manifest_path,
-                    commit_message=f"Update {manifest_path}",
-                    disable_tqdm=True,
-                ),
-                any_error=True,
-            )
+        if args.dry_run or not item.files:
+            continue
+        # Compared on every run, so a manifest an interrupted run left behind is
+        # rewritten even though its files are already uploaded.
+        old = (
+            read_manifest(args.repo, item.folder, args.endpoint)
+            if manifest_path in existing
+            else None
+        )
+        if old:
+            # A file with no pinned or published SHA-256 (an unpinned TheRock
+            # version) keeps the value computed when it was uploaded.
+            known = {o["name"]: o.get("sha256", "") for o in old}
+            for f in item.files:
+                f["sha256"] = f["sha256"] or known.get(f["name"], "")
+        if not changed and same_files(old, manifest_files(item)):
+            continue
+        manifest = {
+            "source": item.source,
+            "mirrored_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "files": manifest_files(item),
+        }
+        with_retries(
+            f"upload {manifest_path}",
+            lambda: api.upload_file(
+                args.repo,
+                REPO_TYPE,
+                json.dumps(manifest, indent=2).encode(),
+                manifest_path,
+                commit_message=f"Update {manifest_path}",
+                disable_tqdm=True,
+            ),
+            any_error=True,
+        )
+        log("    updated  assets.json")
 
     log(f"\nDone. uploaded={uploaded} skipped={skipped} dry_run={args.dry_run}")
     if not args.dry_run:

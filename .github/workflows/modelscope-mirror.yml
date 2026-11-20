@@ -26,6 +26,9 @@ on:
   workflow_run:
     workflows: ["C++ Server Build, Test, and Release 🚀"]
     types: [completed]
+    # Only release builds: a PR build's no-op run would otherwise join the
+    # concurrency group and replace a queued release or scheduled run.
+    branches: ["release-v*", "v[0-9]*"]
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:

@@ -188,23 +188,6 @@ namespace lemon::backends {
         return utils::get_environment_variable_utf8("MODELSCOPE_ENDPOINT");
     }
 
-    // A ModelScope token is only needed while the mirror dataset is private.
-    static std::map<std::string, std::string> backend_download_headers(const std::string& source) {
-        std::map<std::string, std::string> headers;
-        if (!backend_source::is_modelscope(source)) {
-            return headers;
-        }
-        std::string token = utils::get_environment_variable_utf8("MODELSCOPE_API_TOKEN");
-        if (token.empty()) {
-            token = utils::get_environment_variable_utf8("MODELSCOPE_ACCESS_TOKEN");
-        }
-        if (!token.empty()) {
-            headers["Authorization"] = "Bearer " + token;
-            headers["Cookie"] = "m_session_id=" + token;
-        }
-        return headers;
-    }
-
     // The ROCm pip wheels come from AMD's package index, which the ModelScope
     // mirror does not carry, so under "auto" a ModelScope install goes straight
     // to the mirrored TheRock tarball. An explicit "wheel" is still honoured.
@@ -243,7 +226,7 @@ namespace lemon::backends {
             LOG(DEBUG, spec.log_name()) << "Resolving asset wildcard '" << pattern
                 << "' for " << repo << "@" << tag << " via " << manifest_url << std::endl;
             utils::HttpResponse manifest_resp =
-                utils::HttpClient::get(manifest_url, backend_download_headers(source));
+                utils::HttpClient::get(manifest_url);
             if (manifest_resp.status_code != 200) {
                 throw std::runtime_error(
                     "ModelScope mirror returned HTTP " + std::to_string(manifest_resp.status_code) +
@@ -738,7 +721,6 @@ namespace lemon::backends {
 
             const std::string source = BackendUtils::effective_backend_source();
             const std::string endpoint = modelscope_endpoint();
-            const auto download_headers = backend_download_headers(source);
             auto asset_url = [&](const std::string& name) {
                 return backend_source::release_asset_url(source, endpoint, repo, expected_version, name);
             };
@@ -769,7 +751,7 @@ namespace lemon::backends {
             std::vector<std::string> part_assets;
             if (spec.supports_split_archive) {
                 const std::string partcount_url = asset_url(base + ".partcount");
-                auto resp = utils::HttpClient::get(partcount_url, download_headers);
+                auto resp = utils::HttpClient::get(partcount_url);
                 if (resp.status_code == 200) {
                     int total_parts = 0;
                     try {
@@ -833,7 +815,7 @@ namespace lemon::backends {
                 archive_download_opts.resume_partial = false;
 
                 auto download_result = utils::HttpClient::download_file(
-                    url, zip_path, http_progress_cb, download_headers, archive_download_opts);
+                    url, zip_path, http_progress_cb, {}, archive_download_opts);
 
                 if (!download_result.success) {
                     throw std::runtime_error("Failed to download " + spec.binary + " from: " + url +
@@ -892,7 +874,7 @@ namespace lemon::backends {
                     part_download_opts.resume_partial = false;
 
                     auto part_result = utils::HttpClient::download_file(
-                        part_url, part_path, part_http_cb, download_headers, part_download_opts);
+                        part_url, part_path, part_http_cb, {}, part_download_opts);
 
                     if (!part_result.success) {
                         combined.close();
@@ -2200,7 +2182,7 @@ namespace lemon::backends {
             url,
             tarball_path,
             http_progress_cb,
-            backend_download_headers(source),
+            {},
             therock_download_opts
         );
 
@@ -2285,7 +2267,10 @@ namespace lemon::backends {
 
         std::string version = config["therock"]["version"].get<std::string>();
 
-        const std::string install_method = effective_rocm_install_method();
+        std::string install_method = "auto";
+        if (auto* cfg = RuntimeConfig::global()) {
+            install_method = cfg->rocm_install_method();
+        }
 
         // Prefer the lemonade-managed pip-wheel install when present (unless the
         // user pinned the tarball above). Its ROCm runtime is split across
