@@ -904,7 +904,7 @@ json LlamaCppServer::classify_with_rule_head(const json& request) {
             } else {
                 plain = tokens_of(content, false);
             }
-            if (is_label_block) {
+            if (is_label_block && plain.is_array() && plain.size() <= window) {
                 std::lock_guard<std::mutex> lock(rule_head_counts_mutex_);
                 if (rule_head_label_tokens_.size() >= MAX_CACHED_LABEL_BLOCKS) {
                     rule_head_label_tokens_.clear();
