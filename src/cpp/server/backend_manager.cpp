@@ -202,7 +202,7 @@ void install_container_backend(const std::string& recipe, const std::string& bac
     // binary release of the same backend. The previous image goes last so a
     // failed write leaves the working install in place.
     const std::vector<std::string> previous_images =
-        backends::BackendUtils::get_present_installed_images(manager, recipe, backend);
+        backends::BackendUtils::get_installed_backend_images(recipe, backend);
     const fs::path install_dir = version_file.parent_path();
     const fs::path staging_dir =
         install_dir.parent_path() / ("." + install_dir.filename().string() + ".staging");
@@ -251,8 +251,7 @@ std::string container_registry_url(const std::string& image) {
 
 void uninstall_container_backend(const std::string& recipe, const std::string& backend) {
     const auto& manager = utils::ContainerManager::global();
-    for (const auto& image :
-         backends::BackendUtils::get_present_installed_images(manager, recipe, backend)) {
+    for (const auto& image : backends::BackendUtils::get_installed_backend_images(recipe, backend)) {
         manager.remove_image(image);
     }
     const fs::path install_dir = container_version_file(recipe, backend).parent_path();

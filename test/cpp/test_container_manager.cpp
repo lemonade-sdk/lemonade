@@ -10,6 +10,7 @@
 #include "lemon/backends/gufo/gufo.h"
 #include "lemon/backends/gufo/gufo_server.h"
 #include "lemon/backends/halogen/halogen_server.h"
+#include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/container_manager.h"
 #include "lemon/utils/path_utils.h"
 
@@ -18,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <set>
 #include <stdexcept>
@@ -69,6 +71,7 @@ struct FakeHost {
     std::map<std::string, std::string> env;
     bool root = false;
     std::set<std::string> images;  // references `image inspect` finds
+    lemon::utils::CommandResult rmi = {0, ""};
     // How many commands the manager has run on the host.
     mutable int commands = 0;
     mutable std::vector<std::vector<std::string>> runs;
@@ -97,6 +100,8 @@ struct FakeHost {
                 result.output = podman_rootless + " " + network_backend + " " + oci_runtime + "\n";
             } else if (argv.size() > 1 && argv[1] == "network") {
                 result.exit_code = 0;
+            } else if (argv.size() > 1 && argv[1] == "rmi") {
+                result = rmi;
             } else if (argv.size() > 2 && argv[1] == "image" && argv[2] == "inspect") {
                 result.exit_code = images.count(argv.back()) ? 0 : 1;
             } else if (argv.front() == "getsubids") {
@@ -756,6 +761,36 @@ void test_installed_images() {
     fs::remove_all(cache);
 }
 
+// Upgrade and uninstall remove every repository's name for an install, most of
+// which never existed, so only a tool that cannot answer is worth a warning.
+void test_remove_image() {
+    std::vector<std::string> warnings;
+    AixLog::Log::init({std::make_shared<AixLog::SinkCallback>(
+        AixLog::Severity::warning,
+        [&warnings](const AixLog::Metadata&, const std::string& message) {
+            if (message.find("Could not remove image") != std::string::npos) {
+                warnings.push_back(message);
+            }
+        })});
+    const std::string image = "docker.io/kyuz0/amd-strix-halo-toolboxes@sha256:abc";
+
+    FakeHost podman;
+    podman.tools = {"podman"};
+    podman.rmi = {125, "Error: " + image + ": image not known\n"};
+    ContainerManager(podman.host()).remove_image(image);
+    FakeHost docker;
+    docker.tools = {"docker"};
+    docker.rmi = {1, "Error response from daemon: No such image: " + image + "\n"};
+    ContainerManager(docker.host()).remove_image(image);
+    check("removing an image Podman or Docker does not have logs no warning", warnings.empty());
+
+    docker.rmi = {1, "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. "
+                     "Is the docker daemon running?\n"};
+    ContainerManager(docker.host()).remove_image(image);
+    check("removing an image when the tool cannot answer still warns", warnings.size() == 1);
+    AixLog::Log::init();
+}
+
 }  // namespace
 
 int main() {
@@ -777,6 +812,7 @@ int main() {
     test_ds4_memory_plan();
     test_descriptors_and_pins();
     test_installed_images();
+    test_remove_image();
 
     if (failures == 0) {
         std::printf("\nAll container manager checks passed.\n");
