@@ -4,11 +4,13 @@
 ///
 /// Each device advertises its LAN addresses, paired with the dataplane's UDP
 /// port, in the mesh heartbeat (local_endpoints). The server lists them only
-/// to the peers that already list the device. A device probes the LAN
-/// endpoints of a peer on its own network before or with the peer's public
-/// endpoint, so two devices behind a router that does not hairpin UDP still
-/// meet directly. A LAN endpoint only changes where packets go: the
-/// BoringTun handshake still authenticates the peer by its mesh key.
+/// to the peers that already list the device. A device with a usable LAN
+/// address of its own probes a peer's LAN endpoints with the peer's public
+/// endpoint, so two devices behind a router that does not hairpin UDP, or on
+/// two subnets of one routed site, still meet directly. A device without
+/// one (cellular or VPN only) probes them only behind the same NAT as the
+/// peer. A LAN endpoint only changes where packets go: the BoringTun
+/// handshake still authenticates the peer by its mesh key.
 ///
 /// The functions here choose which local addresses to advertise and which
 /// peer LAN endpoints to probe. list_interface_addresses() reads the host's
@@ -128,13 +130,16 @@ struct LocalEndpointRules {
     const std::vector<InterfaceAddress>& interfaces, uint16_t port,
     const LocalEndpointRules& rules);
 
-/// The LAN endpoints of `peer` that this device probes, or none when the
-/// peer is not on this device's network. `peer.local_endpoints` must already
-/// hold only endpoints that passed lan_endpoint_usable. The peer is on this
-/// device's network when its listed public endpoint has the same IP address
-/// as `own_reflexive` (one NAT for both), or when one of its LAN endpoints
-/// is inside the subnet of one of `own_lan` (usable_lan_interfaces). Then
-/// all its LAN endpoints are returned, in list order. Pure.
+/// The LAN endpoints of `peer` that this device probes. `peer.local_endpoints`
+/// must already hold only endpoints that passed lan_endpoint_usable. All of
+/// them are returned, in list order, when `own_lan` (usable_lan_interfaces)
+/// is not empty: a device with a usable LAN address may sit on a site that
+/// routes between its private subnets, and a probe to a private address that
+/// is not routed only goes unanswered. They are also returned when the peer's
+/// listed public endpoint has the same IP address as `own_reflexive` (one NAT
+/// for both). Otherwise none: a device whose only interfaces are cellular or
+/// virtual reaches no private address, so no probe leaves it. No routing
+/// table is read. Pure.
 [[nodiscard]] std::vector<std::string> lan_probe_targets(const MeshPeer& peer,
                                                          const std::string& own_reflexive,
                                                          const std::vector<InterfaceAddress>& own_lan);

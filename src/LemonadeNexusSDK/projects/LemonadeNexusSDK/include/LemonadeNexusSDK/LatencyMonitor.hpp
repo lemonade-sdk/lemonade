@@ -32,6 +32,10 @@ struct ServerLatency {
 
 using ServerSwitchCallback = std::function<void(const ServerConfig& new_server)>;
 
+/// Where a probe of a server dials: the endpoint to connect to for the
+/// endpoint advertised. The stats keep the advertised endpoint.
+using DialResolver = std::function<ServerEndpoint(const ServerEndpoint& advertised)>;
+
 class LatencyMonitor {
 public:
     explicit LatencyMonitor(const LatencyConfig& config = {});
@@ -52,6 +56,12 @@ public:
 
     /// Set callback for when a server switch is recommended.
     void set_switch_callback(ServerSwitchCallback cb);
+
+    /// Set where probes dial (LemonadeNexusClient: the advertised port, or
+    /// the fallback port while the host is on it). Without one, probes dial
+    /// the advertised endpoint. The resolver runs on the probe thread and
+    /// must outlive the monitor or be cleared before it is destroyed.
+    void set_dial_resolver(DialResolver resolver);
 
     /// Start background monitoring thread.
     void start();

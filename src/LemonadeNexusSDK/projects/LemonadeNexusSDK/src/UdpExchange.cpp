@@ -7,6 +7,9 @@
 #include <thread>
 
 #ifdef _WIN32
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
 #  include <winsock2.h>
 #  include <ws2tcpip.h>
 using socket_t = SOCKET;
@@ -82,8 +85,10 @@ Result<std::vector<uint8_t>> exchange(const std::string& gateway_ipv4, uint16_t 
                                       const std::optional<std::string>& local_ipv4,
                                       std::span<const uint8_t> request,
                                       std::span<const std::chrono::milliseconds> waits,
-                                      const Acceptor& accept, const char* protocol) {
+                                      const Acceptor& accept, const char* protocol,
+                                      const std::atomic<bool>* cancel) {
     using Reply = Result<std::vector<uint8_t>>;
+    const auto cancelled = [cancel] { return cancel && cancel->load(); };
 
     sockaddr_in gateway{};
     gateway.sin_family = AF_INET;
@@ -109,7 +114,7 @@ Result<std::vector<uint8_t>> exchange(const std::string& gateway_ipv4, uint16_t 
     std::optional<Reply> outcome;
     std::array<uint8_t, kMaxDatagram> buf{};
     for (const auto wait : waits) {
-        if (outcome) break;
+        if (outcome || cancelled()) break;
         if (sendto(sock, reinterpret_cast<const char*>(request.data()),
                    static_cast<int>(request.size()), 0,
                    reinterpret_cast<const sockaddr*>(&gateway), sizeof(gateway)) < 0) {
@@ -117,11 +122,12 @@ Result<std::vector<uint8_t>> exchange(const std::string& gateway_ipv4, uint16_t 
             break;
         }
         const auto deadline = std::chrono::steady_clock::now() + wait;
-        while (!outcome) {
+        while (!outcome && !cancelled()) {
             const auto now = std::chrono::steady_clock::now();
             if (now >= deadline) break;
-            set_receive_timeout(
-                sock, std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now));
+            const auto slice = std::min(
+                kCancelPoll, std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now));
+            set_receive_timeout(sock, slice);
             sockaddr_in from{};
             socklen_t from_len = sizeof(from);
             const auto n = recvfrom(sock, reinterpret_cast<char*>(buf.data()),
@@ -131,7 +137,11 @@ Result<std::vector<uint8_t>> exchange(const std::string& gateway_ipv4, uint16_t 
                 if (receive_timed_out()) continue;
                 // An unreachable gateway surfaces here on some platforms;
                 // the next retransmission tries again.
-                std::this_thread::sleep_until(deadline);
+                while (!cancelled() && std::chrono::steady_clock::now() < deadline) {
+                    std::this_thread::sleep_for(std::min(
+                        kCancelPoll, std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         deadline - std::chrono::steady_clock::now())));
+                }
                 break;
             }
             if (from.sin_addr.s_addr != gateway.sin_addr.s_addr || from.sin_port != gateway.sin_port) {
@@ -146,7 +156,7 @@ Result<std::vector<uint8_t>> exchange(const std::string& gateway_ipv4, uint16_t 
         }
     }
     close_socket(sock);
-    if (!outcome) return fail(protocol, "gateway did not answer");
+    if (!outcome) return fail(protocol, cancelled() ? "exchange cancelled" : "gateway did not answer");
     return std::move(*outcome);
 }
 

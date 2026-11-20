@@ -173,8 +173,10 @@ bool epoch_indicates_restart(uint32_t previous_epoch, int64_t previous_time_unix
            server_delta + 2 < client_delta - client_delta / 16;
 }
 
-PcpClient::PcpClient(std::string gateway_ipv4, std::string local_ipv4, uint16_t port)
-    : gateway_(std::move(gateway_ipv4)), local_(std::move(local_ipv4)), port_(port) {}
+PcpClient::PcpClient(std::string gateway_ipv4, std::string local_ipv4, uint16_t port,
+                     const std::atomic<bool>* cancel)
+    : gateway_(std::move(gateway_ipv4)), local_(std::move(local_ipv4)), port_(port),
+      cancel_(cancel) {}
 
 std::optional<ResultCode> PcpClient::last_result_code() const noexcept {
     return last_result_code_;
@@ -268,7 +270,8 @@ Result<MapResponse> PcpClient::exchange(const MapRequest& request,
         accepted = std::move(parsed);
         return true;
     };
-    auto reply = udp_exchange::exchange(gateway_, port_, local_, datagram, waits, accept, "PCP");
+    auto reply = udp_exchange::exchange(gateway_, port_, local_, datagram, waits, accept, "PCP",
+                                        cancel_);
     if (!reply) return fail<MapResponse>(std::move(reply.error));
     if (fallback) {
         unsupported_version_ = fallback;

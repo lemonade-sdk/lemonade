@@ -7,6 +7,9 @@
 #include <utility>
 
 #ifdef _WIN32
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
 #  include <winsock2.h>
 #  include <ws2tcpip.h>
 #else
@@ -63,6 +66,7 @@ PortMapper::PortMapper(PortMapperOptions options) : options_(std::move(options))
 }
 
 PortMapper::~PortMapper() {
+    cancel_ = false;
     if (mapped()) release_on_gateway(state_.protocol, state_.internal_port);
 }
 
@@ -146,7 +150,10 @@ int64_t PortMapper::seconds_until_due() const {
     return std::max<int64_t>(0, next_attempt_unix_ - now());
 }
 
+void PortMapper::cancel() { cancel_ = true; }
+
 void PortMapper::release() {
+    cancel_ = false;
     if (mapped()) {
         release_on_gateway(state_.protocol, state_.internal_port);
         clear("released");
@@ -166,7 +173,7 @@ std::optional<PortMapper::Grant> PortMapper::map(const GatewayRoute& route,
                                                  uint16_t internal_port, uint16_t suggested,
                                                  std::string& error) {
     natpmp_.reset();
-    pcp_.emplace(route.gateway, route.local_address, options_.gateway_port);
+    pcp_.emplace(route.gateway, route.local_address, options_.gateway_port, &cancel_);
     auto r = pcp_->map_udp(internal_port, suggested, options_.lifetime_sec);
     if (r) {
         return Grant{MappingProtocol::Pcp, r.value.external_address, r.value.external_port,
@@ -185,7 +192,7 @@ std::optional<PortMapper::Grant> PortMapper::map(const GatewayRoute& route,
 std::optional<PortMapper::Grant> PortMapper::map_natpmp(const GatewayRoute& route,
                                                         uint16_t internal_port,
                                                         uint16_t suggested, std::string& error) {
-    natpmp_.emplace(route.gateway, options_.gateway_port);
+    natpmp_.emplace(route.gateway, options_.gateway_port, &cancel_);
     auto address = natpmp_->external_address();
     if (!address) {
         error = std::move(address.error);
@@ -311,6 +318,8 @@ void PortMapper::clear(const char* reason) {
 }
 
 void PortMapper::fail(std::string error, int64_t at) {
+    // A cancelled attempt says nothing about the gateway.
+    if (cancel_.load()) return;
     ++failures_;
     if (error != warned_error_) {
         spdlog::warn("port mapping failed: {}", error);

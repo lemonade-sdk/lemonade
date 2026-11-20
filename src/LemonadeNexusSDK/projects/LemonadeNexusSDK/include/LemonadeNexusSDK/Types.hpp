@@ -16,6 +16,12 @@ namespace lnsdk {
 /// A single server endpoint. `host` should be the server's certificate FQDN —
 /// the public API is verified HTTPS by default and the cert can't be verified
 /// against a bare IP.
+/// A server's public API as advertised: its certificate FQDN and port. The
+/// SDK dials the advertised port first. When that port gets no response,
+/// the SDK dials the same host on port 443, which every server also serves
+/// its public API on, and keeps dialing 443 for that host until 443 gets no
+/// response. The endpoint the SDK reports and binds a session to is always
+/// the advertised one.
 struct ServerEndpoint {
     std::string host{"127.0.0.1"};
     uint16_t    port{9100};
@@ -414,8 +420,9 @@ struct MeshPeer {
     std::string endpoint;               ///< Direct "ip:port" (from STUN/hole-punch)
     /// The peer's LAN endpoints ("a.b.c.d:port", private addresses) that this
     /// device probes: the server lists them from the peer's heartbeats, and
-    /// the mesh orchestrator keeps them only when the peer is on this
-    /// device's network (lan_probe_targets). Empty otherwise.
+    /// the mesh orchestrator keeps them only when this device has a usable
+    /// LAN address or shares the peer's public address (lan_probe_targets).
+    /// Empty otherwise.
     std::vector<std::string> local_endpoints;
     std::string relay_endpoint;         ///< Relay fallback "ip:port" (empty if not needed)
     /// The path the peer's traffic takes now, as the mesh orchestrator's

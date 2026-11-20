@@ -122,8 +122,9 @@ bool epoch_indicates_restart(uint32_t previous_epoch, int64_t previous_time_unix
     return int64_t{current_epoch} < expected - 2;
 }
 
-NatPmpClient::NatPmpClient(std::string gateway_ipv4, uint16_t port)
-    : gateway_(std::move(gateway_ipv4)), port_(port) {}
+NatPmpClient::NatPmpClient(std::string gateway_ipv4, uint16_t port,
+                           const std::atomic<bool>* cancel)
+    : gateway_(std::move(gateway_ipv4)), port_(port), cancel_(cancel) {}
 
 std::optional<ResultCode> NatPmpClient::last_result_code() const noexcept {
     return last_result_code_;
@@ -182,7 +183,7 @@ Result<std::vector<uint8_t>> NatPmpClient::exchange(const std::vector<uint8_t>& 
         return true;
     };
     auto reply = udp_exchange::exchange(gateway_, port_, std::nullopt, request, kWaits, accept,
-                                        "NAT-PMP");
+                                        "NAT-PMP", cancel_);
     if (!reply) return reply;
     const auto result = static_cast<ResultCode>(get16(reply.value, kOffResult));
     if (result != ResultCode::Success) {

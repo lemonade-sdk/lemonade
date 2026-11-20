@@ -16,6 +16,7 @@
 #include <LemonadeNexusSDK/NatPmp.hpp>
 #include <LemonadeNexusSDK/Pcp.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -67,9 +68,10 @@ struct PortMapperOptions {
 /// Obtains and maintains the mapping for one internal UDP port.
 ///
 /// maintain() and release() must be called from one thread (the
-/// orchestrator loop); they make synchronous, bounded gateway exchanges.
-/// mapping() may be called from any thread and returns a copy under a
-/// mutex. No method throws.
+/// orchestrator's mapping thread); they make synchronous, bounded gateway
+/// exchanges. cancel() ends a maintain() exchange early from another
+/// thread. mapping() and seconds_until_due() may be called from any thread
+/// and read the state under a mutex. No method throws.
 class PortMapper {
 public:
     explicit PortMapper(PortMapperOptions options = {});
@@ -101,9 +103,15 @@ public:
     /// the retry backoff; 0 when it is due now or nothing has been tried.
     [[nodiscard]] int64_t seconds_until_due() const;
 
+    /// Ends the gateway exchange of a maintain() call in progress within
+    /// about a quarter second, and makes a maintain() call before the next
+    /// release() return at once. The attempt it ends is not counted as a
+    /// failure and sets no retry. Thread-safe.
+    void cancel();
+
     /// Deletes the live mapping on the gateway with a lifetime-0 request of
     /// its protocol and clears the state. Does nothing when nothing is
-    /// mapped.
+    /// mapped. Runs after a cancel() and ends its effect.
     void release();
 
     /// A copy of the current state. Thread-safe.
@@ -153,6 +161,7 @@ private:
     Grant live_;  ///< The grant behind `state_`.
     std::optional<pcp::PcpClient> pcp_;
     std::optional<natpmp::NatPmpClient> natpmp_;
+    std::atomic<bool> cancel_{false};  ///< Read by the clients' exchanges.
     int64_t next_attempt_unix_{0};
     uint32_t failures_{0};
     std::string warned_error_;

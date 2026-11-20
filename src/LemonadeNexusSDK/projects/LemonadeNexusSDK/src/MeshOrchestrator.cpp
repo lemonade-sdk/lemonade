@@ -136,12 +136,20 @@ void MeshOrchestrator::start(const MeshConfig& config) {
         }
         port_mapper_ = std::make_unique<PortMapper>(std::move(mapper_options));
         mapped_port_ = 0;
+        mapping_changed_ = false;
+    }
+    {
+        std::lock_guard lock(mapping_mutex_);
+        mapping_request_ = 0;
+        mapping_busy_ = false;
+        mapping_quit_ = false;
     }
 
     // The join just verified the Tier 1 servers.
     tier1_checked_ = std::chrono::steady_clock::now();
     running_ = true;
     client_.begin_mesh_peer_waits();
+    mapping_thread_ = std::thread([this] { mapping_loop(); });
     thread_ = std::thread([this] { run_loop(); });
     poll_thread_ = std::thread([this] { poll_loop(); });
 
@@ -155,6 +163,15 @@ void MeshOrchestrator::stop() {
     // check and its wait.
     { std::lock_guard lock(mutex_); }
     cv_.notify_all();
+    // The mapping thread ends its exchange in progress, gives the lease back
+    // (bounded by the release budget) and ends, while the other threads are
+    // joined.
+    {
+        std::lock_guard lock(mapping_mutex_);
+        mapping_quit_ = true;
+    }
+    mapping_cv_.notify_all();
+    port_mapper_->cancel();
     // A held long-poll ends when its connection closes.
     client_.cancel_mesh_peer_wait();
     if (poll_thread_.joinable()) poll_thread_.join();
@@ -162,18 +179,19 @@ void MeshOrchestrator::stop() {
     // A renewal in progress finishes its request (bounded by the HTTP
     // timeouts); its callback must not run after stop() returns.
     if (cert_thread_.joinable()) cert_thread_.join();
+    // Released before the client stops the dataplane the lease points at.
+    if (mapping_thread_.joinable()) mapping_thread_.join();
 
     // The loop thread has ended, so the relay fallback and the hole puncher
     // have no other user.
     relay_fallback_->stop();
     hole_puncher_->reset();
-    // Give the lease back before the client stops the dataplane it points at.
-    if (port_mapper_) port_mapper_->release();
 
     // Remove all mesh peers from the dataplane
     {
         std::lock_guard lock(mutex_);
         port_mapper_.reset();
+        mapping_changed_ = false;
         for (const auto& peer : known_peers_) {
             mesh_.remove_peer(peer.mesh_pubkey);
         }
@@ -293,14 +311,19 @@ void MeshOrchestrator::run_loop() {
         MeshConfig cfg;
         bool refresh_requested = false;
         bool resume_requested = false;
+        bool mapping_changed = false;
         std::chrono::system_clock::time_point wall_now;
         {
             std::lock_guard lock(mutex_);
             cfg = config_;
             refresh_requested = std::exchange(refresh_requested_, false);
             resume_requested = std::exchange(resume_requested_, false);
+            mapping_changed = std::exchange(mapping_changed_, false);
             wall_now = wall_clock_ ? wall_clock_() : std::chrono::system_clock::now();
         }
+        // A mapping that landed or ended is published at once, like a new
+        // reflexive address.
+        if (mapping_changed) next_heartbeat = now;
 
         // A suspended process (an app in the background, a sleeping laptop)
         // finds its sessions, NAT mappings, and reflexive address possibly
@@ -410,13 +433,13 @@ void MeshOrchestrator::run_loop() {
             next_mtu_retry = now + kMtuRetryInterval;
         }
 
-        // Router mapping, after this pass's heartbeat: the mapper's bounded
-        // wait must not delay the first heartbeat and peer list after the
-        // join. The first attempt waits for the reflexive address (STUN on)
-        // or for the dataplane (STUN off), and for the pass's STUN query to
-        // have run. A resume may find another network; a rebind may have
-        // moved the port, and the mapper's clock may have reached a renewal
-        // or a retry since the timer was set.
+        // Router mapping. The first attempt waits for the reflexive address
+        // (STUN on) or for the dataplane (STUN off), and for the pass's STUN
+        // query to have run. A resume may find another network; a rebind may
+        // have moved the port, and the mapper's clock may have reached a
+        // renewal or a retry since the timer was set. The exchange runs on
+        // the mapping thread; the due time is read again once it ended (an
+        // exchange in flight has not set it yet).
         {
             const uint16_t port = mesh_.bound_port();
             bool reflexive_known = false;
@@ -426,11 +449,16 @@ void MeshOrchestrator::run_loop() {
             }
             const bool ready = port != 0 && (mapped_port_ != 0 || reflexive_known ||
                                              cfg.stun_refresh_interval_sec == 0);
+            const bool in_flight = port_mapping_in_flight();
             if (!ready) {
                 next_mapping = now + kMonitorInterval;
-            } else if (resumed || port != mapped_port_ || now >= next_mapping ||
-                       port_mapper_->seconds_until_due() == 0) {
-                if (do_port_mapping()) next_heartbeat = now;
+            } else if (resumed || port != mapped_port_ ||
+                       (!in_flight && port_mapper_->seconds_until_due() == 0)) {
+                request_port_mapping(port);
+                next_mapping = now + kMonitorInterval;
+            } else if (in_flight) {
+                next_mapping = now + kMonitorInterval;
+            } else {
                 next_mapping =
                     clock::now() + std::chrono::seconds(port_mapper_->seconds_until_due());
             }
@@ -451,7 +479,8 @@ void MeshOrchestrator::run_loop() {
         planned_wait = std::max(milliseconds{0}, duration_cast<milliseconds>(next_wake - pass_end));
         std::unique_lock lock(mutex_);
         cv_.wait_until(lock, next_wake, [this] {
-            return !running_.load() || refresh_requested_ || resume_requested_;
+            return !running_.load() || refresh_requested_ || resume_requested_ ||
+                   mapping_changed_;
         });
     }
 }
@@ -506,8 +535,8 @@ std::vector<std::string> MeshOrchestrator::do_peer_refresh() {
                 endpoint->clear();
             }
         }
-        // LAN endpoints must be private addresses, and are probed only for
-        // a peer on this device's network.
+        // LAN endpoints must be private addresses, and are probed only when
+        // this device can reach a private address (lan_probe_targets).
         std::erase_if(peer.local_endpoints, [&](const std::string& endpoint) {
             if (lan_endpoint_usable(endpoint, server_scope == AddressScope::Loopback)) return false;
             spdlog::warn("[MeshOrchestrator] peer {} lists unusable LAN endpoint '{}'; ignored",
@@ -807,21 +836,60 @@ std::string MeshOrchestrator::published_endpoint() const {
     return our_endpoint_;
 }
 
-bool MeshOrchestrator::do_port_mapping() {
-    const uint16_t port = mesh_.bound_port();
+void MeshOrchestrator::request_port_mapping(uint16_t port) {
     mapped_port_ = port;
-    if (!port_mapper_->maintain(port)) return false;
-    const auto mapping = port_mapper_->mapping();
-    if (!mapping.external_endpoint.empty()) {
-        spdlog::info("[MeshOrchestrator] mesh endpoint via {} mapping {} through {}, lifetime {} s",
-                     mapping_protocol_name(mapping.protocol), mapping.external_endpoint,
-                     mapping.gateway, mapping.lifetime_sec);
-    } else {
-        const auto reflexive = published_endpoint();
-        spdlog::info("[MeshOrchestrator] router mapping ended; mesh endpoint is the reflexive {}",
-                     reflexive.empty() ? std::string("address, not known yet") : reflexive);
+    {
+        std::lock_guard lock(mapping_mutex_);
+        mapping_request_ = port;
     }
-    return true;
+    mapping_cv_.notify_all();
+}
+
+bool MeshOrchestrator::port_mapping_in_flight() const {
+    std::lock_guard lock(mapping_mutex_);
+    return mapping_busy_ || mapping_request_ != 0;
+}
+
+void MeshOrchestrator::mapping_loop() {
+    for (;;) {
+        uint16_t port = 0;
+        {
+            std::unique_lock lock(mapping_mutex_);
+            mapping_cv_.wait(lock, [this] { return mapping_quit_ || mapping_request_ != 0; });
+            if (mapping_quit_) break;
+            port = std::exchange(mapping_request_, uint16_t{0});
+            mapping_busy_ = true;
+        }
+        const bool changed = port_mapper_->maintain(port);
+        if (changed) {
+            const auto mapping = port_mapper_->mapping();
+            if (!mapping.external_endpoint.empty()) {
+                spdlog::info("[MeshOrchestrator] mesh endpoint via {} mapping {} through {}, "
+                             "lifetime {} s",
+                             mapping_protocol_name(mapping.protocol), mapping.external_endpoint,
+                             mapping.gateway, mapping.lifetime_sec);
+            } else {
+                const auto reflexive = published_endpoint();
+                spdlog::info("[MeshOrchestrator] router mapping ended; mesh endpoint is the "
+                             "reflexive {}",
+                             reflexive.empty() ? std::string("address, not known yet") : reflexive);
+            }
+        }
+        {
+            std::lock_guard lock(mapping_mutex_);
+            mapping_busy_ = false;
+        }
+        if (changed) {
+            {
+                std::lock_guard lock(mutex_);
+                mapping_changed_ = true;
+            }
+            cv_.notify_all();
+        }
+    }
+    // Only this thread talks to the gateway, so the release has no
+    // competing exchange; stop() joins the thread after this.
+    port_mapper_->release();
 }
 
 std::chrono::steady_clock::time_point MeshOrchestrator::do_punch() {

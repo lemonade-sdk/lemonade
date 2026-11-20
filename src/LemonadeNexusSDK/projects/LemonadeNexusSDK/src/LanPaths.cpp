@@ -244,21 +244,10 @@ bool lan_endpoint_usable(const std::string& endpoint, bool server_on_loopback) {
 std::vector<std::string> lan_probe_targets(const MeshPeer& peer, const std::string& own_reflexive,
                                            const std::vector<InterfaceAddress>& own_lan) {
     if (peer.local_endpoints.empty()) return {};
+    if (!own_lan.empty()) return peer.local_endpoints;
     const auto own_public = parse_address(host_of(own_reflexive));
     const auto peer_public = parse_address(host_of(peer.endpoint));
     if (own_public && peer_public && *own_public == *peer_public) return peer.local_endpoints;
-
-    for (const auto& endpoint : peer.local_endpoints) {
-        const auto ip = parse_address(host_of(endpoint));
-        if (!ip) continue;
-        for (const auto& itf : own_lan) {
-            const auto own = parse_address(itf.address);
-            if (!own) continue;
-            const int prefix = std::min<int>(itf.prefix_len, 32);
-            const uint32_t mask = prefix == 0 ? 0 : ~uint32_t{0} << (32 - prefix);
-            if ((*ip & mask) == (*own & mask)) return peer.local_endpoints;
-        }
-    }
     return {};
 }
 

@@ -109,6 +109,10 @@ constexpr std::string_view kDeviceNameRefusal = "device name '";
 // this long, while the session server stays a verified member whose public
 // API answers, start a forced session move (see note_private_path_unanswered).
 constexpr int64_t kMeshUnansweredWindowMs = 30'000;
+// Every server also serves its public API on this port, for a client whose
+// network allows only that port out. A request that gets no response on a
+// server's advertised port is sent once more to this port (send_public).
+constexpr uint16_t kPublicFallbackPort = 443;
 
 int64_t steady_now_ms() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -352,6 +356,15 @@ struct LemonadeNexusClient::Impl {
         explicit PooledClient(const std::string& url) : cli(url) {}
     };
     std::map<std::string, std::shared_ptr<PooledClient>> public_clients;
+
+    // The port a server is dialed on when its advertised port gets no
+    // response (set_fallback_port), and the hosts dialed on it until a
+    // request there gets no response. The hosts are guarded by
+    // transport_mtx. Only the dial changes: the pool, the session binding,
+    // the Tier 1 directory and everything reported to the application keep
+    // the advertised endpoint.
+    std::atomic<uint16_t> fallback_port{kPublicFallbackPort};
+    std::set<std::string> fallback_hosts;
 
     // Server pool with health state
     struct ServerState {
@@ -628,29 +641,18 @@ struct LemonadeNexusClient::Impl {
     // A discovery GET: no session token, so a server that is not Tier 1
     // never sees the session.
     std::optional<HttpReply> discovery_get(const ServerEndpoint& ep, const std::string& path) {
-        const auto url = base_url(ep);
-        try {
-            auto pooled = pooled_client(url);
-            httplib::Result res{nullptr, httplib::Error::Unknown};
-            {
-                std::lock_guard use(pooled->in_use);
-                res = pooled->cli.Get(path);
-            }
-            if (!res) {
-                // The transport reason (DNS, connect, TLS verification) goes
-                // back with the reply, so the directory's failure text names
-                // it next to the server; the full URL is logged here.
-                const auto why = httplib::to_string(res.error());
-                spdlog::warn("[LemonadeNexusClient] GET {}{} failed: {}", url, path, why);
-                drop_pooled_client(url);
-                return HttpReply{0, {}, why};
-            }
-            return HttpReply{res->status, res->body};
-        } catch (const std::exception& e) {
-            spdlog::warn("[LemonadeNexusClient] GET {}{} exception: {}", url, path, e.what());
-            drop_pooled_client(url);
-            return HttpReply{0, {}, e.what()};
+        std::string failure;
+        auto res = send_public(ep, [&path](httplib::Client& cli) { return cli.Get(path); },
+                               failure);
+        if (!res) {
+            // The transport reason (DNS, connect, TLS verification) goes
+            // back with the reply, so the directory's failure text names
+            // it next to the server; the full URL is logged here.
+            spdlog::warn("[LemonadeNexusClient] GET {}{} failed: {}", base_url(ep), path,
+                         failure);
+            return HttpReply{0, {}, failure};
         }
+        return HttpReply{res->status, res->body};
     }
 
     /// How long after one fallback discovery the next may run. A long outage
@@ -863,8 +865,8 @@ struct LemonadeNexusClient::Impl {
             }
             avoid = avoid_nodes;
         }
+        const std::string payload = post ? body->dump() : std::string{};
         const auto attempt = [&](const ServerEndpoint& ep) -> std::optional<HttpReply> {
-            const auto url = base_url(ep);
             httplib::Headers headers;
             {
                 // Only the server that issued the session sees it.
@@ -873,23 +875,16 @@ struct LemonadeNexusClient::Impl {
                     headers.emplace("Authorization", "Bearer " + session_token);
                 }
             }
-            try {
-                auto pooled = pooled_client(url);
-                httplib::Result res{nullptr, httplib::Error::Unknown};
-                {
-                    std::lock_guard use(pooled->in_use);
-                    res = post ? pooled->cli.Post(path, headers, body->dump(), "application/json")
-                               : pooled->cli.Get(path, headers);
-                }
-                if (!res) {
-                    drop_pooled_client(url);
-                    return std::nullopt;
-                }
-                return HttpReply{res->status, res->body};
-            } catch (const std::exception&) {
-                drop_pooled_client(url);
-                return std::nullopt;
-            }
+            std::string failure;
+            auto res = send_public(ep,
+                                   [&](httplib::Client& cli) {
+                                       return post ? cli.Post(path, headers, payload,
+                                                              "application/json")
+                                                   : cli.Get(path, headers);
+                                   },
+                                   failure);
+            if (!res) return std::nullopt;
+            return HttpReply{res->status, res->body};
         };
         Tier1Server answered;
         std::string error;
@@ -1183,9 +1178,8 @@ struct LemonadeNexusClient::Impl {
     // What one public request targets, captured under transport_mtx so the
     // request itself runs without the lock.
     struct Target {
-        std::string      url;
-        std::string      host;
-        uint16_t         port{0};
+        std::string      url;       // the advertised endpoint's base URL
+        ServerEndpoint   endpoint;  // as advertised; send_public picks the port dialed
         bool             can_fail_over{false};
         httplib::Headers headers;
     };
@@ -1195,14 +1189,13 @@ struct LemonadeNexusClient::Impl {
         Target t;
         t.url = current_base_url_locked();
         if (!server_pool.empty()) {
-            t.host = server_pool[current_server].endpoint.host;
-            t.port = server_pool[current_server].endpoint.port;
+            t.endpoint = server_pool[current_server].endpoint;
         }
         t.can_fail_over = server_pool.size() > 1;
         // The session is a bearer token for the Tier 1 server that issued it.
         // A public request to any other server (a seed, a Tier 2 server)
         // carries no session.
-        if (!session_token.empty() && session_server_locked(t.host, t.port)) {
+        if (!session_token.empty() && session_server_locked(t.endpoint.host, t.endpoint.port)) {
             t.headers.emplace("Authorization", "Bearer " + session_token);
         }
         return t;
@@ -1246,6 +1239,72 @@ struct LemonadeNexusClient::Impl {
         public_clients.erase(url);
     }
 
+    // Where `ep` is dialed: its advertised port, or the fallback port while
+    // the host is on it.
+    ServerEndpoint dial_endpoint(const ServerEndpoint& ep) const {
+        std::lock_guard lock(transport_mtx);
+        if (!fallback_hosts.contains(ep.host)) return ep;
+        return {ep.host, fallback_port.load(std::memory_order_relaxed), ep.use_tls};
+    }
+
+    // One public request to the server advertised at `ep`: `send(cli)` runs
+    // it on the pooled client of the endpoint dialed. A request that gets
+    // no response (no connect, no handshake, no answer, or an exception) on
+    // the advertised port is sent once more to the fallback port, which the
+    // host then keeps; one that gets no response on the fallback port puts
+    // the host back on its advertised port for the next request. An HTTP
+    // error status is a response. `failure` names why no response came
+    // back.
+    template <typename Send>
+    httplib::Result send_public(const ServerEndpoint& ep, Send&& send, std::string& failure) {
+        const auto dial = dial_endpoint(ep);
+        auto res = send_once(dial, send, failure);
+        if (res) return res;
+        const uint16_t fallback = fallback_port.load(std::memory_order_relaxed);
+        if (ep.port == fallback) return res;
+        if (dial.port == fallback) {
+            std::lock_guard lock(transport_mtx);
+            if (fallback_hosts.erase(ep.host) != 0) {
+                spdlog::info("[LemonadeNexusClient] {} got no response on port {} ({}): "
+                             "dialing its advertised port {} again",
+                             ep.host, fallback, failure, ep.port);
+            }
+            return res;
+        }
+        std::string fallback_failure;
+        auto again = send_once({ep.host, fallback, ep.use_tls}, send, fallback_failure);
+        if (!again) return res;
+        std::lock_guard lock(transport_mtx);
+        if (fallback_hosts.insert(ep.host).second) {
+            spdlog::info("[LemonadeNexusClient] {}:{} got no response ({}): dialing port {} "
+                         "from now on",
+                         ep.host, ep.port, failure, fallback);
+        }
+        failure.clear();
+        return again;
+    }
+
+    template <typename Send>
+    httplib::Result send_once(const ServerEndpoint& dial, Send& send, std::string& failure) {
+        const auto url = base_url(dial);
+        try {
+            auto pooled = pooled_client(url);
+            httplib::Result res{nullptr, httplib::Error::Unknown};
+            {
+                std::lock_guard use(pooled->in_use);
+                res = send(pooled->cli);
+            }
+            if (res) return res;
+            failure = httplib::to_string(res.error());
+            drop_pooled_client(url);
+            return res;
+        } catch (const std::exception& e) {
+            failure = e.what();
+            drop_pooled_client(url);
+            return httplib::Result{nullptr, httplib::Error::Connection};
+        }
+    }
+
     // Record a request's outcome against the server it targeted. Another
     // thread may have rotated or replaced the pool meanwhile; the outcome then
     // belongs to a server that is no longer current and is not applied.
@@ -1268,23 +1327,28 @@ struct LemonadeNexusClient::Impl {
             return tier1_http(post, path, body, status_out);
         }
         const char* verb = post ? "POST" : "GET";
+        const std::string payload = post ? body->dump() : std::string{};
         for (int attempt = 0; attempt < 2; ++attempt) {
             const Target t = current_target();
             try {
-                auto pooled = pooled_client(t.url);
-                httplib::Result res{nullptr, httplib::Error::Unknown};
-                auto rtt_start = std::chrono::steady_clock::now();
-                {
-                    std::lock_guard use(pooled->in_use);
-                    res = post ? pooled->cli.Post(path, t.headers, body->dump(), "application/json")
-                               : pooled->cli.Get(path, t.headers);
-                }
-                auto rtt_end = std::chrono::steady_clock::now();
+                // The RTT is the answering attempt's, not the time a fallback
+                // dial took before it.
+                std::chrono::steady_clock::time_point rtt_start, rtt_end;
+                std::string failure;
+                auto res = send_public(t.endpoint,
+                                       [&](httplib::Client& cli) {
+                                           rtt_start = std::chrono::steady_clock::now();
+                                           auto r = post ? cli.Post(path, t.headers, payload,
+                                                                    "application/json")
+                                                         : cli.Get(path, t.headers);
+                                           rtt_end = std::chrono::steady_clock::now();
+                                           return r;
+                                       },
+                                       failure);
 
                 if (!res) {
-                    spdlog::warn("[LemonadeNexusClient] {} {} failed: connection error (server {}:{})",
-                                  verb, path, t.host, t.port);
-                    drop_pooled_client(t.url);
+                    spdlog::warn("[LemonadeNexusClient] {} {} failed: {} (server {}:{})",
+                                 verb, path, failure, t.endpoint.host, t.endpoint.port);
                     report(t, false, 0);
                     if (attempt == 0 && t.can_fail_over) continue;
                     status_out = 0;
@@ -1322,7 +1386,6 @@ struct LemonadeNexusClient::Impl {
                 return json::parse(res->body);
             } catch (const std::exception& e) {
                 spdlog::error("[LemonadeNexusClient] {} {} exception: {}", verb, path, e.what());
-                drop_pooled_client(t.url);
                 report(t, false, 0);
                 if (attempt == 0 && t.can_fail_over) continue;
                 status_out = 0;
@@ -1524,16 +1587,10 @@ struct LemonadeNexusClient::Impl {
             for (const auto& s : server_pool) endpoints.push_back(s.endpoint);
         }
         for (const auto& ep : endpoints) {
-            bool ok = false;
-            try {
-                httplib::Client cli(base_url(ep));
-                cli.set_connection_timeout(config.connect_timeout_sec);
-                cli.set_read_timeout(config.read_timeout_sec);
-                apply_client_socket_options(cli);
-                auto res = cli.Get("/api/health");
-                ok = res && res->status == 200;
-            } catch (...) {
-            }
+            std::string failure;
+            auto res = send_public(
+                ep, [](httplib::Client& cli) { return cli.Get("/api/health"); }, failure);
+            const bool ok = res && res->status == 200;
             std::lock_guard lock(transport_mtx);
             for (auto& s : server_pool) {
                 if (s.endpoint.host != ep.host || s.endpoint.port != ep.port) continue;
@@ -1815,6 +1872,12 @@ bool LemonadeNexusClient::set_link_token(const std::string& token) {
 
 void LemonadeNexusClient::set_invite_hop_delay(std::chrono::milliseconds first_hop) {
     impl_->invite_hop_delay_ms.store(std::max<int64_t>(first_hop.count(), 0));
+}
+
+void LemonadeNexusClient::set_fallback_port(uint16_t port) {
+    std::lock_guard lock(impl_->transport_mtx);
+    impl_->fallback_port.store(port);
+    impl_->fallback_hosts.clear();
 }
 
 void LemonadeNexusClient::set_inference_node(bool inference) {
@@ -2235,6 +2298,8 @@ void LemonadeNexusClient::enable_auto_switching(const LatencyConfig& config) {
     if (current) {
         monitor->set_current_server(*current);
     }
+    monitor->set_dial_resolver(
+        [this](const ServerEndpoint& ep) { return impl_->dial_endpoint(ep); });
 
     // The callback touches only the transport state, so it takes only the
     // transport lock: taking `mutex` here could deadlock with a stop() that

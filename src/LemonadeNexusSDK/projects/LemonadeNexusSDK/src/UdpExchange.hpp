@@ -5,6 +5,7 @@
 
 #include <LemonadeNexusSDK/Error.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -32,9 +33,16 @@ using Acceptor = std::function<bool(std::span<const uint8_t>)>;
 /// (for example "PCP gateway did not answer") when the address does not
 /// parse, the socket or send fails, or the schedule ends without an
 /// accepted reply. The socket is closed before returning. Never throws.
+///
+/// `cancel`, when set, is read every kCancelPoll at most: once it holds
+/// true the exchange ends within that time with the error
+/// "<protocol> exchange cancelled". Another thread may set it.
 [[nodiscard]] Result<std::vector<uint8_t>> exchange(
     const std::string& gateway_ipv4, uint16_t port, const std::optional<std::string>& local_ipv4,
     std::span<const uint8_t> request, std::span<const std::chrono::milliseconds> waits,
-    const Acceptor& accept, const char* protocol);
+    const Acceptor& accept, const char* protocol, const std::atomic<bool>* cancel = nullptr);
+
+/// The longest wait between two reads of `cancel`.
+inline constexpr std::chrono::milliseconds kCancelPoll{250};
 
 }  // namespace lnsdk::udp_exchange

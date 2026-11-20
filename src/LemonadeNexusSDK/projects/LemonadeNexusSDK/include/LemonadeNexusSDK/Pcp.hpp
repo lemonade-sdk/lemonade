@@ -17,6 +17,7 @@
 #include <LemonadeNexusSDK/Error.hpp>
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <optional>
@@ -164,8 +165,11 @@ public:
     /// into the request, which RFC 6887 section 8.1 requires to match);
     /// `port` is the gateway's PCP port (kDefaultPort; a test passes its
     /// fake's loopback port). An address that does not parse or is not
-    /// local makes every call fail.
-    PcpClient(std::string gateway_ipv4, std::string local_ipv4, uint16_t port = kDefaultPort);
+    /// local makes every call fail. `cancel`, when set, must outlive the
+    /// client: a call in progress ends within a quarter second once another
+    /// thread stores true in it, and fails with "PCP exchange cancelled".
+    PcpClient(std::string gateway_ipv4, std::string local_ipv4, uint16_t port = kDefaultPort,
+              const std::atomic<bool>* cancel = nullptr);
 
     /// Requests a public UDP port that forwards to `internal_port` (1 to
     /// 65535) for `lifetime_sec` seconds (1 or more; RFC 6887 recommends
@@ -227,6 +231,7 @@ private:
     std::string gateway_;
     std::string local_;
     uint16_t port_;
+    const std::atomic<bool>* cancel_;
     std::optional<Held> held_;
     std::optional<ResultCode> last_result_code_;
     uint32_t last_epoch_sec_{0};

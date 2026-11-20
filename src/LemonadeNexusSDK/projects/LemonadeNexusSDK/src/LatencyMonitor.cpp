@@ -34,6 +34,7 @@ struct LatencyMonitor::Impl {
     std::vector<LatencyServerEntry>    entries;
     mutable std::size_t         current_idx{0};
     ServerSwitchCallback        switch_cb;
+    DialResolver                dial_resolver;
 
     // Cooldown tracking
     std::chrono::steady_clock::time_point last_switch_time{};
@@ -49,8 +50,14 @@ struct LatencyMonitor::Impl {
 
     // Measure RTT to a single endpoint via HTTPS GET /api/health
     double probe_one(const ServerEndpoint& ep) const {
+        DialResolver resolve;
+        {
+            std::lock_guard lock(mtx);
+            resolve = dial_resolver;
+        }
+        const ServerEndpoint dial = resolve ? resolve(ep) : ep;
         // Always HTTPS (verified by FQDN); the mesh has no plaintext path.
-        std::string url = "https://" + ep.host + ":" + std::to_string(ep.port);
+        std::string url = "https://" + dial.host + ":" + std::to_string(dial.port);
 
         httplib::Client cli(url);
         cli.set_connection_timeout(0, config.probe_timeout_ms * 1000);  // microseconds
@@ -311,6 +318,11 @@ void LatencyMonitor::record_rtt(double rtt_ms) {
 void LatencyMonitor::set_switch_callback(ServerSwitchCallback cb) {
     std::lock_guard lock(impl_->mtx);
     impl_->switch_cb = std::move(cb);
+}
+
+void LatencyMonitor::set_dial_resolver(DialResolver resolver) {
+    std::lock_guard lock(impl_->mtx);
+    impl_->dial_resolver = std::move(resolver);
 }
 
 void LatencyMonitor::start() {

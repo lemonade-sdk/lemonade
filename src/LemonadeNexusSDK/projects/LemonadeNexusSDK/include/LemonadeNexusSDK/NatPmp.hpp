@@ -8,6 +8,7 @@
 
 #include <LemonadeNexusSDK/Error.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -114,8 +115,12 @@ class NatPmpClient {
 public:
     /// `gateway_ipv4` is the gateway's dotted IPv4 address; `port` is its
     /// NAT-PMP port (kDefaultPort; a test passes its fake's loopback port).
-    /// An address that does not parse makes every call fail.
-    explicit NatPmpClient(std::string gateway_ipv4, uint16_t port = kDefaultPort);
+    /// An address that does not parse makes every call fail. `cancel`, when
+    /// set, must outlive the client: a call in progress ends within a
+    /// quarter second once another thread stores true in it, and fails with
+    /// "NAT-PMP exchange cancelled".
+    explicit NatPmpClient(std::string gateway_ipv4, uint16_t port = kDefaultPort,
+                          const std::atomic<bool>* cancel = nullptr);
 
     /// The gateway's public address. Fails when the gateway does not answer
     /// within the budget or answers with an error result code, which
@@ -157,6 +162,7 @@ private:
 
     std::string gateway_;
     uint16_t port_;
+    const std::atomic<bool>* cancel_;
     std::optional<ResultCode> last_result_code_;
     uint32_t last_epoch_sec_{0};
 };

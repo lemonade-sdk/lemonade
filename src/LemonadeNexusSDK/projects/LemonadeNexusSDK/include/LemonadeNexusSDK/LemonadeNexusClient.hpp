@@ -724,6 +724,12 @@ public:
     /// effect at the next join_network().
     void set_invite_hop_delay(std::chrono::milliseconds first_hop);
 
+    /// Set the port a server is dialed on when its advertised port gets no
+    /// response. The default, 443, is the port every server also serves its
+    /// public API on; keep it outside tests. Forgets the hosts dialed on the
+    /// previous fallback port. Thread-safe; takes effect at the next request.
+    void set_fallback_port(uint16_t port);
+
     /// Name this device's endpoint on the next join_network that creates it
     /// (a join of a device that already has its node keeps the stored name;
     /// rename it with update_node). An empty string clears it, and the server
