@@ -585,10 +585,13 @@ models::CatalogSetDeps ModelManager::make_catalog_deps(
     };
     deps.registry_rows = std::move(rows);
     const bool automatic = config_.automatic_model_source && config_.automatic_model_source();
+    const std::string& huggingface = models::huggingface_descriptor().id.str();
     const std::string default_source = default_model_source_provider_
-        ? default_model_source_provider_() : "huggingface";
+        ? default_model_source_provider_() : huggingface;
     if (automatic) {
-        deps.resolve_builtin_source = [this, default_source](ModelInfo& info) {
+        const std::string alternate_source = default_source == huggingface
+            ? models::modelscope_descriptor().id.str() : huggingface;
+        deps.resolve_builtin_source = [this, default_source, alternate_source](ModelInfo& info) {
             if (!info.source.empty() || !info.registry_source.empty() ||
                 !checkpoint_looks_like_repo_id(info.checkpoint())) return;
             const bool collection = is_model_collection_recipe(info.recipe);
@@ -602,7 +605,7 @@ models::CatalogSetDeps ModelManager::make_catalog_deps(
             }
             info.registry_source = default_source;
             ModelInfo alternate = info;
-            alternate.registry_source = default_source == "huggingface" ? "modelscope" : "huggingface";
+            alternate.registry_source = alternate_source;
             if (collection) {
                 ingest_->populate_from_cached_manifest(info);
                 if (!info.components.empty()) return;
