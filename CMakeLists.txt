@@ -1129,6 +1129,7 @@ set(SOURCES_CORE
     src/cpp/server/api_docs.cpp
     src/cpp/server/prometheus_metrics.cpp
     src/cpp/server/utils/container_manager.cpp
+    src/cpp/server/utils/container_registry.cpp
     src/cpp/server/utils/http_client.cpp
     src/cpp/server/utils/json_file.cpp
     src/cpp/server/utils/json_utils.cpp
