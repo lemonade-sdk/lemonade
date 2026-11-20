@@ -114,8 +114,8 @@ void remove_all_except(const std::set<std::string>& keep) {
 std::string normalize_request(nlohmann::json& request) {
     struct IntegerField {
         const char* name;
-        double min;
-        double max;
+        int64_t min;
+        int64_t max;
     };
     const IntegerField integers[] = {
         {"video_frames", 1, kMaxVideoFrames},
@@ -123,25 +123,33 @@ std::string normalize_request(nlohmann::json& request) {
         {"width", 1, kMaxDimension},
         {"height", 1, kMaxDimension},
         {"steps", 1, kMaxSteps},
-        {"seed", static_cast<double>(std::numeric_limits<int64_t>::min()),
-         static_cast<double>(std::numeric_limits<int64_t>::max())},
+        {"seed", std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max()},
     };
+    // 2^63 is exact as a double, while INT64_MAX is not: a double compared against
+    // (double)INT64_MAX would let 2^63 itself through to an undefined cast.
+    constexpr double kTwoPow63 = 9223372036854775808.0;
     for (const auto& field : integers) {
         if (!request.contains(field.name) || request[field.name].is_null()) continue;
         auto& value = request[field.name];
+        const std::string out_of_range = std::string("'") + field.name + "' is out of range";
         if (!value.is_number()) return std::string("'") + field.name + "' must be an integer";
-        if (value.is_number_integer()) {
-            const double number = value.get<double>();
-            if (number < field.min || number > field.max)
-                return std::string("'") + field.name + "' is out of range";
-            continue;
+        int64_t number = 0;
+        if (value.is_number_unsigned()) {
+            const uint64_t unsigned_number = value.get<uint64_t>();
+            if (unsigned_number > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()))
+                return out_of_range;
+            number = static_cast<int64_t>(unsigned_number);
+        } else if (value.is_number_integer()) {
+            number = value.get<int64_t>();
+        } else {
+            const double floating = value.get<double>();
+            if (!std::isfinite(floating) || std::floor(floating) != floating)
+                return std::string("'") + field.name + "' must be an integer";
+            if (floating < -kTwoPow63 || floating >= kTwoPow63) return out_of_range;
+            number = static_cast<int64_t>(floating);
         }
-        const double number = value.get<double>();
-        if (!std::isfinite(number) || std::floor(number) != number)
-            return std::string("'") + field.name + "' must be an integer";
-        if (number < field.min || number > field.max)
-            return std::string("'") + field.name + "' is out of range";
-        value = static_cast<int64_t>(number);
+        if (number < field.min || number > field.max) return out_of_range;
+        value = number;
     }
     struct NumberField {
         const char* name;

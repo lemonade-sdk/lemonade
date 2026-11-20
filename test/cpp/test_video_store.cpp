@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -118,7 +119,8 @@ static void test_normalize_request() {
                             json{{"video_frames", 2147483648.0}}, json{{"video_frames", "9"}},
                             json{{"fps", 1000}}, json{{"width", 100000}}, json{{"steps", 1e12}},
                             json{{"duration", -1}}, json{{"duration", 1e9}}, json{{"seed", 1.5}},
-                            json{{"cfg_scale", "high"}}}) {
+                            json{{"cfg_scale", "high"}}, json{{"seed", 9223372036854775808ULL}},
+                            json{{"seed", 9223372036854775808.0}}, json{{"seed", 1e19}}}) {
         json copy = bad;
         if (store::normalize_request(copy).empty()) {
             check(("numbers: rejects " + bad.dump()).c_str(), false);
@@ -126,6 +128,15 @@ static void test_normalize_request() {
         }
     }
     check("numbers: rejects fractions, out-of-range values and non-numbers", true);
+
+    json extremes = {{"seed", std::numeric_limits<int64_t>::max()}};
+    check("numbers: INT64_MAX is a valid seed",
+          store::normalize_request(extremes).empty() &&
+              extremes["seed"].get<int64_t>() == std::numeric_limits<int64_t>::max());
+    json lowest = {{"seed", -9223372036854775808.0}};
+    check("numbers: -2^63 as a float is a valid seed",
+          store::normalize_request(lowest).empty() &&
+              lowest["seed"].get<int64_t>() == std::numeric_limits<int64_t>::min());
 
     json absent = {{"prompt", "a cat"}, {"video_frames", nullptr}};
     check("numbers: absent and null fields are left alone", store::normalize_request(absent).empty());
