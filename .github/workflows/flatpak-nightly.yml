@@ -1,0 +1,20 @@
+name: Flatpak Nightly 📦
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Daily at 02:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: flatpak-nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly-flatpak:
+    uses: ./.github/workflows/flatpak-build-publish.yml
+    with:
+      channel: nightly
