@@ -241,15 +241,41 @@ class VideoGenerationTests(ServerTestBase):
         ):
             self._assert_rejected({**base, **bad}, f"{bad}")
 
-    def test_008_finished_videos_report_completed_at(self):
-        """A canceled or failed video says when it ended."""
-        job_id = self._create({"model": "user.does-not-exist", "prompt": "a cat"})
-        requests.post(
-            f"{self.base_url}/videos/{job_id}/cancel", timeout=TIMEOUT_DEFAULT
+    def test_008_canceled_queued_video_reports_completed_at(self):
+        """A video canceled while queued says when it was canceled."""
+        # The job engine runs one job at a time, so a sleep job keeps the video queued.
+        hold = requests.post(
+            f"{self.base_url}/jobs",
+            json={
+                "name": "hold the worker",
+                "steps": [{"id": "wait", "op": "sleep", "params": {"ms": 60000}}],
+            },
+            timeout=TIMEOUT_DEFAULT,
         )
-        payload = self._wait(job_id, timeout=TIMEOUT_MODEL_OPERATION)
-        self.assertIn(payload["status"], ("canceled", "failed"), payload)
-        self.assertIn("completed_at", payload, payload)
+        self.assertIn(hold.status_code, (200, 201, 202), hold.text[:300])
+        hold_id = hold.json()["id"]
+        try:
+            deadline = time.time() + TIMEOUT_DEFAULT
+            while time.time() < deadline:
+                state = requests.get(
+                    f"{self.base_url}/jobs/{hold_id}", timeout=TIMEOUT_DEFAULT
+                ).json()
+                if state.get("status") == "running":
+                    break
+                time.sleep(0.2)
+            job_id = self._create({"model": "user.does-not-exist", "prompt": "a cat"})
+            queued = requests.get(
+                f"{self.base_url}/videos/{job_id}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(queued.get("status"), "queued", queued)
+            requests.post(
+                f"{self.base_url}/videos/{job_id}/cancel", timeout=TIMEOUT_DEFAULT
+            )
+            payload = self._wait(job_id, timeout=TIMEOUT_MODEL_OPERATION)
+            self.assertEqual(payload["status"], "canceled", payload)
+            self.assertIn("completed_at", payload, payload)
+        finally:
+            requests.delete(f"{self.base_url}/jobs/{hold_id}", timeout=TIMEOUT_DEFAULT)
 
     # --- generation ---
 
@@ -458,6 +484,9 @@ class VideoGenerationTests(ServerTestBase):
         payload = self._wait(job_id, timeout=TIMEOUT_MODEL_OPERATION)
         self.assertEqual(
             payload["status"], "canceled", f"cancel did not stop the job: {payload}"
+        )
+        self.assertIn(
+            "completed_at", payload, "a canceled running video has no completed_at"
         )
 
         next_id = self._create(
