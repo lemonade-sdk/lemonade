@@ -60,16 +60,19 @@ if(WIN32)
     list(APPEND COMMON_SOURCES
         ../server/utils/platform/path_windows.cpp
         ../server/utils/platform/process_windows.cpp
+        manual_launch_shell_windows.cpp
     )
 elseif(APPLE)
     list(APPEND COMMON_SOURCES
         ../server/utils/platform/path_macos.cpp
         ../server/utils/platform/process_macos.cpp
+        manual_launch_shell_unix.cpp
     )
 elseif(UNIX)
     list(APPEND COMMON_SOURCES
         ../server/utils/platform/path_linux.cpp
         ../server/utils/platform/process_linux.cpp
+        manual_launch_shell_unix.cpp
     )
 endif()
 

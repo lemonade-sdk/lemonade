@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <initializer_list>
 #include <optional>
@@ -15,6 +17,7 @@
 
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
 
 namespace lemon {
 namespace {
@@ -65,6 +68,32 @@ std::string percent_encode(const std::string& value, bool keep_slash = false) {
 std::string env_string(const char* name) {
     const char* value = std::getenv(name);
     return (value && value[0]) ? std::string(value) : std::string();
+}
+
+std::filesystem::path huggingface_token_path() {
+    const std::string explicit_path = lemon::utils::get_environment_variable_utf8("HF_TOKEN_PATH");
+    if (!explicit_path.empty()) return lemon::utils::path_from_utf8(explicit_path);
+    const std::string hf_home = lemon::utils::get_environment_variable_utf8("HF_HOME");
+    if (!hf_home.empty()) return lemon::utils::path_from_utf8(hf_home) / "token";
+    try {
+        return lemon::utils::path_from_utf8(lemon::utils::default_hf_cache_dir()).parent_path() / "token";
+    } catch (const std::exception&) {
+        return {};
+    }
+}
+
+// Same precedence as huggingface_hub: HF_TOKEN, then the token file that
+// `hf auth login` writes. Read per call so a new login applies without a restart.
+std::string huggingface_token() {
+    std::string token = env_string("HF_TOKEN");
+    if (token.empty()) {
+        std::ifstream file(huggingface_token_path());
+        if (file) std::getline(file, token);
+    }
+    const auto first = token.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return std::string();
+    const auto last = token.find_last_not_of(" \t\r\n");
+    return token.substr(first, last - first + 1);
 }
 
 std::string trim_trailing_slash(std::string value) {
@@ -371,7 +400,7 @@ public:
 
     std::map<std::string, std::string> auth_headers() const override {
         std::map<std::string, std::string> headers;
-        const std::string token = env_string("HF_TOKEN");
+        const std::string token = huggingface_token();
         if (!token.empty()) headers["Authorization"] = "Bearer " + token;
         return headers;
     }

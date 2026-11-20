@@ -2826,6 +2826,30 @@ if(BUILD_TESTING AND EXISTS "${_JOB_GRAPH_TEST_SRC}")
     add_cpp_ci_test(JobGraphTest CI ON COMMAND test_job_graph)
 endif()
 
+set(_JOB_MEDIA_LIMITS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_media_limits.cpp")
+if(BUILD_TESTING AND EXISTS "${_JOB_MEDIA_LIMITS_TEST_SRC}")
+    add_executable(test_job_media_limits test/cpp/test_job_media_limits.cpp)
+    target_include_directories(test_job_media_limits PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_job_media_limits PRIVATE nlohmann_json::nlohmann_json)
+    include(CTest)
+    add_cpp_ci_test(JobMediaLimitsTest CI ON COMMAND test_job_media_limits)
+endif()
+
+set(_JOB_MEDIA_IO_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_media_io.cpp")
+if(BUILD_TESTING AND EXISTS "${_JOB_MEDIA_IO_TEST_SRC}")
+    add_executable(test_job_media_io test/cpp/test_job_media_io.cpp)
+    target_include_directories(test_job_media_io PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_job_media_io PRIVATE nlohmann_json::nlohmann_json)
+    include(CTest)
+    add_cpp_ci_test(JobMediaIoTest CI ON COMMAND test_job_media_io)
+endif()
+
 # Backend install atomicity (staging + verified atomic swap).
 # Header-only unit under test, so no extra source files are required.
 set(_INSTALL_ATOMICITY_TEST_SRC
@@ -3669,6 +3693,12 @@ if(BUILD_TESTING AND EXISTS "${_AUTO_TUNE_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(AutoTuneTest CI ON COMMAND test_auto_tune)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_auto_context_flow.cpp")
+    add_executable(test_auto_context_flow test/cpp/test_auto_context_flow.cpp)
+    target_link_libraries(test_auto_context_flow PRIVATE lemonade-server-core)
+    add_cpp_ci_test(AutoContextFlowTest CI ON COMMAND test_auto_context_flow)
 endif()
 
 set(_GPU_MEMORY_SELECTION_TEST_SRC
