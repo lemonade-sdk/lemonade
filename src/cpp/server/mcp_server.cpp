@@ -1486,8 +1486,8 @@ std::vector<McpTool> McpServer::build_tools() {
                                 {"required", json::array({"recipe", "backend"})},
                                 {"additionalProperties", false},
                                 {"properties", {
-                                    {"recipe", {{"type", "string"}}},
-                                    {"backend", {{"type", "string"}}},
+                                    {"recipe", {{"type", "string"}, {"pattern", "\\S"}}},
+                                    {"backend", {{"type", "string"}, {"pattern", "\\S"}}},
                                     {"force", {{"type", "boolean"},
                                                {"description", "Override an unsupported-state guard when the underlying API permits it."}}},
                                 }},
