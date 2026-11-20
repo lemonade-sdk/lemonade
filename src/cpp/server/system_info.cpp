@@ -10,10 +10,12 @@
 #include "lemon/utils/version_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/utils/safe_fs.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/fastflowlm/fastflowlm_models.h"
 #include "lemon/recipe_backend_def.h"
 #include <filesystem>
 #include <fstream>
@@ -1339,6 +1341,18 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
         backend_status["tier"] = backend_tier_to_string(def.tier);
         backend_status["format"] = backend_format_to_string(def.format);
+        bool can_uninstall = backend_name != "system"
+            && !utils::looks_like_path(
+                BackendUtils::get_bin_config_value(recipe, backend_name));
+        if (recipe == "flm" && can_uninstall) {
+            const std::string flm_path = backends::fastflowlm::find_flm_in_path();
+            if (!flm_path.empty()) {
+                const fs::path install_dir = utils::path_from_utf8(
+                    BackendUtils::get_install_directory(recipe, backend_name));
+                can_uninstall = utils::path_inside(utils::path_from_utf8(flm_path), install_dir);
+            }
+        }
+        backend_status["can_uninstall"] = can_uninstall;
         if (const auto* desc = backends::descriptor_for(recipe)) {
             auto about = desc->about.find(backend_name);
             if (about != desc->about.end()) {
@@ -1400,7 +1414,6 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 {"state", "unsupported"},
                 {"message", message},
                 {"action", ""},
-                {"can_uninstall", true},
             };
 
             set_backend_status(def, backend, kOtherOsUnsupportedPriority);
