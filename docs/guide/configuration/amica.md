@@ -14,6 +14,8 @@ A loaded model is served by **`amica-engine`**, a native program built with Lemo
 
 Generation is greedy: `temperature`, `top_p`, and the other sampling parameters are ignored. Requests run one at a time.
 
+Bundles that carry MTP draft graphs (a `speculative.json` of type `mtp`, such as qwen3.8-flash-next-32k-ud-iq3xxs-q8hc) decode with MTP speculative decoding by default: each step verifies the model's own one-token draft and emits two tokens when it is accepted. On a Radeon 8065S that bundle generates 36–41 tokens/s instead of about 30. Because the verify graph's kernels round slightly differently from the plain decoder's, a near-tie can occasionally pick a different token than plain decoding would. `--speculative off` (through `amica_args`) decodes one token per step instead. See [MTP speculative decoding](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/amica_engine/README.md#mtp-speculative-decoding) for how it runs.
+
 Prompt and context length are fixed by the bundle's graphs: the largest prefill graph sets the prompt capacity (128 tokens for Qwen2.5-0.5B), and the KV cache sets prompt plus generated tokens (192). Older turns are dropped to fit a conversation into the prefill capacity, and `max_tokens` is clamped to the remaining KV capacity.
 
 Both bundle layouts that `amica-driver` runs are supported:

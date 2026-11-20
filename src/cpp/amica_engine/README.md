@@ -134,6 +134,7 @@ Pass `amica-engine` options per load with `--amica-args`, or set them for every 
 | `--weights-vram-mib N` | Keep at most N MiB of weights in VRAM and put the rest in system memory. |
 | `--adapter <index or name>` | Choose the GPU: an index among AMD adapters, or part of the adapter name. By default the first supported discrete AMD GPU is used. On a machine with several GPUs, choosing one that does not drive a display keeps the desktop responsive if the GPU hangs. |
 | `--arch gfxNNNN` | Override the GPU architecture AMICA compiles for. |
+| `--speculative auto\|off` | `auto` (the default) decodes with the bundle's MTP drafts when its `speculative.json` has them (see [MTP speculative decoding](#mtp-speculative-decoding)); `off` decodes one token per step with the bundle's plain prefill and decoder graphs. |
 
 Weights in system memory are read over PCIe for every token, so offloading trades speed for fitting. On an RX 9070 XT, gpt-oss-20b runs at about 122 tokens/s fully in VRAM and about 4 tokens/s with two thirds of its weights offloaded.
 
@@ -158,6 +159,16 @@ Loading compiles the graphs and uploads the weights. Expect about 12 s for qwen2
 ```
 
 Generation is greedy and requests run one at a time. Prompts longer than the bundle's prefill capacity drop their oldest turns, and `max_tokens` is clamped to the remaining context.
+
+### MTP speculative decoding
+
+A bundle whose `speculative.json` has `"type": "mtp"` (written by AMICA's `tools/amica/qwen3.8/qwen38_mtp.py`; ChatApp runs the same files as `qwen3.8-flash-next-32k-mtp`) decodes with the model's multi-token-prediction head, as `amica-driver --mtp-*` does. The load summary then says `speculative=mtp`, or `speculative=mtp+adaptive` when the bundle also has the one-row `decode` and `mtp_decode` graphs:
+
+- The prompt runs through the MTP prefill graph, followed by the head's prefill over the same rows, which drafts the token after the first one.
+- Each step then runs the two-row verify graph over the newest token and the draft, ranks both rows on the GPU, runs the head over the verified tokens, and ranks its rows: one submission that reads back four token IDs. An accepted draft yields two tokens; a rejected one yields the target's token, and the next step restores the recurrent state from the verify graph's rollback slots.
+- With the one-row graphs, the engine stops drafting while the running acceptance rate is too low for a verify step to pay off, and resumes when the head's drafts, still scored on the one-row steps, improve.
+
+The output is greedy, but the verify and one-row graphs use different kernels from the plain decoder, so on a near-tie a token can differ from `--speculative off`, as it does between ChatApp's MTP and plain runs. Each request logs its acceptance (`mtp steps=... accepted=... tokens_per_step=...`). On a Radeon 8065S (gfx1151), qwen3.8-flash-next-32k-ud-iq3xxs-q8hc generates 36–41 tokens/s across the `lemonade bench` scenarios this way, against about 30 with `--speculative off`, with draft acceptance of 0.71–1.0. Time to first token rises by 15–110 ms for the head's prefill, and the model takes about 3.6 GB more memory. If the bundle's `speculative.json` cannot be used (no `argmax` graph, left-padded prompts, or missing graphs), the engine logs why and decodes one token per step.
 
 ## 6. Test
 

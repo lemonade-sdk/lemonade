@@ -149,6 +149,7 @@ Bundle::Bundle(const std::string& model_dir) {
         const auto dims = tensor_dims(cache_output_map(prefill_.back().graph, decoder_).second.at(0));
         if (dims.size() == 4) context_capacity_ = dims[2];
     }
+    load_speculative();
     build_plan();
 }
 
@@ -195,6 +196,101 @@ void Bundle::load_prefill_graphs() {
     std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
     for (const auto& [graph, capacity] : entries) {
         prefill_.push_back({graph, capacity, cache_output_map(graph, decoder_).first});
+    }
+}
+
+// speculative.json of type "mtp", as qwen38_mtp.py writes it and ChatApp's MTP
+// variant runs it: per prefill capacity, a prefill graph that also returns the
+// rows' residual streams and the MTP head's prefill over them; the two-row
+// verify step, the two-row head step, the argmax graph that ranks two logits
+// rows on the GPU, the head's weights, and optionally the one-row target step
+// and head that let the engine stop drafting when drafts are rarely accepted.
+// A bundle whose MTP graphs the engine cannot run decodes one token per step;
+// speculative_note() says why.
+void Bundle::load_speculative() {
+    const fs::path source = fs::u8path(source_dir_);
+    const fs::path path = source / "speculative.json";
+    if (!fs::is_regular_file(path)) return;
+    try {
+        std::string text = read_text_file(path_string(path));
+        if (text.compare(0, 3, "\xEF\xBB\xBF") == 0) text.erase(0, 3);
+        const json spec = json::parse(text);
+        const std::string type = spec.value("type", "");
+        if (type != "mtp") {
+            throw std::runtime_error("type '" + type + "' is not supported; amica-engine runs MTP drafts only");
+        }
+        if (!self_contained_) {
+            throw std::runtime_error("MTP needs a bundle whose graphs produce their own logits");
+        }
+        // The head reads the token after each prompt row from the row after it,
+        // and chunks continue from cached rows, both with prompts at row 0.
+        if (prompt_padding_ != "right") {
+            throw std::runtime_error("MTP needs right-padded prompts");
+        }
+        const auto file = [&](const char* key) {
+            const json& name = spec.at(key);
+            if (!name.is_string() || name.get<std::string>().empty()) {
+                throw std::runtime_error(std::string("\"") + key + "\" does not name a graph");
+            }
+            const fs::path graph = source / fs::u8path(name.get<std::string>());
+            if (!fs::is_regular_file(graph)) {
+                throw std::runtime_error(std::string("\"") + key + "\" names a missing file " + path_string(graph));
+            }
+            return path_string(graph);
+        };
+        // GPU argmax is what keeps a drafting step to one submission; without
+        // it each step would wait for the CPU twice.
+        if (!truthy(spec.value("argmax", json()))) {
+            throw std::runtime_error("it has no argmax graph");
+        }
+        const std::string verify = file("verify");
+        json mtp = {{"verify", verify},
+                    {"head_step", file("mtp_step")},
+                    {"argmax", file("argmax")},
+                    {"resources", file("mtp_resources")}};
+        const json& heads = spec.at("mtp_prefill");
+        std::vector<std::pair<std::size_t, json>> variants;
+        for (const auto& [key, graph] : spec.at("prefill").items()) {
+            if (!heads.contains(key)) {
+                throw std::runtime_error("prefill capacity " + key + " has no mtp_prefill graph");
+            }
+            const std::string target = path_string(source / fs::u8path(graph.get<std::string>()));
+            const std::size_t capacity = graph_capacity(target);
+            if (std::to_string(capacity) != key) {
+                throw std::runtime_error(target + " holds " + std::to_string(capacity) + " prompt tokens, not " + key);
+            }
+            const std::string head = path_string(source / fs::u8path(heads.at(key).get<std::string>()));
+            variants.emplace_back(capacity, json{{"graph", target},
+                                                 {"head", head},
+                                                 {"capacity", capacity},
+                                                 {"cache_map", cache_output_map(target, verify).first}});
+        }
+        if (variants.empty()) {
+            throw std::runtime_error("it has no prefill graphs");
+        }
+        std::sort(variants.begin(), variants.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        // Without chunked prefill the largest graph bounds the prompt, so MTP
+        // must accept every prompt the plain prefill graphs do.
+        if (!chunked_prefill_ && variants.back().first < prefill_.back().capacity) {
+            throw std::runtime_error("its largest prefill graph holds fewer prompt tokens than the bundle's");
+        }
+        mtp["prefill"] = json::array();
+        for (const auto& [capacity, variant] : variants) mtp["prefill"].push_back(variant);
+        const auto mask = tensor_dims(entry_point(verify).inputs.at(
+            parameter_index(generation_.at("decoder_attention_mask_input").get<std::string>())));
+        std::size_t elements = 1;
+        for (const std::size_t dim : mask) elements *= dim;
+        if (context_capacity_ && elements != *context_capacity_) {
+            throw std::runtime_error("the verify graph's attention mask is not the decoder's context length");
+        }
+        if (truthy(spec.value("decode", json())) && truthy(spec.value("mtp_decode", json()))) {
+            mtp["decode"] = file("decode");
+            mtp["head_decode"] = file("mtp_decode");
+        }
+        mtp_ = std::move(mtp);
+    } catch (const std::exception& error) {
+        mtp_ = json();
+        speculative_note_ = path_string(path) + " is not used, so decoding takes one token per step: " + error.what();
     }
 }
 
@@ -246,6 +342,7 @@ void Bundle::build_plan() {
         plan_["inputs"]["prefill_attention_mask"] = g.at("prefill_attention_mask_input");
         plan_["inputs"]["decoder_token"] = g.at("decoder_token_input");
         plan_["inputs"]["decoder_attention_mask"] = g.at("decoder_attention_mask_input");
+        if (!mtp_.is_null()) plan_["mtp"] = mtp_;
         return;
     }
     const json& tail = manifest_.at("decoder_append");

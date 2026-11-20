@@ -23,8 +23,10 @@
 #include "png.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -93,7 +95,32 @@ struct PrefillVariant {
     std::size_t capacity = 0;
     PromptInputs inputs;
     Gpu::Sequence step;  // uploads the inputs and runs the graph
+
+    // With MTP, the head's prefill over the same rows, its token and mask
+    // inputs, and its step: the uploads, the graph and its logits readback.
+    Graph head;
+    HostInput head_token;
+    HostInput head_mask;
+    Gpu::Sequence head_step;
 };
+
+// One prefill graph run: `n` prompt tokens from position `begin`.
+struct Chunk {
+    PrefillVariant* variant;
+    std::size_t begin;
+    std::size_t n;
+};
+
+// AMICA names a graph's entry parameters argN by declaration position, which
+// can differ from the order of its inputs; -1 for any other name.
+int entry_position(const char* name) {
+    const std::string text = name != nullptr ? name : "";
+    if (text.size() <= 3 || text.rfind("arg", 0) != 0 ||
+        !std::all_of(text.begin() + 3, text.end(), [](unsigned char c) { return std::isdigit(c) != 0; })) {
+        return -1;
+    }
+    return std::stoi(text.substr(3));
+}
 
 struct InputNames {
     std::string embedding;
@@ -105,11 +132,16 @@ struct InputNames {
 
 class Engine : public amica_engine::Generator {
 public:
-    Engine(const json& plan, const std::string& adapter, const std::string& arch, std::int64_t weights_vram_mib)
+    // With `speculative` and an "mtp" section in the plan, the engine decodes
+    // with MTP drafts: the verify graph takes the decoder's place, and the MTP
+    // prefill graphs the plain ones'.
+    Engine(const json& plan, const std::string& adapter, const std::string& arch, std::int64_t weights_vram_mib,
+           bool speculative)
         : runtime_(adapter, arch), gpu_(runtime_.gpu()) {
         const auto started = std::chrono::steady_clock::now();
 
         graph_logits_ = plan.at("logits").get<std::string>() == "graph";
+        mtp_ = speculative && graph_logits_ && plan.contains("mtp");
         prompt_right_aligned_ = plan.at("prompt_padding").get<std::string>() == "left";
         chunked_prefill_ = plan.value("chunked_prefill", false);
         external_weights_min_bytes_ = plan.value("external_weights_min_bytes", std::uint64_t{0});
@@ -140,12 +172,18 @@ public:
         }
 
         Resources& resources = runtime_.open_resources(plan.at("resources").get<std::string>());
-        decoder_ = compile("decoder", plan.at("decoder").get<std::string>(), resources);
-        for (const auto& entry : plan.at("prefill")) {
+        const json* mtp = mtp_ ? &plan.at("mtp") : nullptr;
+        Resources* head_resources = mtp ? &runtime_.open_resources(mtp->at("resources").get<std::string>()) : nullptr;
+        const json& decoder = mtp ? mtp->at("verify") : plan.at("decoder");
+        decoder_ = compile(mtp ? "verify" : "decoder", decoder.get<std::string>(), resources);
+        for (const auto& entry : mtp ? mtp->at("prefill") : plan.at("prefill")) {
             auto variant = std::make_unique<PrefillVariant>();
             variant->capacity = entry.at("capacity").get<std::size_t>();
-            variant->graph = compile("prefill[" + std::to_string(variant->capacity) + "]",
-                                     entry.at("graph").get<std::string>(), resources);
+            const std::string capacity = "[" + std::to_string(variant->capacity) + "]";
+            variant->graph = compile("prefill" + capacity, entry.at("graph").get<std::string>(), resources);
+            if (mtp) {
+                variant->head = compile("mtp_prefill" + capacity, entry.at("head").get<std::string>(), *head_resources);
+            }
             for (const auto& [output, input] : entry.at("cache_map").items()) {
                 cache_maps_[variant.get()].emplace_back(output, input.get<std::string>());
             }
@@ -153,6 +191,16 @@ public:
         }
         std::sort(prefill_.begin(), prefill_.end(),
                   [](const auto& a, const auto& b) { return a->capacity < b->capacity; });
+        if (mtp) {
+            head_step_ = compile("mtp_step", mtp->at("head_step").get<std::string>(), *head_resources);
+            verify_argmax_ = compile("argmax[verify]", mtp->at("argmax").get<std::string>(), *head_resources);
+            head_argmax_ = compile("argmax[mtp_step]", mtp->at("argmax").get<std::string>(), *head_resources);
+            adaptive_ = mtp->contains("decode");
+            if (adaptive_) {
+                plain_ = compile("decode", mtp->at("decode").get<std::string>(), resources);
+                plain_head_ = compile("mtp_decode", mtp->at("head_decode").get<std::string>(), *head_resources);
+            }
+        }
         if (!graph_logits_) {
             const auto& lm_head = plan.at("lm_head");
             lm_head_ = compile("lm_head", lm_head.at("graph").get<std::string>(),
@@ -164,6 +212,9 @@ public:
         allocate_decoder();
         for (auto& variant : prefill_) {
             allocate_prefill(*variant);
+        }
+        if (mtp_) {
+            allocate_mtp();
         }
         if (!graph_logits_) {
             allocate_lm_head(plan.at("lm_head").value("resource_map", json::object()));
@@ -184,6 +235,7 @@ public:
         }
         return "adapter='" + gpu_.adapter_name() + "' arch=" + gpu_.gfx_arch() + " prefill_capacity=[" + capacities +
                "]" + (chunked_prefill_ ? " chunked_prefill" : "") +
+               (mtp_ ? std::string(" speculative=mtp") + (adaptive_ ? "+adaptive" : "") : std::string()) +
                " load_ms=" + std::to_string(static_cast<long long>(load_ms_));
     }
 
@@ -203,24 +255,16 @@ public:
             }
             prompt.push_back(static_cast<std::size_t>(id));
         }
-        PrefillVariant* variant = nullptr;
-        for (auto& candidate : prefill_) {
-            if (candidate->capacity >= prompt.size()) {
-                variant = candidate.get();
-                break;
-            }
-        }
-        if (variant == nullptr && !chunked_prefill_) {
-            throw std::runtime_error("the prompt has " + std::to_string(prompt.size()) +
-                                     " tokens, more than the largest prefill capacity " +
-                                     std::to_string(prefill_.back()->capacity));
+        const std::vector<Chunk> chunks = prompt_chunks(prompt.size());
+        if (mtp_) {
+            return generate_mtp(prompt, chunks, max_new_tokens, stop_ids, on_token);
         }
 
         amica_engine::Generation result;
         const auto started = std::chrono::steady_clock::now();
         auto decode_started = started;
         try {
-            std::size_t token = variant ? prefill(*variant, prompt) : prefill_chunked(prompt);
+            std::size_t token = prefill(prompt, chunks);
             result.ttft_ms = milliseconds_since(started);
             result.ids.push_back(static_cast<std::int64_t>(token));
             bool keep_going = on_token(static_cast<std::int64_t>(token));
@@ -248,6 +292,161 @@ public:
     bool device_removed() override { return runtime_.device_removed(); }
 
 private:
+    // MTP speculative greedy decoding with one draft token, as amica-driver's
+    // --mtp-* mode runs it. Each drafting step verifies [newest, draft] in one
+    // two-row target pass. The draft is accepted when it equals the target's
+    // greedy token after the newest one, and then the second row's token is
+    // emitted as well, so the tokens are those of one-token greedy decoding up
+    // to the verify graph's rounding. A rejected draft leaves its row's
+    // attention-cache entries past the mask, where the next step overwrites
+    // them, and the next step's restore flag rolls the recurrent state back
+    // from the verify graph's slots. The head then drafts the next token from
+    // the verify rows' residual streams. One submission runs verify, its GPU
+    // argmax, the head and the head's argmax, and reads back four token ids.
+    //
+    // With the one-row graphs, drafting is adaptive: a drafting step costs
+    // verify_cost and emits 1 + acceptance tokens, a one-row step costs
+    // plain_cost for one, so drafting pays while acceptance exceeds
+    // verify_cost / plain_cost - 1. Both costs and the acceptance are running
+    // averages; one-row steps keep scoring the head's drafts.
+    amica_engine::Generation generate_mtp(const std::vector<std::size_t>& prompt, const std::vector<Chunk>& chunks,
+                                          std::size_t max_new_tokens, const std::set<std::int64_t>& stop_ids,
+                                          const std::function<bool(std::int64_t)>& on_token) {
+        constexpr double kSmoothing = 0.2;
+        constexpr double kHysteresis = 0.05;
+        const auto average = [&](double& value, double sample) {
+            value = value == 0.0 ? sample : value + kSmoothing * (sample - value);
+        };
+        double acceptance = 0.7;
+        double verify_cost = 0.0;
+        double plain_cost = 0.0;
+        bool drafting = true;
+        std::size_t steps = 0, accepted = 0, plain_steps = 0, plain_hits = 0;
+
+        amica_engine::Generation result;
+        const auto started = std::chrono::steady_clock::now();
+        auto decode_started = started;
+        try {
+            auto [token, draft] = prefill_mtp(prompt, chunks);
+            result.ttft_ms = milliseconds_since(started);
+            bool keep_going = true;
+            bool stop = false;
+            const auto emit = [&](std::size_t id) {
+                result.ids.push_back(static_cast<std::int64_t>(id));
+                keep_going = on_token(static_cast<std::int64_t>(id));
+                stop = stop_ids.count(static_cast<std::int64_t>(id)) != 0;
+            };
+            const auto more = [&] { return keep_going && !stop && result.ids.size() < max_new_tokens; };
+            emit(token);
+
+            decode_started = std::chrono::steady_clock::now();
+            std::size_t newest = prompt.size();  // the position of the newest token
+            const std::size_t capacity = decoder_inputs_.mask.elements();
+            bool restore = false;
+            while (more()) {
+                const std::size_t last = static_cast<std::size_t>(result.ids.back());
+                if (adaptive_ && verify_cost > 0.0) {
+                    const double plain = plain_cost > 0.0 ? plain_cost : 0.75 * verify_cost;
+                    const double break_even = verify_cost / plain - 1.0;
+                    drafting = acceptance > break_even + (drafting ? -kHysteresis : kHysteresis);
+                }
+                // The token budget leaves room for the second verify row, so
+                // this holds unless the server's limit changes.
+                const bool fits = newest + 2 <= capacity;
+                if (!fits && !adaptive_) break;
+                if (drafting && fits) {
+                    decoder_inputs_.token.write(0, static_cast<std::int64_t>(last));
+                    decoder_inputs_.token.write(1, static_cast<std::int64_t>(draft));
+                    set_mask_run(decoder_inputs_.mask, decoder_mask_ones_, newest + 2);
+                    verify_restore_.write(0, restore ? 1 : 0);
+                    set_mask_run(head_step_mask_, head_step_mask_ones_, newest + 2);
+                    const auto step_started = std::chrono::steady_clock::now();
+                    gpu_.execute_and_wait(draft_step_);
+                    average(verify_cost, milliseconds_since(step_started));
+                    // The verify step's two greedy ids, then the head's two.
+                    const std::size_t target = read_id(0);
+                    const bool hit = target == draft;
+                    const std::size_t bonus = read_id(1);
+                    draft = read_id(hit ? 3 : 2);
+                    emit(target);
+                    if (hit && more()) emit(bonus);
+                    ++steps;
+                    accepted += hit ? 1 : 0;
+                    average(acceptance, hit ? 1.0 : 0.0);
+                    restore = !hit;
+                    newest += hit ? 2 : 1;
+                } else {
+                    // One row; after a rejected draft it resumes from the slots.
+                    plain_inputs_.token.write(0, static_cast<std::int64_t>(last));
+                    set_mask_run(plain_inputs_.mask, plain_mask_ones_, newest + 1);
+                    plain_restore_.write(0, restore ? 1 : 0);
+                    const auto step_started = std::chrono::steady_clock::now();
+                    gpu_.execute_and_wait(plain_step_);
+                    const std::size_t target = argmax_read_back(plain_logit_width_);
+                    double cost = milliseconds_since(step_started);
+                    const bool hit = target == draft;
+                    emit(target);
+                    ++plain_steps;
+                    plain_hits += hit ? 1 : 0;
+                    if (more()) {
+                        plain_head_token_.write(0, static_cast<std::int64_t>(target));
+                        set_mask_run(plain_head_mask_, plain_head_mask_ones_, newest + 1);
+                        const auto head_started = std::chrono::steady_clock::now();
+                        gpu_.execute_and_wait(plain_head_step_);
+                        draft = argmax_read_back(plain_head_logit_width_);
+                        cost += milliseconds_since(head_started);
+                    }
+                    average(acceptance, hit ? 1.0 : 0.0);
+                    average(plain_cost, cost);
+                    restore = false;
+                    newest += 1;
+                }
+            }
+        } catch (...) {
+            gpu_.abandon();
+            throw;
+        }
+        result.decode_ms = result.ids.size() > 1 ? milliseconds_since(decode_started) : 0.0;
+        result.tokens_per_second =
+            result.decode_ms > 0.0 ? (result.ids.size() - 1) * 1000.0 / result.decode_ms : 0.0;
+        const std::size_t all_steps = steps + plain_steps;
+        char line[256];
+        std::snprintf(line, sizeof(line),
+                      "mtp steps=%zu accepted=%zu acceptance=%.2f plain_steps=%zu plain_draft_hits=%zu "
+                      "tokens_per_step=%.2f",
+                      steps, accepted, steps ? static_cast<double>(accepted) / steps : 0.0, plain_steps, plain_hits,
+                      all_steps ? static_cast<double>(result.ids.size() - 1) / all_steps : 0.0);
+        log(line);
+        return result;
+    }
+
+    // Id i of the int32 ids the drafting step reads back.
+    std::size_t read_id(std::size_t i) const {
+        std::int32_t id = 0;
+        std::memcpy(&id, ids_mapped_ + i * sizeof(id), sizeof(id));
+        if (id < 0 || static_cast<std::size_t>(id) >= vocabulary_) {
+            throw std::runtime_error("the MTP argmax returned token " + std::to_string(id) +
+                                     ", outside the vocabulary");
+        }
+        return static_cast<std::size_t>(id);
+    }
+
+    // A mask input holding a run of ones over the visible positions, kept in
+    // its upload buffer between steps: within a request each step only adds
+    // ones, so only a shorter run (a new request) clears it.
+    static void set_mask_run(HostInput& mask, std::size_t& ones, std::size_t valid) {
+        if (valid > mask.elements()) {
+            throw std::runtime_error("the sequence exceeds the attention-mask capacity");
+        }
+        if (valid < ones) {
+            mask.fill(0);
+            ones = 0;
+        }
+        for (std::size_t i = ones; i < valid; ++i) {
+            mask.write(i, 1);
+        }
+        ones = valid;
+    }
     Graph compile(const std::string& label, const std::string& path, Resources& resources) {
         // Logged first: if amica.dll terminates the process while compiling,
         // this names the graph it was compiling.
@@ -261,8 +460,18 @@ private:
 
     std::vector<Graph*> graphs() {
         std::vector<Graph*> result{&decoder_};
-        for (auto& variant : prefill_) result.push_back(&variant->graph);
+        for (auto& variant : prefill_) {
+            result.push_back(&variant->graph);
+            if (mtp_) result.push_back(&variant->head);
+        }
         if (!graph_logits_) result.push_back(&lm_head_);
+        if (mtp_) {
+            for (Graph* graph : {&head_step_, &verify_argmax_, &head_argmax_}) result.push_back(graph);
+        }
+        if (adaptive_) {
+            result.push_back(&plain_);
+            result.push_back(&plain_head_);
+        }
         return result;
     }
 
@@ -304,9 +513,11 @@ private:
 
     // A buffer shared by prefill and decoder is reset once, under prefill's
     // name, because the manifest's initial_input_fill lists prefill names.
-    void add_reset(const ComPtr<ID3D12Resource>& buffer, const amica_io_desc& io) {
+    // Without manifest_fill the buffer is zeroed: the manifest names the
+    // target's inputs, and other graphs reuse the same argN names.
+    void add_reset(const ComPtr<ID3D12Resource>& buffer, const amica_io_desc& io, bool manifest_fill = true) {
         Reset reset{buffer, nullptr, io.size_bytes};
-        const auto fill = initial_fill_.find(io.name);
+        const auto fill = manifest_fill ? initial_fill_.find(io.name) : initial_fill_.end();
         if (fill != initial_fill_.end()) {
             const std::size_t width = element_bytes(io.element_type);
             if ((io.element_type != AMICA_ELEMENT_INT32 && io.element_type != AMICA_ELEMENT_INT64) ||
@@ -345,11 +556,18 @@ private:
         if (!graph_logits_ && decoder_inputs_.embedding.size != embeddings_->columns() * sizeof(float)) {
             throw std::runtime_error("decoder embedding input does not hold one FP32 embedding row");
         }
-        if (graph_logits_ && decoder_inputs_.token.elements() != 1) {
-            throw std::runtime_error("decoder token input must hold one token");
+        // The verify graph holds the newest token and the draft.
+        const std::size_t rows = mtp_ ? 2 : 1;
+        if (graph_logits_ && decoder_inputs_.token.elements() != rows) {
+            throw std::runtime_error(graph.label + " token input must hold " + std::to_string(rows) + " token(s)");
         }
         if (graph_logits_) {
             decoder_inputs_.mask.fill(0);  // decode() writes only what changes
+        }
+        if (mtp_) {
+            const int restore = restore_input(graph);
+            verify_restore_ = host_input(graph.input(restore), true);
+            bind_input(graph, restore, verify_restore_.buffer);
         }
         // State inputs; see allocate_prefill for how prefill hands them over.
         for (std::uint32_t i = 0; i < graph.requirements.num_inputs; ++i) {
@@ -413,6 +631,189 @@ private:
         bind_outputs(graph);
     }
 
+    // A rollback graph's int32 restore flag is its last entry parameter.
+    static int restore_input(const Graph& graph) {
+        int index = -1;
+        int last = -1;
+        for (std::uint32_t i = 0; i < graph.requirements.num_inputs; ++i) {
+            const int position = entry_position(graph.input(static_cast<int>(i)).name);
+            if (position > last) {
+                last = position;
+                index = static_cast<int>(i);
+            }
+        }
+        if (index < 0 || graph.input(index).element_type != AMICA_ELEMENT_INT32 ||
+            graph.input(index).size_bytes != sizeof(std::int32_t)) {
+            throw std::runtime_error(graph.label + "'s last entry parameter is not the int32 restore flag");
+        }
+        return index;
+    }
+
+    // Binds an input to part of another graph's buffer.
+    static void bind_input_at(Graph& graph, int index, const ComPtr<ID3D12Resource>& buffer, std::uint64_t offset) {
+        graph.input_buffers[index] = buffer;
+        graph.inputs[index] = buffer->GetGPUVirtualAddress() + offset;
+    }
+
+    void allocate_mtp() {
+        for (auto& variant : prefill_) {
+            bind_head(variant->head, variant->graph, &variant->head_token, variant->head_mask);
+            bind_outputs(variant->head);
+            if (variant->head_token.elements() != variant->capacity) {
+                throw std::runtime_error(variant->head.label + " does not hold the rows of " + variant->graph.label);
+            }
+        }
+
+        bind_argmax(verify_argmax_, decoder_, nullptr);
+        bind_head(head_step_, decoder_, nullptr, head_step_mask_);
+        // The head step reads the verify step's greedy ids, the second half of
+        // the verify argmax result, as its token ids.
+        const int tokens = head_step_.input_index("arg0");
+        const auto& ids = verify_argmax_.output(0);
+        if (tokens < 0 || 2 * head_step_.input(tokens).size_bytes != ids.size_bytes) {
+            throw std::runtime_error("the mtp_step token ids are not the ids half of the argmax result");
+        }
+        bind_input_at(head_step_, tokens, verify_argmax_.output_buffers[0], ids.size_bytes / 2);
+        bind_outputs(head_step_);
+        bind_argmax(head_argmax_, head_step_, &verify_argmax_);
+        const auto& result = head_argmax_.output(0);
+        if (result.element_type != AMICA_ELEMENT_INT32 || result.size_bytes != 4 * sizeof(std::int32_t)) {
+            throw std::runtime_error("the MTP argmax result is not four int32 token ids");
+        }
+        ids_readback_ = gpu_.create_buffer(result.size_bytes, D3D12_HEAP_TYPE_READBACK);
+        void* mapped = nullptr;
+        check_hr(ids_readback_->Map(0, nullptr, &mapped), "Map");
+        ids_mapped_ = static_cast<const std::uint8_t*>(mapped);
+
+        if (adaptive_) {
+            allocate_plain();
+            bind_head(plain_head_, plain_, &plain_head_token_, plain_head_mask_);
+            bind_outputs(plain_head_);
+            if (plain_head_token_.elements() != 1) {
+                throw std::runtime_error(plain_head_.label + " token input must hold one token");
+            }
+        }
+    }
+
+    // Head graph ABI (qwen38_mtp.py), by entry position: 0 the token ids, 1
+    // the attention mask, 2 the target graph's residual streams (its last
+    // output), then the head's attention caches, which it updates in place.
+    // The first head graph allocates the caches and the others share them by
+    // name. Without `tokens` the caller binds the token ids.
+    void bind_head(Graph& head, Graph& target, HostInput* tokens, HostInput& mask) {
+        const int streams = static_cast<int>(target.requirements.num_outputs) - 1;
+        for (std::uint32_t i = 0; i < head.requirements.num_inputs; ++i) {
+            const int index = static_cast<int>(i);
+            const auto& io = head.input(index);
+            const int position = entry_position(io.name);
+            if (position == 0) {
+                if (tokens) {
+                    *tokens = host_input(io, true);
+                    bind_input(head, index, tokens->buffer);
+                }
+            } else if (position == 1) {
+                mask = host_input(io, true);
+                mask.fill(0);
+                bind_input(head, index, mask.buffer);
+            } else if (position == 2) {
+                if (streams < 0 || target.output(streams).size_bytes != io.size_bytes) {
+                    throw std::runtime_error(head.label + " streams input does not match the last output of " +
+                                             target.label);
+                }
+                bind_input(head, index, target.output_buffers[streams]);
+            } else if (position >= 3) {
+                auto& cache = head_caches_[io.name];
+                if (!cache) {
+                    cache = gpu_.create_buffer(io.size_bytes);
+                    add_reset(cache, io, false);
+                } else if (cache->GetDesc().Width < io.size_bytes) {
+                    throw std::runtime_error(head.label + " cache " + io.name + " is larger than the shared one");
+                }
+                bind_input(head, index, cache);
+                bool in_place = false;
+                for (std::uint32_t o = 0; o < head.requirements.num_outputs; ++o) {
+                    in_place = in_place || head.output(static_cast<int>(o)).aliased_input == index;
+                }
+                if (!in_place) {
+                    throw std::runtime_error(head.label + " does not update its cache " + io.name + " in place");
+                }
+            } else {
+                throw std::runtime_error(head.label + " has an unexpected input " +
+                                         (io.name != nullptr ? io.name : "(unnamed)"));
+            }
+        }
+        if (!mask) {
+            throw std::runtime_error(head.label + " has no attention-mask input");
+        }
+    }
+
+    // Argmax graph ABI (qwen38_mtp.py), by entry position: 0 the logits rows
+    // it ranks, 1 an int32 id prefix its result starts with. The verify
+    // argmax's prefix is zero and the head argmax's is the verify ids, so the
+    // head argmax result holds both steps' ids.
+    void bind_argmax(Graph& argmax, Graph& source, Graph* prefix) {
+        if (argmax.requirements.num_inputs != 2 || argmax.requirements.num_outputs != 1) {
+            throw std::runtime_error(argmax.label + " does not take logits and an id prefix and return ids");
+        }
+        std::uint64_t prefix_bytes = 0;
+        for (int index = 0; index < 2; ++index) {
+            const auto& io = argmax.input(index);
+            const int position = entry_position(io.name);
+            if (position == 0) {
+                if (io.size_bytes != source.output(0).size_bytes) {
+                    throw std::runtime_error(argmax.label + " does not rank the logits of " + source.label);
+                }
+                bind_input(argmax, index, source.output_buffers[0]);
+            } else if (position == 1) {
+                prefix_bytes = io.size_bytes;
+                if (prefix) {
+                    const std::uint64_t half = prefix->output(0).size_bytes / 2;
+                    if (half != io.size_bytes) {
+                        throw std::runtime_error(argmax.label + " prefix is not the ids half of " + prefix->label);
+                    }
+                    bind_input_at(argmax, index, prefix->output_buffers[0], half);
+                } else {
+                    const auto buffer = gpu_.create_buffer(io.size_bytes);
+                    add_reset(buffer, io, false);
+                    bind_input(argmax, index, buffer);
+                }
+            } else {
+                throw std::runtime_error(argmax.label + " has an unexpected input");
+            }
+        }
+        if (prefix_bytes == 0 || argmax.output(0).size_bytes != 2 * prefix_bytes) {
+            throw std::runtime_error(argmax.label + " does not return its prefix followed by the token ids");
+        }
+        bind_outputs(argmax);
+    }
+
+    // The one-row target step declares the verify step's entry parameters, so
+    // a same-named input is the same state and shares the verify step's
+    // buffer; its token ids, mask and restore flag are its own.
+    void allocate_plain() {
+        Graph& graph = plain_;
+        const auto bound = bind_prompt_inputs(graph, decoder_names_, plain_inputs_);
+        if (plain_inputs_.token.elements() != 1) {
+            throw std::runtime_error(graph.label + " token input must hold one token");
+        }
+        plain_inputs_.mask.fill(0);
+        const int restore = restore_input(graph);
+        plain_restore_ = host_input(graph.input(restore), true);
+        bind_input(graph, restore, plain_restore_.buffer);
+        for (std::uint32_t i = 0; i < graph.requirements.num_inputs; ++i) {
+            const int index = static_cast<int>(i);
+            if (bound.count(index) != 0 || index == restore) continue;
+            const auto& io = graph.input(index);
+            const int state = decoder_.input_index(io.name);
+            if (state < 0 || decoder_.input(state).size_bytes != io.size_bytes) {
+                throw std::runtime_error(graph.label + " input " + io.name + " has no matching " + decoder_.label +
+                                         " state");
+            }
+            bind_input(graph, index, decoder_.input_buffers[state]);
+        }
+        bind_outputs(graph);
+    }
+
     void allocate_lm_head(const json& resource_map) {
         Graph& graph = lm_head_;
         tail_input_index_ = graph.input_index(tail_input_name_);
@@ -464,9 +865,16 @@ private:
         std::vector<Graph*> producers;
         if (graph_logits_) {
             producers.push_back(&decoder_);
-            for (auto& variant : prefill_) producers.push_back(&variant->graph);
+            for (auto& variant : prefill_) {
+                producers.push_back(&variant->graph);
+                if (mtp_) producers.push_back(&variant->head);
+            }
         } else {
             producers.push_back(&lm_head_);
+        }
+        if (adaptive_) {
+            producers.push_back(&plain_);
+            producers.push_back(&plain_head_);
         }
         std::uint64_t row_bytes = 0;
         for (Graph* graph : producers) {
@@ -588,17 +996,22 @@ private:
         return static_cast<std::uint64_t>(row);
     }
 
-    std::size_t prefill(PrefillVariant& variant, const std::vector<std::size_t>& prompt) {
-        return prefill_chunk(variant, prompt.data(), prompt.size(), 0, true);
-    }
-
-    // A prompt longer than every prefill graph goes in as one partial chunk
-    // and then full chunks of the largest graph: a chunked graph places its
-    // rows after the ones already cached, which it can tell only when every
-    // chunk after the first is full.
-    std::size_t prefill_chunked(const std::vector<std::size_t>& prompt) {
+    // The prefill runs of a prompt: the smallest graph that holds it, or, for
+    // a prompt longer than every graph, one partial chunk and then full chunks
+    // of the largest graph: a chunked graph places its rows after the ones
+    // already cached, which it can tell only when every chunk after the first
+    // is full.
+    std::vector<Chunk> prompt_chunks(std::size_t tokens) {
+        for (auto& candidate : prefill_) {
+            if (candidate->capacity >= tokens) return {{candidate.get(), 0, tokens}};
+        }
+        if (!chunked_prefill_) {
+            throw std::runtime_error("the prompt has " + std::to_string(tokens) +
+                                     " tokens, more than the largest prefill capacity " +
+                                     std::to_string(prefill_.back()->capacity));
+        }
         PrefillVariant& full = *prefill_.back();
-        const std::size_t partial = prompt.size() % full.capacity;
+        const std::size_t partial = tokens % full.capacity;
         const std::size_t first = partial == 0 ? full.capacity : partial;
         PrefillVariant* first_variant = &full;
         for (auto& candidate : prefill_) {
@@ -607,22 +1020,92 @@ private:
                 break;
             }
         }
-        std::size_t done = 0;
+        std::vector<Chunk> chunks{{first_variant, 0, first}};
+        for (std::size_t done = first; done < tokens; done += full.capacity) {
+            chunks.push_back({&full, done, full.capacity});
+        }
+        return chunks;
+    }
+
+    // Returns the greedy token after the prompt.
+    std::size_t prefill(const std::vector<std::size_t>& prompt, const std::vector<Chunk>& chunks) {
         std::size_t token = 0;
-        while (done < prompt.size()) {
-            const std::size_t n = done == 0 ? first : full.capacity;
-            PrefillVariant& variant = done == 0 ? *first_variant : full;
-            const bool last = done + n == prompt.size();
-            token = prefill_chunk(variant, prompt.data() + done, n, done, last);
-            done += n;
+        for (std::size_t i = 0; i < chunks.size(); ++i) {
+            const Chunk& chunk = chunks[i];
+            token = prefill_chunk(*chunk.variant, prompt.data() + chunk.begin, chunk.n, chunk.begin,
+                                  i + 1 == chunks.size());
         }
         return token;
+    }
+
+    // Returns the greedy token after the prompt and the head's draft of the
+    // token after that. Each prefill chunk is followed by the head over its
+    // rows. Head row j reads target row j's streams and the token after it,
+    // so the head's last prompt row needs the first generated token: the last
+    // chunk's head runs once its target's token has been read.
+    std::pair<std::size_t, std::size_t> prefill_mtp(const std::vector<std::size_t>& prompt,
+                                                    const std::vector<Chunk>& chunks) {
+        for (std::size_t i = 0; i < chunks.size(); ++i) {
+            const Chunk& chunk = chunks[i];
+            PrefillVariant& variant = *chunk.variant;
+            write_prompt(variant, prompt.data() + chunk.begin, chunk.n, chunk.begin);
+            if (chunk.begin == 0) {
+                gpu_.execute(reset_step_);
+            }
+            gpu_.execute(variant.step);
+            if (i + 1 < chunks.size()) {
+                write_head_prompt(variant, prompt, chunk.begin, chunk.n, 0);
+                gpu_.execute(variant.head_step);
+                gpu_.submit_and_wait();  // the next chunk rewrites the inputs
+                continue;
+            }
+            const std::size_t first = read_prompt_token(variant, chunk.n);
+            write_head_prompt(variant, prompt, chunk.begin, chunk.n, first);
+            gpu_.execute_and_wait(variant.head_step);
+            return {first, argmax_read_back(head_logit_width_)};
+        }
+        throw std::logic_error("a prompt has at least one prefill chunk");
+    }
+
+    // The head's inputs for the chunk of `n` rows from `begin`: row j holds
+    // the token after prompt row begin + j, and the last prompt row the first
+    // generated token.
+    void write_head_prompt(PrefillVariant& variant, const std::vector<std::size_t>& prompt, std::size_t begin,
+                           std::size_t n, std::size_t first) {
+        variant.head_token.fill(pad_token_id_);
+        for (std::size_t row = 0; row < n; ++row) {
+            const std::size_t next = begin + row + 1;
+            variant.head_token.write(row, static_cast<std::int64_t>(next < prompt.size() ? prompt[next] : first));
+        }
+        const std::size_t visible = begin + n;
+        if (visible > variant.head_mask.elements()) {
+            throw std::runtime_error("the prompt exceeds the MTP head's attention-mask capacity");
+        }
+        variant.head_mask.fill(0);
+        for (std::size_t i = 0; i < visible; ++i) {
+            variant.head_mask.write(i, 1);
+        }
     }
 
     // Feeds `n` prompt tokens after `past` cached ones. The first chunk resets
     // the state; only the last reads back its next token.
     std::size_t prefill_chunk(PrefillVariant& variant, const std::size_t* prompt, std::size_t n,
                               std::size_t past, bool last) {
+        write_prompt(variant, prompt, n, past);
+        if (past == 0) {
+            gpu_.execute(reset_step_);
+        }
+        gpu_.execute(variant.step);
+        if (!last) {
+            gpu_.submit_and_wait();  // the next chunk rewrites the inputs
+            return 0;
+        }
+        return read_prompt_token(variant, n);
+    }
+
+    // Writes `n` prompt tokens after `past` cached ones into a prefill
+    // graph's inputs.
+    void write_prompt(PrefillVariant& variant, const std::size_t* prompt, std::size_t n, std::size_t past) {
         PromptInputs& inputs = variant.inputs;
         if (graph_logits_) {
             const std::size_t first = prompt_right_aligned_ ? variant.capacity - n : 0;
@@ -651,18 +1134,12 @@ private:
         }
         if (inputs.position) inputs.position.write(0, static_cast<std::int64_t>(n) - 1);
         if (inputs.sequence) inputs.sequence.write(0, static_cast<std::int64_t>(n));
+    }
 
-        if (past == 0) {
-            gpu_.execute(reset_step_);
-        }
-        gpu_.execute(variant.step);
-        if (!last) {
-            gpu_.submit_and_wait();  // the next chunk rewrites the inputs
-            return 0;
-        }
-
-        // Which row holds the last prompt token depends on the prompt, so
-        // the readback is recorded per request.
+    // The greedy token after the last prompt row of the prefill just
+    // submitted, `n` rows long. Which row holds the last prompt token depends
+    // on the prompt, so the readback is recorded per request.
+    std::size_t read_prompt_token(PrefillVariant& variant, std::size_t n) {
         if (graph_logits_) {
             const std::uint64_t rows = variant.graph.output(0).size_bytes /
                                        (vocabulary_ * element_bytes(variant.graph.output(0).element_type));
@@ -683,6 +1160,10 @@ private:
     // executed for each token. Encoding the decoder anew per token would keep
     // the GPU idle while the CPU records thousands of dispatches.
     void record_decode_step() {
+        if (mtp_) {
+            record_mtp_steps();
+            return;
+        }
         gpu_.begin_sequence();
         gpu_.begin_list();
         upload(decoder_inputs_);
@@ -704,6 +1185,40 @@ private:
         decode_step_ = gpu_.end_sequence();
     }
 
+    // A drafting step is one submission: the verify step, its argmax, the head
+    // over the verify ids and the head's argmax, then the readback of the four
+    // ids. The one-row step and its head read back one row of logits each.
+    void record_mtp_steps() {
+        gpu_.begin_sequence();
+        gpu_.begin_list();
+        upload(decoder_inputs_);
+        upload(verify_restore_);
+        upload(head_step_mask_);
+        gpu_.uav_barrier();
+        for (Graph* graph : {&decoder_, &verify_argmax_, &head_step_, &head_argmax_}) encode(*graph);
+        gpu_.read_back(ids_readback_.Get(), head_argmax_.output_buffers[0].Get(), 0, head_argmax_.output(0).size_bytes);
+        draft_step_ = gpu_.end_sequence();
+        if (!adaptive_) return;
+
+        gpu_.begin_sequence();
+        gpu_.begin_list();
+        upload(plain_inputs_);
+        upload(plain_restore_);
+        gpu_.uav_barrier();
+        encode(plain_);
+        plain_logit_width_ = read_back_logits(plain_, 0);
+        plain_step_ = gpu_.end_sequence();
+
+        gpu_.begin_sequence();
+        gpu_.begin_list();
+        upload(plain_head_token_);
+        upload(plain_head_mask_);
+        gpu_.uav_barrier();
+        encode(plain_head_);
+        plain_head_logit_width_ = read_back_logits(plain_head_, 0);
+        plain_head_step_ = gpu_.end_sequence();
+    }
+
     // Prefill, too, binds the same buffers for every request: each variant's
     // uploads and graph, and the state reset before a request's first chunk,
     // are recorded once.
@@ -715,6 +1230,16 @@ private:
             gpu_.uav_barrier();
             encode(variant->graph);
             variant->step = gpu_.end_sequence();
+            if (mtp_) {
+                gpu_.begin_sequence();
+                gpu_.begin_list();
+                upload(variant->head_token);
+                upload(variant->head_mask);
+                gpu_.uav_barrier();
+                encode(variant->head);
+                head_logit_width_ = read_back_logits(variant->head, 0);
+                variant->head_step = gpu_.end_sequence();
+            }
         }
         gpu_.begin_sequence();
         gpu_.begin_list();
@@ -730,21 +1255,7 @@ private:
         PromptInputs& inputs = decoder_inputs_;
         if (graph_logits_) {
             inputs.token.write(0, static_cast<std::int64_t>(token));
-            const auto valid = static_cast<std::size_t>(position + 1);
-            if (valid > inputs.mask.elements()) {
-                throw std::runtime_error("the sequence exceeds the decoder attention-mask capacity");
-            }
-            // The mask is a run of ones over the visible positions, kept in the
-            // upload buffer between steps: within a request each step adds
-            // one, so only a shorter run (a new request) clears it.
-            if (valid < decoder_mask_ones_) {
-                inputs.mask.fill(0);
-                decoder_mask_ones_ = 0;
-            }
-            for (std::size_t i = decoder_mask_ones_; i < valid; ++i) {
-                inputs.mask.write(i, 1);
-            }
-            decoder_mask_ones_ = valid;
+            set_mask_run(inputs.mask, decoder_mask_ones_, static_cast<std::size_t>(position + 1));
         } else {
             embeddings_->write_f32_row(token, reinterpret_cast<float*>(inputs.embedding.mapped));
         }
@@ -797,12 +1308,41 @@ private:
     ComPtr<ID3D12Resource> zero_source_;
     Gpu::Sequence reset_step_;
     double load_ms_ = 0.0;
+
+    // MTP: decoder_ is the verify step and prefill_ the MTP prefill graphs,
+    // each with its head prefill. adaptive_ adds the one-row step and head.
+    bool mtp_ = false;
+    bool adaptive_ = false;
+    Graph head_step_;
+    Graph verify_argmax_;
+    Graph head_argmax_;
+    HostInput verify_restore_;
+    HostInput head_step_mask_;
+    std::size_t head_step_mask_ones_ = 0;
+    std::map<std::string, ComPtr<ID3D12Resource>> head_caches_;
+    Gpu::Sequence draft_step_;
+    ComPtr<ID3D12Resource> ids_readback_;
+    const std::uint8_t* ids_mapped_ = nullptr;
+    std::size_t head_logit_width_ = 0;
+    Graph plain_;
+    PromptInputs plain_inputs_;
+    HostInput plain_restore_;
+    std::size_t plain_mask_ones_ = 0;
+    Gpu::Sequence plain_step_;
+    std::size_t plain_logit_width_ = 0;
+    Graph plain_head_;
+    HostInput plain_head_token_;
+    HostInput plain_head_mask_;
+    std::size_t plain_head_mask_ones_ = 0;
+    Gpu::Sequence plain_head_step_;
+    std::size_t plain_head_logit_width_ = 0;
 };
 
 int usage() {
     std::cerr << "usage: amica-engine --model-dir <bundle> --amica-dir <AMICA install>\\amica --port N "
                  "[--host 127.0.0.1] [--model-name NAME] [--adapter <index|name>] [--arch gfxNNNN] "
-                 "[--weights-vram-mib N] [--transformer-precision source|int4-weight-only]\n"
+                 "[--weights-vram-mib N] [--speculative auto|off] "
+                 "[--transformer-precision source|int4-weight-only]\n"
                  "       amica-engine --model-dir <image bundle> --print-tokens TEXT\n"
                  "       amica-engine --model-dir <image bundle> --amica-dir <AMICA install>\\amica "
                  "--generate PROMPT [--output FILE.png]\n";
@@ -849,6 +1389,8 @@ int main(int argc, char** argv) {
     std::optional<std::string> generate_prompt;
     std::string output_path = "amica-image.png";
     std::string transformer_precision = "source";
+    // auto: MTP drafts when the bundle's speculative.json has them.
+    std::string speculative = "auto";
     // argv is in the ANSI code page; the wide command line keeps every
     // character of model paths and prompts.
     std::vector<std::string> arguments;
@@ -896,6 +1438,9 @@ int main(int argc, char** argv) {
             output_path = value;
         } else if (option == "--transformer-precision") {
             transformer_precision = value;
+        } else if (option == "--speculative") {
+            if (value != "auto" && value != "off") return usage();
+            speculative = value;
         } else {
             std::cerr << "unknown option " << option << "\n";
             return usage();
@@ -941,7 +1486,10 @@ int main(int argc, char** argv) {
         }
         const amica_engine::Bundle bundle(model_dir);
         const amica_engine::ChatFrontend frontend(bundle.source_dir());
-        Engine engine(bundle.plan(), adapter, arch, weights_vram_mib);
+        if (!bundle.speculative_note().empty() && speculative != "off") {
+            log(bundle.speculative_note());
+        }
+        Engine engine(bundle.plan(), adapter, arch, weights_vram_mib, speculative != "off");
         const auto context = bundle.context_capacity();
         log("model=" + model_dir + " " + engine.summary() +
             " context=" + (context ? std::to_string(*context) : std::string("unknown")) +

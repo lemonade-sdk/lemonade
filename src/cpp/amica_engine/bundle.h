@@ -39,6 +39,10 @@ public:
     // for bundles whose cache layout does not say.
     std::optional<std::size_t> context_capacity() const { return context_capacity_; }
 
+    // Why the bundle's speculative.json, when it has one, is not in the plan;
+    // empty when it is or when there is none.
+    const std::string& speculative_note() const { return speculative_note_; }
+
 private:
     struct Prefill {
         std::string graph;
@@ -49,6 +53,7 @@ private:
     std::string prefill_input() const;
     std::size_t graph_capacity(const std::string& graph) const;
     void load_prefill_graphs();
+    void load_speculative();
     void build_plan();
 
     nlohmann::json manifest_;
@@ -63,6 +68,8 @@ private:
     bool chunked_prefill_ = false;
     std::vector<Prefill> prefill_;
     std::optional<std::size_t> context_capacity_;
+    nlohmann::json mtp_;
+    std::string speculative_note_;
     nlohmann::json plan_;
 };
 
