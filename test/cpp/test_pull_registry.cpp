@@ -369,10 +369,14 @@ void test_a_suggested_pull_uses_the_default_source() {
     check(restarted.is_model_downloaded(model_name) &&
           fs::equivalent(restarted.get_model_info(model_name).resolved_path(), acquired),
           "a restart discovers the cached ModelScope copy when Hugging Face is preferred");
+    const auto acquired_at = fs::last_write_time(acquired);
     restarted.download_model(model_name, nlohmann::json::object());
-    check(restarted.get_model_info(model_name).registry_source == "huggingface" &&
-          restarted.is_model_downloaded(model_name),
-          "a later name-only pull uses Hugging Face after recovery");
+    check(restarted.get_model_info(model_name).registry_source == "modelscope" &&
+          restarted.is_model_downloaded(model_name) &&
+          fs::last_write_time(acquired) == acquired_at &&
+          !fs::exists(fs::path(restarted.get_hf_cache_dir()) /
+                      lemon::registry_repo_cache_dir_name(repo, RegistryId("huggingface"))),
+          "a later name-only pull keeps the complete ModelScope copy instead of re-fetching it");
 }
 
 void test_a_second_pull_reselects_but_refetches_nothing() {
