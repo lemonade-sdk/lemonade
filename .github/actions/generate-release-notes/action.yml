@@ -169,9 +169,9 @@ runs:
           echo "---"
           echo ""
           if [ "$CANDIDATE" = "false" ]; then
-            echo "> Windows installers are signed. Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). See our [Code Signing Policy](https://github.com/$REPO#code-signing-policy)."
+            echo "> Windows installers and embeddable binaries are signed. Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). See our [Code Signing Policy](https://github.com/$REPO#code-signing-policy)."
           else
-            echo "> The Windows installers in this release candidate are **not signed**; Windows SmartScreen will warn before installing. Stable releases are signed."
+            echo "> The Windows installers and embeddable binaries in this release candidate are **not signed**; Windows SmartScreen will warn before installing. Stable releases are signed."
           fi
         } >> "$RELEASE_NOTES_FILE"
 
