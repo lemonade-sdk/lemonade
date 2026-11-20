@@ -1931,6 +1931,13 @@ std::vector<SystemInfo::RecipeStatus> SystemInfo::get_all_recipe_statuses() {
 
                 if (!recipe_info["backends"].contains(def.backend)) continue;
 
+                // A backend with a support row per OS still has one status.
+                if (std::any_of(backends.begin(), backends.end(), [&](const BackendStatus& b) {
+                        return b.name == def.backend;
+                    })) {
+                    continue;
+                }
+
                 const auto& backend_info = recipe_info["backends"][def.backend];
                 std::string state = backend_info.value("state", "unsupported");
                 std::string version = backend_info.value("version", "");

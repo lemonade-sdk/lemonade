@@ -37,6 +37,13 @@ std::string speculative_mode(const std::string& draft_architecture,
 // the release vX.Y.Z. A version that is not an image pin is already a release.
 std::string release_tag(const std::string& version);
 
+// The version a host install reports, given its version.txt, the
+// backend_versions.json pin and the user's *_bin setting. An install of the
+// pin's release reports the pin, which is what Lemonade expects; under an
+// explicit release in *_bin it reports the release, which is then expected.
+std::string installed_version(const std::string& file_version, const std::string& pin,
+                              const std::string& user_pin);
+
 // `gufo serve llm`'s arguments for a model. `mmproj_path` and `draft_path` are ""
 // when the model has none; `speculative` is speculative_mode()'s answer for the
 // draft and is ignored without one.

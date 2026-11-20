@@ -676,6 +676,16 @@ void test_gufo_argv() {
           release_tag("0.34.0@sha256:49b1fce40cb43e33c46d91595e300cb320cdec768fcd976f8c8da24b402fc133") ==
                   "v0.34.0" &&
               release_tag("v0.35.0") == "v0.35.0");
+    using lemon::backends::gufo::installed_version;
+    const std::string pin =
+        "0.35.0@sha256:99e9b5471b7a0000000000000000000000000000000000000000000000000000";
+    check("a host install of the pinned gufo release reports the pin",
+          installed_version("v0.35.0", pin, "") == pin &&
+              installed_version("v0.35.0", pin, "builtin") == pin &&
+              installed_version("v0.34.0", pin, "") == "v0.34.0");
+    check("a gufo release the user pinned is reported as that release",
+          installed_version("v0.35.0", pin, "v0.35.0") == "v0.35.0" &&
+              installed_version("v0.34.0", pin, "v0.34.0") == "v0.34.0");
 }
 
 void test_ds4_memory_plan() {

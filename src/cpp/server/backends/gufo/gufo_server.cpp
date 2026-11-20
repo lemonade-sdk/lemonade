@@ -58,15 +58,16 @@ public:
     }
 
     // A host install's version.txt holds the release it came from, but the
-    // expected version is the image pin that names that release.
+    // expected version is the image pin that names that release. A release the
+    // user pinned is expected as that tag, so it stays one.
     std::string resolve_version(const std::string& backend,
                                 const std::string& file_version) const override {
         if (file_version.empty() || gufo::descriptor.container_for(backend)) {
             return file_version;
         }
-        const std::string pin =
-            BackendUtils::get_backend_version(gufo::descriptor.recipe, backend);
-        return file_version == gufo::release_tag(pin) ? pin : file_version;
+        return gufo::installed_version(
+            file_version, BackendUtils::get_backend_version(gufo::descriptor.recipe, backend),
+            BackendUtils::get_bin_config_value(gufo::descriptor.recipe, backend));
     }
 };
 
@@ -87,6 +88,12 @@ std::string speculative_mode(const std::string& draft_architecture,
 std::string release_tag(const std::string& version) {
     const auto pin = parse_container_pin(version);
     return pin ? "v" + pin->tag : version;
+}
+
+std::string installed_version(const std::string& file_version, const std::string& pin,
+                              const std::string& user_pin) {
+    const bool follows_pin = user_pin.empty() || user_pin == "builtin" || user_pin == "latest";
+    return follows_pin && file_version == release_tag(pin) ? pin : file_version;
 }
 
 std::vector<std::string> build_server_argv(const std::string& model_name,
