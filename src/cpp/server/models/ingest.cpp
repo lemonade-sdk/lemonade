@@ -798,7 +798,8 @@ void ModelIngest::pull(const std::string& model_name,
 
         auto info = requested_info ? *requested_info : require_info(model_name);
         std::vector<std::string> components = inline_collection ? inline_components : info.components;
-        const bool component_selection = !register_only && model_data.contains("components") &&
+        const bool component_selection = !register_only && repo_id.empty() &&
+            model_data.contains("components") &&
             !model_data.contains("models") && !model_data.contains("recipe") &&
             !model_data.contains("checkpoint") && !model_data.contains("checkpoints") &&
             !model_data.contains("recipe_options");

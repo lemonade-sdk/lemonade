@@ -602,6 +602,104 @@ void test_a_cancelled_pull_stops_before_the_first_byte() {
           "a cancelled pull leaves no artifact");
 }
 
+void test_pointer_collection_selection_requires_its_manifest(bool cached) {
+    Fixture fx = make_fixture();
+    const std::string suffix = cached ? "Cached" : "Fresh";
+    const std::string parent = "user.Queued" + suffix;
+    const std::string child = "user.Queued" + suffix + "Child";
+    const std::string repo = "vendor/queued-" + suffix;
+    const std::string filename = "queued-" + suffix + ".json";
+    nlohmann::json original_child = {{"model_name", child}, {"recipe", "llamacpp"},
+        {"checkpoint", "vendor/repo:model.gguf"}};
+    const nlohmann::json manifest = {{"recipe", "collection.omni"},
+        {"components", {child}}, {"models", {original_child}}};
+    stage(fx.stage / ("vendor-queued-" + suffix) / filename, manifest.dump());
+    fx.script[repo] = ScriptedRepo{"snap-collection-1", {file(filename)}};
+    ModelManager mm = fx.make_manager();
+    nlohmann::json imported = manifest;
+    imported["checkpoint"] = "vendor/stale-" + suffix;
+    mm.register_model(parent, imported, true, true, true);
+
+    const nlohmann::json admin_parent = {{"recipe", "collection.omni"},
+        {"checkpoint", repo}, {"recipe_options", {{"llamacpp_args", "--threads 2"}}}};
+    mm.register_model(parent, admin_parent, true, true, true);
+    nlohmann::json admin_child = original_child;
+    admin_child["checkpoint"] = "vendor/repo:other.gguf";
+    admin_child["recipe_options"] = {{"llamacpp_args", "--threads 3"}};
+    mm.register_model(child, admin_child, false, true, true);
+    check(!mm.is_model_downloaded(parent), "fresh pointer starts unavailable: " + suffix);
+    if (cached) {
+        mm.download_model(parent, nlohmann::json::object(), true, nullptr, {}, true);
+    }
+    const fs::path registry_file = lemon::utils::path_from_utf8(
+        lemon::utils::get_config_dir()) / "user_models.json";
+    auto before = nlohmann::json::parse(read_file(registry_file));
+    const auto options_before = mm.options(child).at("saved");
+    reset_trace(fx);
+    int completed = 0;
+    std::string error;
+    try {
+        mm.download_model(parent, {{"components", {child}}}, true,
+            [&](const lemon::DownloadProgress& progress) {
+                if (progress.complete) ++completed;
+                return true;
+            }, {}, false);
+    } catch (const std::exception& e) {
+        error = e.what();
+    }
+    check(error.empty() && completed == 1,
+          "pointer selection completes once after manifest resolution: " + suffix + ": " + error);
+    const fs::path cached_manifest = repo_cache(mm, repo) / "snapshots" /
+        "snap-collection-1" / filename;
+    check(fs::is_regular_file(cached_manifest), "pointer selection caches its manifest: " + suffix);
+    if (cached) {
+        check(fx.trace.listings.empty() && fx.trace.urls.empty(),
+              "cached pointer selection reuses acquired manifest and components");
+    }
+    auto after = nlohmann::json::parse(read_file(registry_file));
+    before.at(child.substr(5)).erase("size");
+    after.at(child.substr(5)).erase("size");
+    check(after == before && mm.options(child).at("saved") == options_before,
+          "pointer selection preserves admin definitions and backend arguments: " + suffix);
+    mm.invalidate_models_cache();
+    const auto info = mm.get_model_info(parent);
+    check(info.checkpoint() == repo && info.components == std::vector<std::string>{child} &&
+          info.downloaded && mm.get_downloaded_models().count(parent) == 1,
+          "selected pointer is available after rebuilding from its current manifest: " + suffix);
+    const auto selected = mm.get_model_info(child);
+    check(selected.checkpoint() == "vendor/repo:other.gguf" && selected.downloaded,
+          "manifest keeps the current local component definition: " + suffix);
+}
+
+void test_pointer_collection_selection_rejects_an_unavailable_manifest() {
+    Fixture fx = make_fixture();
+    ModelManager mm = fx.make_manager();
+    const std::string child = "user.QueuedUnavailableChild";
+    const nlohmann::json child_definition = {{"model_name", child}, {"recipe", "llamacpp"},
+        {"checkpoint", "vendor/repo:model.gguf"}};
+    mm.register_model("user.QueuedUnavailable", {{"recipe", "collection.omni"},
+        {"checkpoint", "vendor/unavailable-collection"}, {"components", {child}},
+        {"models", {child_definition}}}, true, true, true);
+    mm.download_model(child, nlohmann::json::object(), true, nullptr, {}, true);
+    reset_trace(fx);
+    int completed = 0;
+    bool rejected = false;
+    try {
+        mm.download_model("user.QueuedUnavailable", {{"components", {child}}}, true,
+            [&](const lemon::DownloadProgress& progress) {
+                if (progress.complete) ++completed;
+                return true;
+            }, {}, false);
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+    check(rejected && completed == 0,
+          "an unavailable pointer manifest rejects selection without a success event");
+    mm.invalidate_models_cache();
+    check(!mm.is_model_downloaded("user.QueuedUnavailable"),
+          "a selected child cannot make a pointer without its manifest available");
+}
+
 void test_search_is_a_source_answer() {
     // The real adapters, offline: every built-in host answers the search question.
     for (const auto& host : {lemon::models::huggingface_descriptor().id,
@@ -642,6 +740,9 @@ int main() {
     test_a_pull_of_local_files_never_asks_a_registry();
     test_a_malformed_aux_checkpoint_never_reaches_the_wire();
     test_a_cancelled_pull_stops_before_the_first_byte();
+    test_pointer_collection_selection_requires_its_manifest(false);
+    test_pointer_collection_selection_requires_its_manifest(true);
+    test_pointer_collection_selection_rejects_an_unavailable_manifest();
     test_search_is_a_source_answer();
 
     if (!g_failures.empty()) {

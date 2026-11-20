@@ -715,7 +715,7 @@ static void test_collection_download_selection_does_not_repeat_registration(bool
         build.commit({{child.model_name, child}}, nullptr, {});
     }
     const json doc = {{"recipe", "collection.omni"},
-        {"checkpoint", "example/collection-pointer"}, {"components", {"user.SelectedA"}},
+        {"components", {"user.SelectedA"}},
         {"models", {component_def("SelectedA")}}};
     ingest.register_model("user.SelectedParent", doc, true, true, true);
     json admin = doc;
@@ -725,7 +725,7 @@ static void test_collection_download_selection_does_not_repeat_registration(bool
         ModelInfo parent;
         parent.model_name = "user.SelectedParent";
         parent.recipe = "collection.omni";
-        parent.checkpoints["main"] = "example/collection-pointer";
+        parent.components = {builtin ? "SelectedA" : "user.SelectedA"};
         parent.downloaded = true;
         ModelInfo child;
         child.model_name = builtin ? "SelectedA" : "user.SelectedA";
@@ -741,7 +741,7 @@ static void test_collection_download_selection_does_not_repeat_registration(bool
             if (progress.complete) ++completed;
             return true;
         }, {}, false);
-    check("component-only download completes without fetching pointer manifest", completed == 1);
+    check("inline component-only download completes without registration", completed == 1);
     check("download selection preserves admin arguments added after registration",
           *registries.pin().user == before);
 }
