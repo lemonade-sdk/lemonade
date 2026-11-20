@@ -40,6 +40,10 @@ std::string unsupported_message(const std::string& format,
 
 } // namespace
 
+bool is_known_audio_format(const std::string& format) {
+    return mime_types().contains(format);
+}
+
 AudioFormat negotiate_speech_format(Router& router, const std::string& model,
                                     const json& response_format, bool streaming) {
     AudioFormat result;

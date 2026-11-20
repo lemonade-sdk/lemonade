@@ -3,6 +3,11 @@
   "checksums": {
     "comment": "Expected SHA-256 of downloaded GitHub release assets, verified after download (see BackendUtils::lookup_expected_asset_hash). Keyed by checksums.github.<owner/repo>.<tag>.<asset>. Values are the sha256:<hex> digests GitHub publishes for each asset. Update alongside the matching version pin below.",
     "github": {
+      "lemonade-sdk/ryzenai-server": {
+        "v1.9.0": {
+          "ryzenai-server.zip": "sha256:fbafd130d05fb6b6428e927761c65085d672384dd5968d5230b8ee3df878b5f0"
+        }
+      },
       "pwilkin/openmoss": {
         "v0.3.0": {
           "moss-tts-vulkan-linux-x64.tar.gz": "sha256:1288a22295451d0e5d8bd707ef79ea324e1c7b5f1cd9bfbdab2167a388fe3af7",
@@ -51,12 +56,12 @@
     }
   },
   "llamacpp": {
-    "vulkan": "b12109",
-    "rocm-stable": "b12109",
-    "rocm-nightly": "b1365",
-    "cuda": "b12109",
-    "metal": "b12109",
-    "cpu": "b12109",
+    "vulkan": "b12233",
+    "rocm-stable": "b12223",
+    "rocm-nightly": "b1372",
+    "cuda": "b12223",
+    "metal": "b12233",
+    "cpu": "b12233",
     "nathanw": "vulkan-radv-performance@sha256:41018261e61b7e32fb38e4985ba569d0837804e727dcc62689c2fb1d73ec8f15",
     "halobox": "rocm-10.0-strix-llama@sha256:015fddafc28bfdb1653a99905010e83a9327f072206cb1f882f1f9f922069f48"
   },
@@ -84,7 +89,7 @@
     "rocm": "0.19.1@sha256:7ab5c3dfd77acb2387603f1807069cac3494e678f413c0670745ba2df74c0f0e"
   },
   "gufo": {
-    "rocm": "rocm-10.0-gufo@sha256:2d7e9995ff2dfd7035f610a419b4f38d5d1604c0c7ab7f3b81415ad6f3e8db8b"
+    "rocm": "0.34.0@sha256:49b1fce40cb43e33c46d91595e300cb320cdec768fcd976f8c8da24b402fc133"
   },
   "ds4": {
     "rocm": "rocm-10.0@sha256:e14ad3edb88c9c2e80b1c1464ef9307bcc56c935f31c4df9fa8e980974f68c47"
@@ -153,7 +158,7 @@
     }
   },
   "ryzenai-llm": {
-    "npu": "v1.7.0"
+    "npu": "v1.9.0"
   },
   "flm": {
     "npu": "v1.0.13"
@@ -172,8 +177,8 @@
   },
   "thenoise": {
     "comment": "TheNoise shared release: ROCm uses <tag>-gfxNNNN-x64.tar.gz; Linux CUDA uses <tag>-cuda-x64.tar.gz.",
-    "rocm": "thenoise-0.12.1-rocm10.1.0",
-    "cuda": "thenoise-0.12.1-rocm10.1.0"
+    "rocm": "thenoise-0.15.0-rocm10.1.0",
+    "cuda": "thenoise-0.15.0-rocm10.1.0"
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",

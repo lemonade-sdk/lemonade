@@ -7062,13 +7062,17 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(files_response.status_code, 200)
             files = files_response.json()["files"]
             main_files = [f for f in files if f["role"] == "main"]
-            self.assertEqual(len(main_files), 1)
-            self.assertEqual(main_files[0]["name"], os.path.basename(shard1))
             self.assertEqual(
-                main_files[0]["size_bytes"],
-                shard1_bytes,
-                "/files must report the individual file size, not the shard total",
+                [file["name"] for file in main_files],
+                [os.path.basename(shard1), os.path.basename(shard2)],
             )
+            for file, expected_bytes in zip(main_files, [shard1_bytes, shard2_bytes]):
+                self.assertTrue(file["exists"])
+                self.assertEqual(
+                    file["size_bytes"],
+                    expected_bytes,
+                    "/files must report the individual file size, not the shard total",
+                )
 
             print("[OK] sharded size sums shards while /files stays per-file")
 
@@ -8312,6 +8316,29 @@ class EndpointTests(ServerTestBase):
         self.assertIn("not compatible with llama.cpp", error)
         self.assertIn("does not declare a model architecture", error)
         print("[OK] Incompatible GGUF checkpoint was rejected before download")
+
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_033_pull_variants_rejects_repo_without_supported_files(self):
+        """A repository with no GGUF, ONNX or Omni files is a 400, not a server error."""
+        checkpoint = "Qwen/Qwen1.5-0.5B-Chat"
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": checkpoint, "source": "huggingface"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 for a repository without supported files, got "
+            f"{response.status_code}: {response.text}",
+        )
+        self.assertIn(
+            "No supported model files found", response.json().get("error", "")
+        )
+        print("[OK] Repository without supported files was rejected with 400")
 
     def test_035_second_lemond_on_busy_port_exits_nonzero(self):
         """A second lemond on an in-use port must refuse to start and exit non-zero.
