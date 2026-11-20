@@ -1,0 +1,145 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp-hrx/hrx": "hrx-b99"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "bartowski/Qwen3.8-27B-GGUF:Qwen3.8-27B-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3.8-27B-HRX",
+      "results": [
+        {
+          "backend": "hrx",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp-hrx",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 11592.343283,
+                "mean": 11481.169879666668,
+                "min": 11424.475646,
+                "p50": 11426.69071,
+                "p95": 11575.778025700001
+              },
+              "failed_runs": 0,
+              "input_tokens": 3252,
+              "memory_peak_gb": 20.7,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 352.5756748847925,
+              "tps": {
+                "max": 8.496803636631956,
+                "mean": 8.452673886662827,
+                "min": 8.40675974277085,
+                "p50": 8.454458280585671,
+                "p95": 8.492569101027327
+              },
+              "ttft_ms": {
+                "max": 9336.306,
+                "mean": 9224.243,
+                "min": 9154.127,
+                "p50": 9182.296,
+                "p95": 9320.905
+              },
+              "vram_peak_gb": 17.060073852539062
+            }
+          ]
+        },
+        {
+          "backend": "hrx",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp-hrx",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 80670.366523,
+                "mean": 80209.196747,
+                "min": 79812.035513,
+                "p50": 80145.188205,
+                "p95": 80617.8486912
+              },
+              "failed_runs": 0,
+              "input_tokens": 24832,
+              "memory_peak_gb": 22.4,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 321.8959937553773,
+              "tps": {
+                "max": 6.282572243794224,
+                "mean": 6.272214858074218,
+                "min": 6.262120499018494,
+                "p50": 6.271951831409934,
+                "p95": 6.281510202555795
+              },
+              "ttft_ms": {
+                "max": 77598.667,
+                "mean": 77144.492,
+                "min": 76755.215,
+                "p50": 77079.594,
+                "p95": 77546.7597
+              },
+              "vram_peak_gb": 18.949825286865234
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-19T23:23:29Z",
+      "accuracy": {
+        "passed": 44,
+        "total": 45,
+        "score": 0.9778,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "turn-list",
+            "response": "Answer: milk",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-19T23:20:28Z",
+  "fork_id": "llamacpp-hrx",
+  "fork_label": "llama.cpp HRX (ROCm/ggml-staging-automation)",
+  "fork_repo": "ROCm/ggml-staging-automation",
+  "fork_version": "hrx-b148",
+  "rocm_version": null,
+  "fork_backend": "hrx",
+  "experimental": true,
+  "run_id": "44619102253",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44619102253",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s03-d08-135895715036"
+}

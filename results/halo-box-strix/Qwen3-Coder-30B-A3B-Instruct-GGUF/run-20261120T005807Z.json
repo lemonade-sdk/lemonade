@@ -1,0 +1,167 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 1899.862122,
+                "mean": 1889.0859406666668,
+                "min": 1873.423731,
+                "p50": 1893.971969,
+                "p95": 1899.2731067
+              },
+              "failed_runs": 0,
+              "input_tokens": 3208,
+              "memory_peak_gb": 21.5,
+              "name": "context-4k",
+              "output_tokens": 2,
+              "pp_tps": 1728.436581460078,
+              "tps": {
+                "max": 41.452495440225505,
+                "mean": 40.2414156438376,
+                "min": 37.8673129354741,
+                "p50": 41.40443855581318,
+                "p95": 41.447689751784274
+              },
+              "ttft_ms": {
+                "max": 1866.358,
+                "mean": 1856.0716666666667,
+                "min": 1841.724,
+                "p50": 1860.133,
+                "p95": 1865.7354999999998
+              },
+              "vram_peak_gb": 18.065773010253906
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 30114.396772,
+                "mean": 30045.617583666666,
+                "min": 29967.505901,
+                "p50": 30054.950078,
+                "p95": 30108.4521026
+              },
+              "failed_runs": 0,
+              "input_tokens": 24788,
+              "memory_peak_gb": 24.1,
+              "name": "context-32k",
+              "output_tokens": 2,
+              "pp_tps": 827.4222577968603,
+              "tps": {
+                "max": 22.47443532981234,
+                "mean": 21.632954907692167,
+                "min": 20.073065960094745,
+                "p50": 22.35136343316942,
+                "p95": 22.46212814014805
+              },
+              "ttft_ms": {
+                "max": 30026.192,
+                "mean": 29958.22133333333,
+                "min": 29880.459,
+                "p50": 29968.013,
+                "p95": 30020.3741
+              },
+              "vram_peak_gb": 20.717182159423828
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-20T01:34:37Z",
+      "accuracy": {
+        "passed": 40,
+        "total": 45,
+        "score": 0.8889,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-day-fwd",
+            "response": "Starting from Monday, I need to count 10 days forward through the week.\n\nMonday (day 1) \u2192 Tuesday (day 2) \u2192 Wednesday (day 3) \u2192 Thursday (day 4) \u2192 Friday (day 5) \u2192 Saturday (day 6) \u2192 Sunday (day 7) \u2192 Monday (day 8) \u2192 Tuesday (day 9) \u2192 Wednesday (day 10)\n\nAnswer: Wednesday",
+            "cut_off": false
+          },
+          {
+            "id": "tool-weather",
+            "response": "[{\"arguments\": \"{\\\"city\\\":\\\"Paris\\\",\\\"unit\\\":\\\"celsius\\\"}\", \"name\": \"get_weather\"}, {\"arguments\": \"{\\\"amount\\\":100,\\\"from_currency\\\":\\\"USD\\\",\\\"to_currency\\\":\\\"EUR\\\"}\", \"name\": \"convert_currency\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-currency",
+            "response": "[{\"arguments\": \"{\\\"amount\\\":50,\\\"from_currency\\\":\\\"USD\\\",\\\"to_currency\\\":\\\"EUR\\\"}\", \"name\": \"convert_currency\"}, {\"arguments\": \"{\\\"city\\\":\\\"Paris\\\",\\\"unit\\\":\\\"celsius\\\"}\", \"name\": \"get_weather\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-event",
+            "response": "[{\"arguments\": \"{\\\"attendees\\\":[\\\"alice\\\", \\\"bob\\\"],\\\"date\\\":\\\"2026-11-05\\\",\\\"title\\\":\\\"Design review\\\"}\", \"name\": \"create_event\"}, {\"arguments\": \"{\\\"attendees\\\":[\\\"alice\\\", \\\"bob\\\"],\\\"date\\\":\\\"2026-11-05\\\",\\\"title\\\":\\\"Design review\\\"}\", \"name\": \"create_event\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "needle-32k-late",
+            "response": "ction 89 checked at 14:26, all nominal.\nEntry 00962: section 90 checked at 21:39, all nominal.\nEntry 00963: section 91 checked at 04:52, all nominal.\nEntry 00964: section 92 checked at 11:05, all nominal.\nEntry 00965: section 93 checked at 18:18, all nominal.\nEntry 00966: section 94 checked at 01:31",
+            "cut_off": true
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [
+            "reason-batball"
+          ],
+          "empty_replies": 0,
+          "cut_off": 1
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-20T01:34:37Z",
+  "fork_id": "halo-box-strix",
+  "fork_label": "llama.cpp Halo-box",
+  "fork_repo": "halo-box/strix-llama.cpp",
+  "fork_version": "b1064",
+  "rocm_version": "10.1.0a20260910",
+  "fork_backend": "halo-box-strix",
+  "experimental": true,
+  "run_id": "44619102253",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44619102253",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d03-135895715194"
+}

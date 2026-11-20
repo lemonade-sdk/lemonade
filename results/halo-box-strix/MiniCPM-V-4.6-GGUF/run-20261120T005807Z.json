@@ -1,0 +1,196 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM-V-4.6-gguf:MiniCPM-V-4_6-Q4_K_M.gguf",
+        "mmproj": "OpenBMB/MiniCPM-V-4.6-gguf:mmproj-model-f16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM-V-4.6-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 420.374692,
+                "mean": 415.94189933333337,
+                "min": 407.194649,
+                "p50": 420.256357,
+                "p95": 420.3628585
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 5.9,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 10394.413844190838,
+              "tps": {
+                "max": 196.27490883546997,
+                "mean": 191.9739913277643,
+                "min": 188.47710499166732,
+                "p50": 191.16996015615567,
+                "p95": 195.76441396753853
+              },
+              "ttft_ms": {
+                "max": 313.647,
+                "mean": 308.911,
+                "min": 301.541,
+                "p50": 311.545,
+                "p95": 313.4368
+              },
+              "vram_peak_gb": 2.073028564453125
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 3579.498361,
+                "mean": 3570.7409846666665,
+                "min": 3560.232735,
+                "p50": 3572.491858,
+                "p95": 3578.7977107
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 6.2,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 7277.365350246335,
+              "tps": {
+                "max": 154.0195037329464,
+                "mean": 151.8167502091833,
+                "min": 150.03632458384664,
+                "p50": 151.39442231075697,
+                "p95": 153.75699559072746
+              },
+              "ttft_ms": {
+                "max": 3416.708,
+                "mean": 3406.469333333333,
+                "min": 3398.695,
+                "p50": 3404.005,
+                "p95": 3415.4377
+              },
+              "vram_peak_gb": 2.4285507202148438
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-20T01:33:07Z",
+      "accuracy": {
+        "passed": 34,
+        "total": 45,
+        "score": 0.7556,
+        "questions_version": "2dbb1ea20981",
+        "failures": [
+          {
+            "id": "reason-sisters",
+            "response": "Alice and her sister (the other sister), so there is one other sister besides Alice. So each brother has two sisters: Alice and that other sister.\n\nSo, each of Alice's brothers has two sisters: Alice and the other sister.\n\nAnswer: Each of Alice's brothers has two sisters: Alice and her other sister.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "To convert Fahrenheit to Celsius, we use the formula:\n\n\u00b0C = (\u00b0F - 32) \u00d7 5/9\n\nFor 100\u00b0F:\n\n\u00b0C = (100 - 32) \u00d7 5/9  \n\u00b0C = 68 \u00d7 5/9  \n\u00b0C = 350/9  \n\u00b0C \u2248 38.888...\n\nRounded to the nearest whole number, that's 39.\n\nAnswer: 39",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-count-r",
+            "response": " let's go through it:\n1. 'r' appears in \"straw\" \u2192 first 'r'\n2. \"berry\" has two 'r's? Let's check: b-e-r-r-y \u2192 there are two 'r's.\n\nSo, counting: \n- First 'r' in \"straw\"\n- Then two 'r's in \"berry\"\n\nThus, the letter 'r' appears 4 times.\n\nAnswer: The letter 'r' appears 4 times in the word \"strawberry\".",
+            "cut_off": false
+          },
+          {
+            "id": "json-primes",
+            "response": "[\"2\", \"3\", \"5\", \"7\", \"11\"]",
+            "cut_off": false
+          },
+          {
+            "id": "turn-list",
+            "response": "Let's start with the shopping list: apples, bread, milk, eggs. \n\nFirst, remove bread, so the list becomes: apples, milk, eggs.\n\nNow, add cheese to the end, so the list becomes: apples, milk, eggs, cheese.\n\nThe third item on the list is \"milk\".\n\nAnswer: milk",
+            "cut_off": false
+          },
+          {
+            "id": "turn-uppercase",
+            "response": "Let's analyze the question. THE CAPITAL OF FRANCE IS PARIS. NOW, I'll provide the final answer.\n\nAnswer: THE CAPITAL OF FRANCE IS PARIS.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "Based on the information provided, your flight leaves at 3pm. However, considering the earlier correction, it actually leaves two hours later than initially stated.\n\nAnswer: Your flight leaves at 3pm, but it actually leaves two hours later than initially mentioned.",
+            "cut_off": false
+          },
+          {
+            "id": "py-palindrome",
+            "response": "```python\ndef is_palindrome(s):\n    cleaned = ''.join(char for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    # Remove spaces and convert to lower case\n    cleaned_a = a.replace(\" \", \"\").lower()\n    cleaned_b = b.replace(\" \", \"\").lower()\n    # Check if the cleaned strings are equal\n    return cleaned_a == cleaned_b\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "rged = []\n    for interval in sorted_intervals:\n        # Check if this interval can be merged with the previous one\n        if merged and merged[-1][0] >= interval[0]:\n            merged[-1][1] = max(merged[-1][1], interval[1])\n        else:\n            merged.append(interval)\n    return merged\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": " += roman_map[s[i]]\n        \n        # If it's the last character, don't add the next one\n        if i + 1 < len(s):\n            # Subtract the value of the next Roman numeral if it's smaller\n            if s[i+1] in roman_map:\n                integer -= roman_map[s[i+1]]\n    \n    return integer\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "empty_replies": 0,
+          "cut_off": 1
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-20T01:33:07Z",
+  "fork_id": "halo-box-strix",
+  "fork_label": "llama.cpp Halo-box",
+  "fork_repo": "halo-box/strix-llama.cpp",
+  "fork_version": "b1064",
+  "rocm_version": "10.1.0a20260910",
+  "fork_backend": "halo-box-strix",
+  "experimental": true,
+  "run_id": "44619102253",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44619102253",
+  "commit": "a939f2c63bb0cf61c5ccace3b81a0f469b4ca686",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s04-d03-135895715194"
+}
