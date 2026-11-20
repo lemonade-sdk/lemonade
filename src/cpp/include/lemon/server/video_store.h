@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <set>
 #include <string>
 
@@ -26,18 +27,25 @@ bool read(const std::string& name, std::string& bytes);
 
 bool exists(const std::string& name);
 
-// Reserves `preferred` when it is a valid name that no file or other reservation uses,
-// otherwise a new name, and returns the reserved one. A reservation keeps the clip safe
-// from remove_all_except() from before it is written until a clean-up sees its name in
-// a job record, which closes the gap between writing a clip and the job recording it.
-std::string reserve_file_name(const std::string& preferred);
+// Reserves `preferred` for the job `job_id` when it is a valid name that no file or
+// other reservation uses, otherwise a new name, and returns the reserved one. A
+// reservation keeps the clip safe from clean_up() from before it is written until the
+// job's record names it, which covers the gap between writing a clip and the job
+// recording it, or until the job is gone.
+std::string reserve_file_name(const std::string& preferred, const std::string& job_id);
 
 // Drops a reservation whose clip was never written, such as after a failed generation.
 void release(const std::string& name);
 
-// Removes every clip that is neither in `keep` nor reserved, and drops the reservations
-// that `keep` now covers.
-void remove_all_except(const std::set<std::string>& keep);
+struct CleanupSnapshot {
+    std::set<std::string> referenced;  // clip names that a job record names
+    std::set<std::string> live_jobs;   // ids of the jobs that still exist
+};
+
+// Takes the snapshot and sweeps under one lock, so no other clean-up or reservation
+// can change in between: removes every clip that is neither referenced nor reserved,
+// and drops the reservations whose clip is referenced or whose job is gone.
+void clean_up(const std::function<CleanupSnapshot()>& snapshot);
 
 // Upper bounds for a video request's numbers, shared by the route's documented schema
 // and normalize_request().

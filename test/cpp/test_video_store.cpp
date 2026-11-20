@@ -1,5 +1,7 @@
 #include "lemon/server/video_store.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -8,6 +10,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #include <nlohmann/json.hpp>
 
@@ -60,14 +63,22 @@ static void test_write_read() {
     check("io: an invalid name does not write", threw && !fs::exists(store::dir().parent_path() / "escape"));
 }
 
-static void test_remove_all_except() {
+static store::CleanupSnapshot snapshot(std::set<std::string> referenced, std::set<std::string> live_jobs) {
+    return store::CleanupSnapshot{std::move(referenced), std::move(live_jobs)};
+}
+
+static void sweep(std::set<std::string> referenced, std::set<std::string> live_jobs = {}) {
+    store::clean_up([&] { return snapshot(referenced, live_jobs); });
+}
+
+static void test_clean_up() {
     const std::string keep = store::new_file_name();
     const std::string drop = store::new_file_name();
     store::write(keep, "keep");
     store::write(drop, "drop");
     { std::ofstream(store::dir() / "notes.txt") << "not a clip"; }
 
-    store::remove_all_except({keep});
+    sweep({keep});
     check("prune: a referenced clip stays", fs::exists(store::dir() / keep));
     check("prune: an unreferenced clip goes", !fs::exists(store::dir() / drop));
     check("prune: a file it did not make stays", fs::exists(store::dir() / "notes.txt"));
@@ -77,31 +88,67 @@ static void test_reservations() {
     const std::string written = store::new_file_name();
     store::write(written, "taken");
     const std::string preferred = store::new_file_name();
-    check("reserve: a free preferred name is kept", store::reserve_file_name(preferred) == preferred);
-    const std::string second = store::reserve_file_name(preferred);
+    check("reserve: a free preferred name is kept", store::reserve_file_name(preferred, "job-a") == preferred);
+    const std::string second = store::reserve_file_name(preferred, "job-b");
     check("reserve: a reserved name is not handed out again",
           second != preferred && store::is_valid_file_name(second));
-    const std::string third = store::reserve_file_name(written);
+    const std::string third = store::reserve_file_name(written, "job-c");
     check("reserve: an existing clip's name is not reused", third != written);
-    const std::string fourth = store::reserve_file_name("../escape");
+    const std::string fourth = store::reserve_file_name("../escape", "job-d");
     check("reserve: an invalid name is replaced", store::is_valid_file_name(fourth));
 
     store::write(second, "being published");
-    store::remove_all_except({});
-    check("reserve: a reserved clip survives a clean-up", fs::exists(store::dir() / second));
+    sweep({}, {"job-b"});
+    check("reserve: a clip whose job still runs survives a clean-up", fs::exists(store::dir() / second));
     check("reserve: an unreferenced written clip goes", !fs::exists(store::dir() / written));
 
-    store::remove_all_except({second});
-    store::remove_all_except({});
-    check("reserve: a clean-up that sees the clip in a job drops the reservation",
+    sweep({second}, {"job-b"});
+    sweep({}, {"job-b"});
+    check("reserve: once its job names the clip, the reservation is dropped",
           !fs::exists(store::dir() / second));
 
     store::write(third, "failed run");
     store::release(third);
-    store::remove_all_except({});
+    sweep({}, {"job-c"});
     check("reserve: a released name is cleaned up", !fs::exists(store::dir() / third));
     store::release(preferred);
     store::release(fourth);
+}
+
+// Reported in review: clean-up A takes its snapshot before a generic job publishes its
+// clip, clean-up B sees the clip and drops the reservation, then A sweeps with its older
+// snapshot and deletes a clip the job still names. clean_up() takes the snapshot and
+// sweeps under one lock, so B can only run before A's snapshot or after A's sweep.
+static void test_stale_snapshot_cannot_delete() {
+    const std::string clip = store::reserve_file_name(store::new_file_name(), "job-e");
+    store::write(clip, "published");
+    std::atomic<bool> b_done{false};
+    bool b_done_during_a = true;
+    std::thread b;
+    store::clean_up([&] {
+        // A's snapshot predates the job naming the clip.
+        b = std::thread([&] {
+            sweep({clip}, {"job-e"});
+            b_done.store(true);
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        b_done_during_a = b_done.load();
+        return snapshot({}, {"job-e"});
+    });
+    b.join();
+    check("stale: a second clean-up waits for the first one's sweep", !b_done_during_a);
+    check("stale: the clip survives both clean-ups", fs::exists(store::dir() / clip));
+    sweep({clip}, {"job-e"});
+    check("stale: and every later clean-up while the job names it", fs::exists(store::dir() / clip));
+}
+
+// Reported in review: a job deleted before any clean-up saw its clip left the
+// reservation, and the clip, in place until restart.
+static void test_reservation_of_deleted_job_is_released() {
+    const std::string clip = store::reserve_file_name(store::new_file_name(), "job-f");
+    store::write(clip, "orphan");
+    sweep({}, {});
+    check("orphan: the clip of a deleted job is removed", !fs::exists(store::dir() / clip));
 }
 
 static void test_normalize_request() {
@@ -179,8 +226,10 @@ static void test_video_status() {
 int main() {
     test_file_names();
     test_write_read();
-    test_remove_all_except();
+    test_clean_up();
     test_reservations();
+    test_stale_snapshot_cannot_delete();
+    test_reservation_of_deleted_job_is_released();
     test_normalize_request();
     test_is_video_job();
     test_video_status();

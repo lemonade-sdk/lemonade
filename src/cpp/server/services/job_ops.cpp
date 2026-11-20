@@ -225,7 +225,8 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     // hold up other models; the slot is also what records job-owned models, so
     // the op unloads a model it loaded itself when it is interrupted.
     providers.video_op = [router, model_loader, model_manager](const lemon::jobs::json& params,
-                                                lemon::jobs::CancelFlag& cancel)
+                                                               const std::string& job_id,
+                                                               lemon::jobs::CancelFlag& cancel)
         -> lemon::jobs::json {
         nlohmann::json request = nlohmann::json::parse(params.dump());
         if (const std::string error = video_store::normalize_request(request); !error.empty())
@@ -233,7 +234,8 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         const std::string model = request.value("model", std::string());
         // clip_file comes from the job's params, which a generic job can leave out or fill
         // with another video's name, so the op always writes to a name it reserved itself.
-        const std::string file = video_store::reserve_file_name(request.value("clip_file", std::string()));
+        const std::string file =
+            video_store::reserve_file_name(request.value("clip_file", std::string()), job_id);
         bool published = false;
         struct ReleaseUnpublished {
             const std::string& file;

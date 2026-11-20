@@ -168,21 +168,24 @@ public:
 
 private:
     void remove_unreferenced_clips() {
-        std::set<std::string> keep;
-        for (const auto& summary : ctx_.job_manager->list()) {
-            const auto found = ctx_.job_manager->get(summary.value("id", ""));
-            if (!found) continue;
-            const json job = found->to_api_json();
-            if (!job.contains("steps") || !job["steps"].is_array()) continue;
-            for (const auto& step : job["steps"]) {
-                for (const char* where : {"params", "output"}) {
-                    if (step.contains(where) && step[where].is_object() &&
-                        step[where].contains("clip_file") && step[where]["clip_file"].is_string())
-                        keep.insert(step[where]["clip_file"].get<std::string>());
+        video_store::clean_up([this] {
+            video_store::CleanupSnapshot snapshot;
+            for (const auto& summary : ctx_.job_manager->list()) {
+                const auto found = ctx_.job_manager->get(summary.value("id", ""));
+                if (!found) continue;
+                snapshot.live_jobs.insert(found->id);
+                const json job = found->to_api_json();
+                if (!job.contains("steps") || !job["steps"].is_array()) continue;
+                for (const auto& step : job["steps"]) {
+                    for (const char* where : {"params", "output"}) {
+                        if (step.contains(where) && step[where].is_object() &&
+                            step[where].contains("clip_file") && step[where]["clip_file"].is_string())
+                            snapshot.referenced.insert(step[where]["clip_file"].get<std::string>());
+                    }
                 }
             }
-        }
-        video_store::remove_all_except(keep);
+            return snapshot;
+        });
     }
 };
 

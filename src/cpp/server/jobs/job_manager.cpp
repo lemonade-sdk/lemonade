@@ -641,6 +641,7 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
             extracts = s->extract;
             op = s->op;
             context_snapshot = job.context;
+            context_snapshot[kJobIdContextKey] = id;
             ctrl->cancel.store(false);
             persist_locked();
             LOG(DEBUG, "Jobs") << "job " << id << " running step '" << s->id << "' (op " << s->op

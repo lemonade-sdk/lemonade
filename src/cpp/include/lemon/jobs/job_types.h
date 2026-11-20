@@ -14,6 +14,10 @@ namespace jobs {
 
 using json = nlohmann::ordered_json;
 
+// The running job's id, added to the context an op receives and never persisted. The
+// leading underscore keeps it apart from step ids, which name the other context entries.
+inline constexpr const char* kJobIdContextKey = "_job_id";
+
 class JobError : public std::runtime_error {
 public:
     JobError(int status, std::string message)

@@ -7,6 +7,7 @@
 #include <limits>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <mutex>
 #include <random>
 #include <sstream>
@@ -31,8 +32,9 @@ std::mutex& reservation_mutex() {
     return m;
 }
 
-std::set<std::string>& reserved() {
-    static std::set<std::string> names;
+// Clip name -> the job it was reserved for.
+std::map<std::string, std::string>& reserved() {
+    static std::map<std::string, std::string> names;
     return names;
 }
 } // namespace
@@ -85,11 +87,11 @@ bool exists(const std::string& name) {
     return is_valid_file_name(name) && fs::exists(dir() / name, ec);
 }
 
-std::string reserve_file_name(const std::string& preferred) {
+std::string reserve_file_name(const std::string& preferred, const std::string& job_id) {
     std::lock_guard<std::mutex> lock(reservation_mutex());
     std::string name = preferred;
     while (!is_valid_file_name(name) || reserved().count(name) || exists(name)) name = new_file_name();
-    reserved().insert(name);
+    reserved()[name] = job_id;
     return name;
 }
 
@@ -98,13 +100,18 @@ void release(const std::string& name) {
     reserved().erase(name);
 }
 
-void remove_all_except(const std::set<std::string>& keep) {
+void clean_up(const std::function<CleanupSnapshot()>& snapshot) {
     std::lock_guard<std::mutex> lock(reservation_mutex());
-    for (const auto& name : keep) reserved().erase(name);
+    const CleanupSnapshot now = snapshot();
+    for (auto it = reserved().begin(); it != reserved().end();) {
+        const bool published = now.referenced.count(it->first) > 0;
+        const bool job_gone = !now.live_jobs.count(it->second);
+        it = (published || job_gone) ? reserved().erase(it) : std::next(it);
+    }
     std::error_code ec;
     for (fs::directory_iterator it(dir(), ec), end; !ec && it != end; it.increment(ec)) {
         const std::string name = utils::path_to_utf8(it->path().filename());
-        if (!is_valid_file_name(name) || keep.count(name) || reserved().count(name)) continue;
+        if (!is_valid_file_name(name) || now.referenced.count(name) || reserved().count(name)) continue;
         std::error_code rm;
         fs::remove(it->path(), rm);
         if (rm) LOG(WARNING, "Videos") << "Could not remove " << name << ": " << rm.message() << std::endl;

@@ -75,9 +75,9 @@ OpRegistry build_op_registry(OpProviders providers) {
         return providers.chat_op(params, cancel);
     }, true});
 
-    reg.register_op("generate_video", {[providers](const json& params, const json&, CancelFlag& cancel) -> json {
+    reg.register_op("generate_video", {[providers](const json& params, const json& context, CancelFlag& cancel) -> json {
         if (!providers.video_op) throw JobError(501, "generate_video op not available");
-        return providers.video_op(params, cancel);
+        return providers.video_op(params, context.value(kJobIdContextKey, std::string()), cancel);
     }, false});
 
     reg.register_op("image_generations", {[providers](const json& params, const json&, CancelFlag& cancel) -> json {
