@@ -1,27 +1,29 @@
 #pragma once
 
 #include <atomic>
-#include <string>
-#include <memory>
+#include <condition_variable>
+#include <cstddef>
 #include <deque>
 #include <functional>
 #include <list>
 #include <map>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
-#include <condition_variable>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
-#include <optional>
-#include <nlohmann/json.hpp>
 #include <httplib.h>
-#include "wrapped_server.h"
-#include "lemon/live_throughput.h"
-#include "model_residency.h"
+#include <nlohmann/json.hpp>
+
 #include "backend_manager.h"
-#include "runtime_config.h"
+#include "lemon/live_throughput.h"
 #include "lemon/model_manager_types.h"
+#include "model_residency.h"
+#include "runtime_config.h"
+#include "wrapped_server.h"
 
 // 5 seconds is generous enough for inference to complete but prevents
 // indefinite blocking if a backend is stuck.
@@ -125,6 +127,24 @@ class SuspendInhibitor;
 
 class Router {
 public:
+    class RoutingHelperLease {
+    public:
+        RoutingHelperLease() = default;
+        ~RoutingHelperLease();
+        RoutingHelperLease(const RoutingHelperLease&) = delete;
+        RoutingHelperLease& operator=(const RoutingHelperLease&) = delete;
+        RoutingHelperLease(RoutingHelperLease&& other) noexcept;
+        RoutingHelperLease& operator=(RoutingHelperLease&& other) noexcept;
+
+    private:
+        friend class Router;
+        RoutingHelperLease(Router* router, std::set<std::string> model_names);
+        void reset() noexcept;
+
+        Router* router_ = nullptr;
+        std::set<std::string> model_names_;
+    };
+
     friend class EvictionEngine;
     // Test-only access to routing-helper reconciliation internals (inject stub
     // servers, seed the needed set, drive prune). Defined in the test binary.
@@ -169,12 +189,17 @@ public:
         const std::string& model_name,
         LoadPurpose load_purpose);
 
+    // Keep transient policy helpers eligible for residency while an ad-hoc
+    // policy is being evaluated. The lease releases them when evaluation ends.
+    RoutingHelperLease lease_transient_routing_helpers(
+        const std::vector<std::string>& model_names);
+
     // Record the authoritative set of routing-helper models the active policies
     // need resident (the union across all active policies, as policy-authored
     // names — resolved internally), then reclaim any live helper no longer in
-    // it. The set is published immediately so a helper still mid-load validates
-    // against it at load-completion (see load_model), making reconciliation
-    // durable rather than a one-time snapshot; only the eviction pass is deferred
+    // it. The registered-policy set is published immediately so a helper still
+    // mid-load validates against it at load-completion (see load_model), making
+    // reconciliation durable rather than a one-time snapshot; only the eviction pass is deferred
     // to a safe point. Pinned and busy helpers are left resident; a busy helper
     // is marked pending-stale and reclaimed the moment its last request releases
     // (see WrappedServer::release_inference), or by a later reconcile.
@@ -310,11 +335,12 @@ private:
     bool is_loading_ = false;                    // True when a load operation is in progress
     std::condition_variable load_cv_;            // Signals when load completes
 
-    // Canonicalized routing-helper models the active policies need resident.
-    // Guarded by load_mutex_; the authoritative snapshot a freshly loaded helper
-    // validates itself against and a prune pass reclaims against.
+    // Canonicalized helpers required by registered policies, transient leases,
+    // and their union. Guarded by load_mutex_; new loads and pruning use the union.
+    std::set<std::string> active_policy_helper_models_;
+    std::map<std::string, std::size_t> transient_helper_refcounts_;
     std::set<std::string> needed_helper_models_;
-    // Highest policy-notification generation applied to needed_helper_models_.
+    // Highest policy-notification generation applied to active_policy_helper_models_.
     // Guarded by load_mutex_; an out-of-order (older) reconcile is ignored.
     uint64_t last_reconcile_generation_ = 0;
     // Set during ~Router (under load_mutex_) so a reclaim task waiting for the
@@ -366,27 +392,26 @@ private:
     // reconcile_routing_helpers so the set is visible to a mid-load helper's
     // load-completion validation even while is_loading_ is still true.
     void apply_routing_helper_reconcile(std::set<std::string> needed, uint64_t generation);
-    // Evict idle, unpinned routing helpers whose model is not in
-    // needed_helper_models_. A busy not-needed helper is marked pending-stale so
-    // it self-reclaims on its final release instead of blocking this pass on an
-    // eviction timeout. Caller holds load_mutex_.
+    RoutingHelperLease lease_transient_routing_helpers_canonical(
+        std::set<std::string> canonical_models);
+    void rebuild_needed_helper_models_locked();
+    void release_transient_routing_helpers(
+        const std::set<std::string>& model_names) noexcept;
+    // Reclaim stale helpers without waiting for busy backends. Caller holds load_mutex_.
     void prune_stale_routing_helpers_locked();
     // Shared decision for a live routing helper (caller holds load_mutex_): if it
     // is still needed or pinned, cancel any pending reclaim and return false; if
     // it is stale but busy, arm the release-triggered reclaim and return false;
     // if it is stale and idle, return true so the caller evicts it now.
     bool reclaim_or_defer_helper_locked(WrappedServer* server);
-    // Whether a routing-helper model is still referenced by an active policy
-    // (present in needed_helper_models_). The single source of truth for the
-    // needed-set membership test. Caller holds load_mutex_.
     bool is_needed_helper_locked(const std::string& canonical_model_name) const;
-    // Whether a routing helper of the given residency/pin state is no longer
-    // referenced by any active policy (absent from needed_helper_models_). Non
-    // routing-helper and pinned models are never considered stale. Caller holds
-    // load_mutex_.
+    // Non-helper and pinned models are never stale. Caller holds load_mutex_.
     bool routing_helper_no_longer_needed(const std::string& canonical_model_name,
                                          ResidencyClass requested_residency_class,
                                          bool pinned) const;
+    bool should_skip_nuclear_retry_for_transient_helper_locked(
+        const std::string& canonical_model_name,
+        ResidencyClass requested_residency_class) const;
     // Release-triggered reclaim: unload a pending-stale routing helper once its
     // last request drains. Looks the server up by name (never a captured raw
     // pointer) and re-validates staleness under load_mutex_. Waits for the
