@@ -697,9 +697,9 @@ static void test_regular_inline_registration_preserves_local_components() {
         saved->at("NewA").at("source") == "modelscope");
 }
 
-static void test_collection_download_selection_does_not_repeat_registration(bool builtin) {
+static void test_registered_collection_pull_does_not_repeat_registration(bool builtin) {
     using namespace lemon::models;
-    const auto root = lemon::test::make_scratch_dir("collection-download-selection");
+    const auto root = lemon::test::make_scratch_dir("registered-collection-pull");
     AliasManager aliases;
     ModelStore store(aliases);
     RegistryDocuments registries(json::object(), (root / "user_models.json").string());
@@ -736,21 +736,21 @@ static void test_collection_download_selection_does_not_repeat_registration(bool
     }
     const json before = *registries.pin().user;
     int completed = 0;
-    ingest.pull("user.SelectedParent", {{"components", {"user.SelectedA"}}}, true,
+    ingest.pull("user.SelectedParent", json::object(), true,
         [&](const lemon::DownloadProgress& progress) {
             if (progress.complete) ++completed;
             return true;
         }, {}, false);
-    check("inline component-only download completes without registration", completed == 1);
-    check("download selection preserves admin arguments added after registration",
+    check("registered inline collection pull completes without registration", completed == 1);
+    check("registered collection pull preserves admin arguments added after registration",
           *registries.pin().user == before);
 }
 
 int main() {
     test_collection_registration_rejection_is_atomic();
     test_regular_inline_registration_preserves_local_components();
-    test_collection_download_selection_does_not_repeat_registration(false);
-    test_collection_download_selection_does_not_repeat_registration(true);
+    test_registered_collection_pull_does_not_repeat_registration(false);
+    test_registered_collection_pull_does_not_repeat_registration(true);
     for (bool existing : {false, true}) {
         for (bool register_only : {false, true}) {
             test_collection_parent_rejection_is_atomic(existing, register_only);

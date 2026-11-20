@@ -798,30 +798,9 @@ void ModelIngest::pull(const std::string& model_name,
 
         auto info = requested_info ? *requested_info : require_info(model_name);
         std::vector<std::string> components = inline_collection ? inline_components : info.components;
-        const bool component_selection = !register_only && repo_id.empty() &&
-            model_data.contains("components") &&
-            !model_data.contains("models") && !model_data.contains("recipe") &&
-            !model_data.contains("checkpoint") && !model_data.contains("checkpoints") &&
-            !model_data.contains("recipe_options");
-        if (component_selection) {
-            if (!model_data["components"].is_array()) {
-                throw std::runtime_error("Collection download components must be an array");
-            }
-            components.clear();
-            for (const auto& component : model_data["components"]) {
-                if (!component.is_string()) {
-                    throw std::runtime_error("Collection download components must be strings");
-                }
-                const auto selected = require_info(bare_component_name(component.get<std::string>()));
-                if (is_model_collection_recipe(selected.recipe)) {
-                    throw std::runtime_error("Collection download components must be regular models");
-                }
-                components.push_back(selected.model_name);
-            }
-        }
 
         try {
-            if (!inline_collection && !component_selection && !repo_id.empty() &&
+            if (!inline_collection && !repo_id.empty() &&
                 (components.empty() || !do_not_upgrade)) {
                 components = collections_->resolve_from_manifest(
                     repo_id, registry_source_of(info), do_not_upgrade);
@@ -877,7 +856,7 @@ void ModelIngest::pull(const std::string& model_name,
         // A startup build saw no manifest and published an empty list with no
         // bytes; drop that so the next read rebuilds from the manifest just
         // cached instead of staying wrong until a restart.
-        if (!repo_id.empty() && !component_selection) {
+        if (!repo_id.empty()) {
             deps_.store->invalidate();
             const auto current = require_info(model_name);
             if (registry_source_of(current) != registry_source_of(info)) {
