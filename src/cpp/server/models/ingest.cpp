@@ -737,15 +737,18 @@ void ModelIngest::pull(const std::string& model_name,
                     const std::string default_source =
                         remote_registry_source_name(download_source_for(ModelInfo{}));
                     const std::string selected = download_source.empty() ? default_source : download_source;
+                    const bool automatic = deps_.automatic_model_source && deps_.automatic_model_source();
+                    const std::string source_policy = automatic ? "auto"
+                        : download_source.empty() ? "" : default_source;
                     if (!defer_default_source && (model_info.registry_source != selected ||
-                        (download_source.empty() && !model_info.pull_source_default.empty()))) {
+                        model_info.pull_source_default != source_policy)) {
                         {
                             ModelStore::Write write(*deps_.store);
                             if (auto it = write.draft().find(model_info.model_name);
                                 it != write.draft().end() && it->second.recipe == model_info.recipe &&
                                 it->second.checkpoints == model_info.checkpoints) {
                                 it->second.registry_source = selected;
-                                it->second.pull_source_default = download_source.empty() ? "" : default_source;
+                                it->second.pull_source_default = source_policy;
                                 write.invalidate_cache();
                             }
                         }

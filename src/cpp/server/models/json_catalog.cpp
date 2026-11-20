@@ -159,15 +159,6 @@ std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& 
         info.auto_update = row["auto_update"].get<bool>();
     }
 
-    // A repo pointer means the cached manifest holds the components, not this row.
-    if (is_model_collection_recipe(info.recipe) &&
-        (info.components.empty() || !info.checkpoint().empty())) {
-        info.components.clear();
-        if (rules.populate_components) {
-            rules.populate_components(info);
-        }
-    }
-
     if (row.contains("labels") && row["labels"].is_array()) {
         for (const auto& label : row["labels"]) {
             info.labels.push_back(label.get<std::string>());
@@ -183,6 +174,18 @@ std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& 
         }
     }
     backends::ops_for(info.recipe)->add_implied_checkpoints(info);
+
+    if (rules.resolve_source) {
+        rules.resolve_source(info);
+    }
+    // A repo pointer means the cached manifest holds the components, not this row.
+    if (is_model_collection_recipe(info.recipe) &&
+        (info.components.empty() || !info.checkpoint().empty())) {
+        info.components.clear();
+        if (rules.populate_components) {
+            rules.populate_components(info);
+        }
+    }
 
     parse_extras(info, row);
 

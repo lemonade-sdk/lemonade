@@ -126,8 +126,8 @@ public:
             if (has_url) {
                 source = remote_registry_source_name(url_source);
             } else {
-                source = req.has(kSource)
-                    ? req.arg(kSource).get<std::string>() : ctx_.config->default_model_source();
+                source = req.has(kSource) ? req.arg(kSource).get<std::string>()
+                    : remote_registry_source_name(ctx_.model_manager->download_source_for(ModelInfo{}));
             }
             if (checkpoint.find('/') == std::string::npos) {
                 write_plain_error(res, kMalformedCheckpoint,

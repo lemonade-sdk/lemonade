@@ -740,6 +740,30 @@ std::optional<json> fetch_huggingface_compatibility_metadata(
         is_official_huggingface_endpoint(endpoint));
 }
 
+bool probe_model_registry(RegistryId source, long timeout_seconds,
+                          const utils::CancelToken& cancel) {
+    const bool huggingface = source == models::huggingface_descriptor().id;
+    std::string endpoint = trim_trailing_slash(env_string(
+        huggingface ? "HF_ENDPOINT" : "MODELSCOPE_ENDPOINT"));
+    if (endpoint.empty()) {
+        endpoint = huggingface ? models::huggingface_descriptor().endpoint_default
+                               : kModelScopeEndpoint;
+    }
+    const std::string path = huggingface ? "/api/models?limit=1"
+        : "/openapi/v1/models?page_number=1&page_size=1&sort=downloads";
+    try {
+        const auto response = HttpClient::get(endpoint + path, {}, timeout_seconds,
+            utils::HttpSecurityPolicy::ExternalHttpsOnly, 64 * 1024, cancel);
+        if (response.status_code != 200) return false;
+        const auto body = JsonUtils::parse(response.body);
+        if (huggingface) return body.is_array();
+        normalize_registry_search_response(source, body, 1);
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 RegistrySearchResponse search_registry_models(RegistryId source,
                                               const std::string& query,
                                               std::size_t limit,

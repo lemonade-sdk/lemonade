@@ -54,6 +54,16 @@ int main() {
               "modelscope reflected in snapshot");
     }
 
+    {
+        RuntimeConfig config(json::object());
+        config.set(json{{"default_model_source", "auto"}});
+        check(config.default_model_source() == "auto" &&
+                  config.snapshot()["default_model_source"] == "auto",
+              "auto is accepted and round-trips as the configured policy");
+        check(!lemon::is_remote_registry_source("auto"),
+              "auto is a policy and cannot be persisted as a registry");
+    }
+
     // Unknown registry names are rejected.
     {
         RuntimeConfig config(json{{"default_model_source", "huggingface"}});

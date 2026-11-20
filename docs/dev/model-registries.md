@@ -49,7 +49,9 @@ A second remote registry, reached through the provider's own file API.
 
 ## Default source policy
 
-When a pull request names no registry — no `--source`, no `source`/`registry_source` field, and no provider URL — lemond falls back to the `default_model_source` config key (`huggingface` or `modelscope`, default `huggingface`). Resolution is server-side and authoritative so every client (CLI, desktop, web, Ollama-compatible endpoints) inherits the same policy, per the many-clients-one-server contract. For registry-backed models, resolution happens once in the `/pull` handler, and the chosen registry is persisted for downloads, cache layout, and later refreshes. A bare `pull <registered-name>` refresh keeps that recorded provenance. `GET /pull/variants` echoes the resolved `source` so the CLI's interactive flow records the same registry the weights came from.
+The server's `default_model_source` setting accepts `huggingface` (the shipped default), `modelscope`, or `auto`. In `auto`, lemond probes both configured registry APIs in parallel at startup, when switching the policy to `auto`, and periodically while online. It prefers Hugging Face and selects ModelScope when only its probe succeeds. Each pull uses the most recent decision, starting with Hugging Face. The probe checks registry API reachability. Normal pull validation still checks for the requested files at the selected registry.
+
+The default applies when a pull leaves the registry unspecified. Explicit `--source`, `source`/`registry_source` fields, provider URLs, and model definitions that name a registry retain their precedence. New custom models record the concrete registry for downloads, cache layout, and later refreshes. `GET /pull/variants` echoes the resolved `source` so the CLI can use it for the download.
 
 FLM is self-managed and does not persist per-model registry provenance. Each FLM pull or upgrade therefore resolves against the current `default_model_source`, unless that request supplies an explicit source. FLM discovery remains source-independent: Lemonade trusts the installed backend's `flm list --json` output without passing a registry selector.
 

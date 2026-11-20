@@ -85,6 +85,7 @@ struct ModelManagerConfig {
     // host. A test that wants to watch a download end to end answers here instead.
     std::function<std::unique_ptr<models::FetchableRepository>(const models::ArtifactRef& ref)>
         repository_for;
+    std::function<bool()> automatic_model_source;
 };
 
 class ModelManager {

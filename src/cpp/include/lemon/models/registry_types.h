@@ -13,6 +13,10 @@
 
 namespace lemon {
 
+namespace utils {
+struct CancelToken;
+}
+
 // A registry is named by string, not by enum: the string is what user_models.json,
 // .lemonade_registry.json, POST /pull and the desktop app already carry.
 using models::RegistryId;
@@ -164,6 +168,8 @@ RegistrySearchResponse normalize_registry_search_response(
 
 bool registry_task_is_excluded(const std::string& task);
 
+bool probe_model_registry(models::RegistryId source, long timeout_seconds,
+                          const utils::CancelToken& cancel);
 bool is_official_huggingface_endpoint(const std::string& endpoint);
 std::string huggingface_repository_api_url(
     const std::string& endpoint,
