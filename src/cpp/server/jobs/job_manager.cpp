@@ -2,6 +2,7 @@
 
 #include "lemon/jobs/job_expr.h"
 #include "lemon/jobs/job_graph.h"
+#include "lemon/jobs/job_media_limits.h"
 #include "lemon/utils/path_utils.h"
 
 #include <lemon/utils/aixlog.hpp>
@@ -11,9 +12,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 
 namespace fs = std::filesystem;
 
@@ -279,11 +282,11 @@ json JobManager::list() const {
     return out;
 }
 
-std::optional<json> JobManager::get(const std::string& id) const {
+std::optional<Job> JobManager::get(const std::string& id) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(id);
     if (it == jobs_.end() || it->second.deleted) return std::nullopt;
-    return it->second.to_json();
+    return it->second;
 }
 
 bool JobManager::pause(const std::string& id) {
@@ -522,6 +525,8 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
     while (true) {
         json params;
         json context_snapshot;
+        json extracts;
+        std::string op;
         const OpHandler* handler = nullptr;
         std::string step_id;
 
@@ -611,6 +616,8 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
 
             s->status = StepStatus::Running;
             step_id = s->id;
+            extracts = s->extract;
+            op = s->op;
             context_snapshot = job.context;
             ctrl->cancel.store(false);
             persist_locked();
@@ -630,6 +637,36 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
         }
         const auto ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - t0).count();
+
+        json resolved_extracts = json::object();
+        std::map<std::string, std::exception_ptr> extract_errors;
+        std::optional<MediaStoreBudget> budget;
+        if (ok) {
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                const auto it = jobs_.find(id);
+                if (it == jobs_.end()) return;
+                budget.emplace(it->second, output, step_id);
+            }
+            const bool media = media_result_bytes(output) != 0;
+            for (auto extract = extracts.begin(); extract != extracts.end(); ++extract) {
+                if (media && budget->bytes > kMaxJobMediaStoreBytes) break;
+                try {
+                    json value = expr_detail::resolve_ref_path(
+                        extract.value().get<std::string>(), output);
+                    budget->resolve_extract(extract.key(), value, media);
+                    if (budget->bytes > kMaxJobMediaStoreBytes) break;
+                    resolved_extracts[extract.key()] = std::move(value);
+                } catch (const std::exception&) {
+                    extract_errors[extract.key()] = std::current_exception();
+                }
+            }
+            if (budget->bytes > kMaxJobMediaStoreBytes) {
+                ok = false;
+                run_error = op + " output would exceed the per-job media store limit of " +
+                            std::to_string(kMaxJobMediaStoreBytes) + " bytes";
+            }
+        }
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -654,9 +691,12 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                 s->output = output;
                 job.context[s->id] = output;
                 try {
-                    for (auto it2 = s->extract.begin(); it2 != s->extract.end(); ++it2)
-                        job.context[it2.key()] =
-                            expr_detail::resolve_ref_path(it2.value().get<std::string>(), output);
+                    for (auto it2 = s->extract.begin(); it2 != s->extract.end(); ++it2) {
+                        const auto error = extract_errors.find(it2.key());
+                        if (error != extract_errors.end()) std::rethrow_exception(error->second);
+                        job.context[it2.key()] = std::move(resolved_extracts.at(it2.key()));
+                    }
+                    job.media_extract_bytes = std::move(budget->extracts);
                     const std::string next = next_after_success(job, *s);
                     s->status = StepStatus::Completed;
                     job.cursor = next;

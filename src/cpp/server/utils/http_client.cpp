@@ -703,7 +703,8 @@ HttpResponse perform_request(const std::string& url,
                              long timeout_seconds,
                              HttpSecurityPolicy policy,
                              bool headers_only,
-                             size_t max_body_bytes = 0) {
+                             size_t max_body_bytes,
+                             const CancelToken& cancel) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -726,6 +727,12 @@ HttpResponse perform_request(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, effective_timeout(timeout_seconds));
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
+
+    if (cancel.flag != nullptr || cancel.should_cancel != nullptr) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, post_cancel_xferinfo_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancel);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    }
 
     // Add custom headers
     struct curl_slist* header_list = nullptr;
@@ -750,6 +757,9 @@ HttpResponse perform_request(const std::string& url,
         std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
         curl_slist_free_all(header_list);
         curl_easy_cleanup(curl);
+        if (res == CURLE_ABORTED_BY_CALLBACK) {
+            throw HttpClientCancellationException(res, error);
+        }
         throw std::runtime_error(error);
     }
 
@@ -770,8 +780,9 @@ HttpResponse HttpClient::get(const std::string& url,
                              const std::map<std::string, std::string>& headers,
                              long timeout_seconds,
                              HttpSecurityPolicy policy,
-                             size_t max_body_bytes) {
-    return perform_request(url, headers, timeout_seconds, policy, false, max_body_bytes);
+                             size_t max_body_bytes,
+                             const CancelToken& cancel) {
+    return perform_request(url, headers, timeout_seconds, policy, false, max_body_bytes, cancel);
 }
 
 HttpResponse HttpClient::post(const std::string& url,
