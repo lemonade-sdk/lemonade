@@ -95,6 +95,19 @@ assert.equal(deviceOptionLabel('CUDA1', twoNvidiaInfo), expectedCudaLabels[2]);
 assert.match(panelSource,
   /options\.map\(opt => <option key=\{opt\} value=\{opt\}>\{deviceOptionLabel\(opt, info, runtimeDevices,/);
 
+// Explicit Vulkan0 / Vulkan1 selection is exposed by the common subprocess launcher.
+const vulkanInfo = {
+  ...info,
+  recipes: {},
+};
+for (const recipe of ['acestep', 'openmoss', 'thinksound', 'trellis']) {
+  const opts = deviceOptionsForKey(`${recipe}_device`, undefined, 'vulkan', { recipe }, vulkanInfo);
+  assert.deepEqual(plain(opts), ['auto', ...Array.from({
+    length: [...(info.devices?.amd_gpu ?? []), ...(info.devices?.nvidia_gpu ?? [])]
+      .filter(gpu => gpu?.available !== false).length,
+  }, (_, index) => `vulkan${index}`)], `${recipe}: distinct Vulkan indices`);
+}
+
 // ROCm is numbered by HIP, not by the iGPU-first amd_gpu order, and saved by PCI address.
 const rocm = deviceOptionsForKey('acestep_device', undefined, 'rocm', acestep, info);
 assert.deepEqual(plain(rocm), ['auto', '0000:03:00.0', '0000:c3:00.0']);
@@ -118,6 +131,33 @@ for (const saved of ['GPU-ffff9999-0000-0000-0000-000000000000', 'cuda7']) {
 const noHip = JSON.parse(JSON.stringify(info));
 for (const gpu of noHip.devices.amd_gpu) delete gpu.hip_index;
 assert.deepEqual(plain(deviceOptionsForKey('acestep_device', undefined, 'rocm', acestep, noHip)), ['auto']);
+
+
+// Runtime enumeration, when supplied by an installed backend, is authoritative:
+// the backend's two Vulkan devices must win over the five-GPU hardware fallback.
+const enumeratedVulkanInfo = {
+  ...info,
+  recipes: {
+    ...info.recipes,
+    acestep: {
+      ...info.recipes?.acestep,
+      backends: {
+        ...info.recipes?.acestep?.backends,
+        vulkan: {
+          runtime_devices: [
+            { name: 'Vulkan0', description: 'Backend GPU A' },
+            { name: 'Vulkan1', description: 'Backend GPU B' },
+          ],
+        },
+      },
+    },
+  },
+};
+assert.deepEqual(
+  plain(deviceOptionsForKey('acestep_device', undefined, 'vulkan', acestep, enumeratedVulkanInfo)),
+  ['auto', 'vulkan0', 'vulkan1'],
+  'acestep: runtime Vulkan enumeration overrides the hardware fallback',
+);
 
 // ── Per-server system-info cache from api.ts ────────────────────────────────
 

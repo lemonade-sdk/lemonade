@@ -117,6 +117,24 @@ int main() {
               "validate_device_backend_match accepts matching pairs and system/auto backends gracefully");
     }
 
+    // The common process launcher uses this helper for all opted-in engines.
+    {
+        using Env = std::vector<std::pair<std::string, std::string>>;
+        Env env;
+        BackendUtils::apply_accelerator_device_env_vars(env, "CommonGPU", "vulkan", "Vulkan0");
+        check(env == Env{{"GGML_VK_VISIBLE_DEVICES", "0"}}, "common Vulkan0 visibility mask");
+        env.clear();
+        BackendUtils::apply_accelerator_device_env_vars(env, "CommonGPU", "vulkan", "vulkan1");
+        check(env == Env{{"GGML_VK_VISIBLE_DEVICES", "1"}}, "common Vulkan1 visibility mask");
+        env.clear();
+        BackendUtils::apply_accelerator_device_env_vars(env, "CommonGPU", "vulkan", "auto");
+        check(env.empty(), "common Vulkan auto preserves default visibility");
+        bool rejected = false;
+        try { BackendUtils::apply_accelerator_device_env_vars(env, "CommonGPU", "vulkan", "Vulkan0,Vulkan1"); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected, "common single-GPU Vulkan selector rejects comma-separated lists");
+    }
+
     // Test 2b: explicit CUDA selection uses the physical GPU UUID, not CUDA
     // runtime ordinals (which can differ from nvidia-smi on 4090 + 5090 hosts).
     {

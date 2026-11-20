@@ -2740,6 +2740,15 @@ namespace lemon::backends {
             }
             return;
         }
+        if (backend == "vulkan") {
+            if (!automatic) {
+                const int index = parse_gpu_device_index(selection, "vulkan");
+                env_vars.emplace_back("GGML_VK_VISIBLE_DEVICES", std::to_string(index));
+                LOG(INFO, log_tag) << "Selecting Vulkan device index " << index
+                                   << " via GGML_VK_VISIBLE_DEVICES" << std::endl;
+            }
+            return;
+        }
         if (!automatic) {
             throw std::invalid_argument("GPU selection '" + selection +
                                         "' is not supported by backend '" + backend + "'");

@@ -53,6 +53,10 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"vulkan", "rocm", "cuda", "cuda12"},
     /*config_extra*/    nlohmann::json::object(),
+    /*streams_model_from_storage*/ false,
+    /*containers*/      {},
+    /*mode_capability_requirements*/ {},
+    /*common_gpu_visibility*/ true,
 };
 
 }  // namespace trellis

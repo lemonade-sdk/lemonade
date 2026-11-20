@@ -552,10 +552,11 @@ function deviceOptionsForKey(key: keyof RecipeOptions, current: string | undefin
   // An explicit 'auto' clears inherited per-model GPU selections.
   if (singleGpuRecipe) {
     base.unshift('auto');
-    // These servers support CUDA/ROCm visibility masks, not native Vulkan device selection.
+    // Native GGML single-GPU engines share Vulkan visibility at process start.
     if (!['thenoise', 'sd-cpp'].includes(recipe)) {
       base = base.filter(device => device === 'auto' || isGpuId(device)
-        || /^cuda\d+$/i.test(device) || /^rocm\d+$/i.test(device));
+        || /^cuda\d+$/i.test(device) || /^rocm\d+$/i.test(device)
+        || /^vulkan\d+$/i.test(device));
     }
   }
   const normalizedCurrent = optionalDisplayValue(current);
