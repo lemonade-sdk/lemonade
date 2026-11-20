@@ -1985,6 +1985,7 @@ jobs:
           $expected = @(
               "$archiveDir\lemond.exe",
               "$archiveDir\lemonade.exe",
+              "$archiveDir\lemonade-hip-probe.exe",
               "$archiveDir\LICENSE",
               "$archiveDir\resources\server_models.json",
               "$archiveDir\resources\backend_versions.json",

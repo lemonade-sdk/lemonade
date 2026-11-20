@@ -2240,12 +2240,6 @@ bool needs_gfx1151_cwsr_fix() {
     return false;
 }
 
-#ifndef _WIN32
-int run_internal_hip_probe() {
-    return 1;
-}
-#endif
-
 std::string hip_visible_device(const std::string& recipe, const std::string& backend) {
     return system_info_detail::hip_visible_device(
         "/sys/class/kfd/kfd/topology/nodes", [&](const std::string& arch) {
@@ -2741,50 +2735,27 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
 
 #ifdef _WIN32
 
-int run_internal_hip_probe() {
-    // The display driver installs the HIP runtime in System32. Loading it only from
-    // there keeps a DLL beside the executable from standing in for it.
-    HMODULE hip = nullptr;
-    for (const wchar_t* dll : {L"amdhip64_7.dll", L"amdhip64_6.dll"}) {
-        hip = LoadLibraryExW(dll, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-        if (hip) break;
-    }
-    if (!hip) return 2;
-
-    using GetDeviceCount = int (*)(int*);
-    using GetDeviceString = int (*)(char*, int, int);
-    auto get_count = reinterpret_cast<GetDeviceCount>(GetProcAddress(hip, "hipGetDeviceCount"));
-    auto get_name = reinterpret_cast<GetDeviceString>(GetProcAddress(hip, "hipDeviceGetName"));
-    auto get_bus = reinterpret_cast<GetDeviceString>(GetProcAddress(hip, "hipDeviceGetPCIBusId"));
-    int count = 0;
-    if (!get_count || !get_name || !get_bus || get_count(&count) != 0) return 3;
-
-    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
-    for (int i = 0; i < count; ++i) {
-        char name[256] = {0};
-        char bus[64] = {0};
-        get_name(name, sizeof(name), i);
-        get_bus(bus, sizeof(bus), i);
-        const std::string line = std::to_string(i) + "\t" + bus + "\t" + name + "\n";
-        DWORD written = 0;
-        WriteFile(out, line.data(), static_cast<DWORD>(line.size()), &written, nullptr);
-    }
-    return 0;
-}
-
 // HIP's device order on Windows comes from the driver and is not visible through
-// WMI, so ask HIP itself. It runs in a child process (this same executable) so a
-// driver fault cannot take the server down; the result is fixed per boot.
+// WMI, so ask HIP itself through lemonade-hip-probe.exe (src/cpp/hip_probe), which
+// ships beside the server executable. Without it, AMD GPUs get no hip_index.
+// The result is fixed per boot.
 static const std::vector<system_info_detail::HipProbeDevice>& hip_probe_devices() {
     static std::once_flag once;
     static std::vector<system_info_detail::HipProbeDevice> devices;
     std::call_once(once, [] {
         wchar_t path[MAX_PATH] = {0};
-        if (GetModuleFileNameW(nullptr, path, MAX_PATH) == 0) return;
+        const DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
+        if (length == 0 || length >= MAX_PATH) return;
+        const fs::path probe = fs::path(path).parent_path() / L"lemonade-hip-probe.exe";
+        std::error_code ec;
+        if (!fs::is_regular_file(probe, ec)) {
+            LOG(DEBUG, "SystemInfo") << "HIP probe not found: " << utils::path_to_utf8(probe) << std::endl;
+            return;
+        }
         std::string output;
         try {
             const int rc = utils::ProcessManager::run_process_with_output(
-                utils::path_to_utf8(fs::path(path)), {"--internal-hip-probe"},
+                utils::path_to_utf8(probe), {},
                 [&output](const std::string& line) { output += line + "\n"; return true; },
                 "", 30, /*capture_stderr=*/false);
             if (rc == 0) {

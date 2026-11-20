@@ -313,8 +313,6 @@ bool needs_gfx1151_cwsr_fix();
 // backend may not support.
 std::string hip_visible_device(const std::string& recipe, const std::string& backend);
 
-int run_internal_hip_probe();
-
 // The KFD properties file of the first GPU of `arch`, or "" when none is present.
 std::string kfd_gpu_properties(const std::string& arch);
 
