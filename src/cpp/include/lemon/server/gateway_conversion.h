@@ -2,6 +2,7 @@
 
 #include <exception>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -26,6 +27,9 @@ void stream_sse_to_ndjson(const std::string& openai_body, httplib::DataSink& cli
                           NdjsonChunkConverter convert_chunk, NdjsonDoneBuilder build_done,
                           ApiRoute::StreamFn call_router);
 
+// The line stream_sse_to_ndjson ends a stream with when the backend fails.
+nlohmann::ordered_json ollama_stream_error_schema();
+
 void stream_openai_sse_to_anthropic_sse(const std::string& openai_body,
                                         httplib::DataSink& client_sink,
                                         const std::string& model,
@@ -40,6 +44,10 @@ nlohmann::json gateway_load_options(const nlohmann::json& options, const nlohman
 nlohmann::json ollama_details(const std::string& model_name, const std::string& recipe,
                               const std::string& checkpoint);
 nlohmann::ordered_json ollama_details_schema();
+
+// One /api/generate stream line from an OpenAI completion or chat chunk. `response` is
+// always a string, even for a chunk with no choices, since Ollama clients require it.
+nlohmann::json ollama_generate_chunk(const nlohmann::json& openai_chunk, const std::string& model);
 
 // Copies Ollama sampling options, from the request's options argument or its top level, to
 // OpenAI names.
@@ -63,6 +71,16 @@ extern const RouteError kOllamaModelNotFound;
 // Writes kOllamaModelNotFound and returns false when name is not in the registry.
 bool ollama_model_registered(ModelManager& model_manager, const std::string& name,
                              httplib::Response& res);
+
+// What a model can answer on /api/chat and /api/generate.
+// Upscaling models carry the image label but generate Nothing.
+enum class OllamaOutput { Text, Image, Nothing };
+OllamaOutput ollama_output(const std::vector<std::string>& labels);
+
+// Ollama checks a model's capabilities before loading it.
+// Empty when name is not in the registry, which leaves loading to report it.
+std::optional<OllamaOutput> ollama_registered_output(ModelManager& model_manager,
+                                                     const std::string& name);
 
 extern const RouteError kOllamaBackendError;
 

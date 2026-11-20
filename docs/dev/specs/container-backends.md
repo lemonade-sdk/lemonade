@@ -30,6 +30,7 @@ Lemonade follows [Ramalama](https://github.com/containers/ramalama)'s container 
 - **Image sources.**
   - Donato's [Docker Hub account](https://hub.docker.com/u/kyuz0) for rocmfpx, nathanw, and ds4.
   - Peonist's [ghcr.io account](https://github.com/orgs/peonist-ai/packages) for Halogen.
+  - Gufo's [ghcr.io account](https://github.com/orgs/gufo-org/packages) for Gufo, built by [gufo-org/toolboxes](https://github.com/gufo-org/toolboxes).
 - **Models.** Downloaded by Lemonade and mounted read-only. Mounts and privileges are Lemonade's to set.
 - **Packaging.**
   - The PPA, the GitHub release .deb and .rpm, source builds and the embedded SDK tarball will natively support the container backends.
@@ -100,9 +101,10 @@ Each `BackendDescriptor` contains the information needed to install and launch t
 
 | Field | Required | Meaning | Adds to the run command |
 | --- | --- | --- | --- |
-| `image` | Yes | Where the image is published. Only `docker.io/kyuz0/*` and `ghcr.io/peonist-ai/*` are allowed. | The image reference (see [Image](#image)) |
+| `image` | Yes | Where the image is published. Only `docker.io/kyuz0/*`, `ghcr.io/peonist-ai/*` and `ghcr.io/gufo-org/*` are allowed. | The image reference (see [Image](#image)) |
 | `devices` | Yes | Device nodes the container can open, such as `{"/dev/dri"}`. | One `--device` per node, and `--group-add` (see [Run Options](#run-options)) |
 | `cap_add` | No | Linux capabilities to give back after `--cap-drop=all`, such as `{"SYS_PTRACE"}`. | One `--cap-add` per capability |
+| `user` | No | The numeric UID and GID the image runs as, such as `{1000, 1000}` for Gufo's image. Unset for an image that runs as root. | `--userns=keep-id` on rootless Podman (see [Run Options](#run-options)) |
 
 Halogen's `BackendDescriptor` declares one container backend, `rocm`, for Strix Halo (`gfx1151`):
 
@@ -192,13 +194,14 @@ When the container tool is rootless Podman, `lemond` connects to the server at `
 | Option | Value | Comes from |
 | --- | --- | --- |
 | `--group-add` | `keep-groups` ‡, which carries the account's own `render` membership into the container. Through the account's `podman.socket`, whose API rejects `keep-groups`, `lemond` passes `--annotation run.oci.keep_original_groups=1`, the crun annotation `keep-groups` stands for, instead | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
+| `--userns` | `keep-id:uid=<uid>,gid=<gid>` ‡, only when `ContainerPolicy` sets `user`. Container root is the account itself, so an image that runs as root reads the model files as their owner; an image with its own user would read them as an unmapped subordinate ID and could not open a file only its owner can read. `keep-id` maps the account onto the image's user instead | `ContainerPolicy.user` |
 | `-p` | `127.0.0.1:<port>:<port>` | A free port `lemond` picks |
 
 When the container tool is Docker or rootful Podman, `lemond` connects to the server at the container's address on its private network, and the command adds:
 
 | Option | Value | Comes from |
 | --- | --- | --- |
-| `--group-add` | The host's `render` group ID, resolved at launch ‡ | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
+| `--group-add` | One per numeric group ID that owns a device node in `devices`, resolved at launch ‡. An image that runs as root opens the nodes as their owner; one with its own user needs each group, such as `video` where it owns `/dev/kfd` instead of `render` | `ContainerPolicy.devices` (see [`containers` Descriptor Field](#containers-descriptor-field)) |
 
 ### Image
 
@@ -407,7 +410,7 @@ A container backend whose `devices` include `/dev/kfd` runs one more check befor
 
 A new workflow, `.github/workflows/validate_containers.yml`, keeps every container backend on the newest image upstream publishes. It runs weekly, every Sunday at 18:00 UTC, and on every pull request that changes a pin or a backend descriptor, where it only checks that each pin can still be resolved.
 
-A pin whose tag carries version numbers moves to the highest-numbered tag of the same shape: `0.18.22` moves to `0.18.23`, and `rocm-10.0-gufo` to `rocm-10.1-gufo`, but never to a timestamped build such as `rocm-10.0-gufo_20261103T122023`. A tag with no numbers, such as `vulkan-radv-performance`, keeps its name. Every pin then moves to its tag's newest digest. The workflow then opens one pull request with the new pins, the same way `validate_llamacpp.yml` does, and `test-container-backends` validates them on Devlab Dispatch's Strix Halo 128 GB Linux runners. Each starting tag is the one AI Toolbox Cockpit runs for the same engine on the same GPU, such as `vulkan-radv-performance` for `llamacpp:nathanw`. Halogen pins its release tag, such as `0.18.22`, because AI Cockpit's `latest` names no version.
+A pin whose tag carries version numbers moves to the highest-numbered tag of the same shape: `0.18.22` moves to `0.18.23`, and `rocm-10.0-rocmfpx` to `rocm-10.1-rocmfpx`, but never to a timestamped build such as `rocm-10.0-rocmfpx_20261103T122023`. A tag with no numbers, such as `vulkan-radv-performance`, keeps its name. Every pin then moves to its tag's newest digest. The workflow then opens one pull request with the new pins, the same way `validate_llamacpp.yml` does, and `test-container-backends` validates them on Devlab Dispatch's Strix Halo 128 GB Linux runners. Each starting tag for a kyuz0 image is the one AI Toolbox Cockpit runs for the same engine on the same GPU, such as `vulkan-radv-performance` for `llamacpp:nathanw`. Halogen pins its release tag, such as `0.18.22`, because AI Cockpit's `latest` names no version. Gufo pins the `X.Y.Z` tag that [gufo-org/toolboxes](https://github.com/gufo-org/toolboxes) publishes for each stable Gufo release, such as `0.34.0`, so a bump names the new Gufo version.
 
 ## Appendix A: Ramalama and AI Cockpit Conventions, and Where Lemonade Differs
 
@@ -421,7 +424,7 @@ A pin whose tag carries version numbers moves to the highest-numbered tag of the
 | SELinux | `--security-opt=label=disable` unless `--selinux`, which relabels mounts with `z` | `label=disable` plus `--userns=keep-id` on Podman for every backend except Halogen | **Same as Ramalama's `--selinux` mode** †: SELinux stays on, and each model mount is relabeled with `z`, the shared label, so several containers can read the same Hugging Face cache files and the user's own programs still can. **Stricter than AI Cockpit** for every backend but Halogen, where both keep SELinux on. |
 | Seccomp | Never passed; podman or docker's default profile applies | `seccomp=unconfined` in every GPU runtime profile, `halogen-strix-halo` included | **Same as Ramalama** †: the tool's default profile. **Stricter than AI Cockpit**, which turns the filter off. DS4 and Halogen both load and answer under the default on `gfx1151`. |
 | Device access | No such concept; one code path per accelerator family | `runtime_profiles` in `toolboxes.json`: `amd-rocm`, `amd-rocm-hipblaslt`, `amd-rocm-keep-groups`, `vulkan`, `intel-level-zero`, `nvidia-gb10`, `halogen-strix-halo` | **Same as AI Cockpit** ‡: each `ContainerPolicy` grants the devices and permissions AI Cockpit's profile grants that engine, including what its DS4 runner adds inline, except `--ipc=host` for DS4 and Halogen and `--ulimit memlock=-1:-1` for Halogen, which they run without. Ramalama has no per-engine equivalent. |
-| Groups | `--group-add keep-groups` on Podman only when `--keep-groups` is passed; no group flags otherwise | `--group-add video --group-add render` in every GPU profile, rewritten to `--group-add keep-groups` on Podman by `upgrade_groups_for_podman()` | **Same as AI Cockpit** ‡ on Podman: `keep-groups`. **More robust than AI Cockpit** on Docker: Lemonade passes the host's numeric `render` group ID, which always matches the device nodes, where a group name resolves in the image's `/etc/group` and may be missing or numbered differently. |
+| Groups | `--group-add keep-groups` on Podman only when `--keep-groups` is passed; no group flags otherwise | `--group-add video --group-add render` in every GPU profile, rewritten to `--group-add keep-groups` on Podman by `upgrade_groups_for_podman()` | **Same as AI Cockpit** ‡ on Podman: `keep-groups`. **More robust than AI Cockpit** on Docker: Lemonade passes the numeric IDs of the groups that own the device nodes, which always match them, where a group name resolves in the image's `/etc/group` and may be missing or numbered differently. |
 | Model mount | `--mount=type=bind,src=<blob>,destination=<MNT_DIR>/<file>,ro` with `MNT_DIR = "/mnt/models"`, one per file the model needs | The whole models directory as `-v <dir>:/models:ro` for llama.cpp, DS4, vLLM and R9V; per file for Halogen only | **Same as Ramalama** †: one read-only mount per file under `/mnt/models`, resolved through symlinks the way Ramalama mounts the blob, written as `-v` because Docker's `--mount` cannot relabel. **Same as AI Cockpit** ‡ for a directory such as Halogen's tokenizer: one mount per file inside it. **Stricter than AI Cockpit** for llama.cpp and DS4, where the whole models directory is mounted and every model in it is readable. |
 | Port | `-p <host><port>:<port>`, where `host` comes from `--host` and defaults to `::`, so the published address is every interface | `-p 127.0.0.1:<port>:<port>` while the host field stays at localhost, `-p <port>:<port>` once it is set to `0.0.0.0`; Halogen publishes nothing | **Stricter than both:** always `127.0.0.1:<port>:<port>`, so only the local machine reaches the API. Ramalama publishes on every interface by default, and AI Cockpit does once the user sets the host field to `0.0.0.0`. |
 | Devices | Whole `/dev/dri` and `/dev/kfd`, never individual render nodes; `check_rocm_amd()` picks the AMD GPU from the KFD topology by largest VRAM and exports `HIP_VISIBLE_DEVICES` | The same whole device nodes, from the profile; `HIP_VISIBLE_DEVICES` is a text field the user fills in, with no detection at all | **Same as both** § for the device nodes. **More robust than both** for GPU choice: `lemond` picks the GPU whose `gfx_target_version` matches `SystemInfo::get_rocm_arch()` †, where Ramalama picks the GPU with the most VRAM, and AI Cockpit uses whatever the user types. |

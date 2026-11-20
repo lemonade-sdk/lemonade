@@ -13,12 +13,15 @@ docs/api pages:
 
 Each route section shows real requests and the responses lemond returned to
 them. Those responses are recorded in docs/tools/api_examples_cache.json, keyed
-by everything that determines them, and an example runs only when its entry is
-missing. --check runs no examples and loads no model: it fails when any region,
-cache entry or recorded response is stale or invalid.
+by the request, and an example runs only when its entry is missing. --refresh
+RECIPE re-runs the examples a recipe serves, such as after a backend update, and
+replaces a recorded response only when its shape changed. --check runs no
+examples and loads no model: it fails when any region, cache entry or recorded
+response is stale or invalid.
 
 Usage:
     python docs/tools/gen_api_boilerplate.py [--lemond PATH] [--check] [--bin-dir DIR]
+                                             [--refresh RECIPE]...
 """
 
 from __future__ import annotations
@@ -49,7 +52,6 @@ CACHE_FILE = REPO_ROOT / "docs" / "tools" / "api_examples_cache.json"
 FIXTURES = REPO_ROOT / "docs" / "tools" / "fixtures"
 # A fixture can stand for a whole value or follow a prefix, as in a data URL.
 FIXTURE = re.compile(r"@fixtures/[\w.-]+")
-BACKEND_VERSIONS = REPO_ROOT / "src" / "cpp" / "resources" / "backend_versions.json"
 SERVER_MODELS = REPO_ROOT / "src" / "cpp" / "resources" / "server_models.json"
 
 DOCS_HOST = "http://localhost:13305"
@@ -174,42 +176,86 @@ def step_payload(specs: dict, step: dict) -> dict:
     }
 
 
-def pinned_backend(examples: list[dict], backend_versions: dict, server_models: dict):
+def example_recipe(specs: dict, route_id: str, example: dict, server_models: dict):
     """A pass-through route's response depends on the backend serving its model, which
-    its own example names, or else the setup example that loads it. Examples are
-    recorded on a recipe's Vulkan backend when it has one, so only that pin counts."""
-    for example in examples:
-        model = example.get("model", example.get("model_name"))
+    its own example names, or else the setup example that loads it."""
+    ref = {"route": route_id, "example": example["name"]}
+    setup = [step_payload(specs, step) for step in setup_chain(specs, ref)]
+    for request in [example["args"]] + [
+        entry.get("example", entry.get("args")) for entry in reversed(setup)
+    ]:
+        model = request.get("model", request.get("model_name"))
         if isinstance(model, str):
-            recipe = server_models.get(model, {}).get("recipe")
-            pins = backend_versions.get(recipe) if recipe else None
-            if isinstance(pins, dict) and "vulkan" in pins:
-                return pins["vulkan"]
-            return pins
+            return server_models.get(model, {}).get("recipe")
     return None
 
 
-def cache_key(
-    specs: dict,
-    route_id: str,
-    example: dict,
-    backend_versions: dict,
-    server_models: dict,
-) -> str:
+def cache_key(specs: dict, route_id: str, example: dict) -> str:
     ref = {"route": route_id, "example": example["name"]}
-    setup = [step_payload(specs, step) for step in setup_chain(specs, ref)]
-    requests = [example["args"]] + [
-        entry.get("example", entry.get("args")) for entry in reversed(setup)
-    ]
     payload = {
         "route": route_id,
         "format": example["format"],
         "example": example["args"],
-        "setup": setup,
-        "backend": pinned_backend(requests, backend_versions, server_models),
+        "setup": [step_payload(specs, step) for step in setup_chain(specs, ref)],
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def value_shape(value):
+    """Keys and types, without values, array lengths or order."""
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, dict):
+        return {key: value_shape(item) for key, item in value.items()}
+    if isinstance(value, list):
+        shapes = {json.dumps(value_shape(item), sort_keys=True) for item in value}
+        return sorted(shapes)
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "bool"
+    return "number" if isinstance(value, (int, float)) else type(value).__name__
+
+
+def stream_shape(items: list, response_format: str) -> list:
+    shapes = set()
+    for item in items:
+        event = None
+        payloads = [item]
+        if response_format == "EventStream":
+            event = next(
+                (
+                    line[6:].strip()
+                    for line in item.splitlines()
+                    if line.startswith("event:")
+                ),
+                None,
+            )
+            payloads = event_payloads(item)
+        for payload in payloads:
+            try:
+                data = value_shape(json.loads(payload))
+            except json.JSONDecodeError:
+                data = "[DONE]" if payload == "[DONE]" else "string"
+            shapes.add(json.dumps({"event": event, "data": data}, sort_keys=True))
+    return sorted(shapes)
+
+
+def response_shape(response: dict, response_format: str) -> dict:
+    shape = {
+        key: value if key in ("status", "content_type") else value_shape(value)
+        for key, value in response.items()
+        if key not in ("count", "line_count", "head", "tail", "stream_shape")
+    }
+    if response_format in ("JsonLines", "EventStream"):
+        shape["stream_shape"] = response.get("stream_shape")
+        if shape["stream_shape"] is None:
+            # Older recordings retain only samples, so unseen shapes require a new baseline.
+            shape["stream_shape"] = stream_shape(
+                response.get("head", []) + response.get("tail", []), response_format
+            )
+    return shape
 
 
 def validate_specs(specs: dict) -> None:
@@ -1187,9 +1233,11 @@ def record(
             for line in redact(raw.decode("utf-8"), cache_dir).splitlines()
             if line.strip()
         ]
+        recorded["stream_shape"] = stream_shape(lines, response_format)
         recorded.update(truncate([elide_json_text(line) for line in lines]))
     elif response_format == "EventStream":
         events = split_events(redact(raw.decode("utf-8"), cache_dir))
+        recorded["stream_shape"] = stream_shape(events, response_format)
         recorded.update(truncate([elide_event(event) for event in events]))
     elif response_format == "Text":
         lines = redact(raw.decode("utf-8"), cache_dir).splitlines()
@@ -2090,6 +2138,14 @@ def main() -> int:
     parser.add_argument(
         "--bin-dir", help="Installed backends to reuse instead of downloading them"
     )
+    parser.add_argument(
+        "--refresh",
+        action="append",
+        default=[],
+        metavar="RECIPE",
+        help="Re-run the examples RECIPE serves, keeping each recorded response "
+        "unless its shape changed",
+    )
     args = parser.parse_args()
 
     binary = find_lemond(args.lemond)
@@ -2098,16 +2154,25 @@ def main() -> int:
     specs = {spec["id"]: spec for spec in route_list}
     validate_specs(specs)
 
-    backend_versions = json.loads(BACKEND_VERSIONS.read_text(encoding="utf-8"))
     server_models = json.loads(SERVER_MODELS.read_text(encoding="utf-8"))
     cache = load_cache()
 
     keys = {}
+    refresh = set()
+    refresh_counts = collections.Counter()
     for spec in route_list:
         for example in spec["examples"]:
-            keys[(spec["id"], example["name"])] = cache_key(
-                specs, spec["id"], example, backend_versions, server_models
-            )
+            ref = (spec["id"], example["name"])
+            keys[ref] = cache_key(specs, spec["id"], example)
+            recipe = example_recipe(specs, spec["id"], example, server_models)
+            if recipe in args.refresh:
+                refresh.add(ref)
+                refresh_counts[recipe] += 1
+
+    for recipe in dict.fromkeys(args.refresh):
+        print(f"Refresh {recipe}: selected {refresh_counts[recipe]} example(s)")
+    if any(not refresh_counts[recipe] for recipe in args.refresh):
+        raise GenerationError("each --refresh recipe must select at least one example")
 
     problems = lint_sources()
     for spec in route_list:
@@ -2117,12 +2182,29 @@ def main() -> int:
         problems += [
             f"no recorded example for {route_id} {name!r}" for route_id, name in missing
         ]
-    elif missing:
-        print(f"Recording {len(missing)} example(s)...")
+    to_run = [] if args.check else [r for r in keys if r in missing or r in refresh]
+    if to_run:
+        print(f"Recording {len(to_run)} example(s)...")
         with ExampleRunner(binary, args.bin_dir, specs) as runner:
-            for route_id, name in missing:
+            for route_id, name in to_run:
+                key = keys[(route_id, name)]
                 entry = runner.run(route_id, name)
-                cache[keys[(route_id, name)]] = entry
+                # The docs show a response's shape, so new values alone are churn.
+                if key in cache:
+                    if response_shape(
+                        cache[key]["response"], entry["format"]
+                    ) == response_shape(entry["response"], entry["format"]):
+                        if (
+                            "stream_shape" in entry["response"]
+                            and "stream_shape" not in cache[key]["response"]
+                        ):
+                            cache[key]["response"]["stream_shape"] = entry["response"][
+                                "stream_shape"
+                            ]
+                            write_cache(cache)
+                        continue
+                    print(f"  {route_id} {name!r} changed shape")
+                cache[key] = entry
                 write_cache(cache)
 
     stale_keys = set(cache) - set(keys.values())

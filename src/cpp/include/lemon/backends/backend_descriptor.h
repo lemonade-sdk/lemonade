@@ -1,12 +1,14 @@
 #pragma once
 
 #include <map>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "lemon/model_types.h"
 #include "lemon/recipe_backend_def.h"
+#include "lemon/utils/container_manager.h"
 
 namespace lemon {
 
@@ -44,6 +46,7 @@ struct ContainerPolicy {
     std::string image;
     std::vector<std::string> devices;   // device nodes the container can open, e.g. "/dev/dri"
     std::vector<std::string> cap_add;   // capabilities given back after --cap-drop=all
+    std::optional<utils::ContainerUser> user;  // nullopt when the image runs as root
 };
 
 // What one backend is and where it comes from, shown to people choosing among
