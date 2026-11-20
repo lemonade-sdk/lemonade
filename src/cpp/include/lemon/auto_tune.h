@@ -149,8 +149,10 @@ inline double get_available_memory_gb(DeviceType device_type,
                 return 0.0;
             }
             if (memory_known_out) *memory_known_out = true;
-            if (physical_free_gb_out) {
-                // The CPU can hold non-offloaded layers on either UMA or a dGPU.
+            if (physical_free_gb_out &&
+                (!pool.unified || pool.vendor == GpuMemoryVendor::Amd)) {
+                // Do not change main's Metal/unified-NVIDIA context budget:
+                // the physical-RAM output also selects a different KV reserve.
                 double total_ram_gb = physical_total_gb;
                 if (total_ram_gb <= 0.0) {
                     auto metrics = create_metrics_platform();
@@ -444,6 +446,13 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         : (direct_weights_fit || offloaded_weights_fit);
     if (max_ctx_from_memory < fallback) {
         if (!auto_context_strict_admission_for_recipe(model_info.recipe, gpu, safer)) {
+            // Preserve main's positive estimate for non-strict backends. A
+            // fallback must not turn 1200 measured tokens into a 4096-token
+            // allocation. Embeddings retain their required 8192-token floor.
+            if (max_ctx_from_memory > 0 && !is_embedding)
+                return auto_context_clamp_tokens(max_ctx_from_memory,
+                                                 model_info.max_context_window,
+                                                 AUTO_CTX_UNKNOWN_MAX);
             LOG(DEBUG, "AutoTune") << "Best-effort auto context for " << model_info.model_name
                                    << " (" << model_info.recipe << "): estimated="
                                    << max_ctx_from_memory << ", fallback=" << fallback;
@@ -583,22 +592,25 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         &ctx_unified_gpu, &memory_known, &physical_free_gb);
 
     if (available_gb <= 0) {
-        if (!memory_known ||
-            !auto_context_strict_admission_for_recipe(
-                recipe, (admission_info.device & DEVICE_GPU) != 0, safer)) {
-            const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE :
-                (model_info.max_context_window > 0
-                     ? (std::min)(model_info.max_context_window, AUTO_CTX_FALLBACK)
-                     : AUTO_CTX_FALLBACK);
-            LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
-                                   << " — no available memory budget, returning " << fallback;
-            return safer ? AUTO_CTX_NO_CAPACITY : fallback;
+        const int64_t fallback = fixed_window > 0 ? fixed_window :
+            is_embedding ? EMBEDDING_CTX_SIZE :
+            (model_info.max_context_window > 0
+                 ? (std::min)(model_info.max_context_window, AUTO_CTX_FALLBACK)
+                 : AUTO_CTX_FALLBACK);
+        if (!memory_known) {
+            // Unknown telemetry is not evidence of zero capacity. Even safer
+            // mode must not disable auto-sized loads on unmeasurable devices.
+            LOG(WARNING, "AutoTune") << "No reliable memory telemetry for "
+                                     << model_info.model_name
+                                     << "; using best-effort context " << fallback;
+            return fallback;
         }
-        // A full GPU pool is not proof that llama.cpp can adapt its layer split.
-        if (recipe != "llamacpp" || !(admission_info.device & DEVICE_GPU) ||
-            !cpu_offload_runtime_compatible ||
-            (ctx_unified_gpu && !(physical_free_gb > 0.0)))
-            return AUTO_CTX_NO_CAPACITY;
+        if (!auto_context_strict_admission_for_recipe(
+                recipe, (admission_info.device & DEVICE_GPU) != 0, safer))
+            return fallback;
+        // A measured zero GPU budget cannot safely start a GPU backend,
+        // even if the CPU could hold the weights in theory.
+        return AUTO_CTX_NO_CAPACITY;
     }
 
     if (fixed_encoder) {

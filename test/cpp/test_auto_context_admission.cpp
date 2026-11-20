@@ -101,6 +101,11 @@ int main() {
     CHECK(!auto_context_fixed_weights_fit(4, 100, 70, true, false, false));
     CHECK(auto_context_fixed_weights_fit(8, 20, 6, true, true, false));
     CHECK(!auto_context_fixed_weights_fit(8, 5, 6, true, true, false));
-    CHECK(!auto_context_fixed_weights_fit(8, -1, 6, true, true, true));
+    // Apple/Metal can report a RAM-capped GPU working set without providing
+    // physical_free separately. Requiring that second value would disable safer.
+    CHECK(auto_context_fixed_weights_fit(8, -1, 6, true, true, false));
+    CHECK(!auto_context_fixed_weights_fit(7, -1, 6, true, true, false));
+    // A GPU load with genuinely zero free GPU memory still fails admission.
+    CHECK(!auto_context_fixed_weights_fit(0, 100, 6, true, false, true));
     return failures ? 1 : 0;
 }

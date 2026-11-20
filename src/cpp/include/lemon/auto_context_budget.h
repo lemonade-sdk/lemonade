@@ -344,9 +344,13 @@ inline bool auto_context_fixed_weights_fit(
     const double headroom = policy.memory_headroom.estimate(
         gpu && unified_gpu && physical_free_gib >= 0.0 ? physical_free_gib : free_gib);
     const bool direct_fit = gpu && unified_gpu
-        ? (std::isfinite(physical_free_gib) && physical_free_gib >= 0.0 &&
-           free_gib >= weights_gib + workspace &&
-           physical_free_gib >= weights_gib + workspace + headroom)
+        ? (physical_free_gib < 0.0
+            // Metal's working-set measurement is already capped by RAM;
+            // with no separate physical-free output, apply pool headroom.
+            ? free_gib >= weights_gib + workspace + headroom
+            : (std::isfinite(physical_free_gib) &&
+               free_gib >= weights_gib + workspace &&
+               physical_free_gib >= weights_gib + workspace + headroom))
         : free_gib >= weights_gib + workspace + headroom;
     return direct_fit || (gpu && auto_context_cpu_offload_weights_fit(
         free_gib, physical_free_gib, weights_gib, false, unified_gpu, cpu_offload));

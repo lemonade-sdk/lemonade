@@ -965,6 +965,45 @@ void Router::load_model(const std::string& model_name,
         ModelType model_type = model_info.type;
         DeviceType device_type = model_info.device;
 
+        // Preflight automatic context admission *before* routine capacity and
+        // exclusivity eviction. A refusal must not itself evict warm peers.
+        // Existing routing-policy eviction may still free memory legitimately;
+        // in that case remeasure after the policy has run, below.
+        const int64_t preflight_ctx = resolve_auto_ctx_size(effective_options, model_info);
+        if (preflight_ctx == AUTO_CTX_NO_CAPACITY) {
+            const SlotPolicy incoming_policy = slot_policy_for_recipe(model_info.recipe);
+            const int limit = residency_limit(requested_residency_class,
+                                               config_->max_loaded_models());
+            const bool slot_can_reclaim = limit >= 0 &&
+                count_servers_in_pool(model_type, requested_residency_class,
+                                      canonical_model_name) >= limit &&
+                find_lru_server_in_pool(model_type, requested_residency_class,
+                                        canonical_model_name) != nullptr;
+            bool exclusivity_can_reclaim = false;
+            for (const auto& resident : loaded_servers_) {
+                if (!resident->is_backend_alive()) continue;
+                const SlotPolicy resident_policy = slot_policy_for_recipe(
+                    resident->get_recipe_options().get_recipe());
+                if (resident_policy == SlotPolicy::Unmetered) continue;
+                if (incoming_policy == SlotPolicy::ExclusiveHost ||
+                    resident_policy == SlotPolicy::ExclusiveHost ||
+                    (incoming_policy == SlotPolicy::ExclusiveNpu &&
+                     (resident->get_device_type() & DEVICE_NPU)) ||
+                    (incoming_policy == SlotPolicy::CoexistByType &&
+                     (resident->get_device_type() & DEVICE_NPU) &&
+                     (resident_policy != SlotPolicy::CoexistByType ||
+                      resident->get_model_type() == model_type))) {
+                    exclusivity_can_reclaim = true;
+                    break;
+                }
+            }
+            if (!slot_can_reclaim && !exclusivity_can_reclaim) {
+                throw ModelLoadRefusedException(
+                    "Not enough available memory for automatic context sizing of " +
+                    canonical_model_name + ". Free up memory or try a smaller model.");
+            }
+        }
+
         // A host-exclusive backend shares the machine with no other local model:
         // loading it evicts them all, and loading any other local model evicts it.
         // Cloud models hold no local memory and stay.
@@ -1085,34 +1124,14 @@ void Router::load_model(const std::string& model_name,
 
         // Auto-tune: resolve ctx_size = -1 → computed from memory + arch metadata
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
-        int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
+        const int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
         const bool ctx_size_auto = auto_ctx != -2;
-        if (auto_ctx == AUTO_CTX_NO_CAPACITY && !is_unmetered_load) {
-            // Admission can fail only because another resident model occupies
-            // the memory. Recover using the existing LRU/pinning/residency
-            // rules, not evict_all_servers(): that would also evict pinned peers.
-            // Only candidates from this same residency pool are eligible.
-            const size_t max_recovery_evictions = loaded_servers_.size();
-            for (size_t attempt = 0;
-                 attempt < max_recovery_evictions && auto_ctx == AUTO_CTX_NO_CAPACITY;
-                 ++attempt) {
-                if (cancel_flag && cancel_flag->load())
-                    throw std::runtime_error("load cancelled");
-                WrappedServer* victim = find_lru_server_in_pool(
-                    model_type, requested_residency_class, canonical_model_name);
-                if (!victim) break;
-                LOG(INFO, "Router") << "Auto-context admission retry after evicting "
-                                    << victim->get_model_name() << std::endl;
-                const size_t old_size = loaded_servers_.size();
-                evict_server(victim);
-                if (loaded_servers_.size() == old_size) break; // Busy: no memory freed.
-                auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
-            }
-        }
         if (auto_ctx == AUTO_CTX_NO_CAPACITY) {
-            throw std::runtime_error(
-                "Not enough free memory to load " + canonical_model_name +
-                " with automatic context sizing. Free memory or choose a smaller model.");
+            // No additional auto-context eviction: the established routing
+            // policy has already had its opportunity to reclaim a slot.
+            throw ModelLoadRefusedException(
+                "Not enough available memory for automatic context sizing of " +
+                canonical_model_name + ". Free up memory or try a smaller model.");
         }
         if (auto_ctx > 0) {
             LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx << std::endl;
@@ -1268,9 +1287,9 @@ void Router::load_model(const std::string& model_name,
                 effective_options.set_option("ctx_size", -1);
                 const int64_t retry_ctx = resolve_auto_ctx_size(effective_options, model_info);
                 if (retry_ctx == AUTO_CTX_NO_CAPACITY) {
-                    throw std::runtime_error(
-                        "Not enough free memory to load " + canonical_model_name +
-                        " with automatic context sizing after evicting other models.");
+                    throw ModelLoadRefusedException(
+                        "Not enough available memory for automatic context sizing of " +
+                        canonical_model_name + " after evicting other models.");
                 }
                 if (retry_ctx > 0) {
                     LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << retry_ctx

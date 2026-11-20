@@ -46,6 +46,14 @@ int main() {
     CHECK(resolve(short_ctx, 4.646484375, false) == 4096);
     CHECK(resolve(short_ctx, 4.646484375, true) == AUTO_CTX_NO_CAPACITY);
 
+    // A positive measurement remains exact for non-strict recipes, while
+    // llama.cpp GPU retains the intentional best-effort 4k exception above.
+    auto short_flm = fixture("flm", 3.0, DEVICE_CPU);
+    CHECK(resolve(short_flm, 4.646484375, false) == 1200);
+    CHECK(resolve(short_flm, 4.646484375, true) == AUTO_CTX_NO_CAPACITY);
+    auto short_cpu_llama = fixture("llamacpp", 3.0, DEVICE_CPU);
+    CHECK(resolve(short_cpu_llama, 4.646484375, false) == 1200);
+
     // These were best-effort before PR #3988. The estimate must not turn
     // into a blanket load rejection unless stricter admission was requested.
     auto flm = fixture("flm", 20.0, DEVICE_CPU);
