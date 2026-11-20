@@ -24,6 +24,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Test the mirror tool
+        run: python tools/modelscope_mirror/test_modelscope_mirror.py -v
       - name: Check pinned checksums
         env:
           GITHUB_TOKEN: ${{ github.token }}

@@ -8100,6 +8100,98 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(response.status_code, 400)
         print("[OK] /install returns 400 for missing 'backend' parameter")
 
+    MIRROR_PREFIX = (
+        "https://modelscope.cn/api/v1/datasets/lemonade-sdk/backends/repo"
+        "?Revision=master&FilePath="
+    )
+
+    def _dry_run(self, recipe, backend, source):
+        response = requests.post(
+            f"{self.base_url}/install/dry-run",
+            json={"recipe": recipe, "backend": backend, "source": source},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def test_028a_backend_source_dry_run_urls(self):
+        """A request's backend source picks GitHub or the ModelScope mirror URL."""
+        from urllib.parse import quote
+
+        mirror = self._dry_run("onnxruntime", "cpu", "modelscope")
+        path = f"github/{mirror['repo']}/{mirror['version']}/{mirror['filename']}"
+        self.assertEqual(mirror["url"], self.MIRROR_PREFIX + quote(path, safe=""))
+
+        github = self._dry_run("onnxruntime", "cpu", "github")
+        self.assertEqual(
+            github["url"],
+            f"https://github.com/{github['repo']}/releases/download/"
+            f"{github['version']}/{github['filename']}",
+        )
+        print("[OK] dry-run URL follows the request's backend source")
+
+    def test_028b_backend_source_rejects_unknown(self):
+        """Only github and modelscope are accepted as a request's backend source."""
+        for path, body in (
+            ("install", {"recipe": "onnxruntime", "backend": "cpu", "source": "x"}),
+            (
+                "install/dry-run",
+                {"recipe": "onnxruntime", "backend": "cpu", "source": "x"},
+            ),
+            ("load", {"model_name": ENDPOINT_TEST_MODEL, "backend_source": "x"}),
+        ):
+            response = requests.post(
+                f"{self.base_url}/{path}", json=body, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(response.status_code, 400, f"{path}: {response.text}")
+        print("[OK] unknown backend sources are rejected with 400")
+
+    def test_028c_install_from_modelscope_mirror(self):
+        """A backend installs from the ModelScope mirror, verified by its pinned SHA-256."""
+        import sys
+
+        if not sys.platform.startswith(("linux", "win32")):
+            self.skipTest("ort-server is only mirrored for Linux and Windows here")
+        recipe, backend = "onnxruntime", "cpu"
+        url = self._dry_run(recipe, backend, "modelscope")["url"]
+        try:
+            with requests.get(url, stream=True, timeout=30) as probe:
+                if probe.status_code == 404:
+                    self.skipTest(
+                        "the mirror does not have this pin yet; "
+                        "the mirror workflow reports that"
+                    )
+        except requests.RequestException as e:
+            self.skipTest(f"ModelScope is not reachable from this runner: {e}")
+
+        requests.post(
+            f"{self.base_url}/uninstall",
+            json={"recipe": recipe, "backend": backend},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        try:
+            response = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "recipe": recipe,
+                    "backend": backend,
+                    "source": "modelscope",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            # A mirrored file without a pinned or matching SHA-256 is refused, so
+            # success means the mirror served exactly the pinned file.
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["status"], "success")
+        finally:
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"recipe": recipe, "backend": backend},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+        print("[OK] onnxruntime:cpu installed from the ModelScope mirror")
+
     def test_029_system_info_release_url(self):
         """Test that system-info includes release_url for backends."""
         response = requests.get(f"{self.base_url}/system-info", timeout=TIMEOUT_DEFAULT)
