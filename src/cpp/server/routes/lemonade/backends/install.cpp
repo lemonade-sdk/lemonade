@@ -98,10 +98,6 @@ ordered_json install_schema() {
 const RouteArg kForce{"force", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                       "Local backends: if `true`, installs a backend this system does not support anyway. "
                       "Defaults to `false`."};
-const RouteArg kSource{"source", ArgIn::JsonBody, {{"enum", json::array({"github", "modelscope"})}},
-                       false, Support::Available,
-                       "Local backends: where to download the backend from, `github` or `modelscope`, for "
-                       "this install only. Defaults to the server's `backend_source`."};
 const RouteArg kProvider{"provider", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
                          "Cloud providers, which take `backend: \"cloud\"`, required: a short identifier "
                          "matching `[a-z0-9_-]+`, such as `fireworks`, used as the provider's model-name "
@@ -152,7 +148,7 @@ public:
             "resets a custom auth header or the `allow_insecure_http` opt-in.",
         };
         s.args = {
-            backend_routes::kRecipe, backend_routes::kBackend, common::kStream, kForce, kSource,
+            backend_routes::kRecipe, backend_routes::kBackend, common::kStream, kForce, backend_routes::kSource,
             kProvider, kBaseUrl, kApiKey, backend_routes::kAllowInsecureHttp,
             kAuthHeaderName, kAuthHeaderPrefix, kWireFormat, downloads::kSubscribe
         };
@@ -226,13 +222,7 @@ public:
             bool stream = req.value(common::kStream, false);
             bool subscribe = req.value(downloads::kSubscribe, true);
             bool force = req.value(kForce, false);
-            const std::string source = req.value(kSource, "");
-            if (!source.empty() && !backend_source::is_valid(source)) {
-                res.status = 400;
-                res.set_content(json{{"error", "'source' must be either 'github', or 'modelscope'"}}.dump(),
-                                "application/json");
-                return;
-            }
+            backend_source::ScopedOverride source_scope(req.value(backend_routes::kSource, ""));
 
             LOG(INFO, "Server") << "Installing backend: " << recipe << ":" << backend << std::endl;
 
@@ -278,14 +268,13 @@ public:
             BackendManager* backend_manager = ctx_.backend_manager;
             ModelManager* model_manager = ctx_.model_manager;
             if (stream) {
-                DownloadManager::Operation operation =
-                    [backend_manager, model_manager, recipe, backend, force, source](
+                DownloadManager::Operation operation = backend_source::carry_to_worker(
+                    [backend_manager, model_manager, recipe, backend, force](
                         DownloadProgressCallback progress_cb, utils::CancelToken) {
-                        backend_source::ScopedOverride source_scope(source);
                         backend_manager->install_backend(recipe, backend, force, progress_cb);
                         SystemInfoCache::invalidate_recipes();
                         model_manager->invalidate_models_cache();
-                    };
+                    });
 
                 if (!subscribe) {
                     const std::string name = recipe + ":" +
@@ -300,7 +289,6 @@ public:
                     DownloadManager::stream(operation, sink);
                 });
             } else {
-                backend_source::ScopedOverride source_scope(source);
                 backend_manager->install_backend(recipe, backend, force);
                 SystemInfoCache::invalidate_recipes();
                 model_manager->invalidate_models_cache();

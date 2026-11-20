@@ -24,10 +24,6 @@ const RouteArg kRecipe{"recipe", ArgIn::JsonBody, {{"type", "string"}, {"minLeng
 const RouteArg kArch{"arch", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
                      "A ROCm GPU architecture, such as `gfx1201`, to resolve for in place of this host's "
                      "detected one, so CI can check an architecture's asset on a runner without that GPU."};
-const RouteArg kSource{"source", ArgIn::JsonBody, {{"enum", json::array({"github", "modelscope"})}},
-                       false, Support::Available,
-                       "Where the backend would be downloaded from, `github` or `modelscope`. Defaults to the "
-                       "server's `backend_source`."};
 
 class InstallDryRunRoute : public ApiRoute {
 public:
@@ -53,7 +49,7 @@ public:
             "Lemonade does not check that the asset exists; fetch `url`, or its split-archive "
             "manifest, to verify it.",
         };
-        s.args = {kRecipe, backend_routes::kBackend, kArch, kSource};
+        s.args = {kRecipe, backend_routes::kBackend, kArch, backend_routes::kSource};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -94,14 +90,7 @@ public:
             const std::string recipe = req.arg(kRecipe).get<std::string>();
             const std::string backend = req.arg(backend_routes::kBackend).get<std::string>();
             requested_arch = req.value(kArch, "");
-            const std::string requested_source = req.value(kSource, "");
-            if (!requested_source.empty() && !backend_source::is_valid(requested_source)) {
-                res.status = 400;
-                res.set_content(json{{"error", "'source' must be either 'github', or 'modelscope'"}}.dump(),
-                                "application/json");
-                return;
-            }
-            backend_source::ScopedOverride source_scope(requested_source);
+            backend_source::ScopedOverride source_scope(req.value(backend_routes::kSource, ""));
 
             if (!requested_arch.empty()) {
                 SystemInfo::set_rocm_arch_override(requested_arch);

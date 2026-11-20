@@ -187,15 +187,7 @@ public:
         const std::string model_name = req.arg(kModelName).get<std::string>();
         json& request_json = req.body;
 
-        const std::string backend_source_choice = req.value(kBackendSource, "");
-        if (!backend_source_choice.empty() && !backend_source::is_valid(backend_source_choice)) {
-            res.status = 400;
-            res.set_content(
-                json{{"error", "'backend_source' must be either 'github', or 'modelscope'"}}.dump(),
-                "application/json");
-            return;
-        }
-        backend_source::ScopedOverride source_scope(backend_source_choice);
+        backend_source::ScopedOverride source_scope(req.value(kBackendSource, ""));
 
         try {
             // Cloud models are registered at cache build, cloud auth and install, so an

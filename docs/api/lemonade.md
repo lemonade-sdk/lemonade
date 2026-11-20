@@ -2229,7 +2229,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `backend` | Yes | The backend within the recipe, such as `vulkan`, `rocm`, `cpu` or `default`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | `true` sends the response as server-sent events as it progresses; `false` sends one response once complete. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `force` | No | Local backends: if `true`, installs a backend this system does not support anyway. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `source` | No | Local backends: where to download the backend from, `github` or `modelscope`, for this install only. Defaults to the server's `backend_source`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `source` | No | Local backends: where the backend's files come from, `github` or the `modelscope` mirror, for this request only. Defaults to the server's `backend_source`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `provider` | No | Cloud providers, which take `backend: "cloud"`, required: a short identifier matching `[a-z0-9_-]+`, such as `fireworks`, used as the provider's model-name prefix. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `base_url` | No | Cloud providers, required: the provider's base URL, such as one ending in `/v1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `api_key` | No | Cloud providers: an API key, held in `lemond`'s memory. The provider's environment variable takes precedence; see [`POST /v1/cloud/auth`](#post-v1cloudauth). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -2503,7 +2503,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `recipe` | Yes | The recipe, such as `llamacpp`, `whispercpp` or `vllm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `backend` | Yes | The backend within the recipe, such as `vulkan`, `rocm`, `cpu` or `default`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `arch` | No | A ROCm GPU architecture, such as `gfx1201`, to resolve for in place of this host's detected one, so CI can check an architecture's asset on a runner without that GPU. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `source` | No | Where the backend would be downloaded from, `github` or `modelscope`. Defaults to the server's `backend_source`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `source` | No | Local backends: where the backend's files come from, `github` or the `modelscope` mirror, for this request only. Defaults to the server's `backend_source`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Errors carry an `error` string.
 

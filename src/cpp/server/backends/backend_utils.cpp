@@ -827,8 +827,9 @@ namespace lemon::backends {
                 }
 
                 utils::DownloadOptions archive_download_opts;
-                archive_download_opts.expected_hash = lookup_expected_asset_hash(
-                    spec.recipe, backend, expected_version, repo, filename);
+                archive_download_opts.expected_hash = backend_source::require_pinned_hash(
+                    source, lookup_expected_asset_hash(spec.recipe, backend, expected_version, repo, filename),
+                    repo + "@" + expected_version + "/" + filename);
                 archive_download_opts.resume_partial = false;
 
                 auto download_result = utils::HttpClient::download_file(
@@ -884,8 +885,10 @@ namespace lemon::backends {
                     }
 
                     utils::DownloadOptions part_download_opts;
-                    part_download_opts.expected_hash = lookup_expected_asset_hash(
-                        spec.recipe, backend, expected_version, repo, part_filename);
+                    part_download_opts.expected_hash = backend_source::require_pinned_hash(
+                        source,
+                        lookup_expected_asset_hash(spec.recipe, backend, expected_version, repo, part_filename),
+                        repo + "@" + expected_version + "/" + part_filename);
                     part_download_opts.resume_partial = false;
 
                     auto part_result = utils::HttpClient::download_file(
@@ -2187,12 +2190,11 @@ namespace lemon::backends {
             http_progress_cb = utils::create_throttled_progress_callback();
         }
 
-        // TheRock asset verification stays metadata-driven. Once upstream publishes
-        // per-asset checksums, backend_versions.json can provide them without
-        // changing download code. Until then this remains an optional lookup.
+        // AMD publishes no per-tarball checksums; checksums.therock in
+        // backend_versions.json holds hashes taken from AMD's server when pinning.
         utils::DownloadOptions therock_download_opts;
-        therock_download_opts.expected_hash = lookup_expected_asset_hash(
-            "therock", arch, version, "", filename);
+        therock_download_opts.expected_hash = backend_source::require_pinned_hash(
+            source, lookup_expected_asset_hash("therock", arch, version, "", filename), filename);
 
         auto download_result = utils::HttpClient::download_file(
             url,

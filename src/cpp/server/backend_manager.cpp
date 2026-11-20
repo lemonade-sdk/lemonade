@@ -703,14 +703,12 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     if (!progress_cb && download_manager_ && resolved_backend != "system") {
         const std::string name = recipe + ":" + resolved_backend;
-        // The job runs on a worker thread, which does not see this thread's request source.
-        const std::string source = backend_source::request_override;
         download_manager_->run_tracked("backend:" + name, "backend", name,
-            [this, recipe, resolved_backend, force, source](DownloadProgressCallback report,
-                                                            utils::CancelToken) {
-                backend_source::ScopedOverride source_scope(source);
-                install_backend(recipe, resolved_backend, force, report);
-            });
+            backend_source::carry_to_worker(
+                [this, recipe, resolved_backend, force](DownloadProgressCallback report,
+                                                        utils::CancelToken) {
+                    install_backend(recipe, resolved_backend, force, report);
+                }));
         return;
     }
 

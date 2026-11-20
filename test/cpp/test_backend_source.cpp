@@ -3,6 +3,7 @@
 // backend_source config key (default, env override, validation).
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -153,6 +154,40 @@ int main() {
         check(bs::is_valid("github") && bs::is_valid("modelscope") && !bs::is_valid("gitee") &&
                   !bs::is_valid(""),
               "only github and modelscope are valid sources");
+
+        // Installs without a progress callback run on a download-manager worker.
+        std::function<std::string(int)> job;
+        {
+            bs::ScopedOverride request_scope("modelscope");
+            job = bs::carry_to_worker([](int) { return BackendUtils::effective_backend_source(); });
+        }
+        std::string on_worker;
+        std::thread([&] { on_worker = job(0); }).join();
+        check(on_worker == "modelscope", "carry_to_worker hands the request source to a worker thread");
+        check(BackendUtils::effective_backend_source() == "github",
+              "carry_to_worker leaves the calling thread's source alone");
+        std::string after_job;
+        std::thread([&] {
+            job(0);
+            after_job = BackendUtils::effective_backend_source();
+        }).join();
+        check(after_job == "github", "the worker's source is restored after the job");
+    }
+
+    // A mirrored file without a pinned checksum is refused; GitHub keeps the optional check.
+    {
+        const std::string pinned = "sha256:" + std::string(64, 'a');
+        check_eq(bs::require_pinned_hash("modelscope", pinned, "f.zip"), pinned,
+                 "a pinned hash passes through for modelscope");
+        check_eq(bs::require_pinned_hash("github", "", "f.zip"), "",
+                 "github downloads still run without a pinned hash");
+        bool threw = false;
+        try {
+            bs::require_pinned_hash("modelscope", "", "a/b@v1/f.zip");
+        } catch (const std::runtime_error& e) {
+            threw = std::string(e.what()).find("a/b@v1/f.zip") != std::string::npos;
+        }
+        check(threw, "modelscope refuses a file with no pinned hash, naming the file");
     }
 
     std::printf("\n%d passed, %d failed\n", passed, failures);

@@ -9,7 +9,9 @@
 // tools/modelscope_mirror/modelscope_mirror.py keeps it in sync with
 // backend_versions.json. MODELSCOPE_ENDPOINT moves the API, as for model pulls.
 
+#include <stdexcept>
 #include <string>
+#include <utility>
 
 #include <lemon/utils/url_utils.h>
 
@@ -48,6 +50,28 @@ public:
 private:
     std::string previous_;
 };
+
+/** Wraps fn so it runs under this thread's request source on whichever thread calls it. */
+template <typename Fn>
+auto carry_to_worker(Fn fn) {
+    return [source = request_override, fn = std::move(fn)](auto&&... args) mutable {
+        ScopedOverride scope(source);
+        return fn(std::forward<decltype(args)>(args)...);
+    };
+}
+
+// The mirror is a third party, so a file is only taken from it when the SHA-256
+// that ships in backend_versions.json can verify it.
+inline std::string require_pinned_hash(const std::string& source, std::string expected_hash,
+                                       const std::string& file) {
+    if (expected_hash.empty() && is_modelscope(source)) {
+        throw std::runtime_error(
+            "No SHA-256 for " + file + " is pinned in backend_versions.json, so it will not be "
+            "installed from the ModelScope mirror. Use backend_source=github for this install, "
+            "or a Lemonade release whose pins include it.");
+    }
+    return expected_hash;
+}
 
 inline std::string modelscope_base(const std::string& endpoint) {
     std::string base = endpoint.empty() ? std::string(kModelScopeDefaultEndpoint) : endpoint;

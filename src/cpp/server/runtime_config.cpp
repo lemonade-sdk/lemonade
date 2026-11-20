@@ -1,5 +1,6 @@
 #include "lemon/runtime_config.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_source.h"
 #include "lemon/models/configured_catalog.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
@@ -909,8 +910,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (!value.is_string()) {
             throw std::invalid_argument("'backend_source' must be a string");
         }
-        const std::string source = value.get<std::string>();
-        if (source != "github" && source != "modelscope") {
+        if (!backend_source::is_valid(value.get<std::string>())) {
             throw std::invalid_argument(
                 "'backend_source' must be either 'github', or 'modelscope'");
         }
