@@ -10,6 +10,7 @@
 #include <lemon/models/registry_types.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
+#include "manual_launch_shell.h"
 #include <lemon_cli/junie_profile.h>
 #include <lemon_cli/opencode_profile.h>
 #include <lemon_cli/pi_profile.h>
@@ -21,6 +22,7 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <chrono>
@@ -777,7 +779,11 @@ static bool check_pi_version_for_flags(const std::string& pi_binary, const CliCo
 // when the sync already loaded the launched model.
 static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                          const CliConfig& config,
-                                         bool* model_loaded = nullptr) {
+                                         bool* model_loaded = nullptr,
+                                         bool* manual_config_synced = nullptr) {
+    if (manual_config_synced != nullptr) {
+        *manual_config_synced = true;
+    }
     constexpr int default_context_window = 40960;
     // A window of 0 marks a model without a saved size until the fallback is applied.
     std::vector<lemon_cli::AgentModelEntry> models = fetch_llm_models_for_sync(client, 0);
@@ -866,6 +872,9 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                               config.model,
                                               context_window,
                                               junie_error)) {
+            if (manual_config_synced != nullptr) {
+                *manual_config_synced = false;
+            }
             std::cerr << "Warning: Failed to sync junie config: " << junie_error << std::endl;
             std::cerr << "Continuing with launch anyway..." << std::endl;
         }
@@ -906,6 +915,9 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                            config_api_key,
                                            models,
                                            error_message)) {
+        if (manual_config_synced != nullptr) {
+            *manual_config_synced = false;
+        }
         if (pi_with_key) {
             std::cerr << "Error: Failed to sync pi config: " << error_message << std::endl;
             std::cerr << pi_key_stop << std::endl;
@@ -981,6 +993,45 @@ static bool sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     return true;
 }
 
+// Respect the same admin-key override that the normal launch path applies.
+static std::string manual_key_env(const CliConfig& config) {
+    const char* admin = std::getenv("LEMONADE_ADMIN_API_KEY");
+    if (admin != nullptr && admin[0] != '\0' && config.api_key == admin) {
+        return "LEMONADE_ADMIN_API_KEY";
+    }
+    return "LEMONADE_API_KEY";
+}
+
+static void print_manual_agent_launch(const lemon_tray::AgentConfig& agent_config,
+                                      const CliConfig& config) {
+    // Pi may still point at a different server until its guarded config sync runs.
+    if (config.agent == "pi") {
+        std::cout << "Install Pi and rerun your original `lemonade launch pi` "
+                     "invocation with the same options before starting Pi manually.\n";
+        return;
+    }
+    auto manual_config = agent_config;
+    if (config.agent == "junie") {
+        const char* junie_home = std::getenv("JUNIE_HOME");
+        if (junie_home && *junie_home) {
+            manual_config.env_vars.emplace_back(
+                "JUNIE_HOME", std::filesystem::absolute(junie_home).string());
+        }
+    }
+    lemon_cli::print_manual_shell_recipe(manual_config, config.api_key,
+                                         manual_key_env(config), std::cout);
+
+    if (config.agent == "opencode" || config.agent == "junie") {
+        const std::string endpoint = lemon_tray::build_agent_server_base_url(
+            config.host, config.port) +
+            (config.agent == "junie" ? "/v1/chat/completions" : "/v1");
+        std::cout << "Lemonade provider: " << endpoint
+                  << " (model: " << config.model << ")\n";
+        std::cout << "Provider config may change on a later launch; rerun the original "
+                     "launch invocation before reusing this command.\n";
+    }
+}
+
 static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& config) {
     if (config.agent.empty() && !prompt_agent_selection(config.agent)) {
         return 1;
@@ -1000,8 +1051,9 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     // Pi's config sync can load the model, so it waits until pi is found.
     const bool needs_config_sync = lemon_tray::agent_needs_config_sync(config.agent);
     const bool sync_after_binary_check = config.agent == "pi";
+    bool manual_config_synced = true;
     if (needs_config_sync && !sync_after_binary_check &&
-        !sync_agent_config_for_launch(client, config)) {
+        !sync_agent_config_for_launch(client, config, nullptr, &manual_config_synced)) {
         return 1;
     }
 
@@ -1042,6 +1094,18 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
         LOG(ERROR, "AgentBuilder") << "Agent binary not found for " << config.agent << std::endl;
         if (!agent_config.install_instructions.empty()) {
             LOG(ERROR, "AgentBuilder") << agent_config.install_instructions << std::endl;
+        }
+        if (!manual_config_synced) {
+            std::cout << "Agent provider config could not be updated. Fix the error above "
+                         "and rerun the original launch invocation with the same options "
+                         "before starting the agent manually.\n";
+        } else {
+            print_manual_agent_launch(agent_config, config);
+        }
+        if (config.recipe_options.is_object() && !config.recipe_options.empty()) {
+            std::cout << "Launch-time model options were not applied because the agent "
+                         "is missing. Install it and rerun your original launch invocation "
+                         "with the same options.\n";
         }
         return 1;
     }
@@ -1796,6 +1860,16 @@ int main(int argc, char* argv[]) {
 
     // Bench command
     CLI::App* bench_cmd = lemon_cli::register_bench_command(app, config.output_file, config.bench);
+
+    std::function<void(CLI::App*)> add_global_options_footer = [&](CLI::App* parent) {
+        for (CLI::App* command : parent->get_subcommands([](CLI::App*) { return true; })) {
+            const std::string footer = command->get_footer();
+            command->footer((footer.empty() ? "" : footer + "\n\n") +
+                            "Global options (--host, --port, --api-key) are listed in 'lemonade --help'.");
+            add_global_options_footer(command);
+        }
+    };
+    add_global_options_footer(&app);
 
     // Parse arguments
     try {

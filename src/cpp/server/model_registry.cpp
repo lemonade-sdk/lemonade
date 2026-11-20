@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <initializer_list>
 #include <optional>
@@ -15,6 +17,7 @@
 
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
 
 namespace lemon {
 namespace {
@@ -65,6 +68,32 @@ std::string percent_encode(const std::string& value, bool keep_slash = false) {
 std::string env_string(const char* name) {
     const char* value = std::getenv(name);
     return (value && value[0]) ? std::string(value) : std::string();
+}
+
+std::filesystem::path huggingface_token_path() {
+    const std::string explicit_path = lemon::utils::get_environment_variable_utf8("HF_TOKEN_PATH");
+    if (!explicit_path.empty()) return lemon::utils::path_from_utf8(explicit_path);
+    const std::string hf_home = lemon::utils::get_environment_variable_utf8("HF_HOME");
+    if (!hf_home.empty()) return lemon::utils::path_from_utf8(hf_home) / "token";
+    try {
+        return lemon::utils::path_from_utf8(lemon::utils::default_hf_cache_dir()).parent_path() / "token";
+    } catch (const std::exception&) {
+        return {};
+    }
+}
+
+// Same precedence as huggingface_hub: HF_TOKEN, then the token file that
+// `hf auth login` writes. Read per call so a new login applies without a restart.
+std::string huggingface_token() {
+    std::string token = env_string("HF_TOKEN");
+    if (token.empty()) {
+        std::ifstream file(huggingface_token_path());
+        if (file) std::getline(file, token);
+    }
+    const auto first = token.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return std::string();
+    const auto last = token.find_last_not_of(" \t\r\n");
+    return token.substr(first, last - first + 1);
 }
 
 std::string trim_trailing_slash(std::string value) {
@@ -371,7 +400,7 @@ public:
 
     std::map<std::string, std::string> auth_headers() const override {
         std::map<std::string, std::string> headers;
-        const std::string token = env_string("HF_TOKEN");
+        const std::string token = huggingface_token();
         if (!token.empty()) headers["Authorization"] = "Bearer " + token;
         return headers;
     }
@@ -905,6 +934,10 @@ bool detect_registry_url(const std::string& value,
 }
 
 bool checkpoint_looks_like_repo_id(const std::string& checkpoint) {
+    // A rooted path, such as /models/r.gguf, is a file, never owner/repo.
+    if (!checkpoint.empty() && (checkpoint.front() == '/' || checkpoint.front() == '\\')) {
+        return false;
+    }
     // Registry repo ids never contain ':', so the portion before the first ':'
     // is the repo. An owner/repo id carries a '/'; FLM tags (`gemma3:4b`) do not.
     const size_t colon = checkpoint.find(':');
@@ -914,6 +947,21 @@ bool checkpoint_looks_like_repo_id(const std::string& checkpoint) {
 }
 
 namespace {
+
+// `hf://org/repo:file` names its host the way a URL does, but keeps its variant.
+// The download path splits a checkpoint at its first ':', so the scheme must go.
+bool detect_registry_scheme(const std::string& value, RegistryId& out_source,
+                            std::string& out_checkpoint) {
+    for (const auto& descriptor : models::all_registry_descriptors()) {
+        if (descriptor.scheme_prefix.empty()) continue;
+        const std::string prefix = descriptor.scheme_prefix + "://";
+        if (value.rfind(prefix, 0) != 0) continue;
+        out_source = descriptor.id;
+        out_checkpoint = value.substr(prefix.size());
+        return true;
+    }
+    return false;
+}
 
 // Returns the caller's explicitly named remote registry, if any. Non-registry
 // `source` values (local_upload/local_path/…) are ignored so only genuine
@@ -1000,7 +1048,10 @@ void apply_default_pull_source(json& request_json, const std::string& default_so
     for (std::string* slot : checkpoint_slots) {
         RegistryId detected;
         std::string repo_id;
-        if (!detect_registry_url(*slot, detected, repo_id)) continue;
+        if (!detect_registry_url(*slot, detected, repo_id) &&
+            !detect_registry_scheme(*slot, detected, repo_id)) {
+            continue;
+        }
         *slot = repo_id;
         if (url_source && *url_source != detected) {
             throw std::invalid_argument(

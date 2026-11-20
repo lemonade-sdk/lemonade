@@ -1733,6 +1733,140 @@ class JobEngineTests(unittest.TestCase):
         h = requests.get(f"http://{HOST}:{PORT}/api/v1/health", timeout=15).json()
         self.assertIsNone(h.get("model_loaded"))
 
+    def test_generation_op_registered(self):
+        """All new generation ops are accepted by the job registry and round-trip."""
+        ops = [
+            "image_generations",
+            "image_edits",
+            "image_variations",
+            "audio_speech",
+            "audio_generations",
+            "model_3d_generations",
+        ]
+        for op in ops:
+            job = self.create_job(
+                f"gen-{op}",
+                [{"id": "s", "op": op, "on_fail": "continue"}],
+            )
+            self.assertTrue(job.get("id"), f"job creation for {op} returned no id")
+            done = self.poll_status(job["id"], "completed", timeout=60)
+            step = self.step_by_id(done, "s")
+            self.assertEqual(step["op"], op)
+            self.assertNotIn("unknown op", step.get("error", "").lower(), step)
+
+    def test_generation_op_fails_without_backend(self):
+        """Generation ops fail gracefully when no backend supports them."""
+        steps = [
+            {
+                "id": "img",
+                "op": "image_generations",
+                "params": {"model": "no-such-job-media-model", "prompt": "test"},
+                "on_fail": "continue",
+            },
+            {
+                "id": "tts",
+                "op": "audio_speech",
+                "params": {"model": "no-such-job-media-model", "input": "test"},
+                "on_fail": "continue",
+            },
+            {
+                "id": "audio",
+                "op": "audio_generations",
+                "params": {"model": "no-such-job-media-model", "prompt": "test"},
+                "on_fail": "continue",
+            },
+            {
+                "id": "3d",
+                "op": "model_3d_generations",
+                "params": {"model": "no-such-job-media-model", "prompt": "test"},
+                "on_fail": "continue",
+            },
+            {"id": "done", "op": "system_info"},
+        ]
+        job = self.create_job("gen-no-backend", steps)
+        done = self.poll_status(job["id"], "completed", timeout=60)
+        self.assertEqual(self.step_by_id(done, "img")["status"], "failed")
+        self.assertEqual(self.step_by_id(done, "tts")["status"], "failed")
+        self.assertEqual(self.step_by_id(done, "audio")["status"], "failed")
+        self.assertEqual(self.step_by_id(done, "3d")["status"], "failed")
+        for sid in ("img", "tts", "audio", "3d"):
+            step = self.step_by_id(done, sid)
+            self.assertIn("no-such-job-media-model", step.get("error", ""), step)
+        for sid in ("img", "tts", "audio", "3d"):
+            self.assertNotIn(
+                sid, done["context"], f"failed step {sid} should leave no context entry"
+            )
+        self.assertEqual(self.step_by_id(done, "done")["status"], "completed")
+
+    def test_audio_streaming_selectors_without_backend(self):
+        steps = []
+        for op in ("audio_speech", "audio_generations"):
+            for streaming in (False, True):
+                params = {
+                    "model": "no-such-job-media-model",
+                    "input": "hi",
+                    "prompt": "hi",
+                }
+                if streaming:
+                    params.update(stream=True, stream_format="audio", voice="")
+                steps.append(
+                    {
+                        "id": f"{op}_{streaming}",
+                        "op": op,
+                        "params": params,
+                        "on_fail": "continue",
+                    }
+                )
+        job = self.create_job("audio-streaming-no-backend", steps)
+        done = self.poll_status(job["id"], "completed", timeout=60)
+        for op in ("audio_speech", "audio_generations"):
+            baseline = self.step_by_id(done, f"{op}_False")
+            streaming = self.step_by_id(done, f"{op}_True")
+            self.assertEqual(baseline["status"], "failed")
+            self.assertEqual(streaming["status"], "failed")
+            self.assertIn("no-such-job-media-model", baseline.get("error", ""))
+            self.assertEqual(streaming.get("error"), baseline.get("error"))
+            self.assertNotIn(baseline["id"], done["context"])
+            self.assertNotIn(streaming["id"], done["context"])
+
+    def test_audio_op_rejects_unknown_format(self):
+        """response_format validation runs before the backend, so an unknown
+        format fails the step with a format error even with no backend loaded."""
+        steps = [
+            {
+                "id": "tts",
+                "op": "audio_speech",
+                "params": {
+                    "model": "no-such-model",
+                    "input": "hi",
+                    "response_format": "banana",
+                },
+                "on_fail": "continue",
+            },
+            {
+                "id": "audio",
+                "op": "audio_generations",
+                "params": {
+                    "model": "no-such-model",
+                    "prompt": "hi",
+                    "response_format": "banana",
+                },
+                "on_fail": "continue",
+            },
+            {"id": "done", "op": "system_info"},
+        ]
+        job = self.create_job("gen-bad-format", steps)
+        done = self.poll_status(job["id"], "completed", timeout=60)
+        for sid in ("tts", "audio"):
+            step = self.step_by_id(done, sid)
+            self.assertEqual(step["status"], "failed", f"{sid} should fail")
+            self.assertIn(
+                "banana",
+                step.get("error", ""),
+                f"{sid} error should name the rejected format: {step}",
+            )
+        self.assertEqual(self.step_by_id(done, "done")["status"], "completed")
+
 
 def parse_args():
     global _LEMOND_BINARY

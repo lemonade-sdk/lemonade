@@ -1,5 +1,6 @@
 #include <lemon/gguf_shard_utils.h>
 
+#include <lemon/utils/path_utils.h>
 #include <lemon/utils/safe_fs.h>
 
 #include <filesystem>
@@ -17,7 +18,7 @@ static std::vector<fs::path> shard_family(const fs::path& shard_path) {
     std::vector<fs::path> shards;
     std::string base;
     int total = 0;
-    if (!is_gguf_shard_filename(shard_path.filename().string(), &base, &total)) {
+    if (!is_gguf_shard_filename(utils::path_to_utf8(shard_path.filename()), &base, &total)) {
         return shards;
     }
 
@@ -32,7 +33,7 @@ static std::vector<fs::path> shard_family(const fs::path& shard_path) {
             if (ec) ec.clear();
             continue;
         }
-        if (same_shard_family(entry.path().filename().string(), base, total)) {
+        if (same_shard_family(utils::path_to_utf8(entry.path().filename()), base, total)) {
             shards.push_back(entry.path());
         }
     }
@@ -53,10 +54,10 @@ std::uintmax_t sharded_gguf_size_bytes(const fs::path& shard_path) {
 
 std::vector<std::string> gguf_files(const std::string& gguf_path) {
     std::vector<std::string> files = {gguf_path};
-    const fs::path path(gguf_path);
+    const fs::path path = utils::path_from_utf8(gguf_path);
     for (const auto& shard : shard_family(path)) {
         if (shard != path) {
-            files.push_back(shard.string());
+            files.push_back(utils::path_to_utf8(shard));
         }
     }
     return files;
