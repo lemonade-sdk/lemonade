@@ -1008,6 +1008,11 @@ std::optional<RegistryId> explicit_registry_source(const json& request_json) {
 }  // namespace
 
 void apply_default_pull_source(json& request_json, const std::string& default_source) {
+    apply_default_pull_source(request_json, [&default_source] { return default_source; });
+}
+
+void apply_default_pull_source(json& request_json,
+                               const std::function<std::string()>& default_source) {
     if (request_json.value("local_import", false)) return;
 
     // Explicit source fields must be strings when present; reject non-string
@@ -1132,7 +1137,7 @@ void apply_default_pull_source(json& request_json, const std::string& default_so
 
     if (!checkpoint_looks_like_repo_id(*primary_slot)) return;
 
-    request_json["source"] = default_source;
+    request_json["source"] = default_source();
 }
 
 std::string registry_tree_snapshot_id(RegistryId source,

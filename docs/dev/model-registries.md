@@ -49,7 +49,7 @@ A second remote registry, reached through the provider's own file API.
 
 ## Default source policy
 
-The server's `default_model_source` setting accepts `huggingface` (the shipped default), `modelscope`, or `auto`. In `auto`, lemond probes both configured registry APIs in parallel at startup, when switching the policy to `auto`, and periodically while online. It prefers Hugging Face and selects ModelScope when only its probe succeeds. Each pull uses the most recent decision, starting with Hugging Face. The probe checks registry API reachability. Normal pull validation still checks for the requested files at the selected registry.
+The server's `default_model_source` setting accepts `huggingface` (the shipped default), `modelscope`, or `auto`. While online, lemond probes both configured registry APIs in parallel at startup with `auto` and when switching the policy to `auto`. Returning from offline mode also runs a check if `auto` is active. Lemonade prefers Hugging Face and selects ModelScope when only its probe succeeds. Source-less requests wait for the shared check if it is still running, then use its result. They return an error if both probes fail. Normal pull validation still checks for the requested files at the selected registry.
 
 The default applies when a pull leaves the registry unspecified. Explicit `--source`, `source`/`registry_source` fields, provider URLs, and model definitions that name a registry retain their precedence. New custom models record the concrete registry for downloads, cache layout, and later refreshes. `GET /pull/variants` echoes the resolved `source` so the CLI can use it for the download.
 

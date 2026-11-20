@@ -734,10 +734,10 @@ void ModelIngest::pull(const std::string& model_name,
                     const auto* runtime_config = RuntimeConfig::global();
                     defer_default_source = download_source.empty() && !is_model_collection_recipe(model_info.recipe) &&
                                            runtime_config && runtime_config->offline();
-                    const std::string default_source =
-                        remote_registry_source_name(download_source_for(ModelInfo{}));
-                    const std::string selected = download_source.empty() ? default_source : download_source;
                     const bool automatic = deps_.automatic_model_source && deps_.automatic_model_source();
+                    const std::string default_source = automatic && !download_source.empty()
+                        ? "" : remote_registry_source_name(download_source_for(ModelInfo{}));
+                    const std::string selected = download_source.empty() ? default_source : download_source;
                     const std::string source_policy = automatic ? "auto"
                         : download_source.empty() ? "" : default_source;
                     if (!defer_default_source && (model_info.registry_source != selected ||

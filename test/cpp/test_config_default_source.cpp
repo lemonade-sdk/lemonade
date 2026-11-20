@@ -157,9 +157,14 @@ int main() {
     {
         json req = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
                     {"checkpoint", "owner/repo"}, {"source", "huggingface"}};
-        apply_default_pull_source(req, "modelscope");
+        bool resolved_default = false;
+        apply_default_pull_source(req, [&] {
+            resolved_default = true;
+            return "modelscope";
+        });
         check(req["source"] == "huggingface",
               "explicit source overrides the configured default");
+        check(!resolved_default, "explicit source bypasses a pending automatic decision");
     }
 
     // An explicit registry_source alone suppresses default injection.

@@ -2,7 +2,6 @@
 
 #include <lemon/utils/aixlog.hpp>
 
-#include <chrono>
 #include <condition_variable>
 #include <future>
 
@@ -38,19 +37,29 @@ public:
 
     void configure(const RuntimeConfig& config) {
         std::lock_guard<std::mutex> lock(mutex_);
-        const bool enabled = config.default_model_source() == "auto" && !config.offline();
-        if (stopping_ || enabled_ == enabled) return;
-        enabled_ = enabled;
-        ++generation_;
-        if (!enabled_) use_modelscope_ = false;
-        if (enabled_ && !worker_.joinable()) {
-            worker_ = std::thread([this] { run(); });
-        }
-        changed_.notify_all();
+        configure_locked(config.default_model_source() == "auto" && !config.offline());
     }
 
     std::string preferred_source() const {
         return use_modelscope_.load() ? "modelscope" : "huggingface";
+    }
+
+    std::string default_pull_source(const RuntimeConfig& config) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        for (;;) {
+            if (stopping_) throw std::runtime_error("The server is shutting down");
+            const std::string source = config.default_model_source();
+            configure_locked(source == "auto" && !config.offline());
+            if (!pending_) {
+                if (enabled_ && !registry_reachable_) {
+                    throw std::runtime_error(
+                        "Neither Hugging Face nor ModelScope responded. Re-enable auto or "
+                        "specify a model source to try again.");
+                }
+                return source == "auto" ? preferred_source() : source;
+            }
+            changed_.wait(lock);
+        }
     }
 
     void stop() {
@@ -64,8 +73,19 @@ public:
     }
 
 private:
+    void configure_locked(bool enabled) {
+        if (stopping_ || enabled_ == enabled) return;
+        if (enabled && !worker_.joinable()) {
+            worker_ = std::thread([this] { run(); });
+        }
+        enabled_ = enabled;
+        ++generation_;
+        pending_ = enabled;
+        if (!enabled_) use_modelscope_ = false;
+        changed_.notify_all();
+    }
+
     void run() {
-        using namespace std::chrono_literals;
         std::unique_lock<std::mutex> lock(mutex_);
         while (!stopping_) {
             changed_.wait(lock, [this] { return stopping_ || enabled_; });
@@ -80,21 +100,29 @@ private:
             });
             const bool huggingface_reachable =
                 probe_model_registry(models::huggingface_descriptor().id, 10, cancel);
-            const bool modelscope_reachable = modelscope.get();
+            const bool modelscope_reachable = !huggingface_reachable && modelscope.get();
             lock.lock();
 
-            if (generation != generation_) continue;
-            if (huggingface_reachable || modelscope_reachable) {
-                const bool use_modelscope = !huggingface_reachable && modelscope_reachable;
-                if (use_modelscope_.exchange(use_modelscope) != use_modelscope) {
+            if (generation == generation_) {
+                registry_reachable_ = huggingface_reachable || modelscope_reachable;
+                if (use_modelscope_.exchange(modelscope_reachable) != modelscope_reachable) {
                     lock.unlock();
                     LOG(INFO, "ModelRegistry") << "Auto model source selected "
-                        << (use_modelscope ? "modelscope" : "huggingface") << std::endl;
+                        << (modelscope_reachable ? "modelscope" : "huggingface") << std::endl;
                     on_change_();
                     lock.lock();
                 }
+                if (generation == generation_) {
+                    pending_ = false;
+                    changed_.notify_all();
+                }
             }
-            changed_.wait_for(lock, 60s, [this, generation] { return generation_ != generation; });
+            if (modelscope.valid()) {
+                lock.unlock();
+                modelscope.wait();
+                lock.lock();
+            }
+            changed_.wait(lock, [this, generation] { return generation_ != generation; });
         }
     }
 
@@ -104,6 +132,8 @@ private:
     std::mutex mutex_;
     std::condition_variable changed_;
     bool enabled_ = false;
+    bool pending_ = false;
+    bool registry_reachable_ = false;
     bool stopping_ = false;
     std::thread worker_;
 };
@@ -161,6 +191,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     manager_config.automatic_model_source = [this]() {
         return config_->default_model_source() == "auto";
     };
+    manager_config.default_pull_source = [this]() { return wait_for_default_model_source(); };
     manager_config.model_catalogs = [this]() { return config_->model_catalogs(); };
     model_manager_ = std::make_unique<ModelManager>(std::move(manager_config));
 
@@ -261,6 +292,10 @@ Server::~Server() {
 std::string Server::effective_default_model_source() const {
     const std::string source = config_->default_model_source();
     return source == "auto" ? model_source_monitor_->preferred_source() : source;
+}
+
+std::string Server::wait_for_default_model_source() {
+    return model_source_monitor_->default_pull_source(*config_);
 }
 
 void Server::refresh_model_source() {

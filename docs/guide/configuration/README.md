@@ -237,7 +237,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
 | `rocm_install_method` | string | "auto" | How to install the bundled ROCm runtime: "auto" (pip wheels, tarball fallback), "wheel" (wheels only), or "tarball" (no Python/pip). See [llama.cpp Backend](./llamacpp.md#choosing-the-rocm-install-method) for details |
 
-Run `lemonade config set default_model_source=auto` to check both registry APIs in the background at startup, when entering auto mode, and periodically while online. Hugging Face is preferred. If its API fails and ModelScope's API responds, source-less pulls use ModelScope. Pulls use the last result immediately and use Hugging Face while the first check is pending. The selected registry must host the requested checkpoint and variant.
+Run `lemonade config set default_model_source=auto` to check both registry APIs in the background at startup or when entering auto mode. The check also runs when leaving offline mode with `auto` active. Hugging Face is preferred. If its API fails and ModelScope's API responds, source-less pulls use ModelScope. A source-less pull that arrives during the check waits for the result. If both probes fail, re-enable auto to check again or explicitly choose a registry. The selected registry must host the requested checkpoint and variant.
 
 Explicit `--source`, a `source`/`registry_source` field, and provider URLs take precedence. Custom models keep their recorded registry. FLM manages its own storage and follows the current policy for each pull or upgrade without an explicit source.
 

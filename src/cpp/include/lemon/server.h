@@ -67,6 +67,7 @@ public:
 
 private:
     std::string effective_default_model_source() const;
+    std::string wait_for_default_model_source();
     void start_model_cache_warmup();
 
     // Declared so that destruction runs the listeners first and the subsystems last.

@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -152,6 +153,8 @@ bool checkpoint_looks_like_repo_id(const std::string& checkpoint);
 // source or when checkpoints disagree on the registry (callers map this to 400).
 void apply_default_pull_source(nlohmann::json& request_json,
                                const std::string& default_source);
+void apply_default_pull_source(nlohmann::json& request_json,
+                               const std::function<std::string()>& default_source);
 
 // Normalize one provider-specific model-list entry into Lemonade's registry contract.
 // Exposed so fixture tests and future clients share the same field mapping.

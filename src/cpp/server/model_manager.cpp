@@ -140,6 +140,9 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     deps.resolver = resolver_.get();
     deps.artifacts = artifacts_.get();
     deps.default_registry_source = [this] {
+        if (config_.default_pull_source) {
+            return std::make_optional(parse_remote_registry_source(config_.default_pull_source()));
+        }
         if (!default_model_source_provider_) return std::optional<RegistryId>{};
         return std::make_optional(parse_remote_registry_source(default_model_source_provider_()));
     };
@@ -582,8 +585,8 @@ models::CatalogSetDeps ModelManager::make_catalog_deps(
     };
     deps.registry_rows = std::move(rows);
     const bool automatic = config_.automatic_model_source && config_.automatic_model_source();
-    const std::string default_source =
-        remote_registry_source_name(download_source_for(ModelInfo{}));
+    const std::string default_source = default_model_source_provider_
+        ? default_model_source_provider_() : "huggingface";
     if (automatic) {
         deps.resolve_builtin_source = [this, default_source](ModelInfo& info) {
             if (!info.source.empty() || !info.registry_source.empty() ||

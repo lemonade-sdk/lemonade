@@ -122,6 +122,14 @@ public:
             if (has_url) {
                 checkpoint = url_repo_id;
             }
+            if (checkpoint.find('/') == std::string::npos) {
+                write_plain_error(res, kMalformedCheckpoint,
+                    "Malformed 'checkpoint': expected a repository id of the form 'owner/name'");
+                return;
+            }
+            if (refuse_offline_download(ctx_, res)) {
+                return;
+            }
             std::string source;
             if (has_url) {
                 source = remote_registry_source_name(url_source);
@@ -129,15 +137,7 @@ public:
                 source = req.has(kSource) ? req.arg(kSource).get<std::string>()
                     : remote_registry_source_name(ctx_.model_manager->download_source_for(ModelInfo{}));
             }
-            if (checkpoint.find('/') == std::string::npos) {
-                write_plain_error(res, kMalformedCheckpoint,
-                    "Malformed 'checkpoint': expected a repository id of the form 'owner/name'");
-                return;
-            }
             const auto parsed_source = parse_remote_registry_source(source);
-            if (refuse_offline_download(ctx_, res)) {
-                return;
-            }
             bool not_found = false;
             const std::string resolved_source = remote_registry_source_name(parsed_source);
             json body = lemon::fetch_pull_variants(ctx_.model_manager->resolver(),

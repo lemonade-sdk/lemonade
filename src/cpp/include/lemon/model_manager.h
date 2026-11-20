@@ -86,6 +86,7 @@ struct ModelManagerConfig {
     std::function<std::unique_ptr<models::FetchableRepository>(const models::ArtifactRef& ref)>
         repository_for;
     std::function<bool()> automatic_model_source;
+    std::function<std::string()> default_pull_source;
 };
 
 class ModelManager {
