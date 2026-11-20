@@ -5263,11 +5263,14 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(decision["route_to"], routed_model)
             self.assertIsNotNone(captured.get("request"), "the judge was not called")
 
-            loaded = (
-                requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
-                .json()
-                .get("all_models_loaded", [])
+            health_response = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
             )
+            self.assertEqual(health_response.status_code, 200, health_response.text)
+            health = health_response.json()
+            self.assertIn("all_models_loaded", health)
+            self.assertIsInstance(health["all_models_loaded"], list)
+            loaded = health["all_models_loaded"]
             self.assertNotIn(
                 helper_model,
                 {model.get("model_name") for model in loaded},

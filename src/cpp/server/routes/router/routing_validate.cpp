@@ -57,6 +57,8 @@ public:
             "Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, etc.) are "
             "evaluated locally. Model-backed conditions (`semantic_similarity`, `classifier`, "
             "`zero_shot` and `llm`, including `routing.router`) may load and run their models. A "
+            "helper loaded only for this validation is released when evaluation ends; an already "
+            "resident Standard model keeps its existing residency. "
             "model failure follows the classifier's `on_error` policy (`match_false` by default), "
             "so routing continues to a later rule or to `default_model`. A residency conflict is "
             "the exception: when the classifier model cannot be resident alongside the models "

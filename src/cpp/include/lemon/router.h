@@ -397,23 +397,15 @@ private:
     void rebuild_needed_helper_models_locked();
     void release_transient_routing_helpers(
         const std::set<std::string>& model_names) noexcept;
-    // Evict idle, unpinned routing helpers whose model is not in the effective
-    // needed_helper_models_ union. A busy helper is marked pending-stale so
-    // it self-reclaims on its final release instead of blocking this pass on an
-    // eviction timeout. Caller holds load_mutex_.
+    // Reclaim stale helpers without waiting for busy backends. Caller holds load_mutex_.
     void prune_stale_routing_helpers_locked();
     // Shared decision for a live routing helper (caller holds load_mutex_): if it
     // is still needed or pinned, cancel any pending reclaim and return false; if
     // it is stale but busy, arm the release-triggered reclaim and return false;
     // if it is stale and idle, return true so the caller evicts it now.
     bool reclaim_or_defer_helper_locked(WrappedServer* server);
-    // Whether a routing-helper model is needed by a registered policy or
-    // transient lease (present in needed_helper_models_). Caller holds load_mutex_.
     bool is_needed_helper_locked(const std::string& canonical_model_name) const;
-    // Whether a routing helper of the given residency/pin state is no longer
-    // needed by any registered policy or transient lease. Non-routing-helper
-    // and pinned models are never considered stale. Caller holds
-    // load_mutex_.
+    // Non-helper and pinned models are never stale. Caller holds load_mutex_.
     bool routing_helper_no_longer_needed(const std::string& canonical_model_name,
                                          ResidencyClass requested_residency_class,
                                          bool pinned) const;

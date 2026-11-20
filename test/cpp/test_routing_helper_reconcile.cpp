@@ -12,9 +12,14 @@
 // lock-held helpers used by load_model, with StubWrappedServer instances rather
 // than a ModelManager-backed subprocess.
 
+#include "lemon/cloud_provider_registry.h"
+#include "lemon/model_manager.h"
+#include "lemon/models/catalog.h"
 #include "lemon/router.h"
 #include "lemon/runtime_config.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/wrapped_server.h"
+#include "support/test_state_isolation.h"
 
 #include <nlohmann/json.hpp>
 
@@ -37,7 +42,8 @@ namespace lemon {
 class StubWrappedServer : public WrappedServer {
 public:
     StubWrappedServer(const std::string& model_name, ResidencyClass residency)
-        : WrappedServer("stub", "error", nullptr, nullptr) {
+        : WrappedServer("stub", "error", nullptr, nullptr),
+          instance_id_(next_instance_id()) {
         set_model_metadata(model_name, "", ModelType::CLASSIFICATION, DEVICE_CPU,
                            RecipeOptions());
         set_residency_class(residency);
@@ -60,10 +66,17 @@ public:
     }
 
     bool was_unloaded() const { return unloaded_.load(); }
+    unsigned instance_id() const { return instance_id_; }
 
 private:
+    static unsigned next_instance_id() {
+        static std::atomic<unsigned> next{0};
+        return ++next;
+    }
+
     std::atomic<bool> alive_{true};
     std::atomic<bool> unloaded_{false};
+    unsigned instance_id_;
 };
 
 // Friend seam declared in router.h. Gives the test direct access to the
@@ -115,6 +128,13 @@ struct RoutingHelperTestHook {
         return false;
     }
 
+    static unsigned instance_id(Router& r, const std::string& model_name) {
+        std::lock_guard<std::mutex> lock(r.load_mutex_);
+        auto* server = dynamic_cast<StubWrappedServer*>(
+            r.find_server_by_model_name(model_name));
+        return server ? server->instance_id() : 0;
+    }
+
     // Drive the private release-triggered reclaim directly (as the executor
     // worker would), so a test can observe it waiting for the residency slot.
     static void reclaim_now(Router& r, const std::string& model_name) {
@@ -141,6 +161,12 @@ struct RoutingHelperTestHook {
         return r.should_skip_nuclear_retry_for_transient_helper_locked(model_name, residency);
     }
 
+    static void set_load_in_progress(Router& r, bool loading) {
+        std::lock_guard<std::mutex> lock(r.load_mutex_);
+        r.is_loading_ = loading;
+        r.load_cv_.notify_all();
+    }
+
     static ResidencyClass residency_of(Router& r, const std::string& model_name) {
         std::lock_guard<std::mutex> lock(r.load_mutex_);
         for (const auto& s : r.loaded_servers_) {
@@ -155,6 +181,10 @@ struct RoutingHelperTestHook {
 }  // namespace lemon
 
 using lemon::ModelState;
+using lemon::ModelInfo;
+using lemon::ModelManager;
+using lemon::ModelManagerConfig;
+using lemon::RecipeOptions;
 using lemon::ResidencyClass;
 using lemon::Router;
 using lemon::RoutingHelperTestHook;
@@ -166,6 +196,16 @@ static int failures = 0;
 static void check(const char* name, bool ok) {
     std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
     if (!ok) ++failures;
+}
+
+static bool wait_for_helper_eviction(Router& router, const std::string& model_name) {
+    for (int i = 0; i < 200; ++i) {
+        if (!RoutingHelperTestHook::has_helper(router, model_name)) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return false;
 }
 
 static std::unique_ptr<StubWrappedServer> make_helper(const std::string& name) {
@@ -328,14 +368,7 @@ static void test_busy_helper_reclaimed_on_release(Router& router) {
     // on a background thread, so poll for the eviction to land.
     helper->release_inference();
 
-    bool reclaimed = false;
-    for (int i = 0; i < 200; ++i) {
-        if (!RoutingHelperTestHook::has_helper(router, "release.helper")) {
-            reclaimed = true;
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+    bool reclaimed = wait_for_helper_eviction(router, "release.helper");
 
     check("busy stale routing helper self-reclaims on final release (no reconcile)",
           survived_while_busy && reclaimed);
@@ -430,14 +463,7 @@ static void test_maintenance_completion_reclaims_helper(Router& router) {
     // Maintenance finishes; the busy->idle edge dispatches the reclaim.
     helper->finish_downsize(true);
 
-    bool reclaimed = false;
-    for (int i = 0; i < 200; ++i) {
-        if (!RoutingHelperTestHook::has_helper(router, "downsize.helper")) {
-            reclaimed = true;
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+    bool reclaimed = wait_for_helper_eviction(router, "downsize.helper");
 
     check("stale helper self-reclaims when maintenance completes",
           survived_during_maintenance && reclaimed);
@@ -550,7 +576,9 @@ static void test_transient_lease_preserves_standard_model(Router& router) {
 }
 
 static void test_second_load_check_preserves_standard_model(Router& router) {
-    RoutingHelperTestHook::add_server(router, make_standard("concurrent.standard"));
+    auto* standard = RoutingHelperTestHook::add_server(
+        router, make_standard("concurrent.standard"));
+    const unsigned original_instance = standard->instance_id();
     RoutingHelperTestHook::reconcile(router, {});
 
     {
@@ -560,9 +588,16 @@ static void test_second_load_check_preserves_standard_model(Router& router) {
             router, "concurrent.standard", ResidencyClass::RoutingHelper);
     }
 
-    check("second load check preserves a concurrently loaded Standard model",
-          RoutingHelperTestHook::residency_of(router, "concurrent.standard") ==
-              ResidencyClass::Standard);
+    const bool still_resident =
+        RoutingHelperTestHook::has_any_model(router, "concurrent.standard");
+    const bool same_instance = RoutingHelperTestHook::instance_id(
+        router, "concurrent.standard") == original_instance;
+    const bool stayed_standard =
+        RoutingHelperTestHook::residency_of(router, "concurrent.standard") ==
+        ResidencyClass::Standard;
+
+    check("second load check preserves the same Standard model instance",
+          still_resident && same_instance && stayed_standard);
 }
 
 static void test_transient_only_failure_classification(Router& router) {
@@ -587,6 +622,115 @@ static void test_transient_only_failure_classification(Router& router) {
 
     check("only transiently leased helper failures skip the global retry",
           standard_load_keeps_normal_retry && transient_failure_skips_global_retry);
+}
+
+static void test_transient_load_failure_skips_global_retry_and_allows_later_load(
+    Router& router) {
+    const std::string model_name = "transient.failure";
+    auto* standard = RoutingHelperTestHook::add_server(
+        router, make_standard("resident.standard"));
+    const unsigned original_instance = standard->instance_id();
+    auto lease = RoutingHelperTestHook::lease_transient(router, {model_name});
+
+    ModelInfo failing_model;
+    failing_model.model_name = model_name;
+    failing_model.recipe = "cloud";
+    failing_model.checkpoints["main"] = "fixture-model";
+    std::string failure_message;
+    try {
+        router.load_model(model_name, failing_model, RecipeOptions(), true,
+                          false, std::nullopt,
+                          lemon::LoadPurpose::RoutingDependency);
+    } catch (const std::runtime_error& error) {
+        failure_message = error.what();
+    }
+    const bool non_file_not_found_startup_failure =
+        failure_message.find("missing the 'cloud_provider' field") !=
+        std::string::npos;
+
+    const bool global_retry_was_skipped =
+        RoutingHelperTestHook::instance_id(router, "resident.standard") ==
+        original_instance;
+
+    ModelInfo retry_model = failing_model;
+    retry_model.cloud_provider = "fixture";
+    bool subsequent_load_succeeded = false;
+    try {
+        router.load_model(model_name, retry_model, RecipeOptions(), true,
+                          false, std::nullopt,
+                          lemon::LoadPurpose::RoutingDependency);
+        subsequent_load_succeeded =
+            RoutingHelperTestHook::has_helper(router, model_name);
+    } catch (const std::exception&) {
+        subsequent_load_succeeded = false;
+    }
+
+    check("transient startup failure skips global retry and permits a later load",
+          non_file_not_found_startup_failure && global_retry_was_skipped &&
+              subsequent_load_succeeded);
+}
+
+static void test_last_transient_lease_release_waits_for_load(Router& router) {
+    const std::string model_name = "lease.load-slot";
+    RoutingHelperTestHook::add_server(router, make_helper(model_name));
+    {
+        auto lease = RoutingHelperTestHook::lease_transient(router, {model_name});
+        RoutingHelperTestHook::set_load_in_progress(router, true);
+    }
+    const bool resident_during_load =
+        RoutingHelperTestHook::has_helper(router, model_name);
+    RoutingHelperTestHook::set_load_in_progress(router, false);
+    const bool reclaimed_after_load = wait_for_helper_eviction(router, model_name);
+
+    check("last transient lease released during load reclaims after the slot clears",
+          resident_during_load && reclaimed_after_load);
+}
+
+static void test_last_transient_lease_release_waits_for_exclusive(Router& router) {
+    const std::string model_name = "lease.exclusive-slot";
+    RoutingHelperTestHook::add_server(router, make_helper(model_name));
+    auto lease = RoutingHelperTestHook::lease_transient(router, {model_name});
+    const bool acquired = router.begin_exclusive();
+
+    std::thread releaser([lease = std::move(lease)]() mutable {
+        static_cast<void>(lease);
+    });
+    releaser.join();
+    const bool resident_during_exclusive =
+        RoutingHelperTestHook::has_helper(router, model_name);
+    router.end_exclusive();
+    const bool reclaimed_after_exclusive = wait_for_helper_eviction(router, model_name);
+
+    check("last transient lease released during an exclusive session reclaims after it ends",
+          acquired && resident_during_exclusive && reclaimed_after_exclusive);
+}
+
+static void test_last_transient_lease_release_waits_for_inference_and_can_be_rescued(
+    Router& router) {
+    const std::string model_name = "lease.inference-rescue";
+    StubWrappedServer* helper = RoutingHelperTestHook::add_server(
+        router, make_helper(model_name));
+    helper->acquire_for_inference();
+    {
+        auto lease = RoutingHelperTestHook::lease_transient(router, {model_name});
+    }
+
+    const bool resident_while_busy =
+        RoutingHelperTestHook::has_helper(router, model_name);
+    bool resident_after_rescue = false;
+    {
+        auto rescued_lease =
+            RoutingHelperTestHook::lease_transient(router, {model_name});
+        helper->release_inference();
+        resident_after_rescue =
+            RoutingHelperTestHook::has_helper(router, model_name);
+    }
+    const bool reclaimed_after_final_release =
+        !RoutingHelperTestHook::has_helper(router, model_name);
+
+    check("a new transient lease rescues a busy helper until its final release",
+          resident_while_busy && resident_after_rescue &&
+              reclaimed_after_final_release);
 }
 
 static void test_registered_policy_promotes_standard_model(Router& router) {
@@ -636,6 +780,8 @@ int main() {
     json cfg = json::object();
     cfg["max_loaded_models"] = 4;
     cfg["log_level"] = "error";
+    cfg["disable_model_filtering"] = false;
+    cfg["offline"] = false;
 
     RuntimeConfig config(cfg);
     RuntimeConfig::set_global(&config);
@@ -663,6 +809,49 @@ int main() {
         test_second_load_check_preserves_standard_model(router);
         test_transient_only_failure_classification(router);
         test_registered_policy_promotes_standard_model(router);
+    }
+
+    {
+        const auto scratch = lemon::test::make_scratch_dir("routing_helper_load_failure");
+        lemon::utils::set_models_dir((scratch / "models").string());
+
+        ModelManagerConfig model_manager_config;
+        model_manager_config.cache_dir = scratch.string();
+        auto transient_model_catalog =
+            std::make_shared<lemon::models::EnumeratedCatalog>(
+                lemon::models::CatalogDescriptor{"routing-helper-test"},
+                [](const lemon::models::CatalogAccumulator&) {
+                    ModelInfo info;
+                    info.model_name = "transient.failure";
+                    info.recipe = "cloud";
+                    info.cloud_provider = "fixture";
+                    info.checkpoints["main"] = "fixture-model";
+                    info.suggested = true;
+                    info.labels = {"chat"};
+                    return std::vector<ModelInfo>{std::move(info)};
+                });
+        model_manager_config.extra_catalogs = {transient_model_catalog};
+        model_manager_config.availability =
+            [](const std::map<std::string, ModelInfo>&) {
+                lemon::models::BackendAvailability availability;
+                availability.system_ram_gb = 64.0;
+                availability.largest_mem_pool_gb = 48.0;
+                return availability;
+            };
+        ModelManager model_manager(std::move(model_manager_config));
+        lemon::CloudProviderRegistry cloud_registry;
+        cloud_registry.install("fixture", "https://fixture.invalid");
+        Router router(&config, &model_manager, nullptr);
+        router.set_cloud_registry(&cloud_registry);
+        test_transient_load_failure_skips_global_retry_and_allows_later_load(router);
+    }
+
+    {
+        Router router(&config, nullptr, nullptr);
+        test_last_transient_lease_release_waits_for_load(router);
+        test_last_transient_lease_release_waits_for_exclusive(router);
+        test_last_transient_lease_release_waits_for_inference_and_can_be_rescued(
+            router);
     }
 
     test_shutdown_with_pending_reclaim(config);

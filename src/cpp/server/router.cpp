@@ -554,6 +554,7 @@ void Router::release_transient_routing_helpers(
 }
 
 void Router::rebuild_needed_helper_models_locked() {
+    // Reconciliation and active transient leases share one authoritative needed set.
     needed_helper_models_ = active_policy_helper_models_;
     for (const auto& [model, refcount] : transient_helper_refcounts_) {
         if (refcount > 0) {
