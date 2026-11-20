@@ -41,7 +41,7 @@ public:
     }
 
     std::string preferred_source() const {
-        return use_modelscope_.load() ? "modelscope" : "huggingface";
+        return source_name(preferred_.load());
     }
 
     std::string default_pull_source(const RuntimeConfig& config) {
@@ -50,15 +50,23 @@ public:
             if (stopping_) throw std::runtime_error("The server is shutting down");
             const std::string source = config.default_model_source();
             configure_locked(source == "auto" && !config.offline());
-            if (!pending_) {
-                if (enabled_ && !registry_reachable_) {
-                    throw std::runtime_error(
-                        "Neither Hugging Face nor ModelScope responded. Re-enable auto or "
-                        "specify a model source to try again.");
-                }
-                return source == "auto" ? preferred_source() : source;
+            if (!enabled_) return source == "auto" ? preferred_source() : source;
+            if (!probe_) {
+                if (preferred_ != Source::Unknown) return preferred_source();
+                probe_ = std::make_shared<Probe>();
+                changed_.notify_all();
             }
-            changed_.wait(lock);
+            const auto probe = probe_;
+            const auto generation = generation_.load();
+            changed_.wait(lock, [this, &probe, generation] {
+                return generation != generation_ || probe->complete;
+            });
+            if (generation != generation_) continue;
+            if (probe->source == Source::Unknown) {
+                throw std::runtime_error(
+                    "Neither Hugging Face nor ModelScope responded. Try the pull again.");
+            }
+            return source_name(probe->source);
         }
     }
 
@@ -73,6 +81,17 @@ public:
     }
 
 private:
+    enum class Source { Unknown, HuggingFace, ModelScope };
+
+    struct Probe {
+        bool complete = false;
+        Source source = Source::Unknown;
+    };
+
+    static const char* source_name(Source source) {
+        return source == Source::ModelScope ? "modelscope" : "huggingface";
+    }
+
     void configure_locked(bool enabled) {
         if (stopping_ || enabled_ == enabled) return;
         if (enabled && !worker_.joinable()) {
@@ -80,17 +99,18 @@ private:
         }
         enabled_ = enabled;
         ++generation_;
-        pending_ = enabled;
-        if (!enabled_) use_modelscope_ = false;
+        preferred_ = Source::Unknown;
+        probe_ = enabled ? std::make_shared<Probe>() : nullptr;
         changed_.notify_all();
     }
 
     void run() {
         std::unique_lock<std::mutex> lock(mutex_);
         while (!stopping_) {
-            changed_.wait(lock, [this] { return stopping_ || enabled_; });
+            changed_.wait(lock, [this] { return stopping_ || probe_; });
             if (stopping_) return;
 
+            const auto probe = probe_;
             const auto generation = generation_.load();
             lock.unlock();
             utils::CancelToken cancel;
@@ -101,19 +121,22 @@ private:
             const bool huggingface_reachable =
                 probe_model_registry(models::huggingface_descriptor().id, 10, cancel);
             const bool modelscope_reachable = !huggingface_reachable && modelscope.get();
+            const Source source = huggingface_reachable ? Source::HuggingFace
+                : modelscope_reachable ? Source::ModelScope : Source::Unknown;
             lock.lock();
 
             if (generation == generation_) {
-                registry_reachable_ = huggingface_reachable || modelscope_reachable;
-                if (use_modelscope_.exchange(modelscope_reachable) != modelscope_reachable) {
+                if (preferred_.exchange(source) != source && source == Source::ModelScope) {
                     lock.unlock();
                     LOG(INFO, "ModelRegistry") << "Auto model source selected "
-                        << (modelscope_reachable ? "modelscope" : "huggingface") << std::endl;
+                        << source_name(source) << std::endl;
                     on_change_();
                     lock.lock();
                 }
                 if (generation == generation_) {
-                    pending_ = false;
+                    probe->source = source;
+                    probe->complete = true;
+                    probe_.reset();
                     changed_.notify_all();
                 }
             }
@@ -122,18 +145,16 @@ private:
                 modelscope.wait();
                 lock.lock();
             }
-            changed_.wait(lock, [this, generation] { return generation_ != generation; });
         }
     }
 
     std::function<void()> on_change_;
-    std::atomic<bool> use_modelscope_{false};
+    std::atomic<Source> preferred_{Source::Unknown};
     std::atomic<uint64_t> generation_{0};
     std::mutex mutex_;
     std::condition_variable changed_;
+    std::shared_ptr<Probe> probe_;
     bool enabled_ = false;
-    bool pending_ = false;
-    bool registry_reachable_ = false;
     bool stopping_ = false;
     std::thread worker_;
 };
