@@ -189,6 +189,28 @@ static void test_validation_errors_are_clear() {
     check("non-integer max_total_chars rejected",
           throws_with(fractional_total_chars, "must be a non-negative integer"));
 
+    // validate_leaf (the parser/registration path) has its own copy of the
+    // non-negative-integer check that build_turns/build_chars (the engine
+    // factory path, tested in test_routing_policy_deterministic.cpp) also
+    // enforces -- covering it here locks the path an author's policy
+    // actually goes through, not just the engine-internal one.
+    json negative_turns = fixture("l1_keywords.json");
+    negative_turns["routing"]["rules"][1]["match"] = json{{"min_turns", -1}};
+    check("negative min_turns rejected at the parser/registration path",
+          throws_with(negative_turns, "must be a non-negative integer"));
+
+    json bad_turn_band = fixture("l1_keywords.json");
+    bad_turn_band["routing"]["rules"][1]["match"] =
+        json{{"min_turns", 5}, {"max_turns", 1}};
+    check("min_turns greater than max_turns rejected",
+          throws_with(bad_turn_band, "min_turns greater than max_turns"));
+
+    json bad_metadata_gte = fixture("l1_metadata.json");
+    bad_metadata_gte["routing"]["rules"][0]["match"] =
+        json{{"metadata", {{"key", "k"}, {"gte", "not-a-number"}}}};
+    check("non-numeric metadata gte bound rejected at the parser path",
+          throws_with(bad_metadata_gte, "must be a number"));
+
     json router_plus_rules = fixture("l0a_llm_router.json");
     router_plus_rules["routing"]["rules"] = json::array({json{
         {"id", "r0"},
