@@ -3975,6 +3975,14 @@ if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
     add_cpp_ci_test(HttpClientSecurityTest CI OFF COMMAND test_http_client_security)
 endif()
 
+# Network-free fixtures for the built-in web search result parser.
+set(_WEB_SEARCH_PARSER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_web_search_parser.cpp")
+if(BUILD_TESTING AND EXISTS "${_WEB_SEARCH_PARSER_TEST_SRC}")
+    add_executable(test_web_search_parser test/cpp/test_web_search_parser.cpp)
+    target_link_libraries(test_web_search_parser PRIVATE lemonade-server-core)
+    add_cpp_ci_test(WebSearchParserTest CI ON COMMAND test_web_search_parser)
+endif()
+
 set(_HTTP_CLIENT_TIMEOUT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_client_timeout.cpp")
 if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_TIMEOUT_TEST_SRC}")
     add_executable(test_http_client_timeout test/cpp/test_http_client_timeout.cpp)
