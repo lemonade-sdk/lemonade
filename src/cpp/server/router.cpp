@@ -163,6 +163,8 @@ std::string Router::resolve_model_name(const std::string& model_name) const {
     return model_name.empty() ? model_name : model_manager_->resolve_model_name(model_name);
 }
 
+std::uint64_t Router::models_generation() const { return model_manager_->models_generation(); }
+
 std::optional<ModelInfo> Router::try_get_model_info(const std::string& model_name) const {
     if (model_name.empty()) {
         return std::nullopt;
