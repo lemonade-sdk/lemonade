@@ -21,7 +21,10 @@ class McpServer {
 public:
     using EnsureLoadedFn = std::function<void(const std::string&)>;
 
-    McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded);
+    using Generate3dFn = std::function<httplib::Response(const json&)>;
+
+    McpServer(Router* router, ModelManager* model_manager,
+              EnsureLoadedFn ensure_loaded, Generate3dFn generation_3d);
     ~McpServer();
 
     // Returns the JSON-RPC reply, or an empty string when every message was a
@@ -41,6 +44,7 @@ private:
     json tool_chat(const json& arguments);
     json tool_transcribe_audio(const json& arguments);
     json tool_generate_image(const json& arguments);
+    json tool_generate_3d(const json& arguments);
     json tool_omni(const json& arguments);
     json tool_list_models(const json& arguments);
     json tool_docs(const json& arguments);
@@ -76,6 +80,7 @@ private:
     Router* router_;
     ModelManager* model_manager_;
     EnsureLoadedFn ensure_loaded_;
+    Generate3dFn generation_3d_;
     std::vector<McpTool> tools_;
 };
 

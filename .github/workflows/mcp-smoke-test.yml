@@ -9,6 +9,7 @@ on:
     paths:
       - "src/cpp/server/mcp_server.cpp"
       - "src/cpp/include/lemon/mcp_server.h"
+      - "src/cpp/server/routes/mcp/rpc.cpp"
       - "src/cpp/include/lemon/mcp_tool.h"
       - "src/cpp/server/server.cpp"
       - "src/cpp/server/router.cpp"
