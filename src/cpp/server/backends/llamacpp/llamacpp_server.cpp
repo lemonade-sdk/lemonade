@@ -306,6 +306,11 @@ void LlamaCppServer::load(const std::string& model_name,
     int ctx_size = options.get_option("ctx_size");
 
     std::string llamacpp_device = options.get_option("llamacpp_device");
+    // "auto" is kept by the option layers so it can override an inherited device;
+    // llama-server has no such device name, so it means "pass no --device".
+    if (llamacpp_device == "auto") {
+        llamacpp_device.clear();
+    }
     std::string llamacpp_backend_option = options.get_option("llamacpp_backend");
     std::string llamacpp_backend = resolve_llamacpp_backend(llamacpp_backend_option);
     std::string llamacpp_args = options.get_option("llamacpp_args");
