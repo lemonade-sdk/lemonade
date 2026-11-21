@@ -2769,6 +2769,28 @@ if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
     add_cpp_ci_test(BackendModeContractTest CI ON COMMAND test_backend_mode_contract)
 endif()
 
+# The ryzenai-llm descriptor declares one device for the whole recipe (NPU), so
+# the per-variant mapping that corrects -CPU and -Hybrid is pure logic worth
+# pinning on its own.
+set(_RYZENAI_DEVICE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ryzenai_device_variant.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_RYZENAI_DEVICE_TEST_SRC}")
+    add_executable(test_ryzenai_device_variant
+        test/cpp/test_ryzenai_device_variant.cpp
+    )
+    target_include_directories(test_ryzenai_device_variant PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_ryzenai_device_variant PRIVATE
+        nlohmann_json::nlohmann_json
+    )
+
+    include(CTest)
+    add_cpp_ci_test(RyzenaiDeviceVariantTest CI ON COMMAND test_ryzenai_device_variant)
+endif()
+
 # The container backends spec's Command Contract and setup checks, against a fake
 # Podman/Docker host, plus every container backend's policy and pin.
 set(_CONTAINER_MANAGER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_container_manager.cpp")

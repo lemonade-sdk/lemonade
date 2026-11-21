@@ -392,6 +392,14 @@ public:
     ResidencyClass get_residency_class() const { return residency_class_; }
     void set_residency_class(ResidencyClass residency_class) { residency_class_ = residency_class; }
     DeviceType get_device_type() const { return device_type_; }
+    // Device a client sees for this model. A backend whose reported device differs
+    // from the one that decides residency (ryzenai -Hybrid runs on the NPU and the
+    // iGPU, but must keep counting as an NPU holder) sets it explicitly; everything
+    // else keeps reporting device_type_, so eviction accounting is untouched.
+    DeviceType get_reported_device() const {
+        return reported_device_ == DEVICE_NONE ? device_type_ : reported_device_;
+    }
+    void set_reported_device(DeviceType device) { reported_device_ = device; }
     RecipeOptions get_recipe_options() const {
         std::lock_guard<std::mutex> lock(state_mutex_);
         return recipe_options_;
@@ -651,6 +659,9 @@ protected:
     ModelType model_type_ = ModelType::LLM;
     ResidencyClass residency_class_ = ResidencyClass::Standard;
     DeviceType device_type_ = DEVICE_NONE;
+    // Only for backends whose reported device differs from device_type_; DEVICE_NONE
+    // means "report device_type_" (see get_reported_device).
+    DeviceType reported_device_ = DEVICE_NONE;
     std::chrono::steady_clock::time_point last_access_time_;
     RecipeOptions recipe_options_;
     bool ctx_size_auto_ = false;
