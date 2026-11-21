@@ -42,11 +42,18 @@ public:
     }
     void load(const std::string&, const ModelInfo&, const RecipeOptions&, bool) override {}
     void unload() override { unloaded_.store(true); }
-    bool is_backend_alive() const override { return true; }
+    // The router calls this under load_mutex_ on each lookup of the model, so the
+    // count tells a case that unload has looked at this instance.
+    bool is_backend_alive() const override {
+        alive_checks_.fetch_add(1);
+        return true;
+    }
     bool was_unloaded() const { return unloaded_.load(); }
+    int alive_checks() const { return alive_checks_.load(); }
 
 private:
     std::atomic<bool> unloaded_{false};
+    mutable std::atomic<int> alive_checks_{0};
 };
 
 struct UnloadBusyModelTestHook {
@@ -136,6 +143,41 @@ static bool threw(const std::shared_future<void>& f) {
     return false;
 }
 
+// The timeout only bounds a failure; the condition is the success signal.
+static bool wait_until(const std::function<bool()>& condition, std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!condition()) {
+        if (std::chrono::steady_clock::now() >= deadline) return false;
+        std::this_thread::yield();
+    }
+    return true;
+}
+
+// Returns once unload is in its busy-wait path for `busy`: it looked the model up
+// under the router lock, released the lock (this thread takes it), and looked the
+// model up again. Unload records the instance it waits for before it releases the
+// lock, so a case may remove or replace the instance after this returns.
+static bool unload_is_waiting(Router& router, UnloadStubServer* busy, const std::string& name,
+                              int checks_before_unload) {
+    if (!wait_until([&] { return busy->alive_checks() > checks_before_unload; },
+                    std::chrono::seconds(2))) {
+        std::printf("  unload never looked up %s\n", name.c_str());
+        return false;
+    }
+    auto lock_taken = run_detached([&router, name] { UnloadBusyModelTestHook::has_model(router, name); });
+    if (!finishes(lock_taken, std::chrono::seconds(2))) {
+        std::printf("  unload kept the router lock while %s is busy\n", name.c_str());
+        return false;
+    }
+    const int checks_after_unlock = busy->alive_checks();
+    if (!wait_until([&] { return busy->alive_checks() > checks_after_unlock; },
+                    std::chrono::seconds(2))) {
+        std::printf("  unload did not look up %s again\n", name.c_str());
+        return false;
+    }
+    return true;
+}
+
 static void test_idle_unload_is_immediate(Router& router) {
     UnloadBusyModelTestHook::add_server(router, "idle-model");
     auto unload_done = run_detached([&] { UnloadBusyModelTestHook::unload(router, "idle-model"); });
@@ -159,10 +201,11 @@ static void test_busy_unload_keeps_router_responsive(Router& router) {
     UnloadBusyModelTestHook::add_server(router, "other-model");
     busy->acquire_for_inference();
 
+    const int checks = busy->alive_checks();
     auto unload_done = run_detached([&] { UnloadBusyModelTestHook::unload(router, "busy-model"); });
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    const bool waiting = unload_is_waiting(router, busy, "busy-model", checks);
     check("unload waits while the request is in flight",
-          unload_done.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout);
+          waiting && unload_done.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout);
 
     auto other_lookup = run_detached([&] { UnloadBusyModelTestHook::has_model(router, "other-model"); });
     check("router lock is free while unload waits", finishes(other_lookup, std::chrono::seconds(2)));
@@ -182,10 +225,11 @@ static void test_busy_unload_via_public_entry(Router& router) {
     UnloadBusyModelTestHook::add_server(router, "public-other-model");
     busy->acquire_for_inference();
 
+    const int checks = busy->alive_checks();
     auto unload_done = run_detached([&] { router.unload_model("public-busy-model"); });
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    const bool waiting = unload_is_waiting(router, busy, "public-busy-model", checks);
     check("unload_model waits while the request is in flight",
-          unload_done.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout);
+          waiting && unload_done.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout);
 
     auto other_lookup =
         run_detached([&] { UnloadBusyModelTestHook::has_model(router, "public-other-model"); });
@@ -207,8 +251,14 @@ static void test_model_removed_while_waiting(Router& router) {
     UnloadStubServer* busy = UnloadBusyModelTestHook::add_server(router, "vanishing-model");
     busy->acquire_for_inference();
 
+    const int checks = busy->alive_checks();
     auto unload_done = run_detached([&] { UnloadBusyModelTestHook::unload(router, "vanishing-model"); });
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    if (!unload_is_waiting(router, busy, "vanishing-model", checks)) {
+        check("unload waits before the model disappears", false);
+        busy->release_inference();
+        finishes(unload_done, std::chrono::seconds(5));
+        return;
+    }
     auto removed = run_detached([&] { UnloadBusyModelTestHook::remove_server(router, "vanishing-model"); });
     if (!finishes(removed, std::chrono::seconds(2))) {
         check("router lock is free while unload waits (vanishing model)", false);
@@ -225,8 +275,14 @@ static void test_reloaded_model_is_left_alone(Router& router) {
     UnloadStubServer* busy = UnloadBusyModelTestHook::add_server(router, "reloaded-model");
     busy->acquire_for_inference();
 
+    const int checks = busy->alive_checks();
     auto unload_done = run_detached([&] { UnloadBusyModelTestHook::unload(router, "reloaded-model"); });
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    if (!unload_is_waiting(router, busy, "reloaded-model", checks)) {
+        check("unload waits before the model is replaced", false);
+        busy->release_inference();
+        finishes(unload_done, std::chrono::seconds(5));
+        return;
+    }
     UnloadStubServer* fresh = nullptr;
     auto replaced = run_detached([&] {
         UnloadBusyModelTestHook::remove_server(router, "reloaded-model");
