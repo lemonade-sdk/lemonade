@@ -4689,6 +4689,74 @@
       }
     }
   },
+  "9efe3923d57d1840b7efae518a7254724cc91dd18e8f44028067dbdf2cc60628": {
+    "route": "lemonade.videos_cancel",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/videos/job-20261117-071140-000003/cancel",
+      "query": {},
+      "json": null,
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "status": "canceling"
+      }
+    }
+  },
+  "8f0a9de7cce02188180eda93e138054498d2f415e94334a6db8631ba6ad57847": {
+    "route": "lemonade.videos_create",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/videos",
+      "query": {},
+      "json": {
+        "model": "Wan2.1-T2V-1.3B",
+        "prompt": "a lovely cat walking through tall grass",
+        "video_frames": 33,
+        "fps": 16
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 202,
+      "content_type": "application/json",
+      "body": {
+        "created_at": "2026-11-17T07:11:40Z",
+        "id": "job-20261117-071140-000001",
+        "model": "Wan2.1-T2V-1.3B",
+        "status": "queued"
+      }
+    }
+  },
+  "5758c3659c4bd220577286be578bcd2a2e41920466c651d33b01eeeb96879755": {
+    "route": "lemonade.videos_get",
+    "format": "Json",
+    "request": {
+      "method": "GET",
+      "path": "/v1/videos/job-20261117-071140-000002",
+      "query": {},
+      "json": null,
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "created_at": "2026-11-17T07:11:40Z",
+        "id": "job-20261117-071140-000002",
+        "model": "Wan2.1-T2V-1.3B",
+        "status": "queued"
+      }
+    }
+  },
   "cd51000c6b239ba2e16e67af0c4f95a05a77aa86d4478e7cbaae952a91efcd4b": {
     "route": "llamacpp.rerank",
     "format": "Json",
