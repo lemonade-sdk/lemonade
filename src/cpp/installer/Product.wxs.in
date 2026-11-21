@@ -282,6 +282,27 @@
       <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade Server" Name="Desktop" Type="integer" Value="1" KeyPath="yes" />
     </Component>
 
+<?if $(var.IncludeTauriApp) = 1 ?>
+    <!-- Separate components keep these shortcuts out of the minimal MSI. -->
+    <Component Id="LemonadeAppStartMenuShortcut" Directory="ProgramMenuDir" Guid="2f75e3fa-f2df-561c-a0a2-552e9adb46a2">
+      <Shortcut Id="LemonadeAppStartMenuShortcutId"
+                Name="Lemonade App"
+                Target="[TauriAppDir]lemonade-app.exe"
+                WorkingDirectory="TauriAppDir"
+                Icon="LemonadeIcon" />
+      <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade Server" Name="AppStartMenu" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Component Id="LemonadeAppDesktopShortcut" Directory="DesktopFolder" Guid="b8b6439e-6567-50de-8615-022fd9b117fb" Condition="ADDDESKTOPSHORTCUT = 1">
+      <Shortcut Id="LemonadeAppDesktopShortcutId"
+                Name="Lemonade App"
+                Target="[TauriAppDir]lemonade-app.exe"
+                WorkingDirectory="TauriAppDir"
+                Icon="LemonadeIcon" />
+      <RegistryValue Root="HKCU" Key="Software\AMD\Lemonade Server" Name="AppDesktop" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+<?endif?>
+
     <!-- Auto-start on login: Lemonade.exe in Startup folder -->
     <Component Id="StartupShortcut" Directory="StartupFolder" Guid="d0e1f2a3-b4c5-4d6e-7f8a-9b0c1d2e3f4a">
       <Shortcut Id="StartupShortcutId"
@@ -306,6 +327,8 @@
 <?endif?>
 <?if $(var.IncludeTauriApp) = 1 ?>
       <ComponentGroupRef Id="TauriAppComponents" />
+      <ComponentRef Id="LemonadeAppStartMenuShortcut" />
+      <ComponentRef Id="LemonadeAppDesktopShortcut" />
 <?endif?>
       <ComponentRef Id="CleanupProtocolHandler" />
       <ComponentRef Id="PathEnvironmentUser" />
