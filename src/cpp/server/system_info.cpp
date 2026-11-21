@@ -1578,10 +1578,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
         } else {
             std::string installed_version = get_recipe_version(def.recipe, def.backend);
             std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
-            if (container_backend) {
-                installed_version = backends::short_container_pin(installed_version);
-                expected_version = backends::short_container_pin(expected_version);
-            }
+            installed_version = backends::short_container_pin(installed_version);
+            expected_version = backends::short_container_pin(expected_version);
 
             // The user's *_bin pin overrides what the state machine considers
             // "expected" — otherwise an explicit-tag pin (e.g. b8664) would
@@ -1932,6 +1930,13 @@ std::vector<SystemInfo::RecipeStatus> SystemInfo::get_all_recipe_statuses() {
                 if (def.recipe != recipe_name) continue;
 
                 if (!recipe_info["backends"].contains(def.backend)) continue;
+
+                // A backend with a support row per OS still has one status.
+                if (std::any_of(backends.begin(), backends.end(), [&](const BackendStatus& b) {
+                        return b.name == def.backend;
+                    })) {
+                    continue;
+                }
 
                 const auto& backend_info = recipe_info["backends"][def.backend];
                 std::string state = backend_info.value("state", "unsupported");

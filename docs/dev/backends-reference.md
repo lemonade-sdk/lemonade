@@ -43,6 +43,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `ds4` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `flm` | npu | core | native | linux, windows | amd_npu (XDNA2) |
 | `gufo` | rocm | guest | container | linux | amd_gpu (gfx1151) |
+| `gufo` | rocm | guest | native | windows | amd_gpu (gfx1151) |
 | `halogen` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `kokoro` | metal | core | native | macos | metal |
 | `kokoro` | cpu | core | native | linux, windows | cpu (x86_64) |
