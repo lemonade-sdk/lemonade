@@ -96,6 +96,9 @@ let registerRequests = 0;
 let backendState = 'update_required';
 let systemInfoRequests = 0;
 let loadFails = false;
+const loadBodies = [];
+const loadHeaders = [];
+let unloadRequests = 0;
 let modelRows = [
   { id: 'test-model', model_name: 'test-model', downloaded: true },
 ];
@@ -186,7 +189,16 @@ global.fetch = async (url, init = {}) => {
     return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
   }
 
+  if (target.endsWith('/api/v1/unload') && method === 'POST') {
+    unloadRequests += 1;
+    return new Response(JSON.stringify({ status: 'success' }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  }
+
   if (target.endsWith('/api/v1/load') && method === 'POST') {
+    loadBodies.push(JSON.parse(init.body));
+    loadHeaders.push(new Headers(init.headers));
     await new Promise(resolve => setTimeout(resolve, 15));
     if (loadFails) {
       return new Response(JSON.stringify({ error: { message: 'load failed' } }), {
@@ -210,7 +222,10 @@ global.fetch = async (url, init = {}) => {
       await gate.released;
     }
     return new Response(JSON.stringify({
-      recipes: { thenoise: { default_backend: 'cuda', backends: { cuda: { state: stateAtStart }, cpu: { state: 'installable' } } } },
+      recipes: {
+        thenoise: { default_backend: 'cuda', backends: { cuda: { state: stateAtStart }, cpu: { state: 'installable' } } },
+        llamacpp: { options: [{ name: 'llamacpp_args', type_name: 'ARGS' }] },
+      },
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
 
@@ -394,6 +409,71 @@ async function waitFor(predicate, timeoutMs = 1500) {
     loadFails = false;
     await waitFor(() => loadStates.at(-1) === 'installed');
     unsubscribeLoad();
+
+    const { setSessionArgsOverride, clearSessionArgsOverride } = require(path.join(root, 'src/modelConfiguration.ts'));
+    const stagedModel = { id: 'staged-model', model_name: 'staged-model', recipe: 'llamacpp', downloaded: true };
+    setSessionArgsOverride('staged-model', 'llamacpp', '--threads 2');
+    const previousApiKey = api.apiKey;
+    try {
+      for (const key of ['', 'synthetic-regular-key', 'synthetic-admin-key']) {
+        api.apiKey = key;
+        for (const partial of [{ ctx_size: 2048 }, { llamacpp_backend: 'metal' }, {}]) {
+          await api.loadModel('staged-model', partial, stagedModel);
+          assert.deepEqual(loadBodies.at(-1), {
+            model_name: 'staged-model', llamacpp_args: '--threads 2', merge_args: false,
+            ...partial, save_options: false,
+          }, 'ordinary partial-option callers must retain intentional session arguments');
+          assert.equal(loadHeaders.at(-1).get('Authorization'), key ? `Bearer ${key}` : null);
+        }
+
+        for (const args of ['--threads 4', '', null]) {
+          await api.loadModel('staged-model', { llamacpp_args: args }, stagedModel);
+          assert.deepEqual(loadBodies.at(-1), {
+            model_name: 'staged-model', llamacpp_args: args, merge_args: false, save_options: false,
+          }, 'ordinary explicit argument callers must retain the existing session merge policy');
+        }
+
+        for (const panel of [{ ctx_size: 2048 }, {}, undefined]) {
+          await api.loadModel('staged-model', panel, stagedModel, 'server-config');
+          assert.deepEqual(loadBodies.at(-1), {
+            model_name: 'staged-model', ...panel, save_options: false,
+          }, 'only the explicit panel policy may suppress hidden session arguments');
+        }
+
+        for (const args of ['--threads 4', '', null]) {
+          await api.loadModel('staged-model', { llamacpp_args: args, merge_args: false }, stagedModel, 'server-config');
+          assert.deepEqual(loadBodies.at(-1), {
+            model_name: 'staged-model', llamacpp_args: args, merge_args: false, save_options: false,
+          }, 'panel argument changes and tombstones must reach server authorization unchanged');
+        }
+
+        await api.loadModel('staged-model', { llamacpp_args: '--threads 4' }, stagedModel, 'server-config');
+        assert.deepEqual(loadBodies.at(-1), {
+          model_name: 'staged-model', llamacpp_args: '--threads 4', save_options: false,
+        }, 'a panel argument override must not inherit a hidden merge policy');
+
+        await api.loadModel('staged-model', undefined, stagedModel);
+        assert.deepEqual(loadBodies.at(-1), {
+          model_name: 'staged-model', llamacpp_args: '--threads 2', merge_args: false, save_options: false,
+        }, 'ordinary loads without options must retain intentional session overrides');
+
+        const beforeReload = unloadRequests;
+        await api.reloadModel('staged-model', { ctx_size: 4096 }, stagedModel, 'server-config');
+        assert.equal(unloadRequests, beforeReload + 1, 'panel reload must use the real unload/load path');
+        assert.deepEqual(loadBodies.at(-1), {
+          model_name: 'staged-model', ctx_size: 4096, save_options: false,
+        }, 'panel reload must forward its authoritative argument policy');
+
+        await api.reloadModel('staged-model', { ctx_size: 4096 }, stagedModel);
+        assert.deepEqual(loadBodies.at(-1), {
+          model_name: 'staged-model', ctx_size: 4096, llamacpp_args: '--threads 2',
+          merge_args: false, save_options: false,
+        }, 'ordinary partial-option reloads must preserve session arguments');
+      }
+    } finally {
+      api.apiKey = previousApiKey;
+      clearSessionArgsOverride('staged-model');
+    }
 
     unsubscribe();
     console.log('Model state deduplication checks passed.');

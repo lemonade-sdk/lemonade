@@ -1442,6 +1442,8 @@ const ModelConfigurationTab: React.FC<{
   const isReloading = reloadingNames.has(name);
   const currentNameRef = useRef(name);
   currentNameRef.current = name;
+  const saveSelectionRef = useRef({ name });
+  if (saveSelectionRef.current.name !== name) saveSelectionRef.current = { name };
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [systemInfoSettled, setSystemInfoSettled] = useState(() => api.systemInfoData !== null);
 
@@ -1598,9 +1600,6 @@ const ModelConfigurationTab: React.FC<{
   );
   const argsKeys = recipeKeys.filter(key => recipeOptionIsArgs(systemInfo, activeRecipe, String(key)));
   const otherRecipeKeys = recipeKeys.filter(key => !selectorKeys.includes(key) && !argsKeys.includes(key));
-  // merge_args only decides what happens to *_args, so it is only stated for a
-  // model that has an args field of its own.
-  const sendsArgs = argsKeys.length > 0;
   // Only the options this panel manages count: a reset here cannot claim to
   // clear a saved key it never shows.
   const hasSavedOptions = Object.keys(serverSavedRecipeOptions)
@@ -1673,13 +1672,29 @@ const ModelConfigurationTab: React.FC<{
       if (showNotice) setNotice('Saved for future loads');
       return true;
     }
+    const saveSelection = saveSelectionRef.current;
     try {
-      // The draft is what was just sent, so only the server layers move. Syncing
-      // it back would also undo anything typed while the save was in flight.
-      applyServerOptions(await api.saveModelOptions(name, patch), false);
+      const result = await api.saveModelOptions(name, patch);
+      if (saveSelectionRef.current !== saveSelection) return false;
+      applyServerOptions(result, false);
+      const savedDraft = draftFromResolvedOptions(recipeKeys, sanitizeRecipeOptions(result.saved),
+        sanitizeRecipeOptions(result.effective), offersResolvedValue);
+      // The server normalizes argument order. Keep the accepted draft aligned
+      // without overwriting edits made while the save was in flight.
+      setRecipeDraft(current => {
+        if (saveSelectionRef.current !== saveSelection) return current;
+        const next = { ...current };
+        for (const key of argsKeyNames) {
+          if ((current[key] || '') === (recipeDraft[key] || '')) {
+            next[key] = savedDraft.recipe[key] || '';
+          }
+        }
+        return next;
+      });
       if (showNotice) setNotice('Saved for future loads');
       return true;
     } catch (error) {
+      if (saveSelectionRef.current !== saveSelection) return false;
       setNotice(`Could not save model options: ${friendlyErrorMessage(error)}`);
       return false;
     }
@@ -1700,17 +1715,18 @@ const ModelConfigurationTab: React.FC<{
     setNotice('Reverted to your saved load settings.');
   };
 
-  // Every option the panel shows is stated outright: the value on screen, or
-  // null where the field is empty. An omitted option would fall back to the
-  // saved value, which is not what the user is looking at.
+  // Unchanged backend arguments stay server-owned so an ordinary load does not
+  // request a privileged override.
   const buildLoadOptions = (): Record<string, unknown> => {
     const configured = buildConfigOptions() as Record<string, unknown>;
     const options: Record<string, unknown> = {};
     for (const key of recipeKeys.map(recipeKey => String(recipeKey))) {
+      if (argsKeyNames.has(key)
+        && (recipeDraft[key] || '') === (savedLoadSettings.recipe[key] || '')) continue;
       options[key] = Object.prototype.hasOwnProperty.call(configured, key) ? configured[key] : null;
     }
     if (supportsContextSize) options.ctx_size = configured.ctx_size ?? -1;
-    if (sendsArgs) options.merge_args = false;
+    if (argsKeys.some(key => Object.prototype.hasOwnProperty.call(options, key))) options.merge_args = false;
     return options;
   };
 
@@ -2578,7 +2594,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
     start: (model: ModelInfo, recipeOptions?: Record<string, unknown>) => void,
     target: ModelInfo,
   ) => {
-    start(target, configLoadOptionsRef.current?.());
+    start(target, configLoadOptionsRef.current?.() ?? {});
   }, []);
 
   const detailName = model ? mdName(model) : '';

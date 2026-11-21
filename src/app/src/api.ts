@@ -212,6 +212,7 @@ export function blobFromDataUrl(dataUrl: string): Blob {
 }
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
+export type ModelLoadArgumentSource = 'local-overrides' | 'server-config';
 
 export interface HealthData {
   status: string;
@@ -1540,7 +1541,12 @@ class LemonadeAPI {
     return result;
   }
 
-  async loadModel(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<unknown> {
+  async loadModel(
+    modelName: string,
+    recipeOptions?: Record<string, unknown>,
+    modelInfo?: ModelInfo | null,
+    argumentSource: ModelLoadArgumentSource = 'local-overrides',
+  ): Promise<unknown> {
     await this._assertModelNotDownloading(modelName);
     const target = modelName.trim().toLowerCase();
     const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
@@ -1554,6 +1560,15 @@ class LemonadeAPI {
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
     const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
+    if (argumentSource === 'server-config' && stagedOptions) {
+      // An explicit panel payload must not regain hidden privileged overrides.
+      for (const key of Object.keys(stagedOptions)) {
+        if ((key.endsWith('_args') || key === 'merge_args')
+          && !Object.prototype.hasOwnProperty.call(recipeOptions ?? {}, key)) {
+          delete (stagedOptions as Record<string, unknown>)[key];
+        }
+      }
+    }
     // A load carries whatever the panel currently shows, saved or not, so it must
     // not write those options back as the model's stored defaults.
     const body: Record<string, unknown> = {
@@ -1641,15 +1656,16 @@ class LemonadeAPI {
     modelName: string,
     recipeOptions?: Record<string, unknown>,
     modelInfo?: ModelInfo | null,
+    argumentSource: ModelLoadArgumentSource = 'local-overrides',
   ): Promise<unknown> {
     const target = modelName.trim().toLowerCase();
     const info = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
     const recipe = String((info as any)?.recipe || '').trim().toLowerCase();
     if (recipe === 'collection.router' || recipe.startsWith('collection.router.')) {
-      return this.loadModel(modelName, undefined, info);
+      return this.loadModel(modelName, undefined, info, argumentSource);
     }
     await this.unloadModel(modelName);
-    return this.loadModel(modelName, recipeOptions, info);
+    return this.loadModel(modelName, recipeOptions, info, argumentSource);
   }
 
   async deleteModel(modelName: string): Promise<unknown> {

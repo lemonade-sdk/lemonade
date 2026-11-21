@@ -3,6 +3,16 @@
 
 #include "lemon/model_manager.h"
 #include "lemon/routing_policy.h"
+#include "lemon/models/alias_manager.h"
+#include "lemon/models/artifact_store.h"
+#include "lemon/models/change_notifier.h"
+#include "lemon/models/ingest_collections.h"
+#include "lemon/models/model_errors.h"
+#include "lemon/models/store.h"
+#include "support/test_state_isolation.h"
+
+#include <filesystem>
+#include <fstream>
 
 #include <cstdio>
 #include <map>
@@ -201,7 +211,7 @@ static void test_zero_shot_label_selects_classifier_type(ModelManager& manager) 
         "user.ZsRegistered",
         json{{"model_name", "user.ZsRegistered"}, {"recipe", "onnxruntime"},
              {"checkpoint", "example/zs-registered"},
-             {"labels", {"classification", "zero-shot"}}});
+             {"labels", {"classification", "zero-shot"}}}, "", /*allow_backend_args=*/true);
     // The inline definition omits the label: a registered model keeps its own.
     json registered = router_with_classifier(
         "classifier", onnx_def("user.ZsRegistered", {"classification"}));
@@ -230,7 +240,7 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
     manager.register_user_model(
         "user.GuardX",
         json{{"model_name", "user.GuardX"}, {"recipe", "onnxruntime"},
-             {"checkpoint", "example/guard"}, {"reasoning", true}});
+             {"checkpoint", "example/guard"}, {"reasoning", true}}, "", /*allow_backend_args=*/true);
     check("onnxruntime + reasoning:true is CLASSIFICATION, not LLM",
           manager.get_model_info("user.GuardX").type == lemon::ModelType::CLASSIFICATION);
 
@@ -238,7 +248,7 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
     manager.register_user_model(
         "user.ImgX",
         json{{"model_name", "user.ImgX"}, {"recipe", "sd-cpp"},
-             {"checkpoint", "example/img"}, {"vision", true}});
+             {"checkpoint", "example/img"}, {"vision", true}}, "", /*allow_backend_args=*/true);
     check("sd-cpp + vision:true is IMAGE, not LLM",
           manager.get_model_info("user.ImgX").type == lemon::ModelType::IMAGE);
 
@@ -277,7 +287,7 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
         manager.register_user_model(
             "user.LlamaClf",
             json{{"model_name", "user.LlamaClf"}, {"recipe", "llamacpp"},
-                 {"checkpoint", "example/x:Q4_K_M"}, {"labels", {"classification"}}});
+                 {"checkpoint", "example/x:Q4_K_M"}, {"labels", {"classification"}}}, "", /*allow_backend_args=*/true);
     } catch (const lemon::InvalidModelDefinitionError&) {
         rejected = true;
     }
@@ -304,7 +314,7 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
         manager.register_user_model(
             "user.LlamaBoth",
             json{{"model_name", "user.LlamaBoth"}, {"recipe", "llamacpp"},
-                 {"checkpoint", "example/y:Q4_K_M"}, {"labels", {"chat", "embeddings"}}});
+                 {"checkpoint", "example/y:Q4_K_M"}, {"labels", {"chat", "embeddings"}}}, "", /*allow_backend_args=*/true);
     } catch (const lemon::InvalidModelDefinitionError&) {
         two_modes_rejected = true;
     }
@@ -321,7 +331,7 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
             "user.LlamaFlag",
             json{{"model_name", "user.LlamaFlag"}, {"recipe", "llamacpp"},
                  {"checkpoint", "example/z:Q4_K_M"}, {"labels", {"chat"}},
-                 {"embedding", true}});
+                 {"embedding", true}}, "", /*allow_backend_args=*/true);
     } catch (const lemon::InvalidModelDefinitionError&) {
         flag_rejected = true;
     }
@@ -410,7 +420,7 @@ static void test_filtered_classifier_component_does_not_drop_policy(ModelManager
     manager.register_user_model(
         "user.npu-clf",
         json{{"model_name", "user.npu-clf"}, {"recipe", "ryzenai-llm"},
-             {"checkpoint", "example/npu-clf"}});
+             {"checkpoint", "example/npu-clf"}}, "", /*allow_backend_args=*/true);
     check("npu-clf is hardware-filtered (test machine has no NPU)",
           !manager.model_exists("user.npu-clf"));
 
@@ -441,7 +451,7 @@ static void test_filtered_classifier_component_does_not_drop_policy(ModelManager
         }},
     };
 
-    manager.register_user_model("user.RouterFiltered", doc);
+    manager.register_user_model("user.RouterFiltered", doc, "", /*allow_backend_args=*/true);
 
     auto info = manager.get_model_info("user.RouterFiltered");
     check("router policy still parses when a classifier component is "
@@ -459,7 +469,7 @@ static void test_filtered_classifier_bare_name_resolves_through_alias(ModelManag
     manager.register_user_model(
         "user.npu-clf2",
         json{{"model_name", "user.npu-clf2"}, {"recipe", "ryzenai-llm"},
-             {"checkpoint", "example/npu-clf2"}});
+             {"checkpoint", "example/npu-clf2"}}, "", /*allow_backend_args=*/true);
     check("npu-clf2 is hardware-filtered (test machine has no NPU)",
           !manager.model_exists("user.npu-clf2"));
 
@@ -490,7 +500,7 @@ static void test_filtered_classifier_bare_name_resolves_through_alias(ModelManag
         }},
     };
 
-    manager.register_user_model("user.RouterFilteredBare", doc);
+    manager.register_user_model("user.RouterFilteredBare", doc, "", /*allow_backend_args=*/true);
 
     auto info = manager.get_model_info("user.RouterFilteredBare");
     check("router policy still parses when the classifier references the "
@@ -537,7 +547,7 @@ static void test_filtered_classifier_builtin_prefixed_alias_resolves(ModelManage
         }},
     };
 
-    manager.register_user_model("user.RouterFilteredBuiltin", doc);
+    manager.register_user_model("user.RouterFilteredBuiltin", doc, "", /*allow_backend_args=*/true);
 
     auto info2 = manager.get_model_info("user.RouterFilteredBuiltin");
     check("router policy still parses when the classifier references a "
@@ -551,14 +561,201 @@ static void test_filtered_classifier_builtin_prefixed_alias_resolves(ModelManage
 
 static void test_register_preserves_routing(ModelManager& manager) {
     json doc = valid_router_collection();
-    manager.register_user_model("user.RouterKit", doc);
+    manager.register_user_model("user.RouterKit", doc, "", /*allow_backend_args=*/true);
     auto info = manager.get_model_info("user.RouterKit");
     auto it = info.extras.find("routing");
     check("registered router collection preserves routing in ModelInfo extras",
           it != info.extras.end() && it->second == doc["routing"]);
 }
 
+static void test_collection_registration_rejection_is_atomic() {
+    namespace fs = std::filesystem;
+    using namespace lemon::models;
+    const auto root = lemon::test::make_scratch_dir("collection-atomic-registration");
+    const auto file = root / "user_models.json";
+    AliasManager aliases;
+    ModelStore store(aliases);
+    RegistryDocuments registries(json::object(), file.string());
+    ModelChangeNotifier notifier;
+    ModelIngest::Deps deps{nullptr, {}, &registries, &store, &notifier, {}};
+    ModelIngest ingest(deps);
+    IngestCollections collections(deps, ingest);
+
+    // Keep the scan's published model set while an admin adds the second row.
+    json admin = component_def("AtomicB");
+    admin["recipe_options"] = {{"llamacpp_args", "--threads 2"}};
+    ingest.register_user_model("user.AtomicB", admin, "", true);
+    const json before = *registries.pin().user;
+    bool rejected = false;
+    try {
+        collections.register_components(json::array({"AtomicA", "AtomicB"}),
+            json::array({component_def("AtomicA"), component_def("AtomicB")}),
+            "", false);
+    } catch (const lemon::BackendArgsAuthorizationError&) {
+        rejected = true;
+    }
+    check("collection rejects changing concurrently registered backend args", rejected);
+    check("rejected component batch preserves every registry row",
+          *registries.pin().user == before);
+    std::ifstream input(file);
+    json disk;
+    input >> disk;
+    input.close();
+    check("rejected component batch preserves disk registry", disk == before);
+    fs::remove_all(root);
+}
+
+static void test_collection_parent_rejection_is_atomic(bool existing, bool register_only) {
+    using namespace lemon::models;
+    const auto root = lemon::test::make_scratch_dir("collection-parent-atomic");
+    const auto file = root / "user_models.json";
+    AliasManager aliases;
+    ModelStore store(aliases);
+    RegistryDocuments registries(json::object(), file.string());
+    ModelChangeNotifier notifier;
+    int options_saved = 0;
+    ModelIngest ingest({nullptr, {}, &registries, &store, &notifier,
+        [&](const ModelInfo&) { ++options_saved; }});
+    if (existing) {
+        ingest.register_user_model("user.AtomicParent",
+            {{"recipe", "collection.omni"}, {"components", {"Original"}}}, "", true);
+    }
+    {
+        std::map<std::string, ModelInfo> rows;
+        if (existing) {
+            ModelInfo parent;
+            parent.model_name = "user.AtomicParent";
+            parent.recipe = "collection.omni";
+            parent.components = {"Original"};
+            rows.emplace(parent.model_name, parent);
+        }
+        ModelStore::Build build(store);
+        build.commit(std::move(rows), nullptr, {});
+    }
+    json admin = component_def("AtomicB");
+    admin["recipe_options"] = {{"llamacpp_args", "--threads 2"}};
+    ingest.register_user_model("user.AtomicB", admin, "", true);
+    const json before = *registries.pin().user;
+    std::ifstream before_file(file);
+    const std::string before_bytes{std::istreambuf_iterator<char>(before_file), {}};
+    before_file.close();
+    const json doc = {{"recipe", "collection.omni"},
+        {"components", {"AtomicA", "AtomicB"}},
+        {"models", {component_def("AtomicA"), component_def("AtomicB")}}};
+    bool rejected = false;
+    try {
+        if (register_only) {
+            ingest.register_model("user.AtomicParent", doc, true, true, false);
+        } else {
+            ingest.pull("user.AtomicParent", doc, true, nullptr, {}, false);
+        }
+    } catch (const lemon::BackendArgsAuthorizationError&) {
+        rejected = true;
+    }
+    check(register_only ? "registration phase rejects component backend-args drift"
+                        : "download phase rejects component backend-args drift", rejected);
+    check(existing ? "rejection preserves existing parent and untouched components"
+                   : "rejection leaves new parent and components absent",
+          *registries.pin().user == before);
+    std::ifstream after_file(file);
+    const std::string after_bytes{std::istreambuf_iterator<char>(after_file), {}};
+    after_file.close();
+    check("rejected collection leaves registry bytes and options unchanged",
+          after_bytes == before_bytes && options_saved == 0);
+}
+
+static void test_regular_inline_registration_preserves_local_components() {
+    using namespace lemon::models;
+    const auto root = lemon::test::make_scratch_dir("collection-regular-inline");
+    AliasManager aliases;
+    ModelStore store(aliases);
+    RegistryDocuments registries(json::object(), (root / "user_models.json").string());
+    ModelChangeNotifier notifier;
+    ModelIngest ingest({nullptr, {}, &registries, &store, &notifier, {}});
+    json local = component_def("LocalB");
+    local["recipe_options"] = {{"llamacpp_args", "--threads 2"}};
+    ingest.register_user_model("user.LocalB", local, "", true);
+    const json local_before = registries.pin().user->at("LocalB");
+    {
+        ModelInfo info;
+        info.model_name = "user.LocalB";
+        info.recipe = "llamacpp";
+        ModelStore::Build build(store);
+        build.commit({{info.model_name, info}}, nullptr, {});
+    }
+    const json doc = {{"recipe", "collection.omni"}, {"source", "modelscope"},
+        {"components", {"NewA", "LocalB"}},
+        {"models", {component_def("NewA"), component_def("LocalB")}}};
+    ingest.register_model("user.RegularInline", doc, true, true, false);
+    const auto saved = registries.pin().user;
+    check("regular inline collection registers parent and unknown component",
+        saved->contains("NewA") && saved->at("RegularInline").at("components") ==
+            json::array({"user.NewA", "user.LocalB"}));
+    check("regular inline import preserves known local backend arguments",
+        saved->at("LocalB") == local_before);
+    check("inline component inherits parent registry provenance",
+        saved->at("NewA").at("source") == "modelscope");
+}
+
+static void test_registered_collection_pull_does_not_repeat_registration(bool builtin) {
+    using namespace lemon::models;
+    const auto root = lemon::test::make_scratch_dir("registered-collection-pull");
+    AliasManager aliases;
+    ModelStore store(aliases);
+    RegistryDocuments registries(json::object(), (root / "user_models.json").string());
+    ModelChangeNotifier notifier;
+    ModelArtifactStore artifacts({[&] { return root.string(); }, {}, {}});
+    ModelIngest ingest({&artifacts, {}, &registries, &store, &notifier, {}});
+    if (builtin) {
+        ModelInfo child;
+        child.model_name = "SelectedA";
+        child.recipe = "llamacpp";
+        child.downloaded = true;
+        ModelStore::Build build(store);
+        build.commit({{child.model_name, child}}, nullptr, {});
+    }
+    const json doc = {{"recipe", "collection.omni"},
+        {"components", {"user.SelectedA"}},
+        {"models", {component_def("SelectedA")}}};
+    ingest.register_model("user.SelectedParent", doc, true, true, true);
+    json admin = doc;
+    admin["recipe_options"] = {{"llamacpp_args", "--threads 2"}};
+    ingest.register_user_model("user.SelectedParent", admin, "", true);
+    {
+        ModelInfo parent;
+        parent.model_name = "user.SelectedParent";
+        parent.recipe = "collection.omni";
+        parent.components = {builtin ? "SelectedA" : "user.SelectedA"};
+        parent.downloaded = true;
+        ModelInfo child;
+        child.model_name = builtin ? "SelectedA" : "user.SelectedA";
+        child.recipe = "llamacpp";
+        child.downloaded = true;
+        ModelStore::Build build(store);
+        build.commit({{parent.model_name, parent}, {child.model_name, child}}, nullptr, {});
+    }
+    const json before = *registries.pin().user;
+    int completed = 0;
+    ingest.pull("user.SelectedParent", json::object(), true,
+        [&](const lemon::DownloadProgress& progress) {
+            if (progress.complete) ++completed;
+            return true;
+        }, {}, false);
+    check("registered inline collection pull completes without registration", completed == 1);
+    check("registered collection pull preserves admin arguments added after registration",
+          *registries.pin().user == before);
+}
+
 int main() {
+    test_collection_registration_rejection_is_atomic();
+    test_regular_inline_registration_preserves_local_components();
+    test_registered_collection_pull_does_not_repeat_registration(false);
+    test_registered_collection_pull_does_not_repeat_registration(true);
+    for (bool existing : {false, true}) {
+        for (bool register_only : {false, true}) {
+            test_collection_parent_rejection_is_atomic(existing, register_only);
+        }
+    }
     ModelManagerConfig config;
     config.availability = [](const std::map<std::string, ModelInfo>&) {
         return machine_without_npu();

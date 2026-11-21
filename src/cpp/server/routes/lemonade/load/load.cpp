@@ -103,7 +103,8 @@ public:
         s.summary = "Load a model";
         s.description =
             "Loads a registered model into memory, downloading it first when needed, so it is "
-            "ready before the first request.";
+            "ready before the first request. Request-supplied `*_args` and `merge_args` require "
+            "[admin authorization](../guide/configuration/README.md#admin-api-key), including empty or `null` values.";
         s.notes = {
             "Loading a collection (`recipe: \"collection.omni\"`) loads each component in turn "
             "with the component's own saved options; options in the request are not forwarded. A "
@@ -165,13 +166,17 @@ public:
         collection_example.format = ResponseFormat::Json;
         collection_example.args = {{"model_name", "LMX-Omni-5.5B-Lite"}};
         s.examples = {example, collection_example};
-        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kOnDemandCannotLoad}, ModelLoader::errors()});
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kOnDemandCannotLoad, kBackendArgsAdminRequired}, ModelLoader::errors()});
         s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
+        if (!authorize_backend_args(req, res)) {
+            return;
+        }
+
         auto thread_id = std::this_thread::get_id();
         LOG(DEBUG, "Server") << "===== LOAD ENDPOINT ENTERED (Thread: " << thread_id << ") =====" << std::endl;
 
@@ -231,7 +236,7 @@ public:
                         }
                     }
                 }
-                model_manager.replace_options(model_name, saved_for_write);
+                model_manager.replace_options(model_name, saved_for_write, is_admin_request(req));
                 info = model_manager.get_model_info(model_name);
             }
 
@@ -292,6 +297,8 @@ public:
                 res.set_content(response.dump(), "application/json");
             }
 
+        } catch (const BackendArgsAuthorizationError& e) {
+            write_error(res, req.spec.error_format, kBackendArgsAdminRequired, e.what());
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
             ctx_.model_loader->write_load_error(res, model_name, e.what());

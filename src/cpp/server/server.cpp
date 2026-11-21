@@ -147,6 +147,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     register_mcp_routes(*registry_, ctx_);
 
     middleware_ = std::make_unique<RequestMiddleware>(config_.get(), registry_.get());
+    ctx_.middleware = middleware_.get();
     web_ui_ = std::make_unique<WebUi>(ctx_);
     listener_ = std::make_unique<HttpListener>(
         config_.get(), router_.get(),

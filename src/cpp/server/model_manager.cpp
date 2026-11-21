@@ -26,6 +26,7 @@
 #include <lemon/models/routing_parse_options.h>
 #include <lemon/models/model_index.h>
 #include <lemon/routing_policy_parser.h>
+#include <lemon/utils/backend_args.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/http_client.h>
 #include <lemon/utils/model_name_utils.h>
@@ -129,7 +130,7 @@ models::SyncService::Deps ModelManager::make_sync_deps() {
     deps.scan = [this](const std::vector<std::string>& targets) { return run_update_scan(targets); };
     deps.download = [this](const std::string& name, const json& options, bool do_not_upgrade,
                            DownloadProgressCallback progress, const utils::CancelToken& cancel) {
-        download_model(name, options, do_not_upgrade, progress, cancel);
+        download_model(name, options, do_not_upgrade, progress, cancel, /*allow_backend_args=*/true);
     };
     deps.store = &store_;
     return deps;
@@ -404,12 +405,13 @@ json ModelManager::registry_recipe_options(const std::string& cache_key) {
     return row ? models::row_recipe_options(*row) : json(nullptr);
 }
 
-json ModelManager::replace_options(const std::string& name, const json& saved) {
-    return write_saved_model_options(name, saved, /*merge=*/false);
+json ModelManager::replace_options(const std::string& name, const json& saved,
+                                   bool allow_backend_args) {
+    return write_saved_model_options(name, saved, /*merge=*/false, allow_backend_args);
 }
 
 json ModelManager::set_options(const std::string& name, const json& changes) {
-    return write_saved_model_options(name, changes, /*merge=*/true);
+    return write_saved_model_options(name, changes, /*merge=*/true, /*allow_backend_args=*/true);
 }
 
 // Read-modify-write of one model's recipe_options.json entry.
@@ -420,7 +422,7 @@ json ModelManager::set_options(const std::string& name, const json& changes) {
 // an older option set than the file. Only the first is held across disk I/O —
 // every request thread contends on the cache mutex.
 json ModelManager::write_saved_model_options(const std::string& model_name,
-                                             const json& options, bool merge) {
+                                             const json& options, bool merge, bool allow_backend_args) {
     const std::string cache_key = resolve_model_name(model_name);
     const std::string id = cache_key_to_canonical_id(cache_key);
     LOG(INFO, "ModelManager") << "Updating saved options for model: " << model_name << std::endl;
@@ -438,6 +440,13 @@ json ModelManager::write_saved_model_options(const std::string& model_name,
     }
 
     std::lock_guard<std::mutex> write_lock(recipe_options_write_mutex_);
+
+    if (!allow_backend_args &&
+        utils::backend_arg_options(recipe_options_.entry(id)) !=
+            utils::backend_arg_options(options)) {
+        throw BackendArgsAuthorizationError(
+            "Admin authorization is required to change saved backend arguments");
+    }
 
     const json saved = merge ? recipe_options_.merge(id, options)
                              : recipe_options_.replace(id, options);
@@ -680,17 +689,17 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
 void ModelManager::register_model(const std::string& model_name,
                                  const json& model_data,
                                  bool allow_missing_checkpoint,
-                                 bool replace_existing) {
+                                 bool replace_existing, bool allow_backend_args) {
     ingest_->register_model(model_name, model_data, allow_missing_checkpoint,
-                            replace_existing);
+                            replace_existing, allow_backend_args);
 }
 
 void ModelManager::download_model(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback,
-                                 const utils::CancelToken& cancel) {
-    ingest_->pull(model_name, model_data, do_not_upgrade, progress_callback, cancel);
+                                 const utils::CancelToken& cancel, bool allow_backend_args) {
+    ingest_->pull(model_name, model_data, do_not_upgrade, progress_callback, cancel, allow_backend_args);
 }
 
 std::string ModelManager::canonical_for_request(const std::string& requested) {
@@ -804,8 +813,8 @@ void ModelManager::delete_model(const std::string& model_name) {
 
 void ModelManager::register_user_model(const std::string& model_name,
                                        const json& model_data,
-                                       const std::string& source) {
-    ingest_->register_user_model(model_name, model_data, source);
+                                       const std::string& source, bool allow_backend_args) {
+    ingest_->register_user_model(model_name, model_data, source, allow_backend_args);
 }
 
 void ModelManager::unregister_user_model(const std::string& model_name) {

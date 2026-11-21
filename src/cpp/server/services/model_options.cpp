@@ -116,6 +116,8 @@ void respond_with_model_options(ServerContext& ctx, const std::string& id,
             {"resolved_ctx_size", resolved_ctx}
         };
         res.set_content(response.dump(), "application/json");
+    } catch (const BackendArgsAuthorizationError& e) {
+        write_plain_error(res, kBackendArgsAdminRequired, e.what());
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Failed to handle options for '" << model_id
                              << "': " << e.what() << std::endl;

@@ -15,13 +15,17 @@
 #include "lemon/route_decision_response.h"
 #include "lemon/router.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/request_middleware.h"
 #include "lemon/server/shared_args.h"
 #include "lemon/streaming_proxy.h"
+#include "lemon/utils/backend_args.h"
 
 namespace lemon {
 
 using json = nlohmann::json;
 
+const RouteError kBackendArgsAdminRequired{
+    403, "admin_required", "The request changes backend arguments or a collection manifest source without admin authorization"};
 const RouteError kBackendError{
     500, "", "The backend reports an error; the backend's own status replaces this one when it sends one"};
 const RouteError kMalformedBackendResponse{
@@ -40,6 +44,55 @@ const RouteError kNoOutputError{
     502, "", "The backend produces no output, for example after it crashes or runs out of GPU memory"};
 
 namespace {
+
+bool requires_backend_args_admin(const json& definition, ModelManager* model_manager) {
+    if (!definition.is_object()) {
+        return false;
+    }
+    if (!utils::backend_arg_options(definition).empty()) {
+        return true;
+    }
+    for (const char* block : {"recipe_options", "image_defaults", "audio_defaults"}) {
+        auto options = definition.find(block);
+        if (options != definition.end() && !utils::backend_arg_options(*options).empty()) {
+            return true;
+        }
+    }
+    std::string recipe;
+    const auto recipe_it = definition.find("recipe");
+    if (recipe_it != definition.end() && recipe_it->is_string()) {
+        recipe = recipe_it->get<std::string>();
+    }
+    std::optional<ModelInfo> existing;
+    if (model_manager) {
+        for (const char* key : {"model_name", "id"}) {
+            const auto name = definition.find(key);
+            if (name != definition.end() && name->is_string() &&
+                model_manager->model_exists(name->get<std::string>())) {
+                existing = model_manager->get_model_info(name->get<std::string>());
+                if (recipe.empty()) recipe = existing->recipe;
+                break;
+            }
+        }
+    }
+    if ((is_model_collection_recipe(recipe) &&
+         (definition.contains("checkpoint") || definition.contains("checkpoints"))) ||
+        (existing && is_model_collection_recipe(existing->recipe) &&
+         !existing->checkpoint().empty() &&
+         (definition.contains("source") || definition.contains("registry_source")))) {
+        return true;
+    }
+
+    auto models = definition.find("models");
+    if (models != definition.end() && models->is_array()) {
+        for (const auto& model : *models) {
+            if (requires_backend_args_admin(model, model_manager)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 const char* to_string(Prefixes prefixes) {
     switch (prefixes) {
@@ -469,6 +522,24 @@ const httplib::FormData* RouteRequest::file(const RouteArg& arg) const {
         }
     }
     return nullptr;
+}
+
+bool ApiRoute::is_admin_request(const RouteRequest& req) const {
+    return ctx_.middleware && ctx_.middleware->is_admin_request(req.http);
+}
+
+bool ApiRoute::authorize_backend_args(const RouteRequest& req, httplib::Response& res) const {
+    return authorize_backend_args(req, res, req.body);
+}
+
+bool ApiRoute::authorize_backend_args(const RouteRequest& req, httplib::Response& res,
+                                      const json& options) const {
+    if (is_admin_request(req) || !requires_backend_args_admin(options, ctx_.model_manager)) {
+        return true;
+    }
+    write_error(res, req.spec.error_format, kBackendArgsAdminRequired,
+                "Admin authorization is required to change backend arguments or collection manifest sources");
+    return false;
 }
 
 void ApiRoute::serve(const RouteSpec& spec, const httplib::Request& http,
