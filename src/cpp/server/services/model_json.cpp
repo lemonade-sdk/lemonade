@@ -68,6 +68,8 @@ json ModelJson::to_json(const std::string& model_id, const ModelInfo& info, int 
         {"checkpoint", info.checkpoint()},
         {"checkpoints", info.checkpoints},
         {"recipe", info.recipe},
+        {"capability", ModelManager::model_capability(info)},
+        {"capabilities", ModelManager::model_capabilities(info)},
         {"downloaded", info.downloaded},
         {"update_available", info.update_available},
         {"suggested", info.suggested},
@@ -192,7 +194,7 @@ json ModelJson::status_page_json(const std::string& model_id, const ModelInfo& i
 nlohmann::ordered_json ModelJson::schema() {
     return nlohmann::ordered_json::parse(R"json({
         "type": "object",
-        "required": ["id", "object", "created", "owned_by", "checkpoint", "checkpoints", "recipe",
+        "required": ["id", "object", "created", "owned_by", "checkpoint", "checkpoints", "recipe", "capability", "capabilities",
                      "downloaded", "update_available", "suggested", "source", "registry_source",
                      "labels", "components", "recipe_options"],
         "properties": {
@@ -202,6 +204,8 @@ nlohmann::ordered_json ModelJson::schema() {
             "owned_by": {"const": "lemonade", "description": "Always `\"lemonade\"`."},
             "checkpoint": {"type": "string", "description": "The main checkpoint in the model's registry; see `registry_source`."},
             "recipe": {"type": "string", "description": "Recipe used to load the model, e.g. `llamacpp` or `flm`."},
+            "capability": {"type": "string", "description": "Primary server-owned deployment capability, e.g. chat, image or router."},
+            "capabilities": {"type": "array", "items": {"type": "string"}, "description": "Canonical server-owned capabilities including recognized labels such as image-edit."},
             "size": {"type": "number", "description": "Size in GB; omitted when unknown."},
             "max_context_window": {"type": "integer", "description": "Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models."},
             "context_length": {"type": "integer", "description": "Tokens the model handles in one request: the loaded `ctx_size` while it runs, else the configured `ctx_size`, else `max_context_window`; omitted when none is known."},
