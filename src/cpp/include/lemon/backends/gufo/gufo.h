@@ -61,7 +61,7 @@ inline const BackendDescriptor descriptor = {
     /*self_manages_downloads*/ false,
     /*takes_args*/      true,
     /*arg_variants*/    {},
-    /*bin_variants*/    {},
+    /*bin_variants*/    {"rocm"},
     /*config_extra*/    nlohmann::json::object(),
     /*streams_model_from_storage*/ false,
     /*containers*/ {
@@ -70,6 +70,8 @@ inline const BackendDescriptor descriptor = {
             /*devices*/ {"/dev/dri", "/dev/kfd"},
             /*cap_add*/ {},
             /*user*/    lemon::utils::ContainerUser{1000, 1000},
+            // Its X.Y.Z tags are releases; "latest" names the newest.
+            /*latest_tag*/ "latest",
         }},
     },
 };

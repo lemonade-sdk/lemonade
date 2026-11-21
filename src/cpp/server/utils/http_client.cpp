@@ -785,6 +785,13 @@ HttpResponse HttpClient::get(const std::string& url,
     return perform_request(url, headers, timeout_seconds, policy, false, max_body_bytes, cancel);
 }
 
+HttpResponse HttpClient::head(const std::string& url,
+                              const std::map<std::string, std::string>& headers,
+                              long timeout_seconds,
+                              HttpSecurityPolicy policy) {
+    return perform_request(url, headers, timeout_seconds, policy, true);
+}
+
 HttpResponse HttpClient::post(const std::string& url,
                               const std::string& body,
                               const std::map<std::string, std::string>& headers,

@@ -1578,16 +1578,29 @@ json SystemInfo::build_recipes_info(const json& devices) {
         } else {
             std::string installed_version = get_recipe_version(def.recipe, def.backend);
             std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
+            backends::ContainerStatus container;
+            std::string container_error;
             if (container_backend) {
+                try {
+                    const auto selection = BackendUtils::get_container_selection(def.recipe, def.backend);
+                    container = backends::container_status(selection, installed_version, "");
+                    auto* bm = BackendManager::global();
+                    if (selection.latest && !container.update_required && bm) {
+                        container = backends::container_status(
+                            selection, installed_version,
+                            bm->get_or_resolve_latest_container_pin(def.recipe, def.backend));
+                    }
+                } catch (const std::exception& e) {
+                    LOG(WARNING, "SystemInfo") << e.what() << std::endl;
+                    container.update_required = true;
+                    container_error = e.what();
+                }
                 installed_version = backends::short_container_pin(installed_version);
-                expected_version = backends::short_container_pin(expected_version);
-            }
-
-            // The user's *_bin pin overrides what the state machine considers
-            // "expected" — otherwise an explicit-tag pin (e.g. b8664) would
-            // perpetually emit update_required because the lemonade baseline
-            // differs, and a path pin would do the same with no version.txt.
-            {
+            } else {
+                // The user's *_bin pin overrides what the state machine considers
+                // "expected" — otherwise an explicit-tag pin (e.g. b8664) would
+                // perpetually emit update_required because the lemonade baseline
+                // differs, and a path pin would do the same with no version.txt.
                 std::string user_pin = BackendUtils::get_bin_config_value(def.recipe, def.backend);
                 if (!user_pin.empty() && user_pin != "builtin" && user_pin != "latest") {
                     if (utils::looks_like_path(user_pin)) {
@@ -1606,7 +1619,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
             bool version_known = !installed_version.empty() && installed_version != "unknown";
             bool has_expected = !expected_version.empty();
-            bool latest_pin = is_bin_pinned_to_latest(def.recipe, def.backend);
+            bool latest_pin = !container_backend && is_bin_pinned_to_latest(def.recipe, def.backend);
             bool needs_update;
 
             // Some recipes (e.g. vllm) install with per-GPU-target release
@@ -1634,6 +1647,9 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 needs_update = has_expected && (!version_known || !version_at_least_expected);
             } else
 #endif
+            if (container_backend) {
+                needs_update = container.update_required;
+            } else
             if (latest_pin) {
                 // For *_bin = "latest", the installed version is allowed to be
                 // newer than the lemonade-shipped baseline. Only force
@@ -1647,9 +1663,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
             }
 
             if (needs_update) {
+                // Installing cannot fix a *_bin value lemonade cannot read.
                 backend["state"] = "update_required";
-                backend["message"] = "Backend update is required before use.";
-                backend["action"] = get_install_command(def.recipe, def.backend);
+                backend["message"] = container_error.empty() ? "Backend update is required before use."
+                                                             : container_error;
+                backend["action"] = container_error.empty() ? get_install_command(def.recipe, def.backend)
+                                                            : "";
             } else {
                 // Soft "update_available" signal for *_bin = "latest" backends
                 // when GitHub has a newer release than what's installed. The
@@ -1661,7 +1680,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
                         latest_tag = bm->get_or_resolve_latest_tag(def.recipe, def.backend);
                     }
                 }
-                if (!latest_tag.empty()
+                if (!container.update_available.empty()) {
+                    backend["state"] = "update_available";
+                    backend["message"] = "Newer image available: " +
+                                         backends::short_container_pin(container.update_available);
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+                } else if (!latest_tag.empty()
                     && version_compare(installed_version, latest_tag) < 0) {
                     backend["state"] = "update_available";
                     backend["message"] = "Newer upstream release available: " + latest_tag;

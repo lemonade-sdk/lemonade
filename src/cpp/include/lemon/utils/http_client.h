@@ -133,6 +133,12 @@ public:
                            size_t max_body_bytes = 0,
                            const RequestCancelToken& cancel = {});
 
+    // Like get(), but asks for the headers only; the body stays empty.
+    static HttpResponse head(const std::string& url,
+                             const std::map<std::string, std::string>& headers = {},
+                             long timeout_seconds = 0,
+                             HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
+
     // Simple POST request. Redirects are never followed.
     // timeout_seconds=0 uses default_timeout_seconds_, as in get(); pass
     // kNoTimeout to opt out deliberately.

@@ -1129,6 +1129,7 @@ set(SOURCES_CORE
     src/cpp/server/api_docs.cpp
     src/cpp/server/prometheus_metrics.cpp
     src/cpp/server/utils/container_manager.cpp
+    src/cpp/server/utils/container_registry.cpp
     src/cpp/server/utils/http_client.cpp
     src/cpp/server/utils/json_file.cpp
     src/cpp/server/utils/json_utils.cpp
@@ -2775,6 +2776,7 @@ set(_CONTAINER_MANAGER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_conta
 if(BUILD_TESTING AND EXISTS "${_CONTAINER_MANAGER_TEST_SRC}")
     add_executable(test_container_manager test/cpp/test_container_manager.cpp)
     target_link_libraries(test_container_manager PRIVATE lemonade-server-core)
+    add_dependencies(test_container_manager copy_resources)
     target_compile_definitions(test_container_manager PRIVATE
         BACKEND_VERSIONS_JSON_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backend_versions.json"
     )

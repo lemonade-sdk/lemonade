@@ -79,7 +79,7 @@ inline const BackendDescriptor descriptor = {
     /*self_manages_downloads*/ false,
     /*takes_args*/      true,
     /*arg_variants*/    {"rocm", "vulkan", "cuda", "cpu"},
-    /*bin_variants*/    {"rocm", "vulkan", "cuda", "cpu"},
+    /*bin_variants*/    {"rocm", "vulkan", "cuda", "cpu", "nathanw", "halobox"},
     /*config_extra*/    {{"prefer_system", true}},
     /*streams_model_from_storage*/ false,
     /*containers*/ {

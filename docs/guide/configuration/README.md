@@ -57,7 +57,8 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "disable_model_filtering": false,
   "download_rate_limit": "",
   "ds4": {
-    "args": ""
+    "args": "",
+    "rocm_bin": "builtin"
   },
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",
@@ -67,7 +68,11 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   },
   "global_timeout": 600,
   "gufo": {
-    "args": ""
+    "args": "",
+    "rocm_bin": "builtin"
+  },
+  "halogen": {
+    "rocm_bin": "builtin"
   },
   "host": "localhost",
   "hrx": {
@@ -85,6 +90,8 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "cpu_bin": "builtin",
     "cuda_args": "",
     "cuda_bin": "builtin",
+    "halobox_bin": "builtin",
+    "nathanw_bin": "builtin",
     "prefer_system": true,
     "rocm_args": "",
     "rocm_bin": "builtin",
@@ -119,7 +126,8 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "rocm_channel": "stable",
   "rocm_install_method": "auto",
   "rocmfpx": {
-    "args": ""
+    "args": "",
+    "rocm_bin": "builtin"
   },
   "ryzenai": {
     "server_bin": "builtin"
@@ -397,6 +405,26 @@ lemonade config set llamacpp.vulkan_bin=/home/me/llama.cpp/build/bin
 # Revert to the version lemonade ships
 lemonade config set llamacpp.vulkan_bin=builtin
 ```
+
+#### Container backends
+
+Backends that run from a container image (`gufo.rocm_bin`, `halogen.rocm_bin`, `ds4.rocm_bin`, `rocmfpx.rocm_bin`, `llamacpp.halobox_bin`, `llamacpp.nathanw_bin`) choose an image instead of a release. Each backend's image repository is fixed; the value picks an image from it:
+
+| Value | Meaning |
+|---|---|
+| `"builtin"` *(default)* | The image lemonade pins in its release, by digest. |
+| `"latest"` | The newest image: the registry's `latest` tag for Gufo and Halogen, and for the kyuz0 images the moving tag lemonade's pin comes from (e.g. `rocm-10.0-rocmfpx`). |
+| `"0.35.0"` / `"rocm-10.0-rocmfpx_20261107T063533"` / etc. | A tag, as the registry lists it. |
+| `"0.19.1@sha256:<digest>"` | One exact image. |
+
+A tag works like a native release tag: installing it looks up the image the tag names, pulls it by digest, and records `<tag>@<digest>` in `version.txt`. From then on lemonade runs that image without asking the registry again, even if the tag moves; `lemonade backends install <recipe>:<backend> --force` picks up what it names now. `"latest"` works like a native `"latest"`: it is looked up once per `lemond` process, `lemonade backends` reports `update_available` when it names a newer image, and offline or when the lookup or pull fails, whatever image of the backend is installed keeps running. A pinned tag never runs another tag's image. `"builtin"` and `<tag>@sha256:<digest>` need no lookup. Paths are not accepted.
+
+```bash
+lemonade config set gufo.rocm_bin=latest
+lemonade config set halogen.rocm_bin=0.20.0
+```
+
+As for native backends, `lemonade config set` installs the new image before it returns. An image is several GB, so the CLI can time out after 30 seconds while `lemond` keeps pulling; `lemonade backends install <recipe>:<backend>` shows the pull's progress and returns once it is installed.
 
 #### Behavior when `*_bin` changes
 
