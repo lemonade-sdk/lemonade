@@ -97,6 +97,8 @@ export interface ToolCallEntry {
 
 
 interface StreamState {
+  requestId?: number;
+  interruptible?: boolean;
   content: string;
   thinking: string;
   toolStatus?: string;
@@ -111,14 +113,16 @@ export interface ChatStreamingResult {
   streamingConvoIds: Set<string>;
   getStream: (convoId: string) => StreamState | undefined;
   getLiveStats: (convoId: string) => LiveStreamStats | undefined;
+  hasActiveRequest: (convoId: string) => boolean;
   send: (
     convoId: string,
     model: string,
     messages: ChatMessage[],
     tools?: boolean | ChatToolRuntime | null,
     thinkingMode?: ChatThinkingMode,
+    interruptible?: boolean,
   ) => Promise<void>;
-  stop: (convoId: string) => { content: string; thinking?: string } | null;
+  stop: (convoId: string, requireNoTools?: boolean) => { content: string; thinking?: string } | null;
 }
 
 export function useChatStreaming(
@@ -130,7 +134,13 @@ export function useChatStreaming(
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
 
   const controllersRef = useRef<Map<string, AbortController>>(new Map());
-  const tokenBufferRef = useRef<Record<string, StreamState>>({});
+  const nextRequestIdRef = useRef(0);
+  // Keep the last generated tokens independently of React's deferred render.
+  const latestOutputRef = useRef<Record<string, { content: string; thinking: string }>>({});
+  const toolCallsStartedRef = useRef<Set<string>>(new Set());
+  const interruptibleRequestsRef = useRef<Set<string>>(new Set());
+  // Only token fields belong in the flush buffer; tool metadata stays in state.
+  const tokenBufferRef = useRef<Record<string, { requestId: number; content?: string; thinking?: string }>>({});
   const flushTimerRef = useRef<number | null>(null);
 
   // Do not keep a 50ms interval alive for the entire lifetime of the Chat view.
@@ -143,7 +153,8 @@ export function useChatStreaming(
     setActiveStreams(prev => {
       let next = prev;
       for (const id of keys) {
-        if (!prev[id]) continue;
+        // A deferred flush from the stopped request must not alter its replacement.
+        if (!prev[id] || prev[id].requestId !== buf[id].requestId) continue;
         if (next === prev) next = { ...prev };
         next[id] = { ...next[id], ...buf[id] };
       }
@@ -170,6 +181,7 @@ export function useChatStreaming(
     (convoId: string) => liveStats[convoId],
     [liveStats],
   );
+  const hasActiveRequest = useCallback((convoId: string) => controllersRef.current.has(convoId), []);
 
   const send = useCallback(async (
     convoId: string,
@@ -177,6 +189,7 @@ export function useChatStreaming(
     messages: ChatMessage[],
     tools: boolean | ChatToolRuntime | null = false,
     thinkingMode: ChatThinkingMode = 'normal',
+    interruptible = false,
   ) => {
     let runtime: ChatToolRuntime | null = tools && typeof tools === 'object' ? tools : null;
     if (tools === true) {
@@ -188,7 +201,18 @@ export function useChatStreaming(
         execute: executeTool as unknown as (call: ToolCall) => Promise<ToolExecutionPayload>,
       };
     }
-    setActiveStreams(prev => ({ ...prev, [convoId]: { content: '', thinking: '', toolCalls: [] } }));
+    // An automatic replacement must not abandon a tool with external side effects.
+    if (controllersRef.current.has(convoId) && toolCallsStartedRef.current.has(convoId)) {
+      throw new Error('Cannot replace a chat request after tools have started.');
+    }
+    // An overlapping send must not leave an orphaned backend request running.
+    controllersRef.current.get(convoId)?.abort();
+    const requestId = ++nextRequestIdRef.current;
+    latestOutputRef.current[convoId] = { content: '', thinking: '' };
+    toolCallsStartedRef.current.delete(convoId);
+    if (interruptible) interruptibleRequestsRef.current.add(convoId);
+    else interruptibleRequestsRef.current.delete(convoId);
+    setActiveStreams(prev => ({ ...prev, [convoId]: { requestId, interruptible, content: '', thinking: '', toolCalls: [] } }));
     setThinkingExpanded(false);
 
     const controller = new AbortController();
@@ -225,16 +249,18 @@ export function useChatStreaming(
           tools: !toolsDisabled && !retriedWithoutTools && runtime?.tools?.length ? runtime.tools : undefined,
           onReasoning: (_token, fullReasoning) => {
             if (!ownsConversation()) return;
+            latestOutputRef.current[convoId].thinking = fullReasoning;
             const buf = tokenBufferRef.current;
-            if (!buf[convoId]) buf[convoId] = { content: '', thinking: '', toolCalls: [] };
+            if (!buf[convoId] || buf[convoId].requestId !== requestId) buf[convoId] = { requestId };
             buf[convoId].thinking = fullReasoning;
             scheduleTokenFlush();
             if (!thinkingExpanded) setThinkingExpanded(true);
           },
           onToken: (_token, full) => {
             if (!ownsConversation()) return;
+            latestOutputRef.current[convoId].content = full;
             const buf = tokenBufferRef.current;
-            if (!buf[convoId]) buf[convoId] = { content: '', thinking: '', toolCalls: [] };
+            if (!buf[convoId] || buf[convoId].requestId !== requestId) buf[convoId] = { requestId };
             buf[convoId].content = full;
             scheduleTokenFlush();
           },
@@ -256,6 +282,9 @@ export function useChatStreaming(
                 return;
               }
 
+              // No further automatic interruption: a tool may have side effects,
+              // and its results are not part of the persisted chat history.
+              toolCallsStartedRef.current.add(convoId);
               // Show tool status in the stream and add running entries
               const toolNames = toolCalls.map(tc => tc.function.name).join(', ');
               const runningEntries: ToolCallEntry[] = toolCalls.map(tc => {
@@ -428,10 +457,12 @@ Some tool calls were skipped after repeated identical failures. Other tools rema
               (!stats.content.trim() || stats.finishReason === 'length')
             ) {
               retriedWithoutTools = true;
+              latestOutputRef.current[convoId] = { content: '', thinking: '' };
+              delete tokenBufferRef.current[convoId];
 
               setActiveStreams(prev => ({
                 ...prev,
-                [convoId]: { content: '', thinking: '', toolCalls: [] },
+                [convoId]: { requestId, interruptible, content: '', thinking: '', toolCalls: [] },
               }));
               setLiveStats(prev => {
                 const next = { ...prev };
@@ -456,7 +487,7 @@ Some tool calls were skipped after repeated identical failures. Other tools rema
             resolve();
           },
           onError: (err) => {
-            if (err.name === 'AbortError') { cleanupIfOwned(); resolve(); return; }
+            if (!ownsConversation() || controller.signal.aborted || err.name === 'AbortError') { cleanupIfOwned(); resolve(); return; }
             dropTokenBufferIfOwned();
             onError(convoId, err.message);
             cleanupIfOwned();
@@ -468,6 +499,10 @@ Some tool calls were skipped after repeated identical failures. Other tools rema
     };
 
     const cleanup = (id: string) => {
+      delete latestOutputRef.current[id];
+      delete tokenBufferRef.current[id];
+      toolCallsStartedRef.current.delete(id);
+      interruptibleRequestsRef.current.delete(id);
       setActiveStreams(prev => {
         const next = { ...prev };
         delete next[id];
@@ -484,16 +519,23 @@ Some tool calls were skipped after repeated identical failures. Other tools rema
     await runCompletion();
   }, [onDone, onError, scheduleTokenFlush]);
 
-  const stop = useCallback((convoId: string): { content: string; thinking?: string } | null => {
+  const stop = useCallback((convoId: string, requireNoTools = false): { content: string; thinking?: string } | null => {
     const controller = controllersRef.current.get(convoId);
-    if (!controller) return null;
+    if (!controller || (requireNoTools && (
+      toolCallsStartedRef.current.has(convoId) || !interruptibleRequestsRef.current.has(convoId)))) return null;
 
+    const latest = latestOutputRef.current[convoId];
     const buf = tokenBufferRef.current[convoId];
     const stream = activeStreams[convoId];
-    const merged = stream && buf
-      ? { content: buf.content || stream.content, thinking: buf.thinking || stream.thinking }
-      : stream;
+    // Rendered state and the 50ms buffer may both lag the actual stream.
+    const merged = {
+      content: latest?.content ?? buf?.content ?? stream?.content ?? '',
+      thinking: latest?.thinking ?? buf?.thinking ?? stream?.thinking ?? '',
+    };
+    delete latestOutputRef.current[convoId];
     delete tokenBufferRef.current[convoId];
+    toolCallsStartedRef.current.delete(convoId);
+    interruptibleRequestsRef.current.delete(convoId);
 
     controller.abort();
     controllersRef.current.delete(convoId);
@@ -509,10 +551,7 @@ Some tool calls were skipped after repeated identical failures. Other tools rema
       return next;
     });
 
-    if (merged && (merged.content || merged.thinking)) {
-      return { content: merged.content || '(stopped)', thinking: merged.thinking || undefined };
-    }
-    return null;
+    return { content: merged.content, thinking: merged.thinking || undefined };
   }, [activeStreams]);
 
   return {
@@ -523,6 +562,7 @@ Some tool calls were skipped after repeated identical failures. Other tools rema
     streamingConvoIds: new Set(Object.keys(activeStreams)),
     getStream,
     getLiveStats,
+    hasActiveRequest,
     send,
     stop,
   };
