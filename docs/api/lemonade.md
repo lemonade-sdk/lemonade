@@ -1779,6 +1779,11 @@ This endpoint does not take any parameters.
 - `telemetry` - Telemetry state.
   - `enabled` - Whether telemetry collection is active
   - `captures` - The parts of each request telemetry captures, present when `enabled` is `true`.
+  - `usage_log` - State of the [local usage log](../guide/telemetry.md#local-usage-log). Only `enabled` is present when it is off.
+    - `enabled` - Whether `telemetry.usage_log.enabled` is set
+    - `path` - Directory the files are written to
+    - `disk_usage_bytes` - Total size of the usage files in `path`
+    - `failed` - `true` after a write failed: records are dropped until the log retries, 5 minutes later
 - `pinned_helper_models` - Loaded pinned routing-helper models, counted per model type.
   - How many pinned routing-helper models of this type are loaded.
 <!-- END GENERATED: lemonade.health -->

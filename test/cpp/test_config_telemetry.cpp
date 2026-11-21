@@ -96,6 +96,39 @@ int main() {
     }
     check(threw_unknown_otlp, "rejects unknown telemetry.otlp subkey");
 
+    config.set({{"telemetry", {{"usage_log", {{"enabled", true}, {"content", "full"}, {"max_size_mb", 50}}}}}});
+    check(config.telemetry_usage_log_enabled() && config.telemetry_usage_log_content() == "full" &&
+              config.telemetry_usage_log_max_size_mb() == 50,
+          "accepts telemetry.usage_log settings");
+
+    config.set({{"telemetry", {{"usage_log", {{"content", "none"}}}}}});
+    check(config.telemetry_usage_log_enabled() && config.telemetry_usage_log_max_size_mb() == 50,
+          "telemetry.usage_log sibling keys preserved on partial set");
+
+    config.set({{"telemetry", {{"usage_log", {{"max_size_mb", -1}, {"max_days", -1}}}}}});
+    check(config.telemetry_usage_log_max_size_mb() == -1 && config.telemetry_usage_log_max_days() == -1,
+          "accepts -1 (unlimited) for telemetry.usage_log limits");
+
+    for (const json& bad : {json{{"content", "prompts"}}, json{{"max_size_mb", 0}}, json{{"max_days", 0}},
+                            json{{"max_size_mb", -2}}, json{{"max_days", -5}},
+                            json{{"enabled", "yes"}}, json{{"path", 1}}, json{{"bogus", 1}}}) {
+        bool threw = false;
+        try {
+            config.set({{"telemetry", {{"usage_log", bad}}}});
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        check(threw, ("rejects invalid telemetry.usage_log " + bad.dump()).c_str());
+    }
+
+    bool threw_old_key = false;
+    try {
+        config.set({{"telemetry", {{"file", {{"enabled", true}}}}}});
+    } catch (const std::invalid_argument&) {
+        threw_old_key = true;
+    }
+    check(threw_old_key, "rejects the old telemetry.file key");
+
     // 3. Test CLI dotted key config path parsing logic
     std::vector<std::string> cli_args = {
         "telemetry.otlp.endpoint=http://127.0.0.1:5555/v1/traces",

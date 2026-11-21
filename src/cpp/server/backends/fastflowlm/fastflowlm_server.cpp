@@ -462,10 +462,30 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
     try {
         json request = json::parse(request_body);
         request["model"] = checkpoint_;
+        // FLM reports token usage on a stream only when asked. When the client
+        // did not ask, Lemonade asks for telemetry and drops the extra chunk.
+        bool injected_usage = false;
+        if (sse && (endpoint == "/v1/chat/completions" || endpoint == "/v1/completions")) {
+            json& stream_options = request["stream_options"];
+            if (!stream_options.is_object()) {
+                stream_options = json::object();
+            }
+            if (!stream_options.value("include_usage", false)) {
+                stream_options["include_usage"] = true;
+                injected_usage = true;
+            }
+        }
         std::string modified_body = request.dump();
 
-        WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse,
+        if (!injected_usage) {
+            WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse,
+                                                     timeout_seconds, telemetry_callback);
+            return;
+        }
+        UsageChunkFilter filter(sink);
+        WrappedServer::forward_streaming_request(endpoint, modified_body, filter.sink(), sse,
                                                  timeout_seconds, telemetry_callback);
+        filter.finish();
     } catch (const json::exception& e) {
         // If JSON parsing fails, forward original request
         WrappedServer::forward_streaming_request(endpoint, request_body, sink, sse,

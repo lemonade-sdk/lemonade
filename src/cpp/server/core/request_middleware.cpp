@@ -186,6 +186,7 @@ httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::
                                                                  httplib::Response& res) {
     telemetry::g_request_start_time = std::chrono::steady_clock::now();
     telemetry::g_current_auth_token = "";
+    telemetry::g_client_ip = req.remote_addr;
     if (req.has_header("X-Client-Session-Id")) {
         telemetry::g_current_client_session_id = req.get_header_value("X-Client-Session-Id");
     } else {

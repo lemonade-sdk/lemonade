@@ -8,6 +8,7 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/http_listener.h"
 #include "lemon/version.h"
+#include "../../../usage_log.h"
 
 namespace lemon {
 namespace {
@@ -93,7 +94,18 @@ ordered_json health_schema() {
                 "required": ["enabled"],
                 "properties": {
                     "enabled": {"type": "boolean", "description": "Whether telemetry collection is active"},
-                    "captures": {"type": "array", "items": {"enum": ["inputs", "outputs", "thinking"]}, "description": "The parts of each request telemetry captures, present when `enabled` is `true`."}
+                    "captures": {"type": "array", "items": {"enum": ["inputs", "outputs", "thinking"]}, "description": "The parts of each request telemetry captures, present when `enabled` is `true`."},
+                    "usage_log": {
+                        "type": "object",
+                        "description": "State of the [local usage log](../guide/telemetry.md#local-usage-log). Only `enabled` is present when it is off.",
+                        "required": ["enabled"],
+                        "properties": {
+                            "enabled": {"type": "boolean", "description": "Whether `telemetry.usage_log.enabled` is set"},
+                            "path": {"type": "string", "description": "Directory the files are written to"},
+                            "disk_usage_bytes": {"type": "integer", "description": "Total size of the usage files in `path`"},
+                            "failed": {"type": "boolean", "description": "`true` after a write failed: records are dropped until the log retries, 5 minutes later"}
+                        }
+                    }
                 }
             },
             "pinned_helper_models": {"type": "object", "additionalProperties": {"type": "integer", "description": "How many pinned routing-helper models of this type are loaded."}, "description": "Loaded pinned routing-helper models, counted per model type."}
@@ -155,6 +167,7 @@ public:
             }
             telemetry_info["captures"] = captures;
         }
+        telemetry_info["usage_log"] = usage::status();
         response["telemetry"] = telemetry_info;
 
         std::string loaded_model = ctx_.router->get_loaded_model();

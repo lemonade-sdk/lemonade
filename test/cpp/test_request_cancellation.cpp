@@ -568,6 +568,63 @@ bool test_streaming_proxy_cancel() {
     return failures == 0;
 }
 
+bool test_streaming_proxy_cancel_token_marks_abort() {
+    int failures = 0;
+    auto check = [&failures](bool condition, const char* name) {
+        std::printf("[%s] %s\n", condition ? "PASS" : "FAIL", name);
+        if (!condition) ++failures;
+    };
+
+    httplib::Server backend;
+    std::atomic<bool> release_backend{false};
+    backend.Post("/v1/chat/completions", [&](const httplib::Request&, httplib::Response& res) {
+        res.set_chunked_content_provider("text/event-stream", [&](size_t, httplib::DataSink& sink) {
+            const std::string chunk = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n";
+            sink.write(chunk.data(), chunk.size());
+            while (!release_backend.load(std::memory_order_acquire)) {
+                std::this_thread::sleep_for(10ms);
+            }
+            return false;
+        });
+    });
+    const int port = backend.bind_to_any_port("127.0.0.1");
+    if (port <= 0) {
+        std::printf("[FAIL] failed to bind mock backend for cancel token test\n");
+        return false;
+    }
+    std::thread backend_thread([&backend]() { backend.listen_after_bind(); });
+    backend.wait_until_ready();
+
+    httplib::DataSink downstream;
+    downstream.write = [](const char*, size_t) { return true; };
+    downstream.done = []() {};
+    downstream.done_with_trailer = [](const httplib::Headers&) {};
+    downstream.is_writable = []() { return true; };
+
+    std::atomic<bool> cancel_flag{false};
+    std::thread cancel_thread([&]() {
+        std::this_thread::sleep_for(300ms);
+        cancel_flag.store(true);
+    });
+
+    lemon::StreamingProxy::TelemetryData seen;
+    lemon::StreamingProxy::forward_sse_stream(
+        "http://127.0.0.1:" + std::to_string(port) + "/v1/chat/completions",
+        R"({"model":"test-model","stream":true})", downstream,
+        [&](const lemon::StreamingProxy::TelemetryData& telemetry) { seen = telemetry; },
+        10, nullptr, 1000, lemon::utils::CancelToken{&cancel_flag, nullptr});
+
+    cancel_thread.join();
+    release_backend.store(true, std::memory_order_release);
+    backend.stop();
+    backend_thread.join();
+
+    check(seen.client_disconnected, "StreamingProxy: a cancelled stream is reported as aborted");
+    check(!seen.error_message.empty(), "StreamingProxy: a cancelled stream is not reported as a success");
+    check(seen.output_chunks == 1, "StreamingProxy: output relayed before the cancel is counted");
+    return failures == 0;
+}
+
 } // namespace
 
 int main() {
@@ -579,6 +636,7 @@ int main() {
     ok = test_wrapped_server_multipart_cancel() && ok;
     ok = test_http_client_direct_cancellation() && ok;
     ok = test_streaming_proxy_cancel() && ok;
+    ok = test_streaming_proxy_cancel_token_marks_abort() && ok;
 
     if (ok) {
         std::printf("All request cancellation tests passed!\n");
