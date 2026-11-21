@@ -243,6 +243,75 @@ Returns a result from lemonade_unload_model, including structured content on suc
 |---|:---:|---|---|
 | `model_name` | yes | `{"type":"string"}` | Exact model ID to unload. |
 
+### `lemonade_get_loaded_models`
+
+List the models currently loaded in Lemonade, including runtime recipe/type/device information reported by the server. Use this when the question is specifically about current residency; use lemonade_list_models for broader discovery.
+
+**Returns**
+
+Returns a result from lemonade_get_loaded_models, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true
+}
+```
+
+This tool takes no arguments.
+
+### `lemonade_pull_model`
+
+Download or register a model using the same implementation as POST /v1/pull. For a built-in/registered model, pass its exact model_name. For a custom remote model, pass a user.* model_name plus checkpoint and recipe. This call is synchronous and may take a long time for large model downloads.
+
+**Returns**
+
+Returns a result from lemonade_pull_model, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": true,
+  "readOnlyHint": false
+}
+```
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `checkpoint` | no | `{"type":"string"}` | Optional remote repository/checkpoint selector accepted by /pull. |
+| `do_not_upgrade` | no | `{"type":"boolean"}` | Skip upgrading an already-cached registered model. |
+| `model_name` | yes | `{"type":"string"}` | Exact registered model ID, or user.* ID for a new custom model. |
+| `recipe` | no | `{"type":"string"}` | Recipe required when registering a custom checkpoint. |
+| `source` | no | `{"type":"string"}` | Optional remote registry source, for example huggingface or modelscope. |
+
+### `lemonade_delete_model`
+
+Delete exactly one model using the same implementation as POST /v1/delete. This is destructive. The model_name must identify an existing model exactly and confirm must be true. A loaded model is unloaded first, matching the REST endpoint.
+
+**Returns**
+
+Returns a result from lemonade_delete_model, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": true,
+  "openWorldHint": false,
+  "readOnlyHint": false
+}
+```
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `confirm` | yes | `{"enum":[true],"type":"boolean"}` | Must be true to execute deletion. |
+| `model_name` | yes | `{"type":"string"}` | Exact existing model ID to delete. |
+
 ### `lemonade_list_models`
 
 List models known to the Lemonade server. ALWAYS call this first if you don't already know the exact model name to use for chat/transcribe/image — passing a wrong name may trigger a multi-GB download. Returns a summary text block plus a JSON block with `{loaded, available, suggested_to_pull, recommended_chat_model}`.
@@ -378,6 +447,8 @@ tools reuse Lemonade's existing server implementations:
 |-----------|----------|
 | Model detail | `lemonade_get_model_info` |
 | Load / unload | `lemonade_load_model`, `lemonade_unload_model` |
+| Pull / delete | `lemonade_pull_model`, `lemonade_delete_model` |
+| Model residency | `lemonade_get_loaded_models` |
 
 Lifecycle actions can change local model state and consume resources.
 MCP annotations and `confirm: true` for model deletion help clients
