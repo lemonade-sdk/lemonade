@@ -120,13 +120,18 @@ const tests = [
       );
       assertMatches(
         source,
-        /if \(components\.length > 0\)[\s\S]*?for \(const componentName of components\)[\s\S]*?loadModelRuntime\(componentInfo \|\| componentName, visited\)/,
-        'Loading a collection should recursively load its concrete components.',
+        /if \(components\.length > 0\)[\s\S]*?for \(const componentName of components\)[\s\S]*?loadModelRuntime\(componentInfo \|\| componentName, targets, visited\)/,
+        'Loading a collection should resolve each concrete component as a job step.',
       );
       assertIncludes(
         source,
-        'selected virtual model in the UI',
-        'The collection should remain a virtual selection after its components load.',
+        'targets.push({ name, recipeOptions, info });',
+        'Concrete models must become load-job targets.',
+      );
+      assertMatches(
+        source,
+        /if \(job\.status === 'completed'\)[\s\S]*?onModelSelect\(name\)/,
+        'A completed collection job must select the original virtual collection.',
       );
     },
   },
