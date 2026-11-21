@@ -1,0 +1,223 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp-hrx/hrx": "hrx-b99"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM5-1B-HRX",
+      "results": [
+        {
+          "backend": "hrx",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp-hrx",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 1076.127811,
+                "mean": 1065.3077320000002,
+                "min": 1052.414815,
+                "p50": 1067.38057,
+                "p95": 1075.2530869
+              },
+              "failed_runs": 0,
+              "input_tokens": 3065,
+              "memory_peak_gb": 4.6,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 4731.993780404074,
+              "tps": {
+                "max": 48.77347544383863,
+                "mean": 46.19381732915693,
+                "min": 44.51045527167776,
+                "p50": 45.297521271954395,
+                "p95": 48.425880026650205
+              },
+              "ttft_ms": {
+                "max": 657.575,
+                "mean": 647.7933333333334,
+                "min": 641.702,
+                "p50": 644.103,
+                "p95": 656.2278
+              },
+              "vram_peak_gb": 1.62408447265625
+            }
+          ]
+        },
+        {
+          "backend": "hrx",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp-hrx",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 14329.371339,
+                "mean": 13731.239134333335,
+                "min": 13095.577224,
+                "p50": 13768.76884,
+                "p95": 14273.3110891
+              },
+              "failed_runs": 0,
+              "input_tokens": 23649,
+              "memory_peak_gb": 5.5,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 1927.6260270146101,
+              "tps": {
+                "max": 14.274745270927154,
+                "mean": 13.31224940790819,
+                "min": 12.617148564268103,
+                "p50": 13.044854388529318,
+                "p95": 14.15175618268737
+              },
+              "ttft_ms": {
+                "max": 12860.199,
+                "mean": 12285.249000000002,
+                "min": 11747.422,
+                "p50": 12248.126,
+                "p95": 12798.9917
+              },
+              "vram_peak_gb": 2.59356689453125
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-21T07:19:46Z",
+      "accuracy": {
+        "passed": 29,
+        "total": 45,
+        "score": 0.6444,
+        "questions_version": "7806a316d254",
+        "failures": [
+          {
+            "id": "reason-widgets",
+            "response": " 100 widgets in 100 minutes.\n\nLet's use the formula: Time = (Number of widgets) / (Rate of one machine)\nRate of one machine = 1 widget / 1 minute = 1 widget per minute.\n\nTime = 100 widgets / (1 widget per minute)\nTime = 100 minutes.\n\nThe final answer is 100 minutes.\n\nThe final answer is 100 minutes.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-batball",
+            "response": "ll. The total cost of the bat and ball is $1.10, which is 110 cents. So, we can write the equation:\n\n\\[ (x + 1) + x = 110 \\]\n\nSimplify the equation:\n\n\\[ 2x + 1 = 110 \\]\n\nSubtract 1 from both sides:\n\n\\[ 2x = 109 \\]\n\nDivide both sides by 2:\n\n\\[ x = 54.5 \\]\n\nSo, the ball costs 54.5 cents.\n\nAnswer: 54.5",
+            "cut_off": false
+          },
+          {
+            "id": "reason-sisters",
+            "response": "thers, each brother has at least one sister (Alice).\n\n4. The information about Alice having 3 brothers and 1 sister does not provide any additional information about the siblings of the brothers.\n\n5. Therefore, we can conclude that each of Alice's brothers has at least one sister (Alice).\n\nAnswer: 1",
+            "cut_off": false
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "Answer: Wednesday",
+            "cut_off": false
+          },
+          {
+            "id": "fact-light",
+            "response": "eed of light in a vacuum is approximately 299,792 kilometers per second, but this value can change over time due to experimental measurements and theoretical advancements.\n\nIf you provide the specific value you're referring to, I can help you calculate or verify it.\n\nAnswer: I need more information.",
+            "cut_off": false
+          },
+          {
+            "id": "code-powassoc",
+            "response": "pression:\n\n1. `2 ** 3` means 2 raised to the power of 3, which equals 8.\n2. `8 ** 2` means 8 raised to the power of 2, which equals 64.\n\nSo, the code will print `64`.\n\nHere's the step-by-step calculation:\n\n- `2 ** 3` = 2 * 2 * 2 = 8\n- `8 ** 2` = 8 * 8 = 64\n\nTherefore, the output of the code is `64`.",
+            "cut_off": false
+          },
+          {
+            "id": "code-typeof",
+            "response": "` is a built-in JavaScript function that returns the type of the variable.\n- `null` is a special value in JavaScript that represents the null object.\n- The `typeof` function returns the type of the variable, so in this case, it returns `\"object\"`.\n\nSo, the output of the code will be:\n\n```\nobject\n```",
+            "cut_off": false
+          },
+          {
+            "id": "code-bool",
+            "response": "The code `print(bool(\"\"))` will print `False` because the boolean value of an empty string is `False`.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-miles",
+            "response": "n the prompt.\n\nI cannot answer the question \"How many kilometers are in 5 miles, to one decimal place?\" because I do not have the necessary information to perform the calculation.\n\nI would need the actual distance in miles to calculate the number of kilometers.\n\nAnswer: I cannot answer the question.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "Answer: 37",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-backwards",
+            "response": "Answer: anabnu",
+            "cut_off": false
+          },
+          {
+            "id": "json-sum",
+            "response": "```json\n{\"sum\": 2 + 3}\n```",
+            "cut_off": false
+          },
+          {
+            "id": "turn-dog",
+            "response": "I'm sorry, but I don't have information about your dog's name.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-remember",
+            "response": "I don't have access to the number you asked me to remember, so I can't add 100 to it.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-uppercase",
+            "response": "THE CAPITAL OF FRANCE IS PARIS.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "I'm sorry, but I don't have access to your personal information or the specific details of your flight. I can't provide information about your flight leaving at a particular time.",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [
+            "reason-batball"
+          ],
+          "repeat_errors": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-21T07:19:39Z",
+  "fork_id": "llamacpp-hrx",
+  "fork_label": "llama.cpp HRX (ROCm/ggml-staging-automation)",
+  "fork_repo": "ROCm/ggml-staging-automation",
+  "fork_version": "hrx-b148",
+  "rocm_version": null,
+  "fork_backend": "hrx",
+  "experimental": true,
+  "run_id": "44873533003",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44873533003",
+  "commit": "602a1f00bccce1622b513c45b49dd6ff40252ceb",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s03-d05-136753141123"
+}

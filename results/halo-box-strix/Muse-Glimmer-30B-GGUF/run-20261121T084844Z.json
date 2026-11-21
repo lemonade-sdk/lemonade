@@ -1,0 +1,142 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "draft": "unsloth/Muse-Glimmer-30B-GGUF:dflash-kquant.gguf",
+        "main": "unsloth/Muse-Glimmer-30B-GGUF:UD-Q4_K_XL",
+        "mmproj": "unsloth/Muse-Glimmer-30B-GGUF:mmproj-Muse-Glimmer-30B-BF16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Muse-Glimmer-30B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 8262.793473,
+                "mean": 8260.059411666667,
+                "min": 8258.673399,
+                "p50": 8258.711363,
+                "p95": 8262.385262
+              },
+              "failed_runs": 0,
+              "input_tokens": 3109,
+              "memory_peak_gb": 25.8,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 415.45037042636187,
+              "tps": {
+                "max": 25.229957786296946,
+                "mean": 25.208120150229913,
+                "min": 25.195797871352905,
+                "p50": 25.19860479303988,
+                "p95": 25.22682248697124
+              },
+              "ttft_ms": {
+                "max": 7487.389,
+                "mean": 7483.446333333333,
+                "min": 7479.676,
+                "p50": 7483.274,
+                "p95": 7486.977500000001
+              },
+              "vram_peak_gb": 21.260082244873047
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 62645.622833,
+                "mean": 62639.50661433333,
+                "min": 62635.759657,
+                "p50": 62637.137353,
+                "p95": 62644.774285
+              },
+              "failed_runs": 0,
+              "input_tokens": 23693,
+              "memory_peak_gb": 26.2,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 384.20443996581565,
+              "tps": {
+                "max": 21.39309588498171,
+                "mean": 21.217726484838362,
+                "min": 20.97838784401796,
+                "p50": 21.281695725515412,
+                "p95": 21.38195586903508
+              },
+              "ttft_ms": {
+                "max": 61671.112,
+                "mean": 61667.689333333336,
+                "min": 61664.607,
+                "p50": 61667.349,
+                "p95": 61670.7357
+              },
+              "vram_peak_gb": 21.641986846923828
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-21T08:53:40Z",
+      "accuracy": {
+        "passed": 45,
+        "total": 45,
+        "score": 1.0,
+        "questions_version": "7806a316d254",
+        "failures": [],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "repeat_errors": [],
+          "empty_replies": 0,
+          "cut_off": 1
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-21T08:53:40Z",
+  "fork_id": "halo-box-strix",
+  "fork_label": "llama.cpp Halo-box",
+  "fork_repo": "halo-box/strix-llama.cpp",
+  "fork_version": "b1066",
+  "rocm_version": "10.1.0a20260910",
+  "fork_backend": "halo-box-strix",
+  "experimental": true,
+  "run_id": "44873533003",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44873533003",
+  "commit": "602a1f00bccce1622b513c45b49dd6ff40252ceb",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s03-d03-136753141085"
+}

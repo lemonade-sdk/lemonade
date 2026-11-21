@@ -1,0 +1,148 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "ggml-org/gpt-oss-120b-GGUF:gpt-oss-120b-MXFP4.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "gpt-oss-120b-mxfp-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 3630.694263,
+                "mean": 3603.6862433333336,
+                "min": 3586.822669,
+                "p50": 3593.541798,
+                "p95": 3626.9790164999995
+              },
+              "failed_runs": 0,
+              "input_tokens": 3120,
+              "memory_peak_gb": 62.9,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 980.8304207909383,
+              "tps": {
+                "max": 47.72790072596649,
+                "mean": 47.39097472408139,
+                "min": 46.87712026448565,
+                "p50": 47.56790318179201,
+                "p95": 47.71190097154904
+              },
+              "ttft_ms": {
+                "max": 3204.697,
+                "mean": 3181.069,
+                "min": 3165.154,
+                "p50": 3173.356,
+                "p95": 3201.5629000000004
+              },
+              "vram_peak_gb": 59.23942184448242
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 30977.876714,
+                "mean": 30943.752690666664,
+                "min": 30907.737311,
+                "p50": 30945.644047,
+                "p95": 30974.653447300003
+              },
+              "failed_runs": 0,
+              "input_tokens": 23704,
+              "memory_peak_gb": 64.0,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 779.9867373193216,
+              "tps": {
+                "max": 39.9340038042393,
+                "mean": 39.63824914963529,
+                "min": 39.08355240692972,
+                "p50": 39.89719123773686,
+                "p95": 39.93032254758906
+              },
+              "ttft_ms": {
+                "max": 30428.784,
+                "mean": 30390.297333333332,
+                "min": 30347.063,
+                "p50": 30395.045,
+                "p95": 30425.4101
+              },
+              "vram_peak_gb": 60.253177642822266
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-21T06:54:29Z",
+      "accuracy": {
+        "passed": 44,
+        "total": 45,
+        "score": 0.9778,
+        "questions_version": "7806a316d254",
+        "failures": [
+          {
+            "id": "tool-search",
+            "response": "We need to find wireless headphones under $100 that are in stock. Use search_products function with query \"wireless headphones\", max_price 100, in_stock true.",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [
+            "py-fizzbuzz"
+          ],
+          "repeat_errors": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-21T06:54:29Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20261120",
+  "rocm_version": "10.1.0a20260822",
+  "fork_backend": "rocm-gfx11",
+  "experimental": false,
+  "run_id": "44873533003",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44873533003",
+  "commit": "602a1f00bccce1622b513c45b49dd6ff40252ceb",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s03-d05-136753141123"
+}

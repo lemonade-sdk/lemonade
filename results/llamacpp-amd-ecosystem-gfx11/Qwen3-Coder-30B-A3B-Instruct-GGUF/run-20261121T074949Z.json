@@ -1,0 +1,166 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 2073.826816,
+                "mean": 2066.313372333333,
+                "min": 2057.350849,
+                "p50": 2067.762452,
+                "p95": 2073.2203796
+              },
+              "failed_runs": 0,
+              "input_tokens": 3208,
+              "memory_peak_gb": 21.5,
+              "name": "context-4k",
+              "output_tokens": 2,
+              "pp_tps": 1581.0532157492405,
+              "tps": {
+                "max": 35.18896474065733,
+                "mean": 34.934401369567766,
+                "min": 34.70535156521136,
+                "p50": 34.9088878028346,
+                "p95": 35.16095704687506
+              },
+              "ttft_ms": {
+                "max": 2037.546,
+                "mean": 2029.055,
+                "min": 2019.294,
+                "p50": 2030.325,
+                "p95": 2036.8239
+              },
+              "vram_peak_gb": 18.04084014892578
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 35005.079304,
+                "mean": 34984.91346266667,
+                "min": 34950.68441,
+                "p50": 34998.976674,
+                "p95": 35004.469041
+              },
+              "failed_runs": 0,
+              "input_tokens": 24788,
+              "memory_peak_gb": 24.1,
+              "name": "context-32k",
+              "output_tokens": 2,
+              "pp_tps": 710.3036184581141,
+              "tps": {
+                "max": 22.75830678197542,
+                "mean": 22.40435328709252,
+                "min": 21.829294913774284,
+                "p50": 22.625458165527853,
+                "p95": 22.745021920330664
+              },
+              "ttft_ms": {
+                "max": 34916.851,
+                "mean": 34897.771,
+                "min": 34862.043,
+                "p50": 34914.419,
+                "p95": 34916.607800000005
+              },
+              "vram_peak_gb": 20.69213104248047
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-21T08:25:48Z",
+      "accuracy": {
+        "passed": 40,
+        "total": 45,
+        "score": 0.8889,
+        "questions_version": "7806a316d254",
+        "failures": [
+          {
+            "id": "tool-weather",
+            "response": "[{\"arguments\": \"{\\\"city\\\":\\\"Paris\\\",\\\"unit\\\":\\\"celsius\\\"}\", \"name\": \"get_weather\"}, {\"arguments\": \"{\\\"amount\\\":100,\\\"from_currency\\\":\\\"EUR\\\",\\\"to_currency\\\":\\\"USD\\\"}\", \"name\": \"convert_currency\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-currency",
+            "response": "[{\"arguments\": \"{\\\"amount\\\":50,\\\"from_currency\\\":\\\"USD\\\",\\\"to_currency\\\":\\\"EUR\\\"}\", \"name\": \"convert_currency\"}, {\"arguments\": \"{\\\"city\\\":\\\"Paris\\\",\\\"unit\\\":\\\"celsius\\\"}\", \"name\": \"get_weather\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-event",
+            "response": "[{\"arguments\": \"{\\\"attendees\\\":[\\\"alice\\\", \\\"bob\\\"],\\\"date\\\":\\\"2026-11-05\\\",\\\"title\\\":\\\"Design review\\\"}\", \"name\": \"create_event\"}, {\"arguments\": \"{\\\"attendees\\\":[\\\"alice\\\", \\\"bob\\\"],\\\"date\\\":\\\"2026-11-05\\\",\\\"title\\\":\\\"Design review\\\"}\", \"name\": \"create_event\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "tool-search",
+            "response": "[{\"arguments\": \"{\\\"query\\\":\\\"wireless headphones\\\",\\\"max_price\\\":100,\\\"in_stock\\\":true}\", \"name\": \"search_products\"}, {\"arguments\": \"{\\\"query\\\":\\\"wireless headphones\\\",\\\"max_price\\\":100,\\\"in_stock\\\":true}\", \"name\": \"search_products\"}]",
+            "cut_off": false
+          },
+          {
+            "id": "needle-32k-late",
+            "response": "tion 89 checked at 14:26, all nominal.\nEntry 00962: section 90 checked at 21:39, all nominal.\nEntry 00963: section 91 checked at 04:52, all nominal.\nEntry 00964: section 92 checked at 11:05, all nominal.\nEntry 00965: section 93 checked at 18:18, all nominal.\nEntry 00966: section 94 checked at 01:31,",
+            "cut_off": true
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "repeat_errors": [],
+          "empty_replies": 0,
+          "cut_off": 1
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-21T08:25:47Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20261120",
+  "rocm_version": "10.1.0a20260822",
+  "fork_backend": "rocm-gfx11",
+  "experimental": false,
+  "run_id": "44873533003",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44873533003",
+  "commit": "602a1f00bccce1622b513c45b49dd6ff40252ceb",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s03-d01-136753141045"
+}

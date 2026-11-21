@@ -1,0 +1,202 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM-V-4.6-gguf:MiniCPM-V-4_6-Q4_K_M.gguf",
+        "mmproj": "OpenBMB/MiniCPM-V-4.6-gguf:mmproj-model-f16.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM-V-4.6-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 521.643137,
+                "mean": 509.9194713333333,
+                "min": 498.969785,
+                "p50": 509.145492,
+                "p95": 520.3933725
+              },
+              "failed_runs": 0,
+              "input_tokens": 3210,
+              "memory_peak_gb": 6.0,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 8115.67886416976,
+              "tps": {
+                "max": 187.41553970743448,
+                "mean": 181.5439967098563,
+                "min": 175.5147663344203,
+                "p50": 181.7016840877141,
+                "p95": 186.84415414546243
+              },
+              "ttft_ms": {
+                "max": 403.337,
+                "mean": 395.63100000000003,
+                "min": 387.907,
+                "p50": 395.649,
+                "p95": 402.5682
+              },
+              "vram_peak_gb": 2.133373260498047
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 3982.245078,
+                "mean": 3965.214297,
+                "min": 3954.230463,
+                "p50": 3959.16735,
+                "p95": 3979.9373051999996
+              },
+              "failed_runs": 0,
+              "input_tokens": 24790,
+              "memory_peak_gb": 6.2,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 6532.944853929136,
+              "tps": {
+                "max": 149.49212019166464,
+                "mean": 148.14614854178004,
+                "min": 145.77930547669834,
+                "p50": 149.1670199569771,
+                "p95": 149.4596101681959
+              },
+              "ttft_ms": {
+                "max": 3801.576,
+                "mean": 3794.6299999999997,
+                "min": 3783.525,
+                "p50": 3798.789,
+                "p95": 3801.2973
+              },
+              "vram_peak_gb": 2.4888839721679688
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-21T08:24:15Z",
+      "accuracy": {
+        "passed": 33,
+        "total": 45,
+        "score": 0.7333,
+        "questions_version": "7806a316d254",
+        "failures": [
+          {
+            "id": "reason-batball",
+            "response": "00 cents).\n\nThe total cost is $1.10, which is 110 cents. So we have the equation:\n\n\\[ b + (b + 10) = 110 \\]\n\nSimplify the equation:\n\n\\[ 2b + 10 = 110 \\]\n\nSubtract 10 from both sides:\n\n\\[ 2b = 100 \\]\n\nDivide both sides by 2:\n\n\\[ b = 50 \\]\n\nSo the ball costs 50 cents.\n\nAnswer: The ball costs 50 cents.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-sisters",
+            "response": "n is interpreted as how many sisters does each brother have besides themselves, but the standard is to count all siblings. So the correct count is: each brother has Alice (the sister) and the other sister, so two sisters.\n\nAnswer: Each of Alice's brothers has two sisters: Alice and her other sister.",
+            "cut_off": false
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "We know that adding 10 days to a Monday brings us to Friday, because Monday is the 1st, Tuesday the 2nd, ..., and 10 days later is the 10th, which is a Friday.\n\nTherefore, the day of the week 10 days after a Monday is a Friday.\n\nAnswer: Friday",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "To convert Fahrenheit to Celsius, we use the formula:\n\n\u00b0C = (\u00b0F - 32) \u00d7 5/9\n\nFor 100\u00b0F:\n\n\u00b0C = (100 - 32) \u00d7 5/9  \n\u00b0C = 68 \u00d7 5/9  \n\u00b0C = 350/9  \n\u00b0C \u2248 38.888...\n\nRounded to the nearest whole number, that's 39.\n\nAnswer: 39",
+            "cut_off": false
+          },
+          {
+            "id": "json-primes",
+            "response": "[\"2\", \"3\", \"5\", \"7\", \"11\"]",
+            "cut_off": false
+          },
+          {
+            "id": "json-extract",
+            "response": "{\n  \"name\": \"Lopez\",\n  \"age\": 34\n}",
+            "cut_off": false
+          },
+          {
+            "id": "turn-list",
+            "response": ", the items are apples, bread, milk, eggs. Remove bread, so apples, milk, eggs. Add cheese, so apples, milk, eggs, cheese. So the items are in order: 1. apples, 2. milk, 3. eggs, 4. cheese. So the third item is eggs.\n\nAnswer: the third item on the list after removing bread and adding cheese is eggs.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-uppercase",
+            "response": "Let's analyze the question. THE CAPITAL OF FRANCE IS PARIS. NOW, I'll provide the final answer.\n\nAnswer: THE CAPITAL OF FRANCE IS PARIS.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "Based on the information provided, your flight leaves at 3pm. However, considering the earlier correction, it actually leaves two hours later than initially stated.\n\nAnswer: Your flight leaves at 3pm, but it actually leaves two hours later than initially mentioned.",
+            "cut_off": false
+          },
+          {
+            "id": "py-palindrome",
+            "response": "```python\ndef is_palindrome(s):\n    cleaned = ''.join(char for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-anagram",
+            "response": "```python\ndef is_anagram(a, b):\n    # Remove spaces and convert to lower case\n    cleaned_a = a.replace(\" \", \"\").lower()\n    cleaned_b = b.replace(\" \", \"\").lower()\n    # Check if the cleaned strings are equal\n    return cleaned_a == cleaned_b\n```",
+            "cut_off": false
+          },
+          {
+            "id": "py-roman",
+            "response": " += roman_map[s[i]]\n        \n        # If it's the last character, don't add the next one\n        if i + 1 < len(s):\n            # Subtract the value of the next Roman numeral if it's smaller\n            if s[i+1] in roman_map:\n                integer -= roman_map[s[i+1]]\n    \n    return integer\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "repeat_errors": [],
+          "empty_replies": 0,
+          "cut_off": 1
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-21T08:24:15Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20261120",
+  "rocm_version": "10.1.0a20260822",
+  "fork_backend": "rocm-gfx11",
+  "experimental": false,
+  "run_id": "44873533003",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44873533003",
+  "commit": "602a1f00bccce1622b513c45b49dd6ff40252ceb",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s03-d01-136753141045"
+}

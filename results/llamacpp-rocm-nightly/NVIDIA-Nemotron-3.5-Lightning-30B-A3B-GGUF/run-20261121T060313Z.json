@@ -1,0 +1,146 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "unsloth/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF:NVIDIA-Nemotron-3.5-Lightning-30B-A3B-UD-Q4_K_XL.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 2548.539177,
+                "mean": 2539.6482586666666,
+                "min": 2531.155148,
+                "p50": 2539.250451,
+                "p95": 2547.6103044
+              },
+              "failed_runs": 0,
+              "input_tokens": 3168,
+              "memory_peak_gb": 28.0,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 1382.1665002034413,
+              "tps": {
+                "max": 81.82319299937986,
+                "mean": 80.71488349825556,
+                "min": 79.55116395913582,
+                "p50": 80.77029353625097,
+                "p95": 81.71790305306698
+              },
+              "ttft_ms": {
+                "max": 2301.773,
+                "mean": 2292.0743333333335,
+                "min": 2286.846,
+                "p50": 2287.604,
+                "p95": 2300.3561
+              },
+              "vram_peak_gb": 24.24169921875
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 18837.227213,
+                "mean": 18788.415044666664,
+                "min": 18754.516773,
+                "p50": 18773.501148,
+                "p95": 18830.8546065
+              },
+              "failed_runs": 0,
+              "input_tokens": 24416,
+              "memory_peak_gb": 28.3,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 1320.4155372315693,
+              "tps": {
+                "max": 75.02230926565005,
+                "mean": 74.6999331787708,
+                "min": 74.52470886334129,
+                "p50": 74.55278140732108,
+                "p95": 74.97535647981717
+              },
+              "ttft_ms": {
+                "max": 18540.218,
+                "mean": 18491.216,
+                "min": 18458.418,
+                "p50": 18475.012,
+                "p95": 18533.6974
+              },
+              "vram_peak_gb": 24.487903594970703
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-21T06:34:42Z",
+      "accuracy": {
+        "passed": 44,
+        "total": 45,
+        "score": 0.9778,
+        "questions_version": "7806a316d254",
+        "failures": [
+          {
+            "id": "turn-list",
+            "response": "milk",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "repeat_errors": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-21T06:30:19Z",
+  "fork_id": "llamacpp-rocm-nightly",
+  "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+  "fork_repo": "lemonade-sdk/llamacpp-rocm",
+  "fork_version": "b1383",
+  "rocm_version": "10.3.0a20261120",
+  "fork_backend": "rocm-nightly",
+  "experimental": false,
+  "run_id": "44873533003",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44873533003",
+  "commit": "602a1f00bccce1622b513c45b49dd6ff40252ceb",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s03-d03-136753141085"
+}

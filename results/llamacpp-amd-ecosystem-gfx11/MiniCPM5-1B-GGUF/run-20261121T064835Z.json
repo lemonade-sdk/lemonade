@@ -1,0 +1,216 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1338"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "MiniCPM5-1B-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 539.571642,
+                "mean": 534.4498193333334,
+                "min": 530.798297,
+                "p50": 532.979519,
+                "p95": 538.9124297000001
+              },
+              "failed_runs": 0,
+              "input_tokens": 3065,
+              "memory_peak_gb": 4.6,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 7291.978497303714,
+              "tps": {
+                "max": 178.724284867697,
+                "mean": 173.9118080064064,
+                "min": 168.25028558272157,
+                "p50": 174.76085356880057,
+                "p95": 178.32794173780738
+              },
+              "ttft_ms": {
+                "max": 422.187,
+                "mean": 420.329,
+                "min": 419.286,
+                "p50": 419.514,
+                "p95": 421.91970000000003
+              },
+              "vram_peak_gb": 1.2249717712402344
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 6890.463969,
+                "mean": 6878.403591666666,
+                "min": 6870.220095,
+                "p50": 6874.526711,
+                "p95": 6888.870243200001
+              },
+              "failed_runs": 0,
+              "input_tokens": 23649,
+              "memory_peak_gb": 5.0,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 3529.1664606212476,
+              "tps": {
+                "max": 120.0639498511839,
+                "mean": 118.2777153852979,
+                "min": 117.10756638149947,
+                "p50": 117.66162992321031,
+                "p95": 119.82371785838654
+              },
+              "ttft_ms": {
+                "max": 6713.792,
+                "mean": 6701.027999999999,
+                "min": 6693.569,
+                "p50": 6695.723,
+                "p95": 6711.985100000001
+              },
+              "vram_peak_gb": 1.9093704223632812
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-21T06:52:57Z",
+      "accuracy": {
+        "passed": 30,
+        "total": 45,
+        "score": 0.6667,
+        "questions_version": "7806a316d254",
+        "failures": [
+          {
+            "id": "reason-sisters",
+            "response": "thers, each brother has at least one sister (Alice).\n\n4. The information about Alice having 3 brothers and 1 sister does not provide any additional information about the siblings of the brothers.\n\n5. Therefore, we can conclude that each of Alice's brothers has at least one sister (Alice).\n\nAnswer: 1",
+            "cut_off": false
+          },
+          {
+            "id": "reason-day-fwd",
+            "response": "Answer: Wednesday",
+            "cut_off": false
+          },
+          {
+            "id": "fact-light",
+            "response": "imately 299,792 kilometers per second, but this value can change over time due to experimental measurements and theoretical advancements.\n\nIf you provide the specific speed of light you're referring to, I can help you calculate or explain it.\n\nAnswer: I need more information to answer your question.",
+            "cut_off": false
+          },
+          {
+            "id": "code-powassoc",
+            "response": "pression:\n\n1. `2 ** 3` means 2 raised to the power of 3, which equals 8.\n2. `8 ** 2` means 8 raised to the power of 2, which equals 64.\n\nSo, the code will print `64`.\n\nHere's the step-by-step calculation:\n\n- `2 ** 3` = 2 * 2 * 2 = 8\n- `8 ** 2` = 8 * 8 = 64\n\nTherefore, the output of the code is `64`.",
+            "cut_off": false
+          },
+          {
+            "id": "code-typeof",
+            "response": "t-in JavaScript function that returns the type of the variable.\n- `null` is a special value in JavaScript that represents the null object.\n- The `typeof` function returns the type of the variable, which in this case is `\"object\"`.\n\nSo, when you run this code, it will print `\"object\"` to the console.",
+            "cut_off": false
+          },
+          {
+            "id": "code-bool",
+            "response": "The code `print(bool(\"\"))` will print `False` because the boolean value of an empty string is `False`.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-miles",
+            "response": "n the prompt.\n\nI cannot answer the question \"How many kilometers are in 5 miles, to one decimal place?\" because I do not have the necessary information to perform the calculation.\n\nI would need the actual distance in miles to calculate the number of kilometers.\n\nAnswer: I cannot answer the question.",
+            "cut_off": false
+          },
+          {
+            "id": "unit-fahrenheit",
+            "response": "Answer: 37",
+            "cut_off": false
+          },
+          {
+            "id": "fmt-backwards",
+            "response": "Answer: anaburn",
+            "cut_off": false
+          },
+          {
+            "id": "json-sum",
+            "response": "```json\n{\"sum\": 2 + 3}\n```",
+            "cut_off": false
+          },
+          {
+            "id": "turn-dog",
+            "response": "I'm sorry, but I don't have information about your dog's name.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-remember",
+            "response": "I don't have access to the number you asked me to remember, so I can't add 100 to it.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-uppercase",
+            "response": "THE CAPITAL OF FRANCE IS PARIS.",
+            "cut_off": false
+          },
+          {
+            "id": "turn-correction",
+            "response": "I'm sorry, but I don't have access to your personal information or the specific details of your flight. I can only provide general information about flights and travel. If you have any other questions or need assistance with something else, feel free to ask.",
+            "cut_off": false
+          },
+          {
+            "id": "py-intervals",
+            "response": "0], intervals[0][1]]\n    for current_start, current_end in intervals[1:]:\n        last_start, last_end = merged[-1]\n        if current_start <= last_end:\n            merged[-1][1] = max(last_end, current_end)\n        else:\n            merged.append([current_start, current_end])\n    return merged\n```",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [],
+          "repeat_errors": [],
+          "empty_replies": 0,
+          "cut_off": 1
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-21T06:52:57Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20261120",
+  "rocm_version": "10.1.0a20260822",
+  "fork_backend": "rocm-gfx11",
+  "experimental": false,
+  "run_id": "44873533003",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44873533003",
+  "commit": "602a1f00bccce1622b513c45b49dd6ff40252ceb",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s03-d05-136753141123"
+}
