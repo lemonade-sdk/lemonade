@@ -1623,6 +1623,12 @@ jobs:
       - name: Print the Docker version
         run: docker --version
 
+      # The .deb needs libcpp-httplib0.26, which 24.04 has only in this PPA, and
+      # the R9700 runner image does not ship with it.
+      - name: Add the Lemonade PPA
+        if: matrix.runner == 'radeon-r9700'
+        run: sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge
+
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb
         with:
