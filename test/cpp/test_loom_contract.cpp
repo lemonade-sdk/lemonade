@@ -279,6 +279,17 @@ void check_request_contract() {
     check("Without the template switch the request keeps the user's text and effort",
           untouched["reasoning_effort"] == "none" &&
               untouched["messages"][0]["content"] == "/no_think\nHello");
+
+    const json raw_response = {{"id", "loom-1"}, {"model", "qwen3.8-27b"}, {"choices", json::array()}};
+    check("Response model is normalized to the requested Lemonade model id",
+          loom::normalize_chat_response(raw_response, {{"model", "Qwen3.8-27B-Loom"}}, "fallback")["model"] ==
+              "Qwen3.8-27B-Loom");
+    check("Response model falls back when request omits model",
+          loom::normalize_chat_response(raw_response, json::object(), "Qwen3.8-27B-Loom")["model"] ==
+              "Qwen3.8-27B-Loom");
+    check("Error responses without model stay untouched",
+          !loom::normalize_chat_response({{"error", {{"message", "bad"}}}}, {{"model", "Qwen3.8-27B-Loom"}}, "fallback")
+               .contains("model"));
 }
 
 void check_readiness_contract() {

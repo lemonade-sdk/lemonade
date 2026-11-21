@@ -121,6 +121,7 @@ std::vector<std::string> build_server_argv(const std::string& model_dir, int por
 // chat_template_kwargs itself, so the `/no_think` prefix Lemonade adds for other
 // templates would reach the model as user text.
 json prepare_chat_request(json request, const std::string& model_id);
+json normalize_chat_response(json response, const json& request, const std::string& fallback_model);
 
 enum class Readiness { Pending, Ready, Failed };
 

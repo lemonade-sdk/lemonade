@@ -408,6 +408,15 @@ json prepare_chat_request(json request, const std::string& model_id) {
     return request;
 }
 
+json normalize_chat_response(json response, const json& request, const std::string& fallback_model) {
+    if (response.is_object() && response.contains("model")) {
+        const std::string requested = string_field(request, "model");
+        const std::string model = requested.empty() ? fallback_model : requested;
+        if (!model.empty()) response["model"] = model;
+    }
+    return response;
+}
+
 ReadinessState parse_readiness(const json& models, const json& status, const std::string& model_id) {
     if (models.is_object() && models.contains("data") && models["data"].is_array()) {
         for (const auto& entry : models["data"]) {

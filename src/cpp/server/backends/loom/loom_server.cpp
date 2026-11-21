@@ -494,7 +494,9 @@ void LoomServer::wait_for_bundle(const std::string& model_name) {
 }
 
 json LoomServer::chat_completion(const json& request) {
-    return forward_request("/v1/chat/completions", loom::prepare_chat_request(request, served_model_id_));
+    return loom::normalize_chat_response(
+        forward_request("/v1/chat/completions", loom::prepare_chat_request(request, served_model_id_)),
+        request, get_model_name());
 }
 
 void LoomServer::forward_streaming_request(const std::string& endpoint,
