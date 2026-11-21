@@ -3273,6 +3273,19 @@ if(BUILD_TESTING AND EXISTS "${_PULL_REGISTRY_TEST_SRC}")
     add_cpp_ci_test(PullRegistryTest CI ON COMMAND test_pull_registry)
 endif()
 
+set(_EXTRA_DIR_UPDATES_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_extra_dir_updates.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_EXTRA_DIR_UPDATES_TEST_SRC}")
+    add_executable(test_extra_dir_updates
+        test/cpp/test_extra_dir_updates.cpp
+    )
+    target_link_libraries(test_extra_dir_updates PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(ExtraDirUpdatesTest CI ON COMMAND test_extra_dir_updates)
+endif()
+
 set(_REGISTRY_PROVENANCE_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_registry_provenance.cpp"
 )

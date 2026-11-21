@@ -289,8 +289,8 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
         const FetchableRepository& repository = *repositories.at(ref.repo_id);
         const RepoListing& listing = listings.at(ref.repo_id);
         Placement where;
-        where.cache_dir =
-            path_to_utf8(cache_root / repository.cache_dir_name(ref.repo_id));
+        where.cache_dir = path_to_utf8(
+            artifacts().repo_cache_dir(info, ref.repo_id, repository.cache_dir_name(ref.repo_id)));
         where.revision =
             listing.revision.id.empty() ? listing.download_revision : listing.revision.id;
         const DownloadPlan part =
@@ -325,7 +325,22 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
     for (const auto& repo_id : repo_ids) {
         FetchableRepository& repository = *repositories.at(repo_id);
         const RepoListing& listing = listings.at(repo_id);
-        fs::path repo_cache = cache_root / repository.cache_dir_name(repo_id);
+        const std::string dir_name = repository.cache_dir_name(repo_id);
+        fs::path repo_cache = artifacts().repo_cache_dir(info, repo_id, dir_name);
+        if (repo_cache != cache_root / dir_name) {
+            // Falling back to the managed cache would silently move the model off
+            // the disk its owner chose for it, so an unwritable copy fails instead.
+            if (const std::error_code ec = utils::probe_directory_writable(repo_cache)) {
+                throw std::runtime_error(
+                    "Cannot update '" + info.model_name + "' in place: its files are in " +
+                    path_to_utf8(repo_cache) + " (extra_models_dir), which the Lemonade "
+                    "server cannot write to (" + ec.message() + "). Grant the server write "
+                    "access to that directory, or delete the model there and pull it again "
+                    "to download it into the models directory.");
+            }
+            LOG(INFO, "ModelManager") << "Updating " << repo_id << " in place in extra_models_dir: "
+                                      << path_to_utf8(repo_cache) << std::endl;
+        }
         ensure_create_directories(repo_cache);
         const std::string previous_ref = artifacts().active_snapshot_ref(repo_cache);
         const std::string snapshot_id =

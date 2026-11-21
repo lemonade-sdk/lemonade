@@ -109,6 +109,12 @@ class ModelArtifactStore {
     bool adopt_extra_cache(ModelInfo& info,
                            std::set<std::filesystem::path>* owned_paths = nullptr) const;
 
+    // The repository directory holding this model's copy of `repo_id`: the one in
+    // the extra models root when the model was adopted from there, otherwise the
+    // managed cache. An update must land where the copy it replaces lives.
+    std::filesystem::path repo_cache_dir(const ModelInfo& info, const std::string& repo_id,
+                                         const std::string& cache_dir_name) const;
+
     // Every required checkpoint present, uninterrupted, and valid to the backend
     // that reads it.
     bool complete(const ModelInfo& info) const;

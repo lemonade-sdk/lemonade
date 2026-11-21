@@ -1,12 +1,17 @@
 #include <lemon/utils/safe_fs.h>
 #include <lemon/utils/path_utils.h>
 
+#include <chrono>
 #include <stdexcept>
 #include <string>
 
 #ifdef _WIN32
 #include <windows.h>
 #include <Shlobj.h>
+#else
+#include <cerrno>
+#include <fcntl.h>
+#include <unistd.h>
 #endif
 
 namespace lemon {
@@ -78,6 +83,46 @@ void ensure_create_directories(const std::filesystem::path& path) {
     }
 }
 #endif
+
+std::error_code probe_directory_writable(const std::filesystem::path& dir) {
+    const auto tick = std::chrono::steady_clock::now().time_since_epoch().count();
+#ifdef _WIN32
+    const std::filesystem::path probe =
+        dir / (".lemonade-write-probe-" + std::to_string(GetCurrentProcessId()) + "-" +
+               std::to_string(tick));
+    HANDLE handle = CreateFileW(probe.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                                FILE_ATTRIBUTE_TEMPORARY | FILE_ATTRIBUTE_HIDDEN |
+                                    FILE_FLAG_DELETE_ON_CLOSE,
+                                nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return std::error_code(static_cast<int>(GetLastError()), std::system_category());
+    }
+    const char byte = 0;
+    DWORD written = 0;
+    std::error_code result;
+    if (!WriteFile(handle, &byte, 1, &written, nullptr) || written != 1) {
+        result = std::error_code(static_cast<int>(GetLastError()), std::system_category());
+    }
+    CloseHandle(handle);
+    return result;
+#else
+    const std::filesystem::path probe =
+        dir / (".lemonade-write-probe-" + std::to_string(getpid()) + "-" +
+               std::to_string(tick));
+    const int fd = ::open(probe.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
+    if (fd < 0) {
+        return std::error_code(errno, std::generic_category());
+    }
+    const char byte = 0;
+    std::error_code result;
+    if (::write(fd, &byte, 1) != 1) {
+        result = std::error_code(errno, std::generic_category());
+    }
+    ::close(fd);
+    ::unlink(probe.c_str());
+    return result;
+#endif
+}
 
 bool path_inside(const std::filesystem::path& path, const std::filesystem::path& root) {
     if (path.empty() || root.empty()) return false;

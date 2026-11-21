@@ -1166,6 +1166,32 @@ bool ModelArtifactStore::adopt_extra_cache(ModelInfo& info,
     return true;
 }
 
+fs::path ModelArtifactStore::repo_cache_dir(const ModelInfo& info, const std::string& repo_id,
+                                            const std::string& cache_dir_name) const {
+    const fs::path managed = utils::path_from_utf8(root()) / cache_dir_name;
+    const std::string extra_dir =
+        hooks_.extra_models_dir != nullptr ? hooks_.extra_models_dir() : std::string();
+    if (extra_dir.empty() || !info.source.empty() || repo_id.empty()) return managed;
+
+    // Compared against the repository directory, not the extra root: the root may
+    // contain the managed cache, and a managed copy must not read as adopted.
+    const fs::path extra_root = utils::path_from_utf8(extra_dir);
+    const fs::path extra_repo = extra_root / cache_dir_name;
+    const std::string main_repo = repo_id_from_checkpoint(info.checkpoint("main"));
+    const fs::path extra_main_repo = main_repo.empty() ? fs::path() :
+        extra_root / backends::hf_cache::repo_id_to_cache_dir_name(main_repo, registry_source_of(info));
+    for (const auto& [type, checkpoint] : info.checkpoints) {
+        if (repo_id_from_checkpoint(checkpoint) != repo_id) continue;
+        const fs::path resolved = utils::path_from_utf8(info.resolved_path(type));
+        if (resolved.empty()) continue;
+        if (path_inside(resolved, extra_repo) ||
+            (type != "main" && !extra_main_repo.empty() && path_inside(resolved, extra_main_repo))) {
+            return extra_repo;
+        }
+    }
+    return managed;
+}
+
 backends::DownloadPolicy ModelArtifactStore::download_policy(const ModelInfo& info) const {
     backends::BackendOpsContext ctx;
     ctx.artifacts = this;
