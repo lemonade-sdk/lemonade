@@ -35,6 +35,9 @@ const RouteArg kComponents{"components", ArgIn::JsonBody,
                            {{"type", "array"}, {"items", {{"type", "string"}}}}, false, Support::Available,
                            "Collections only: the component model names, each already registered."};
 
+const RouteArg kCreateOnly{"create_only", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
+                           "Reject an existing user registration instead of replacing it."};
+
 class RegisterRoute : public ApiRoute {
 public:
     using ApiRoute::ApiRoute;
@@ -49,7 +52,7 @@ public:
             "Registers or updates a `user.*` model definition in `user_models.json` without "
             "downloading any files, for clients that register and install as separate steps. "
             "[`POST /v1/pull`](#post-v1pull) registers the same way and then downloads.";
-        s.args = {kModelName, kRecipe, kCheckpoint, kCheckpoints, kSource, kLabels, kComponents};
+        s.args = {kModelName, kRecipe, kCheckpoint, kCheckpoints, kSource, kLabels, kComponents, kCreateOnly};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;

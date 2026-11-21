@@ -6,6 +6,11 @@
 #include <utility>
 
 namespace lemon {
+namespace {
+// One atomic JSON file contains the active option entries and archived recipes.
+// This key is not a model id; all() excludes it from model composition.
+constexpr const char* kRecipeProfiles = "__lemonade_recipe_profiles_v1";
+} // namespace
 
 RecipeOptionsStore::RecipeOptionsStore(std::string file_path)
     : file_path_(std::move(file_path)) {
@@ -65,7 +70,74 @@ json RecipeOptionsStore::entry_locked(const std::string& canonical_id_value) con
 
 json RecipeOptionsStore::all() const {
     std::lock_guard<std::mutex> lock(mutex_);
+    json active = options_;
+    active.erase(kRecipeProfiles);
+    return active;
+}
+
+json RecipeOptionsStore::snapshot() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return options_;
+}
+
+void RecipeOptionsStore::restore_snapshot(const json& snapshot) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    utils::save_json_atomic(file_path_, snapshot);
+    options_ = snapshot;
+}
+
+void RecipeOptionsStore::switch_recipe(const std::string& canonical_id_value,
+                                       const std::string& previous_recipe,
+                                       const std::string& next_recipe,
+                                       const json& previous_saved,
+                                       const json& next_authored) {
+    if (previous_recipe.empty() || next_recipe.empty() || previous_recipe == next_recipe) return;
+    std::lock_guard<std::mutex> lock(mutex_);
+    json updated = options_;
+    json profiles = updated.value(kRecipeProfiles, json::object());
+    if (!profiles.is_object()) profiles = json::object();
+    json per_recipe = profiles.value(canonical_id_value, json::object());
+    if (!per_recipe.is_object()) per_recipe = json::object();
+
+    // The pre-registration snapshot matters if a registration request itself
+    // also supplied recipe_options and overwrote the active entry.
+    if (previous_saved.is_object() && !previous_saved.empty()) {
+        per_recipe[previous_recipe] = previous_saved;
+    } else {
+        per_recipe.erase(previous_recipe);
+    }
+    json restored = per_recipe.value(next_recipe, json::object());
+    if (!restored.is_object()) restored = json::object();
+    if (next_authored.is_object()) {
+        for (const auto& [key, value] : next_authored.items()) {
+            if (value.is_null()) restored.erase(key);
+            else restored[key] = value;
+        }
+    }
+    if (per_recipe.empty()) profiles.erase(canonical_id_value);
+    else profiles[canonical_id_value] = std::move(per_recipe);
+    if (profiles.empty()) updated.erase(kRecipeProfiles);
+    else updated[kRecipeProfiles] = std::move(profiles);
+    if (restored.empty()) updated.erase(canonical_id_value);
+    else updated[canonical_id_value] = std::move(restored);
+
+    // Publish the in-memory copy only once the atomic disk write succeeds.
+    utils::save_json_atomic(file_path_, updated);
+    options_ = std::move(updated);
+}
+
+void RecipeOptionsStore::forget_model(const std::string& canonical_id_value) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    json updated = options_;
+    updated.erase(canonical_id_value);
+    auto profiles = updated.find(kRecipeProfiles);
+    if (profiles != updated.end() && profiles->is_object()) {
+        profiles->erase(canonical_id_value);
+        if (profiles->empty()) updated.erase(profiles);
+    }
+    if (updated == options_) return;
+    utils::save_json_atomic(file_path_, updated);
+    options_ = std::move(updated);
 }
 
 json RecipeOptionsStore::replace(const std::string& canonical_id_value, const json& value) {
@@ -94,12 +166,14 @@ json RecipeOptionsStore::merge(const std::string& canonical_id_value, const json
 }
 
 void RecipeOptionsStore::store(const std::string& canonical_id_value, const json& value) {
+    json updated = options_;
     if (value.empty()) {
-        options_.erase(canonical_id_value);
+        updated.erase(canonical_id_value);
     } else {
-        options_[canonical_id_value] = value;
+        updated[canonical_id_value] = value;
     }
-    utils::save_json_atomic(file_path_, options_);
+    utils::save_json_atomic(file_path_, updated);
+    options_ = std::move(updated);
 }
 
 }  // namespace lemon

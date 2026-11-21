@@ -2426,6 +2426,15 @@ class LemonadeAPI {
     return result;
   }
 
+  async unregisterModelDefinition(modelName: string): Promise<void> {
+    await this._json('/api/v1/models/unregister', {
+      method: 'POST',
+      body: { model_name: modelName },
+      cache: 'no-store',
+    });
+    this._notifyModelsChanged();
+  }
+
   // Model updates are checked and selected by lemond, not the GUI.
   async startModelSync(models?: string[]): Promise<ModelSyncStatus> {
     return this._json<ModelSyncStatus>('/internal/models/sync', {

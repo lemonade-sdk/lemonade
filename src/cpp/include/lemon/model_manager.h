@@ -178,6 +178,10 @@ public:
                             const json& model_data,
                             const std::string& source = "");
 
+    // Unregister a user model without deleting any checkpoint files.
+    // Callers must ensure the model is not loaded before removing its definition.
+    void unregister_user_model(const std::string& model_name);
+
     // Register or validate a model definition without downloading its files.
     // Uses the same registration path as download_model.
     void register_model(const std::string& model_name,
@@ -369,9 +373,6 @@ private:
 
     static json load_server_models();
     json load_architecture_defaults();
-
-    // Remove a user model entry from user_models.json (no file deletion).
-    void unregister_user_model(const std::string& model_name);
 
     static std::string get_user_models_file();
     std::string get_recipe_options_file();
