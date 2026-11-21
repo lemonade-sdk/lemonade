@@ -27,9 +27,27 @@ lemonade run Qwen3-1.7B-Hybrid --chat-cli
 
 | Option | Description |
 |---|---|
-| `MODEL` (positional) | Model to chat with. If omitted, uses the currently loaded model, or prompts you to choose. |
+| `MODEL` (positional) | Model to chat with. If omitted, uses the currently loaded model, or prompts you to choose (one-shot requires a loaded model or `MODEL`). |
 | `--system TEXT` | Set a system prompt for the session. |
-| `--no-stream` | Wait for the full response instead of streaming token-by-token. Useful when piping output. |
+| `-p, --prompt TEXT` | Send one prompt, print the answer, and exit. |
+| `-j, --json` | One-shot only: print one JSON object instead of text. |
+| `--no-stream` | Wait for the full response instead of streaming token-by-token. |
+
+## Scripting (one-shot)
+
+`-p` or piped stdin sends a single request and exits. With both, the prompt comes first, then stdin, in one user message.
+
+```bash
+lemonade chat MODEL -p "Say hi"
+lemonade chat MODEL -p "Summarize" < log.txt
+git diff | lemonade chat MODEL -p "Write a commit message"
+lemonade chat MODEL -p "Say hi" --json
+```
+
+- Stdout is only the answer; progress and errors go to stderr. Never opens a picker.
+- Non-terminal stdin is read to EOF. If it's an open pipe with nothing sent (e.g. `docker exec -i` without piping), it waits; close it or drop `-i`.
+- `--json` prints `{"model", "message", "usage", "finish_reason"}` once, only on success.
+- Exit codes: `0` ok, `1` request/load failure (a failed stream may leave partial output), `2` invalid input or options, `130` interrupted.
 
 ## Using the REPL
 
