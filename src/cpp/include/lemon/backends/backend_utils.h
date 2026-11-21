@@ -261,6 +261,14 @@ namespace lemon::backends {
         /** The image get_backend_image() gave at install time, or "" when none is installed. */
         static std::string get_installed_backend_image(const std::string& recipe, const std::string& backend);
 
+        /** Every image the installed pin can name: its digest under the descriptor's image, then under each of its former_images. Empty when none is installed. */
+        static std::vector<std::string> get_installed_backend_images(const std::string& recipe, const std::string& backend);
+
+        /** The get_installed_backend_images() the manager's container tool holds. */
+        static std::vector<std::string> get_present_installed_images(const utils::ContainerManager& manager,
+                                                                     const std::string& recipe,
+                                                                     const std::string& backend);
+
         /** Get the path where the version indicator is installed. Does not check existence. */
         static std::string get_installed_version_file(const BackendSpec& spec, const std::string& backend);
 

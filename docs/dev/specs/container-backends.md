@@ -105,6 +105,7 @@ Each `BackendDescriptor` contains the information needed to install and launch t
 | `devices` | Yes | Device nodes the container can open, such as `{"/dev/dri"}`. | One `--device` per node, and `--group-add` (see [Run Options](#run-options)) |
 | `cap_add` | No | Linux capabilities to give back after `--cap-drop=all`, such as `{"SYS_PTRACE"}`. | One `--cap-add` per capability |
 | `user` | No | The numeric UID and GID the image runs as, such as `{1000, 1000}` for Gufo's image. Unset for an image that runs as root. | `--userns=keep-id` on rootless Podman (see [Run Options](#run-options)) |
+| `former_images` | No | Repositories the image was published under before, such as `{"docker.io/kyuz0/amd-strix-halo-toolboxes"}` for Gufo. Upgrading or uninstalling the backend also removes the installed digest under each one, since the version marker records only the tag and digest. | Nothing |
 
 Halogen's `BackendDescriptor` declares one container backend, `rocm`, for Strix Halo (`gfx1151`):
 
