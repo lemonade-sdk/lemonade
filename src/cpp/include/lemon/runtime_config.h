@@ -49,6 +49,7 @@ public:
 
     std::string models_dir() const;
     int ctx_size() const;
+    bool auto_context_safer() const;
     bool auto_evict() const;
     double auto_evict_threshold_pct() const;
     bool inhibit_suspend() const;

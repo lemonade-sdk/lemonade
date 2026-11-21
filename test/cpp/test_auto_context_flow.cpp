@@ -33,17 +33,83 @@ static ModelInfo fixture(const char* recipe, double size_gib, DeviceType device)
 }
 
 static int64_t resolve(const ModelInfo& info, double free_gib,
-                       bool bounded_swa = false,
+                       bool safer, bool bounded_swa = false,
                        double kv_bytes_ratio = 1.0) {
     return compute_auto_context_size(info, free_gib, false, false, -1.0,
-                                     bounded_swa, kv_bytes_ratio);
+                                     bounded_swa, safer, true, kv_bytes_ratio);
 }
 
 int main() {
-    // A positive estimate must not be increased to the 4k load-policy floor.
-    // 3 GiB weights + 1.5 GiB reserves + 1200 * 128 KiB KV = 4.646484375 GiB.
+    // With measurable weight fit, default mode deliberately tries 4k even if
+    // reserved KV suggests 1200 tokens. Safer opt-in rejects that shortfall.
     const auto short_ctx = fixture("llamacpp", 3.0, DEVICE_GPU);
-    CHECK(resolve(short_ctx, 4.646484375) == 1200);
+    CHECK(resolve(short_ctx, 4.646484375, false) == 4096);
+    CHECK(resolve(short_ctx, 4.646484375, true) == AUTO_CTX_NO_CAPACITY);
+
+    // A positive measurement remains exact for non-strict recipes, while
+    // llama.cpp GPU retains the intentional best-effort 4k exception above.
+    auto short_flm = fixture("flm", 3.0, DEVICE_CPU);
+    CHECK(resolve(short_flm, 4.646484375, false) == 1200);
+    CHECK(resolve(short_flm, 4.646484375, true) == AUTO_CTX_NO_CAPACITY);
+    auto short_cpu_llama = fixture("llamacpp", 3.0, DEVICE_CPU);
+    CHECK(resolve(short_cpu_llama, 4.646484375, false) == 1200);
+
+    // These were best-effort before PR #3988. The estimate must not turn
+    // into a blanket load rejection unless stricter admission was requested.
+    auto flm = fixture("flm", 20.0, DEVICE_CPU);
+    CHECK(resolve(flm, 4.0, false) == 4096);
+    CHECK(resolve(flm, 4.0, true) == AUTO_CTX_NO_CAPACITY);
+    flm.max_context_window = 2048;
+    CHECK(resolve(flm, 4.0, false) == 2048);
+
+    // CPU-only llama.cpp can use host paging; the hard GPU admission must not
+    // reject its old best-effort minimum by default.
+    auto cpu_llama = fixture("llamacpp", 20.0, DEVICE_CPU);
+    CHECK(resolve(cpu_llama, 4.0, false) == 4096);
+    CHECK(resolve(cpu_llama, 4.0, true) == AUTO_CTX_NO_CAPACITY);
+
+    // The effective backend wins over llamacpp's GPU catalog default.
+    const auto requested_gpu = fixture("llamacpp", 6.0, DEVICE_GPU);
+    CHECK(auto_context_device_for_backend(requested_gpu, "cpu") == DEVICE_CPU);
+    CHECK(auto_context_device_for_backend(requested_gpu, "cuda") == DEVICE_GPU);
+    CHECK(auto_context_device_for_backend(requested_gpu, "rocm") == DEVICE_GPU);
+    const auto other_recipe = fixture("ds4", 6.0, DEVICE_GPU);
+    CHECK(auto_context_device_for_backend(other_recipe, "cpu") == DEVICE_GPU);
+    auto selected_cpu = requested_gpu;
+    selected_cpu.device = auto_context_device_for_backend(selected_cpu, "cpu");
+    CHECK(resolve(requested_gpu, 2.0, true) == AUTO_CTX_NO_CAPACITY);
+    CHECK(resolve(selected_cpu, 20.0, true) >= 4096);
+
+    // Rule-head admission must test its actual 2048-token window (not the
+    // GGUF base model's 128k context, nor a generic 4096-token floor).
+    auto rule_head = fixture("llamacpp", 3.0, DEVICE_GPU);
+    rule_head.max_context_window = backends::llamacpp::RULE_HEAD_ROUTER_CTX_SIZE;
+    CHECK(resolve(rule_head, 16.0, true) == rule_head.max_context_window);
+    CHECK(resolve(rule_head, 4.0, true) == AUTO_CTX_NO_CAPACITY);
+
+    // DS4 owns its resident working-set budget. A real, non-empty file
+    // ensures this exercises the backend's non-null KV-budget hook instead
+    // of silently testing its generic nullopt path.
+    const auto ds4_file = std::filesystem::temp_directory_path() /
+        ("lemonade-ds4-ctx-" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
+    {
+        std::ofstream out(ds4_file, std::ios::binary);
+        out << "test-gguf-weights";
+    }
+    CHECK(std::filesystem::file_size(ds4_file) > 0);
+    auto ds4 = fixture("ds4", 20.0, DEVICE_GPU);
+    ds4.min_resident_gb = 10.0;
+    ds4.resolved_paths["main"] = ds4_file.string();
+    CHECK(resolve(ds4, 1e-8, false) == 4096);
+    CHECK(resolve(ds4, 1e-8, true) == AUTO_CTX_NO_CAPACITY);
+    // The backend's working-set estimate permits KV here although the full
+    // checkpoint cannot fit. A generic llama.cpp calculation must reject it.
+    CHECK(resolve(ds4, 20.0, true) >= 4096);
+    auto generic = ds4;
+    generic.recipe = "llamacpp";
+    CHECK(resolve(generic, 20.0, true) == AUTO_CTX_NO_CAPACITY);
+    std::filesystem::remove(ds4_file);
 
     // The actual production estimator must still exploit Gemma4's bounded
     // KV cache rather than charge all sliding layers for every token.
@@ -68,8 +134,8 @@ int main() {
         gemma.gguf.head_count_kv_per_layer.push_back(heads);
         gemma.gguf.head_count_kv += heads;
     }
-    const auto full_kv = resolve(gemma, 31.8, false);
-    const auto bounded_kv = resolve(gemma, 31.8, true);
+    const auto full_kv = resolve(gemma, 31.8, false, false);
+    const auto bounded_kv = resolve(gemma, 31.8, false, true);
     CHECK(full_kv > 0 && full_kv < 100000);
     CHECK(bounded_kv == 262144);
 
@@ -87,8 +153,8 @@ int main() {
     flint.gguf.sliding_window_pattern.assign(49, true);
     for (int i = 0; i < 14; ++i)
         flint.gguf.sliding_window_pattern[static_cast<size_t>(i * 3)] = false;
-    CHECK(resolve(flint, 31.8, false) < 131072);
-    CHECK(resolve(flint, 31.8, true) == 262144);
+    CHECK(resolve(flint, 31.8, false, false) < 131072);
+    CHECK(resolve(flint, 31.8, false, true) == 262144);
 
     // Qwen3.8 27B: 16 full-attention groups, MTP, Q8 K/V. The format flags
     // must affect the runtime estimator, not just the llama-server invocation.
@@ -105,7 +171,7 @@ int main() {
         "--parallel 1 --spec-type draft-mtp -ctk q8_0 -ctv q8_0 -fa on",
         nullptr, nullptr);
     CHECK(q8 == 17.0 / 32.0);
-    CHECK(resolve(qwen, 31.8, false) < 262144);
-    CHECK(resolve(qwen, 31.8, false, q8) == 262144);
+    CHECK(resolve(qwen, 31.8, false, false) < 262144);
+    CHECK(resolve(qwen, 31.8, false, false, q8) == 262144);
     return failures ? 1 : 0;
 }
