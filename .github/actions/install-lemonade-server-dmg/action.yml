@@ -78,6 +78,19 @@ runs:
             echo "WARNING: lemonade not found at $BIN_PATH"
         fi
 
+        APP_BINARY="/Applications/lemonade-app.app/Contents/MacOS/lemonade-app"
+        APP_LINK="$BIN_PATH/lemonade-app"
+        if [ ! -x "$APP_BINARY" ]; then
+            echo "ERROR: Desktop app not found at $APP_BINARY"
+            exit 1
+        fi
+        if [ ! -L "$APP_LINK" ] || [ "$(readlink "$APP_LINK")" != "$APP_BINARY" ]; then
+            echo "ERROR: $APP_LINK must point to $APP_BINARY"
+            ls -l "$APP_LINK" || true
+            exit 1
+        fi
+        echo "Found: $APP_LINK -> $APP_BINARY"
+
         echo "Installation verification complete!"
 
     - name: Wait for server to be ready
