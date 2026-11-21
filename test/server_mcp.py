@@ -85,8 +85,12 @@ MCP_HUB_EXPECTED_TOOLS = {
     "lemonade_load_model",
     "lemonade_unload_model",
     "lemonade_get_loaded_models",
+    "lemonade_get_server_health",
     "lemonade_pull_model",
     "lemonade_delete_model",
+    "lemonade_get_system_info",
+    "lemonade_list_backends",
+    "lemonade_install_backend",
     "lemonade_generate_image",
     "lemonade_transcribe_audio",
     "lemonade_chat",
@@ -823,6 +827,9 @@ class McpGatewayTests(ServerTestBase):
             ),
         )
         by_name = {tool["name"]: tool for tool in listed}
+        install_props = by_name["lemonade_install_backend"]["inputSchema"]["properties"]
+        for name in ("recipe", "backend"):
+            self.assertEqual(install_props[name]["pattern"], r"\S")
         expected_annotations = {
             "lemonade_list_models": {
                 "readOnlyHint": True,
@@ -849,6 +856,11 @@ class McpGatewayTests(ServerTestBase):
                 "destructiveHint": False,
                 "openWorldHint": False,
             },
+            "lemonade_get_server_health": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
             "lemonade_pull_model": {
                 "readOnlyHint": False,
                 "destructiveHint": False,
@@ -858,6 +870,21 @@ class McpGatewayTests(ServerTestBase):
                 "readOnlyHint": False,
                 "destructiveHint": True,
                 "openWorldHint": False,
+            },
+            "lemonade_get_system_info": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_list_backends": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_install_backend": {
+                "readOnlyHint": False,
+                "destructiveHint": True,
+                "openWorldHint": True,
             },
         }
         for name, expected in expected_annotations.items():
@@ -878,6 +905,7 @@ class McpGatewayTests(ServerTestBase):
             "lemonade_unload_model": {"model_name": ""},
             "lemonade_pull_model": {"model_name": ""},
             "lemonade_delete_model": {"model_name": "", "confirm": True},
+            "lemonade_install_backend": {"recipe": "", "backend": ""},
         }
         for index, (name, arguments) in enumerate(safe_probes.items(), start=121):
             self.assertIn(name, listed_names)
