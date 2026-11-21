@@ -1508,6 +1508,81 @@ std::vector<McpTool> McpServer::build_tools() {
                 return server_tool_("lemonade_install_backend", arguments);
             }),
         McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_generate_audio"},
+                            {"description",
+                             "Generate music or a sound effect with a Lemonade audio-generation "
+                             "model using the same server generation path as POST "
+                             "/api/v1/audio/generations. When model is omitted, reuse a "
+                             "loaded/downloaded audio-generation model."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"required", json::array({"prompt"})},
+                                {"additionalProperties", false},
+                                {"properties", {
+                                    {"prompt", {{"type", "string"}}},
+                                    {"model", {{"type", "string"}}},
+                                    {"duration", {{"type", "number"}}},
+                                    {"steps", {{"type", "integer"}, {"minimum", 1}}},
+                                    {"cfg", {{"type", "number"}}},
+                                    {"seed", {{"type", "integer"}}},
+                                    {"lyrics", {{"type", "string"}}},
+                                    {"vocal_language", {{"type", "string"}}},
+                                    {"response_format", {{"type", "string"}}},
+                                }},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_generate_audio, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_generate_audio", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_text_to_speech"},
+                            {"description",
+                             "Convert text to speech using the same server generation path as "
+                             "POST /api/v1/audio/speech. When model is omitted, reuse a "
+                             "loaded/downloaded TTS model."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"required", json::array({"input"})},
+                                {"additionalProperties", false},
+                                {"properties", {
+                                    {"input", {{"type", "string"}}},
+                                    {"model", {{"type", "string"}}},
+                                    {"voice", {{"type", "string"}}},
+                                    {"speed", {{"type", "number"}}},
+                                    {"response_format", {{"type", "string"}}},
+                                }},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_text_to_speech, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_text_to_speech", arguments);
+            }),
+        McpTool(
             json{
                 {"name", "lemonade_list_models"},
                 {"annotations", {
