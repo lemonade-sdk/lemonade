@@ -72,6 +72,9 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     manager_config.cloud_providers = cloud_registry_.get();
     manager_config.default_model_source = [this]() { return config_->default_model_source(); };
     manager_config.model_catalogs = [this]() { return config_->model_catalogs(); };
+    manager_config.llamacpp_is_local_build = [this]() {
+        return config_->backend_string("llamacpp", "backend") == "system";
+    };
     model_manager_ = std::make_unique<ModelManager>(std::move(manager_config));
 
     backend_manager_ = std::make_unique<BackendManager>();

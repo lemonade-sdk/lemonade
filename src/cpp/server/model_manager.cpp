@@ -284,7 +284,8 @@ void ModelManager::start_directory_watcher() {
 
 std::map<std::string, ModelInfo> ModelManager::discover_extra_models(
     const std::set<fs::path>& registered_paths) const {
-    return models::ScanCatalog::for_dir(extra_models_dir_).enumerate(registered_paths);
+    const bool local_llamacpp = config_.llamacpp_is_local_build && config_.llamacpp_is_local_build();
+    return models::ScanCatalog::for_dir(extra_models_dir_, local_llamacpp).enumerate(registered_paths);
 }
 
 std::vector<models::CheckpointStatus> ModelManager::checkpoint_status(const ModelInfo& info) const {
