@@ -19,6 +19,18 @@ LogStreamHub& LogStreamHub::instance() {
     return hub;
 }
 
+std::vector<LogStreamEntry> LogStreamHub::snapshot(std::optional<uint64_t> after_seq) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<LogStreamEntry> result;
+    result.reserve(entries_.size());
+    for (const auto& entry : entries_) {
+        if (!after_seq || entry.seq > *after_seq) {
+            result.push_back(entry);
+        }
+    }
+    return result;
+}
+
 std::string LogStreamHub::subscribe_with_snapshot(
     SubscriberCallback callback,
     std::optional<uint64_t> after_seq,
