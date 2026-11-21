@@ -507,6 +507,31 @@ namespace lemon::backends {
         return parsed ? policy->image + "@" + parsed->digest : "";
     }
 
+    std::vector<std::string> BackendUtils::get_installed_backend_images(const std::string& recipe,
+                                                                        const std::string& backend) {
+        const std::string current = get_installed_backend_image(recipe, backend);
+        if (current.empty()) {
+            return {};
+        }
+        std::vector<std::string> images = {current};
+        const std::string digest = current.substr(current.find('@'));
+        for (const auto& former : get_container_policy(recipe, backend)->former_images) {
+            images.push_back(former + digest);
+        }
+        return images;
+    }
+
+    std::vector<std::string> BackendUtils::get_present_installed_images(
+        const utils::ContainerManager& manager, const std::string& recipe, const std::string& backend) {
+        std::vector<std::string> present;
+        for (const auto& image : get_installed_backend_images(recipe, backend)) {
+            if (manager.has_image(image)) {
+                present.push_back(image);
+            }
+        }
+        return present;
+    }
+
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
         std::string resolved_backend = backend;
         if (recipe_has_rocm_channels(recipe) && backend == "rocm") {
