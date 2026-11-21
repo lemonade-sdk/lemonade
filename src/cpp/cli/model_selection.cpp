@@ -98,6 +98,7 @@ bool is_agent_launch_recipe(const std::string& recipe) {
     static const std::unordered_set<std::string> kAgentLaunchRecipes = {
         "flm",
         "llamacpp",
+        "loom",
         "vllm",
     };
     return kAgentLaunchRecipes.find(recipe) != kAgentLaunchRecipes.end();

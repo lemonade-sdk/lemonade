@@ -309,6 +309,34 @@ namespace lemon::backends {
         return extract_zip(archive_path, dest_dir, backend_name);
     }
 
+    void BackendUtils::keep_archive_subdir(const std::string& staging_dir, const std::string& subdir) {
+        const fs::path root = fs::path(staging_dir);
+        const fs::path relative = fs::path(subdir).lexically_normal();
+        if (relative.empty() || relative.is_absolute() || relative.has_root_name() ||
+            *relative.begin() == "..") {
+            throw std::runtime_error("Archive subdirectory escapes the install tree: " + subdir);
+        }
+        const fs::path kept = root / relative;
+        std::error_code ec;
+        if (!fs::is_directory(kept, ec)) {
+            throw std::runtime_error("Archive has no " + subdir + " directory");
+        }
+        const fs::path holding = root.string() + ".keep";
+        fs::remove_all(holding, ec);
+        fs::rename(kept, holding, ec);
+        if (ec) {
+            throw std::runtime_error("Failed to isolate " + subdir + ": " + ec.message());
+        }
+        fs::remove_all(root, ec);
+        if (ec) {
+            throw std::runtime_error("Failed to prune extracted archive: " + ec.message());
+        }
+        fs::rename(holding, root, ec);
+        if (ec) {
+            throw std::runtime_error("Failed to restore " + subdir + ": " + ec.message());
+        }
+    }
+
     std::string BackendUtils::get_install_directory(const std::string& dir_name, const std::string& backend) {
         // Use fs::path throughout to ensure consistent native separators
         fs::path ret = fs::path(utils::get_downloaded_bin_dir()) / dir_name;
@@ -542,7 +570,8 @@ namespace lemon::backends {
                                            const std::string& repo,
                                            const std::string& asset_pattern,
                                            const std::string& backend,
-                                           DownloadProgressCallback progress_cb) {
+                                           DownloadProgressCallback progress_cb,
+                                           const std::string& archive_subdir) {
         std::string install_dir;
         std::string version_file;
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
@@ -831,6 +860,9 @@ namespace lemon::backends {
             // staging guard removes the partial tree when we throw.
             if (!extract_archive(zip_path, staging_dir, spec.log_name())) {
                 throw std::runtime_error("Failed to extract archive: " + zip_path);
+            }
+            if (!archive_subdir.empty()) {
+                keep_archive_subdir(staging_dir, archive_subdir);
             }
 
             // Save version info into the staging tree so it travels with the

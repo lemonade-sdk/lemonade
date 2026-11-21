@@ -677,7 +677,7 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     std::string release_version = final_params.version_override.empty()
                                       ? resolved_version
                                       : final_params.version_override;
-    return {final_params.repo, final_params.filename, release_version};
+    return {final_params.repo, final_params.filename, release_version, final_params.archive_subdir};
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
@@ -894,7 +894,8 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     try {
         backends::BackendUtils::install_from_github(
-            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb);
+            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb,
+            params.archive_subdir);
         // install_from_github only returns after atomically swapping the new
         // backend into place; from here on the working install is the new one.
         backend_committed = true;

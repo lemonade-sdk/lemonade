@@ -621,7 +621,7 @@ void test_search_is_a_source_answer() {
     check(!quiet.supports_search(), "a plain source declines search");
     bool threw = false;
     try {
-        quiet.search("anything", 5, false);
+        quiet.search("anything", 5, lemon::RegistrySearchFormat::Any);
     } catch (const std::logic_error&) {
         threw = true;
     }
