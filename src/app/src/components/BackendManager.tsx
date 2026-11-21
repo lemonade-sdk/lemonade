@@ -72,6 +72,7 @@ interface SystemInfoData {
 /** User-facing labels for recipes */
 const RECIPE_LABELS: Record<string, string> = {
   llamacpp:       'llama.cpp',
+  strata:         'Strata',
   onnxruntime:    'ONNX Runtime',
   whispercpp:     'whisper.cpp',
   moonshine:      'Moonshine',

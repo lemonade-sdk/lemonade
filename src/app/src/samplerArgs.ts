@@ -11,7 +11,7 @@
  * where a token ends would show one thing and load another.
  */
 
-export type ArgFieldKind = 'number' | 'text';
+export type ArgFieldKind = 'number' | 'text' | 'boolean';
 
 /** Poles and the range between them worth staying inside, for a value people
     reason about by feel rather than by number. A spec that carries one is drawn
@@ -73,9 +73,39 @@ export const LLAMACPP_SAMPLER_FIELDS: ArgFieldSpec[] = [
     the server describes which options exist, not what a flag inside one means. */
 const SAMPLER_FIELDS_BY_RECIPE: Record<string, ArgFieldSpec[]> = {
   llamacpp: LLAMACPP_SAMPLER_FIELDS,
+  strata: [
+    { flag: '--mtp', id: 'mtp', label: 'MTP drafts', kind: 'number', min: 0, max: 7, step: 1, backendDefault: '2' },
+    { flag: '--prefill', id: 'prefill', label: 'Prompt chunk size', kind: 'text', backendDefault: 'auto' },
+    { flag: '--gpu', id: 'gpu', label: 'GPU', kind: 'text' },
+    { flag: '--expert-vram', id: 'expert-vram', label: 'Expert VRAM (GiB)', kind: 'number', min: 0, step: 0.5 },
+    { flag: '--expert-slots', id: 'expert-slots', label: 'Expert slots', kind: 'number', min: 0, step: 1 },
+    { flag: '--cpu-threads', id: 'cpu-threads', label: 'CPU threads', kind: 'number', min: 0, step: 1 },
+    { flag: '--hybrid-rows', id: 'hybrid-rows', label: 'Hybrid rows', kind: 'number', min: 1, step: 1, backendDefault: '128' },
+    { flag: '--draft-vocab', id: 'draft-vocab', label: 'Draft vocabulary size', kind: 'number', min: 1, step: 1 },
+    { flag: '--no-graph', id: 'no-graph', label: 'Disable GPU graphs', kind: 'boolean' },
+    { flag: '--no-warmup', id: 'no-warmup', label: 'Disable warmup', kind: 'boolean' },
+    { flag: '--batch-mtp', id: 'batch-mtp', label: 'Batched MTP', kind: 'boolean' },
+  ],
 };
 
-export function samplerFieldsForRecipe(recipe: string): ArgFieldSpec[] {
+const STRATA_FLASH_FIELDS: ArgFieldSpec[] = [
+  { flag: '--mtp', id: 'mtp', label: 'MTP draft pack (auto/off/path)', kind: 'text', backendDefault: 'auto' },
+  { flag: '--prefill', id: 'prefill', label: 'Prompt chunk size', kind: 'text', backendDefault: 'auto' },
+  { flag: '--spec', id: 'spec', label: 'Speculative tokens (0 disables MTP)', kind: 'number', min: 0, step: 1, backendDefault: '4' },
+  { flag: '--spec-min-p', id: 'spec-min-p', label: 'Draft confidence', kind: 'number', min: 0, max: 1, step: 0.05, backendDefault: '0.5' },
+  { flag: '--kv', id: 'kv', label: 'KV cache precision', kind: 'text' },
+  { flag: '--kv-resident', id: 'kv-resident', label: 'GPU KV tokens (0 disables streaming)', kind: 'number', min: 0, step: 1024 },
+  { flag: '--expert-cache', id: 'expert-cache', label: 'Expert cache', kind: 'text', backendDefault: 'auto' },
+  { flag: '--vram-reserve-mib', id: 'vram-reserve-mib', label: 'VRAM reserve (MiB)', kind: 'number', min: 0, step: 256 },
+  { flag: '--gpu', id: 'gpu', label: 'GPU', kind: 'text' },
+  { flag: '--cpu-threads', id: 'cpu-threads', label: 'CPU threads', kind: 'number', min: 0, step: 1 },
+  { flag: '--mmap-experts', id: 'mmap-experts', label: 'Memory-map experts', kind: 'boolean' },
+];
+
+export function samplerFieldsForRecipe(recipe: string, checkpoint = ''): ArgFieldSpec[] {
+  if (recipe === 'strata' && checkpoint && !checkpoint.includes('Qwen3.6-35B-A3B')) {
+    return STRATA_FLASH_FIELDS;
+  }
   return SAMPLER_FIELDS_BY_RECIPE[recipe] || [];
 }
 
@@ -178,7 +208,12 @@ export function splitSamplerArgs(specs: ArgFieldSpec[], args: string): SplitArgs
 
   for (const [flag, occurrences] of buildArgsMap(tokens)) {
     if (!samplerFlags.has(flag)) continue;
-    if (occurrences.length === 1 && occurrences[0].length === 1) {
+    if (specs.find(spec => spec.flag === flag)?.kind === 'boolean' &&
+        occurrences.length === 1 && occurrences[0].length === 0) {
+      fields[flag] = 'true';
+      extracted.add(flag);
+    } else if (specs.find(spec => spec.flag === flag)?.kind !== 'boolean' &&
+        occurrences.length === 1 && occurrences[0].length === 1) {
       fields[flag] = occurrences[0][0];
       extracted.add(flag);
     } else {
@@ -209,7 +244,9 @@ export function composeSamplerArgs(
   const parts: string[] = [];
   for (const spec of specs) {
     const value = (fields[spec.flag] || '').trim();
-    if (value) parts.push(`${spec.flag} ${value}`);
+    if (spec.kind === 'boolean') {
+      if (value === 'true') parts.push(spec.flag);
+    } else if (value) parts.push(`${spec.flag} ${value}`);
   }
   const tail = rest.trim();
   if (tail) parts.push(tail);

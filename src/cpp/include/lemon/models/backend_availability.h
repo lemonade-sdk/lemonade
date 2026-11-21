@@ -31,6 +31,8 @@ struct BackendAvailability {
     std::string os_version = "Unknown";
 
     std::map<std::string, RecipeAvailability> recipes;
+    std::map<std::string, std::string> model_unsupported_reasons;
+    std::map<std::string, double> model_memory_pools;
 
 // An unknown recipe counts as supported.
     const RecipeAvailability& recipe(const std::string& name) const {

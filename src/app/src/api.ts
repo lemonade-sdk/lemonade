@@ -259,6 +259,7 @@ export interface ModelInfo {
   name?: string;
   display_name?: string;
   labels?: string[];
+  supported_backends?: string[];
   size?: number;
   recipes?: Record<string, unknown>[];
   [key: string]: unknown;

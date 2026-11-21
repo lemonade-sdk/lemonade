@@ -224,6 +224,7 @@ set(LEMON_BACKENDS
     # "<recipe>|<stem>"
     "llamacpp|llamacpp"
     "llamacpp-hrx|hrx"
+    "strata|strata"
     "whispercpp|whispercpp"
     "moonshine|moonshine"
     "kokoro|kokoro"
@@ -2403,6 +2404,7 @@ add_custom_target(embeddable
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/toolDefinitions.json"
+        "$<TARGET_FILE_DIR:lemond>/resources/strata_prepare.py"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
 
     # Create archive
@@ -2779,6 +2781,12 @@ if(BUILD_TESTING AND EXISTS "${_CONTAINER_MANAGER_TEST_SRC}")
         BACKEND_VERSIONS_JSON_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backend_versions.json"
     )
     add_cpp_ci_test(ContainerManagerTest CI ON COMMAND test_container_manager)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_strata_contract.cpp")
+    add_executable(test_strata_contract test/cpp/test_strata_contract.cpp)
+    target_link_libraries(test_strata_contract PRIVATE lemonade-server-core)
+    add_cpp_ci_test(StrataContractTest CI ON COMMAND test_strata_contract)
 endif()
 
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_contract.cpp")

@@ -78,6 +78,25 @@ CAPABILITIES = {
                 "reranking": "jina-reranker-v1-tiny-en-GGUF",
             },
         },
+        "strata": {
+            "backends": ["cuda", "rocm"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "static_max_context_window": True,
+            },
+            "test_models": {
+                "llm": "Qwen3.6-35B-A3B-Strata",
+                "tool_calling": "Qwen3.6-35B-A3B-Strata",
+            },
+            "chat_extra_body": {"enable_thinking": False},
+            "responses_extra_body": {"reasoning": {"effort": "none"}},
+        },
         "llamacpp-hrx": {
             "backends": ["hrx"],
             "supports": {"chat_completions": True},

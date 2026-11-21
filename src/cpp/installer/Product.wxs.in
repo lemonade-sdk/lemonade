@@ -214,6 +214,10 @@
         <File Id="toolDefinitions.json" Source="$(var.BuildDir)\Release\resources\toolDefinitions.json" KeyPath="yes" />
       </Component>
 
+      <Component Id="StrataPreparePy" Directory="ResourcesDir" Guid="751f395e-1c86-4c34-9f34-2b748defdbca">
+        <File Id="strata_prepare.py" Source="$(var.BuildDir)\Release\resources\strata_prepare.py" KeyPath="yes" />
+      </Component>
+
       <Component Id="ArchitectureDefaultsJson" Directory="ResourcesDir" Guid="f04a62d1-8b3e-4c2a-9f5d-7e1b8c3a0d4e">
         <File Id="architecture_defaults.json" Source="$(var.BuildDir)\Release\resources\architecture_defaults.json" KeyPath="yes" />
       </Component>

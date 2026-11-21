@@ -157,7 +157,7 @@ assert.match(detailSource, /const split = useMemo\(\(\) => splitSamplerArgs\(spe
 // Which flags a command line spells this way belongs to the recipe, not to the
 // renderer: the panel asks for the schema and draws whatever comes back, so a
 // backend gains typed fields without this file naming it.
-assert.match(detailSource, /specs=\{samplerFieldsForRecipe\(activeRecipeForModel\(model\)\)\}/);
+assert.match(detailSource, /specs=\{samplerFieldsForRecipe\(activeRecipeForModel\(model\), optionalDisplayValue\(model\.checkpoint\)\)\}/);
 assert.doesNotMatch(detailSource, /=== 'llamacpp_args'/,
   'the args renderer must not single out a recipe by name');
 assert.match(samplerSource, /const SAMPLER_FIELDS_BY_RECIPE: Record<string, ArgFieldSpec\[\]> = \{/);

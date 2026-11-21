@@ -140,6 +140,15 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "vulkan_bin": "builtin",
     "width": 512
   },
+  "strata": {
+    "args": "",
+    "backend": "auto",
+    "cuda_bin": "builtin",
+    "metal_bin": "builtin",
+    "parallel": 1,
+    "rocm_bin": "builtin",
+    "sycl_bin": "builtin"
+  },
   "telemetry": {
     "enabled": false,
     "hide_inputs": false,

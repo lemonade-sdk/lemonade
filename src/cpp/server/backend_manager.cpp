@@ -2,7 +2,9 @@
 #include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/error_types.h"
 #include "lemon/runtime_config.h"
 #include "lemon/server/download_manager.h"
 #include "lemon/system_info.h"
@@ -759,7 +761,25 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         return;
     }
 
-    auto params = get_install_params(recipe, resolved_backend);
+    InstallParams params;
+    try {
+        params = get_install_params(recipe, resolved_backend);
+    } catch (const NetworkException& e) {
+        if (force || !has_existing_backend) throw;
+        const auto pinned = get_version_from_config(recipe, resolved_backend);
+        if (!can_reuse_pinned_backend(
+                backends::BackendUtils::get_bin_config_value(recipe, resolved_backend), pinned,
+                read_version_file(backends::BackendUtils::get_installed_version_file(*spec, resolved_backend))) ||
+            !backends::ops_for(recipe)->check_install(resolved_backend, true).installed) {
+            throw;
+        }
+        LOG(WARNING, "BackendManager")
+            << "Release metadata for " << recipe << ":" << resolved_backend
+            << " is unavailable (" << e.what() << "); using complete installed version "
+            << pinned << std::endl;
+        report_backend_ready(recipe, resolved_backend, progress_cb);
+        return;
+    }
 
     // Check if we need to download additional runtime components after the main backend.
     // `will_install_therock` intentionally answers whether TheRock is applicable

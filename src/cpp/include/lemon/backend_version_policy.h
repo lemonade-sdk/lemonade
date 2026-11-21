@@ -9,6 +9,14 @@
 // result. See resolve_user_version() in backend_manager.cpp.
 namespace lemon {
 
+inline bool can_reuse_pinned_backend(const std::string& configured_version,
+                                     const std::string& pinned_version,
+                                     const std::string& installed_version) {
+    return !pinned_version.empty() && installed_version == pinned_version &&
+        (configured_version.empty() || configured_version == "builtin" ||
+         configured_version == pinned_version);
+}
+
 struct LatestPinResolution {
     // Concrete release tag to use. Empty only when resolution failed, in which
     // case `error` explains why.

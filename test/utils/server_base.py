@@ -443,6 +443,8 @@ def _build_runtime_config(additional_server_args=None):
         config["trellis"] = {"backend": backend}
     elif wrapped_server == "openmoss" and backend:
         config["openmoss"] = {"backend": backend}
+    elif wrapped_server == "strata" and backend:
+        config["strata"] = {"backend": backend}
 
     # Parse additional_server_args for known flags
     additional = list(_config.get("additional_server_args", []))
