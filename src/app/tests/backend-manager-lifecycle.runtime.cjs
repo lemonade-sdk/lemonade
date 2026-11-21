@@ -48,6 +48,14 @@ assert.match(installBlock, /const synced = await syncBackendStatus\(recipe, back
 assert.match(source, /BACKEND_STATUS_RETRY_DELAYS_MS/);
 assert.match(source, /backendActionIsReflected/);
 
+const flmBuildSelector = source.match(
+  /recipe === 'flm' && backend === 'npu' && \([\s\S]*?<select[\s\S]*?<\/select>/,
+)?.[0];
+assert.ok(flmBuildSelector, 'FastFlowLM runtime selector not found');
+assert.match(flmBuildSelector, /disabled=\{isInstalling \|\| showBackendProgress \|\| !runtimeConfig\.flm\}/);
+assert.doesNotMatch(flmBuildSelector, /info\.state|Uninstall FastFlowLM before changing its build/);
+assert.match(flmBuildSelector, /Changing the runtime requires an update before FastFlowLM can run/);
+
 // Concurrent refreshes may not overwrite the newest system-info snapshot.
 assert.match(source, /const requestId = \+\+systemInfoRequestRef\.current/);
 assert.match(source, /requestId === systemInfoRequestRef\.current/);
@@ -136,7 +144,99 @@ function backendItem(status, running) {
   };
 }
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; });
+  return { promise, resolve, reject };
+}
+
+function configFlow(api, loadSystemInfo = async () => ({})) {
+  const parsed = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const callbacks = [];
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) &&
+        ['fetchInfo', 'handleFlmBuildChange'].includes(node.name.getText(parsed))) {
+      callbacks.push(`const ${node.getText(parsed)};`);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(parsed);
+  const module = { exports: {} };
+  let config = { flm: { runtime: 'xrt', args: '--pmode 1' } };
+  const errors = [];
+  vm.runInNewContext(ts.transpileModule(callbacks.join('\n') +
+    '\nmodule.exports = { fetchInfo, handleFlmBuildChange };', {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText, {
+    module,
+    api: { healthData: {}, ...api },
+    loadSystemInfo,
+    useCallback: fn => fn,
+    runtimeConfigRequestRef: { current: 0 },
+    setRuntimeConfig: value => { config = typeof value === 'function' ? value(config) : value; },
+    backendRuntimeRecord: value => value && typeof value === 'object' ? value : null,
+    setLoading: () => {},
+    setError: error => { if (error) errors.push(error); },
+    setSavingFlmBuild: () => {},
+    friendlyErrorMessage: error => error.message,
+    toast: error => errors.push(error),
+  });
+  return { ...module.exports, config: () => config, errors };
+}
+
+async function runConfigFlowChecks() {
+  {
+    const older = deferred();
+    const newer = deferred();
+    const responses = [older, newer];
+    const flow = configFlow({ getRuntimeConfig: () => responses.shift().promise });
+    const first = flow.fetchInfo(false);
+    const second = flow.fetchInfo(false);
+    newer.resolve({ flm: { runtime: 'hrx' } });
+    await second;
+    older.resolve({ flm: { runtime: 'xrt' } });
+    await first;
+    assert.equal(flow.config().flm.runtime, 'hrx', 'older config responses cannot replace newer ones');
+  }
+  {
+    const oldRefresh = deferred();
+    const duringSaveRefresh = deferred();
+    const postSaveRefresh = deferred();
+    const save = deferred();
+    const responses = [oldRefresh, duringSaveRefresh, postSaveRefresh];
+    const flow = configFlow({
+      getRuntimeConfig: () => responses.shift().promise,
+      setRuntimeConfig: () => save.promise,
+    });
+    const beforeSave = flow.fetchInfo(false);
+    const saving = flow.handleFlmBuildChange('hrx');
+    const duringSave = flow.fetchInfo(false);
+    save.resolve({ updated: { flm: { runtime: 'hrx' } } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(flow.config().flm.runtime, 'hrx', 'the accepted runtime is applied before refresh completes');
+    assert.equal(flow.config().flm.args, '--pmode 1', 'saving the runtime preserves other settings');
+    oldRefresh.resolve({ flm: { runtime: 'xrt' } });
+    duringSaveRefresh.resolve({ flm: { runtime: 'xrt' } });
+    await Promise.all([beforeSave, duringSave]);
+    assert.equal(flow.config().flm.runtime, 'hrx', 'responses from before save completion are invalidated');
+    postSaveRefresh.resolve({ flm: { runtime: 'hrx', args: 'refreshed' } });
+    await saving;
+    assert.equal(flow.config().flm.args, 'refreshed', 'the post-save refresh can update configuration');
+  }
+  {
+    const flow = configFlow({
+      setRuntimeConfig: async () => ({}),
+      getRuntimeConfig: async () => ({ flm: { runtime: 'hrx' } }),
+    }, async () => { throw new Error('system-info unavailable'); });
+    await flow.handleFlmBuildChange('hrx');
+    assert.equal(flow.config().flm.runtime, 'hrx', 'refresh failure preserves the accepted selection');
+    assert.deepEqual(flow.errors, ['system-info unavailable']);
+  }
+}
+
 async function runBehaviorChecks() {
+  await runConfigFlowChecks();
   {
     const store = createDownloadStore([backendItem('downloading', true)]);
     const { waitForBackendDownloadTerminal } = buildRuntimeHelpers(store);

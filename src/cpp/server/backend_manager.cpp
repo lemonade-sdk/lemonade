@@ -725,12 +725,23 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     const std::string existing_backend_binary =
         installed_backend_binary_path(*spec, resolved_backend);
     const bool has_existing_backend = !existing_backend_binary.empty();
+    const auto can_use_existing_backend = [&] {
+        if (!has_existing_backend) return false;
+        if (!spec->build_matches ||
+            !backends::BackendUtils::find_external_backend_binary(recipe, resolved_backend).empty()) {
+            return true;
+        }
+        const auto pinned = get_version_from_config(recipe, resolved_backend);
+        const auto params = spec->install_params_fn(resolved_backend, pinned);
+        return spec->build_matches(
+            backends::BackendUtils::get_install_directory(recipe, resolved_backend), params.filename);
+    };
 
     if (auto* cfg = RuntimeConfig::global()) {
         const bool offline = cfg->offline();
         const bool no_fetch = cfg->no_fetch_executables();
         if (offline || no_fetch) {
-            if (!force && has_existing_backend) {
+            if (!force && can_use_existing_backend()) {
                 LOG(WARNING, "BackendManager")
                     << (offline ? "offline mode" : "Fetching executable artifacts is disabled")
                     << "; using installed " << recipe << ":" << resolved_backend
@@ -746,7 +757,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         }
     }
 
-    if (!force && has_existing_backend && !github_download_service_reachable()) {
+    if (!force && can_use_existing_backend() && !github_download_service_reachable()) {
         // enter install_from_github() when GitHub is reachable, so available
         // backend updates are applied before the model starts. Only skip the
         // update path when the machine is effectively offline and a usable
@@ -878,7 +889,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     bool backend_committed = false;
 
     auto handle_install_failure = [&](const std::string& message) -> bool {
-        if (backend_committed || !has_existing_backend || force) {
+        if (backend_committed || force || !can_use_existing_backend()) {
             if (!backend_install_dir_existed_before) {
                 std::error_code cleanup_ec;
                 fs::remove_all(backend_install_dir, cleanup_ec);

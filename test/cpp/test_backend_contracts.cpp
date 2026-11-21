@@ -2,11 +2,20 @@
 // directories and its own failure count; the only shared state is the process-wide
 // models directory, which every suite sets on entry.
 
+#include "lemon/backend_manager.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
+#include "lemon/backends/fastflowlm/fastflowlm_server.h"
 #include "lemon/model_manager.h"
+#include "lemon/runtime_config.h"
+#include "lemon/utils/path_utils.h"
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <set>
 #include <string>
 #include "lemon/backends/vllm/vllm_server.h"
@@ -260,6 +269,141 @@ int run() {
 
 }  // namespace backend_about
 
+namespace flm_installation {
+
+namespace fs = std::filesystem;
+using lemon::backends::BackendUtils;
+using nlohmann::json;
+
+int failures = 0;
+
+void check(const std::string& name, bool ok) {
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name.c_str());
+    if (!ok) ++failures;
+}
+
+class Fixture {
+public:
+    Fixture()
+        : previous_cache_(lemon::utils::get_cache_dir()),
+          previous_config_(lemon::RuntimeConfig::global()),
+          config_({{"flm", json::object()}, {"offline", true}, {"no_fetch_executables", false}}) {
+        root_ = fs::temp_directory_path() /
+            ("lemonade_flm_install_" + std::to_string(
+                std::chrono::steady_clock::now().time_since_epoch().count()));
+        fs::create_directories(root_);
+        if (const char* value = std::getenv("LEMONADE_FLM_NPU_BIN")) {
+            previous_flm_npu_bin_ = value;
+            had_flm_npu_bin_ = true;
+        }
+#ifdef _WIN32
+        _putenv_s("LEMONADE_FLM_NPU_BIN", "");
+#else
+        unsetenv("LEMONADE_FLM_NPU_BIN");
+#endif
+        lemon::utils::set_cache_dir(root_.string());
+        lemon::RuntimeConfig::set_global(&config_);
+    }
+
+    ~Fixture() {
+#ifdef _WIN32
+        _putenv_s("LEMONADE_FLM_NPU_BIN",
+                  had_flm_npu_bin_ ? previous_flm_npu_bin_.c_str() : "");
+#else
+        if (had_flm_npu_bin_) {
+            setenv("LEMONADE_FLM_NPU_BIN", previous_flm_npu_bin_.c_str(), 1);
+        } else {
+            unsetenv("LEMONADE_FLM_NPU_BIN");
+        }
+#endif
+        lemon::RuntimeConfig::set_global(previous_config_);
+        lemon::utils::set_cache_dir(previous_cache_);
+        std::error_code ec;
+        fs::remove_all(root_, ec);
+    }
+
+private:
+    fs::path root_;
+    std::string previous_cache_;
+    std::string previous_flm_npu_bin_;
+    bool had_flm_npu_bin_ = false;
+    lemon::RuntimeConfig* previous_config_;
+    lemon::RuntimeConfig config_;
+};
+
+int run() {
+    Fixture fixture;
+    auto* config = lemon::RuntimeConfig::global();
+    const auto xrt = lemon::backends::FastFlowLMServer::get_install_params("npu", "v1.0.11");
+    config->set({{"flm", {{"runtime", "xrt"}}}});
+    check("XRT is used when no runtime is configured",
+          lemon::backends::FastFlowLMServer::get_install_params("npu", "v1.0.11").filename == xrt.filename);
+    config->set({{"flm", {{"runtime", "hrx"}}}});
+    const auto hrx = lemon::backends::FastFlowLMServer::get_install_params("npu", "v1.0.11");
+    check("HRX uses the matching prefixed release asset",
+          hrx.repo == xrt.repo && hrx.filename == "HRX_" + xrt.filename);
+
+    for (const json invalid : {json(true), json(""), json("XRT"), json("other")}) {
+        const std::string previous = config->backend_string("flm", "runtime");
+        bool rejected = false;
+        try {
+            config->set({{"flm", {{"runtime", invalid}}}});
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        check("the runtime setting rejects invalid values without changing selection",
+              rejected && config->backend_string("flm", "runtime") == previous);
+    }
+
+    lemon::BackendManager manager;
+    const auto* ops = lemon::backends::fastflowlm::ops();
+    for (const std::string runtime : {"xrt", "hrx"}) {
+        const std::string alternate = runtime == "hrx" ? "xrt" : "hrx";
+        config->set({{"flm", {{"runtime", runtime}}}});
+        const fs::path install_dir = BackendUtils::get_install_directory("flm", "npu");
+        fs::create_directories(install_dir / "lib");
+        const auto* spec = lemon::backends::fastflowlm::spec();
+        std::ofstream(install_dir / spec->binary) << "binary";
+        std::ofstream(install_dir / "version.txt") << "v1.0.11";
+        if (runtime == "hrx") {
+#ifdef _WIN32
+            std::ofstream(install_dir / "hrx.dll") << "runtime";
+#else
+            std::ofstream(install_dir / "lib" / "libhrx.so.1") << "runtime";
+#endif
+        }
+        config->set({{"flm", {{"runtime", alternate}}}});
+        const auto status = ops->check_install("npu", true);
+        const std::string update_command = "lemonade backends install flm:npu";
+        const auto unavailable = ops->classify_unavailable("npu", status.error, update_command);
+        check("a different selected build requires updating even at the same version",
+              !status.installed && unavailable && unavailable->state == "update_required" &&
+              unavailable->action == update_command);
+        const auto selected = lemon::backends::FastFlowLMServer::get_install_params("npu", "v1.0.11");
+        check("the installed build does not match the same-version replacement asset",
+              !spec->build_matches(install_dir, selected.filename));
+
+        bool rejected = false;
+        try {
+            manager.install_backend("flm", "npu");
+        } catch (const std::runtime_error& error) {
+            rejected = std::string(error.what()).find("offline mode") != std::string::npos;
+        }
+        const auto& original = runtime == "hrx" ? hrx : xrt;
+        check("offline update fails and leaves the original install intact",
+              rejected && fs::exists(install_dir / spec->binary) &&
+              fs::exists(install_dir / "version.txt") && spec->build_matches(install_dir, original.filename));
+        config->set({{"flm", {{"runtime", runtime}}}});
+        manager.install_backend("flm", "npu");
+        check("switching back restores installed status without a download",
+              ops->check_install("npu", true).installed);
+        fs::remove_all(install_dir);
+    }
+    return failures == 0 ? 0 : 1;
+}
+
+}  // namespace flm_installation
+
 int main() {
     int failures = 0;
     std::printf("\n=== download policy ===\n");
@@ -270,5 +414,7 @@ int main() {
     failures |= flm_pull_args::run();
     std::printf("\n=== backend about ===\n");
     failures |= backend_about::run();
+    std::printf("\n=== flm installation ===\n");
+    failures |= flm_installation::run();
     return failures;
 }

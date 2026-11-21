@@ -79,6 +79,21 @@ void ConfigEffects::apply(const std::string& key, const json& value) {
         // Recipe defaults (e.g. default_backend) are derived from these settings, so
         // drop the memoized recipes so the next /system-info recomputes them.
         SystemInfoCache::invalidate_recipes();
+        if (key == "flm" && value.contains("runtime")) {
+            for (const auto& model : ctx_.router->get_all_loaded_models()) {
+                if (model.value("recipe", "") != "flm") continue;
+                const std::string name = model.value("model_name", "");
+                if (name.empty()) continue;
+                LOG(INFO, "Server") << "Unloading " << name
+                                    << " after flm.runtime changed" << std::endl;
+                try {
+                    ctx_.router->unload_model(name);
+                } catch (const std::exception& e) {
+                    LOG(WARNING, "Server") << "Failed to unload " << name
+                                           << ": " << e.what() << std::endl;
+                }
+            }
+        }
         for (auto& [sub_key, sub_value] : value.items()) {
             if (sub_key.size() >= 4
                 && sub_key.compare(sub_key.size() - 4, 4, "_bin") == 0) {
