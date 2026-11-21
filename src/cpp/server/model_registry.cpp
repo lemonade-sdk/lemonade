@@ -752,7 +752,8 @@ bool probe_model_registry(RegistryId source, long timeout_seconds,
     const std::string path = huggingface ? "/api/models?limit=1"
         : "/openapi/v1/models?page_number=1&page_size=1&sort=downloads";
     try {
-        const auto response = HttpClient::get(endpoint + path, {}, timeout_seconds,
+        const auto response = HttpClient::get(endpoint + path,
+            model_registry(source).auth_headers(), timeout_seconds,
             utils::HttpSecurityPolicy::ExternalHttpsOnly, 64 * 1024, cancel);
         if (response.status_code != 200) return false;
         const auto body = JsonUtils::parse(response.body);

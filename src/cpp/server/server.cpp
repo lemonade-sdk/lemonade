@@ -126,7 +126,7 @@ private:
             lock.lock();
 
             if (generation == generation_) {
-                if (preferred_.exchange(source) != source && source == Source::ModelScope) {
+                if (preferred_.exchange(source) != source) {
                     lock.unlock();
                     LOG(INFO, "ModelRegistry") << "Auto model source selected "
                         << source_name(source) << std::endl;

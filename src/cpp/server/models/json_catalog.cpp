@@ -176,7 +176,13 @@ std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& 
     backends::ops_for(info.recipe)->add_implied_checkpoints(info);
 
     if (rules.resolve_source) {
-        rules.resolve_source(info);
+        try {
+            rules.resolve_source(info);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "ModelManager")
+                << "  EXCEPTION selecting a source for '" << info.model_name << "': " << e.what()
+                << std::endl;
+        }
     }
     // A repo pointer means the cached manifest holds the components, not this row.
     if (is_model_collection_recipe(info.recipe) &&

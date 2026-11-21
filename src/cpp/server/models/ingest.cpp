@@ -738,7 +738,8 @@ void ModelIngest::pull(const std::string& model_name,
                     // Auto's preference drifts with network weather; it must not orphan a
                     // complete copy by re-fetching it from the other registry.
                     const bool keep_downloaded = automatic && download_source.empty() &&
-                        !model_info.registry_source.empty() && model_info.downloaded;
+                        !model_info.registry_source.empty() && model_info.downloaded &&
+                        (is_model_collection_recipe(model_info.recipe) || artifacts().complete(model_info));
                     const std::string default_source = (automatic && !download_source.empty()) || keep_downloaded
                         ? "" : remote_registry_source_name(download_source_for(ModelInfo{}));
                     const std::string selected = !download_source.empty() ? download_source
