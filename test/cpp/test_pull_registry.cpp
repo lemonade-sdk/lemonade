@@ -333,23 +333,22 @@ void test_a_suggested_pull_uses_the_default_source() {
     stage(fx.stage / flat / filename, staged_gguf("suggested"));
     fx.script[repo] = ScriptedRepo{"snap-suggested-1", {file(filename)}};
 
-    bool used_default_source = true;
+    std::string preferred_source = "huggingface";
     ModelManagerConfig config;
-    config.default_model_source = [] { return std::string("modelscope"); };
+    config.default_model_source = [&] { return preferred_source; };
+    config.automatic_model_source = [] { return true; };
     config.repository_for = [&](const ArtifactRef& ref) {
-        if (ref.repo_id == repo) {
-            used_default_source = used_default_source &&
-                ref.registry.value_or(RegistryId("huggingface")) == RegistryId("modelscope");
-        }
         return std::make_unique<ScriptedRepository>(ref, fx.script, fx.stage.string(),
                                                     &fx.trace);
     };
     ModelManager mm(config);
 
-    mm.download_model(model_name, nlohmann::json::object());
+    const auto initial = mm.get_model_info(model_name);
+    preferred_source = "modelscope";
+    mm.download_registered_model(initial, true);
 
-    check(!fx.trace.urls.empty() && used_default_source,
-          "a name-only Suggested pull downloads from the configured default source");
+    check(!fx.trace.urls.empty(),
+          "a download triggered by loading a model uses the effective source");
     const fs::path cache = fs::path(mm.get_hf_cache_dir()) /
         lemon::registry_repo_cache_dir_name(repo, RegistryId("modelscope"));
     const fs::path acquired = cache / "snapshots" / "snap-suggested-1" / filename;
@@ -360,11 +359,24 @@ void test_a_suggested_pull_uses_the_default_source() {
           mm.get_downloaded_models().count(model_name) == 1 &&
           fs::equivalent(mm.get_model_info(model_name).resolved_path(), acquired),
           "the default-source pull is visible at its acquired cache path");
+    preferred_source = "huggingface";
     mm.invalidate_models_cache();
     check(fs::is_regular_file(acquired) && mm.is_model_downloaded(model_name) &&
           mm.get_downloaded_models().count(model_name) == 1 &&
           fs::equivalent(mm.get_model_info(model_name).resolved_path(), acquired),
-          "the acquired default-source model remains visible after a rebuild");
+          "the acquired ModelScope model remains visible after Hugging Face recovers");
+    ModelManager restarted(config);
+    check(restarted.is_model_downloaded(model_name) &&
+          fs::equivalent(restarted.get_model_info(model_name).resolved_path(), acquired),
+          "a restart discovers the cached ModelScope copy when Hugging Face is preferred");
+    const auto acquired_at = fs::last_write_time(acquired);
+    restarted.download_model(model_name, nlohmann::json::object());
+    check(restarted.get_model_info(model_name).registry_source == "modelscope" &&
+          restarted.is_model_downloaded(model_name) &&
+          fs::last_write_time(acquired) == acquired_at &&
+          !fs::exists(fs::path(restarted.get_hf_cache_dir()) /
+                      lemon::registry_repo_cache_dir_name(repo, RegistryId("huggingface"))),
+          "a later name-only pull keeps the complete ModelScope copy instead of re-fetching it");
 }
 
 void test_a_second_pull_reselects_but_refetches_nothing() {

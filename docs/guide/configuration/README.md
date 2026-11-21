@@ -225,7 +225,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond`. See [Imported models](./custom-models.md#imported-models-extra_models_dir) |
 | `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
-| `default_model_source` | string | "huggingface" | Remote registry used to pull checkpoints when a request does not name one (`huggingface` or `modelscope`). Explicit `--source`, a `source`/`registry_source` field, or a provider URL always overrides it. |
+| `default_model_source` | string | "huggingface" | Remote registry policy for checkpoints without a source. Accepts `huggingface`, `modelscope`, or `auto`. |
 | `download_rate_limit` | string | "" | Caps model/backend download speed. Byte rate with curl-style suffixes: `512`, `100K`, `10M`, etc. Use `""` for unlimited download speed. A non-empty value also serializes concurrent transfers. |
 | `offline` | bool | false | Skip model downloads |
 | `auto_check_model_updates` | bool | true | Check downloaded Hugging Face-backed models for updates during server startup. Set to `false` to check only with `lemonade check-updates` or `POST /v1/models/check-updates`. Manual downloads and updates remain enabled. |
@@ -237,7 +237,9 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
 | `rocm_install_method` | string | "auto" | How to install the bundled ROCm runtime: "auto" (pip wheels, tarball fallback), "wheel" (wheels only), or "tarball" (no Python/pip). See [llama.cpp Backend](./llamacpp.md#choosing-the-rocm-install-method) for details |
 
-FLM manages its own model storage, so it does not persist a registry source with each model. An FLM pull follows the current `default_model_source` unless that request supplies an explicit `--source`; changing the default therefore changes the registry used by later FLM pulls and upgrades.
+Run `lemonade config set default_model_source=auto` to check both registry APIs in the background at startup or when entering auto mode. The check also runs when leaving offline mode with `auto` active. Hugging Face is preferred. If its API fails and ModelScope's API responds, source-less pulls use ModelScope. A source-less pull waits for a check if the source is still unknown. If neither probe succeeds, the next source-less pull checks again. The selected registry must host the requested checkpoint and variant.
+
+Explicit `--source`, a `source`/`registry_source` field, and provider URLs take precedence. Custom models keep their recorded registry. FLM manages its own storage and follows the current policy for each pull or upgrade without an explicit source.
 
 Both `models_dir` and `extra_models_dir` can be changed at runtime through [`POST /internal/set`](../../api/internal.md#post-internalset). Existing `extra_models_dir` paths are preflighted as directories and must be enumerable by the `lemond` process. Nonexistent paths are accepted so the directory watcher can observe them if they are created later.
 

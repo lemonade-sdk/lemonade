@@ -897,9 +897,9 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument("'default_model_source' must be a string");
         }
         const std::string source = value.get<std::string>();
-        if (source != "huggingface" && source != "modelscope") {
+        if (source != "huggingface" && source != "modelscope" && source != "auto") {
             throw std::invalid_argument(
-                "'default_model_source' must be either 'huggingface', or 'modelscope'");
+                "'default_model_source' must be 'huggingface', 'modelscope', or 'auto'");
         }
     } else if (key == "download_rate_limit") {
         if (!value.is_string()) {

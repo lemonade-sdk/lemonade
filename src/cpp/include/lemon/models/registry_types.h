@@ -6,12 +6,17 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace lemon {
+
+namespace utils {
+struct CancelToken;
+}
 
 // A registry is named by string, not by enum: the string is what user_models.json,
 // .lemonade_registry.json, POST /pull and the desktop app already carry.
@@ -148,6 +153,8 @@ bool checkpoint_looks_like_repo_id(const std::string& checkpoint);
 // source or when checkpoints disagree on the registry (callers map this to 400).
 void apply_default_pull_source(nlohmann::json& request_json,
                                const std::string& default_source);
+void apply_default_pull_source(nlohmann::json& request_json,
+                               const std::function<std::string()>& default_source);
 
 // Normalize one provider-specific model-list entry into Lemonade's registry contract.
 // Exposed so fixture tests and future clients share the same field mapping.
@@ -164,6 +171,8 @@ RegistrySearchResponse normalize_registry_search_response(
 
 bool registry_task_is_excluded(const std::string& task);
 
+bool probe_model_registry(models::RegistryId source, long timeout_seconds,
+                          const utils::CancelToken& cancel);
 bool is_official_huggingface_endpoint(const std::string& endpoint);
 std::string huggingface_repository_api_url(
     const std::string& endpoint,

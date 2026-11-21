@@ -46,6 +46,7 @@ class ModelIngest : public ArtifactFetchService {
         const ModelArtifactStore* artifacts;
         // The server-wide default pull source; null when none is configured.
         std::function<std::optional<RegistryId>()> default_registry_source;
+        std::function<bool()> automatic_model_source;
 
         // The user registry and the published set it keeps in step: a registration
         // writes the entry and invalidates the store in one move.
