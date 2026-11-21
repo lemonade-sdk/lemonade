@@ -219,6 +219,13 @@ namespace lemon::backends {
                                             std::string& filename,
                                             size_t& bytes_total);
 
+        /** rocm_install_method for a new install. Under modelscope, "auto" means
+         *  "tarball": the mirror has no wheel index. */
+        static std::string effective_rocm_install_method();
+
+        /** The request's source, else LEMONADE_BACKEND_SOURCE, else the config key. */
+        static std::string effective_backend_source();
+
         /** Download and install TheRock ROCm tarball for the specified architecture (Linux only) */
         static void install_therock(const std::string& arch, const std::string& version,
                                    DownloadProgressCallback progress_cb = nullptr);

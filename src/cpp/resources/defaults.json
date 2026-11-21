@@ -11,6 +11,7 @@
   "auto_evict": false,
   "auto_evict_threshold_pct": 0.9,
   "auto_update_models": false,
+  "backend_source": "github",
   "broadcast": true,
   "cloud_providers": [],
   "config_version": 2,
