@@ -71,6 +71,7 @@ struct RouterFit {
     RouterInput input;
     nlohmann::json tokens;  // input.text from the tokenizer, kept for router_tokens()
     bool truncated = false;
+    bool fits_by_bytes = false;  // the text was not tokenized on its own
 };
 
 RouterFit fit_router_input(const std::vector<std::string>& labels, const std::string& text,
@@ -93,6 +94,15 @@ struct RouterTokens {
 // `with_special` may hold bare ids; `without_special` must carry pieces.
 RouterTokens router_tokens(const nlohmann::json& with_special,
                            const nlohmann::json& without_special, size_t text_bytes);
+
+// How many of the special tokens that add_special puts around an input come before it.
+size_t special_token_lead(const nlohmann::json& with_special,
+                          const nlohmann::json& without_special);
+
+// The input's own tokens from an add_special answer: n_lead special tokens come
+// before them and n_specials - n_lead after them.
+nlohmann::json strip_special_tokens(const nlohmann::json& with_special, size_t n_lead,
+                                    size_t n_specials);
 
 struct RouterTokenGroups {
     std::vector<std::vector<size_t>> labels;

@@ -161,6 +161,11 @@ struct BackendDescriptor {
     // such a model may deploy in. Registration refuses the mode without one.
     std::vector<std::pair<std::string, std::vector<std::string>>> mode_capability_requirements;
 
+    // The common subprocess launcher applies *_device selection via the
+    // CUDA/ROCm/Vulkan visibility environment for this native GGML recipe.
+    // Engines with native selection (llama.cpp, sd.cpp) keep their own path.
+    bool common_gpu_visibility = false;
+
     const ContainerPolicy* container_for(const std::string& backend) const {
         auto it = containers.find(backend);
         return it == containers.end() ? nullptr : &it->second;
