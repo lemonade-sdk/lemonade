@@ -1874,6 +1874,7 @@ Canonical discovery uses query, capability, downloaded, limit and cursor. It exc
 | Status | Code | When |
 |--------|------|------|
 | `400` | `invalid_model_query` | The capability, limit or cursor is invalid |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 <!-- END GENERATED: openai.models -->
 
 ### Model Labels

@@ -84,7 +84,7 @@ public:
         example.format = ResponseFormat::Json;
         example.args = json::object();
         s.examples = {example};
-        s.errors = {kInvalidDiscoveryQuery};
+        s.errors = {kInvalidDiscoveryQuery, ApiRoute::kArgInvalid};
         return s;
     }
 

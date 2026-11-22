@@ -419,7 +419,6 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
-
     def test_000c_registered_model_query_contract(self):
         """Canonical /models discovery is queryable without MCP or GUI heuristics."""
         suffix = uuid.uuid4().hex[:8]
@@ -640,6 +639,7 @@ class EndpointTests(ServerTestBase):
                     )
                 except Exception:
                     pass
+
     def test_001_live_endpoint(self):
         """Test the /live endpoint for load balancer health checks."""
         response = requests.get(
