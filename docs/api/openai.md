@@ -1212,10 +1212,36 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ```json
 {
-  "created": 1791943145,
+  "created": 1795370112,
   "data": [
     {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAEgnRFWHRwYXJhbWV0ZXJzAEEgc2VyZW5l... (886,104 characters)"
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAACwnRFWHRwYXJhbWV0ZXJzAEEgc2VyZW5l... (838,928 characters)",
+      "generation_info": {
+        "clip_skip": 2,
+        "height": 512,
+        "kind": "image",
+        "models": {"model": "sd_turbo.safetensors"},
+        "negative_prompt": "",
+        "prompt": "A serene mountain landscape at sunset ",
+        "sample_params": {
+          "eta": 1.0,
+          "guidance": {"distilled_guidance": 3.5, "txt_cfg": 1.0},
+          "sample_method": "euler_a",
+          "sample_steps": 4,
+          "scheduler": "discrete"
+        },
+        "schema": "sdcpp.generation/v1",
+        "seed": "7262",
+        "vae_tiling_params": {
+          "enabled": true,
+          "rel_size_h": 0.0,
+          "rel_size_w": 0.0,
+          "target_overlap": 0.5,
+          "tile_size_h": 0,
+          "tile_size_w": 0
+        },
+        "width": 512
+      }
     }
   ],
   "output_format": "png"
@@ -1325,10 +1351,41 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ```json
 {
-  "created": 1791943169,
+  "created": 1795370150,
   "data": [
     {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAFR3RFWHRwYXJhbWV0ZXJzAEFkZCBhIHJl... (689,496 characters)"
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAADYHRFWHRwYXJhbWV0ZXJzAEFkZCBhIHJl... (776,060 characters)",
+      "generation_info": {
+        "clip_skip": 0,
+        "height": 512,
+        "kind": "image",
+        "models": {
+          "diffusion_model": "flux-2-klein-4b.safetensors",
+          "llm": "qwen_3_4b.safetensors",
+          "vae": "flux2-vae.safetensors"
+        },
+        "negative_prompt": "",
+        "prompt": "Add a red barn and mountains in the background, photorealistic ",
+        "sample_params": {
+          "eta": 0.0,
+          "flow_shift": 1.0,
+          "guidance": {"distilled_guidance": 3.5, "txt_cfg": 1.0},
+          "sample_method": "euler",
+          "sample_steps": 4,
+          "scheduler": "flux2"
+        },
+        "schema": "sdcpp.generation/v1",
+        "seed": "7282",
+        "vae_tiling_params": {
+          "enabled": true,
+          "rel_size_h": 0.0,
+          "rel_size_w": 0.0,
+          "target_overlap": 0.5,
+          "tile_size_h": 0,
+          "tile_size_w": 0
+        },
+        "width": 512
+      }
     }
   ],
   "output_format": "png"
@@ -1429,10 +1486,41 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ```json
 {
-  "created": 1791943188,
+  "created": 1795370167,
   "data": [
     {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAE3XRFWHRwYXJhbWV0ZXJzAHZhcmlhdGlv... (204,076 characters)"
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAC9nRFWHRwYXJhbWV0ZXJzAHZhcmlhdGlv... (272,020 characters)",
+      "generation_info": {
+        "clip_skip": 0,
+        "height": 512,
+        "kind": "image",
+        "models": {
+          "diffusion_model": "flux-2-klein-4b.safetensors",
+          "llm": "qwen_3_4b.safetensors",
+          "vae": "flux2-vae.safetensors"
+        },
+        "negative_prompt": "",
+        "prompt": "variation ",
+        "sample_params": {
+          "eta": 0.0,
+          "flow_shift": 1.0,
+          "guidance": {"distilled_guidance": 3.5, "txt_cfg": 1.0},
+          "sample_method": "euler",
+          "sample_steps": 4,
+          "scheduler": "flux2"
+        },
+        "schema": "sdcpp.generation/v1",
+        "seed": "7403",
+        "vae_tiling_params": {
+          "enabled": true,
+          "rel_size_h": 0.0,
+          "rel_size_w": 0.0,
+          "target_overlap": 0.5,
+          "tile_size_h": 0,
+          "tile_size_w": 0
+        },
+        "width": 512
+      }
     }
   ],
   "output_format": "png"
