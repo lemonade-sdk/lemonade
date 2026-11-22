@@ -153,6 +153,35 @@ bool is_repo_id_char(char c) {
     return std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.';
 }
 
+std::string default_preset(const json& card) {
+    const auto presets = card.is_object() ? card.find("presets") : card.end();
+    if (!card.is_object() || presets == card.end() || !presets->is_object()) return "";
+    if (presets->contains("chat")) return "chat";
+    if (presets->size() == 1) return presets->begin().key();
+    std::vector<std::string> base;
+    for (const auto& [name, preset] : presets->items()) {
+        (void)preset;
+        if (!is_gpu_variant(name)) base.push_back(name);
+    }
+    return base.size() == 1 ? base.front() : "";
+}
+
+PresetLimits execution_limits(const json& preset) {
+    PresetLimits limits;
+    if (!preset.is_object()) return limits;
+    const auto execution = preset.find("execution");
+    if (execution == preset.end() || !execution->is_object()) return limits;
+    if (execution->contains("context_capacity") && (*execution)["context_capacity"].is_number_integer()) {
+        const auto value = (*execution)["context_capacity"].get<std::int64_t>();
+        if (value > 0) limits.context_capacity = value;
+    }
+    if (execution->contains("max_tokens") && (*execution)["max_tokens"].is_number_integer()) {
+        const auto value = (*execution)["max_tokens"].get<std::int64_t>();
+        if (value > 0) limits.max_tokens = value;
+    }
+    return limits;
+}
+
 }  // namespace
 
 bool is_contained_relative_path(const std::string& path) {
@@ -175,21 +204,7 @@ BundlePlan plan_bundle(const json& card, const json& lock) {
     BundlePlan plan;
     plan.model_id = string_field(card.value("model", json::object()), "id");
     if (plan.model_id.empty()) throw std::runtime_error("Loom card has no model.id");
-    const auto presets = card.find("presets");
-    if (presets != card.end() && presets->is_object()) {
-        if (presets->contains("chat")) {
-            plan.preset = "chat";
-        } else if (presets->size() == 1) {
-            plan.preset = presets->begin().key();
-        } else {
-            std::vector<std::string> base;
-            for (const auto& [name, preset] : presets->items()) {
-                (void)preset;
-                if (!is_gpu_variant(name)) base.push_back(name);
-            }
-            if (base.size() == 1) plan.preset = base.front();
-        }
-    }
+    plan.preset = default_preset(card);
 
     const auto origins = read_origins(card, lock);
     const auto locked = read_lock_files(lock);
@@ -306,6 +321,25 @@ std::string target_preset(const json& card, const std::string& preset, const std
         return variant;
     }
     return preset;
+}
+
+PresetLimits preset_limits(const json& card, const std::string& target) {
+    const auto presets = card.is_object() ? card.find("presets") : card.end();
+    if (!card.is_object() || presets == card.end() || !presets->is_object()) return {};
+
+    const std::string resolved = target_preset(card, default_preset(card), target);
+    if (!resolved.empty() && presets->contains(resolved)) {
+        return execution_limits((*presets)[resolved]);
+    }
+
+    for (const bool skip_gpu_variants : {true, false}) {
+        for (const auto& [name, preset] : presets->items()) {
+            if (skip_gpu_variants && is_gpu_variant(name)) continue;
+            const PresetLimits limits = execution_limits(preset);
+            if (limits.context_capacity > 0 || limits.max_tokens > 0) return limits;
+        }
+    }
+    return {};
 }
 
 std::uint64_t parameter_bytes(const BundlePlan& plan) {

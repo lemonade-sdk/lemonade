@@ -392,16 +392,37 @@ void check_card_metadata() {
     }
 
     json r9700_card = kCard;
-    r9700_card["presets"]["chat-r9700"] = {{"execution", json::object()}};
+    r9700_card["presets"]["chat-r9700"] = {{"execution", {{"context_capacity", 131072}, {"max_tokens", 8192}}}};
     check("The R9700 runs the card's -r9700 preset",
           loom::target_preset(r9700_card, "chat", loom::kRadeonR9700Target) == "chat-r9700");
-    r9700_card["presets"]["chat-16gb"] = {{"execution", json::object()}};
+    r9700_card["presets"]["chat-16gb"] = {{"execution", {{"context_capacity", 65536}, {"max_tokens", 2048}}}};
     check("The 16 GB class runs the card's -16gb preset",
           loom::target_preset(r9700_card, "chat", loom::kGfx120116gbTarget) == "chat-16gb");
     check("Strix Halo runs the base preset",
           loom::target_preset(r9700_card, "chat", loom::kStrixHaloTarget) == "chat");
     check("The R9700 runs the base preset when the card has no variant",
           loom::target_preset(kCard, "chat", loom::kRadeonR9700Target) == "chat");
+
+    const auto strix_limits = loom::preset_limits(r9700_card, loom::kStrixHaloTarget);
+    check("Strix Halo reads the base preset's context capacity and max tokens",
+          strix_limits.context_capacity == 262144 && strix_limits.max_tokens == 4096);
+    const auto r9700_limits = loom::preset_limits(r9700_card, loom::kRadeonR9700Target);
+    check("R9700 reads the -r9700 preset's context capacity and max tokens",
+          r9700_limits.context_capacity == 131072 && r9700_limits.max_tokens == 8192);
+    const auto gfx16_limits = loom::preset_limits(r9700_card, loom::kGfx120116gbTarget);
+    check("16 GB class reads the -16gb preset's context capacity and max tokens",
+          gfx16_limits.context_capacity == 65536 && gfx16_limits.max_tokens == 2048);
+
+    json vision_card = kCard;
+    vision_card["presets"] = {
+        {"vision", {{"execution", {{"context_capacity", 262144}, {"max_tokens", 4096}}}}},
+        {"vision-r9700", {{"execution", {{"context_capacity", 131072}, {"max_tokens", 4096}}}}},
+        {"vision-16gb", {{"execution", {{"context_capacity", 32768}, {"max_tokens", 2048}}}}},
+    };
+    check("Non-chat base preset keeps its own capacity on Strix Halo instead of last alphabetical variant",
+          loom::preset_limits(vision_card, loom::kStrixHaloTarget).context_capacity == 262144);
+    check("Non-chat base preset resolves its -16gb variant",
+          loom::preset_limits(vision_card, loom::kGfx120116gbTarget).context_capacity == 32768);
     check("Parameter bytes sum the origin files",
           loom::parameter_bytes(loom::plan_bundle(kCard, kLock)) == 19095766304ull + 1033066592ull);
     check("Verified features become catalog labels",

@@ -331,8 +331,7 @@ private:
 
 // The iGPU is checked first so a Strix Halo with an attached dGPU keeps the
 // target it had before the R9700 was supported.
-std::string require_supported_gpu() {
-    std::vector<std::string> found;
+std::string detect_supported_gpu(std::vector<std::string>* found = nullptr) {
     try {
         const auto system_info = create_system_info();
         std::vector<GPUInfo> gpus = {system_info->get_amd_igpu_device()};
@@ -343,10 +342,17 @@ std::string require_supported_gpu() {
             const std::string arch = identify_rocm_arch_from_name(gpu.name);
             const std::string target = loom::device_target(arch, gpu.name, gpu.vram_gb);
             if (!target.empty()) return target;
-            if (!arch.empty()) found.push_back(arch);
+            if (found != nullptr && !arch.empty()) found->push_back(arch);
         }
     } catch (...) {
     }
+    return "";
+}
+
+std::string require_supported_gpu() {
+    std::vector<std::string> found;
+    const std::string target = detect_supported_gpu(&found);
+    if (!target.empty()) return target;
     std::string detail;
     for (const auto& arch : found) detail += (detail.empty() ? ", found " : ", ") + arch;
     throw std::runtime_error(
@@ -579,18 +585,12 @@ public:
             std::error_code ec;
             if (dir.empty() || !fs::is_regular_file(dir / kCardFile, ec)) return;
             const json card = read_json_file(dir / kCardFile);
-            const json presets = card.value("presets", json::object());
-            for (const auto& [name, preset] : presets.items()) {
-                if (!preset.is_object()) continue;
-                const json execution = preset.value("execution", json::object());
-                if (!execution.is_object()) continue;
-                if (execution.value("context_capacity", 0) > 0) {
-                    info.max_context_window = execution["context_capacity"].get<int64_t>();
-                }
-                if (execution.value("max_tokens", 0) > 0) {
-                    info.max_output_tokens = execution["max_tokens"].get<int64_t>();
-                }
-                if (name == "chat") break;
+            const PresetLimits limits = preset_limits(card, detect_supported_gpu());
+            if (limits.context_capacity > 0) {
+                info.max_context_window = limits.context_capacity;
+            }
+            if (limits.max_tokens > 0) {
+                info.max_output_tokens = limits.max_tokens;
             }
         } catch (const std::exception& error) {
             LOG(WARNING, "Loom") << "Cannot read the card for " << info.checkpoint() << ": "

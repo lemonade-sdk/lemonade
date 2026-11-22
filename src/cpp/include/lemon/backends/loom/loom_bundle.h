@@ -92,6 +92,13 @@ bool bundle_supports_target(const json& info, const std::string& target);
 // (16 GB class) variant when the card has one (a larger prefill chunk, same programs), else `preset`.
 std::string target_preset(const json& card, const std::string& preset, const std::string& target);
 
+struct PresetLimits {
+    std::int64_t context_capacity = 0;
+    std::int64_t max_tokens = 0;
+};
+
+PresetLimits preset_limits(const json& card, const std::string& target = "");
+
 // The bytes of the parameter files a bundle loads from its origins.
 std::uint64_t parameter_bytes(const BundlePlan& plan);
 
