@@ -4120,6 +4120,18 @@ if(BUILD_TESTING AND EXISTS "${_PI_PROFILE_TEST_SRC}")
     add_cpp_ci_test(PiProfileTest CI ON COMMAND test_pi_profile)
 endif()
 
+# Chat session store and export formats behind `lemonade chat --continue/--resume/--session`.
+set(_CHAT_SESSION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_chat_session.cpp")
+if(BUILD_TESTING AND EXISTS "${_CHAT_SESSION_TEST_SRC}")
+    add_executable(test_chat_session
+        test/cpp/test_chat_session.cpp
+        src/cpp/cli/chat_session.cpp
+    )
+    target_include_directories(test_chat_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include)
+    target_link_libraries(test_chat_session PRIVATE lemonade-server-core nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(ChatSessionTest CI ON COMMAND test_chat_session)
+endif()
+
 set(_MODEL_SYNC_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_sync_service.cpp")
 if(BUILD_TESTING AND EXISTS "${_MODEL_SYNC_TEST_SRC}")
     add_executable(test_model_sync_service test/cpp/test_model_sync_service.cpp)

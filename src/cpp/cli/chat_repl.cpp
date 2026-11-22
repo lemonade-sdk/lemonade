@@ -1,14 +1,24 @@
 #include "lemon_cli/chat_repl.h"
+#include "lemon_cli/chat_session.h"
+#include "lemon_cli/line_editor.h"
+#include "lemon_cli/session_picker.h"
 #include "lemon_cli/model_selection.h"
 
+#include <lemon/utils/path_utils.h>
+
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
+#include <filesystem>
 #include <iostream>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -350,13 +360,18 @@ void print_section_divider(const TermUi& ui, const std::string& label = "") {
     }
 }
 
-void print_input_prompt(const TermUi& ui, bool continuation = false) {
+constexpr int kInputPromptWidth = 4;
+
+std::string input_prompt_text(const TermUi& ui, bool continuation) {
     Style s(ui);
     if (continuation) {
-        std::cout << "  " << s.dim() << "." << s.reset() << " " << std::flush;
-    } else {
-        std::cout << "  " << s.cyan_b() << ">" << s.reset() << " " << std::flush;
+        return std::string("  ") + s.dim() + "." + s.reset() + " ";
     }
+    return std::string("  ") + s.cyan_b() + ">" + s.reset() + " ";
+}
+
+void print_input_prompt(const TermUi& ui, bool continuation = false) {
+    std::cout << input_prompt_text(ui, continuation) << std::flush;
 }
 
 // Sticky-style command hint above input prompts
@@ -412,6 +427,7 @@ void print_help(const TermUi& ui) {
         {"/exit, /quit",                "Leave the chat"},
         {"/clear",                      "Clear conversation history (keeps system prompt)"},
         {"/system <text>",              "Set/replace system prompt (also clears history)"},
+        {"/system --keep <text>",       "Edit system prompt and keep the conversation"},
         {"/model <name>",               "Switch active model (loads if needed, clears history)"},
         {"/load <name>",                "Load a model server-side without switching active chat"},
         {"/unload [name]",              "Unload one model, or all loaded models if omitted"},
@@ -422,6 +438,13 @@ void print_help(const TermUi& ui) {
         {"/stats",                      "Show usage from the last assistant turn"},
         {"/think [on|off]",             "Show or set reasoning mode (no arg = show)"},
         {"/multiline",                  "Toggle multiline input (end with a blank line)"},
+        {"/session",                    "Show the current session (ID, model, prompt, file)"},
+        {"/history [text]",             "Browse saved sessions (arrows, / filter, d delete, r rename)"},
+        {"/new [name]",                 "Start a new session; the current one stays saved"},
+        {"/rename <name>",              "Name the current session"},
+        {"/delete <id|name|#>",         "Delete a saved session; # is a row from /history (asks first)"},
+        {"/export [file]",              "Write this session as .md or .json (--format, --force)"},
+        {"/import <file>",              "Open a session exported as .md or .json"},
     };
     const int col = 24;
     for (const auto& r : rows) {
@@ -746,11 +769,45 @@ void print_stats(const TermUi& ui, const TurnResult& last) {
               << s.reset() << "\n";
 }
 
+// Same contract as read_user_input, using the terminal line editor, which draws the prompts
+// itself. Ctrl-C at an empty or single-line prompt flags an interrupt so the main loop exits;
+// while composing a multi-line message it only discards the buffer.
+bool read_user_input_edited(const TermUi& ui, LineEditor& editor, bool multiline,
+                            std::string& out) {
+    out.clear();
+    std::string line;
+    bool got_any = false;
+    while (true) {
+        const LineEditor::Result result = editor.read_line(
+            input_prompt_text(ui, got_any), kInputPromptWidth, line, /*remember=*/!multiline);
+        if (result == LineEditor::Result::Interrupted) {
+            out.clear();
+            if (multiline && got_any) {
+                print_info(ui, "multi-line buffer cleared");
+            } else {
+                g_interrupted = true;
+            }
+            return true;
+        }
+        if (result == LineEditor::Result::Eof) return got_any;
+        if (!multiline) {
+            out = line;
+            return true;
+        }
+        if (line.empty()) return true;
+        if (got_any) out += "\n";
+        out += line;
+        got_any = true;
+    }
+}
+
 // Read either a single line or when multiline mode is on, accumulate lines
 // until a blank line is entered (submit). Ctrl-C while buffering to discard the
 // in-progress lines and returning empty (the main loop will then redraw a fresh
-// prompt). Returns false on EOF.
-bool read_user_input(const TermUi& ui, bool multiline, std::string& out) {
+// prompt). Returns false on EOF. With an editor the prompts are drawn by it;
+// otherwise the caller prints the first prompt.
+bool read_user_input(const TermUi& ui, LineEditor* editor, bool multiline, std::string& out) {
+    if (editor != nullptr) return read_user_input_edited(ui, *editor, multiline, out);
     out.clear();
     if (!multiline) {
         if (!std::getline(std::cin, out)) {
@@ -786,13 +843,6 @@ bool read_user_input(const TermUi& ui, bool multiline, std::string& out) {
         return true;
     }
     return got_any;
-}
-
-void rebuild_messages(json& messages, const std::string& system_prompt) {
-    messages = json::array();
-    if (!system_prompt.empty()) {
-        messages.push_back({{"role", "system"}, {"content", system_prompt}});
-    }
 }
 
 std::pair<std::string, std::string> split_command(const std::string& line) {
@@ -1006,9 +1056,704 @@ std::string describe_exception(const std::exception& e) {
     return e.what();
 }
 
+// =============================================================================
+// Sessions
+// =============================================================================
+
+constexpr int kOneShotLockWaitMs = 30000;
+constexpr size_t kRecapBytes = 200;
+constexpr size_t kHistoryNameBytes = 32;
+
+struct SessionContext {
+    std::optional<SessionStore> store;
+    ChatSession session;
+    SessionLock lock;
+    std::vector<std::string> last_listing;  // Session IDs in the order /history last showed them.
+    bool autosave = false;  // Writes are allowed and the store is usable.
+    bool on_disk = false;   // The session file exists.
+};
+
+ChatSession new_session(const SessionContext& ctx, const std::string& model,
+                        const std::string& system_prompt) {
+    if (ctx.store) return ctx.store->create(model, system_prompt);
+    ChatSession session;
+    session.model = model;
+    session.system_prompt = system_prompt;
+    session.created_at = now_iso8601();
+    session.updated_at = session.created_at;
+    return session;
+}
+
+bool save_session(SessionContext& ctx, std::string& error) {
+    if (!ctx.autosave || !ctx.store) return true;
+    try {
+        if (!ctx.lock.held()) {
+            ctx.lock = ctx.store->lock(ctx.session.id, 0);
+            if (!ctx.lock.held()) {
+                throw std::runtime_error("the session is open in another lemonade chat");
+            }
+        }
+        ctx.session.ensure_title();
+        ctx.store->save(ctx.session);
+        ctx.on_disk = true;
+        return true;
+    } catch (const std::exception& e) {
+        error = e.what();
+        return false;
+    }
+}
+
+// Chooses the session for this run from the flags and applies the explicit overrides.
+// Returns an exit code; `error` explains a nonzero one.
+int open_session(const ChatOptions& options, bool oneshot, SessionContext& ctx,
+                 std::string& error) {
+    const bool selects = options.continue_last || !options.resume.empty() ||
+                         !options.session_name.empty();
+    ctx.autosave = !options.no_save && (selects || !oneshot);
+
+    std::string name;
+    if (!options.session_name.empty()) {
+        try {
+            name = validate_session_name(options.session_name);
+        } catch (const std::exception& e) {
+            error = e.what();
+            return kExitUsage;
+        }
+    }
+
+    try {
+        ctx.store = SessionStore::for_cli();
+    } catch (const std::exception& e) {
+        if (selects) {
+            error = std::string("cannot locate the session folder: ") + e.what();
+            return kExitFailure;
+        }
+        if (ctx.autosave) {
+            std::cerr << "Warning: sessions are disabled: " << e.what() << std::endl;
+        }
+        ctx.autosave = false;
+    }
+
+    const int lock_wait = oneshot ? kOneShotLockWaitMs : 0;
+    try {
+        if (!selects) {
+            ctx.session = new_session(ctx, options.initial_model, options.system_prompt);
+        } else if (!name.empty() && ctx.autosave) {
+            auto opened = ctx.store->open_named(name, options.initial_model,
+                                                options.system_prompt, lock_wait);
+            if (!opened.lock.held()) {
+                error = "session '" + name + "' is open in another lemonade chat";
+                return kExitFailure;
+            }
+            ctx.session = std::move(opened.session);
+            ctx.lock = std::move(opened.lock);
+            ctx.on_disk = true;
+        } else if (!name.empty()) {
+            if (auto id = ctx.store->find_by_name(name)) {
+                ctx.session = ctx.store->load(*id);
+                ctx.on_disk = true;
+            } else {
+                ctx.session = new_session(ctx, options.initial_model, options.system_prompt);
+                ctx.session.name = name;
+            }
+        } else {
+            std::string id;
+            if (options.continue_last) {
+                auto latest = ctx.store->latest_id();
+                if (!latest) {
+                    error = "no saved sessions to continue";
+                    return kExitFailure;
+                }
+                id = *latest;
+            } else {
+                id = ctx.store->resolve(options.resume);
+            }
+            if (ctx.autosave) {
+                ctx.lock = ctx.store->lock(id, lock_wait);
+                if (!ctx.lock.held()) {
+                    error = "session '" + id + "' is open in another lemonade chat";
+                    return kExitFailure;
+                }
+            }
+            ctx.session = ctx.store->load(id);
+            ctx.on_disk = true;
+        }
+    } catch (const std::exception& e) {
+        error = e.what();
+        return kExitFailure;
+    }
+
+    if (!options.initial_model.empty()) ctx.session.model = options.initial_model;
+    if (!options.system_prompt.empty()) ctx.session.system_prompt = options.system_prompt;
+
+    if (!oneshot && ctx.autosave && ctx.on_disk) {
+        ctx.session.touch();
+        std::string save_error;
+        if (!save_session(ctx, save_error)) {
+            error = "could not save session: " + save_error;
+            return kExitFailure;
+        }
+    }
+    return kExitOk;
+}
+
+std::string format_local_time(const std::string& iso) {
+    int y = 0, mo = 0, d = 0, h = 0, mi = 0, sec = 0;
+    if (std::sscanf(iso.c_str(), "%d-%d-%dT%d:%d:%d", &y, &mo, &d, &h, &mi, &sec) != 6) {
+        return iso;
+    }
+    std::tm utc{};
+    utc.tm_year = y - 1900;
+    utc.tm_mon = mo - 1;
+    utc.tm_mday = d;
+    utc.tm_hour = h;
+    utc.tm_min = mi;
+    utc.tm_sec = sec;
+#ifdef _WIN32
+    const std::time_t t = _mkgmtime(&utc);
+#else
+    const std::time_t t = timegm(&utc);
+#endif
+    if (t == static_cast<std::time_t>(-1)) return iso;
+    std::tm local{};
+#ifdef _WIN32
+    localtime_s(&local, &t);
+#else
+    localtime_r(&t, &local);
+#endif
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", &local);
+    return buf;
+}
+
+std::string one_line(const std::string& text, size_t max_bytes) {
+    std::string flat;
+    for (char c : text) flat += (c == '\n' || c == '\r' || c == '\t') ? ' ' : c;
+    return truncate_utf8(flat, max_bytes);
+}
+
+size_t visible_width(const std::string& text) {
+    size_t width = 0;
+    for (unsigned char c : text) {
+        if ((c & 0xC0) != 0x80) ++width;
+    }
+    return width;
+}
+
+std::vector<std::string> tokenize_args(const std::string& text) {
+    std::vector<std::string> tokens;
+    std::string current;
+    char quote = 0;
+    bool in_token = false;
+    for (char c : text) {
+        if (quote != 0) {
+            if (c == quote) quote = 0;
+            else current += c;
+        } else if (c == '"' || c == '\'') {
+            quote = c;
+            in_token = true;
+        } else if (c == ' ' || c == '\t') {
+            if (in_token) tokens.push_back(current);
+            current.clear();
+            in_token = false;
+        } else {
+            current += c;
+            in_token = true;
+        }
+    }
+    if (in_token) tokens.push_back(current);
+    return tokens;
+}
+
+std::string file_stem_for(const ChatSession& session) {
+    std::string stem;
+    for (unsigned char c : session.display_name()) {
+        const bool keep = std::isalnum(c) || c == '-' || c == '_' || c >= 0x80;
+        if (keep) stem += static_cast<char>(c);
+        else if (!stem.empty() && stem.back() != '-') stem += '-';
+    }
+    while (!stem.empty() && stem.back() == '-') stem.pop_back();
+    stem = truncate_utf8(stem, 50);
+    return stem.empty() || stem == "(empty)" ? "chat" : stem;
+}
+
+bool confirm(const std::string& question) {
+    std::cout << "  " << question << " [y/N] " << std::flush;
+    std::string answer;
+    if (!std::getline(std::cin, answer)) return false;
+    answer = trim(answer);
+    return answer == "y" || answer == "Y" || answer == "yes" || answer == "YES";
+}
+
+void print_session_notice(const TermUi& ui, const SessionContext& ctx, bool resumed) {
+    const ChatSession& session = ctx.session;
+    std::ostringstream line;
+    if (resumed) {
+        line << "Resumed '" << session.display_name() << "' (" << session.messages.size()
+             << (session.messages.size() == 1 ? " message" : " messages") << ")";
+        if (!ctx.autosave) line << " - read-only, changes are not saved";
+    } else if (ctx.autosave) {
+        line << "New session " << session.id << " - saved automatically (--no-save turns this off)";
+    } else {
+        line << "Saving is off for this chat";
+    }
+    print_info(ui, line.str());
+
+    if (!resumed) return;
+    const size_t total = session.messages.size();
+    for (size_t i = total > 2 ? total - 2 : 0; i < total; ++i) {
+        const auto& m = session.messages[i];
+        const std::string label = m.value("role", "") == "user" ? "you: " : "assistant: ";
+        print_info(ui, label + one_line(m.value("content", ""), kRecapBytes));
+    }
+}
+
+void print_session_info(const TermUi& ui, const SessionContext& ctx) {
+    Style s(ui);
+    const ChatSession& session = ctx.session;
+    auto row = [&](const char* label, const std::string& value) {
+        std::cout << "    " << s.dim() << label << s.reset()
+                  << std::string(10 - std::string(label).size(), ' ') << value << "\n";
+    };
+    row("id", session.id.empty() ? "(not saved)" : session.id);
+    row("name", session.name.empty() ? "(none; /rename sets one)" : session.name);
+    row("title", session.title.empty() ? "(set after the first message)" : session.title);
+    row("model", session.model);
+    row("messages", std::to_string(session.messages.size()));
+    row("tokens", std::to_string(session.usage.prompt_tokens) + " prompt, " +
+                      std::to_string(session.usage.completion_tokens) + " completion");
+    row("prompt", session.system_prompt.empty() ? "(none)"
+                                                 : one_line(session.system_prompt, kRecapBytes));
+    std::string where = "(not saved yet)";
+    if (!ctx.autosave) where = "(saving is off)";
+    else if (ctx.on_disk && ctx.store) where = lemon::utils::path_to_utf8(ctx.store->path_for(session.id));
+    row("file", where);
+}
+
+// Makes `next` the active session. Leaves the current one untouched and returns false
+// if the model cannot be loaded or another process has `next` open.
+bool switch_session(const TermUi& ui, lemonade::LemonadeClient& client, SessionContext& ctx,
+                    std::string& active_model, ChatSession next, bool on_disk) {
+    if (!next.model.empty() && next.model != active_model &&
+        !ensure_model_loaded(ui, client, next.model)) {
+        return false;
+    }
+
+    SessionLock next_lock;
+    if (ctx.autosave && on_disk) {
+        try {
+            next_lock = ctx.store->lock(next.id, 0);
+        } catch (const std::exception& e) {
+            print_error(ui, e.what());
+            return false;
+        }
+        if (!next_lock.held()) {
+            print_error(ui, "that session is open in another lemonade chat");
+            return false;
+        }
+    }
+
+    if (next.model.empty()) next.model = active_model;
+    else active_model = next.model;
+
+    ctx.lock = std::move(next_lock);
+    ctx.session = std::move(next);
+    ctx.on_disk = on_disk;
+    if (ctx.autosave && on_disk) {
+        ctx.session.touch();
+        std::string error;
+        if (!save_session(ctx, error)) print_error(ui, "could not save session: " + error);
+    }
+    print_session_notice(ui, ctx, /*resumed=*/true);
+    return true;
+}
+
+void start_fresh_session(SessionContext& ctx, std::string model, std::string system_prompt) {
+    ctx.lock = SessionLock();
+    ctx.session = new_session(ctx, model, system_prompt);
+    ctx.on_disk = false;
+}
+
+void history_numbered(const TermUi& ui, lemonade::LemonadeClient& client, SessionContext& ctx,
+                      std::string& active_model, const std::vector<ChatSession>& sessions,
+                      size_t problem_count) {
+    Style s(ui);
+    ctx.last_listing.clear();
+    int index = 0;
+    for (const auto& entry : sessions) {
+        ++index;
+        ctx.last_listing.push_back(entry.id);
+        const bool current = !ctx.session.id.empty() && entry.id == ctx.session.id;
+        const std::string label = one_line(entry.display_name(), kHistoryNameBytes);
+        const size_t pad = visible_width(label) < kHistoryNameBytes
+            ? kHistoryNameBytes - visible_width(label) : 1;
+        char number[16];
+        std::snprintf(number, sizeof(number), "%3d", index);
+        std::cout << "  " << s.dim() << number << s.reset() << (current ? " * " : "   ")
+                  << (current ? s.cyan_b() : "") << label << s.reset()
+                  << std::string(pad, ' ') << s.dim()
+                  << format_local_time(entry.updated_at) << "  "
+                  << entry.messages.size() << " msg  " << entry.model << "  " << entry.id
+                  << s.reset() << "\n";
+    }
+    if (problem_count > 0) {
+        print_info(ui, std::to_string(problem_count) + " file(s) in " +
+                           lemon::utils::path_to_utf8(ctx.store->dir()) + " could not be read");
+    }
+
+    std::cout << "  Open which session? (number, ID or name; Enter to cancel) " << std::flush;
+    std::string answer;
+    if (!std::getline(std::cin, answer)) return;
+    answer = trim(answer);
+    if (answer.empty()) return;
+
+    std::string id;
+    if (answer.find_first_not_of("0123456789") == std::string::npos) {
+        const size_t pick = std::strtoul(answer.c_str(), nullptr, 10);
+        if (pick < 1 || pick > sessions.size()) {
+            print_error(ui, "no session numbered " + answer);
+            return;
+        }
+        id = sessions[pick - 1].id;
+    } else {
+        try {
+            id = ctx.store->resolve(answer);
+        } catch (const std::exception& e) {
+            print_error(ui, e.what());
+            return;
+        }
+    }
+    if (id == ctx.session.id) {
+        print_info(ui, "that session is already open");
+        return;
+    }
+    try {
+        switch_session(ui, client, ctx, active_model, ctx.store->load(id), /*on_disk=*/true);
+    } catch (const std::exception& e) {
+        print_error(ui, e.what());
+    }
+}
+
+void perform_delete(const TermUi& ui, SessionContext& ctx, const std::string& id,
+                    const std::string& label, const std::string& active_model);
+void rename_stored_session(const TermUi& ui, SessionContext& ctx, const std::string& id,
+                           LineEditor* editor);
+
+// Browses saved sessions. On a terminal it is an interactive picker; otherwise it prints a
+// numbered list and asks for a choice. `query` limits the list to sessions whose name, title or
+// messages contain it.
+void handle_history(const TermUi& ui, lemonade::LemonadeClient& client, SessionContext& ctx,
+                    std::string& active_model, LineEditor* editor, const std::string& query) {
+    if (!ctx.store) {
+        print_error(ui, "no session folder is available");
+        return;
+    }
+    std::string filter = trim(query);
+    std::string selected = ctx.session.id;
+    bool reported_problems = false;
+    while (true) {
+        std::vector<std::string> problems;
+        std::vector<ChatSession> sessions = ctx.store->list(&problems);
+        if (sessions.empty()) {
+            print_info(ui, "no saved sessions");
+            return;
+        }
+        if (!problems.empty() && !reported_problems) {
+            reported_problems = true;
+            print_info(ui, std::to_string(problems.size()) + " file(s) in " +
+                               lemon::utils::path_to_utf8(ctx.store->dir()) +
+                               " could not be read");
+        }
+
+        if (!RawTerminal::available()) {
+            std::vector<ChatSession> matching;
+            for (auto& entry : sessions) {
+                if (session_matches(entry, filter)) matching.push_back(std::move(entry));
+            }
+            if (matching.empty()) {
+                print_info(ui, "no sessions match '" + filter + "'");
+                return;
+            }
+            history_numbered(ui, client, ctx, active_model, matching, 0);
+            return;
+        }
+
+        std::vector<PickerRow> rows;
+        for (const auto& entry : sessions) {
+            PickerRow row;
+            row.id = entry.id;
+            row.label = one_line(entry.display_name(), 80);
+            row.when = format_local_time(entry.updated_at);
+            row.model = entry.model;
+            row.msgs = entry.messages.size();
+            row.current = !ctx.session.id.empty() && entry.id == ctx.session.id;
+            row.haystack = search_text(entry);
+            for (const auto& m : entry.messages) {
+                if (m.value("role", "") == "user") {
+                    row.first = one_line(m.value("content", ""), 300);
+                    break;
+                }
+            }
+            if (!entry.messages.empty()) {
+                row.last = one_line(entry.messages.back().value("content", ""), 300);
+            }
+            rows.push_back(std::move(row));
+        }
+
+        ctx.last_listing.clear();
+        const PickerResult picked =
+            run_session_picker(rows, PickerStyle{ui.ansi, ui.unicode}, filter, selected);
+        filter = picked.filter;
+        selected = picked.id;
+
+        switch (picked.kind) {
+            case PickerResult::Kind::Cancel: return;
+            case PickerResult::Kind::Open:
+                if (picked.id == ctx.session.id) {
+                    print_info(ui, "that session is already open");
+                } else {
+                    try {
+                        switch_session(ui, client, ctx, active_model,
+                                       ctx.store->load(picked.id), /*on_disk=*/true);
+                    } catch (const std::exception& e) {
+                        print_error(ui, e.what());
+                    }
+                }
+                return;
+            case PickerResult::Kind::Delete: {
+                std::string label = picked.id;
+                for (const auto& entry : sessions) {
+                    if (entry.id == picked.id) label = entry.display_name();
+                }
+                perform_delete(ui, ctx, picked.id, label, active_model);
+                break;
+            }
+            case PickerResult::Kind::Rename:
+                rename_stored_session(ui, ctx, picked.id, editor);
+                break;
+        }
+    }
+}
+
+void handle_new(const TermUi& ui, SessionContext& ctx, const std::string& active_model,
+                const std::string& name) {
+    ChatSession fresh = new_session(ctx, active_model, ctx.session.system_prompt);
+    if (!name.empty()) {
+        try {
+            if (ctx.autosave && ctx.store) ctx.store->rename(fresh, name, /*persist=*/false);
+            else fresh.name = validate_session_name(name);
+        } catch (const std::exception& e) {
+            print_error(ui, e.what());
+            return;
+        }
+    }
+    ctx.lock = SessionLock();
+    ctx.session = std::move(fresh);
+    ctx.on_disk = false;
+    print_session_notice(ui, ctx, /*resumed=*/false);
+}
+
+void handle_rename(const TermUi& ui, SessionContext& ctx, const std::string& name) {
+    if (name.empty()) {
+        print_info(ui, "Usage: /rename <name>");
+        return;
+    }
+    try {
+        if (ctx.autosave && ctx.store) ctx.store->rename(ctx.session, name, ctx.on_disk);
+        else ctx.session.name = validate_session_name(name);
+        print_info(ui, "session named '" + ctx.session.name + "'");
+    } catch (const std::exception& e) {
+        print_error(ui, e.what());
+    }
+}
+
+void handle_delete(const TermUi& ui, SessionContext& ctx, const std::string& target,
+                   const std::string& active_model) {
+    if (target.empty()) {
+        print_info(ui, "Usage: /delete <id|name|#>");
+        return;
+    }
+    if (!ctx.store) {
+        print_error(ui, "no session folder is available");
+        return;
+    }
+    std::string id;
+    std::string label;
+    try {
+        const bool numeric = target.find_first_not_of("0123456789") == std::string::npos;
+        const size_t pick = numeric ? std::strtoul(target.c_str(), nullptr, 10) : 0;
+        if (numeric && pick >= 1 && pick <= ctx.last_listing.size()) {
+            id = ctx.last_listing[pick - 1];
+        } else {
+            id = ctx.store->resolve(target);
+        }
+        label = ctx.store->load(id).display_name();
+    } catch (const std::exception& e) {
+        const bool numeric = target.find_first_not_of("0123456789") == std::string::npos;
+        print_error(ui, numeric && ctx.last_listing.empty()
+                            ? std::string(e.what()) + " (run /history first to delete by number)"
+                            : std::string(e.what()));
+        return;
+    }
+    if (!confirm("Delete '" + label + "' (" + id + ")?")) {
+        print_info(ui, "cancelled");
+        return;
+    }
+    perform_delete(ui, ctx, id, label, active_model);
+}
+
+void perform_delete(const TermUi& ui, SessionContext& ctx, const std::string& id,
+                    const std::string& label, const std::string& active_model) {
+    const bool is_current = id == ctx.session.id;
+    if (is_current) ctx.lock = SessionLock();
+    try {
+        ctx.store->remove(id);
+    } catch (const std::exception& e) {
+        print_error(ui, e.what());
+        if (is_current && ctx.autosave) {
+            try {
+                ctx.lock = ctx.store->lock(id, 0);
+            } catch (const std::exception&) {
+            }
+        }
+        return;
+    }
+    print_info(ui, "deleted '" + label + "'");
+    if (is_current) {
+        start_fresh_session(ctx, active_model, ctx.session.system_prompt);
+        print_session_notice(ui, ctx, /*resumed=*/false);
+    }
+}
+
+void rename_stored_session(const TermUi& ui, SessionContext& ctx, const std::string& id,
+                           LineEditor* editor) {
+    std::string name;
+    const std::string prompt = "  Rename to (Enter to cancel): ";
+    if (editor != nullptr) {
+        if (editor->read_line(prompt, static_cast<int>(prompt.size()), name, false) !=
+            LineEditor::Result::Line) {
+            return;
+        }
+    } else {
+        std::cout << prompt << std::flush;
+        if (!std::getline(std::cin, name)) return;
+    }
+    name = trim(name);
+    if (name.empty()) return;
+
+    if (id == ctx.session.id) {
+        handle_rename(ui, ctx, name);
+        return;
+    }
+    try {
+        SessionLock lock = ctx.store->lock(id, 0);
+        if (!lock.held()) {
+            print_error(ui, "that session is open in another lemonade chat");
+            return;
+        }
+        ChatSession stored = ctx.store->load(id);
+        ctx.store->rename(stored, name, /*persist=*/true);
+        print_info(ui, "session named '" + stored.name + "'");
+    } catch (const std::exception& e) {
+        print_error(ui, e.what());
+    }
+}
+
+void handle_export(const TermUi& ui, const SessionContext& ctx, const std::string& args) {
+    std::string file;
+    std::optional<ExportFormat> format;
+    bool force = false;
+    const std::vector<std::string> tokens = tokenize_args(args);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        const std::string& tok = tokens[i];
+        if (tok == "--force" || tok == "-f") {
+            force = true;
+        } else if (tok == "--format" && i + 1 < tokens.size()) {
+            const std::string& value = tokens[++i];
+            if (value == "json") format = ExportFormat::Json;
+            else if (value == "md" || value == "markdown") format = ExportFormat::Markdown;
+            else {
+                print_error(ui, "unknown format '" + value + "' (use json or md)");
+                return;
+            }
+        } else if (tok.rfind("--", 0) == 0) {
+            print_info(ui, "Usage: /export [file] [--format json|md] [--force]");
+            return;
+        } else if (file.empty()) {
+            file = tok;
+        } else {
+            print_info(ui, "Usage: /export [file] [--format json|md] [--force]");
+            return;
+        }
+    }
+
+    ChatSession copy = ctx.session;
+    copy.ensure_title();
+    if (copy.messages.empty()) {
+        print_info(ui, "nothing to export yet");
+        return;
+    }
+    const std::filesystem::path path =
+        lemon::utils::path_from_utf8(file.empty() ? file_stem_for(copy) + ".md" : file);
+    const ExportFormat chosen = format.value_or(export_format_for_path(path));
+    try {
+        export_session_file(copy, path, chosen, force);
+        std::error_code ec;
+        const auto absolute = std::filesystem::absolute(path, ec);
+        print_info(ui, "exported " + std::to_string(copy.messages.size()) + " messages to " +
+                           lemon::utils::path_to_utf8(ec ? path : absolute));
+    } catch (const std::exception& e) {
+        print_error(ui, e.what());
+    }
+}
+
+void handle_import(const TermUi& ui, lemonade::LemonadeClient& client, SessionContext& ctx,
+                   std::string& active_model, const std::string& args) {
+    const std::vector<std::string> tokens = tokenize_args(args);
+    if (tokens.size() != 1) {
+        print_info(ui, "Usage: /import <file>");
+        return;
+    }
+
+    ChatSession imported;
+    try {
+        imported = import_session_file(lemon::utils::path_from_utf8(tokens[0]));
+    } catch (const std::exception& e) {
+        print_error(ui, std::string("cannot import '") + tokens[0] + "': " + e.what());
+        return;
+    }
+
+    const bool save = ctx.autosave && ctx.store;
+    if (save) {
+        try {
+            imported = ctx.store->import_session(std::move(imported));
+        } catch (const std::exception& e) {
+            print_error(ui, e.what());
+            return;
+        }
+    } else {
+        imported.created_at = imported.created_at.empty() ? now_iso8601() : imported.created_at;
+        imported.updated_at = now_iso8601();
+    }
+    const std::string saved_id = imported.id;
+    if (!switch_session(ui, client, ctx, active_model, std::move(imported), /*on_disk=*/save) &&
+        save) {
+        print_info(ui, "the imported session was saved as " + saved_id + "; open it with /history");
+    } else if (save) {
+        print_info(ui, "imported as session " + saved_id);
+    }
+}
+
+// What a one-shot request produced, kept so it can be added to a saved session.
+struct OneShotAnswer {
+    std::string text;
+    int64_t prompt_tokens = 0;
+    int64_t completion_tokens = 0;
+};
+
 // Sends one non-streaming request; prints the answer text, or one JSON object if json_output.
 int oneshot_blocking(lemonade::LemonadeClient& client, const std::string& model,
-                     json request_body, bool json_output) {
+                     json request_body, bool json_output, OneShotAnswer& answer) {
     request_body["stream"] = false;
 
     json response;
@@ -1040,6 +1785,13 @@ int oneshot_blocking(lemonade::LemonadeClient& client, const std::string& model,
         return oneshot_error("server returned a response without an assistant message",
                              kExitFailure);
     }
+    if (message.contains("content") && message["content"].is_string()) {
+        answer.text = message["content"].get<std::string>();
+    }
+    if (response.contains("usage") && response["usage"].is_object()) {
+        answer.prompt_tokens = response["usage"].value("prompt_tokens", 0);
+        answer.completion_tokens = response["usage"].value("completion_tokens", 0);
+    }
     if (json_output) {
         json out;
         out["model"] = response.contains("model") && response["model"].is_string()
@@ -1064,7 +1816,8 @@ int oneshot_blocking(lemonade::LemonadeClient& client, const std::string& model,
 }
 
 // Streams the answer text to stdout as it arrives; any stream failure exits 1 after partial output.
-int oneshot_streaming(lemonade::LemonadeClient& client, json request_body) {
+int oneshot_streaming(lemonade::LemonadeClient& client, json request_body,
+                      OneShotAnswer& answer) {
     request_body["stream"] = true;
     request_body["stream_options"] = {{"include_usage", true}};
 
@@ -1088,6 +1841,11 @@ int oneshot_streaming(lemonade::LemonadeClient& client, json request_body) {
                     ? err["message"].get<std::string>() : err.dump();
                 return;
             }
+            if (chunk.is_object() && chunk.contains("usage") && chunk["usage"].is_object()) {
+                answer.prompt_tokens = chunk["usage"].value("prompt_tokens", answer.prompt_tokens);
+                answer.completion_tokens =
+                    chunk["usage"].value("completion_tokens", answer.completion_tokens);
+            }
             if (!chunk.contains("choices") || !chunk["choices"].is_array() ||
                 chunk["choices"].empty()) {
                 return;
@@ -1097,6 +1855,7 @@ int oneshot_streaming(lemonade::LemonadeClient& client, json request_body) {
             if (delta.is_object() && delta.contains("content") && delta["content"].is_string()) {
                 const std::string piece = delta["content"].get<std::string>();
                 if (!piece.empty()) {
+                    answer.text += piece;
                     std::cout << piece << std::flush;
                     if (std::cout.fail()) stdout_failed = true;
                     last_char = piece.back();
@@ -1174,7 +1933,14 @@ int run_chat_oneshot(lemonade::LemonadeClient& client, const ChatOptions& option
         return oneshot_error("no input; pass --prompt or pipe text on stdin", kExitUsage);
     }
 
-    std::string model = options.initial_model;
+    SessionContext session_ctx;
+    {
+        std::string session_error;
+        const int session_rc = open_session(options, /*oneshot=*/true, session_ctx, session_error);
+        if (session_rc != kExitOk) return oneshot_error(session_error, session_rc);
+    }
+
+    std::string model = session_ctx.session.model;
     bool already_loaded = false;
     if (model.empty()) {
         try {
@@ -1210,20 +1976,33 @@ int run_chat_oneshot(lemonade::LemonadeClient& client, const ChatOptions& option
         }
     }
 
-    json messages = json::array();
-    if (!options.system_prompt.empty()) {
-        messages.push_back({{"role", "system"}, {"content", options.system_prompt}});
-    }
+    json messages = session_ctx.session.request_messages();
     messages.push_back({{"role", "user"}, {"content", content}});
 
     json request_body;
     request_body["model"] = model;
     request_body["messages"] = messages;
 
-    if (options.json_output || !options.stream) {
-        return oneshot_blocking(client, model, request_body, options.json_output);
+    OneShotAnswer answer;
+    const int code = (options.json_output || !options.stream)
+        ? oneshot_blocking(client, model, request_body, options.json_output, answer)
+        : oneshot_streaming(client, request_body, answer);
+
+    if (code == kExitOk && session_ctx.autosave && !answer.text.empty()) {
+        ChatSession& session = session_ctx.session;
+        session.model = model;
+        session.messages.push_back({{"role", "user"}, {"content", content}});
+        session.messages.push_back({{"role", "assistant"}, {"content", answer.text}});
+        session.usage.prompt_tokens += answer.prompt_tokens;
+        session.usage.completion_tokens += answer.completion_tokens;
+        session.usage.turns += 1;
+        session.touch();
+        std::string save_error;
+        if (!save_session(session_ctx, save_error)) {
+            return oneshot_error("could not save session: " + save_error, kExitFailure);
+        }
     }
-    return oneshot_streaming(client, request_body);
+    return code;
 }
 
 } // namespace
@@ -1240,8 +2019,19 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
 
     TermUi ui = init_term_ui();
 
-    std::string active_model = options.initial_model;
-    std::string system_prompt = options.system_prompt;
+    SessionContext session_ctx;
+    {
+        std::string session_error;
+        const int session_rc = open_session(options, /*oneshot=*/false, session_ctx, session_error);
+        if (session_rc != kExitOk) {
+            print_error(ui, session_error);
+            return session_rc;
+        }
+    }
+    ChatSession& session = session_ctx.session;
+    const bool resumed = session_ctx.on_disk;
+
+    std::string active_model = session.model;
     bool stream = options.stream;
 
     if (active_model.empty()) {
@@ -1256,12 +2046,11 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
     if (!ensure_model_loaded(ui, client, active_model)) {
         return 1;
     }
-
-    json messages;
-    rebuild_messages(messages, system_prompt);
+    session.model = active_model;
 
     print_banner(ui);
     print_welcome(ui, active_model);
+    print_session_notice(ui, session_ctx, resumed);
 
     install_interrupt_handler();
 
@@ -1269,6 +2058,26 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
     ReasoningMode reasoning_mode = ReasoningMode::Default;
     TurnResult last_turn;
     int exit_code = 0;
+
+    // Writes the session after a change. A session that has never held a message is not
+    // created on disk, so opening and quitting leaves nothing behind.
+    auto persist = [&]() {
+        if (!session_ctx.autosave) return;
+        if (!session_ctx.on_disk && session.messages.empty()) return;
+        session.touch();
+        std::string save_error;
+        if (!save_session(session_ctx, save_error)) {
+            print_error(ui, "could not save session: " + save_error);
+        }
+    };
+
+    std::optional<LineEditor> editor;
+    if (LineEditor::supported()) {
+        editor.emplace();
+        for (const auto& m : session.messages) {
+            if (m.value("role", "") == "user") editor->add_history(m.value("content", ""));
+        }
+    }
 
     while (true) {
         // Ctrl-C at the prompt exits the REPL. If it fires mid-stream, the
@@ -1280,15 +2089,20 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
         }
 
         print_hint_bar(ui, active_model, multiline);
-        print_input_prompt(ui);
+        if (!editor) print_input_prompt(ui);
         std::string input;
-        if (!read_user_input(ui, multiline, input)) {
+        if (!read_user_input(ui, editor ? &*editor : nullptr, multiline, input)) {
             std::cout << std::endl;
             break;
         }
 
         if (input.empty()) {
             continue;
+        }
+
+        const size_t first_char = input.find_first_not_of(" \t\r");
+        if (first_char != std::string::npos && input[first_char] == '/') {
+            input = trim(input);
         }
 
         if (input[0] == '/') {
@@ -1298,12 +2112,22 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
             } else if (cmd == "/help") {
                 print_help(ui);
             } else if (cmd == "/clear") {
-                rebuild_messages(messages, system_prompt);
+                session.clear_messages();
+                persist();
                 print_info(ui, "history cleared");
             } else if (cmd == "/system") {
-                system_prompt = rest;
-                rebuild_messages(messages, system_prompt);
-                print_info(ui, "system prompt updated; history cleared");
+                if (rest == "--keep" || rest.rfind("--keep ", 0) == 0) {
+                    session.system_prompt = trim(rest.substr(6));
+                    persist();
+                    print_info(ui, session.system_prompt.empty()
+                                       ? "system prompt removed; history kept"
+                                       : "system prompt updated; history kept");
+                } else {
+                    session.system_prompt = rest;
+                    session.clear_messages();
+                    persist();
+                    print_info(ui, "system prompt updated; history cleared");
+                }
             } else if (cmd == "/model") {
                 if (rest.empty()) {
                     print_info(ui, "Usage: /model <name>");
@@ -1311,9 +2135,26 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
                 }
                 if (ensure_model_loaded(ui, client, rest)) {
                     active_model = rest;
-                    rebuild_messages(messages, system_prompt);
+                    session.model = active_model;
+                    session.clear_messages();
+                    persist();
                     print_info(ui, "switched to " + active_model + "; history cleared");
                 }
+            } else if (cmd == "/session") {
+                print_session_info(ui, session_ctx);
+            } else if (cmd == "/history") {
+                handle_history(ui, client, session_ctx, active_model,
+                               editor ? &*editor : nullptr, trim(rest));
+            } else if (cmd == "/new") {
+                handle_new(ui, session_ctx, active_model, trim(rest));
+            } else if (cmd == "/rename") {
+                handle_rename(ui, session_ctx, rest);
+            } else if (cmd == "/delete") {
+                handle_delete(ui, session_ctx, trim(rest), active_model);
+            } else if (cmd == "/export") {
+                handle_export(ui, session_ctx, rest);
+            } else if (cmd == "/import") {
+                handle_import(ui, client, session_ctx, active_model, rest);
             } else if (cmd == "/load") {
                 if (rest.empty()) {
                     print_info(ui, "Usage: /load <name>");
@@ -1431,13 +2272,13 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
         }
 
         // Regular user message.
-        messages.push_back({{"role", "user"}, {"content", input}});
+        session.messages.push_back({{"role", "user"}, {"content", input}});
 
         std::string assistant_text;
         TurnResult turn = stream
-            ? stream_chat_turn_capture(ui, client, active_model, messages,
+            ? stream_chat_turn_capture(ui, client, active_model, session.request_messages(),
                                        reasoning_mode, assistant_text)
-            : blocking_chat_turn(ui, client, active_model, messages,
+            : blocking_chat_turn(ui, client, active_model, session.request_messages(),
                                  reasoning_mode, assistant_text);
 
         if (turn.interrupted) {
@@ -1448,11 +2289,15 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
         if (assistant_text.empty()) {
             // Server returned no content (likely an error already printed).
             // Drop the user turn so the next attempt isn't poisoned.
-            if (!messages.empty()) messages.erase(messages.size() - 1);
+            if (!session.messages.empty()) session.messages.erase(session.messages.size() - 1);
             continue;
         }
 
-        messages.push_back({{"role", "assistant"}, {"content", assistant_text}});
+        session.messages.push_back({{"role", "assistant"}, {"content", assistant_text}});
+        session.usage.prompt_tokens += turn.prompt_tokens;
+        session.usage.completion_tokens += turn.completion_tokens;
+        if (turn.ok) session.usage.turns += 1;
+        persist();
         last_turn = turn;
         if (turn.ok) {
             print_stats(ui, turn);
@@ -1461,6 +2306,9 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
     }
 
     uninstall_interrupt_handler();
+    if (session_ctx.autosave && session_ctx.on_disk) {
+        print_info(ui, "session saved - resume with: lemonade chat --resume " + session.id);
+    }
     return exit_code;
 }
 

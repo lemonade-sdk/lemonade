@@ -208,6 +208,10 @@ struct CliConfig {
     bool chat_no_stream = false;
     std::optional<std::string> chat_prompt;
     bool chat_json = false;
+    bool chat_continue = false;
+    bool chat_no_save = false;
+    std::string chat_resume;
+    std::string chat_session;
     std::string chat_system_prompt;
 
     // Bench command options
@@ -575,6 +579,10 @@ static int handle_chat_command(lemonade::LemonadeClient& client, const CliConfig
     options.stream = !config.chat_no_stream;
     options.prompt = config.chat_prompt;
     options.json_output = config.chat_json;
+    options.continue_last = config.chat_continue;
+    options.resume = config.chat_resume;
+    options.session_name = config.chat_session;
+    options.no_save = config.chat_no_save;
     return lemon_cli::run_chat_repl(client, options);
 }
 
@@ -1741,6 +1749,22 @@ int main(int argc, char* argv[]) {
         "Print one JSON response object (one-shot only)");
     chat_cmd->add_flag("--no-stream", config.chat_no_stream,
         "Disable streaming; print the full response when it is ready");
+    const auto not_blank = [](const std::string& value) {
+        return value.find_first_not_of(" \t") == std::string::npos
+            ? std::string("must not be empty") : std::string();
+    };
+    CLI::Option* continue_opt = chat_cmd->add_flag("--continue", config.chat_continue,
+        "Continue the most recently used saved session");
+    CLI::Option* resume_opt = chat_cmd->add_option("--resume", config.chat_resume,
+        "Resume a saved session by ID, unique ID prefix, or name")
+        ->type_name("ID_OR_NAME")->check(not_blank);
+    CLI::Option* session_opt = chat_cmd->add_option("--session", config.chat_session,
+        "Open the session called NAME, creating it if needed (works with -p)")
+        ->type_name("NAME")->check(not_blank);
+    chat_cmd->add_flag("--no-save", config.chat_no_save,
+        "Do not write anything to the session store for this run");
+    continue_opt->excludes(resume_opt)->excludes(session_opt);
+    resume_opt->excludes(session_opt);
 
     // Unload options
     unload_cmd->add_option("model", config.model, "Model name to unload")->type_name("MODEL");
