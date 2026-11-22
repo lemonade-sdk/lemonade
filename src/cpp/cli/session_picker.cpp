@@ -72,8 +72,9 @@ PickerResult run_session_picker(const std::vector<PickerRow>& rows, const Picker
 
     const char* reset = style.ansi ? "\033[0m" : "";
     const char* dim = style.ansi ? "\033[2m" : "";
-    const char* title = style.ansi ? "\033[1;38;5;221m" : "";
-    const char* highlight = style.ansi ? "\033[1;38;5;87m\033[48;5;236m" : "";
+    const char* title = style.ansi ? "\033[1;38;5;120m" : "";
+    const char* accent = style.ansi ? "\033[1;38;5;221m" : "";
+    const char* highlight = style.ansi ? "\033[1;38;5;221m\033[48;5;236m" : "";
     const char* warn = style.ansi ? "\033[1;38;5;177m" : "";
     const char* sep = style.unicode ? " \xc2\xb7 " : " | ";
     const std::string dash = style.unicode ? "\xe2\x94\x80" : "-";
@@ -135,7 +136,7 @@ PickerResult run_session_picker(const std::vector<PickerRow>& rows, const Picker
             lines.push_back("  " + std::string(warn) + "Delete '" + list[sel]->label +
                             "'? [y/N]" + reset);
         } else if (filtering) {
-            lines.push_back("  " + std::string(title) + "/" + reset + filter + "_   " + dim +
+            lines.push_back("  " + std::string(accent) + "/" + reset + filter + "_   " + dim +
                             "Enter keep" + sep + "Esc clear" + reset);
         } else {
             const std::string arrows = style.unicode ? "\xe2\x86\x91\xe2\x86\x93 move" : "Up/Down move";

@@ -155,8 +155,8 @@ struct Style {
     const char* italic()  const { return ui.ansi ? "\033[3m"  : ""; }
     const char* yellow()  const { return ui.ansi ? "\033[38;5;221m" : ""; }
     const char* yellow_b() const { return ui.ansi ? "\033[1;38;5;221m" : ""; }
-    const char* cyan()    const { return ui.ansi ? "\033[38;5;87m"  : ""; }
-    const char* cyan_b()  const { return ui.ansi ? "\033[1;38;5;87m" : ""; }
+    const char* accent()  const { return ui.ansi ? "\033[38;5;221m" : ""; }
+    const char* accent_b() const { return ui.ansi ? "\033[1;38;5;221m" : ""; }
     const char* green()   const { return ui.ansi ? "\033[38;5;120m" : ""; }
     const char* red()     const { return ui.ansi ? "\033[1;31m" : ""; }
     const char* gray()    const { return ui.ansi ? "\033[38;5;245m" : ""; }
@@ -243,7 +243,7 @@ private:
         std::unique_lock<std::mutex> lk(mu_);
         int i = 0;
         while (running_.load()) {
-            std::cout << "\r  " << s.cyan() << frames[i] << s.reset()
+            std::cout << "\r  " << s.accent() << frames[i] << s.reset()
                       << " " << s.dim() << label_ << s.reset()
                       << std::flush;
             i = (i + 1) % n;
@@ -331,15 +331,15 @@ void print_welcome(const TermUi& ui, const std::string& model) {
 
     std::cout << "  " << s.bold() << "Tips for getting started:" << s.reset() << "\n";
     const char* bullet = ui.unicode ? "•" : "*";
-    std::cout << "    " << s.cyan() << bullet << s.reset()
+    std::cout << "    " << s.accent() << bullet << s.reset()
               << " Ask anything in natural language\n";
-    std::cout << "    " << s.cyan() << bullet << s.reset()
+    std::cout << "    " << s.accent() << bullet << s.reset()
               << " Try " << s.dim() << "\"write a haiku about lemons\"" << s.reset()
               << " or " << s.dim() << "\"explain transformers\"" << s.reset() << "\n";
-    std::cout << "    " << s.cyan() << bullet << s.reset()
+    std::cout << "    " << s.accent() << bullet << s.reset()
               << " " << s.dim() << "/help" << s.reset()
               << " for commands, " << s.dim() << "/exit" << s.reset() << " to quit\n";
-    std::cout << "    " << s.cyan() << bullet << s.reset()
+    std::cout << "    " << s.accent() << bullet << s.reset()
               << " " << s.dim() << "/model <name>" << s.reset()
               << " to switch models on the fly\n";
 }
@@ -367,7 +367,7 @@ std::string input_prompt_text(const TermUi& ui, bool continuation) {
     if (continuation) {
         return std::string("  ") + s.dim() + "." + s.reset() + " ";
     }
-    return std::string("  ") + s.cyan_b() + ">" + s.reset() + " ";
+    return std::string("  ") + s.accent_b() + ">" + s.reset() + " ";
 }
 
 void print_input_prompt(const TermUi& ui, bool continuation = false) {
@@ -391,7 +391,7 @@ void print_hint_bar(const TermUi& ui, const std::string& model, bool multiline) 
     std::cout << "\n"
               << "  "
               << s.gray() << repeat(dash, 3) << s.reset()
-              << s.cyan_b() << label << s.reset()
+              << s.accent_b() << label << s.reset()
               << s.gray() << repeat(dash, avail) << s.reset()
               << "  " << s.dim() << hint << s.reset() << "\n"
               << "  " << s.dim();
@@ -448,7 +448,7 @@ void print_help(const TermUi& ui) {
     };
     const int col = 24;
     for (const auto& r : rows) {
-        std::cout << "    " << s.cyan() << r.cmd << s.reset();
+        std::cout << "    " << s.accent() << r.cmd << s.reset();
         int pad = col - static_cast<int>(std::string(r.cmd).size());
         if (pad < 1) pad = 1;
         std::cout << std::string(pad, ' ') << s.dim() << r.desc << s.reset() << "\n";
@@ -918,7 +918,7 @@ void print_model_list(const TermUi& ui,
         std::cout << "    " << status_color << status_glyph << s.reset() << " ";
 
         if (m.id == active_model) {
-            std::cout << s.cyan_b() << m.id << s.reset();
+            std::cout << s.accent_b() << m.id << s.reset();
         } else {
             std::cout << m.id;
         }
@@ -1390,7 +1390,7 @@ void history_numbered(const TermUi& ui, lemonade::LemonadeClient& client, Sessio
         char number[16];
         std::snprintf(number, sizeof(number), "%3d", index);
         std::cout << "  " << s.dim() << number << s.reset() << (current ? " * " : "   ")
-                  << (current ? s.cyan_b() : "") << label << s.reset()
+                  << (current ? s.accent_b() : "") << label << s.reset()
                   << std::string(pad, ' ') << s.dim()
                   << format_local_time(entry.updated_at) << "  "
                   << entry.messages.size() << " msg  " << entry.model << "  " << entry.id
@@ -2213,7 +2213,7 @@ int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) 
 
                             std::cout << "    ";
                             if (name == active_model) {
-                                std::cout << s.cyan_b() << name << s.reset();
+                                std::cout << s.accent_b() << name << s.reset();
                             } else {
                                 std::cout << name;
                             }
