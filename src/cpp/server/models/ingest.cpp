@@ -31,6 +31,7 @@
 #include <lemon/utils/safe_fs.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <set>
 #include <stdexcept>
@@ -42,6 +43,66 @@ using namespace lemon::utils;
 
 namespace lemon {
 namespace models {
+
+namespace {
+
+// The cached attestation is only an optimization for an already hashed file.
+// A missing/changed metadata entry always falls back to a full digest check.
+bool verified_file_metadata(const fs::path& path, std::uintmax_t& size,
+                            std::string& mtime_ticks) {
+    std::error_code ec;
+    if (!fs::is_regular_file(path, ec) || ec) return false;
+    size = fs::file_size(path, ec);
+    if (ec) return false;
+    const auto mtime = fs::last_write_time(path, ec);
+    if (ec) return false;
+    // Preserve subsecond precision without overflowing an epoch-relative int64.
+    mtime_ticks = file_time_cache_stamp(mtime);
+    return true;
+}
+
+json verified_registry_files(const fs::path& cache) {
+    const fs::path provenance = cache / ".lemonade_registry.json";
+    if (!safe_exists(provenance)) return json::object();
+    try {
+        const json state = JsonUtils::load_from_file(path_to_utf8(provenance));
+        if (state.contains("verified_files") && state["verified_files"].is_object()) {
+            return state["verified_files"];
+        }
+    } catch (const std::exception&) {
+        // Fail closed: a missing/corrupt cache merely costs one hash scan.
+    }
+    return json::object();
+}
+
+bool registry_verification_matches(const fs::path& path, const std::string& name,
+                                   const std::string& algorithm, const std::string& hash,
+                                   const json& verified_files) {
+    const auto it = verified_files.find(name);
+    if (it == verified_files.end() || !it->is_object()) return false;
+    const json& prior = *it;
+    auto equals_string = [&](const char* key, const std::string& expected) {
+        const auto field = prior.find(key);
+        return field != prior.end() && field->is_string() &&
+               field->get<std::string>() == expected;
+    };
+    if (!equals_string("algorithm", algorithm) || !equals_string("hash", hash) ||
+        !equals_string("path", path_to_utf8(path.lexically_normal()))) return false;
+    if (!prior.contains("size") || !prior["size"].is_number_unsigned() ||
+        !prior.contains("mtime_ticks") || !prior["mtime_ticks"].is_string()) return false;
+    if (safe_exists(path_from_utf8(path_to_utf8(path) + ".partial"))) return false;
+    std::uintmax_t size = 0;
+    std::string mtime_ticks;
+    return verified_file_metadata(path, size, mtime_ticks) &&
+           size == prior["size"].get<std::uintmax_t>() &&
+           mtime_ticks == prior["mtime_ticks"].get<std::string>();
+}
+
+bool is_http_download(const std::string& url) {
+    return url.rfind("https://", 0) == 0 || url.rfind("http://", 0) == 0;
+}
+
+}  // namespace
 
 ModelIngest::ModelIngest(Deps deps) : deps_(std::move(deps)) {
     collections_ = std::make_unique<IngestCollections>(deps_, *this);
@@ -341,6 +402,11 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
         repo_download_paths[repo_id] = path_to_utf8(snapshot);
     }
 
+    std::map<std::string, json> verified_by_repo;
+    for (const auto& repo_id : repo_ids) {
+        verified_by_repo.emplace(repo_id, verified_registry_files(repo_cache_paths.at(repo_id)));
+    }
+
     // Headers are the host's fact; the source carries it.
     std::map<std::string, std::string> headers = repositories.at(main_repo_id)->auth_headers();
 
@@ -431,14 +497,63 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
                 {"algorithm", planned.file.expected_hash_algorithm},
                 {"value", planned.file.expected_hash}
             };
+            // A snapshot with unchanged remote artifacts is NOT evidence that
+            // the local bytes were ever verified. Only attested files skip.
+            const fs::path existing = path_from_utf8(planned.file.download_path) /
+                                      path_from_utf8(planned.file.name);
+            if (is_http_download(planned.file.url) &&
+                registry_verification_matches(existing, planned.file.name,
+                    planned.file.expected_hash_algorithm, planned.file.expected_hash,
+                    verified_by_repo.at(planned.repo_id))) {
+                entry["verify_existing_hash"] = false;
+                const json& cached = verified_by_repo.at(planned.repo_id).at(planned.file.name);
+                entry["verified_existing_size"] = cached.at("size");
+                entry["verified_existing_mtime_ticks"] = cached.at("mtime_ticks");
+                LOG(DEBUG, "ModelManager") << "Skipping repeat hash scan for: "
+                                            << planned.file.name << std::endl;
+            }
         }
         manifest["files"].push_back(std::move(entry));
     }
 
+    // Capture the file's verified state before the next transfer can change it.
+    std::map<std::string, json> verified_updates_by_repo;
+    for (const auto& repo_id : repo_ids) {
+        verified_updates_by_repo.emplace(repo_id, json::object());
+    }
+    const auto file_completed = [&](const DownloadFile& file, std::size_t index) {
+        const PlannedFile& planned = selected.at(index);
+        if (planned.file.name != file.name ||
+            planned.file.download_path != file.download_path ||
+            planned.file.expected_hash != file.expected_hash) {
+            throw std::logic_error("Download plan changed during verification");
+        }
+        json& updates = verified_updates_by_repo.at(planned.repo_id);
+        if (file.expected_hash.empty() || !is_http_download(file.url)) {
+            updates[file.name] = nullptr;
+            return;
+        }
+        const fs::path path = path_from_utf8(file.download_path) / path_from_utf8(file.name);
+        std::uintmax_t size = 0;
+        std::string mtime_ticks;
+        if (safe_exists(path_from_utf8(path_to_utf8(path) + ".partial")) ||
+            !verified_file_metadata(path, size, mtime_ticks)) {
+            updates[file.name] = nullptr;
+            return;
+        }
+        updates[file.name] = {
+            {"path", path_to_utf8(path.lexically_normal())},
+            {"algorithm", file.expected_hash_algorithm},
+            {"hash", file.expected_hash},
+            {"size", size},
+            {"mtime_ticks", mtime_ticks},
+        };
+    };
+
     const fs::path manifest_path =
         path_from_utf8(repo_snapshot_paths.at(main_repo_id)) / ".download_manifest.json";
     JsonUtils::save_to_file(manifest, path_to_utf8(manifest_path));
-    download_from_manifest(manifest, headers, progress_callback, cancel);
+    download_from_manifest(manifest, headers, progress_callback, cancel, file_completed);
     std::error_code manifest_ec;
     fs::remove(manifest_path, manifest_ec);
 
@@ -472,6 +587,7 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
             listing.download_revision,
             active_snapshot_id,
             snapshot_id,
+            verified_updates_by_repo.at(repo_id),
         }, checkpoint_type);
     }
 
@@ -493,10 +609,11 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
 void ModelIngest::download_from_manifest(const json& manifest,
                                          std::map<std::string, std::string>& headers,
                                          DownloadProgressCallback progress_callback,
-                                         const utils::CancelToken& cancel) const {
+                                         const utils::CancelToken& cancel,
+                                         const std::function<void(const DownloadFile&, std::size_t)>& file_completed) const {
     const DownloadPlan plan = download_plan_from_manifest(manifest);
     ArtifactTransfer transfer = ArtifactTransfer::with_default_transfers();
-    transfer.execute(plan, headers, progress_callback, cancel);
+    transfer.execute(plan, headers, progress_callback, cancel, file_completed);
 }
 
 
