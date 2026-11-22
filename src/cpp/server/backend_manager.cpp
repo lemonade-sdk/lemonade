@@ -201,8 +201,8 @@ void install_container_backend(const std::string& recipe, const std::string& bac
     // Replace whatever the install directory held, such as an earlier pin or a
     // binary release of the same backend. The previous image goes last so a
     // failed write leaves the working install in place.
-    const std::string previous_image =
-        backends::BackendUtils::get_installed_backend_image(recipe, backend);
+    const std::vector<std::string> previous_images =
+        backends::BackendUtils::get_installed_backend_images(recipe, backend);
     const fs::path install_dir = version_file.parent_path();
     const fs::path staging_dir =
         install_dir.parent_path() / ("." + install_dir.filename().string() + ".staging");
@@ -222,8 +222,10 @@ void install_container_backend(const std::string& recipe, const std::string& bac
     if (ec) {
         throw std::runtime_error("Failed to replace " + install_dir.string() + ": " + ec.message());
     }
-    if (!previous_image.empty() && previous_image != image) {
-        manager.remove_image(previous_image);
+    for (const auto& previous_image : previous_images) {
+        if (previous_image != image) {
+            manager.remove_image(previous_image);
+        }
     }
     LOG(INFO, "BackendManager") << "Installed " << recipe << ":" << backend << " as " << image
                                 << std::endl;
@@ -248,9 +250,9 @@ std::string container_registry_url(const std::string& image) {
 }
 
 void uninstall_container_backend(const std::string& recipe, const std::string& backend) {
-    const std::string image = backends::BackendUtils::get_installed_backend_image(recipe, backend);
-    if (!image.empty()) {
-        utils::ContainerManager::global().remove_image(image);
+    const auto& manager = utils::ContainerManager::global();
+    for (const auto& image : backends::BackendUtils::get_installed_backend_images(recipe, backend)) {
+        manager.remove_image(image);
     }
     const fs::path install_dir = container_version_file(recipe, backend).parent_path();
     std::error_code ec;
