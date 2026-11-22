@@ -1270,6 +1270,17 @@ if(WIN32)
             LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:\"${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest\""
         )
     endif()
+
+    # Reports HIP's device order to the server; it must sit beside lemond.exe
+    # and LemonadeServer.exe, which look for it in their own directory.
+    add_executable(lemonade-hip-probe src/cpp/hip_probe/main.cpp)
+    target_compile_definitions(lemonade-hip-probe PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
+    set_target_properties(lemonade-hip-probe PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/Debug"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release"
+    )
+    add_dependencies(${EXECUTABLE_NAME} lemonade-hip-probe)
 endif()
 
 
@@ -1894,6 +1905,9 @@ if(WIN32 AND WIX_EXECUTABLE)
     if(TARGET ${EXECUTABLE_NAME})
         list(APPEND WIX_PACKAGED_TARGETS ${EXECUTABLE_NAME})
     endif()
+    if(TARGET lemonade-hip-probe)
+        list(APPEND WIX_PACKAGED_TARGETS lemonade-hip-probe)
+    endif()
 
     if(TARGET wix_installer_minimal)
         if(TARGET web-app)
@@ -2373,6 +2387,14 @@ else()
         "${EMBEDDABLE_DIR_NAME}")
 endif()
 
+set(EMBEDDABLE_HIP_PROBE_COPY)
+set(EMBEDDABLE_EXTRA_DEPENDS)
+if(TARGET lemonade-hip-probe)
+    set(EMBEDDABLE_HIP_PROBE_COPY
+        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemonade-hip-probe>" "${EMBEDDABLE_STAGING_DIR}/")
+    set(EMBEDDABLE_EXTRA_DEPENDS lemonade-hip-probe)
+endif()
+
 add_custom_target(embeddable
     # Clean and create staging directory
     COMMAND ${CMAKE_COMMAND} -E remove_directory "${EMBEDDABLE_STAGING_DIR}"
@@ -2381,6 +2403,7 @@ add_custom_target(embeddable
     # Copy binaries
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemond>" "${EMBEDDABLE_STAGING_DIR}/"
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemonade>" "${EMBEDDABLE_STAGING_DIR}/"
+    ${EMBEDDABLE_HIP_PROBE_COPY}
 
     # Copy LICENSE
     COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${EMBEDDABLE_STAGING_DIR}/"
@@ -2408,7 +2431,7 @@ add_custom_target(embeddable
     # Create archive
     COMMAND ${CMAKE_COMMAND} -E chdir "${CMAKE_BINARY_DIR}" ${EMBEDDABLE_TAR_CMD}
 
-    DEPENDS lemond lemonade
+    DEPENDS lemond lemonade ${EMBEDDABLE_EXTRA_DEPENDS}
     COMMENT "Assembling embeddable archive: ${EMBEDDABLE_ARCHIVE_NAME}"
     VERBATIM
 )
