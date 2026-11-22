@@ -23,6 +23,7 @@ except ImportError:
 
 from utils.server_base import (
     ServerTestBase,
+    _auth_headers,
     model_recipe_options,
     pull_model_with_retry,
     run_server_tests,
@@ -171,6 +172,149 @@ class OllamaTests(ServerTestBase):
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 404)
+
+    def test_005a_show_resolves_alias(self):
+        """Test /api/show describes an alias's target, and pull and delete refuse the alias."""
+        alias_name = "test-ollama-show-alias"
+        target = requests.post(
+            f"{OLLAMA_BASE_URL}/api/show",
+            json={"name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(target.status_code, 200, target.text)
+
+        add = requests.post(
+            f"{self.internal_url}/aliases",
+            headers=_auth_headers(),
+            json={"alias": alias_name, "target": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(add.status_code, 200, add.text)
+
+        try:
+            for name in (alias_name, f"{alias_name}:latest"):
+                with self.subTest(name=name):
+                    response = requests.post(
+                        f"{OLLAMA_BASE_URL}/api/show",
+                        json={"name": name},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                    self.assertEqual(response.status_code, 200, response.text)
+                    self.assertEqual(response.json(), target.json())
+
+            # Resolving an alias here would download or delete its target's files.
+            pull = requests.post(
+                f"{OLLAMA_BASE_URL}/api/pull",
+                json={"model": alias_name, "stream": False},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(pull.status_code, 404, pull.text)
+            delete = requests.delete(
+                f"{OLLAMA_BASE_URL}/api/delete",
+                json={"model": alias_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(delete.status_code, 404, delete.text)
+        finally:
+            requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+    def test_005b_pull_and_delete_refuse_a_latest_alias(self):
+        """Test an alias named "<model>:latest" is refused, not pulled or deleted as <model>."""
+        self.ensure_model_pulled()
+        alias_name = f"{ENDPOINT_TEST_MODEL}:latest"
+        add = requests.post(
+            f"{self.internal_url}/aliases",
+            headers=_auth_headers(),
+            json={"alias": alias_name, "target": TOOL_CALLING_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(add.status_code, 200, add.text)
+
+        try:
+            pull = requests.post(
+                f"{OLLAMA_BASE_URL}/api/pull",
+                json={"model": alias_name, "stream": False},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(pull.status_code, 404, pull.text)
+            delete = requests.delete(
+                f"{OLLAMA_BASE_URL}/api/delete",
+                json={"model": alias_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(delete.status_code, 404, delete.text)
+        finally:
+            requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+        model = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(model.status_code, 200, model.text)
+        self.assertTrue(
+            model.json()["downloaded"], f"{ENDPOINT_TEST_MODEL} was deleted"
+        )
+
+    def test_005c_delete_a_registered_latest_name(self):
+        """Test /api/delete of a registered "<model>:latest" deletes that model, not <model>."""
+        self.ensure_model_pulled()
+        latest_name = f"{ENDPOINT_TEST_MODEL}:latest"
+        try:
+            # The registration is saved before the download, so a failed download
+            # still leaves it behind for the cleanup below.
+            register = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": f"user.{latest_name}",
+                    "checkpoint": "nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S",
+                    "recipe": "llamacpp",
+                    "embedding": True,
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(register.status_code, 200, register.text)
+
+            delete = requests.delete(
+                f"{OLLAMA_BASE_URL}/api/delete",
+                json={"model": latest_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(delete.status_code, 200, delete.text)
+
+            model = requests.get(
+                f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(model.status_code, 200, model.text)
+            self.assertTrue(
+                model.json()["downloaded"], f"{ENDPOINT_TEST_MODEL} was deleted"
+            )
+
+            latest = requests.get(
+                f"{self.base_url}/models/{requests.utils.quote(f'user.{latest_name}')}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            if latest.status_code != 404:
+                self.assertEqual(latest.status_code, 200, latest.text)
+                self.assertIs(
+                    latest.json()["downloaded"],
+                    False,
+                    f"user.{latest_name} was not deleted",
+                )
+        finally:
+            requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": f"user.{latest_name}"},
+                timeout=TIMEOUT_DEFAULT,
+            )
 
     def test_006_ps(self):
         """Test /api/ps returns running models with correct Ollama format."""
@@ -717,6 +861,49 @@ class OllamaTests(ServerTestBase):
         self.assertIn("message", data)
         self.assertIn("content", data["message"])
 
+    def test_021a_generate_with_image_input(self):
+        """Test /api/generate passes `images` to a vision model, in both stream modes."""
+        if sys.platform == "darwin":
+            self.skipTest("Vision model not supported on macOS")
+        pull_model_with_retry(VISION_MODEL)
+
+        # 10x10 red PNG to avoid backend assertions on tiny images.
+        png_b64 = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFElEQVR42mP4"
+            "z8DwnxjMMKqQvgoBksPHOXvuG4oAAAAASUVORK5CYII="
+        )
+        prompt = "What color is this image?"
+
+        def generate(stream, images):
+            response = requests.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json={
+                    "model": VISION_MODEL,
+                    "prompt": prompt,
+                    "images": images,
+                    "stream": stream,
+                    "options": {"num_predict": 10},
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            return [json.loads(line) for line in response.text.splitlines() if line]
+
+        # Each image adds its tokens to the prompt only if it reaches the model.
+        one_image = generate(False, [png_b64])[0]
+        two_images = generate(False, [png_b64, png_b64])[0]
+        self.assertGreater(one_image["eval_count"], 0, one_image)
+        self.assertGreater(
+            two_images["prompt_eval_count"], one_image["prompt_eval_count"]
+        )
+
+        lines = generate(True, [png_b64])
+        self.assertTrue(all("error" not in line for line in lines), lines)
+        self.assertTrue(
+            all(isinstance(line.get("response"), str) for line in lines), lines
+        )
+        self.assertTrue(lines[-1]["done"], lines)
+
     def skip_without_sdcpp(self):
         if sys.platform == "darwin":
             self.skipTest("sd-cpp not supported on macOS")
@@ -867,8 +1054,8 @@ class OllamaTests(ServerTestBase):
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertEqual(response.json()["done_reason"], "unload")
 
-    def test_022g_show_speech_decision_capabilities(self):
-        """Test /api/show reports speech and decision the way Ollama does."""
+    def test_022g_show_speech_decision_audio_capabilities(self):
+        """Test /api/show reports speech, decision and audio the way Ollama does."""
         cases = {
             # A text-to-speech model.
             "kokoro-v1": ["speech"],
@@ -876,8 +1063,8 @@ class OllamaTests(ServerTestBase):
             "Bert-Phishing-ONNX": [],
             # A SystemOne decision model reports nothing else, as in Ollama.
             "Laya-GGUF": ["decision"],
-            # /api/generate drops audio sent in `images`, so audio input is not reported.
-            "Qwen2.5-Omni-3B-GGUF": ["completion", "vision"],
+            # A llama.cpp chat model that hears audio.
+            "Qwen2.5-Omni-3B-GGUF": ["completion", "vision", "audio"],
         }
         for model, expected in cases.items():
             with self.subTest(model=model):

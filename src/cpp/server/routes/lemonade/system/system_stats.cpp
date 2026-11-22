@@ -28,7 +28,7 @@ public:
             "name but reports GPU memory usage, which can be shared system memory on AMD APUs.",
             "GPU, VRAM and NPU telemetry depends on the operating system and installed drivers. On "
             "Linux, AMD and NVIDIA GPUs are enumerated; on Windows, NVIDIA GPUs through NVML and AMD "
-            "GPUs through DXGI, DXCore and PDH; on macOS `gpus` is empty. NVML does not report "
+            "GPUs through DXGI, DXCore, D3DKMT and PDH; on macOS `gpus` is empty. NVML does not report "
             "whether memory is dedicated or shared, so NVIDIA GPUs report `memory_type` as `unknown`.",
         };
 

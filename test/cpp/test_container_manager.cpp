@@ -7,8 +7,10 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/ds4/ds4.h"
+#include "lemon/backends/gufo/gufo.h"
 #include "lemon/backends/gufo/gufo_server.h"
 #include "lemon/backends/halogen/halogen_server.h"
+#include "lemon/system_info.h"
 #include "lemon/utils/container_manager.h"
 
 #include <cstdio>
@@ -24,6 +26,7 @@
 using lemon::utils::ContainerHost;
 using lemon::utils::ContainerManager;
 using lemon::utils::ContainerRunSpec;
+using lemon::utils::ContainerUser;
 
 namespace {
 
@@ -46,6 +49,8 @@ std::string join(const std::vector<std::string>& argv) {
 struct FakeHost {
     std::set<std::string> tools;
     bool gpu_access = false;
+    // The groups owning the device nodes a run passes in.
+    std::vector<std::string> device_gids = {"990"};
     std::string account = "alice";
     std::map<std::string, std::string> subids;  // getsubids arguments -> output
     // `docker info`'s exit code and its OperatingSystem|SecurityOptions answer.
@@ -71,9 +76,7 @@ struct FakeHost {
         h.on_path = [this](const std::string& name) { return tools.count(name) > 0; };
         h.gpu_devices_accessible = [this]() { return gpu_access; };
         h.account = [this]() { return account; };
-        h.group_id = [](const std::string& group) {
-            return group == "render" ? std::string("990") : std::string();
-        };
+        h.device_group_ids = [this](const std::vector<std::string>&) { return device_gids; };
         h.env = [this](const std::string& name) {
             const auto it = env.find(name);
             return it == env.end() ? std::string() : it->second;
@@ -165,7 +168,7 @@ void test_run_command() {
     FakeHost docker;
     docker.tools = {"docker"};
     const std::string docker_command = join(ContainerManager(docker.host()).run_command(example_spec()));
-    check("docker run adds the host's render ID and publishes no port",
+    check("docker run adds the device nodes' group IDs and publishes no port",
           docker_command == "docker" + common + " --group-add 990" +
                                 mount_and_home + image_and_program);
 
@@ -189,6 +192,36 @@ void test_run_command() {
                               " --cap-add SYS_PTRACE -v ") != std::string::npos &&
               policy_command.find(" --env HOME=/tmp --env HIP_VISIBLE_DEVICES=0"
                                   " --env ROCBLAS_USE_HIPBLASLT=1 -p ") != std::string::npos);
+
+    FakeHost video_kfd;
+    video_kfd.tools = {"docker"};
+    video_kfd.device_gids = {"44", "990"};
+    check("docker run adds every group that owns a device node",
+          join(ContainerManager(video_kfd.host()).run_command(policy))
+                  .find(" --device /dev/dri --device /dev/kfd --group-add 44 --group-add 990"
+                        " --cap-add SYS_PTRACE ") != std::string::npos);
+
+    FakeHost root_owned;
+    root_owned.tools = {"docker"};
+    root_owned.device_gids = {};
+    check("docker run adds no group when no device node has one",
+          join(ContainerManager(root_owned.host()).run_command(example_spec()))
+                  .find("--group-add") == std::string::npos);
+
+    ContainerRunSpec non_root = example_spec();
+    non_root.user = ContainerUser{1000, 1000};
+    check("rootless podman maps the account onto an image's own user",
+          join(ContainerManager(podman.host()).run_command(non_root)) ==
+              "podman" + common + " --group-add keep-groups --userns=keep-id:uid=1000,gid=1000" +
+                  mount_and_home + " -p 127.0.0.1:8001:8001" + image_and_program);
+    check("rootless podman through the account's podman.socket maps the image's user too",
+          join(ContainerManager(user_socket.host()).run_command(non_root))
+                  .find(" --annotation run.oci.keep_original_groups=1"
+                        " --userns=keep-id:uid=1000,gid=1000 -v ") != std::string::npos);
+    check("docker and rootful podman run an image's own user unmapped",
+          join(ContainerManager(docker.host()).run_command(non_root)).find("--userns") ==
+                  std::string::npos &&
+              join(rootful_manager.run_command(non_root)).find("--userns") == std::string::npos);
 
     ContainerRunSpec colon = example_spec();
     colon.mounts = {{"/home/alice/a:b.gguf", "/mnt/models/a:b.gguf"}};
@@ -478,7 +511,7 @@ void test_oci_runtime() {
     FakeHost rootful = runc;
     rootful.oci_runtime = "runc";
     rootful.podman_rootless = "false";
-    check("rootful Podman on runc passes, since it adds the render group by ID",
+    check("rootful Podman on runc passes, since it adds the device nodes' groups by ID",
           !ContainerManager(rootful.host()).check_podman());
 
     FakeHost own_socket = runc;
@@ -604,7 +637,7 @@ void test_halogen_kernel_check() {
 void test_gufo_argv() {
     const std::string argv = join(lemon::backends::gufo::build_server_argv(
         "Qwen3.8-27B-Gufo", "/mnt/models/target.gguf", "/mnt/models/mmproj-BF16.gguf",
-        "/mnt/models/draft.gguf", "dflash2", 8192, 8001, "--think off"));
+        "/mnt/models/draft.gguf", "dflash2", 8192, "0.0.0.0", 8001, "--think off"));
     check("gufo serves the target under Lemonade's model name, with its projector and its "
           "DFlash2 draft",
           argv == "serve llm --model /mnt/models/target.gguf --served-model-name "
@@ -613,10 +646,10 @@ void test_gufo_argv() {
                   "/mnt/models/draft.gguf --think off");
     check("gufo passes an MTP draft through --mtp-model and a DSpark draft through --dspark-model",
           join(lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "d.gguf", "mtp", 0,
-                                                        1, ""))
+                                                        "127.0.0.1", 1, ""))
                       .find("--speculative mtp --mtp-model d.gguf") != std::string::npos &&
               join(lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "d.gguf",
-                                                            "dspark", 0, 1, ""))
+                                                            "dspark", 0, "127.0.0.1", 1, ""))
                       .find("--speculative dspark --dspark-model d.gguf") != std::string::npos);
     using lemon::backends::gufo::speculative_mode;
     check("gufo reads a draft's mode from its GGUF architecture",
@@ -632,11 +665,27 @@ void test_gufo_argv() {
     check("gufo refuses a draft of an architecture it cannot run", threw);
     threw = false;
     try {
-        lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "", "", 0, 1, "--port 9");
+        lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "", "", 0, "127.0.0.1", 1,
+                                                 "--port 9");
     } catch (const std::invalid_argument&) {
         threw = true;
     }
     check("gufo_args cannot move the port", threw);
+    using lemon::backends::gufo::release_tag;
+    check("gufo's host build comes from the release its image pin is tagged with",
+          release_tag("0.34.0@sha256:49b1fce40cb43e33c46d91595e300cb320cdec768fcd976f8c8da24b402fc133") ==
+                  "v0.34.0" &&
+              release_tag("v0.35.0") == "v0.35.0");
+    using lemon::backends::gufo::installed_version;
+    const std::string pin =
+        "0.35.0@sha256:99e9b5471b7a0000000000000000000000000000000000000000000000000000";
+    check("a host install of the pinned gufo release reports the pin",
+          installed_version("v0.35.0", pin, "") == pin &&
+              installed_version("v0.35.0", pin, "builtin") == pin &&
+              installed_version("v0.34.0", pin, "") == "v0.34.0");
+    check("a gufo release the user pinned is reported as that release",
+          installed_version("v0.35.0", pin, "v0.35.0") == "v0.35.0" &&
+              installed_version("v0.34.0", pin, "v0.34.0") == "v0.34.0");
 }
 
 void test_ds4_memory_plan() {
@@ -659,6 +708,10 @@ void test_descriptors_and_pins() {
     const nlohmann::json versions = nlohmann::json::parse(in);
     for (const auto* desc : lemon::backends::all_descriptors()) {
         for (const auto& row : desc->support) {
+            // A backend can run in a container on one OS and on the host on another.
+            if (row.supported_os.count(lemon::get_current_os()) == 0) {
+                continue;
+            }
             const bool container = desc->container_for(row.backend) != nullptr;
             check(desc->recipe + ":" + row.backend + " is labeled container exactly when it has a policy",
                   container == (row.format == lemon::BackendFormat::Container));
@@ -675,6 +728,14 @@ void test_descriptors_and_pins() {
                                 versions[desc->recipe][backend].get<std::string>()));
         }
     }
+#ifdef _WIN32
+    check("gufo:rocm runs the release's Windows build on the host",
+          lemon::backends::gufo::descriptor.container_for("rocm") == nullptr);
+#else
+    const auto& gufo_user = lemon::backends::gufo::descriptor.container_for("rocm")->user;
+    check("gufo:rocm declares the gufo-org image's 1000:1000 user",
+          gufo_user && gufo_user->uid == 1000 && gufo_user->gid == 1000);
+#endif
 }
 
 }  // namespace

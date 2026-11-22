@@ -3,8 +3,12 @@
 // Compile: g++ -std=c++17 -I src/cpp/include test/cpp/test_auto_tune.cpp -o test_auto_tune
 
 #include "lemon/gguf_reader.h"
+#include "lemon/swa_cache_profile.h"
 #include "lemon/auto_context_budget.h"
 #include <cmath>
+#include <cstdlib>
+#include <optional>
+#include <utility>
 #include <cstdio>
 #include <limits>
 #include <vector>
@@ -297,6 +301,74 @@ static void test_varying_heads_swa() {
 }
 
 
+
+static void test_gemma4_bounded_swa() {
+    GgufMetadata m;
+    m.architecture = "gemma4";
+    m.block_count = 48;
+    m.key_length = 512;
+    m.value_length = 512;
+    m.key_length_swa = 256;
+    m.value_length_swa = 256;
+    m.sliding_window = 1024;
+    for (int i = 0; i < 48; ++i) {
+        const bool sliding = i % 6 != 5;
+        m.sliding_window_pattern.push_back(sliding);
+        m.head_count_kv_per_layer.push_back(sliding ? 8 : 1);
+    }
+    derive_scalars(m);
+
+    const double unbounded = lemon::compute_weighted_kv_cache_bytes_per_token(m);
+    const auto profile = lemon::compute_bounded_swa_profile(m, "llamacpp");
+    check("Gemma4 12B: original 40-SWA / 8-full classification preserved",
+          approx_eq(unbounded, 344064.0) && profile &&
+          approx_eq(profile->swa_bytes_per_cell, 327680.0));
+    check("Gemma4 12B: conservative non-FA V padding is included",
+          profile && approx_eq(profile->full_bytes_per_token, 40960.0));
+
+    constexpr double draft_bytes_per_token = 26624.0;
+    const double old_slope = unbounded * lemon::AUTO_CTX_MTP_KV_MULTIPLIER +
+                             draft_bytes_per_token;
+    const auto before = lemon::estimate_auto_context_budget(
+        31.8, 7.75, old_slope, true, true);
+    check("Gemma4 12B MTP: reproduces observed 60k limit",
+          before.max_tokens >= 58000 && before.max_tokens < 62000);
+    if (profile) {
+        const double safe_slope = profile->unbounded_bytes_per_token() *
+                                      lemon::AUTO_CTX_MTP_KV_MULTIPLIER +
+                                  draft_bytes_per_token;
+        const auto budget = lemon::estimate_auto_context_budget(
+            31.8, 7.75, safe_slope, true, true);
+        const auto ctx = lemon::bounded_swa_context_limit(
+            *profile, budget.kv_gib,
+            profile->full_bytes_per_token * lemon::AUTO_CTX_MTP_KV_MULTIPLIER +
+                draft_bytes_per_token,
+            profile->swa_bytes_per_cell * lemon::AUTO_CTX_MTP_KV_MULTIPLIER,
+            262144);
+        check("Gemma4 12B MTP: full 262144-token context fits 5090 budget",
+              ctx == 262144);
+        const auto hrx_profile = lemon::compute_bounded_swa_profile(m, "llamacpp-hrx");
+        check("Gemma4 HRX uses the same SWA estimate",
+              hrx_profile &&
+              approx_eq(hrx_profile->full_bytes_per_token, profile->full_bytes_per_token) &&
+              approx_eq(hrx_profile->swa_bytes_per_cell, profile->swa_bytes_per_cell));
+    }
+    m.architecture = "qwen35";
+    // A hybrid with recurrent/SSM layers must never receive an ISWA-only budget.
+    m.full_attention_interval = 4;
+    check("Qwen hybrid: no ISWA optimization",
+          !lemon::compute_bounded_swa_profile(m, "llamacpp"));
+    m.architecture = "gemma4";
+    m.full_attention_interval = 0;
+    m.sliding_window = 0;
+    check("Gemma4 without window: conservative estimate",
+          !lemon::compute_bounded_swa_profile(m, "llamacpp"));
+    m.sliding_window = 1024;
+    m.sliding_window_pattern.pop_back();
+    check("Gemma4 with incomplete per-layer pattern: conservative estimate",
+          !lemon::compute_bounded_swa_profile(m, "llamacpp"));
+}
+
 static void test_auto_context_budget() {
     using lemon::estimate_auto_context_budget;
     // 5090 (32 GiB), Qwen3.8-27B Q4 (16.5 GiB), vision projector and MTP.
@@ -332,6 +404,50 @@ static void test_auto_context_budget() {
                                                  true, false, false);
     check("auto ctx: discrete and UMA budgets differ",
           discrete.reserve_gib < apu.reserve_gib);
+    auto cpu_budget = estimate_auto_context_budget(16.0, 5.0, 65536.0,
+                                                    false, false);
+    auto cpu_with_uma_hint = estimate_auto_context_budget(16.0, 5.0, 65536.0,
+                                                           false, false, true, 24.0);
+    check("auto ctx: CPU budget ignores any UMA GPU hint",
+          cpu_budget.max_tokens == cpu_with_uma_hint.max_tokens);
+    check("auto ctx: host workspace minimum is 0.5 GiB",
+          approx_eq(cpu_budget.reserve_gib,
+              lemon::AUTO_CTX_HOST_RESERVE.memory_headroom.estimate(16.0) +
+              lemon::AUTO_CTX_HOST_RESERVE.compute_workspace.estimate(5.0)));
+    check("auto ctx: dGPU headroom is fixed at 1 GiB",
+          approx_eq(lemon::AUTO_CTX_DISCRETE_GPU_RESERVE.memory_headroom.estimate(8.0), 1.0) &&
+          approx_eq(lemon::AUTO_CTX_DISCRETE_GPU_RESERVE.memory_headroom.estimate(32.0), 1.0) &&
+          approx_eq(lemon::AUTO_CTX_DISCRETE_GPU_RESERVE.memory_headroom.estimate(48.0), 1.0));
+    auto original_apple = estimate_auto_context_budget(3.2, 0.73, 128.0 * 1024.0,
+                                                      true, false, true);
+    auto apple_no_physical_reading = estimate_auto_context_budget(
+        3.2, 0.73, 128.0 * 1024.0, true, false, true, -1.0);
+    check("auto ctx: Apple retains existing budget without AMD split",
+          original_apple.max_tokens == apple_no_physical_reading.max_tokens);
+
+    // A 128 GiB Strix Halo has ~64 GiB GTT by default, but far more
+    // physically free RAM. OS headroom must not consume GTT capacity.
+    auto strix64 = estimate_auto_context_budget(64.0, 58.5, 65536.0,
+                                                true, false, true, 116.0);
+    check("auto ctx: Strix Halo 64 GiB GTT can load gpt-oss-120b",
+          strix64.max_tokens >= 8192 && strix64.kv_gib > 3.0);
+    auto strix120 = estimate_auto_context_budget(120.0, 58.5, 65536.0,
+                                                 true, false, true, 116.0);
+    check("auto ctx: 120 GiB GTT honors RAM headroom",
+          strix120.kv_gib < 47.0 && strix120.kv_gib > 45.0);
+    auto ram_pressure = estimate_auto_context_budget(64.0, 58.5, 65536.0,
+                                                     true, false, true, 62.0);
+    check("auto ctx: UMA rejects true physical RAM exhaustion",
+          ram_pressure.max_tokens == 0);
+    auto gtt_pressure = estimate_auto_context_budget(60.0, 58.5, 65536.0,
+                                                     true, false, true, 116.0);
+    check("auto ctx: UMA GPU-only budget retains workspace reserve",
+          gtt_pressure.max_tokens == 0);
+    // GPT-OSS MXFP4 exceeds the default GTT once the GPU workspace is included.
+    auto mxfp4_gpu = estimate_auto_context_budget(64.0, 63.4, 65536.0,
+                                                  true, false, true, 116.0);
+    check("auto ctx: default GTT cannot fully host 63.4 GiB weights",
+          mxfp4_gpu.max_tokens == 0);
 
     auto small_mac = estimate_auto_context_budget(3.2, 0.73, 128.0 * 1024.0,
                                                    true, false, true);
@@ -369,7 +485,7 @@ static void test_auto_context_budget() {
                                                      true, false);
     check("auto ctx: known insufficient VRAM returns zero, not 4096",
           barely_fits.max_tokens == 0);
-    auto tiny_budget = estimate_auto_context_budget(8.0, 6.7, 65536.0,
+    auto tiny_budget = estimate_auto_context_budget(8.0, 6.4, 65536.0,
                                                      true, false);
     check("auto ctx: low but positive budget is not raised to a fallback",
           tiny_budget.max_tokens > 0 && tiny_budget.max_tokens < 4096);
@@ -429,6 +545,8 @@ static void test_auto_context_budget() {
           approx_eq(auto_context_cap_shared_memory_gib(12.0, 32.0, 4.0), 12.0));
     check("auto ctx: unknown RAM usage does not fabricate a cap",
           approx_eq(auto_context_cap_shared_memory_gib(12.0, 32.0, -1.0), 12.0));
+    check("auto ctx: default GTT does not subtract physical RAM usage from GPU limit",
+          approx_eq(auto_context_cap_shared_memory_gib(64.0, 124.0, 12.0), 64.0));
 
     using lemon::auto_context_available_gpu_gib;
     auto cuda_free = auto_context_available_gpu_gib(32.0, 4.0, false, 0.0, -1.0);
@@ -462,8 +580,316 @@ static void test_auto_context_budget() {
           huge.max_tokens == std::numeric_limits<int64_t>::max());
 }
 
+static void set_swa_test_env(const char* name, const char* value) {
+#if defined(_WIN32)
+    _putenv_s(name, value ? value : "");
+#else
+    if (value) setenv(name, value, 1);
+    else unsetenv(name);
+#endif
+}
+
+static GgufMetadata make_swa_fixture(const char* architecture, int64_t n_layers = 24) {
+    GgufMetadata m;
+    m.architecture = architecture;
+    m.block_count = n_layers;
+    m.embedding_length = 1024;
+    m.head_count = 8;
+    m.key_length = 128;
+    m.value_length = 128;
+    m.sliding_window = 1024;
+    m.head_count_kv_per_layer.assign(static_cast<size_t>(n_layers), 4);
+    m.head_count_kv = n_layers * 4;
+    return m;
+}
+
+static void test_llamacpp_kv_cache_formats() {
+    using lemon::auto_context_llamacpp_kv_bytes_ratio;
+    constexpr double q8 = 17.0 / 32.0; // 34 B / 32 values / 2 B F16
+    check("Q8_0 K and V use their actual GGML block size",
+          approx_eq(auto_context_llamacpp_kv_bytes_ratio(
+              "llamacpp", "-ctk q8_0 -ctv q8_0", nullptr, nullptr), q8));
+    check("Q8_0 long flags and equals syntax",
+          approx_eq(auto_context_llamacpp_kv_bytes_ratio(
+              "llamacpp", "--cache-type-k=q8_0 --cache-type-v=q8_0",
+              nullptr, nullptr), q8));
+    check("mixed Q8 K / F16 V conservatively uses the larger format",
+          approx_eq(auto_context_llamacpp_kv_bytes_ratio(
+              "llamacpp", "-ctk q8_0", nullptr, nullptr), 1.0));
+    check("F32 KV doubles the F16 estimate",
+          approx_eq(auto_context_llamacpp_kv_bytes_ratio(
+              "llamacpp", "-ctk f32 -ctv f32", nullptr, nullptr), 2.0));
+    check("CLI overrides inherited KV env settings",
+          approx_eq(auto_context_llamacpp_kv_bytes_ratio(
+              "llamacpp", "-ctk=q8_0 -ctv q8_0", "f32", "f16"), q8));
+    check("host KV env settings are recognized",
+          approx_eq(auto_context_llamacpp_kv_bytes_ratio(
+              "llamacpp", "", "q8_0", "q8_0"), q8));
+    check("non-llama recipes keep existing cache budget",
+          approx_eq(auto_context_llamacpp_kv_bytes_ratio(
+              "ds4", "-ctk q8_0 -ctv q8_0", nullptr, nullptr), 1.0));
+}
+
+static void test_bounded_swa_architectures() {
+    using lemon::compute_bounded_swa_profile;
+    // Even an explicit pattern is insufficient for an unverified loader.
+    auto explicit_layout = make_swa_fixture("unlisted-bounded-swa", 6);
+    explicit_layout.sliding_window_pattern = {true, false, true, true, false, true};
+    check("unknown architecture keeps unbounded KV despite explicit pattern",
+          !compute_bounded_swa_profile(explicit_layout, "llamacpp"));
+    explicit_layout.architecture = "flint"; // Generic formula, verified loader.
+    auto generic = compute_bounded_swa_profile(explicit_layout, "llamacpp");
+    check("audited Flint loader uses generic explicit-pattern ISWA estimate",
+          generic && approx_eq(generic->full_bytes_per_token, 4096.0) &&
+          approx_eq(generic->swa_bytes_per_cell, 8192.0));
+    check("HRX Flint remains disabled without verified loader",
+          !compute_bounded_swa_profile(explicit_layout, "llamacpp-hrx"));
+    // The main F16 slope and fixed F16 SWA cells must be scaled together.
+    const double q8_ratio = lemon::auto_context_llamacpp_kv_bytes_ratio(
+        "llamacpp", "-ctk q8_0 -ctv q8_0", nullptr, nullptr);
+    check("Q8_0 capped-SWA subtraction preserves the dense KV slope",
+          generic && approx_eq(
+              generic->unbounded_bytes_per_token() * q8_ratio -
+              generic->swa_bytes_per_cell * q8_ratio,
+              generic->full_bytes_per_token * q8_ratio));
+    explicit_layout.sliding_window_pattern.clear();
+    check("Flint without explicit pattern stays conservative",
+          !compute_bounded_swa_profile(explicit_layout, "llamacpp"));
+
+    auto m = make_swa_fixture("gemma2", 4);
+    auto p = compute_bounded_swa_profile(m, "llamacpp");
+    check("Gemma2: implicit 2-period with SWA first",
+          p && p->full_bytes_per_token == p->swa_bytes_per_cell);
+
+    m = make_swa_fixture("gemma3", 6);
+    p = compute_bounded_swa_profile(m, "llamacpp");
+    check("Gemma3: 5 SWA / 1 full despite equal K/V dimensions",
+          p && approx_eq(p->swa_bytes_per_cell, 5.0 * p->full_bytes_per_token));
+
+    m = make_swa_fixture("gpt-oss", 24);
+    check("GPT-OSS: 12 SWA / 12 full ISWA layout",
+          compute_bounded_swa_profile(m, "llamacpp").has_value());
+    m = make_swa_fixture("cohere2", 8);
+    check("Cohere2: periodic ISWA layout",
+          compute_bounded_swa_profile(m, "llamacpp").has_value());
+    m = make_swa_fixture("cohere2moe", 4);
+    m.head_count_kv_per_layer = {1, 8, 8, 8};
+    m.head_count_kv = 25;
+    p = compute_bounded_swa_profile(m, "llamacpp");
+    check("Cohere2 MoE: dense-first phase",
+          p && p->swa_bytes_per_cell > p->full_bytes_per_token);
+    m = make_swa_fixture("olmo2", 32);
+    check("OLMo2/3: optional SWA layout",
+          compute_bounded_swa_profile(m, "llamacpp").has_value());
+    m = make_swa_fixture("exaone4", 64);
+    check("EXAONE4 32B: ISWA layout",
+          compute_bounded_swa_profile(m, "llamacpp").has_value());
+    m.block_count = 30;
+    m.head_count_kv_per_layer.resize(30);
+    m.head_count_kv = 120;
+    check("EXAONE4 1.2B: no bounded cache",
+          !compute_bounded_swa_profile(m, "llamacpp"));
+
+    m = make_swa_fixture("flint", 49);
+    m.sliding_window = 513;
+    m.sliding_window_pattern.assign(49, true);
+    for (int i = 0; i < 14; ++i)
+        m.sliding_window_pattern[static_cast<size_t>(i * 3)] = false;
+    p = compute_bounded_swa_profile(m, "llamacpp");
+    check("Flint explicit 35 SWA / 14 full ISWA layout",
+          p && p->window == 513 &&
+          approx_eq(p->swa_bytes_per_cell, 71680.0) &&
+          approx_eq(p->full_bytes_per_token, 28672.0));
+    check("Flint HRX remains conservatively disabled",
+          !compute_bounded_swa_profile(m, "llamacpp-hrx"));
+    m.sliding_window_pattern.clear();
+    check("Flint missing explicit SWA layout is not guessed",
+          !compute_bounded_swa_profile(m, "llamacpp"));
+
+    m = make_swa_fixture("gemma3", 6);
+    m.sliding_window_pattern_scalar_present = true;
+    m.sliding_window_pattern_period = 3;
+    p = compute_bounded_swa_profile(m, "llamacpp");
+    check("scalar GGUF period overrides architecture default",
+          p && approx_eq(p->swa_bytes_per_cell, 2.0 * p->full_bytes_per_token));
+    m.sliding_window_pattern = {false, true, true, true, true, true};
+    p = compute_bounded_swa_profile(m, "llamacpp");
+    check("explicit array overrides scalar period and default phase",
+          p && approx_eq(p->swa_bytes_per_cell, 5.0 * p->full_bytes_per_token));
+
+    m = make_swa_fixture("gemma4", 4);
+    m.sliding_window_pattern.assign(4, true);
+    p = compute_bounded_swa_profile(m, "llamacpp");
+    check("pure SWA: exactly zero full-attention slope",
+          p && p->full_bytes_per_token == 0.0);
+    check("pure SWA: full context when fixed cache fits",
+          p && lemon::bounded_swa_context_limit(*p, 1.0, 0.0,
+                  p->swa_bytes_per_cell, 262144) == 262144);
+
+    m = make_swa_fixture("gemma4", 4);
+    m.sliding_window_pattern = {false, true, false, true};
+    m.head_count_kv_per_layer = {1, 8, 4, 2};
+    m.head_count_kv = 15;
+    m.key_length = 64;
+    m.value_length = 128;
+    m.key_length_swa = 16;
+    m.value_length_swa = 32;
+    p = compute_bounded_swa_profile(m, "llamacpp");
+    check("asymmetric K/V and per-layer KV heads, padded V allocation",
+          p && approx_eq(p->full_bytes_per_token, 2688.0) &&
+          approx_eq(p->swa_bytes_per_cell, 2368.0));
+}
+
+static void test_bounded_swa_fallbacks_and_runtime() {
+    // Host LLAMA_ARG_* settings must not affect positive argument checks.
+    const std::vector<const char*> keys = {
+        "LLAMA_ARG_N_PARALLEL", "LLAMA_ARG_CACHE_TYPE_V", "LLAMA_ARG_CACHE_TYPE_K",
+        "LLAMA_ARG_UBATCH", "LLAMA_ARG_SWA_FULL", "LLAMA_ARG_KV_UNIFIED"};
+    std::vector<std::pair<std::string, std::optional<std::string>>> previous;
+    for (const char* key : keys) {
+        const char* value = std::getenv(key);
+        previous.push_back({key, value ? std::optional<std::string>(value) : std::nullopt});
+        set_swa_test_env(key, nullptr);
+    }
+    using lemon::compute_bounded_swa_profile;
+    auto m = make_swa_fixture("gemma4", 4);
+    check("Gemma4 missing explicit pattern: conservative fallback",
+          !compute_bounded_swa_profile(m, "llamacpp"));
+    m.sliding_window_pattern = {true, false};
+    check("incomplete array: conservative fallback",
+          !compute_bounded_swa_profile(m, "llamacpp"));
+    m.sliding_window_pattern = {true, false, true, false};
+    m.sliding_window_pattern_valid = false;
+    check("invalid array: conservative fallback",
+          !compute_bounded_swa_profile(m, "llamacpp"));
+    m.sliding_window_pattern_valid = true;
+    m.shared_kv_layers = 2;
+    check("virtual/reused KV layers: conservative fallback",
+          !compute_bounded_swa_profile(m, "llamacpp"));
+    m.shared_kv_layers = 0;
+    m.value_length = 0;
+    m.embedding_length = 0;
+    check("unknown V dimension: do not assume V equals K",
+          !compute_bounded_swa_profile(m, "llamacpp"));
+    m = make_swa_fixture("gemma3", 6);
+    m.sliding_window = 0;
+    check("missing optional Gemma3 window: conservative fallback",
+          !compute_bounded_swa_profile(m, "llamacpp"));
+    m = make_swa_fixture("gemma2", 4);
+    m.sliding_window = 0;
+    check("Gemma2 verified 4096 window default",
+          compute_bounded_swa_profile(m, "llamacpp") &&
+          compute_bounded_swa_profile(m, "llamacpp")->window == 4096);
+    m.full_attention_interval = 2;
+    check("hybrid recurrent model: never treat SSM state as KV",
+          !compute_bounded_swa_profile(m, "llamacpp"));
+    m = make_swa_fixture("phi3", 4);
+    check("Phi3 without an explicit pattern is not assumed to use ISWA",
+          !compute_bounded_swa_profile(m, "llamacpp"));
+    m.sliding_window_pattern = {true, false, true, false};
+    check("Phi3 with an explicit pattern still uses unbounded KV",
+          !compute_bounded_swa_profile(m, "llamacpp"));
+    m.sliding_window_pattern.clear();
+    m.architecture = "llama4";
+    check("Llama4 without an explicit pattern stays conservative",
+          !compute_bounded_swa_profile(m, "llamacpp"));
+    m.architecture = "qwen35";
+    check("Qwen hybrid without an explicit pattern stays conservative",
+          !compute_bounded_swa_profile(m, "llamacpp"));
+    m.architecture = "granite_swa";
+    m.sliding_window_pattern = {true, false, true, false};
+    check("granite-swa is upstream-only until HRX loader supports it",
+          compute_bounded_swa_profile(m, "llamacpp") &&
+          !compute_bounded_swa_profile(m, "llamacpp-hrx"));
+
+    using lemon::bounded_swa_runtime_compatible;
+    check("parallel 1 and -np 1 preserve bounded SWA",
+          bounded_swa_runtime_compatible("--parallel 1 -np=1") &&
+          bounded_swa_runtime_compatible("-np 1 --parallel=1"));
+    check("non-default --parallel is rejected",
+          !bounded_swa_runtime_compatible("--parallel 1 --parallel=2"));
+    check("-np 2 is rejected",
+          !bounded_swa_runtime_compatible("-np 2"));
+    check("--swa-full rejects optimization",
+          !bounded_swa_runtime_compatible("--swa-full"));
+    check("GGUF metadata overrides reject cached SWA assumptions",
+          !bounded_swa_runtime_compatible("--override-kv gemma3.attention.sliding_window=int:8192") &&
+          !bounded_swa_runtime_compatible("--override-kv=gemma3.attention.sliding_window=int:8192") &&
+          bounded_swa_runtime_compatible("--override-kv-other test"));
+    check("custom microbatch rejects optimization",
+          !bounded_swa_runtime_compatible("--ubatch-size=8192") &&
+          !bounded_swa_runtime_compatible("-ub 1024"));
+    check("K/V quantized cache rejects optimization",
+          !bounded_swa_runtime_compatible("-ctk=q8_0") &&
+          !bounded_swa_runtime_compatible("--cache-type-v q4_0"));
+    check("KV unified overrides reject optimization",
+          !bounded_swa_runtime_compatible("--kv-unified"));
+    check("flag substrings are not mistaken for a cache flag",
+          bounded_swa_runtime_compatible("--parallelism-other 2"));
+    check("HRX reads hrx_args, not llamacpp_args",
+          !lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp-hrx", "--parallel 2", "--swa-full") &&
+          lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp-hrx", "--parallel 2", "--parallel 1") &&
+          !lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "--swa-full", "--parallel 1", "rocm"));
+    check("default single-slot with a verified backend",
+          lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "", "", "rocm") &&
+          lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "-np 1", "", "cuda") &&
+          !lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "-np 2", "", "vulkan"));
+    check("only audited bundled builds enable bounded SWA",
+          !lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "--parallel 1", "", "system") &&
+          !lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "--parallel 1", "", "nathanw") &&
+          !lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "--parallel 1", "", "halobox") &&
+          !lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "--parallel 1", "", "") &&
+          lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp", "--parallel 1", "", "rocm") &&
+          lemon::bounded_swa_runtime_compatible_for_recipe(
+              "llamacpp-hrx", "", "", "hrx"));
+    check("both recipe types use one verified SWA profile",
+          compute_bounded_swa_profile(make_swa_fixture("gemma3", 6), "llamacpp") &&
+          compute_bounded_swa_profile(make_swa_fixture("gemma3", 6), "llamacpp-hrx"));
+
+    // Test environment overrides after the environment-independent checks.
+    check("LLAMA_ARG_N_PARALLEL=unset is safe", bounded_swa_runtime_compatible(""));
+    set_swa_test_env("LLAMA_ARG_N_PARALLEL", "1");
+    check("LLAMA_ARG_N_PARALLEL=1 is safe", bounded_swa_runtime_compatible(""));
+    check("env value one keeps the single-slot default",
+          bounded_swa_runtime_compatible(""));
+    set_swa_test_env("LLAMA_ARG_N_PARALLEL", "2");
+    check("LLAMA_ARG_N_PARALLEL=2 forces full-KV fallback",
+          !bounded_swa_runtime_compatible(""));
+    set_swa_test_env("LLAMA_ARG_N_PARALLEL", nullptr);
+    set_swa_test_env("LLAMA_ARG_CACHE_TYPE_V", "q8_0");
+    check("LLAMA_ARG_CACHE_TYPE_V override forces fallback",
+          !bounded_swa_runtime_compatible(""));
+    set_swa_test_env("LLAMA_ARG_CACHE_TYPE_V", nullptr);
+    set_swa_test_env("LLAMA_ARG_SWA_FULL", "1");
+    check("LLAMA_ARG_SWA_FULL override forces fallback",
+          !bounded_swa_runtime_compatible(""));
+    set_swa_test_env("LLAMA_ARG_SWA_FULL", nullptr);
+    set_swa_test_env("LLAMA_ARG_UBATCH", "8192");
+    check("LLAMA_ARG_UBATCH override forces fallback",
+          !bounded_swa_runtime_compatible(""));
+    set_swa_test_env("LLAMA_ARG_UBATCH", nullptr);
+    set_swa_test_env("LLAMA_ARG_KV_UNIFIED", "1");
+    check("LLAMA_ARG_KV_UNIFIED override forces fallback",
+          !bounded_swa_runtime_compatible(""));
+    for (const auto& entry : previous)
+        set_swa_test_env(entry.first.c_str(),
+                         entry.second ? entry.second->c_str() : nullptr);
+}
+
 int main() {
     test_auto_context_budget();
+    test_llamacpp_kv_cache_formats();
     test_scalar_head_count_kv();
     test_array_head_count_kv();
     test_swa_pattern_derivation();
@@ -475,6 +901,9 @@ int main() {
     test_fai_improvement();
     test_missing_metadata();
     test_varying_heads_swa();
+    test_gemma4_bounded_swa();
+    test_bounded_swa_architectures();
+    test_bounded_swa_fallbacks_and_runtime();
 
     if (g_failures == 0) {
         std::printf("\nAll auto_tune tests passed\n");
