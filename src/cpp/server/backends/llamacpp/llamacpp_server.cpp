@@ -64,6 +64,8 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
+static constexpr size_t MAX_CACHED_LABEL_BLOCKS = 256;
+
 // Helper to push reserved flags and their aliases
 static void push_reserved(std::set<std::string>& reserved,
                     const std::string& key,
@@ -304,6 +306,11 @@ void LlamaCppServer::load(const std::string& model_name,
     int ctx_size = options.get_option("ctx_size");
 
     std::string llamacpp_device = options.get_option("llamacpp_device");
+    // "auto" is kept by the option layers so it can override an inherited device;
+    // llama-server has no such device name, so it means "pass no --device".
+    if (llamacpp_device == "auto") {
+        llamacpp_device.clear();
+    }
     std::string llamacpp_backend_option = options.get_option("llamacpp_backend");
     std::string llamacpp_backend = resolve_llamacpp_backend(llamacpp_backend_option);
     std::string llamacpp_args = options.get_option("llamacpp_args");
@@ -363,6 +370,7 @@ void LlamaCppServer::load(const std::string& model_name,
     {
         std::lock_guard<std::mutex> lock(rule_head_counts_mutex_);
         rule_head_counts_.reset();
+        rule_head_label_tokens_.clear();
     }
     if (is_rule_head_router_model(model_info)) {
         const std::string rule_head_path = model_info.resolved_path("rulehead");
@@ -857,24 +865,67 @@ json LlamaCppServer::classify_with_rule_head(const json& request) {
     };
 
     try {
-        size_t n_specials = 0;
-        size_t elision_tokens = 0;
+        RuleHeadCounts counts;
         {
             std::lock_guard<std::mutex> lock(rule_head_counts_mutex_);
             if (!rule_head_counts_) {
-                rule_head_counts_.emplace(tokens_of("", true).size(),
-                                          tokens_of("\n...\n", false).size());
+                RuleHeadCounts fresh;
+                fresh.specials = tokens_of("", true).size();
+                fresh.elision = tokens_of("\n...\n", false).size();
+                const json with_special = tokens_of("a", true);
+                const json plain = tokens_of("a", false);
+                try {
+                    fresh.lead = llamacpp::special_token_lead(with_special, plain);
+                    fresh.one_call = with_special.size() == plain.size() + fresh.specials;
+                } catch (const std::runtime_error&) {
+                    fresh.one_call = false;
+                }
+                rule_head_counts_ = fresh;
             }
-            std::tie(n_specials, elision_tokens) = *rule_head_counts_;
+            counts = *rule_head_counts_;
         }
 
+        // One add_special call gives the ids for /embedding and the pieces for the
+        // spans, so the last prompt that the fit tokenizes is not tokenized again.
+        const std::string label_block = llamacpp::build_router_input(labels, "").text;
+        std::string last_content;
+        json last_with_special;
+        auto pieces_of = [&](const std::string& content) -> json {
+            const bool is_label_block = content == label_block;
+            if (is_label_block) {
+                std::lock_guard<std::mutex> lock(rule_head_counts_mutex_);
+                const auto cached = rule_head_label_tokens_.find(content);
+                if (cached != rule_head_label_tokens_.end()) return cached->second;
+            }
+            json plain;
+            if (counts.one_call) {
+                json response = tokenize(
+                    json{{"content", content}, {"add_special", true}, {"with_pieces", true}});
+                if (response.contains("error")) throw TokenizeFailure{std::move(response)};
+                json with_special = response.value("tokens", json());
+                plain = llamacpp::strip_special_tokens(with_special, counts.lead, counts.specials);
+                last_content = content;
+                last_with_special = std::move(with_special);
+            } else {
+                plain = tokens_of(content, false);
+            }
+            if (is_label_block && plain.is_array() && plain.size() <= window) {
+                std::lock_guard<std::mutex> lock(rule_head_counts_mutex_);
+                if (rule_head_label_tokens_.size() >= MAX_CACHED_LABEL_BLOCKS) {
+                    rule_head_label_tokens_.clear();
+                }
+                rule_head_label_tokens_.emplace(content, plain);
+            }
+            return plain;
+        };
+
         const llamacpp::RouterFit fit = llamacpp::fit_router_input(
-            labels, text.get<std::string>(), window, n_specials, elision_tokens,
-            [&](const std::string& content) { return tokens_of(content, false); });
+            labels, text.get<std::string>(), window, counts.specials, counts.elision, pieces_of);
         bool truncated = fit.truncated;
 
         llamacpp::RouterTokens tokens = llamacpp::router_tokens(
-            tokens_of(fit.input.text, true), fit.tokens, fit.input.text.size());
+            last_content == fit.input.text ? last_with_special : tokens_of(fit.input.text, true),
+            fit.tokens, fit.input.text.size());
         if (tokens.ids.size() > window) {
             tokens.ids.resize(window);
             tokens.spans.resize(window);

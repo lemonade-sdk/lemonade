@@ -240,7 +240,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td rowspan="1"><code>gufo</code></td>
       <td><code>rocm</code>‡</td>
       <td>AMD Strix Halo</td>
-      <td>Linux</td>
+      <td>Windows, Linux</td>
     </tr>
     <tr>
       <td rowspan="6"><strong>Speech-to-text</strong></td>

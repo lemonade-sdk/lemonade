@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <filesystem>
 #include <stdexcept>
@@ -173,9 +174,11 @@ RouterInput build_router_input(const std::vector<std::string>& labels, const std
     return input;
 }
 
-RouterFit fit_router_input(const std::vector<std::string>& labels, const std::string& text,
-                           size_t window, size_t n_specials, size_t elision_tokens,
-                           const PieceTokenizer& tokenize) {
+namespace {
+
+RouterFit fit_router_input_once(const std::vector<std::string>& labels, const std::string& text,
+                                size_t window, size_t n_specials, size_t elision_tokens,
+                                const PieceTokenizer& tokenize, bool count_text_tokens) {
     const RouterInput block = build_router_input(labels, "");
     // As ort-server: a block the window provably cannot hold is refused by one
     // division, before a label set of any size is sent to the tokenizer.
@@ -207,8 +210,12 @@ RouterFit fit_router_input(const std::vector<std::string>& labels, const std::st
         fit.truncated = true;
     }
 
+    // A token covers at least one byte, so a text of at most text_budget bytes
+    // cannot need a cut and is not tokenized on its own.
+    const bool fits_by_bytes = !count_text_tokens && body.size() <= text_budget;
     const std::vector<std::pair<size_t, size_t>> spans =
-        token_byte_spans(tokenize(body), body.size());
+        fits_by_bytes ? std::vector<std::pair<size_t, size_t>>{}
+                      : token_byte_spans(tokenize(body), body.size());
     if (spans.size() > text_budget) {
         size_t keep = text_budget;
         std::string mid;
@@ -246,7 +253,24 @@ RouterFit fit_router_input(const std::vector<std::string>& labels, const std::st
         body = body.substr(0, utf8_byte_at(body, chars - drop));
         fit.truncated = true;
     }
+    fit.fits_by_bytes = fits_by_bytes;
     return fit;
+}
+
+}  // namespace
+
+RouterFit fit_router_input(const std::vector<std::string>& labels, const std::string& text,
+                           size_t window, size_t n_specials, size_t elision_tokens,
+                           const PieceTokenizer& tokenize) {
+    RouterFit fit =
+        fit_router_input_once(labels, text, window, n_specials, elision_tokens, tokenize, false);
+    if (!fit.fits_by_bytes) return fit;
+    // The byte bound does not hold for a token without bytes.
+    const auto spans = token_byte_spans(fit.tokens, fit.input.text.size());
+    const bool empty_piece = std::any_of(spans.begin(), spans.end(),
+                                         [](const auto& span) { return span.first == span.second; });
+    if (!empty_piece) return fit;
+    return fit_router_input_once(labels, text, window, n_specials, elision_tokens, tokenize, true);
 }
 
 std::vector<std::pair<size_t, size_t>> token_byte_spans(const nlohmann::json& tokens,
@@ -278,38 +302,63 @@ std::vector<std::pair<size_t, size_t>> token_byte_spans(const nlohmann::json& to
     return spans;
 }
 
+namespace {
+
+std::vector<int64_t> token_ids(const nlohmann::json& tokens) {
+    std::vector<int64_t> ids;
+    for (const auto& token : tokens) {
+        const nlohmann::json& id = token.is_object() && token.contains("id") ? token["id"] : token;
+        if (!id.is_number_integer()) {
+            throw std::runtime_error("llama-server /tokenize returned a token without an id");
+        }
+        ids.push_back(id.get<int64_t>());
+    }
+    return ids;
+}
+
+size_t lead_of(const std::vector<int64_t>& all, const std::vector<int64_t>& text) {
+    for (size_t lead = 0; lead + text.size() <= all.size(); ++lead) {
+        if (std::equal(text.begin(), text.end(), all.begin() + lead)) return lead;
+    }
+    throw std::runtime_error("llama-server tokenized the input differently with and without its "
+                             "special tokens, so lemond cannot place them");
+}
+
+}  // namespace
+
+size_t special_token_lead(const nlohmann::json& with_special,
+                          const nlohmann::json& without_special) {
+    if (!with_special.is_array() || !without_special.is_array()) {
+        throw std::runtime_error("llama-server /tokenize returned no tokens");
+    }
+    return lead_of(token_ids(with_special), token_ids(without_special));
+}
+
+nlohmann::json strip_special_tokens(const nlohmann::json& with_special, size_t n_lead,
+                                    size_t n_specials) {
+    if (!with_special.is_array() || n_lead > n_specials || with_special.size() < n_specials) {
+        throw std::runtime_error("llama-server /tokenize returned fewer tokens than the " +
+                                 std::to_string(n_specials) + " special tokens it adds");
+    }
+    return nlohmann::json(with_special.begin() + static_cast<std::ptrdiff_t>(n_lead),
+                          with_special.end() - static_cast<std::ptrdiff_t>(n_specials - n_lead));
+}
+
 RouterTokens router_tokens(const nlohmann::json& with_special,
                            const nlohmann::json& without_special, size_t text_bytes) {
     const std::vector<std::pair<size_t, size_t>> spans =
         token_byte_spans(without_special, text_bytes);
-    auto ids_of = [](const nlohmann::json& tokens) {
-        std::vector<int64_t> ids;
-        for (const auto& token : tokens) {
-            const nlohmann::json& id = token.is_object() && token.contains("id") ? token["id"] : token;
-            if (!id.is_number_integer()) {
-                throw std::runtime_error("llama-server /tokenize returned a token without an id");
-            }
-            ids.push_back(id.get<int64_t>());
-        }
-        return ids;
-    };
     if (!with_special.is_array()) {
         throw std::runtime_error("llama-server /tokenize returned no tokens");
     }
-    const std::vector<int64_t> all = ids_of(with_special);
-    const std::vector<int64_t> text = ids_of(without_special);
-
-    for (size_t lead = 0; lead + text.size() <= all.size(); ++lead) {
-        if (!std::equal(text.begin(), text.end(), all.begin() + lead)) continue;
-        RouterTokens out;
-        out.ids = all;
-        out.spans.assign(lead, {0, 0});
-        out.spans.insert(out.spans.end(), spans.begin(), spans.end());
-        out.spans.resize(all.size(), {text_bytes, text_bytes});
-        return out;
-    }
-    throw std::runtime_error("llama-server tokenized the input differently with and without its "
-                             "special tokens, so lemond cannot place them");
+    const std::vector<int64_t> all = token_ids(with_special);
+    const size_t lead = lead_of(all, token_ids(without_special));
+    RouterTokens out;
+    out.ids = all;
+    out.spans.assign(lead, {0, 0});
+    out.spans.insert(out.spans.end(), spans.begin(), spans.end());
+    out.spans.resize(all.size(), {text_bytes, text_bytes});
+    return out;
 }
 
 RouterTokenGroups group_router_tokens(const RouterInput& input,
