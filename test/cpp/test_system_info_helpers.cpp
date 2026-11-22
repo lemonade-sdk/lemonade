@@ -25,6 +25,7 @@ using lemon::system_info_detail::device_matches_constraint;
 using lemon::system_info_detail::gfx_target_version_to_arch;
 using lemon::system_info_detail::gpu_display_name;
 using lemon::system_info_detail::identify_cuda_arch_from_name;
+using lemon::system_info_detail::is_amd_discrete_gpu;
 using lemon::system_info_detail::hip_index_for_pci_bus_id;
 using lemon::system_info_detail::hip_visible_device;
 using lemon::system_info_detail::kfd_gpu_nodes;
@@ -162,6 +163,19 @@ static bool expect_device_memory(const char* name,
 
 int main() {
     int failures = 0;
+
+    const std::vector<std::pair<std::string, bool>> amd_gpu_name_cases = {
+        {"AMD Radeon AI PRO R9700", true},
+        {"amd radeon ai pro r9700", true},
+        {"AMD Radeon(TM) 890M Graphics", false},
+        {"AMD Radeon 8060S Graphics", false},
+        {"AMD Radeon RX 7900 XTX", true},
+        {"AMD Radeon PRO W7900", true},
+    };
+    for (const auto& [input, expected] : amd_gpu_name_cases) {
+        const std::string name = "AMD discrete classification " + input;
+        failures += !expect_bool(name.c_str(), is_amd_discrete_gpu(input), expected);
+    }
 
     const std::vector<std::pair<std::string, std::string>> compute_cap_cases = {
         {"7.5", "sm_75"},
