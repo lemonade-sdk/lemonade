@@ -14,7 +14,11 @@ static void check(const char* name, bool ok) {
     if (!ok) ++g_failures;
 }
 
-static const std::set<std::string> kOps = {"system_info", "load", "unload", "chat"};
+static const std::set<std::string> kOps = {
+    "system_info", "load", "unload", "chat",
+    "image_generations", "image_edits", "image_variations",
+    "audio_speech", "audio_generations", "model_3d_generations",
+};
 
 static StepRecord step(const std::string& id, const std::string& op) {
     StepRecord s;
@@ -105,6 +109,7 @@ static void test_json_roundtrip() {
     j.status = JobStatus::Running;
     j.inputs = {{"model", "Agents-A1"}};
     j.cursor = "run_v";
+    j.media_extract_bytes = {{"audio", 123}, {"image", 456}};
     StepRecord s = step("load_v", "load");
     s.params = {{"llamacpp_backend", "vulkan"}, {"ctx_size", "${inputs.ctx}"}};
     s.on_fail = "load_v_lo";
@@ -114,7 +119,19 @@ static void test_json_roundtrip() {
     s.duration_ms = 4200;
     j.steps.push_back(s);
 
-    Job back = Job::from_json(j.to_json());
+    const json serialized = j.to_json();
+    check("json: persistence media tally is an object", serialized["media_extract_bytes"].is_object()
+              && serialized["media_extract_bytes"]["audio"] == 123);
+    json api = serialized;
+    api.erase("media_extract_bytes");
+    check("json: API omits media tally", j.to_api_json() == api);
+    Job back = Job::from_json(serialized);
+    check("json: media tally survives", back.media_extract_bytes == j.media_extract_bytes);
+    json older = serialized;
+    older.erase("media_extract_bytes");
+    const Job legacy = Job::from_json(older);
+    check("json: missing media tally loads empty", legacy.media_extract_bytes.empty());
+    check("json: empty media tally omitted", !legacy.to_json().contains("media_extract_bytes"));
     check("json: job fields", back.id == "job-1" && back.name == "bench-duel"
               && back.status == JobStatus::Running && back.cursor == "run_v");
     check("json: step definition survives",

@@ -736,7 +736,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 <!-- BEGIN GENERATED: openai.responses -->
 ## `POST /v1/responses`
-<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+<sub>![Status](https://img.shields.io/badge/status-partially_available-yellow)</sub>
 
 Generates a model response to an input, in OpenAI's Responses format, downloading and loading the model if it is not loaded.
 
@@ -749,6 +749,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `input` | Yes | The input, as a string or an array of input items. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_output_tokens` | No | Upper bound on generated tokens. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `previous_response_id` | No | The response this one continues. llama.cpp rejects it. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `temperature` | No | Sampling temperature. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `repeat_penalty` | No | From `1.0` to `2.0`: `1.0` applies no penalty, and higher values discourage repetition. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `top_k` | No | Number of top tokens to consider during sampling. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -758,6 +759,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `ctx_size` | No | Lemonade extension: context size to load the model with, when this request loads it. Ignored when the model is already loaded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Naming a `collection.router` model routes the request to one of its candidates; see [Router API](./router.md).
+
+A request that continues earlier responses, through `previous_response_id`, `conversation` or an `item_reference` input, is rejected on a `collection.router` model, since the candidate picked for this turn may not be the one holding them. Resend the full `input`. If the candidate named in the earlier response's `x_lemonade_route.route_to` (on the first event of a streamed response) supports continuation, the request can also go to it directly; llama.cpp does not.
 
 ### Examples
 
@@ -920,6 +923,7 @@ Sent in place of the rest of the stream when the backend fails after the stream 
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The request does not stream and `model` is a FastFlowLM or cloud model, which has no Responses API |
 | `400` | `model_not_applicable` | The request does not stream and `model` is not an LLM |
+| `400` | `router_response_chain_unsupported` | The request continues earlier responses through `previous_response_id`, `conversation` or an `item_reference` input, and `model` is a `collection.router` model whose policy can pick a different candidate than the one holding that state |
 | `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
@@ -1557,7 +1561,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `input` | Yes | The text to speak. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `speed` | No | Speaking speed. Defaults to `1.0`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `voice` | No | For `kokoro-v1`, a voice name: OpenAI's voices (`alloy`, `ash`, ...) or Kokoro's own (`af_sky`, `am_echo`, ...), defaulting to `shimmer`. For OpenMOSS models, a free-text voice or style instruction, e.g. `a calm, deep male narrator voice`. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `voice` | No | For `kokoro-v1`, a voice name: OpenAI's voices (`alloy`, `ash`, ...) or Kokoro's own (`af_sky`, `am_echo`, ...), defaulting to `shimmer`. For OpenMOSS models, a free-text voice or style instruction, e.g. `a calm, deep male narrator voice`. An empty `voice` is the same as leaving it out. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `reference_wav_b64` | No | Lemonade extension (OpenMOSS voice cloning): base64-encoded WAV sample of the voice to clone. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `voice_design_description` | No | Lemonade extension (OpenMOSS voice design): a description of the voice to invent, e.g. `a warm low female voice with a British accent`. Lemonade renders a short sample in that voice and uses it as the reference, so the effect is the same as supplying `reference_wav_b64` yourself. Ignored when `reference_wav_b64` is also present. Only this field triggers design; `voice` never does. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Container for the returned audio. Defaults to `mp3` when buffered and `pcm` when streaming, or to the backend's first supported format when it cannot encode those. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
@@ -1756,8 +1760,10 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
   - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
   - `recipe_options` - The model's own options: those its registry row authors, with what was saved in `recipe_options.json` on top.
   - `cloud_provider` - Cloud models only: the provider that serves the model.
-  - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
-  - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
+  - `cost_tier` - `free`, `low`, `medium` or `high`, when the model's entry sets it.
+  - `cost_input_per_million` - USD per million input tokens: the provider's price for a cloud model, or the model entry's own.
+  - `cost_output_per_million` - USD per million output tokens: the provider's price for a cloud model, or the model entry's own.
+  - `latency_ms_hint` - Expected latency in milliseconds, when the model's entry sets it.
   - `system_prompt` - Omni collections only: the collection's system prompt override.
   - `version` - Router collections only: the policy document's version.
   - `routing` - Router collections only: the routing policy.
@@ -1940,8 +1946,10 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
 - `recipe_options` - The model's own options: those its registry row authors, with what was saved in `recipe_options.json` on top.
 - `cloud_provider` - Cloud models only: the provider that serves the model.
-- `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
-- `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
+- `cost_tier` - `free`, `low`, `medium` or `high`, when the model's entry sets it.
+- `cost_input_per_million` - USD per million input tokens: the provider's price for a cloud model, or the model entry's own.
+- `cost_output_per_million` - USD per million output tokens: the provider's price for a cloud model, or the model entry's own.
+- `latency_ms_hint` - Expected latency in milliseconds, when the model's entry sets it.
 - `system_prompt` - Omni collections only: the collection's system prompt override.
 - `version` - Router collections only: the policy document's version.
 - `routing` - Router collections only: the routing policy.

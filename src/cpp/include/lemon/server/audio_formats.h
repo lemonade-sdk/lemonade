@@ -34,6 +34,8 @@ AudioFormat negotiate_speech_format(Router& router, const std::string& model,
 AudioFormat negotiate_audio_generation_format(Router& router, const std::string& model,
                                               const nlohmann::json& response_format);
 
+bool is_known_audio_format(const std::string& format);
+
 extern const RouteError kUnsupportedAudioFormat;
 
 // Sets the format's headers, or writes kUnsupportedAudioFormat and returns false.

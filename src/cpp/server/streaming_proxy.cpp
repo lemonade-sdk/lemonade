@@ -1,10 +1,12 @@
 #include "lemon/streaming_proxy.h"
-#include <sstream>
-#include <iostream>
+
 #include <chrono>
 #include <cstring>
+#include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string_view>
+
 #include <curl/curl.h>
 #include <lemon/utils/aixlog.hpp>
 
@@ -141,7 +143,8 @@ void StreamingProxy::forward_sse_stream(
     std::function<void(const TelemetryData&)> on_complete,
     long timeout_seconds,
     std::function<void()> on_chunk,
-    long heartbeat_interval_ms) {
+    long heartbeat_interval_ms,
+    const lemon::utils::CancelToken& cancel) {
 
     TelemetryData telemetry;
     try {
@@ -160,7 +163,7 @@ void StreamingProxy::forward_sse_stream(
 
     int backend_status = 200;
     std::string error_body;
-    static constexpr size_t max_error_body = 64 * 1024;
+    static constexpr size_t max_error_body = kMaxErrorBodyBytes;
 
     // Chunk boundaries are arbitrary, so whether the stream carried any event
     // at all is decided per reassembled line rather than per received chunk. An
@@ -168,8 +171,10 @@ void StreamingProxy::forward_sse_stream(
     // off before that is discarded by the client, so it delivered nothing.
     bool has_data_event = false;
     bool has_pending_data_field = false;
+    bool forwarded_error_event = false;
 
-    auto process_line = [&telemetry, &has_data_event, &has_pending_data_field](const std::string& line) {
+    auto process_line = [&telemetry, &has_data_event, &has_pending_data_field,
+                         &forwarded_error_event](const std::string& line) {
         if (line.empty()) {
             has_data_event = has_data_event || has_pending_data_field;
             has_pending_data_field = false;
@@ -195,9 +200,16 @@ void StreamingProxy::forward_sse_stream(
             try {
                 auto chunk = json::parse(field.value.begin(), field.value.end());
                 extract_telemetry_from_chunk(chunk, telemetry);
+                if (chunk.is_object() && chunk.contains("error") && !chunk["error"].is_null()) {
+                    forwarded_error_event = true;
+                }
             } catch (...) {}
         }
     };
+
+    const std::function<bool()> should_cancel = (cancel.flag || cancel.should_cancel)
+        ? std::function<bool()>([&cancel]() { return cancel.cancelled(); })
+        : std::function<bool()>{};
 
     utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,
@@ -241,7 +253,10 @@ void StreamingProxy::forward_sse_stream(
         timeout_seconds,
         [&backend_status](int status) { backend_status = status; },
         utils::HttpSecurityPolicy::TrustedLoopback,
-        [&sink, &last_activity_time, &backend_status, heartbeat_interval_ms]() {
+        [&sink, &last_activity_time, &backend_status, &should_cancel, heartbeat_interval_ms]() {
+            if (should_cancel && should_cancel()) {
+                return true;
+            }
             if (sink.is_writable && !sink.is_writable()) {
                 return true;
             }
@@ -267,14 +282,24 @@ void StreamingProxy::forward_sse_stream(
     // bytes can arrive, so the last event of a CR-terminated stream still counts.
     process_sse_lines(line_buffer, process_line, true);
 
-    const bool client_disconnected =
-        result.curl_code == CURLE_WRITE_ERROR ||
-        result.curl_code == CURLE_ABORTED_BY_CALLBACK;
     const bool transport_interrupted =
         result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR;
+    const bool request_cancelled = cancel.cancelled() && !transport_interrupted;
+    const bool client_disconnected = !request_cancelled &&
+        (result.curl_code == CURLE_WRITE_ERROR ||
+         result.curl_code == CURLE_ABORTED_BY_CALLBACK);
 
     if (result.curl_code != CURLE_OK) {
-        if (client_disconnected) {
+        if (request_cancelled) {
+            stream_error = true;
+            LOG(INFO, "StreamingProxy") << "SSE stream cancelled" << std::endl;
+        } else if (client_disconnected && forwarded_error_event) {
+            // Gateways that translate the stream stop it themselves once they have
+            // relayed the backend's error, so the client did not go away.
+            stream_error = true;
+            LOG(ERROR, "StreamingProxy") << "Backend reported an error during SSE stream" << std::endl;
+            telemetry.error_message = "Backend reported an error during stream";
+        } else if (client_disconnected) {
             stream_error = true;
             LOG(WARNING, "StreamingProxy") << "Client disconnected during SSE stream (CURL error: " << result.curl_error << ")" << std::endl;
             telemetry.error_message = "Client disconnected during stream";
@@ -295,7 +320,7 @@ void StreamingProxy::forward_sse_stream(
         }
     }
 
-    if (!client_disconnected &&
+    if (!request_cancelled && !client_disconnected &&
         (result.status_code != 200 || backend_status != 200)) {
         const int status = backend_status != 200 ? backend_status : result.status_code;
         LOG(ERROR, "StreamingProxy") << "Backend returned error: " << status
@@ -399,7 +424,8 @@ void StreamingProxy::forward_byte_stream(
     const std::string& request_body,
     httplib::DataSink& sink,
     long timeout_seconds,
-    std::function<void()> on_chunk) {
+    std::function<void()> on_chunk,
+    const lemon::utils::CancelToken& cancel) {
 
     bool stream_error = false;
 
@@ -408,7 +434,11 @@ void StreamingProxy::forward_byte_stream(
     // JSON error below rather than served as successful media.
     int backend_status = 200;
     std::string error_body;
-    static constexpr size_t max_error_body = 64 * 1024;
+    static constexpr size_t max_error_body = kMaxErrorBodyBytes;
+
+    const std::function<bool()> should_cancel = (cancel.flag || cancel.should_cancel)
+        ? std::function<bool()>([&cancel]() { return cancel.cancelled(); })
+        : std::function<bool()>{};
 
     utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,
@@ -434,7 +464,8 @@ void StreamingProxy::forward_byte_stream(
         {},
         timeout_seconds,
         [&backend_status](int status) { backend_status = status; },
-        utils::HttpSecurityPolicy::TrustedLoopback
+        utils::HttpSecurityPolicy::TrustedLoopback,
+        should_cancel
     );
 
     const bool transport_interrupted =
@@ -442,7 +473,9 @@ void StreamingProxy::forward_byte_stream(
 
     if (result.curl_code != CURLE_OK) {
         stream_error = true;
-        if (result.curl_code == CURLE_WRITE_ERROR) {
+        if (cancel.cancelled() && !transport_interrupted) {
+            LOG(INFO, "StreamingProxy") << "Byte stream cancelled" << std::endl;
+        } else if (result.curl_code == CURLE_WRITE_ERROR) {
             LOG(WARNING, "StreamingProxy") << "Client disconnected during byte stream (CURL error: " << result.curl_error << ")" << std::endl;
         } else if (transport_interrupted) {
             // Keep byte streams consistent with SSE: an interrupted transport is a
@@ -456,7 +489,7 @@ void StreamingProxy::forward_byte_stream(
         }
     }
 
-    if (result.status_code != 200 || backend_status != 200) {
+    if (!cancel.cancelled() && (result.status_code != 200 || backend_status != 200)) {
         const int status = backend_status != 200 ? backend_status : result.status_code;
         LOG(ERROR, "StreamingProxy") << "Backend returned error " << status
                                      << (error_body.empty() ? "" : ": " + error_body) << std::endl;
