@@ -6,6 +6,7 @@
 
 #include <cstdio>
 #include <string>
+#include <tuple>
 
 using json = nlohmann::json;
 using lemon::RecipeOptions;
@@ -362,6 +363,26 @@ int main() {
         failures += fail("stored: width read back as set",
                          good.stored_int_option("width").value_or(-1) == 1024,
                          std::to_string(good.stored_int_option("width").value_or(-1)), "1024");
+    }
+
+    // E1: an explicit "auto" device is a value, for every *_device option, so it
+    // overrides a lower layer's GPU; other options still treat "auto" as unset.
+    {
+        for (const auto& [recipe, key, inherited] : {
+                 std::tuple<std::string, std::string, std::string>{"sd-cpp", "sd-cpp_device", "rocm0"},
+                 {"llamacpp", "llamacpp_device", "Vulkan0"}}) {
+            RecipeOptions lower(recipe, {{key, inherited}});
+            RecipeOptions upper(recipe, {{key, "auto"}});
+            const std::string got = upper.inherit(lower).get_option(key).get<std::string>();
+            failures += fail((key + ": explicit auto overrides the inherited device").c_str(),
+                             got == "auto", got, "auto");
+        }
+
+        RecipeOptions lower("llamacpp", {{"llamacpp_backend", "vulkan"}});
+        RecipeOptions upper("llamacpp", {{"llamacpp_backend", "auto"}});
+        const std::string got = upper.inherit(lower).get_option("llamacpp_backend").get<std::string>();
+        failures += fail("llamacpp_backend: auto still inherits the lower layer",
+                         got == "vulkan", got, "vulkan");
     }
 
     std::printf("\n%d failures\n", failures);

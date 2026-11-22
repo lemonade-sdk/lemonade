@@ -9,7 +9,7 @@ const source = fs.readFileSync(filename, 'utf8');
 const parsed = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true);
 const apiClass = parsed.statements.find(s => ts.isClassDeclaration(s) && s.name?.text === 'LemonadeAPI');
 assert.ok(apiClass);
-const methods = ['canPersistApiKey', 'isApiKeyPersisted', 'loadConnectionSettings', 'saveConnectionSettings', 'clearConnectionSettings', 'setSessionApiKey', 'clearStoredApiKey'].map(name => {
+const methods = ['canPersistApiKey', 'isApiKeyPersisted', 'loadConnectionSettings', 'saveConnectionSettings', 'clearConnectionSettings', 'setSessionApiKey', 'clearStoredApiKey', '_noteServerChange'].map(name => {
   const member = apiClass.members.find(m => m.name?.getText(parsed) === name);
   assert.ok(member, `${name} missing`);
   return member.getText(parsed);
@@ -20,6 +20,11 @@ const program = `class TestAPI {
   _apiKeyPersisted = false;
   _hostBaseUrl = null;
   _connectionSettingsPromise = null;
+  _systemInfoGeneration = 0;
+  _systemInfoInFlight = null;
+  _systemInfoFetchedAt = 0;
+  _serverChangeListeners = new Set();
+  get baseUrl() { return this._hostBaseUrl || safeGetLocalStorage(LS_BASE_URL) || ''; }
   ${methods.join('\n')}
 }
 module.exports = TestAPI;`;
