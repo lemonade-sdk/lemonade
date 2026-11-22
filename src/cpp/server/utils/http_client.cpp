@@ -737,10 +737,10 @@ HttpResponse perform_request(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
+    ResponseProgress progress;
+    progress.cancel = &cancel;
     if (cancel.flag != nullptr || cancel.should_cancel != nullptr) {
-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, post_cancel_xferinfo_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancel);
-        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        enable_response_progress(curl, progress);
     }
 
     // Add custom headers
