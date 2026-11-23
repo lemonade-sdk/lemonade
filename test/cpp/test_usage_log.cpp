@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <thread>
 #include <vector>
@@ -336,6 +337,77 @@ static void test_tail_without_newline_only_record() {
           lines.size() == 1 && nlohmann::json::parse(lines[0])["n"] == 4);
 }
 
+static void test_complete_tail_without_newline_kept() {
+    auto dir = fresh_dir("complete_tail");
+    fs::create_directories(dir);
+    std::ofstream(dir / "usage-2026-09-28.jsonl", std::ios::binary) << "{\"n\":1}\n{\"n\":2}";
+    UsageLog log([&] { return roomy(dir); });
+    log.start();
+    log.push(record_on("2026-09-28", 3));
+    log.flush();
+    auto lines = read_lines(dir / "usage-2026-09-28.jsonl");
+    bool all_parse = true;
+    for (const auto& l : lines) all_parse = all_parse && nlohmann::json::accept(l);
+    check("partial: complete last record without newline kept",
+          lines.size() == 3 && all_parse && nlohmann::json::parse(lines[1])["n"] == 2 &&
+              nlohmann::json::parse(lines[2])["n"] == 3);
+}
+
+#ifndef _WIN32
+static std::string read_all(const fs::path& file) {
+    std::ifstream in(file, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+static void test_symlinked_log_file_refused() {
+    auto dir = fresh_dir("symlink");
+    auto outside = fresh_dir("symlink_target");
+    fs::create_directories(dir);
+    fs::create_directories(outside);
+    const std::string original = "not a usage log, and no newline at the end";
+    std::ofstream(outside / "target", std::ios::binary) << original;
+    fs::create_symlink(outside / "target", dir / "usage-2026-09-28.jsonl");
+    UsageLog log([&] { return roomy(dir); });
+    log.start();
+    log.push(record_on("2026-09-28", 1));
+    log.flush();
+    check("unsafe: symlink target neither truncated nor appended to", read_all(outside / "target") == original);
+    check("unsafe: symlinked log file pauses the log", log.failed());
+}
+
+static void test_hard_linked_log_file_refused() {
+    auto dir = fresh_dir("hardlink");
+    auto outside = fresh_dir("hardlink_target");
+    fs::create_directories(dir);
+    fs::create_directories(outside);
+    const std::string original = "{\"n\":1}\n";
+    std::ofstream(outside / "target", std::ios::binary) << original;
+    fs::create_hard_link(outside / "target", dir / "usage-2026-09-28.jsonl");
+    UsageLog log([&] { return roomy(dir); });
+    log.start();
+    log.push(record_on("2026-09-28", 2));
+    log.flush();
+    check("unsafe: hard-linked file not appended to", read_all(outside / "target") == original);
+    check("unsafe: hard-linked log file pauses the log", log.failed());
+}
+
+static void test_existing_file_permissions_tightened() {
+    auto dir = fresh_dir("perms_file");
+    fs::create_directories(dir);
+    auto file = dir / "usage-2026-09-28.jsonl";
+    std::ofstream(file, std::ios::binary) << "{\"n\":1}\n";
+    fs::permissions(file, fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_read |
+                              fs::perms::others_read);
+    UsageLog log([&] { return roomy(dir); });
+    log.start();
+    log.push(record_on("2026-09-28", 2));
+    log.flush();
+    check("perms: existing world-readable log file made owner only",
+          fs::status(file).permissions() == (fs::perms::owner_read | fs::perms::owner_write));
+    check("perms: existing records kept", read_lines(file).size() == 2);
+}
+#endif
+
 int main() {
     std::printf("=== RUNNING USAGE LOG C++ TESTS ===\n");
     test_record_format();
@@ -360,6 +432,12 @@ int main() {
     test_write_failure_is_retried();
     test_partial_record_trimmed_before_append();
     test_tail_without_newline_only_record();
+    test_complete_tail_without_newline_kept();
+#ifndef _WIN32
+    test_symlinked_log_file_refused();
+    test_hard_linked_log_file_refused();
+    test_existing_file_permissions_tightened();
+#endif
     std::printf("=== %s (%d failures) ===\n", g_failures ? "FAILED" : "ALL PASSED", g_failures);
     return g_failures ? 1 : 0;
 }

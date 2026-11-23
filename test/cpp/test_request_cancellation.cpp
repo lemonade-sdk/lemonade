@@ -595,15 +595,24 @@ bool test_streaming_proxy_cancel_token_marks_abort() {
     std::thread backend_thread([&backend]() { backend.listen_after_bind(); });
     backend.wait_until_ready();
 
+    std::atomic<bool> content_relayed{false};
     httplib::DataSink downstream;
-    downstream.write = [](const char*, size_t) { return true; };
+    downstream.write = [&](const char* data, size_t len) {
+        if (std::string(data, len).find("\"content\"") != std::string::npos) content_relayed.store(true);
+        return true;
+    };
     downstream.done = []() {};
     downstream.done_with_trailer = [](const httplib::Headers&) {};
     downstream.is_writable = []() { return true; };
 
+    // Cancel once the first content chunk has reached the client; the deadline keeps a
+    // stream that never delivers it from hanging the test.
     std::atomic<bool> cancel_flag{false};
     std::thread cancel_thread([&]() {
-        std::this_thread::sleep_for(300ms);
+        auto deadline = std::chrono::steady_clock::now() + 5s;
+        while (!content_relayed.load() && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(10ms);
+        }
         cancel_flag.store(true);
     });
 
@@ -619,6 +628,7 @@ bool test_streaming_proxy_cancel_token_marks_abort() {
     backend.stop();
     backend_thread.join();
 
+    check(content_relayed.load(), "StreamingProxy: content reached the client before the cancel");
     check(seen.client_disconnected, "StreamingProxy: a cancelled stream is reported as aborted");
     check(!seen.error_message.empty(), "StreamingProxy: a cancelled stream is not reported as a success");
     check(seen.output_chunks == 1, "StreamingProxy: output relayed before the cancel is counted");

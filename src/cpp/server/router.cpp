@@ -296,18 +296,8 @@ static bool is_unmetered_recipe(const std::string& recipe) {
 }
 
 // Non-streaming responses report counts and speed in backend-specific places: llama.cpp in a
-// "timings" block, FLM inside "usage". Token counts here only need the llama.cpp case.
-static void apply_timings(const json& response, nlohmann::json& usage_payload, telemetry::InferenceSpan& span) {
-    if (response.contains("timings")) {
-        const auto& timings = response["timings"];
-        if (timings.contains("prompt_n")) usage_payload["prompt_tokens"] = timings["prompt_n"].get<int>();
-        if (timings.contains("predicted_n")) usage_payload["completion_tokens"] = timings["predicted_n"].get<int>();
-        if (timings.contains("cache_n")) usage_payload["cached_tokens"] = timings["cache_n"].get<int>();
-        if (!usage_payload.contains("prompt_tokens_total") && timings.contains("prompt_n")) {
-            usage_payload["prompt_tokens_total"] = timings["prompt_n"].get<int>() + timings.value("cache_n", 0);
-        }
-    }
-
+// "timings" block, FLM and OpenAI-style backends inside "usage".
+static nlohmann::json usage_and_speed(const json& response, telemetry::InferenceSpan& span) {
     auto perf = StreamingProxy::extract_telemetry(response);
     if (perf.time_to_first_token > 0) {
         span.set_attribute("llm.performance.time_to_first_token", perf.time_to_first_token);
@@ -315,6 +305,7 @@ static void apply_timings(const json& response, nlohmann::json& usage_payload, t
     if (perf.tokens_per_second > 0) {
         span.set_attribute("llm.performance.tokens_per_second", perf.tokens_per_second);
     }
+    return StreamingProxy::usage_payload(perf);
 }
 
 int Router::count_servers_in_pool(ModelType type,
@@ -1923,29 +1914,8 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                     span->end_with_error(error_msg);
                 }
             } else {
-                nlohmann::json usage_payload = nlohmann::json::object();
+                nlohmann::json usage_payload = usage_and_speed(response, *span);
                 std::string text_output = "";
-                if (response.contains("usage") && response["usage"].is_object()) {
-                    auto usage = response["usage"];
-                    if (usage.contains("prompt_tokens")) {
-                        usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
-                    } else if (usage.contains("input_tokens")) {
-                        usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
-                    }
-                    if (usage_payload.contains("prompt_tokens")) {
-                        usage_payload["prompt_tokens_total"] = usage_payload["prompt_tokens"];
-                    }
-                    if (usage.contains("completion_tokens")) {
-                        usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
-                    } else if (usage.contains("output_tokens")) {
-                        usage_payload["completion_tokens"] = usage["output_tokens"].get<int>();
-                    }
-                    auto details = usage.value("prompt_tokens_details", json::object());
-                    if (details.is_object() && details.contains("cached_tokens") && details["cached_tokens"].is_number()) {
-                        usage_payload["cached_tokens"] = details["cached_tokens"].get<int>();
-                    }
-                }
-                apply_timings(response, usage_payload, *span);
 
                 std::vector<telemetry::ToolCall> tool_calls;
                 if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
@@ -2034,29 +2004,8 @@ json Router::completion(const json& request) {
                     span->end_with_error(error_msg);
                 }
             } else {
-                nlohmann::json usage_payload = nlohmann::json::object();
+                nlohmann::json usage_payload = usage_and_speed(response, *span);
                 std::string text_output = "";
-                if (response.contains("usage") && response["usage"].is_object()) {
-                    auto usage = response["usage"];
-                    if (usage.contains("prompt_tokens")) {
-                        usage_payload["prompt_tokens"] = usage["prompt_tokens"].get<int>();
-                    } else if (usage.contains("input_tokens")) {
-                        usage_payload["prompt_tokens"] = usage["input_tokens"].get<int>();
-                    }
-                    if (usage_payload.contains("prompt_tokens")) {
-                        usage_payload["prompt_tokens_total"] = usage_payload["prompt_tokens"];
-                    }
-                    if (usage.contains("completion_tokens")) {
-                        usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
-                    } else if (usage.contains("output_tokens")) {
-                        usage_payload["completion_tokens"] = usage["output_tokens"].get<int>();
-                    }
-                    auto details = usage.value("prompt_tokens_details", json::object());
-                    if (details.is_object() && details.contains("cached_tokens") && details["cached_tokens"].is_number()) {
-                        usage_payload["cached_tokens"] = details["cached_tokens"].get<int>();
-                    }
-                }
-                apply_timings(response, usage_payload, *span);
 
                 if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
                     auto choice = response["choices"][0];

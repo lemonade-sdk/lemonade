@@ -295,6 +295,48 @@ int main() {
             check_int("accumulate_telemetry: responses function call argument deltas count as output",
                       tel.output_chunks, 2);
         }
+        {
+            lemon::StreamingProxy::TelemetryData tel;
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                R"({"type": "response.reasoning_text.delta", "delta": "thinking"})"), tel);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                R"({"type": "response.reasoning_text.delta", "delta": ""})"), tel);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                R"({"type": "response.in_progress"})"), tel);
+            check_int("accumulate_telemetry: non-empty responses reasoning deltas count as output",
+                      tel.output_chunks, 1);
+        }
+        // A null or malformed count is skipped without hiding the counts next to it.
+        {
+            auto tel = lemon::StreamingProxy::extract_telemetry(nlohmann::json::parse(
+                R"({"usage": {"prompt_tokens": null, "completion_tokens": 2}})"));
+            check_bool("extract_telemetry: null input count not reported", tel.input_reported, false);
+            check_bool("extract_telemetry: sibling output count reported", tel.output_reported, true);
+            check_int("extract_telemetry: sibling output count kept", tel.output_tokens, 2);
+            auto usage = lemon::StreamingProxy::usage_payload(tel);
+            check_bool("usage_payload: null input count left out", usage.contains("prompt_tokens"), false);
+        }
+        {
+            auto tel = lemon::StreamingProxy::extract_telemetry(nlohmann::json::parse(
+                R"({"usage": {"prompt_tokens": "7", "input_tokens": 5, "output_tokens": 0}})"));
+            check_int("extract_telemetry: falls back to a valid input_tokens", tel.input_tokens, 5);
+            check_int("extract_telemetry: reported zero output kept", tel.output_tokens, 0);
+            check_bool("extract_telemetry: reported zero output flagged", tel.output_reported, true);
+        }
+        {
+            auto tel = lemon::StreamingProxy::extract_telemetry(nlohmann::json::parse(
+                R"({"timings": {"prompt_n": null, "predicted_n": 4, "prompt_ms": null, "cache_n": 0}})"));
+            check_bool("extract_telemetry: null prompt_n not reported", tel.input_reported, false);
+            check_int("extract_telemetry: predicted_n kept beside a null prompt_n", tel.output_tokens, 4);
+            check_int("extract_telemetry: reported zero cache kept", tel.cache_tokens, 0);
+        }
+        {
+            auto tel = lemon::StreamingProxy::extract_telemetry(nlohmann::json::parse(
+                R"({"timings": {"cache_n": 32}})"));
+            auto usage = lemon::StreamingProxy::usage_payload(tel);
+            check_int("usage_payload: cache count reported alone is kept", usage.value("cached_tokens", -1), 32);
+            check_bool("usage_payload: cache alone adds no input count", usage.contains("prompt_tokens"), false);
+        }
         // UsageChunkFilter: drops the usage-only chunk Lemonade asked for, relays everything else.
         {
             std::string relayed;

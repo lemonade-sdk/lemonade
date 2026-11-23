@@ -4,7 +4,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
-#include <fstream>
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -45,6 +45,32 @@ struct UsageLogOptions {
     int max_days = 0;
 };
 
+// A daily log opened for appending. The log directory is configurable and may be
+// writable by others, so open() refuses anything but a regular file the server owns.
+class LogFile {
+public:
+    LogFile() = default;
+    LogFile(const LogFile&) = delete;
+    LogFile& operator=(const LogFile&) = delete;
+    ~LogFile() { close(); }
+
+    void open(const std::filesystem::path& path);
+    void close();
+    bool is_open() const;
+    uint64_t size() const;
+    bool read_at(uint64_t offset, char* buf, size_t len) const;
+    void truncate(uint64_t len);
+    void append(const std::string& data);
+
+private:
+    std::string path_;
+#ifdef _WIN32
+    void* handle_ = nullptr;
+#else
+    int fd_ = -1;
+#endif
+};
+
 // Appends JSON lines to usage-YYYY-MM-DD.jsonl on a background thread.
 // Options are re-read for every batch so config changes apply without restart.
 // After a write failure, records are dropped until a retry after retry_interval.
@@ -81,7 +107,7 @@ private:
     std::atomic<uint64_t> disk_bytes_{0};
     std::thread worker_;
 
-    std::ofstream file_;
+    LogFile file_;
     std::string file_path_;
     std::string file_dir_;
     std::string file_date_;

@@ -36,6 +36,21 @@ nlohmann::ordered_json StreamingProxy::error_event_schema() {
 
 namespace {
 
+// Backends sometimes send null or malformed fields; a bad one is skipped so it does not hide its siblings.
+bool read_count(const nlohmann::json& obj, const char* key, int& out) {
+    auto it = obj.find(key);
+    if (it == obj.end() || !it->is_number()) return false;
+    out = it->get<int>();
+    return true;
+}
+
+bool read_number(const nlohmann::json& obj, const char* key, double& out) {
+    auto it = obj.find(key);
+    if (it == obj.end() || !it->is_number()) return false;
+    out = it->get<double>();
+    return true;
+}
+
 bool has_output_text(const nlohmann::json& chunk) {
     if (chunk.contains("choices") && chunk["choices"].is_array() && !chunk["choices"].empty()) {
         const auto& choice = chunk["choices"][0];
@@ -48,8 +63,11 @@ bool has_output_text(const nlohmann::json& chunk) {
         }
         return delta.contains("tool_calls") && delta["tool_calls"].is_array() && !delta["tool_calls"].empty();
     }
-    return chunk.contains("type") && (chunk["type"] == "response.output_text.delta" ||
-                                      chunk["type"] == "response.function_call_arguments.delta");
+    if (!chunk.contains("type") || !chunk["type"].is_string()) return false;
+    const auto& type = chunk["type"].get_ref<const std::string&>();
+    if (type == "response.function_call_arguments.delta") return true;
+    if (type != "response.output_text.delta" && type != "response.reasoning_text.delta") return false;
+    return chunk.contains("delta") && chunk["delta"].is_string() && !chunk["delta"].get_ref<const std::string&>().empty();
 }
 
 void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::TelemetryData& telemetry) {
@@ -65,42 +83,24 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
     }
 
     if (usage.is_object()) {
-        if (usage.contains("prompt_tokens") || usage.contains("input_tokens")) {
+        if (read_count(usage, "prompt_tokens", telemetry.input_tokens) ||
+            read_count(usage, "input_tokens", telemetry.input_tokens)) {
+            telemetry.prompt_tokens = telemetry.input_tokens;
             telemetry.input_reported = true;
             telemetry.tokens_reported = true;
         }
-        if (usage.contains("completion_tokens") || usage.contains("output_tokens")) {
+        if (read_count(usage, "completion_tokens", telemetry.output_tokens) ||
+            read_count(usage, "output_tokens", telemetry.output_tokens)) {
             telemetry.output_reported = true;
             telemetry.tokens_reported = true;
         }
-        if (usage.contains("prompt_tokens")) {
-            telemetry.input_tokens = usage["prompt_tokens"].get<int>();
-        } else if (usage.contains("input_tokens")) {
-            telemetry.input_tokens = usage["input_tokens"].get<int>();
-        }
-        if (usage.contains("prompt_tokens") || usage.contains("input_tokens")) {
-            telemetry.prompt_tokens = telemetry.input_tokens;
-        }
-        if (usage.contains("completion_tokens")) {
-            telemetry.output_tokens = usage["completion_tokens"].get<int>();
-        } else if (usage.contains("output_tokens")) {
-            telemetry.output_tokens = usage["output_tokens"].get<int>();
-        }
-        if (usage.contains("prefill_duration_ttft")) {
-            telemetry.time_to_first_token = usage["prefill_duration_ttft"].get<double>();
-        }
-        if (usage.contains("decoding_speed_tps")) {
-            telemetry.tokens_per_second = usage["decoding_speed_tps"].get<double>();
-        }
-        if (usage.contains("prompt_tokens_details") && usage["prompt_tokens_details"].is_object() &&
-            usage["prompt_tokens_details"].contains("cached_tokens") &&
-            usage["prompt_tokens_details"]["cached_tokens"].is_number()) {
-            telemetry.cache_tokens = usage["prompt_tokens_details"]["cached_tokens"].get<int>();
-        } else if (usage.contains("input_tokens_details") && usage["input_tokens_details"].is_object() &&
-                   usage["input_tokens_details"].contains("cached_tokens") &&
-                   usage["input_tokens_details"]["cached_tokens"].is_number()) {
-            // Responses API usage shape.
-            telemetry.cache_tokens = usage["input_tokens_details"]["cached_tokens"].get<int>();
+        read_number(usage, "prefill_duration_ttft", telemetry.time_to_first_token);
+        read_number(usage, "decoding_speed_tps", telemetry.tokens_per_second);
+        for (const char* details : {"prompt_tokens_details", "input_tokens_details"}) {
+            if (usage.contains(details) && usage[details].is_object() &&
+                read_count(usage[details], "cached_tokens", telemetry.cache_tokens)) {
+                break;
+            }
         }
     }
 
@@ -112,25 +112,20 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
     }
 
     if (timings.is_object()) {
-        if (timings.contains("prompt_n")) {
-            telemetry.input_tokens = timings["prompt_n"].get<int>();
+        if (read_count(timings, "prompt_n", telemetry.input_tokens)) {
             telemetry.input_reported = true;
             telemetry.tokens_reported = true;
         }
-        if (timings.contains("predicted_n")) {
-            telemetry.output_tokens = timings["predicted_n"].get<int>();
+        if (read_count(timings, "predicted_n", telemetry.output_tokens)) {
             telemetry.output_reported = true;
             telemetry.tokens_reported = true;
         }
-        if (timings.contains("prompt_ms")) {
-            telemetry.time_to_first_token = timings["prompt_ms"].get<double>() / 1000.0;
+        double prompt_ms = 0.0;
+        if (read_number(timings, "prompt_ms", prompt_ms)) {
+            telemetry.time_to_first_token = prompt_ms / 1000.0;
         }
-        if (timings.contains("predicted_per_second")) {
-            telemetry.tokens_per_second = timings["predicted_per_second"].get<double>();
-        }
-        if (timings.contains("cache_n") && timings["cache_n"].is_number()) {
-            telemetry.cache_tokens = timings["cache_n"].get<int>();
-        }
+        read_number(timings, "predicted_per_second", telemetry.tokens_per_second);
+        read_count(timings, "cache_n", telemetry.cache_tokens);
     }
 }
 
@@ -577,7 +572,7 @@ nlohmann::json StreamingProxy::usage_payload(const TelemetryData& telemetry) {
     if (telemetry.output_reported) {
         usage["completion_tokens"] = telemetry.output_tokens;
     }
-    if (!usage.empty() && telemetry.cache_tokens >= 0) {
+    if (telemetry.cache_tokens >= 0) {
         usage["cached_tokens"] = telemetry.cache_tokens;
     }
     return usage;

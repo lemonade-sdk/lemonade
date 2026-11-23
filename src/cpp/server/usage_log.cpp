@@ -1,12 +1,14 @@
 #include "usage_log.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
 #include <ctime>
 #include <filesystem>
-#include <fstream>
+#include <iterator>
 #include <regex>
+#include <stdexcept>
 #include <vector>
 
 #ifdef _WIN32
@@ -16,6 +18,7 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -28,40 +31,164 @@ namespace fs = std::filesystem;
 
 namespace lemon::usage {
 
+void LogFile::open(const fs::path& path) {
+    close();
+    std::string name = utils::path_to_utf8(path);
+#ifdef _WIN32
+    // FILE_FLAG_OPEN_REPARSE_POINT opens a symlink or junction itself, so the check below rejects it.
+    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                           OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (h == INVALID_HANDLE_VALUE) throw std::runtime_error("cannot open " + name);
+    BY_HANDLE_FILE_INFORMATION info{};
+    bool safe = GetFileInformationByHandle(h, &info) &&
+                !(info.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY)) &&
+                info.nNumberOfLinks == 1;
+    if (!safe) {
+        CloseHandle(h);
+        throw std::runtime_error("refusing to write to " + name + ": not a regular file");
+    }
+    handle_ = h;
+#else
+    int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_APPEND | O_NOFOLLOW | O_CLOEXEC, 0600);
+    if (fd < 0) {
+        throw std::runtime_error((errno == ELOOP ? "refusing to follow a symbolic link at " : "cannot open ") + name);
+    }
+    // A hard link or another user's file would put records where someone else can read them.
+    struct stat st {};
+    bool safe = ::fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && st.st_nlink == 1 && st.st_uid == ::geteuid();
+    if (safe && (st.st_mode & 077) != 0) safe = ::fchmod(fd, 0600) == 0;
+    if (!safe) {
+        ::close(fd);
+        throw std::runtime_error("refusing to write to " + name + ": not a regular file owned by this user");
+    }
+    fd_ = fd;
+#endif
+    path_ = name;
+}
+
+void LogFile::close() {
+#ifdef _WIN32
+    if (handle_) CloseHandle(static_cast<HANDLE>(handle_));
+    handle_ = nullptr;
+#else
+    if (fd_ >= 0) ::close(fd_);
+    fd_ = -1;
+#endif
+}
+
+bool LogFile::is_open() const {
+#ifdef _WIN32
+    return handle_ != nullptr;
+#else
+    return fd_ >= 0;
+#endif
+}
+
+uint64_t LogFile::size() const {
+#ifdef _WIN32
+    LARGE_INTEGER n{};
+    if (!GetFileSizeEx(static_cast<HANDLE>(handle_), &n)) throw std::runtime_error("cannot read " + path_);
+    return static_cast<uint64_t>(n.QuadPart);
+#else
+    struct stat st {};
+    if (::fstat(fd_, &st) != 0) throw std::runtime_error("cannot read " + path_);
+    return static_cast<uint64_t>(st.st_size);
+#endif
+}
+
+bool LogFile::read_at(uint64_t offset, char* buf, size_t len) const {
+    while (len > 0) {
+#ifdef _WIN32
+        OVERLAPPED at{};
+        at.Offset = static_cast<DWORD>(offset);
+        at.OffsetHigh = static_cast<DWORD>(offset >> 32);
+        DWORD chunk = static_cast<DWORD>(std::min<size_t>(len, 1 << 20));
+        DWORD got = 0;
+        if (!ReadFile(static_cast<HANDLE>(handle_), buf, chunk, &got, &at) || got == 0) return false;
+#else
+        ssize_t got = ::pread(fd_, buf, len, static_cast<off_t>(offset));
+        if (got < 0 && errno == EINTR) continue;
+        if (got <= 0) return false;
+#endif
+        buf += got;
+        len -= static_cast<size_t>(got);
+        offset += static_cast<uint64_t>(got);
+    }
+    return true;
+}
+
+void LogFile::truncate(uint64_t len) {
+#ifdef _WIN32
+    LARGE_INTEGER at{};
+    at.QuadPart = static_cast<LONGLONG>(len);
+    HANDLE h = static_cast<HANDLE>(handle_);
+    if (!SetFilePointerEx(h, at, nullptr, FILE_BEGIN) || !SetEndOfFile(h)) {
+        throw std::runtime_error("cannot write " + path_);
+    }
+#else
+    if (::ftruncate(fd_, static_cast<off_t>(len)) != 0) throw std::runtime_error("cannot write " + path_);
+#endif
+}
+
+void LogFile::append(const std::string& data) {
+    const char* p = data.data();
+    size_t left = data.size();
+#ifdef _WIN32
+    HANDLE h = static_cast<HANDLE>(handle_);
+    LARGE_INTEGER zero{};
+    if (!SetFilePointerEx(h, zero, nullptr, FILE_END)) throw std::runtime_error("cannot write " + path_);
+#endif
+    while (left > 0) {
+#ifdef _WIN32
+        DWORD put = 0;
+        DWORD chunk = static_cast<DWORD>(std::min<size_t>(left, 1 << 20));
+        if (!WriteFile(h, p, chunk, &put, nullptr) || put == 0) throw std::runtime_error("cannot write " + path_);
+#else
+        ssize_t put = ::write(fd_, p, left);
+        if (put < 0 && errno == EINTR) continue;
+        if (put <= 0) throw std::runtime_error("cannot write " + path_);
+#endif
+        p += put;
+        left -= static_cast<size_t>(put);
+    }
+}
+
 namespace {
 
-// A failed or interrupted write can leave half a record at the end of the file.
-// Appending after it would make the next record unreadable too.
-void trim_partial_record(const fs::path& path) {
-    std::error_code ec;
-    uint64_t size = fs::file_size(path, ec);
-    if (ec || size == 0) return;
+// Past this, a trailing fragment is not worth reading to see whether it is a whole record.
+constexpr uint64_t kMaxTailCheckBytes = 64ull * 1024 * 1024;
+
+// A failed or interrupted write can leave half a record at the end of the file, and
+// appending after it would make the next record unreadable too. A complete record
+// that only lacks its newline is valid JSON Lines and is kept.
+void repair_tail(LogFile& file) {
+    uint64_t size = file.size();
+    if (size == 0) return;
     uint64_t keep = 0;
-    {
-        std::ifstream in(path, std::ios::binary);
-        if (!in) return;
-        char buf[4096];
-        uint64_t end = size;
-        bool found = false;
-        while (end > 0 && !found) {
-            uint64_t start = end > sizeof(buf) ? end - sizeof(buf) : 0;
-            in.seekg(static_cast<std::streamoff>(start));
-            in.read(buf, static_cast<std::streamsize>(end - start));
-            if (!in) return;
-            for (uint64_t i = end - start; i > 0; --i) {
-                if (buf[i - 1] == '\n') {
-                    keep = start + i;
-                    found = true;
-                    break;
-                }
-            }
-            end = start;
+    char buf[4096];
+    for (uint64_t end = size; end > 0;) {
+        uint64_t start = end > sizeof(buf) ? end - sizeof(buf) : 0;
+        size_t len = static_cast<size_t>(end - start);
+        if (!file.read_at(start, buf, len)) throw std::runtime_error("cannot read the end of the usage log");
+        auto nl = std::find(std::make_reverse_iterator(buf + len), std::make_reverse_iterator(buf), '\n');
+        if (nl != std::make_reverse_iterator(buf)) {
+            keep = start + static_cast<uint64_t>(nl.base() - buf);
+            break;
         }
+        end = start;
     }
     if (keep == size) return;
-    LOG(WARNING, "UsageLog") << "Removing an incomplete record from the end of " << utils::path_to_utf8(path)
-                             << std::endl;
-    fs::resize_file(path, keep, ec);
+
+    uint64_t tail_len = size - keep;
+    if (tail_len <= kMaxTailCheckBytes) {
+        std::string tail(static_cast<size_t>(tail_len), '\0');
+        if (file.read_at(keep, &tail[0], tail.size()) && nlohmann::json::accept(tail)) {
+            file.append("\n");
+            return;
+        }
+    }
+    LOG(WARNING, "UsageLog") << "Removing an incomplete record from the end of the usage log" << std::endl;
+    file.truncate(keep);
 }
 
 std::string local_hostname() {
@@ -268,10 +395,6 @@ void UsageLog::run() {
                 auto opts = options_();
                 for (const auto& record : batch) write(opts, record);
                 if (dropped > 0) write(opts, {{"dropped", dropped}});
-                if (file_.is_open()) {
-                    file_.flush();
-                    if (!file_) throw std::runtime_error("cannot write " + file_path_);
-                }
                 prune(opts);
             } catch (const std::exception& e) {
                 LOG(WARNING, "UsageLog") << "Usage log paused after write failure: " << e.what() << std::endl;
@@ -307,28 +430,14 @@ void UsageLog::write(const UsageLogOptions& opts, const nlohmann::ordered_json& 
             fs::permissions(dir, fs::perms::owner_all, fs::perm_options::replace, ec);
         }
         fs::path path = dir / file_name(date);
-        bool new_file = !fs::exists(path, ec);
-        if (new_file) {
-#ifndef _WIN32
-            // Create with 0600 so the file is never readable by others, even briefly.
-            int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
-            if (fd >= 0) ::close(fd);
-#endif
-        } else {
-            trim_partial_record(path);
-        }
-        file_.open(path, std::ios::binary | std::ios::app);
-        if (!file_) throw std::runtime_error("cannot open " + utils::path_to_utf8(path));
-        if (new_file) {
-            fs::permissions(path, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
-        }
+        file_.open(path);
+        repair_tail(file_);
         file_path_ = utils::path_to_utf8(path);
         file_date_ = date;
         file_dir_ = opts.dir;
     }
 
-    file_ << line;
-    if (!file_) throw std::runtime_error("cannot write " + file_path_);
+    file_.append(line);
 }
 
 // Deletes whole days, oldest first. The size cap never deletes the newest day,
