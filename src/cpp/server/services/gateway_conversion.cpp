@@ -369,6 +369,12 @@ void stream_sse_to_ndjson(const std::string& openai_body, httplib::DataSink& cli
                         eval_count = usage["completion_tokens"].get<int>();
                 }
 
+                // A usage-only chunk feeds the done line's counts and has nothing to stream.
+                if (openai_chunk.contains("choices") && openai_chunk["choices"].is_array() &&
+                    openai_chunk["choices"].empty()) {
+                    continue;
+                }
+
                 auto ollama_chunk = convert_chunk(openai_chunk);
                 std::string ndjson = ollama_chunk.dump() + "\n";
                 if (!client_sink.write(ndjson.c_str(), ndjson.size())) {

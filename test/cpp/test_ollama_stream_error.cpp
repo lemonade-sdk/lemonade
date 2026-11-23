@@ -80,7 +80,9 @@ StreamResult run_ollama_stream(const std::string& backend_body) {
             }
             return line;
         },
-        [](int, int) { return json{{"done", true}}; },
+        [](int prompt_eval_count, int eval_count) {
+            return json{{"done", true}, {"prompt_eval_count", prompt_eval_count}, {"eval_count", eval_count}};
+        },
         [&url, &result](const std::string& body, httplib::DataSink& sink) {
             lemon::StreamingProxy::forward_sse_stream(
                 url, body, sink,
@@ -144,11 +146,26 @@ static void test_clean_stream_is_unchanged() {
     check(result.done_called, "clean stream: response is terminated");
 }
 
+// vLLM and FastFlowLM end a stream with a usage chunk whose choices are empty.
+static void test_usage_only_chunk_feeds_done_line() {
+    const StreamResult result = run_ollama_stream(
+        kContentEvent +
+        R"(data: {"choices":[],"usage":{"prompt_tokens":37,"completion_tokens":2}})" "\n\n"
+        "data: [DONE]\n\n");
+
+    check(result.lines.size() == 2, "usage-only chunk: content line then done line, nothing for the usage chunk");
+    check(!result.lines.empty() && result.lines.back().value("done", false) &&
+              result.lines.back().value("prompt_eval_count", 0) == 37 &&
+              result.lines.back().value("eval_count", 0) == 2,
+          "usage-only chunk: counts reach the done line");
+}
+
 int main() {
     std::printf("=== Ollama Stream Error Tests ===\n\n");
 
     test_error_after_content();
     test_clean_stream_is_unchanged();
+    test_usage_only_chunk_feeds_done_line();
 
     std::printf("\n%s\n", g_failures == 0 ? "All tests passed" : "Some tests failed");
     return g_failures == 0 ? 0 : 1;

@@ -1,7 +1,9 @@
 #pragma once
 #include <chrono>
+#include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -26,7 +28,11 @@ public:
     void set_attribute(const std::string& key, const nlohmann::json& value);
     void end_with_success(const nlohmann::json& usage_or_timings, const std::string& complete_output, const std::vector<ToolCall>& tool_calls = {});
     void end_with_error(const std::string& error_message);
+    // Client disconnected. streamed_chunks >= 0 becomes an estimated output token count.
+    void end_aborted(int streamed_chunks = -1);
     void cancel();
+    // Fixes the usage record's end time, so later metrics collection does not count as inference time.
+    void mark_completed();
 
 
 
@@ -40,7 +46,12 @@ private:
     std::string parent_span_id_;
     std::string user_id_;
     std::string session_id_;
+    std::string client_ip_;
+    bool stream_ = false;
+    std::optional<int> aborted_chunks_;
     std::chrono::steady_clock::time_point start_time_;
+    std::optional<std::chrono::steady_clock::time_point> completed_time_;
+    int64_t completed_unix_ms_ = 0;
     bool ended_ = false;
 
     struct Message {
@@ -52,6 +63,8 @@ private:
 
     nlohmann::json build_common_attributes(bool has_openinference, bool has_otel_genai, bool hide_inputs);
     void submit_span(const nlohmann::json& span_details);
+    void record_usage(const std::string& status, int input_tokens, int output_tokens, int cached_tokens,
+                      bool estimated, const std::string& output);
 };
 
 class TelemetryTracker {
@@ -84,5 +97,6 @@ extern thread_local std::string g_incoming_trace_id;
 extern thread_local std::string g_incoming_parent_span_id;
 extern thread_local std::string g_incoming_client_id;
 extern thread_local std::string g_incoming_session_id;
+extern thread_local std::string g_client_ip;
 
 } // namespace lemon::telemetry

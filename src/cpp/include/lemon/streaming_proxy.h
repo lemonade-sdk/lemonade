@@ -29,6 +29,12 @@ public:
         int cache_tokens = -1;
         double time_to_first_token = 0.0;
         double tokens_per_second = 0.0;
+        bool tokens_reported = false;
+        bool input_reported = false;
+        bool output_reported = false;
+        // Content-bearing chunks relayed; the output estimate when a client disconnects mid-stream.
+        int output_chunks = 0;
+        bool client_disconnected = false;
         std::string error_message = "";
         std::string model_name = "";
 
@@ -89,9 +95,39 @@ public:
     // cached-token details) and llama.cpp timings.
     static TelemetryData extract_telemetry(const nlohmann::json& payload);
 
+    // Fold one SSE chunk into a running stream's telemetry (usage, timings, output chunk count).
+    static void accumulate_telemetry(const nlohmann::json& chunk, TelemetryData& telemetry);
+
+    // Usage counts for the inference span; a count the backend did not report is left out.
+    static nlohmann::json usage_payload(const TelemetryData& telemetry);
+
     static void accumulate_responses_delta(const nlohmann::json& parsed, std::string& accumulated_text);
 
 private:
+};
+
+// Relays an SSE stream to `out` without the usage-only chunks (usage set,
+// choices empty or absent) that stream_options.include_usage adds. Used when
+// Lemonade sets include_usage itself, so the client sees the stream it asked for.
+class UsageChunkFilter {
+public:
+    explicit UsageChunkFilter(httplib::DataSink& out);
+    UsageChunkFilter(const UsageChunkFilter&) = delete;
+    UsageChunkFilter& operator=(const UsageChunkFilter&) = delete;
+
+    httplib::DataSink& sink() { return sink_; }
+    // Relays a trailing line that has no terminator.
+    void finish();
+
+    static bool is_usage_only_line(const std::string& line);
+
+private:
+    bool relay(const std::string& text);
+
+    httplib::DataSink& out_;
+    httplib::DataSink sink_;
+    std::string buffer_;
+    bool drop_blank_line_ = false;
 };
 
 } // namespace lemon

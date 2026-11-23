@@ -225,6 +225,166 @@ int main() {
             check_int("extract_telemetry: responses prompt from input", tel.prompt_tokens, 30);
             check_int("extract_telemetry: responses cached via input_tokens_details", tel.cache_tokens, 12);
             check_int("extract_telemetry: responses output_tokens", tel.output_tokens, 40);
+            check_bool("extract_telemetry: responses usage sets tokens_reported", tel.tokens_reported, true);
+        }
+        {
+            nlohmann::json responses_body = nlohmann::json::parse(
+                "{\"object\": \"response\", \"error\": null, \"output\": []}");
+            auto tel = lemon::StreamingProxy::extract_telemetry(responses_body);
+            check_bool("extract_telemetry: responses without usage leaves tokens_reported false",
+                       tel.tokens_reported, false);
+        }
+
+        // 1a'. accumulate_telemetry across a stream: content chunks counted, usage flags reporting
+        {
+            lemon::StreamingProxy::TelemetryData tel;
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"choices\": [{\"delta\": {\"content\": \"Hel\"}}]}"), tel);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"choices\": [{\"delta\": {\"content\": \"lo\"}}]}"), tel);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"choices\": [{\"delta\": {}, \"finish_reason\": \"stop\"}]}"), tel);
+            check_int("accumulate_telemetry: counts content chunks", tel.output_chunks, 2);
+            check_bool("accumulate_telemetry: no usage yet", tel.tokens_reported, false);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"choices\": [], \"usage\": {\"prompt_tokens\": 7, \"completion_tokens\": 2}}"), tel);
+            check_bool("accumulate_telemetry: usage marks tokens reported", tel.tokens_reported, true);
+            check_int("accumulate_telemetry: usage output tokens", tel.output_tokens, 2);
+        }
+        {
+            lemon::StreamingProxy::TelemetryData tel;
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"type\": \"response.output_text.delta\", \"delta\": \"Hi\"}"), tel);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"type\": \"response.completed\", \"response\": {\"usage\": {\"input_tokens\": 9, \"output_tokens\": 4}}}"), tel);
+            check_int("accumulate_telemetry: responses delta counted", tel.output_chunks, 1);
+            check_bool("accumulate_telemetry: responses usage reported", tel.tokens_reported, true);
+            check_int("accumulate_telemetry: responses input tokens", tel.input_tokens, 9);
+        }
+        {
+            lemon::StreamingProxy::TelemetryData tel;
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"choices\": [], \"usage\": {\"prompt_tokens\": 7}}"), tel);
+            auto usage = lemon::StreamingProxy::usage_payload(tel);
+            check_int("usage_payload: reported input kept", usage.value("prompt_tokens", -1), 7);
+            check_bool("usage_payload: unreported output left out", usage.contains("completion_tokens"), false);
+        }
+        {
+            lemon::StreamingProxy::TelemetryData tel;
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"timings\": {\"prompt_n\": 5, \"predicted_n\": 0}}"), tel);
+            auto usage = lemon::StreamingProxy::usage_payload(tel);
+            check_int("usage_payload: reported zero output kept", usage.value("completion_tokens", -1), 0);
+            check_bool("usage_payload: nothing reported is empty",
+                       lemon::StreamingProxy::usage_payload(lemon::StreamingProxy::TelemetryData{}).empty(), true);
+        }
+        {
+            lemon::StreamingProxy::TelemetryData tel;
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"choices\": [{\"delta\": {\"tool_calls\": [{\"index\": 0, \"function\": {\"arguments\": \"{\\\"q\\\"\"}}]}}]}"), tel);
+            check_int("accumulate_telemetry: tool call chunks count as output", tel.output_chunks, 1);
+        }
+        {
+            lemon::StreamingProxy::TelemetryData tel;
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"type\": \"response.output_item.added\", \"item\": {\"type\": \"function_call\"}}"), tel);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"type\": \"response.function_call_arguments.delta\", \"delta\": \"{\\\"q\\\"\"}"), tel);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                "{\"type\": \"response.function_call_arguments.delta\", \"delta\": \":1}\"}"), tel);
+            check_int("accumulate_telemetry: responses function call argument deltas count as output",
+                      tel.output_chunks, 2);
+        }
+        {
+            lemon::StreamingProxy::TelemetryData tel;
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                R"({"type": "response.reasoning_text.delta", "delta": "thinking"})"), tel);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                R"({"type": "response.reasoning_text.delta", "delta": ""})"), tel);
+            lemon::StreamingProxy::accumulate_telemetry(nlohmann::json::parse(
+                R"({"type": "response.in_progress"})"), tel);
+            check_int("accumulate_telemetry: non-empty responses reasoning deltas count as output",
+                      tel.output_chunks, 1);
+        }
+        // A null or malformed count is skipped without hiding the counts next to it.
+        {
+            auto tel = lemon::StreamingProxy::extract_telemetry(nlohmann::json::parse(
+                R"({"usage": {"prompt_tokens": null, "completion_tokens": 2}})"));
+            check_bool("extract_telemetry: null input count not reported", tel.input_reported, false);
+            check_bool("extract_telemetry: sibling output count reported", tel.output_reported, true);
+            check_int("extract_telemetry: sibling output count kept", tel.output_tokens, 2);
+            auto usage = lemon::StreamingProxy::usage_payload(tel);
+            check_bool("usage_payload: null input count left out", usage.contains("prompt_tokens"), false);
+        }
+        {
+            auto tel = lemon::StreamingProxy::extract_telemetry(nlohmann::json::parse(
+                R"({"usage": {"prompt_tokens": "7", "input_tokens": 5, "output_tokens": 0}})"));
+            check_int("extract_telemetry: falls back to a valid input_tokens", tel.input_tokens, 5);
+            check_int("extract_telemetry: reported zero output kept", tel.output_tokens, 0);
+            check_bool("extract_telemetry: reported zero output flagged", tel.output_reported, true);
+        }
+        {
+            auto tel = lemon::StreamingProxy::extract_telemetry(nlohmann::json::parse(
+                R"({"timings": {"prompt_n": null, "predicted_n": 4, "prompt_ms": null, "cache_n": 0}})"));
+            check_bool("extract_telemetry: null prompt_n not reported", tel.input_reported, false);
+            check_int("extract_telemetry: predicted_n kept beside a null prompt_n", tel.output_tokens, 4);
+            check_int("extract_telemetry: reported zero cache kept", tel.cache_tokens, 0);
+        }
+        {
+            auto tel = lemon::StreamingProxy::extract_telemetry(nlohmann::json::parse(
+                R"({"timings": {"cache_n": 32}})"));
+            auto usage = lemon::StreamingProxy::usage_payload(tel);
+            check_int("usage_payload: cache count reported alone is kept", usage.value("cached_tokens", -1), 32);
+            check_bool("usage_payload: cache alone adds no input count", usage.contains("prompt_tokens"), false);
+        }
+        // UsageChunkFilter: drops the usage-only chunk Lemonade asked for, relays everything else.
+        {
+            std::string relayed;
+            bool done = false;
+            httplib::DataSink out;
+            out.write = [&relayed](const char* d, size_t n) { relayed.append(d, n); return true; };
+            out.is_writable = []() { return true; };
+            out.done = [&done]() { done = true; };
+            lemon::UsageChunkFilter filter(out);
+            const std::string content = "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n";
+            const std::string usage = "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":2}}\r\n\r\n";
+            const std::string final_with_usage =
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"completion_tokens\":2}}\n\n";
+            const std::string stream = ": ping\n\n" + content + usage + final_with_usage + "data: [DONE]\n\n";
+            // Split mid-line to cover chunk boundaries.
+            filter.sink().write(stream.data(), 20);
+            filter.sink().write(stream.data() + 20, stream.size() - 20);
+            filter.sink().done();
+            check_eq("UsageChunkFilter: only the usage-only chunk is removed", relayed,
+                     ": ping\n\n" + content + final_with_usage + "data: [DONE]\n\n");
+            check_bool("UsageChunkFilter: done is passed through", done, true);
+        }
+        {
+            using lemon::UsageChunkFilter;
+            check_bool("UsageChunkFilter: usage without choices is usage-only",
+                       UsageChunkFilter::is_usage_only_line(
+                           "data: {\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":36}}"),
+                       true);
+            check_bool("UsageChunkFilter: content chunk with usage null is kept",
+                       UsageChunkFilter::is_usage_only_line(
+                           "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"}}],\"usage\":null}"),
+                       false);
+            check_bool("UsageChunkFilter: usage on a chunk with text is kept",
+                       UsageChunkFilter::is_usage_only_line(
+                           "data: {\"choices\":[{\"index\":0,\"text\":\" and\",\"finish_reason\":null}],"
+                           "\"usage\":{\"completion_tokens\":6}}"),
+                       false);
+            check_bool("UsageChunkFilter: content chunk without usage is kept",
+                       UsageChunkFilter::is_usage_only_line(
+                           "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"}}]}"),
+                       false);
+        }
+        {
+            auto tel = lemon::StreamingProxy::extract_telemetry(nlohmann::json::parse(
+                "{\"usage\": {\"prompt_tokens\": 17, \"completion_tokens\": 1, "
+                "\"prefill_duration_ttft\": 0.368, \"decoding_speed_tps\": 60.86}}"));
+            check_bool("extract_telemetry: FLM non-streaming TTFT", std::abs(tel.time_to_first_token - 0.368) < 1e-9, true);
+            check_bool("extract_telemetry: FLM non-streaming decode speed", std::abs(tel.tokens_per_second - 60.86) < 1e-9, true);
         }
 
         // 1b. Cached tokens from usage.prompt_tokens_details (OpenAI-wire)
@@ -483,6 +643,38 @@ int main() {
 
             check_eq("Client disconnected error message check", error_msg, "Client disconnected during stream");
         }
+    }
+
+    // TTFT stops at the first output text, not at a leading status event (Responses API).
+    {
+        httplib::Server svr;
+        svr.Post("/stream", [](const httplib::Request&, httplib::Response& res) {
+            res.set_content_provider("text/event-stream", [](size_t, httplib::DataSink& sink) {
+                const std::string created = "data: {\"type\":\"response.created\"}\n\n";
+                const std::string delta = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hi\"}\n\n";
+                const std::string done = "data: [DONE]\n\n";
+                sink.write(created.data(), created.size());
+                std::this_thread::sleep_for(std::chrono::milliseconds(300));
+                sink.write(delta.data(), delta.size());
+                sink.write(done.data(), done.size());
+                sink.done();
+                return true;
+            });
+        });
+        int port = svr.bind_to_any_port("127.0.0.1");
+        std::thread server_thread([&svr]() { svr.listen_after_bind(); });
+        svr.wait_until_ready();
+
+        httplib::DataSink sink;
+        sink.write = [](const char*, size_t) { return true; };
+        sink.done = []() {};
+        double ttft = -1;
+        lemon::StreamingProxy::forward_sse_stream(
+            "http://127.0.0.1:" + std::to_string(port) + "/stream", "{}", sink,
+            [&ttft](const lemon::StreamingProxy::TelemetryData& tel) { ttft = tel.time_to_first_token; }, 5);
+        svr.stop();
+        server_thread.join();
+        check_bool("forward_sse_stream: TTFT waits for first output text", ttft >= 0.25, true);
     }
 
     // --- InferenceSpan session ID resolution tests ---

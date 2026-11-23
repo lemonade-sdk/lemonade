@@ -1,5 +1,6 @@
 #include "lemon/streaming_proxy.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -35,7 +36,45 @@ nlohmann::ordered_json StreamingProxy::error_event_schema() {
 
 namespace {
 
+// Backends sometimes send null or malformed fields; a bad one is skipped so it does not hide its siblings.
+bool read_count(const nlohmann::json& obj, const char* key, int& out) {
+    auto it = obj.find(key);
+    if (it == obj.end() || !it->is_number()) return false;
+    out = it->get<int>();
+    return true;
+}
+
+bool read_number(const nlohmann::json& obj, const char* key, double& out) {
+    auto it = obj.find(key);
+    if (it == obj.end() || !it->is_number()) return false;
+    out = it->get<double>();
+    return true;
+}
+
+bool has_output_text(const nlohmann::json& chunk) {
+    if (chunk.contains("choices") && chunk["choices"].is_array() && !chunk["choices"].empty()) {
+        const auto& choice = chunk["choices"][0];
+        if (!choice.is_object()) return false;
+        const auto& delta = choice.contains("delta") && choice["delta"].is_object() ? choice["delta"] : choice;
+        for (const char* key : {"content", "reasoning_content", "text"}) {
+            if (delta.contains(key) && delta[key].is_string() && !delta[key].get_ref<const std::string&>().empty()) {
+                return true;
+            }
+        }
+        return delta.contains("tool_calls") && delta["tool_calls"].is_array() && !delta["tool_calls"].empty();
+    }
+    if (!chunk.contains("type") || !chunk["type"].is_string()) return false;
+    const auto& type = chunk["type"].get_ref<const std::string&>();
+    if (type == "response.function_call_arguments.delta") return true;
+    if (type != "response.output_text.delta" && type != "response.reasoning_text.delta") return false;
+    return chunk.contains("delta") && chunk["delta"].is_string() && !chunk["delta"].get_ref<const std::string&>().empty();
+}
+
 void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::TelemetryData& telemetry) {
+    if (has_output_text(chunk)) {
+        ++telemetry.output_chunks;
+    }
+
     nlohmann::json usage;
     if (chunk.contains("usage")) {
         usage = chunk["usage"];
@@ -44,34 +83,24 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
     }
 
     if (usage.is_object()) {
-        if (usage.contains("prompt_tokens")) {
-            telemetry.input_tokens = usage["prompt_tokens"].get<int>();
-        } else if (usage.contains("input_tokens")) {
-            telemetry.input_tokens = usage["input_tokens"].get<int>();
-        }
-        if (usage.contains("prompt_tokens") || usage.contains("input_tokens")) {
+        if (read_count(usage, "prompt_tokens", telemetry.input_tokens) ||
+            read_count(usage, "input_tokens", telemetry.input_tokens)) {
             telemetry.prompt_tokens = telemetry.input_tokens;
+            telemetry.input_reported = true;
+            telemetry.tokens_reported = true;
         }
-        if (usage.contains("completion_tokens")) {
-            telemetry.output_tokens = usage["completion_tokens"].get<int>();
-        } else if (usage.contains("output_tokens")) {
-            telemetry.output_tokens = usage["output_tokens"].get<int>();
+        if (read_count(usage, "completion_tokens", telemetry.output_tokens) ||
+            read_count(usage, "output_tokens", telemetry.output_tokens)) {
+            telemetry.output_reported = true;
+            telemetry.tokens_reported = true;
         }
-        if (usage.contains("prefill_duration_ttft")) {
-            telemetry.time_to_first_token = usage["prefill_duration_ttft"].get<double>();
-        }
-        if (usage.contains("decoding_speed_tps")) {
-            telemetry.tokens_per_second = usage["decoding_speed_tps"].get<double>();
-        }
-        if (usage.contains("prompt_tokens_details") && usage["prompt_tokens_details"].is_object() &&
-            usage["prompt_tokens_details"].contains("cached_tokens") &&
-            usage["prompt_tokens_details"]["cached_tokens"].is_number()) {
-            telemetry.cache_tokens = usage["prompt_tokens_details"]["cached_tokens"].get<int>();
-        } else if (usage.contains("input_tokens_details") && usage["input_tokens_details"].is_object() &&
-                   usage["input_tokens_details"].contains("cached_tokens") &&
-                   usage["input_tokens_details"]["cached_tokens"].is_number()) {
-            // Responses API usage shape.
-            telemetry.cache_tokens = usage["input_tokens_details"]["cached_tokens"].get<int>();
+        read_number(usage, "prefill_duration_ttft", telemetry.time_to_first_token);
+        read_number(usage, "decoding_speed_tps", telemetry.tokens_per_second);
+        for (const char* details : {"prompt_tokens_details", "input_tokens_details"}) {
+            if (usage.contains(details) && usage[details].is_object() &&
+                read_count(usage[details], "cached_tokens", telemetry.cache_tokens)) {
+                break;
+            }
         }
     }
 
@@ -83,21 +112,20 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
     }
 
     if (timings.is_object()) {
-        if (timings.contains("prompt_n")) {
-            telemetry.input_tokens = timings["prompt_n"].get<int>();
+        if (read_count(timings, "prompt_n", telemetry.input_tokens)) {
+            telemetry.input_reported = true;
+            telemetry.tokens_reported = true;
         }
-        if (timings.contains("predicted_n")) {
-            telemetry.output_tokens = timings["predicted_n"].get<int>();
+        if (read_count(timings, "predicted_n", telemetry.output_tokens)) {
+            telemetry.output_reported = true;
+            telemetry.tokens_reported = true;
         }
-        if (timings.contains("prompt_ms")) {
-            telemetry.time_to_first_token = timings["prompt_ms"].get<double>() / 1000.0;
+        double prompt_ms = 0.0;
+        if (read_number(timings, "prompt_ms", prompt_ms)) {
+            telemetry.time_to_first_token = prompt_ms / 1000.0;
         }
-        if (timings.contains("predicted_per_second")) {
-            telemetry.tokens_per_second = timings["predicted_per_second"].get<double>();
-        }
-        if (timings.contains("cache_n") && timings["cache_n"].is_number()) {
-            telemetry.cache_tokens = timings["cache_n"].get<int>();
-        }
+        read_number(timings, "predicted_per_second", telemetry.tokens_per_second);
+        read_count(timings, "cache_n", telemetry.cache_tokens);
     }
 }
 
@@ -156,7 +184,6 @@ void StreamingProxy::forward_sse_stream(
     std::string line_buffer;
     bool stream_error = false;
     bool has_done_marker = false;
-    bool has_first_token = false;
     double time_to_first_token = 0.0;
     const auto start_time = std::chrono::steady_clock::now();
     auto last_activity_time = start_time;
@@ -173,8 +200,8 @@ void StreamingProxy::forward_sse_stream(
     bool has_pending_data_field = false;
     bool forwarded_error_event = false;
 
-    auto process_line = [&telemetry, &has_data_event, &has_pending_data_field,
-                         &forwarded_error_event](const std::string& line) {
+    auto process_line = [&telemetry, &has_data_event, &has_pending_data_field, &time_to_first_token,
+                         &start_time, &forwarded_error_event](const std::string& line) {
         if (line.empty()) {
             has_data_event = has_data_event || has_pending_data_field;
             has_pending_data_field = false;
@@ -199,7 +226,13 @@ void StreamingProxy::forward_sse_stream(
         if (!field.value.empty() && field.value != "[DONE]") {
             try {
                 auto chunk = json::parse(field.value.begin(), field.value.end());
+                const int chunks_before = telemetry.output_chunks;
                 extract_telemetry_from_chunk(chunk, telemetry);
+                // Status events such as Responses-API "response.created" arrive before any token.
+                if (chunks_before == 0 && telemetry.output_chunks > 0) {
+                    time_to_first_token = std::chrono::duration<double>(
+                        std::chrono::steady_clock::now() - start_time).count();
+                }
                 if (chunk.is_object() && chunk.contains("error") && !chunk["error"].is_null()) {
                     forwarded_error_event = true;
                 }
@@ -214,8 +247,8 @@ void StreamingProxy::forward_sse_stream(
     utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
-        [&sink, &line_buffer, &has_done_marker, &has_first_token, &time_to_first_token,
-         &start_time, &last_activity_time, &on_chunk, &process_line, &backend_status, &error_body](const char* data, size_t length) {
+        [&sink, &line_buffer, &has_done_marker, &last_activity_time, &on_chunk, &process_line,
+         &backend_status, &error_body](const char* data, size_t length) {
             last_activity_time = std::chrono::steady_clock::now();
 
             if (backend_status != 200) {
@@ -233,12 +266,6 @@ void StreamingProxy::forward_sse_stream(
             process_sse_lines(line_buffer, process_line);
 
             std::string chunk(data, length);
-            if (!has_first_token && chunk.find("data: ") != std::string::npos) {
-                has_first_token = true;
-                time_to_first_token = std::chrono::duration<double>(
-                    std::chrono::steady_clock::now() - start_time).count();
-            }
-
             if (chunk.find("data: [DONE]") != std::string::npos) {
                 has_done_marker = true;
             }
@@ -293,6 +320,8 @@ void StreamingProxy::forward_sse_stream(
         if (request_cancelled) {
             stream_error = true;
             LOG(INFO, "StreamingProxy") << "SSE stream cancelled" << std::endl;
+            telemetry.error_message = "Request cancelled during stream";
+            telemetry.client_disconnected = true;
         } else if (client_disconnected && forwarded_error_event) {
             // Gateways that translate the stream stop it themselves once they have
             // relayed the backend's error, so the client did not go away.
@@ -303,6 +332,7 @@ void StreamingProxy::forward_sse_stream(
             stream_error = true;
             LOG(WARNING, "StreamingProxy") << "Client disconnected during SSE stream (CURL error: " << result.curl_error << ")" << std::endl;
             telemetry.error_message = "Client disconnected during stream";
+            telemetry.client_disconnected = true;
         } else if (transport_interrupted) {
             if (!has_done_marker) {
                 // This is the important crash path: HTTP headers may have been sent and
@@ -526,6 +556,28 @@ void StreamingProxy::forward_byte_stream(
     sink.done();
 }
 
+void StreamingProxy::accumulate_telemetry(const nlohmann::json& chunk, TelemetryData& telemetry) {
+    extract_telemetry_from_chunk(chunk, telemetry);
+}
+
+nlohmann::json StreamingProxy::usage_payload(const TelemetryData& telemetry) {
+    nlohmann::json usage = nlohmann::json::object();
+    if (telemetry.input_reported) {
+        usage["prompt_tokens"] = telemetry.input_tokens;
+        // llama.cpp timings count only newly processed prompt tokens; usage.prompt_tokens includes the cache.
+        usage["prompt_tokens_total"] = telemetry.prompt_tokens >= 0
+            ? telemetry.prompt_tokens
+            : telemetry.input_tokens + std::max(telemetry.cache_tokens, 0);
+    }
+    if (telemetry.output_reported) {
+        usage["completion_tokens"] = telemetry.output_tokens;
+    }
+    if (telemetry.cache_tokens >= 0) {
+        usage["cached_tokens"] = telemetry.cache_tokens;
+    }
+    return usage;
+}
+
 StreamingProxy::TelemetryData StreamingProxy::extract_telemetry(const nlohmann::json& payload) {
     TelemetryData telemetry;
     extract_telemetry_from_chunk(payload, telemetry);
@@ -590,6 +642,68 @@ void StreamingProxy::process_sse_lines(std::string& line_buffer, std::function<v
         std::string line = line_buffer.substr(0, pos);
         line_buffer.erase(0, pos + terminator_length);
         line_callback(line);
+    }
+}
+
+UsageChunkFilter::UsageChunkFilter(httplib::DataSink& out) : out_(out) {
+    sink_.write = [this](const char* data, size_t length) {
+        buffer_.append(data, length);
+        bool ok = true;
+        size_t pos;
+        while (ok && (pos = buffer_.find('\n')) != std::string::npos) {
+            std::string line = buffer_.substr(0, pos + 1);
+            buffer_.erase(0, pos + 1);
+            std::string content = line.substr(0, line.find_last_not_of("\r\n") + 1);
+            if (content.empty() && drop_blank_line_) {
+                drop_blank_line_ = false;
+                continue;
+            }
+            drop_blank_line_ = false;
+            if (is_usage_only_line(content)) {
+                drop_blank_line_ = true;
+                continue;
+            }
+            ok = relay(line);
+        }
+        return ok;
+    };
+    sink_.is_writable = [this]() { return !out_.is_writable || out_.is_writable(); };
+    sink_.done = [this]() {
+        finish();
+        if (out_.done) out_.done();
+    };
+    sink_.done_with_trailer = [this](const httplib::Headers& trailer) {
+        finish();
+        if (out_.done_with_trailer) {
+            out_.done_with_trailer(trailer);
+        } else if (out_.done) {
+            out_.done();
+        }
+    };
+}
+
+void UsageChunkFilter::finish() {
+    if (buffer_.empty()) return;
+    std::string rest;
+    rest.swap(buffer_);
+    if (!is_usage_only_line(rest)) relay(rest);
+}
+
+bool UsageChunkFilter::relay(const std::string& text) {
+    return out_.write(text.data(), text.size());
+}
+
+bool UsageChunkFilter::is_usage_only_line(const std::string& line) {
+    if (line.rfind("data:", 0) != 0) return false;
+    size_t start = line.find_first_not_of(' ', 5);
+    if (start == std::string::npos) return false;
+    try {
+        auto chunk = json::parse(line.begin() + start, line.end());
+        if (!chunk.is_object() || !chunk.contains("usage") || chunk["usage"].is_null()) return false;
+        if (!chunk.contains("choices")) return true;
+        return chunk["choices"].is_array() && chunk["choices"].empty();
+    } catch (...) {
+        return false;
     }
 }
 
