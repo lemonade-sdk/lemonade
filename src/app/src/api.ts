@@ -1574,6 +1574,16 @@ class LemonadeAPI {
     modelInfo?: ModelInfo | null,
     argumentSource: ModelLoadArgumentSource = 'local-overrides',
   ): Promise<unknown> {
+    return this._loadModel(modelName, recipeOptions, modelInfo, argumentSource, false);
+  }
+
+  private async _loadModel(
+    modelName: string,
+    recipeOptions: Record<string, unknown> | undefined,
+    modelInfo: ModelInfo | null | undefined,
+    argumentSource: ModelLoadArgumentSource,
+    restart: boolean,
+  ): Promise<unknown> {
     await this._assertModelNotDownloading(modelName);
     const target = modelName.trim().toLowerCase();
     const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
@@ -1614,6 +1624,19 @@ class LemonadeAPI {
       console.warn('Could not watch model load progress:', error);
     }
     try {
+      if (restart) {
+        if (Object.keys(body).some(key => key.endsWith('_args'))) {
+          // Use the load credential to check admin access before stopping the
+          // model. HEAD checks the route without transferring the configuration.
+          const server = this.baseUrl;
+          const credential = this.apiKey;
+          await this._fetch('/internal/config', { method: 'HEAD', cache: 'no-store' });
+          if (this.baseUrl !== server || this.apiKey !== credential) {
+            throw new Error('Connection changed while authorizing the model reload');
+          }
+        }
+        await this.unloadModel(modelName);
+      }
       const result = await this._json('/api/v1/load', { method: 'POST', body });
       this._notifyModelsChanged();
       return result;
@@ -1685,14 +1708,7 @@ class LemonadeAPI {
     modelInfo?: ModelInfo | null,
     argumentSource: ModelLoadArgumentSource = 'local-overrides',
   ): Promise<unknown> {
-    const target = modelName.trim().toLowerCase();
-    const info = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
-    const recipe = String((info as any)?.recipe || '').trim().toLowerCase();
-    if (recipe === 'collection.router' || recipe.startsWith('collection.router.')) {
-      return this.loadModel(modelName, undefined, info, argumentSource);
-    }
-    await this.unloadModel(modelName);
-    return this.loadModel(modelName, recipeOptions, info, argumentSource);
+    return this._loadModel(modelName, recipeOptions, modelInfo, argumentSource, true);
   }
 
   async deleteModel(modelName: string): Promise<unknown> {

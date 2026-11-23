@@ -74,8 +74,8 @@ require.extensions['.ts'] = (module, file) => {
       'an explicit empty panel payload must not replay custom arguments');
     await loadModelRuntime(custom);
     assert.deepEqual(loadCalls.at(-1), [custom.model_name,
-      { save_options: false, ...custom.recipe_options }, custom, 'local-overrides'],
-    'ordinary nonpanel loads must retain intentional custom configuration');
+      { save_options: false, ctx_size: 8192, llamacpp_backend: 'metal' }, custom, 'local-overrides'],
+    'ordinary loads must let the server apply registered custom arguments');
     assert.deepEqual(custom, original, 'filtering a panel load must not mutate the custom model record');
 
     await loadModelRuntime(collection, new Set(), {});
@@ -84,8 +84,8 @@ require.extensions['.ts'] = (module, file) => {
     'an ordinary panel collection load must not replay hidden component arguments');
     await loadModelRuntime(collection);
     assert.equal(loadCalls.at(-1)[3], 'local-overrides',
-      'nonpanel collection loads must preserve intentional local component arguments');
-    assert.equal(loadCalls.at(-1)[1].llamacpp_args, '--threads 3');
+      'nonpanel collection loads permit client tuning while inheriting registered component arguments');
+    assert.equal(Object.hasOwn(loadCalls.at(-1)[1], 'llamacpp_args'), false);
 
     const handleReloadModel = instantiate('handleReloadModel', {
       api, modelName, allModels: [custom], markBusy: noop, clearBusy: noop, refresh: async () => {},

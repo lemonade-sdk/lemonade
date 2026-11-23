@@ -123,6 +123,11 @@ global.fetch = async (url, init = {}) => {
   const target = String(url);
   const method = String(init.method || 'GET').toUpperCase();
 
+  if (target.endsWith('/internal/config') && method === 'HEAD') {
+    const credential = new Headers(init.headers).get('Authorization');
+    return new Response(null, { status: credential === 'Bearer synthetic-regular-key' ? 401 : 200 });
+  }
+
   if (target.includes('/api/v1/health')) {
     if (!healthAvailable) throw new TypeError('Server unavailable');
     await new Promise(resolve => setTimeout(resolve, 15));
@@ -412,6 +417,11 @@ async function waitFor(predicate, timeoutMs = 1500) {
 
     const { setSessionArgsOverride, clearSessionArgsOverride } = require(path.join(root, 'src/modelConfiguration.ts'));
     const stagedModel = { id: 'staged-model', model_name: 'staged-model', recipe: 'llamacpp', downloaded: true };
+    const serverConfigured = { ...stagedModel, recipe_options: { llamacpp_args: '--threads 6', merge_args: false } };
+    await api.loadModel('staged-model', undefined, serverConfigured);
+    assert.deepEqual(loadBodies.at(-1), { model_name: 'staged-model', save_options: false },
+      'ordinary loads let the server apply its saved arguments');
+
     setSessionArgsOverride('staged-model', 'llamacpp', '--threads 2');
     const previousApiKey = api.apiKey;
     try {
@@ -464,7 +474,17 @@ async function waitFor(predicate, timeoutMs = 1500) {
           model_name: 'staged-model', ctx_size: 4096, save_options: false,
         }, 'panel reload must forward its authoritative argument policy');
 
+        const beforePrivilegedReload = unloadRequests;
+        if (key === 'synthetic-regular-key') {
+          const beforeLoads = loadBodies.length;
+          await assert.rejects(api.reloadModel('staged-model', { ctx_size: 4096 }, stagedModel),
+            error => error.status === 401);
+          assert.equal(unloadRequests, beforePrivilegedReload, 'a denied reload must leave the model running');
+          assert.equal(loadBodies.length, beforeLoads);
+          continue;
+        }
         await api.reloadModel('staged-model', { ctx_size: 4096 }, stagedModel);
+        assert.equal(unloadRequests, beforePrivilegedReload + 1, 'an authorized reload still restarts the model');
         assert.deepEqual(loadBodies.at(-1), {
           model_name: 'staged-model', ctx_size: 4096, llamacpp_args: '--threads 2',
           merge_args: false, save_options: false,

@@ -1694,10 +1694,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const custom = info ? customLoadOptions(info) : undefined;
     const options = overrideOptions || custom ? { ...custom, ...overrideOptions } : undefined;
     const argumentSource = overrideOptions === undefined ? 'local-overrides' : 'server-config';
-    if (overrideOptions !== undefined && options) {
+    if (options) {
       for (const key of Object.keys(options)) {
         if ((key.endsWith('_args') || key === 'merge_args')
-          && !Object.prototype.hasOwnProperty.call(overrideOptions, key)) {
+          && !Object.prototype.hasOwnProperty.call(overrideOptions ?? {}, key)) {
           delete options[key];
         }
       }

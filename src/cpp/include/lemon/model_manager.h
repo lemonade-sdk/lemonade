@@ -365,7 +365,7 @@ private:
 
     // Internal to the facade: called from its own mutating paths.
     void forget_registered_model(const std::string& canonical_model_name);
-    void save_model_options(const ModelInfo& info);
+    void save_model_options(ModelInfo& info, bool allow_backend_args);
     void start_directory_watcher();
 
     static json load_server_models();

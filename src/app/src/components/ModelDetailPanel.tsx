@@ -1594,8 +1594,15 @@ const ModelConfigurationTab: React.FC<{
   const isReloading = reloadingNames.has(name);
   const currentNameRef = useRef(name);
   currentNameRef.current = name;
-  const saveSelectionRef = useRef({ name });
-  if (saveSelectionRef.current.name !== name) saveSelectionRef.current = { name };
+  const saveSelectionRef = useRef(0);
+  useLayoutEffect(() => {
+    const invalidate = () => { saveSelectionRef.current++; };
+    const unsubscribe = api.onServerChange(invalidate);
+    return () => {
+      unsubscribe();
+      invalidate();
+    };
+  }, [name]);
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [systemInfoSettled, setSystemInfoSettled] = useState(() => api.systemInfoData !== null);
   const [serverUrl, setServerUrl] = useState(() => api.baseUrl);

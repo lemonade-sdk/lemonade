@@ -147,7 +147,9 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     deps.registries = &registries_;
     deps.store = &store_;
     deps.notifier = &change_notifier_;
-    deps.save_options = [this](const ModelInfo& info) { save_model_options(info); };
+    deps.save_options = [this](ModelInfo& info, bool allow_backend_args) {
+        save_model_options(info, allow_backend_args);
+    };
     return deps;
 }
 
@@ -353,16 +355,30 @@ json ModelManager::get_architecture_defaults(const std::string& architecture) co
     return json::object();
 }
 
-void ModelManager::save_model_options(const ModelInfo& info) {
+void ModelManager::save_model_options(ModelInfo& info, bool allow_backend_args) {
     LOG(INFO, "ModelManager") << "Saving options for model: " << info.model_name << std::endl;
     // Persist under canonical ID (built-ins are keyed bare in cache but
     // recipe_options.json stores them as builtin.<name>).
     const std::string id = cache_key_to_canonical_id(info.model_name);
     std::lock_guard<std::mutex> write_lock(recipe_options_write_mutex_);
 
-    recipe_options_.replace(id, info.recipe_options.to_json());
+    json saved = info.recipe_options.to_json();
+    if (!allow_backend_args) {
+        // A recipe change can filter keys out of the resolved options. Only the
+        // persisted layer, read under the writer lock, owns the saved arguments.
+        const json resolved_args = utils::backend_arg_options(saved);
+        for (const auto& arg : resolved_args.items()) {
+            saved.erase(arg.key());
+        }
+        saved.update(utils::backend_arg_options(recipe_options_.entry(id)));
+    }
+    recipe_options_.replace(id, saved);
 
     StoreWrite store_write(*this);
+    if (!allow_backend_args) {
+        info.recipe_options = models::build_recipe_options(
+            info, registry_recipe_options(info.model_name), id, json{{id, saved}});
+    }
     models::ModelStore::patch_options(store_write.draft(), info);
 }
 

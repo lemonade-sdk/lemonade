@@ -55,7 +55,7 @@ class ModelIngest : public ArtifactFetchService {
         ModelChangeNotifier* notifier;
         // The facade's options write: its store, its file mutex, and a store patch that
         // may not be opened outside the facade.
-        std::function<void(const ModelInfo&)> save_options;
+        std::function<void(ModelInfo&, bool allow_backend_args)> save_options;
         // Refs and repositories both come from the resolver, never assembled here.
         const ArtifactSourceResolver* resolver = nullptr;
     };

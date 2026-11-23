@@ -7,10 +7,11 @@ const filename = path.resolve(__dirname, '../src/components/ModelDetailPanel.tsx
 const source = ts.createSourceFile(filename, fs.readFileSync(filename, 'utf8'),
   ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const declarations = new Map();
-let selectionChange;
+let selectionEffect;
 function visit(node) {
-  if (ts.isIfStatement(node) && node.expression.getText(source) === 'saveSelectionRef.current.name !== name') {
-    selectionChange = node.getText(source);
+  if (ts.isCallExpression(node) && node.expression.getText(source) === 'useLayoutEffect'
+    && node.arguments[0].getText(source).includes('saveSelectionRef.current')) {
+    selectionEffect = node.arguments[0].getText(source);
   }
   if (ts.isVariableDeclaration(node) && node.initializer) {
     declarations.set(node.name.getText(source), node.initializer.getText(source));
@@ -44,7 +45,15 @@ function loadPayload(state) {
 
 async function saveAndLoad(editDuringSave, { failure, showNotice = true, stale = false, deferDraftUpdate = false } = {}) {
   const state = { draft: structuredClone(draft), baseline: structuredClone(initial), notices: [] };
-  const saveSelectionRef = { current: { name: 'Test' } };
+  const saveSelectionRef = { current: 0 };
+  let selectedName = 'Test';
+  let serverChange;
+  const mountSelection = compile(`return (${selectionEffect})();`, ['saveSelectionRef', 'api']);
+  const subscription = { onServerChange(callback) {
+    serverChange = callback;
+    return () => { serverChange = undefined; };
+  } };
+  let cleanup = mountSelection(saveSelectionRef, subscription);
   let queuedDraftUpdate;
   let finishSave;
   let rejectSave;
@@ -87,20 +96,22 @@ return ${declarations.get('saveConfig')};`, Object.keys(dependencies))(...Object
   const request = save(showNotice);
   assert.equal(submitted.llamacpp_args, args);
   const selectModel = name => {
-    const previousName = saveSelectionRef.current.name;
-    compile(selectionChange, ['saveSelectionRef', 'name'])(saveSelectionRef, name);
-    if (previousName !== name) {
+    if (selectedName !== name) {
+      cleanup();
+      selectedName = name;
+      cleanup = mountSelection(saveSelectionRef, subscription);
       state.draft = { ctxSize: '4096', recipe: { llamacpp_backend: 'vulkan', llamacpp_args: args } };
       state.baseline = structuredClone(state.draft);
     }
   };
-  editDuringSave?.(state.draft, selectModel);
+  editDuringSave?.(state.draft, selectModel, serverChange);
   if (failure) rejectSave(new Error('save rejected'));
   else finishSave(response);
   state.saved = await request;
   if (!stale) assert.equal(state.saved, !failure);
   if (queuedDraftUpdate) {
-    selectModel('Other');
+    if (deferDraftUpdate === 'server') serverChange();
+    else selectModel('Other');
     state.draft.recipe = queuedDraftUpdate(state.draft.recipe);
   }
   return state;
@@ -148,6 +159,18 @@ return ${declarations.get('saveConfig')};`, Object.keys(dependencies))(...Object
   assert.deepEqual(returned.notices, []);
   assert.equal(returned.saved, false);
 
+  for (const failure of [false, true]) {
+    const switchedServer = await saveAndLoad((_current, _selectModel, switchServer) => {
+      switchServer();
+      switchServer();
+    }, { stale: true, failure });
+    assert.deepEqual(switchedServer.baseline, initial);
+    assert.deepEqual(switchedServer.draft, draft);
+    assert.deepEqual(switchedServer.notices, []);
+    assert.equal(switchedServer.saved, false);
+  }
+  const queuedServer = await saveAndLoad(undefined, { deferDraftUpdate: 'server' });
+  assert.deepEqual(queuedServer.draft, draft, 'a deferred draft update must ignore a server switch');
   const failed = await saveAndLoad((_current, selectModel) => selectModel('Other'), {
     stale: true, failure: true,
   });

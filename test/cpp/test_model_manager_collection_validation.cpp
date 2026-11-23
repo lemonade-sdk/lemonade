@@ -615,7 +615,7 @@ static void test_collection_parent_rejection_is_atomic(bool existing, bool regis
     ModelChangeNotifier notifier;
     int options_saved = 0;
     ModelIngest ingest({nullptr, {}, &registries, &store, &notifier,
-        [&](const ModelInfo&) { ++options_saved; }});
+        [&](ModelInfo&, bool) { ++options_saved; }});
     if (existing) {
         ingest.register_user_model("user.AtomicParent",
             {{"recipe", "collection.omni"}, {"components", {"Original"}}}, "", true);
@@ -746,6 +746,27 @@ static void test_registered_collection_pull_does_not_repeat_registration(bool bu
           *registries.pin().user == before);
 }
 
+static void test_registration_preserves_saved_options_across_recipes(ModelManager& manager) {
+    const std::string name = "user.SavedRecipeSettings";
+    const json args = {{"llamacpp_args", "--threads 2"}};
+    manager.register_model(name, {{"recipe", "llamacpp"}}, true, true, true);
+    manager.set_options(name, args);
+
+    manager.register_model(name, {{"recipe", "whispercpp"}, {"recipe_options", json::object()}},
+                           true, true, false);
+    const json options = manager.options(name, json::object());
+    check("saved arguments survive a change of recipe", options["saved"].contains("llamacpp_args") &&
+          options["saved"]["llamacpp_args"] == args["llamacpp_args"]);
+    check("only options for the current recipe are effective",
+          !options["resolved_with"].contains("llamacpp_args"));
+
+    manager.register_model(name, {{"recipe", "llamacpp"}, {"recipe_options", {{"ctx_size", 2048}}}},
+                           true, true, false);
+    const json restored = manager.get_model_info(name).recipe_options.to_json();
+    check("returning to the original recipe uses operator arguments and regular settings",
+          restored.value("llamacpp_args", "") == "--threads 2" && restored.value("ctx_size", 0) == 2048);
+}
+
 int main() {
     test_collection_registration_rejection_is_atomic();
     test_regular_inline_registration_preserves_local_components();
@@ -761,6 +782,7 @@ int main() {
         return machine_without_npu();
     };
     ModelManager manager(config);
+    test_registration_preserves_saved_options_across_recipes(manager);
     test_accepts_valid_router_policy(manager);
     test_rejects_bad_routing(manager);
     test_inline_capability_matches_registration(manager);

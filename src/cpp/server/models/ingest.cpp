@@ -921,7 +921,7 @@ void ModelIngest::pull(const std::string& model_name,
             merged[key] = value;
         }
         model_info.recipe_options = RecipeOptions(model_info.recipe, merged);
-        deps_.save_options(model_info);
+        deps_.save_options(model_info, allow_backend_args);
     }
 
     if (register_only) {
