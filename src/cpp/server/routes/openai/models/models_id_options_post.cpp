@@ -145,7 +145,8 @@ public:
                     // null removes the key. The other values the option system
                     // reads as "not set" ("", -1, "auto") still clear every option
                     // except ctx_size, where -1 is a value and a malformed size is
-                    // an error rather than an absence.
+                    // an error rather than an absence, and *_device, where "auto"
+                    // is saved so it overrides an inherited GPU selection.
                     const bool clears = value.is_null() ||
                         (key != model_options::kCtxSize.name && RecipeOptions::is_default_sentinel(key, value));
                     if (clears) {

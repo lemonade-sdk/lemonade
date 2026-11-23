@@ -407,6 +407,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--sdcpp BACKEND` | SD.cpp backend to use | Auto-detected |
+| `--sdcpp-device DEVICES` | GPU to use: ROCm0, CUDA1, Vulkan0, ... or a GPU's uuid or pci_bus_id from system-info; empty selects automatically | `""` |
 | `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
 
 #### FastFlowLM NPU (`flm` recipe)
@@ -435,6 +436,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
+| `--thenoise-device DEVICES` | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; empty selects automatically | `""` |
 
 #### DwarfStar4 (`ds4` recipe)
 
@@ -467,12 +469,14 @@ The following options are available depending on the recipe being used:
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--thinksound-device DEVICES` | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically | `""` |
 | `--thinksound BACKEND` | ThinkSound backend to use | Auto-detected |
 
 #### ACE-Step (`acestep` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--acestep-device DEVICES` | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically | `""` |
 | `--acestep BACKEND` | ACE-Step backend to use | Auto-detected |
 
 #### ONNX Runtime (`onnxruntime` recipe)
@@ -485,6 +489,7 @@ The following options are available depending on the recipe being used:
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--trellis-device DEVICES` | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically | `""` |
 | `--trellis BACKEND` | Trellis backend to use | Auto-detected |
 | `--trellis-args ARGS` | Custom arguments to pass to trellis-server | `""` |
 
@@ -492,6 +497,7 @@ The following options are available depending on the recipe being used:
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--openmoss-device DEVICES` | GPU to use: CUDA0, CUDA1, ... or a GPU's uuid from system-info; auto selects automatically | `""` |
 | `--openmoss BACKEND` | OpenMOSS TTS backend to use | Auto-detected |
 <!-- END GENERATED: cli-recipe-options -->
 **Notes:**
