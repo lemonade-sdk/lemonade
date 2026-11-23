@@ -2277,6 +2277,11 @@ jobs:
         with:
           version: ${{ env.LEMONADE_VERSION }}
 
+      - name: Measure Hugging Face download speed
+        continue-on-error: true
+        shell: bash
+        run: bash .github/scripts/measure_hf_speed.sh
+
       # All test scripts run in one job so they share a single setup and model
       # cache (issue #2103). Each step runs even if an earlier test failed
       # (matching the old fail-fast: false matrix); the job fails if any failed.
@@ -2532,6 +2537,11 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
+      - name: Measure Hugging Face download speed
+        continue-on-error: true
+        shell: bash
+        run: bash .github/scripts/measure_hf_speed.sh
+
       # All test scripts run in one job so they share a single setup and model
       # cache (issue #2103). Each step runs even if an earlier test failed; the
       # job fails if any failed.
@@ -2716,6 +2726,11 @@ jobs:
           venv-name: '.venv'
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
+
+      - name: Measure Hugging Face download speed
+        continue-on-error: true
+        shell: bash
+        run: bash .github/scripts/measure_hf_speed.sh
 
       # All test scripts run in one job so they share a single setup and model
       # cache (issue #2103). Each step runs even if an earlier test failed; the
