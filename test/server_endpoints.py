@@ -8292,6 +8292,56 @@ class EndpointTests(ServerTestBase):
             )
         print("[OK] onnxruntime:cpu installed from the ModelScope mirror")
 
+    def test_028d_modelscope_backend_then_inference(self):
+        """Install a llamacpp backend from ModelScope, then run real inference.
+
+        Tests the full path: backend downloaded and hash-verified from the mirror,
+        model loaded, chat completion returns a non-empty response.
+        Skips if ModelScope is unreachable or the backend pin is not mirrored yet.
+        """
+        import sys
+
+        backend = "metal" if sys.platform == "darwin" else "cpu"
+
+        url = self._dry_run("llamacpp", backend, "modelscope")["url"]
+        try:
+            with requests.get(url, stream=True, timeout=30) as probe:
+                if probe.status_code == 404:
+                    self.skipTest(f"llamacpp:{backend} not mirrored yet")
+        except requests.RequestException as e:
+            self.skipTest(f"ModelScope not reachable: {e}")
+
+        uninstall = requests.post(
+            f"{self.base_url}/uninstall",
+            json={"recipe": "llamacpp", "backend": backend},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(uninstall.status_code, 200, uninstall.text)
+
+        load = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL, "backend_source": "modelscope"},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load.status_code, 200, load.text)
+
+        from openai import OpenAI
+
+        client = OpenAI(base_url=f"http://localhost:{PORT}/api/v1", api_key="x")
+        response = client.chat.completions.create(
+            model=ENDPOINT_TEST_MODEL,
+            messages=[{"role": "user", "content": "Say hello."}],
+            max_tokens=16,
+        )
+        self.assertTrue(
+            response.choices[0].message.content.strip(),
+            "Expected a non-empty response",
+        )
+        print(
+            f"[OK] llamacpp:{backend} from ModelScope mirror ran inference: "
+            f"{response.choices[0].message.content.strip()[:60]!r}"
+        )
+
     def test_029_system_info_release_url(self):
         """Test that system-info includes release_url for backends."""
         response = requests.get(f"{self.base_url}/system-info", timeout=TIMEOUT_DEFAULT)
