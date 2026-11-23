@@ -2229,8 +2229,7 @@ jobs:
     name: Test CLI/Endpoints (ubuntu-latest)
     runs-on: ubuntu-latest
     needs: build-lemonade-deb
-    # Passing runs take 13-23 min, so 25 cancelled about one run in four.
-    timeout-minutes: 40
+    timeout-minutes: 60
     container:
       image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
       credentials:
