@@ -10,12 +10,17 @@
 #include "lemon/backends/gufo/gufo.h"
 #include "lemon/backends/gufo/gufo_server.h"
 #include "lemon/backends/halogen/halogen_server.h"
+#include "lemon/system_info.h"
+#include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/container_manager.h"
+#include "lemon/utils/path_utils.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <set>
 #include <stdexcept>
@@ -66,6 +71,8 @@ struct FakeHost {
     std::map<std::string, std::string> files = {{"/etc/os-release", "ID=ubuntu\nID_LIKE=debian\n"}};
     std::map<std::string, std::string> env;
     bool root = false;
+    std::set<std::string> images;  // references `image inspect` finds
+    lemon::utils::CommandResult rmi = {0, ""};
     // How many commands the manager has run on the host.
     mutable int commands = 0;
     mutable std::vector<std::vector<std::string>> runs;
@@ -94,6 +101,10 @@ struct FakeHost {
                 result.output = podman_rootless + " " + network_backend + " " + oci_runtime + "\n";
             } else if (argv.size() > 1 && argv[1] == "network") {
                 result.exit_code = 0;
+            } else if (argv.size() > 1 && argv[1] == "rmi") {
+                result = rmi;
+            } else if (argv.size() > 2 && argv[1] == "image" && argv[2] == "inspect") {
+                result.exit_code = images.count(argv.back()) ? 0 : 1;
             } else if (argv.front() == "getsubids") {
                 const auto it = subids.find(join({argv.begin() + 1, argv.end()}));
                 result.exit_code = it == subids.end() ? 1 : 0;
@@ -636,7 +647,7 @@ void test_halogen_kernel_check() {
 void test_gufo_argv() {
     const std::string argv = join(lemon::backends::gufo::build_server_argv(
         "Qwen3.8-27B-Gufo", "/mnt/models/target.gguf", "/mnt/models/mmproj-BF16.gguf",
-        "/mnt/models/draft.gguf", "dflash2", 8192, 8001, "--think off"));
+        "/mnt/models/draft.gguf", "dflash2", 8192, "0.0.0.0", 8001, "--think off"));
     check("gufo serves the target under Lemonade's model name, with its projector and its "
           "DFlash2 draft",
           argv == "serve llm --model /mnt/models/target.gguf --served-model-name "
@@ -645,10 +656,10 @@ void test_gufo_argv() {
                   "/mnt/models/draft.gguf --think off");
     check("gufo passes an MTP draft through --mtp-model and a DSpark draft through --dspark-model",
           join(lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "d.gguf", "mtp", 0,
-                                                        1, ""))
+                                                        "127.0.0.1", 1, ""))
                       .find("--speculative mtp --mtp-model d.gguf") != std::string::npos &&
               join(lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "d.gguf",
-                                                            "dspark", 0, 1, ""))
+                                                            "dspark", 0, "127.0.0.1", 1, ""))
                       .find("--speculative dspark --dspark-model d.gguf") != std::string::npos);
     using lemon::backends::gufo::speculative_mode;
     check("gufo reads a draft's mode from its GGUF architecture",
@@ -664,11 +675,27 @@ void test_gufo_argv() {
     check("gufo refuses a draft of an architecture it cannot run", threw);
     threw = false;
     try {
-        lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "", "", 0, 1, "--port 9");
+        lemon::backends::gufo::build_server_argv("m", "t.gguf", "", "", "", 0, "127.0.0.1", 1,
+                                                 "--port 9");
     } catch (const std::invalid_argument&) {
         threw = true;
     }
     check("gufo_args cannot move the port", threw);
+    using lemon::backends::gufo::release_tag;
+    check("gufo's host build comes from the release its image pin is tagged with",
+          release_tag("0.34.0@sha256:49b1fce40cb43e33c46d91595e300cb320cdec768fcd976f8c8da24b402fc133") ==
+                  "v0.34.0" &&
+              release_tag("v0.35.0") == "v0.35.0");
+    using lemon::backends::gufo::installed_version;
+    const std::string pin =
+        "0.35.0@sha256:99e9b5471b7a0000000000000000000000000000000000000000000000000000";
+    check("a host install of the pinned gufo release reports the pin",
+          installed_version("v0.35.0", pin, "") == pin &&
+              installed_version("v0.35.0", pin, "builtin") == pin &&
+              installed_version("v0.34.0", pin, "") == "v0.34.0");
+    check("a gufo release the user pinned is reported as that release",
+          installed_version("v0.35.0", pin, "v0.35.0") == "v0.35.0" &&
+              installed_version("v0.34.0", pin, "v0.34.0") == "v0.34.0");
 }
 
 void test_ds4_memory_plan() {
@@ -691,6 +718,10 @@ void test_descriptors_and_pins() {
     const nlohmann::json versions = nlohmann::json::parse(in);
     for (const auto* desc : lemon::backends::all_descriptors()) {
         for (const auto& row : desc->support) {
+            // A backend can run in a container on one OS and on the host on another.
+            if (row.supported_os.count(lemon::get_current_os()) == 0) {
+                continue;
+            }
             const bool container = desc->container_for(row.backend) != nullptr;
             check(desc->recipe + ":" + row.backend + " is labeled container exactly when it has a policy",
                   container == (row.format == lemon::BackendFormat::Container));
@@ -707,9 +738,83 @@ void test_descriptors_and_pins() {
                                 versions[desc->recipe][backend].get<std::string>()));
         }
     }
+#ifdef _WIN32
+    check("gufo:rocm runs the release's Windows build on the host",
+          lemon::backends::gufo::descriptor.container_for("rocm") == nullptr);
+#else
     const auto& gufo_user = lemon::backends::gufo::descriptor.container_for("rocm")->user;
     check("gufo:rocm declares the gufo-org image's 1000:1000 user",
           gufo_user && gufo_user->uid == 1000 && gufo_user->gid == 1000);
+#endif
+}
+
+// A version marker holds only a tag and digest, so an install made before a
+// backend changed repositories still names an image under the old one.
+void test_installed_images() {
+    const fs::path cache = fs::temp_directory_path() / "lemonade-test-installed-images";
+    fs::remove_all(cache);
+    fs::create_directories(cache / "bin" / "gufo" / "rocm");
+    const std::string previous_cache = lemon::utils::get_cache_dir();
+    lemon::utils::set_cache_dir(cache.string());
+    using lemon::backends::BackendUtils;
+
+    check("a backend with no version marker names no installed image",
+          BackendUtils::get_installed_backend_images("gufo", "rocm").empty());
+
+    const std::string digest =
+        "sha256:2d7e9995ff2dfd7035f610a419b4f38d5d1604c0c7ab7f3b81415ad6f3e8db8b";
+    const std::string current = "ghcr.io/gufo-org/toolboxes/gufo-runtime@" + digest;
+    const std::string former = "docker.io/kyuz0/amd-strix-halo-toolboxes@" + digest;
+    std::ofstream(cache / "bin" / "gufo" / "rocm" / "version.txt") << "rocm-10.0-gufo@" << digest
+                                                                    << "\n";
+    check("an install's digest is named under the current repository, then the former one",
+          BackendUtils::get_installed_backend_images("gufo", "rocm") ==
+              std::vector<std::string>{current, former});
+
+    FakeHost host;
+    host.tools = {"podman"};
+    host.images = {former, "docker.io/kyuz0/amd-strix-halo-toolboxes@sha256:other"};
+    check("a gufo:rocm install from kyuz0's image is found under that repository only",
+          BackendUtils::get_present_installed_images(ContainerManager(host.host()), "gufo",
+                                                     "rocm") == std::vector<std::string>{former});
+    host.images = {};
+    check("an install whose image is gone has no present image",
+          BackendUtils::get_present_installed_images(ContainerManager(host.host()), "gufo",
+                                                     "rocm")
+              .empty());
+
+    lemon::utils::set_cache_dir(previous_cache);
+    fs::remove_all(cache);
+}
+
+// Upgrade and uninstall remove every repository's name for an install, most of
+// which never existed, so only a tool that cannot answer is worth a warning.
+void test_remove_image() {
+    std::vector<std::string> warnings;
+    AixLog::Log::init({std::make_shared<AixLog::SinkCallback>(
+        AixLog::Severity::warning,
+        [&warnings](const AixLog::Metadata&, const std::string& message) {
+            if (message.find("Could not remove image") != std::string::npos) {
+                warnings.push_back(message);
+            }
+        })});
+    const std::string image = "docker.io/kyuz0/amd-strix-halo-toolboxes@sha256:abc";
+
+    FakeHost podman;
+    podman.tools = {"podman"};
+    podman.rmi = {125, "Error: " + image + ": image not known\n"};
+    ContainerManager(podman.host()).remove_image(image);
+    FakeHost docker;
+    docker.tools = {"docker"};
+    docker.rmi = {1, "Error response from daemon: No such image: " + image + "\n"};
+    ContainerManager(docker.host()).remove_image(image);
+    check("removing an image Podman or Docker does not have logs no warning", warnings.empty());
+
+    docker.rmi = {1, "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. "
+                     "Is the docker daemon running?\n"};
+    ContainerManager(docker.host()).remove_image(image);
+    check("removing an image when the tool cannot answer still warns", warnings.size() == 1);
+    AixLog::Log::init();
 }
 
 }  // namespace
@@ -732,6 +837,8 @@ int main() {
     test_gufo_argv();
     test_ds4_memory_plan();
     test_descriptors_and_pins();
+    test_installed_images();
+    test_remove_image();
 
     if (failures == 0) {
         std::printf("\nAll container manager checks passed.\n");

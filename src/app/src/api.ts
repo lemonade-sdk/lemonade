@@ -807,6 +807,8 @@ class LemonadeAPI {
   private _systemInfoListeners = new Set<(info: Record<string, unknown>) => void>();
   private _systemInfoInFlight: Promise<Record<string, unknown>> | null = null;
   private _systemInfoGeneration = 0;
+  private _systemInfoServer: string | null = null;
+  private _serverChangeListeners = new Set<() => void>();
   private _modelStateSnapshot: ModelStateSnapshot = {
     status: 'disconnected',
     health: null,
@@ -863,9 +865,24 @@ class LemonadeAPI {
   }
 
   set baseUrl(url: string) {
+    const previous = this.baseUrl;
     const normalized = normalizeBaseUrl(url);
     this._hostBaseUrl = normalized;
     safeSetLocalStorage(LS_BASE_URL, normalized);
+    this._noteServerChange(previous);
+  }
+
+  onServerChange(fn: () => void): () => void {
+    this._serverChangeListeners.add(fn);
+    return () => { this._serverChangeListeners.delete(fn); };
+  }
+
+  private _noteServerChange(previous: string): void {
+    if (this.baseUrl === previous) return;
+    this._systemInfoGeneration++;
+    this._systemInfoInFlight = null;
+    this._systemInfoFetchedAt = 0;
+    this._serverChangeListeners.forEach(fn => { try { fn(); } catch {} });
   }
 
   get apiKey(): string {
@@ -935,8 +952,10 @@ class LemonadeAPI {
           : '';
         const resolvedUrl = baseUrl.trim() || fallbackUrl;
         if (resolvedUrl) {
+          const previous = this.baseUrl;
           this._hostBaseUrl = normalizeBaseUrl(resolvedUrl);
           safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
+          this._noteServerChange(previous);
         }
         // The lemond browser shim stores settings in localStorage. Remove any
         // key saved by an earlier GUI version, but preserve non-secret settings.
@@ -953,8 +972,10 @@ class LemonadeAPI {
       if (hostApi.getServerBaseUrl) {
         const baseUrl = await hostApi.getServerBaseUrl();
         if (typeof baseUrl === 'string' && baseUrl.trim()) {
+          const previous = this.baseUrl;
           this._hostBaseUrl = normalizeBaseUrl(baseUrl);
           safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
+          this._noteServerChange(previous);
         }
       }
       if (hostApi.getServerAPIKey && !hostApi.isWebApp) {
@@ -971,10 +992,12 @@ class LemonadeAPI {
   }
 
   async saveConnectionSettings(baseUrl: string, apiKey: string, rememberApiKey: boolean): Promise<ConnectionSettingsSaveResult> {
+    const previous = this.baseUrl;
     const normalized = normalizeBaseUrl(baseUrl);
     this._hostBaseUrl = normalized;
     this._sessionApiKey = apiKey;
     safeSetLocalStorage(LS_BASE_URL, normalized);
+    this._noteServerChange(previous);
 
     const hostApi = await waitForHostSettingsApi();
     if (!hostApi || hostApi.isWebApp) {
@@ -1007,12 +1030,14 @@ class LemonadeAPI {
   }
 
   async clearConnectionSettings(): Promise<void> {
+    const previous = this.baseUrl;
     this._hostBaseUrl = null;
     this._sessionApiKey = '';
     this._sessionAdminApiKey = '';
     this._apiKeyPersisted = false;
     safeRemoveLocalStorage(LS_BASE_URL);
     safeRemoveLocalStorage(LS_API_KEY);
+    this._noteServerChange(previous);
 
     const hostApi = await waitForHostSettingsApi();
     if (hostApi?.getSettings && hostApi?.saveSettings) {
@@ -1059,7 +1084,9 @@ class LemonadeAPI {
   get healthData(): HealthData | null { return this._healthData; }
   get highSecurity(): boolean | undefined { return this._healthData?.high_security; }
   get modelsData(): ModelsData | null { return this._modelsData; }
-  get systemInfoData(): Record<string, unknown> | null { return this._systemInfoData; }
+  get systemInfoData(): Record<string, unknown> | null {
+    return this._systemInfoServer === this.baseUrl ? this._systemInfoData : null;
+  }
   get modelStateSnapshot(): ModelStateSnapshot { return this._modelStateSnapshot; }
 
   get loadedModels(): LoadedModel[] {
@@ -1559,7 +1586,7 @@ class LemonadeAPI {
     const { recipeOptionsForModel } = await import(
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
-    const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
+    const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this.systemInfoData);
     if (argumentSource === 'server-config' && stagedOptions) {
       // An explicit panel payload must not regain hidden privileged overrides.
       for (const key of Object.keys(stagedOptions)) {
@@ -1597,7 +1624,7 @@ class LemonadeAPI {
   }
 
   private _refreshBackendStatusAfterLoad(recipe: string, options: Record<string, unknown>): void {
-    const recipes = (this._systemInfoData as any)?.recipes;
+    const recipes = (this.systemInfoData as any)?.recipes;
     if (!isObject(recipes)) return;
     const recipeInfo = recipes[recipe];
     if (!isObject(recipeInfo) || !isObject(recipeInfo.backends)) return;
@@ -1681,11 +1708,13 @@ class LemonadeAPI {
     // Several views use the same expensive system-info endpoint. A workspace
     // preload and the view's first effect can overlap, so share the in-flight
     // request instead of making the server do the same discovery twice.
-    if (options.maxAgeMs !== undefined && this._systemInfoData
+    const cached = this.systemInfoData;
+    if (options.maxAgeMs !== undefined && cached
       && Date.now() - this._systemInfoFetchedAt < options.maxAgeMs) {
-      return this._systemInfoData;
+      return cached;
     }
     const generation = this._systemInfoGeneration;
+    const server = this.baseUrl;
     if (options.afterPending && this._systemInfoInFlight) {
       await this._systemInfoInFlight.catch(() => undefined);
       if (generation !== this._systemInfoGeneration) {
@@ -1698,8 +1727,9 @@ class LemonadeAPI {
       '/api/v1/system-info',
       { cache: 'no-store' } as LemonadeRequestInit,
     ).then(data => {
-      if (generation !== this._systemInfoGeneration) return data;
+      if (generation !== this._systemInfoGeneration || server !== this.baseUrl) return data;
       this._systemInfoData = data;
+      this._systemInfoServer = server;
       this._systemInfoFetchedAt = Date.now();
       this._systemInfoListeners.forEach(fn => { try { fn(data); } catch {} });
       return data;
