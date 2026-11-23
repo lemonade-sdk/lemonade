@@ -190,6 +190,76 @@ If not found, the "Open app" menu option is hidden but everything else works.
 - A signed and notarized `.pkg` installer is available from the [releases page](https://github.com/lemonade-sdk/lemonade/releases/latest)
 - Local Release builds are ad-hoc codesigned (`codesign --sign -`) so they run without an Apple Developer certificate. To sign with a real Developer ID, export `DEVELOPER_ID_APPLICATION_IDENTITY` before configuring CMake (see [Building and Notarizing for Distribution](#building-and-notarizing-for-distribution)).
 
+### Installing a Source Build as a Service (Linux)
+
+A source build can be installed in one of two ways. A **system install** (the default) installs under `/opt` and ships a system-wide `lemond` service that runs as a dedicated `lemonade` user. A **user install** installs under `~/.local`, needs no root, and registers `lemond` as a `systemd --user` service that runs as you. Pick one: both services listen on the same port.
+
+#### System install (default)
+
+```bash
+./setup.sh
+cmake --build --preset default
+sudo cmake --install build
+sudo systemctl daemon-reload
+sudo systemctl enable --now lemond
+```
+
+`cmake --install` puts the files in place but does not enable or start anything. With the default `/opt` prefix it installs:
+
+| What | Where |
+|------|-------|
+| Binaries (`lemond`, `lemonade`, `lemonade-tray`, …) | `/opt/bin`; the client binaries (`lemonade`, `lemonade-tray`, `lemonade-web-app`) are also symlinked into `/usr/bin` |
+| System unit (`User=lemonade`) | `/opt/lib/systemd/system/lemond.service`, symlinked into `/usr/lib/systemd/system` |
+| User unit | `/opt/lib/systemd/user/lemond.service`, symlinked into `/usr/lib/systemd/user` |
+| `lemonade` system user | `/opt/lib/sysusers.d/lemonade.conf` |
+| Secrets env file (`HF_TOKEN`, `LEMONADE_API_KEY`, `LEMONADE_ADMIN_API_KEY`) | `/etc/default/lemond` |
+
+The `/usr` symlinks are what make systemd and your `PATH` see an `/opt` install. They are skipped when the prefix is `/usr`, because the files are already on the standard paths. If the `lemonade` user doesn't exist yet, create it with `sudo systemd-sysusers` before starting the service. The service keeps its state in `/var/lib/lemonade` (including `config.json`) and its cache in `/var/cache/lemonade`. Follow its logs with `journalctl -u lemond -f`.
+
+Because both units are installed, a system install also lets any user run `systemctl --user enable --now lemond` instead of enabling the system service.
+
+#### User install (`--user`)
+
+```bash
+./setup.sh --user
+cmake --build --preset default
+cmake --install build              # no sudo
+systemctl --user start lemond
+```
+
+`./setup.sh --user` configures the build with `-DLEMONADE_USER_INSTALL=ON`. To switch an existing build directory over instead, run `cmake --preset default -DLEMONADE_USER_INSTALL=ON`. The default prefix then becomes `~/.local`, and the install writes nothing outside your home directory:
+
+| What | Where |
+|------|-------|
+| Binaries | `~/.local/bin` (on `PATH` in most distributions) |
+| Resources, examples, desktop entries, man pages | `~/.local/share/…` |
+| User unit | `~/.local/share/systemd/user/lemond.service` |
+
+No system unit, `lemonade` user or `/etc/default/lemond` is installed. At the end of `cmake --install`, CMake registers the service with your user manager: it runs `systemctl --user daemon-reload` and `systemctl --user enable lemond`, and restarts the service if it is already running so that the new binary takes effect. To rebuild and redeploy, run `cmake --build --preset default && cmake --install build`.
+
+The service runs as you, so it uses your normal configuration in `~/.config/lemonade/config.json` and your Hugging Face cache. It can read your home directory. Useful commands:
+
+```bash
+systemctl --user status lemond
+journalctl --user -u lemond -f
+loginctl enable-linger $USER       # start at boot and keep running after you log out
+```
+
+Secrets go in `~/.config/lemonade/lemond.conf`, an optional file of `KEY=value` lines, or in `systemctl --user edit lemond`.
+
+Notes:
+- **Don't run the install with `sudo`.** Root would own the files in your home directory, and the service would be registered with root's user manager. The install refuses to register the service when run as root.
+- **Custom prefix:** `-DCMAKE_INSTALL_PREFIX=<dir>` works with `LEMONADE_USER_INSTALL=ON`. A unit outside `~/.local/share/systemd/user` isn't on the systemd search path, so the install also runs `systemctl --user link` on it.
+- **No user session bus:** registration is skipped with a warning when systemd isn't available (for example in a container), when there's no user session bus (for example over a bare `ssh` session without lingering), or when `DESTDIR` is set. The warning lists the commands to run by hand.
+
+To uninstall a user install:
+
+```bash
+systemctl --user disable --now lemond
+xargs -d '\n' rm -f < build/install_manifest.txt
+systemctl --user daemon-reload
+```
+
 ## Building Installers
 
 ### Windows Installer (WiX/MSI)

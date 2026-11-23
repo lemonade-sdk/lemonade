@@ -259,7 +259,7 @@ if(UNIX AND NOT APPLE AND _LINUX_TRAY_BUILD)
     # No autostart desktop entry — Linux users start lemonade-tray manually
 
     # Symlink in /usr/bin if not installing to /usr
-    if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+    if(LEMONADE_LINK_INTO_USR)
         install(CODE "
             file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/bin\")
             file(RELATIVE_PATH _symlink_target \"/usr/bin\" \"${CMAKE_INSTALL_PREFIX}/bin/lemonade-tray\")

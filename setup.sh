@@ -51,6 +51,27 @@ maybe_sudo() {
     fi
 }
 
+USER_INSTALL=OFF
+for arg in "$@"; do
+    case "$arg" in
+        --user)
+            USER_INSTALL=ON
+            ;;
+        -h|--help)
+            echo "Usage: $0 [--user]"
+            echo ""
+            echo "  --user  Configure a per-user install (Linux only): \`cmake --install build\`"
+            echo "          then installs into ~/.local without root and registers lemond"
+            echo "          as a systemd --user service."
+            exit 0
+            ;;
+        *)
+            print_error "Unknown option: $arg (see $0 --help)"
+            exit 1
+            ;;
+    esac
+done
+
 # Detect OS
 if [[ "$OSTYPE" == "linux"* ]]; then
     OS="linux"
@@ -827,7 +848,14 @@ echo ""
 # Configure with CMake presets
 print_info "Configuring CMake with presets..."
 
-cmake --preset default
+if [ "$OS" = "linux" ]; then
+    cmake --preset default -DLEMONADE_USER_INSTALL=$USER_INSTALL
+else
+    if [ "$USER_INSTALL" = "ON" ]; then
+        print_warning "--user is only supported on Linux, ignoring it"
+    fi
+    cmake --preset default
+fi
 
 print_success "CMake configured successfully"
 
@@ -842,5 +870,12 @@ echo "  Build the project: cmake --build --preset default"
 echo "  Build the Tauri desktop app: cmake --build --preset default --target tauri-app"
 echo "    (first build downloads ~80 Rust crates and may take several minutes)"
 echo "  Hot-reload the desktop UI during development: cd src/app && npm run dev"
+if [ "$OS" = "linux" ]; then
+    if [ "$USER_INSTALL" = "ON" ]; then
+        echo "  Install into ~/.local and register the systemd --user service: cmake --install build"
+    else
+        echo "  Install system-wide (default prefix /opt): sudo cmake --install build"
+    fi
+fi
 echo ""
 print_info "For more information, see the docs/dev/getting-started.md file"

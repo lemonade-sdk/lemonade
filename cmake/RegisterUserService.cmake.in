@@ -1,0 +1,67 @@
+# Runs at `cmake --install` time for LEMONADE_USER_INSTALL builds: registers the
+# installed lemond unit with the invoking user's systemd --user manager.
+
+set(_systemctl "@LEMONADE_SYSTEMCTL@")
+set(_unit_path "@LEMONADE_USER_UNIT_PATH@")
+set(_needs_link "@LEMONADE_USER_UNIT_NEEDS_LINK@")
+
+set(_manual_steps
+    "  systemctl --user daemon-reload\n")
+if(_needs_link)
+    string(APPEND _manual_steps "  systemctl --user link ${_unit_path}\n")
+endif()
+string(APPEND _manual_steps "  systemctl --user enable --now lemond\n")
+
+execute_process(COMMAND id -u OUTPUT_VARIABLE _uid OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+
+macro(_lemond_systemctl)
+    execute_process(
+        COMMAND "${_systemctl}" --user ${ARGN}
+        RESULT_VARIABLE _rc
+        OUTPUT_QUIET
+        ERROR_VARIABLE _err
+        ERROR_STRIP_TRAILING_WHITESPACE
+    )
+endmacro()
+
+if(NOT "$ENV{DESTDIR}" STREQUAL "")
+    message(STATUS "DESTDIR is set, not registering the lemond user service")
+elseif(_uid STREQUAL "0")
+    message(WARNING
+        "A user install should not be run as root (e.g. with sudo): root would own the "
+        "installed files and the service would be registered with root's systemd. "
+        "Re-run `cmake --install` as your own user.")
+elseif(NOT _systemctl)
+    message(WARNING "systemctl not found, the lemond user service was not registered. "
+        "On a systemd system, register it with:\n${_manual_steps}")
+else()
+    set(_failed "")
+    _lemond_systemctl(daemon-reload)
+    if(NOT _rc EQUAL 0)
+        set(_failed "daemon-reload: ${_err}")
+    endif()
+    if(NOT _failed AND _needs_link)
+        _lemond_systemctl(link "${_unit_path}")
+        if(NOT _rc EQUAL 0)
+            set(_failed "link: ${_err}")
+        endif()
+    endif()
+    if(NOT _failed)
+        _lemond_systemctl(enable lemond.service)
+        if(NOT _rc EQUAL 0)
+            set(_failed "enable: ${_err}")
+        endif()
+    endif()
+
+    if(_failed)
+        message(WARNING "Could not register the lemond user service (systemctl --user ${_failed}). "
+            "Make sure a user session bus is available, then run:\n${_manual_steps}")
+    else()
+        # Picks up the freshly installed binary if the service is already running.
+        _lemond_systemctl(try-restart lemond.service)
+        message(STATUS "Registered lemond as a systemd --user service (${_unit_path})")
+        message(STATUS "  Start it:           systemctl --user start lemond")
+        message(STATUS "  Run without login:  loginctl enable-linger $ENV{USER}")
+        message(STATUS "  Logs:               journalctl --user -u lemond -f")
+    endif()
+endif()
