@@ -6,6 +6,7 @@
 
 import type { RecipeOptions } from './modelConfiguration';
 import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageConfig';
+import { buildChatContextUsage, collectChatTokenCounts, estimateChatContextUsage, newChatTokenCounts, withGeneratedContextUsage, type ChatContextUsage } from './features/chat/contextUsage';
 
 function detectDefaultBaseUrl(): string {
   if (typeof window !== 'undefined' && window.location) {
@@ -345,10 +346,12 @@ export interface ChatCompletionStats {
   tokens: number;
   reasoningTokens: number;
   reasoningElapsedMs: number | null;
+  context?: ChatContextUsage;
   route?: Record<string, unknown> | null;
 }
 
 export interface LiveStreamStats {
+  context?: ChatContextUsage;
   tps: number;
   tokens: number;
   reasoningTokens: number;
@@ -362,6 +365,8 @@ export interface ChatCompletionCallbacks {
   onReasoning?: (token: string, fullReasoning: string) => void;
   onStats?: (stats: LiveStreamStats) => void;
   onDone?: (stats: ChatCompletionStats) => void;
+  /** Request backend token usage for the GUI composer only. */
+  includeUsage?: boolean;
   onToolCalls?: (toolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>) => void;
   onError?: (err: Error) => void;
   params?: Record<string, unknown>;
@@ -2587,7 +2592,7 @@ class LemonadeAPI {
     messages: ChatMessage[],
     callbacks: ChatCompletionCallbacks = {}
   ): Promise<void> {
-    const { onToken, onReasoning, onStats, onDone, onToolCalls, onError, params, tools, signal } = callbacks;
+    const { onToken, onReasoning, onStats, onDone, onToolCalls, onError, params, tools, signal, includeUsage } = callbacks;
     const t0 = performance.now();
     let firstTokenTime: number | null = null;
     let tokenCount = 0;
@@ -2597,6 +2602,28 @@ class LemonadeAPI {
     let reasoningClosed = false;
     let routeDecision: Record<string, unknown> | null = null;
     let finishReason: string | null = null;
+    const tokenCounts = newChatTokenCounts();
+    const initialContext = estimateChatContextUsage(messages, tools);
+    let streamedAnswerLength = 0;
+    let streamedThinkingLength = 0;
+    let measuredContext: ChatContextUsage | null = null;
+    let lastMeasuredPrompt: number | null = null;
+    let lastMeasuredCache: number | null = null;
+    const currentContext = (): ChatContextUsage => {
+      const prompt = tokenCounts.usagePrompt ?? tokenCounts.timingPrompt;
+      const cached = tokenCounts.usageCache ?? tokenCounts.timingCache;
+      if (prompt !== null && (prompt !== lastMeasuredPrompt || cached !== lastMeasuredCache)) {
+        measuredContext = buildChatContextUsage(messages, tools, prompt, null, cached);
+        lastMeasuredPrompt = prompt;
+        lastMeasuredCache = cached;
+      }
+      return withGeneratedContextUsage(
+        measuredContext ?? initialContext,
+        streamedAnswerLength,
+        streamedThinkingLength,
+        tokenCounts.usageCompletion ?? tokenCounts.timingCompletion,
+      );
+    };
 
     const reasoningElapsedMs = (now: number): number | null => {
       if (reasoningStartTime == null) return null;
@@ -2620,6 +2647,7 @@ class LemonadeAPI {
         tokens: tokenCount,
         reasoningTokens: reasoningTokenCount,
         reasoningElapsedMs: reasoningElapsedMs(now),
+        context: currentContext(),
         route: routeDecision,
       };
     };
@@ -2637,6 +2665,7 @@ class LemonadeAPI {
         reasoningElapsedMs: reasoningElapsedMs(now),
         elapsed,
         ttft: firstTokenTime ? firstTokenTime - t0 : null,
+        context: currentContext(),
       });
     };
 
@@ -2653,6 +2682,10 @@ class LemonadeAPI {
       const body: Record<string, unknown> = { model, messages, stream: true, ...samplingForModel(model, requestModelInfo), ...(params || {}) };
       if (isRouterRequest && body.route_trace === undefined) body.route_trace = true;
       if (tools && tools.length > 0) body.tools = tools;
+      if (includeUsage) {
+        const options = isObject(body.stream_options) ? body.stream_options : {};
+        body.stream_options = { ...options, include_usage: true };
+      }
       const resp = await this._fetch('/api/v1/chat/completions', {
         method: 'POST',
         body,
@@ -2693,6 +2726,7 @@ class LemonadeAPI {
           }
           try {
             const chunk = JSON.parse(payload);
+            collectChatTokenCounts(tokenCounts, chunk);
             if (isObject(chunk.x_lemonade_route)) routeDecision = { ...chunk.x_lemonade_route };
             // If the Router already selected a candidate, keep that attribution in surfaced errors.
             if (chunk.error) {
@@ -2714,6 +2748,7 @@ class LemonadeAPI {
               reasoningEndTime = now;
               reasoningClosed = false;
               reasoningTokenCount++;
+              streamedThinkingLength += delta.reasoning_content.length;
               reasoning += delta.reasoning_content;
               onReasoning?.(delta.reasoning_content, reasoning);
             }
@@ -2725,6 +2760,7 @@ class LemonadeAPI {
                 reasoningClosed = true;
               }
               tokenCount++;
+              streamedAnswerLength += delta.content.length;
               full += delta.content;
               onToken?.(delta.content, full);
             }
@@ -2742,7 +2778,10 @@ class LemonadeAPI {
                 const entry = pendingToolCalls.get(idx)!;
                 if (tc.id) entry.id = tc.id;
                 if (tc.function?.name) entry.function.name = tc.function.name;
-                if (tc.function?.arguments) entry.function.arguments += tc.function.arguments;
+                if (tc.function?.arguments) {
+                  streamedAnswerLength += tc.function.arguments.length;
+                  entry.function.arguments += tc.function.arguments;
+                }
               }
             }
           } catch {}

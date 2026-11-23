@@ -12,6 +12,7 @@ import { backendCompactLabel, capabilityColor } from '../modelPresentation';
 import { scheduleIdleWork } from '../startupScheduler';
 import { useI18n } from '../i18n';
 import ChatReadinessProgress from './ChatReadinessProgress';
+import ContextMeter from './ContextMeter';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
 const LogViewer = lazy(() => import(/* webpackChunkName: "chat-logs" */ './LogViewer'));
@@ -2176,6 +2177,19 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
+  const contextUsage = useMemo(() => {
+    const thread = activeConvo?.messages || [];
+    for (let i = thread.length - 1; i >= 0; i--) {
+      const message = thread[i];
+      if (message.role !== 'assistant' || !message.stats?.context) continue;
+      // Never display another model's last token count after switching models.
+      return message.model?.name?.toLowerCase() === currentModel.toLowerCase()
+        ? message.stats.context : null;
+    }
+    return null;
+  }, [activeConvo?.messages, currentModel]);
+  const liveContextUsage = activeId && isStreaming ? streaming.getLiveStats(activeId)?.context ?? null : null;
+  const displayedContextUsage = isStreaming ? liveContextUsage : contextUsage;
   const incomingPromptPending = !activeId && !!incomingPrompt && !incomingPromptHandledRef.current;
   const toolsUnavailable = hasBrowserPromptContext(messages) || incomingPromptPending;
   useEffect(() => {
@@ -2665,7 +2679,7 @@ ${finalText}`
           // A failed primary socket may still close while the legacy port connects.
           if (!isCurrent() || !realtimeRef.current) return;
           setIsLiveConnected(false);
-          if (dictating && liveFinalizeTimerRef.current === null) setLiveError('Realtime microphone disconnected.');
+          if (dictating && liveFinalizeTimerRef.current === null) setLiveError(t('Realtime microphone disconnected.'));
           failDictation();
         },
         onError: message => { if (isCurrent()) { setLiveError(message); failDictation(); } },
@@ -2673,12 +2687,12 @@ ${finalText}`
         onTranscription: (text, final) => { if (isCurrent()) handleLiveTranscription(text, final); },
       });
       if (!isCurrent()) { handle.close(); return; }
-      if (!handle.isConnected()) throw new Error('Realtime microphone disconnected.');
+      if (!handle.isConnected()) throw new Error(t('Realtime microphone disconnected.'));
       realtimeRef.current = handle;
       isLiveRecordingRef.current = true;
       await startRecording();
       if (!isCurrent()) { stopRecording(); return; }
-      if (!handle.isConnected()) throw new Error('Realtime microphone disconnected.');
+      if (!handle.isConnected()) throw new Error(t('Realtime microphone disconnected.'));
       setIsLiveRecording(true);
     } catch (err) {
       if (!isCurrent()) return;
@@ -4220,6 +4234,16 @@ ${index}`;
                 </div>
               )}
             </div>
+          )}
+          {modeSupportsChatCompletions && (
+            <ContextMeter
+              model={currentLoadedModel}
+              modelInfo={currentEffectiveSettingsModelInfo}
+              usage={displayedContextUsage}
+              mcpEnabled={useMcp && !toolsUnavailable}
+              mcpServerIds={selectedMcpServerIds}
+              mcpToolNames={selectedMcpToolNames}
+            />
           )}
           {canShowEffectiveSettings && (
             <button

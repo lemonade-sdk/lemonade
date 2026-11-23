@@ -221,6 +221,7 @@ export function useChatStreaming(
           && fullMessages[0]?.role === 'system' && fullMessages[0].content === runtime.systemPrompt
           ? fullMessages.slice(1) : fullMessages;
         api.chatCompletion(model, retriedWithoutTools ? withoutToolPrompt : withoutToolSystemPrompt, {
+          includeUsage: true,
           params: chatThinkingParams(thinkingMode),
           tools: !toolsDisabled && !retriedWithoutTools && runtime?.tools?.length ? runtime.tools : undefined,
           onReasoning: (_token, fullReasoning) => {
