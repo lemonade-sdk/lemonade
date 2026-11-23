@@ -1,0 +1,164 @@
+# Uploads the pinned backend files and Lemonade installers to the
+# lemonade-sdk/backends ModelScope dataset. A failed run opens an issue.
+#
+# Triggered by the finished release build, not `release: published`: releases are
+# created with GITHUB_TOKEN, whose events start no workflows. Only default-branch
+# code runs; a release's pins are read as data, never checked out.
+name: Mirror backends to ModelScope
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/cpp/resources/backend_versions.json
+      - tools/modelscope_mirror/**
+      - .github/workflows/modelscope-mirror.yml
+  workflow_run:
+    workflows: ["C++ Server Build, Test, and Release 🚀"]
+    types: [completed]
+    # A PR build's no-op run would replace a queued run in the concurrency group.
+    branches: ["release-v*", "v[0-9]*"]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      set:
+        description: "trial = 3 small backends, core = everything Lemonade pins"
+        type: choice
+        options: [trial, core]
+        default: core
+      dry_run:
+        description: "List what would be uploaded, change nothing"
+        type: boolean
+        default: true
+      lemonade_release:
+        description: "Lemonade release whose installers to mirror (tag, latest or newest)"
+        type: string
+        default: latest
+
+concurrency:
+  group: modelscope-mirror
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checksums:
+    if: github.repository == 'lemonade-sdk/lemonade' && github.event_name != 'workflow_run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            src/cpp/resources/backend_versions.json
+            tools/modelscope_mirror
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check pinned checksums
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python tools/modelscope_mirror/modelscope_mirror.py --check-checksums
+
+  mirror:
+    if: >-
+      github.repository == 'lemonade-sdk/lemonade' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        (startsWith(github.event.workflow_run.head_branch, 'release-v') ||
+         startsWith(github.event.workflow_run.head_branch, 'v'))))
+    runs-on: ubuntu-latest
+    # Holds MODELSCOPE_API_TOKEN, limited to main.
+    environment: modelscope-mirror
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        group: [small, npu, whispercpp, llamacpp-upstream, llamacpp-nightly,
+                vllm, sdcpp, llamacpp-lemonade, thenoise, therock]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            src/cpp/resources/backend_versions.json
+            tools/modelscope_mirror
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install modelscope truststore
+
+      - name: Mirror ${{ matrix.group }}
+        env:
+          MODELSCOPE_API_TOKEN: ${{ secrets.MODELSCOPE_API_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          LEMONADE_RELEASE: ${{ inputs.lemonade_release || 'latest' }}
+          MIRROR_SET: ${{ inputs.set || 'core' }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          GROUP: ${{ matrix.group }}
+        run: |
+          set -euo pipefail
+          args=(--repo lemonade-sdk/backends --set "$MIRROR_SET" --group "$GROUP"
+                --workdir "$RUNNER_TEMP/msmirror")
+          if [[ "$EVENT" == workflow_run ]]; then
+            [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "bad head_sha"; exit 1; }
+            args+=(--lemonade-ref "$RELEASE_SHA" --lemonade-release newest)
+          else
+            [[ "$LEMONADE_RELEASE" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "bad lemonade_release"; exit 1; }
+            args+=(--versions-file src/cpp/resources/backend_versions.json
+                   --lemonade-ref release:latest --lemonade-ref release:newest
+                   --lemonade-release "$LEMONADE_RELEASE")
+          fi
+          if [[ "$GROUP" == small ]]; then
+            args+=(--readme tools/modelscope_mirror/dataset_card.md)
+          fi
+          if [[ "$DRY_RUN" == true ]]; then
+            args+=(--dry-run)
+          fi
+          python tools/modelscope_mirror/modelscope_mirror.py "${args[@]}"
+
+  report:
+    needs: [checksums, mirror]
+    if: >-
+      always() && github.repository == 'lemonade-sdk/lemonade' &&
+      github.event_name != 'workflow_dispatch' &&
+      needs.mirror.result != 'skipped' && needs.mirror.result != 'cancelled'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: ModelScope backend mirror is incomplete
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      EVENT: ${{ github.event_name }}
+      FAILED: ${{ needs.mirror.result == 'failure' || needs.checksums.result == 'failure' }}
+    steps:
+      - run: |
+          set -euo pipefail
+          issue=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number,title \
+            --jq "map(select(.title == env.TITLE)) | .[0].number // empty")
+          if [[ "$FAILED" == true ]]; then
+            body="[This run]($RUN_URL) (trigger: $EVENT) left the mirror incomplete or found checksums that do not match the pins. Users with backend_source=modelscope cannot install the affected backends until a run passes; the failing job's log lists them."
+            if [[ -n "$issue" ]]; then
+              gh issue comment "$issue" --body "$body"
+            else
+              gh issue create --title "$TITLE" --body "$body"
+            fi
+          elif [[ -n "$issue" && "$EVENT" != "workflow_run" ]]; then
+            # Only close after a full-coverage run (main + stable + RC).
+            # A release-only run checks just its own pins and must not clear an
+            # incident that was filed for a different set of missing files.
+            gh issue close "$issue" --comment "[This run]($RUN_URL) found every pinned file on ModelScope."
+          fi
