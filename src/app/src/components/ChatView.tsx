@@ -606,6 +606,8 @@ interface AudioGenerationSettings {
   seed: number | '';
   lyrics: string;
   vocalLanguage: string;
+  sigmaShift: number;
+  negativePrompt: string;
 }
 
 const DEFAULT_AUDIO_GENERATION_SETTINGS: AudioGenerationSettings = {
@@ -615,7 +617,17 @@ const DEFAULT_AUDIO_GENERATION_SETTINGS: AudioGenerationSettings = {
   seed: -1,
   lyrics: '',
   vocalLanguage: 'en',
+  sigmaShift: 5,
+  negativePrompt: '',
 };
+
+const OPENMOSS_SFX_DEFAULTS = {
+  steps: 100,
+  cfg: 4,
+  sigmaShift: 5,
+};
+
+const OPENMOSS_SFX_SEED_LIMIT = 0x100000000;
 
 type OpenMossMode = 'plain' | 'describe' | 'clone';
 
@@ -629,8 +641,16 @@ const DEFAULT_OPENMOSS_SETTINGS: OpenMossSettings = {
   voiceDescription: '',
 };
 
-const OPENMOSS_VOICE_DESIGN_PHRASE =
-  'Hello there. This is a short sample of the voice you described.';
+const OPENMOSS_SPEECH_PARAMS = [
+  { key: 'audio_temperature', label: 'Audio temp', min: 0, max: 3, step: 0.05 },
+  { key: 'audio_top_p', label: 'Audio top-p', min: 0, max: 1, step: 0.05 },
+  { key: 'audio_top_k', label: 'Audio top-k', min: 0, max: 200, step: 1 },
+  { key: 'audio_repetition_penalty', label: 'Repetition', min: 1, max: 2, step: 0.05 },
+  { key: 'text_temperature', label: 'Text temp', min: 0, max: 3, step: 0.05 },
+  { key: 'text_top_p', label: 'Text top-p', min: 0, max: 1, step: 0.05 },
+  { key: 'text_top_k', label: 'Text top-k', min: 0, max: 200, step: 1 },
+  { key: 'speed', label: 'Speed', min: 0.25, max: 4, step: 0.05 },
+] as const;
 
 type Model3DSourceMode = 'image' | 'text';
 
@@ -864,12 +884,6 @@ async function audioToInputAudio(file: File): Promise<{ type: 'input_audio'; inp
   return { type: 'input_audio', input_audio: { data: payload, format } };
 }
 
-async function fileToBase64(file: Blob): Promise<string> {
-  const dataUrl = await blobToDataUrl(file);
-  const comma = dataUrl.indexOf(',');
-  return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
-}
-
 async function wavVoiceSampleToBase64(file: File): Promise<string> {
   const maxBytes = 10 * 1024 * 1024;
   if (file.size > maxBytes) {
@@ -966,6 +980,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
   const [audioGenerationSettings, setAudioGenerationSettings] = useState<AudioGenerationSettings>(DEFAULT_AUDIO_GENERATION_SETTINGS);
   const [openMossSettings, setOpenMossSettings] = useState<OpenMossSettings>(DEFAULT_OPENMOSS_SETTINGS);
+  const [openMossSpeechParams, setOpenMossSpeechParams] = useState<Record<string, number>>({});
   const [model3dSettings, setModel3dSettings] = useState<Model3DSettings>(DEFAULT_MODEL3D_SETTINGS);
   const imageSettingsModelRef = useRef<string | null>(null);
   const imageSettingsTouchedRef = useRef(false);
@@ -1314,40 +1329,22 @@ const ChatView: React.FC<ChatViewProps> = ({
   const isAceStepAudio = currentCapability === 'audio-generation'
     && (currentRecipe.includes('acestep') || currentRecipe.includes('ace-step') || (/ace[-_ ]?step/.test(String(currentModel || '').toLowerCase())));
   const currentLabels = (currentKnownModelInfo?.labels || []).map(label => String(label).toLowerCase());
+  const isOpenMossSfx = currentCapability === 'audio-generation'
+    && (currentRecipe.includes('openmoss') || /moss[-_ ]?soundeffect/i.test(String(currentModel || '')));
   const isOpenMossTts = currentCapability === 'tts'
     && (currentRecipe.includes('openmoss') || /moss[-_ ]?(tts|voicegen)/i.test(String(currentModel || '')));
   const currentIsVoiceDesign = currentLabels.includes('voice-design')
     || /voicegen/i.test(String(currentModel || ''));
-  const openMossModels = useMemo(() => {
-    const loadedNames = new Set(loadedModels.map(model => model.model_name.toLowerCase()));
-    return knownModelInfos
-      .map(info => {
-        const name = String((info as any).model_name || info.name || info.id || '').trim();
-        const recipe = String(
-          (info as any).recipe
-          || ((Array.isArray(info.recipes) && info.recipes[0]) ? (info.recipes[0] as any).recipe : ''),
-        ).toLowerCase();
-        const labels = (info.labels || []).map(label => String(label).toLowerCase());
-        return { name, recipe, labels, downloaded: Boolean((info as any).downloaded) };
-      })
-      .filter(model => model.name
-        && (model.recipe.includes('openmoss') || /moss[-_ ]?(tts|voicegen)/i.test(model.name))
-        && (loadedNames.has(model.name.toLowerCase())
-          || model.name === currentModel
-          || (model.downloaded && !activeDownloadForModel(downloadItems, model.name))));
-  }, [currentModel, downloadItems, knownModelInfos, loadedModels]);
-  const openMossVoiceDesignModel = currentIsVoiceDesign && isOpenMossTts
-    ? currentModel
-    : (openMossModels.find(model => model.labels.includes('voice-design') || /voicegen/i.test(model.name))?.name || '');
-  const openMossCloneModel = isOpenMossTts && !currentIsVoiceDesign
-    ? currentModel
-    : (openMossModels.find(model => !model.labels.includes('voice-design') && !/voicegen/i.test(model.name))?.name || '');
+  const openMossModes: OpenMossMode[] = currentIsVoiceDesign ? ['describe'] : ['plain', 'describe', 'clone'];
+  const openMossMode: OpenMossMode = openMossModes.includes(openMossSettings.mode)
+    ? openMossSettings.mode
+    : openMossModes[0];
   const openMossDescribeUnavailable = isOpenMossTts
-    && openMossSettings.mode === 'describe'
-    && !openMossVoiceDesignModel;
+    && openMossMode === 'describe'
+    && !openMossSettings.voiceDescription.trim();
   const openMossCloneUnavailable = isOpenMossTts
-    && openMossSettings.mode === 'clone'
-    && (!openMossCloneModel || pendingAudioFiles.length === 0);
+    && openMossMode === 'clone'
+    && pendingAudioFiles.length === 0;
   const imageGenerationModels = useMemo(() => {
     const names = new Set<string>();
     loadedModels.forEach(model => {
@@ -1446,14 +1443,20 @@ const ChatView: React.FC<ChatViewProps> = ({
   useEffect(() => {
     if (currentCapability !== 'audio-generation') return;
     const recipeOptions = currentModelRecipeOptions || {};
+    const fallback = isOpenMossSfx ? OPENMOSS_SFX_DEFAULTS : DEFAULT_AUDIO_GENERATION_SETTINGS;
+    const numericOption = (key: string, value: number) => (
+      typeof recipeOptions[key] === 'number' ? recipeOptions[key] as number : value
+    );
     setAudioGenerationSettings(prev => ({
       ...prev,
       duration: isAceStepAudio ? 150 : 10,
-      steps: typeof recipeOptions.steps === 'number' ? recipeOptions.steps : 50,
-      cfg: typeof recipeOptions.cfg_scale === 'number' ? recipeOptions.cfg_scale : 4.5,
+      steps: numericOption('steps', fallback.steps),
+      cfg: numericOption('cfg_scale', fallback.cfg),
+      sigmaShift: numericOption('sigma_shift', fallback.sigmaShift),
+      negativePrompt: '',
       lyrics: '',
     }));
-  }, [currentModel, currentCapability, currentModelRecipeOptions, isAceStepAudio]);
+  }, [currentModel, currentCapability, currentModelRecipeOptions, isAceStepAudio, isOpenMossSfx]);
 
   useEffect(() => {
     if (!isOpenMossTts) return;
@@ -1461,6 +1464,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       mode: 'plain',
       voiceDescription: String(currentModelRecipeOptions?.voice || ''),
     });
+    setOpenMossSpeechParams({});
     setPendingAudioFiles([]);
   }, [currentModel, currentModelRecipeOptions, isOpenMossTts]);
 
@@ -1469,14 +1473,14 @@ const ChatView: React.FC<ChatViewProps> = ({
       || currentIsOmniCollection
       || modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel);
     if (keepsAudioAttachments) return;
-    if (isOpenMossTts && openMossSettings.mode === 'clone') return;
+    if (isOpenMossTts && openMossMode === 'clone') return;
     setPendingAudioFiles([]);
   }, [
     currentCapability,
     currentKnownModelInfo,
     currentLoadedModel,
     isOpenMossTts,
-    openMossSettings.mode,
+    openMossMode,
   ]);
 
   const hasRealtimeAudio = useMemo(
@@ -2833,6 +2837,16 @@ ${finalText}`
         } else {
           audioOptions.cfg = audioGenerationSettings.cfg;
         }
+        const isOpenMossSfxModel = String(model.recipe || '').toLowerCase().includes('openmoss')
+          || /moss[-_ ]?soundeffect/i.test(String(model.name || ''));
+        if (isOpenMossSfxModel) {
+          audioOptions.sigma_shift = audioGenerationSettings.sigmaShift;
+          const negativePrompt = audioGenerationSettings.negativePrompt.trim();
+          if (negativePrompt) audioOptions.negative_prompt = negativePrompt;
+          if (typeof audioOptions.seed !== 'number' || audioOptions.seed < 0) {
+            audioOptions.seed = Math.floor(Math.random() * OPENMOSS_SFX_SEED_LIMIT);
+          }
+        }
         const audio = await api.audioGeneration(model.name, text, audioOptions);
         appendAssistantMessage(convoId, {
           content: isAceStepModel
@@ -2888,68 +2902,38 @@ ${finalText}`
         });
       } else if (model.capability === 'tts') {
         if (!text) throw new Error(t('TTS mode needs text to speak.'));
-        let targetModel = model.name;
         const directOptions = (await api.getModelOptions(model.name)).effective || {};
         let voice = ttsVoiceFromRecipeOptions(directOptions);
-        let speechOptions: Record<string, unknown> = {};
+        const speechOptions: Record<string, unknown> = {};
         let content = 'Generated speech audio from your text.';
-        let reloadTargetAfterVoiceDesign = false;
 
         if (isOpenMossTts) {
+          Object.assign(speechOptions, openMossSpeechParams);
           voice = openMossSettings.voiceDescription.trim();
-          if (openMossSettings.mode === 'describe') {
-            if (!openMossVoiceDesignModel) {
-              throw new Error(t('Install MOSS-VoiceGen to design a voice from a description.'));
-            }
-            targetModel = openMossVoiceDesignModel;
-            if (openMossCloneModel) {
-              if (!loadedModels.some(item => item.model_name.toLowerCase() === openMossVoiceDesignModel.toLowerCase())) {
-                await loadModelForChat(
-                  openMossVoiceDesignModel,
-                  findModelInfoByName(knownModelInfos, openMossVoiceDesignModel) || null,
-                );
-              }
-              const designedSample = await api.textToSpeech(
-                openMossVoiceDesignModel,
-                OPENMOSS_VOICE_DESIGN_PHRASE,
-                voice,
-              );
-              try {
-                speechOptions.reference_wav_b64 = await fileToBase64(designedSample.blob);
-              } finally {
-                URL.revokeObjectURL(designedSample.url);
-              }
-              targetModel = openMossCloneModel;
+          if (openMossMode === 'describe') {
+            if (!voice) throw new Error(t('Describe the voice you want before generating speech.'));
+            const requestLabels = (findModelInfoByName(knownModelInfos, model.name)?.labels || [])
+              .map(label => String(label).toLowerCase());
+            const isVoiceDesignModel = requestLabels.includes('voice-design') || /voicegen/i.test(model.name);
+            if (!isVoiceDesignModel) {
+              speechOptions.voice_design_description = voice;
               voice = '';
-              reloadTargetAfterVoiceDesign = true;
-              content = t('Designed a voice from your description and generated speech with it.');
-            } else {
-              content = t('Generated speech with the described voice.');
             }
-          } else if (openMossSettings.mode === 'clone') {
+            content = t('Designed a voice from your description and generated speech with it.');
+          } else if (openMossMode === 'clone') {
             const sample = audioFiles[0];
             if (!sample) throw new Error(t('Attach a WAV voice sample to clone.'));
-            if (!openMossCloneModel) throw new Error(t('Install OpenMOSS-TTS to clone a voice sample.'));
-            targetModel = openMossCloneModel;
             speechOptions.reference_wav_b64 = await wavVoiceSampleToBase64(sample);
             content = t('Generated speech using the attached voice sample.');
           }
-
-          if (reloadTargetAfterVoiceDesign || !loadedModels.some(item => item.model_name.toLowerCase() === targetModel.toLowerCase())) {
-            await loadModelForChat(targetModel, findModelInfoByName(knownModelInfos, targetModel) || null);
-          }
         }
 
-        const audio = await api.textToSpeech(targetModel, text, voice, speechOptions);
-        const targetInfo = findModelInfoByName(knownModelInfos, targetModel);
-        const outputModel = targetModel === model.name
-          ? model
-          : (snapshotFromModelInfo(targetInfo) || { ...model, name: targetModel });
+        const audio = await api.textToSpeech(model.name, text, voice, speechOptions);
         appendAssistantMessage(convoId, {
           content,
           audioUrl: trackGeneratedMediaUrl(audio.url),
-          audioName: `${targetModel}.wav`,
-          model: outputModel,
+          audioName: `${model.name}.wav`,
+          model,
         });
       } else if (model.capability === 'audio') {
         const file = audioFiles[0];
@@ -2981,7 +2965,7 @@ ${finalText}`
   }, [
     appendAssistantMessage, audioGenerationSettings, imageMode, imageSettings,
     isOpenMossTts, knownModelInfos, loadedModels, model3dSettings, onRefresh,
-    loadModelForChat, openMossCloneModel, openMossSettings, openMossVoiceDesignModel,
+    loadModelForChat, openMossMode, openMossSettings, openMossSpeechParams,
     speakWithPinnedTts, trackGeneratedMediaUrl,
   ]);
 
@@ -3486,10 +3470,10 @@ ${index}`;
     || (currentCapability === 'image' && imageMode === 'edit')
     || (currentCapability === 'model3d' && model3dSettings.sourceMode === 'image');
   const acceptsAudioAttachments = canUseAudioInput
-    || (isOpenMossTts && openMossSettings.mode === 'clone');
+    || (isOpenMossTts && openMossMode === 'clone');
 
   const addAttachments = useCallback(async (files: File[]) => {
-    if (isOpenMossTts && openMossSettings.mode === 'clone') {
+    if (isOpenMossTts && openMossMode === 'clone') {
       const wav = files.find(file => file.type.toLowerCase().includes('wav') || file.name.toLowerCase().endsWith('.wav'));
       if (wav) setPendingAudioFiles([wav]);
       return;
@@ -3549,7 +3533,7 @@ ${index}`;
   }, [
     acceptsImageAttachments, canUseAudioInput, currentCapability, imageMode, isOpenMossTts,
     modeSupportsChatCompletions, model3dSettings.sourceMode,
-    openMossSettings.mode, pendingImages.length, t, createImageEditPreview,
+    openMossMode, pendingImages.length, t, createImageEditPreview,
   ]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -3690,7 +3674,7 @@ ${index}`;
   }, []);
 
   const hasMessages = messages.length > 0 || isStreaming || capabilityBusy || modelPreparation !== null;
-  const isOpenMossCloneMode = isOpenMossTts && openMossSettings.mode === 'clone';
+  const isOpenMossCloneMode = isOpenMossTts && openMossMode === 'clone';
   const canAttach = acceptsImageAttachments || acceptsAudioAttachments;
   const imageAttachmentLimitReached = acceptsImageAttachments
     && !acceptsAudioAttachments
@@ -3810,9 +3794,11 @@ ${index}`;
           ? (model3dSettings.sourceMode === 'image' ? '3D mode · image becomes /3d/generations · export GLB or geometry-only STL' : '3D mode · image model renders a reference, then TRELLIS reconstructs it')
           : currentCapability === 'tts'
             ? (isOpenMossTts
-              ? openMossSettings.mode === 'describe'
-                ? 'OpenMOSS · describe a voice; MOSS-VoiceGen creates a reference for speech synthesis'
-                : openMossSettings.mode === 'clone'
+              ? openMossMode === 'describe'
+                ? (currentIsVoiceDesign
+                  ? 'OpenMOSS · the description becomes the voice via /audio/speech'
+                  : 'OpenMOSS · the server designs a reference voice from your description, then speaks with it')
+                : openMossMode === 'clone'
                   ? 'OpenMOSS · attach one WAV sample to clone its voice'
                   : 'OpenMOSS · optional voice style instruction via /audio/speech'
               : 'TTS mode · text becomes /audio/speech')
@@ -4445,6 +4431,32 @@ ${index}`;
                 disabled={isBusy}
               />
             </label>
+            {isOpenMossSfx && (
+              <label className="composer__image-setting">
+                <span>{t('Sigma shift')}</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={20}
+                  step={0.5}
+                  value={audioGenerationSettings.sigmaShift}
+                  onChange={e => setAudioGenerationSettings(prev => ({ ...prev, sigmaShift: Math.max(0, Math.min(20, parseFloat(e.target.value) || 0)) }))}
+                  disabled={isBusy}
+                />
+              </label>
+            )}
+            {isOpenMossSfx && (
+              <label className="composer__openmoss-description composer__audio-negative-prompt">
+                <span>{t('Negative prompt')} <small>{t('optional')}</small></span>
+                <input
+                  type="text"
+                  value={audioGenerationSettings.negativePrompt}
+                  onChange={e => setAudioGenerationSettings(prev => ({ ...prev, negativePrompt: e.target.value }))}
+                  placeholder={t('Sounds to steer away from…')}
+                  disabled={isBusy}
+                />
+              </label>
+            )}
             {isAceStepAudio && (
               <label className="composer__image-setting composer__image-setting--language">
                 <span>{t('Lyrics language')}</span>
@@ -4477,7 +4489,7 @@ ${index}`;
             <label className="composer__image-setting composer__image-setting--mode">
               <span>{t('Voice mode')}</span>
               <select
-                value={openMossSettings.mode}
+                value={openMossMode}
                 onChange={event => {
                   const mode = event.target.value as OpenMossMode;
                   setOpenMossSettings(previous => ({ ...previous, mode }));
@@ -4485,49 +4497,76 @@ ${index}`;
                 }}
                 disabled={isBusy}
               >
-                <option value="plain">{t('Plain')}</option>
-                <option value="describe">{t('Describe voice')}</option>
-                <option value="clone">{t('Clone WAV sample')}</option>
+                {openMossModes.includes('plain') && <option value="plain">{t('Plain')}</option>}
+                {openMossModes.includes('describe') && <option value="describe">{t('Describe voice')}</option>}
+                {openMossModes.includes('clone') && <option value="clone">{t('Clone WAV sample')}</option>}
               </select>
             </label>
             <label className="composer__openmoss-description">
               <span>
-                {openMossSettings.mode === 'describe'
+                {openMossMode === 'describe'
                   ? t('Voice description')
-                  : openMossSettings.mode === 'clone'
+                  : openMossMode === 'clone'
                     ? t('Style note')
                     : t('Voice style')}
-                <small>{openMossSettings.mode === 'clone' ? t('optional') : t('optional instruction')}</small>
+                <small>{openMossMode === 'describe' ? t('required') : openMossMode === 'clone' ? t('optional') : t('optional instruction')}</small>
               </span>
               <input
                 type="text"
                 value={openMossSettings.voiceDescription}
                 onChange={event => setOpenMossSettings(previous => ({ ...previous, voiceDescription: event.target.value }))}
-                placeholder={openMossSettings.mode === 'describe'
+                placeholder={openMossMode === 'describe'
                   ? 'Warm low female voice, British accent…'
-                  : openMossSettings.mode === 'clone'
+                  : openMossMode === 'clone'
                     ? 'Calm, conversational delivery…'
                     : 'Cheerful, whispering, dramatic…'}
                 disabled={isBusy}
               />
             </label>
+            <details className="composer__openmoss-params">
+              <summary>{t('Generation parameters')}</summary>
+              <div className="composer__openmoss-params-grid">
+                {OPENMOSS_SPEECH_PARAMS.map(param => (
+                  <label key={param.key} className="composer__image-setting">
+                    <span>{t(param.label)}</span>
+                    <input
+                      type="number"
+                      min={param.min}
+                      max={param.max}
+                      step={param.step}
+                      value={openMossSpeechParams[param.key] ?? ''}
+                      placeholder={t('Auto')}
+                      onChange={event => {
+                        const raw = event.target.value;
+                        const value = Number(raw);
+                        setOpenMossSpeechParams(previous => {
+                          const next = { ...previous };
+                          if (raw === '' || !Number.isFinite(value)) delete next[param.key];
+                          else next[param.key] = value;
+                          return next;
+                        });
+                      }}
+                      disabled={isBusy}
+                    />
+                  </label>
+                ))}
+              </div>
+            </details>
             <div
-              className={`composer__openmoss-status${openMossDescribeUnavailable || (openMossSettings.mode === 'clone' && !openMossCloneModel) ? ' composer__openmoss-status--error' : ''}`}
+              className={`composer__openmoss-status${openMossDescribeUnavailable || openMossCloneUnavailable ? ' composer__openmoss-status--error' : ''}`}
               role="status"
               aria-live="polite"
             >
-              {openMossSettings.mode === 'describe'
+              {openMossMode === 'describe'
                 ? openMossDescribeUnavailable
-                  ? t('Install MOSS-VoiceGen to enable described voices.')
-                  : openMossCloneModel
-                    ? t('Voice design: {design} → speech: {speech}', { design: openMossVoiceDesignModel, speech: openMossCloneModel })
-                    : t('Using {model} directly for described speech.', { model: openMossVoiceDesignModel })
-                : openMossSettings.mode === 'clone'
-                  ? !openMossCloneModel
-                    ? t('Install OpenMOSS-TTS to clone a WAV voice sample.')
-                    : pendingAudioFiles.length > 0
-                      ? t('Voice sample ready: {name}', { name: pendingAudioFiles[0].name })
-                      : t('Attach one WAV voice sample with the paperclip below.')
+                  ? t('Describe the voice you want: pitch, accent, age, delivery.')
+                  : currentIsVoiceDesign
+                    ? t('{model} speaks your text in the described voice.', { model: currentModel || '' })
+                    : t('{model} designs a reference voice from your description, then speaks your text with it.', { model: currentModel || '' })
+                : openMossMode === 'clone'
+                  ? pendingAudioFiles.length > 0
+                    ? t('Voice sample ready: {name}', { name: pendingAudioFiles[0].name })
+                    : t('Attach one WAV voice sample with the paperclip below.')
                   : t('The selected OpenMOSS model receives the optional voice style directly.')}
             </div>
           </div>
